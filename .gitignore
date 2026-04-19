@@ -1,0 +1,42 @@
+# AI assistant files — not tracked in this repo
+CLAUDE.md
+.claude/
+.clauderc
+AGENTS.md
+GEMINI.md
+.gemini/
+.cursor/
+.cursorrules
+.aider*
+.continue/
+.codeium/
+.windsurf/
+.copilot-instructions.md
+.github/copilot-instructions.md
+
+# C build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.d
+*.gcov
+*.gcda
+*.gcno
+
+# Build directories
+build/
+dist/
+out/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
