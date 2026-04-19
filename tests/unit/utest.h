@@ -27,16 +27,16 @@ extern const char *utest_current;
 
 #define UTEST_MAX_CASES 4096
 
-#define UTEST(name)                                                 \
-    static void utest_##name(void);                                 \
-    __attribute__((constructor)) static void utest_register_##name(void) { \
+#define UTEST(test_name)                                            \
+    static void utest_##test_name(void);                            \
+    __attribute__((constructor)) static void utest_register_##test_name(void) { \
         if (utest_count < UTEST_MAX_CASES) {                        \
-            utest_cases[utest_count].name = #name;                  \
-            utest_cases[utest_count].fn = utest_##name;             \
+            utest_cases[utest_count].name = #test_name;             \
+            utest_cases[utest_count].fn = utest_##test_name;        \
             utest_count++;                                          \
         }                                                           \
     }                                                               \
-    static void utest_##name(void)
+    static void utest_##test_name(void)
 
 #define UASSERT(cond)                                               \
     do {                                                            \
