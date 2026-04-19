@@ -1,5 +1,7 @@
 # urbi-embedded
 
+![ci](https://github.com/aklofas/urbi-embedded/actions/workflows/ci.yml/badge.svg)
+
 An embeddable orchestration scripting language for robotics and physical systems, in pure C99.
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
