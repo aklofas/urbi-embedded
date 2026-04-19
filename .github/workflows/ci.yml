@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  host:
+    name: host (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [test, test-asan, test-ubsan, test-debug]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: Build and test
+        run: make ${{ matrix.mode }}
+
+  cross-arm:
+    name: cross-compile (ARM Cortex-M7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Cross-compile
+        run: make cross-arm
+      - name: Inspect archive
+        run: arm-none-eabi-ar t liburbi.a
+
+  cross-riscv:
+    name: cross-compile (RISC-V rv32imc)
+    runs-on: ubuntu-latest
+    # RISC-V bare-metal toolchain packaging is inconsistent across Ubuntu releases.
+    # Keep this job non-blocking until P4 (Value system + GC) when we genuinely
+    # need to verify 32-bit RISC-V compatibility — by then we can invest in
+    # a reliable toolchain installation path.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          # Try multiple package names; succeed if any works.
+          sudo apt-get install -y gcc-riscv64-unknown-elf \
+            || sudo apt-get install -y gcc-riscv-none-elf \
+            || (echo "RISC-V bare-metal toolchain unavailable; skipping cross-compile"; exit 0)
+      - name: Cross-compile
+        run: |
+          if command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
+            make cross-riscv
+          else
+            echo "RISC-V bare-metal toolchain unavailable; skipping cross-compile"
+            exit 0
+          fi
+      - name: Inspect archive
+        run: |
+          if [ -f liburbi.a ]; then
+            riscv64-unknown-elf-ar t liburbi.a
+          else
+            echo "No archive produced; skipped"
+          fi
