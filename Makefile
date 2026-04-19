@@ -23,7 +23,20 @@ test-ubsan: clean
 test-debug: clean
 	$(MAKE) CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" test
 
+# Cross-compile sanity (builds liburbi.a only; no test runner)
+cross-arm: clean
+	$(MAKE) CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding" \
+		AR=arm-none-eabi-ar \
+		liburbi.a
+
+cross-riscv: clean
+	$(MAKE) CC=riscv64-unknown-elf-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding" \
+		AR=riscv64-unknown-elf-ar \
+		liburbi.a
+
 clean:
 	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner
 
-.PHONY: test test-asan test-ubsan test-debug clean
+.PHONY: test test-asan test-ubsan test-debug cross-arm cross-riscv clean
