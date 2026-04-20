@@ -344,6 +344,48 @@ static void bin_leading_underscore(void) {
     UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
 }
 
+static void oct_simple(void) {
+    Lexer l; ulex_init(&l, "0o42", 4);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 34);
+}
+
+static void oct_upper_prefix(void) {
+    Lexer l; ulex_init(&l, "0O755", 5);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 493);
+}
+
+static void oct_with_underscores(void) {
+    Lexer l; ulex_init(&l, "0o177_777", 9);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0177777);
+}
+
+static void oct_empty_radix(void) {
+    Lexer l; ulex_init(&l, "0o", 2);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
+}
+
+static void oct_malformed_eight(void) {
+    Lexer l; ulex_init(&l, "0o8", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_MALFORMED_OCT);
+}
+
+static void oct_malformed_nine(void) {
+    Lexer l; ulex_init(&l, "0o9", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_MALFORMED_OCT);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -391,4 +433,10 @@ void test_lexer_suite(void) {
     utest_run("bin_empty_radix", bin_empty_radix);
     utest_run("bin_malformed_digit", bin_malformed_digit);
     utest_run("bin_leading_underscore", bin_leading_underscore);
+    utest_run("oct_simple", oct_simple);
+    utest_run("oct_upper_prefix", oct_upper_prefix);
+    utest_run("oct_with_underscores", oct_with_underscores);
+    utest_run("oct_empty_radix", oct_empty_radix);
+    utest_run("oct_malformed_eight", oct_malformed_eight);
+    utest_run("oct_malformed_nine", oct_malformed_nine);
 }
