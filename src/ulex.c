@@ -76,7 +76,6 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
                         LexErrorCode malformed_code) {
     int start_col = (int)(start - lex->line_start) + 1;
     int start_line = lex->line;
-    const char *digits = lex->cur;
 
     /* Must have at least one digit or underscore. */
     if (lex->cur >= lex->end) {
@@ -147,7 +146,6 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
                           start_line, start_col, len);
     }
 
-    (void)digits;
     Token t;
     memset(&t, 0, sizeof(t));
     t.type = TOK_INT;
