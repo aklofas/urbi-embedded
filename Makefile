@@ -52,6 +52,6 @@ compile_commands.json:
 	@printf '\n]\n' >> $@
 
 clean:
-	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner
+	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner compile_commands.json
 
 .PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json
