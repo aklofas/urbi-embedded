@@ -543,7 +543,7 @@ static void unknown_char_at(void) {
 }
 
 static void unknown_char_semicolon_still_deferred(void) {
-    /* Semicolons land in a later plan with the compound separators. */
+    /* Semicolons are out of current scope; they land with the compound separators. */
     Lexer l; ulex_init(&l, ";", 1);
     Token t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
@@ -562,6 +562,76 @@ static void unknown_char_message_is_correct(void) {
     Lexer l; ulex_init(&l, "$", 1);
     Token t = ulex_next(&l);
     UASSERT_STR_EQ(t.u.err.message, "unknown character");
+}
+
+/* Hex — fills the adjacent-underscores gap. */
+static void hex_adjacent_underscores(void) {
+    Lexer l; ulex_init(&l, "0xFF__00", 8);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
+}
+
+static void hex_overflow(void) {
+    /* 0x8000_0000_0000_0000 = INT64_MAX + 1 */
+    Lexer l; ulex_init(&l, "0x8000000000000000", 18);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+/* Binary — trailing, adjacent, overflow. */
+static void bin_trailing_underscore(void) {
+    Lexer l; ulex_init(&l, "0b1010_", 7);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
+}
+
+static void bin_adjacent_underscores(void) {
+    Lexer l; ulex_init(&l, "0b10__01", 8);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
+}
+
+static void bin_overflow(void) {
+    /* 64 binary digits = 2^64 = INT64_MAX + 1 range */
+    Lexer l; ulex_init(&l,
+        "0b10000000000000000000000000000000000000000000000000000000000000000", 67);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+/* Octal — leading, trailing, adjacent, overflow. */
+static void oct_leading_underscore(void) {
+    Lexer l; ulex_init(&l, "0o_755", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
+}
+
+static void oct_trailing_underscore(void) {
+    Lexer l; ulex_init(&l, "0o755_", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
+}
+
+static void oct_adjacent_underscores(void) {
+    Lexer l; ulex_init(&l, "0o7__5", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
+}
+
+static void oct_overflow(void) {
+    /* 0o1000000000000000000000 = 2^63 = INT64_MAX + 1 */
+    Lexer l; ulex_init(&l, "0o1000000000000000000000", 24);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
 void test_lexer_suite(void) {
@@ -605,18 +675,27 @@ void test_lexer_suite(void) {
     utest_run("hex_malformed_digit", hex_malformed_digit);
     utest_run("hex_leading_underscore", hex_leading_underscore);
     utest_run("hex_trailing_underscore", hex_trailing_underscore);
+    utest_run("hex_adjacent_underscores", hex_adjacent_underscores);
+    utest_run("hex_overflow", hex_overflow);
     utest_run("bin_simple", bin_simple);
     utest_run("bin_upper_prefix", bin_upper_prefix);
     utest_run("bin_with_underscores", bin_with_underscores);
     utest_run("bin_empty_radix", bin_empty_radix);
     utest_run("bin_malformed_digit", bin_malformed_digit);
     utest_run("bin_leading_underscore", bin_leading_underscore);
+    utest_run("bin_trailing_underscore", bin_trailing_underscore);
+    utest_run("bin_adjacent_underscores", bin_adjacent_underscores);
+    utest_run("bin_overflow", bin_overflow);
     utest_run("oct_simple", oct_simple);
     utest_run("oct_upper_prefix", oct_upper_prefix);
     utest_run("oct_with_underscores", oct_with_underscores);
     utest_run("oct_empty_radix", oct_empty_radix);
     utest_run("oct_malformed_eight", oct_malformed_eight);
     utest_run("oct_malformed_nine", oct_malformed_nine);
+    utest_run("oct_leading_underscore", oct_leading_underscore);
+    utest_run("oct_trailing_underscore", oct_trailing_underscore);
+    utest_run("oct_adjacent_underscores", oct_adjacent_underscores);
+    utest_run("oct_overflow", oct_overflow);
     utest_run("ident_single_letter", ident_single_letter);
     utest_run("ident_underscore_alone", ident_underscore_alone);
     utest_run("ident_underscore_prefixed", ident_underscore_prefixed);
