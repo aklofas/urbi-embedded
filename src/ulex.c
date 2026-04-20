@@ -4,7 +4,6 @@
 #include "ulex.h"
 
 #include <limits.h>
-#include <string.h>
 
 static const char *TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
@@ -29,8 +28,7 @@ static const char *ERR_MSG[] = {
 };
 
 static Token make_error(LexErrorCode code, int line, int col, int len) {
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = TOK_ERROR;
     t.line = line;
     t.col = col;
@@ -42,8 +40,7 @@ static Token make_error(LexErrorCode code, int line, int col, int len) {
 
 static Token make_tok(const Lexer *l, TokenType type,
                      const char *start, int len) {
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = type;
     t.line = l->line;
     t.col = (int)(start - l->line_start) + 1;
@@ -144,8 +141,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
                           start_line, start_col, len);
     }
 
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = TOK_INT;
     t.line = start_line;
     t.col = start_col;
@@ -224,8 +220,7 @@ static Token scan_decimal(Lexer *lex) {
                           start_line, start_col, len);
     }
 
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = TOK_INT;
     t.line = start_line;
     t.col = start_col;
@@ -251,8 +246,7 @@ static Token scan_ident(Lexer *lex) {
     while (lex->cur < lex->end && is_ident_cont(*lex->cur)) {
         lex->cur++;
     }
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = TOK_IDENT;
     t.line = start_line;
     t.col = start_col;
@@ -271,8 +265,7 @@ void ulex_init(Lexer *lex, const char *src, size_t len) {
 }
 
 static Token make_eof(const Lexer *l) {
-    Token t;
-    memset(&t, 0, sizeof(t));
+    Token t = {0};
     t.type = TOK_EOF;
     t.line = l->line;
     t.col = (int)(l->cur - l->line_start) + 1;
