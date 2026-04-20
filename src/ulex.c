@@ -28,8 +28,7 @@ static const char *ERR_MSG[] = {
     "integer literal exceeds INT64_MAX"
 };
 
-static Token make_error(const Lexer *l, LexErrorCode code,
-                       int line, int col, int len) {
+static Token make_error(LexErrorCode code, int line, int col, int len) {
     Token t;
     memset(&t, 0, sizeof(t));
     t.type = TOK_ERROR;
@@ -38,7 +37,6 @@ static Token make_error(const Lexer *l, LexErrorCode code,
     t.len = len;
     t.u.err.code = code;
     t.u.err.message = ERR_MSG[code];
-    (void)l;
     return t;
 }
 
@@ -79,7 +77,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
 
     /* Must have at least one digit or underscore. */
     if (lex->cur >= lex->end) {
-        return make_error(lex, LEX_EMPTY_RADIX, start_line, start_col, 2);
+        return make_error(LEX_EMPTY_RADIX, start_line, start_col, 2);
     }
     char c0 = *lex->cur;
     if (c0 == '_') {
@@ -89,7 +87,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
             lex->cur++;
         }
         int len = (int)(lex->cur - start);
-        return make_error(lex, LEX_LEADING_UNDERSCORE,
+        return make_error(LEX_LEADING_UNDERSCORE,
                           start_line, start_col, len);
     }
     if (digit_value(c0, base) < 0) {
@@ -104,10 +102,10 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
         if (looks_digitish) {
             /* Consume the bad digit-ish char so we advance. */
             lex->cur++;
-            return make_error(lex, malformed_code,
+            return make_error(malformed_code,
                               start_line, start_col, 3);
         }
-        return make_error(lex, LEX_EMPTY_RADIX,
+        return make_error(LEX_EMPTY_RADIX,
                           start_line, start_col, 2);
     }
 
@@ -118,7 +116,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
         if (c == '_') {
             if (prev == '_') {
                 int len = (int)(lex->cur - start) + 1;
-                return make_error(lex, LEX_ADJACENT_UNDERSCORES,
+                return make_error(LEX_ADJACENT_UNDERSCORES,
                                   start_line, start_col, len);
             }
             prev = '_';
@@ -133,7 +131,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
                 lex->cur++;
             }
             int len = (int)(lex->cur - start);
-            return make_error(lex, LEX_INT_OVERFLOW,
+            return make_error(LEX_INT_OVERFLOW,
                               start_line, start_col, len);
         }
         prev = c;
@@ -142,7 +140,7 @@ static Token scan_radix(Lexer *lex, const char *start, int base,
 
     if (prev == '_') {
         int len = (int)(lex->cur - start);
-        return make_error(lex, LEX_TRAILING_UNDERSCORE,
+        return make_error(LEX_TRAILING_UNDERSCORE,
                           start_line, start_col, len);
     }
 
@@ -186,26 +184,19 @@ static Token scan_decimal(Lexer *lex) {
                 lex->cur++;
             }
             int len = (int)(lex->cur - start);
-            return make_error(lex, LEX_AMBIGUOUS_LEADING_ZERO,
+            return make_error(LEX_AMBIGUOUS_LEADING_ZERO,
                               start_line, start_col, len);
         }
     }
 
     int64_t value = 0;
     char prev = 0;
-    int digit_seen = 0;
     while (lex->cur < lex->end) {
         char c = *lex->cur;
         if (c == '_') {
-            if (!digit_seen) {
-                /* Underscore before any digit — should never reach here
-                   for a leading '_' since '_' doesn't dispatch to scan_decimal. */
-                return make_error(lex, LEX_LEADING_UNDERSCORE,
-                                  start_line, start_col, 1);
-            }
             if (prev == '_') {
                 int len = (int)(lex->cur - start) + 1;
-                return make_error(lex, LEX_ADJACENT_UNDERSCORES,
+                return make_error(LEX_ADJACENT_UNDERSCORES,
                                   start_line, start_col, len);
             }
             prev = '_';
@@ -220,17 +211,16 @@ static Token scan_decimal(Lexer *lex) {
                 lex->cur++;
             }
             int len = (int)(lex->cur - start);
-            return make_error(lex, LEX_INT_OVERFLOW,
+            return make_error(LEX_INT_OVERFLOW,
                               start_line, start_col, len);
         }
         prev = c;
-        digit_seen = 1;
         lex->cur++;
     }
 
     if (prev == '_') {
         int len = (int)(lex->cur - start);
-        return make_error(lex, LEX_TRAILING_UNDERSCORE,
+        return make_error(LEX_TRAILING_UNDERSCORE,
                           start_line, start_col, len);
     }
 
@@ -357,7 +347,7 @@ static TriviaResult skip_trivia(Lexer *l) {
 Token ulex_next(Lexer *lex) {
     TriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
-        return make_error(lex, tr.code, tr.line, tr.col, 2);
+        return make_error(tr.code, tr.line, tr.col, 2);
     }
     if (lex->cur >= lex->end) {
         return make_eof(lex);
@@ -384,7 +374,7 @@ Token ulex_next(Lexer *lex) {
             int col = (int)(lex->cur - lex->line_start) + 1;
             int line = lex->line;
             lex->cur++;  /* recovery: advance past the bad byte */
-            return make_error(lex, LEX_UNKNOWN_CHAR, line, col, 1);
+            return make_error(LEX_UNKNOWN_CHAR, line, col, 1);
         }
     }
 }
