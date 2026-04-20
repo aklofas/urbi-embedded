@@ -109,6 +109,54 @@ static void unterminated_block_comment_emits_error(void) {
     UASSERT_STR_EQ(t.u.err.message, "unterminated block comment");
 }
 
+static void plus_token(void) {
+    Lexer l; ulex_init(&l, "+", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_PLUS);
+    UASSERT_EQ(t.len, 1);
+    UASSERT_EQ(t.col, 1);
+}
+
+static void minus_token(void) {
+    Lexer l; ulex_init(&l, "-", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_MINUS);
+}
+
+static void star_token(void) {
+    Lexer l; ulex_init(&l, "*", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_STAR);
+}
+
+static void slash_token(void) {
+    Lexer l; ulex_init(&l, "/", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_SLASH);
+}
+
+static void lparen_token(void) {
+    Lexer l; ulex_init(&l, "(", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_LPAREN);
+}
+
+static void rparen_token(void) {
+    Lexer l; ulex_init(&l, ")", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_RPAREN);
+}
+
+static void pipe_token(void) {
+    Lexer l; ulex_init(&l, "|", 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_PIPE);
+}
+
+static void plus_position_on_second_line(void) {
+    Lexer l;
+    const char *s = "  \n +";
+    ulex_init(&l, s, 5);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_PLUS);
+    UASSERT_EQ(t.line, 2);
+    UASSERT_EQ(t.col, 2);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -122,4 +170,12 @@ void test_lexer_suite(void) {
     utest_run("block_comment_single_line", block_comment_single_line);
     utest_run("block_comment_spans_lines", block_comment_spans_lines);
     utest_run("unterminated_block_comment_emits_error", unterminated_block_comment_emits_error);
+    utest_run("plus_token", plus_token);
+    utest_run("minus_token", minus_token);
+    utest_run("star_token", star_token);
+    utest_run("slash_token", slash_token);
+    utest_run("lparen_token", lparen_token);
+    utest_run("rparen_token", rparen_token);
+    utest_run("pipe_token", pipe_token);
+    utest_run("plus_position_on_second_line", plus_position_on_second_line);
 }

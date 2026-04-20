@@ -41,6 +41,17 @@ static Token make_error(const Lexer *l, LexErrorCode code,
     return t;
 }
 
+static Token make_tok(const Lexer *l, TokenType type,
+                     const char *start, int len) {
+    Token t;
+    memset(&t, 0, sizeof(t));
+    t.type = type;
+    t.line = l->line;
+    t.col = (int)(start - l->line_start) + 1;
+    t.len = len;
+    return t;
+}
+
 void ulex_init(Lexer *lex, const char *src, size_t len) {
     lex->src = src;
     lex->end = src + len;
@@ -125,7 +136,25 @@ Token ulex_next(Lexer *lex) {
     if (tr.code != LEX_OK) {
         return make_error(lex, tr.code, tr.line, tr.col, 2);
     }
-    return make_eof(lex);
+    if (lex->cur >= lex->end) {
+        return make_eof(lex);
+    }
+
+    const char *start = lex->cur;
+    char c = *lex->cur;
+    switch (c) {
+    case '+': lex->cur++; return make_tok(lex, TOK_PLUS,   start, 1);
+    case '-': lex->cur++; return make_tok(lex, TOK_MINUS,  start, 1);
+    case '*': lex->cur++; return make_tok(lex, TOK_STAR,   start, 1);
+    case '/': lex->cur++; return make_tok(lex, TOK_SLASH,  start, 1);
+    case '(': lex->cur++; return make_tok(lex, TOK_LPAREN, start, 1);
+    case ')': lex->cur++; return make_tok(lex, TOK_RPAREN, start, 1);
+    case '|': lex->cur++; return make_tok(lex, TOK_PIPE,   start, 1);
+    default:
+        /* Unknown character — populated in a later task. */
+        lex->cur++;
+        return make_eof(lex);
+    }
 }
 
 const char *ulex_token_name(TokenType t) {
