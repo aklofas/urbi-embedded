@@ -1,42 +1,64 @@
 SRC := $(wildcard src/*.c)
-OBJ := $(SRC:.c=.o)
-
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
-TEST_OBJ := $(TEST_SRC:.c=.o)
+
+TARGET ?= host
+BUILDDIR := build/$(TARGET)
+
+OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
+LIB := $(BUILDDIR)/liburbi.a
+RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 CPPFLAGS += -Isrc -Itests/unit
 
-all: liburbi.a
+all: $(LIB)
 
-liburbi.a: $(OBJ)
+$(LIB): $(OBJ)
 	$(AR) rcs $@ $^
 
-test: liburbi.a $(TEST_OBJ)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o tests/unit/runner $(TEST_OBJ) liburbi.a
-	./tests/unit/runner
+$(BUILDDIR)/src/%.o: src/%.c | $(BUILDDIR)/src
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-test-asan: clean
-	$(MAKE) CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address -fno-omit-frame-pointer" test
+$(BUILDDIR)/tests/unit/%.o: tests/unit/%.c | $(BUILDDIR)/tests/unit
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-test-ubsan: clean
-	$(MAKE) CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" test
+$(BUILDDIR)/src $(BUILDDIR)/tests/unit:
+	@mkdir -p $@
 
-test-debug: clean
-	$(MAKE) CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" test
+test: $(LIB) $(TEST_OBJ)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
+	$(RUNNER)
 
-# Cross-compile sanity (builds liburbi.a only; no test runner)
-cross-arm: clean
-	$(MAKE) CC=arm-none-eabi-gcc \
+test-debug:
+	$(MAKE) TARGET=host-debug \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" \
+		test
+
+test-asan:
+	$(MAKE) TARGET=host-asan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address -fno-omit-frame-pointer" \
+		test
+
+test-ubsan:
+	$(MAKE) TARGET=host-ubsan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
+		test
+
+# Cross-compile sanity (builds liburbi.a only; no test runner).
+cross-arm:
+	$(MAKE) TARGET=arm-cortex-m7 \
+		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding" \
 		AR=arm-none-eabi-ar \
-		liburbi.a
+		all
 
-cross-riscv: clean
-	$(MAKE) CC=riscv64-unknown-elf-gcc \
+cross-riscv:
+	$(MAKE) TARGET=riscv-rv32imc \
+		CC=riscv64-unknown-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding" \
 		AR=riscv64-unknown-elf-ar \
-		liburbi.a
+		all
 
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
@@ -52,6 +74,6 @@ compile_commands.json:
 	@printf '\n]\n' >> $@
 
 clean:
-	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner compile_commands.json
+	rm -rf build compile_commands.json
 
 .PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json
