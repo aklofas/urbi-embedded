@@ -386,6 +386,77 @@ static void oct_malformed_nine(void) {
     UASSERT_EQ(t.u.err.code, LEX_MALFORMED_OCT);
 }
 
+static void ident_single_letter(void) {
+    Lexer l; ulex_init(&l, "x", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 1);
+    UASSERT_EQ(t.u.str.start[0], 'x');
+}
+
+static void ident_underscore_alone(void) {
+    Lexer l; ulex_init(&l, "_", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 1);
+}
+
+static void ident_underscore_prefixed(void) {
+    Lexer l; ulex_init(&l, "_private", 8);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 8);
+}
+
+static void ident_with_digits(void) {
+    Lexer l; ulex_init(&l, "foo123", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 6);
+}
+
+static void ident_camel_case(void) {
+    Lexer l; ulex_init(&l, "camelCase", 9);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 9);
+}
+
+static void ident_snake_case(void) {
+    Lexer l; ulex_init(&l, "snake_case", 10);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 10);
+}
+
+static void leading_underscore_digit_is_ident(void) {
+    /* Identifiers win at leading '_'. */
+    Lexer l; ulex_init(&l, "_42", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.u.str.len, 3);
+}
+
+static void ident_start_points_into_source(void) {
+    const char *src = "foo";
+    Lexer l; ulex_init(&l, src, 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    /* zero-copy: t.u.str.start is exactly src */
+    UASSERT(t.u.str.start == src);
+}
+
+static void digit_then_ident_is_two_tokens(void) {
+    /* 123foo lexes as TOK_INT(123) then TOK_IDENT(foo). */
+    Lexer l; ulex_init(&l, "123foo", 6);
+    Token t1 = ulex_next(&l);
+    Token t2 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 123);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 3);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -439,4 +510,13 @@ void test_lexer_suite(void) {
     utest_run("oct_empty_radix", oct_empty_radix);
     utest_run("oct_malformed_eight", oct_malformed_eight);
     utest_run("oct_malformed_nine", oct_malformed_nine);
+    utest_run("ident_single_letter", ident_single_letter);
+    utest_run("ident_underscore_alone", ident_underscore_alone);
+    utest_run("ident_underscore_prefixed", ident_underscore_prefixed);
+    utest_run("ident_with_digits", ident_with_digits);
+    utest_run("ident_camel_case", ident_camel_case);
+    utest_run("ident_snake_case", ident_snake_case);
+    utest_run("leading_underscore_digit_is_ident", leading_underscore_digit_is_ident);
+    utest_run("ident_start_points_into_source", ident_start_points_into_source);
+    utest_run("digit_then_ident_is_two_tokens", digit_then_ident_is_two_tokens);
 }

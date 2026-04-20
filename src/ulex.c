@@ -244,6 +244,34 @@ static Token scan_decimal(Lexer *lex) {
     return t;
 }
 
+static int is_ident_start(char c) {
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           c == '_';
+}
+
+static int is_ident_cont(char c) {
+    return is_ident_start(c) || (c >= '0' && c <= '9');
+}
+
+static Token scan_ident(Lexer *lex) {
+    const char *start = lex->cur;
+    int start_col = (int)(start - lex->line_start) + 1;
+    int start_line = lex->line;
+    while (lex->cur < lex->end && is_ident_cont(*lex->cur)) {
+        lex->cur++;
+    }
+    Token t;
+    memset(&t, 0, sizeof(t));
+    t.type = TOK_IDENT;
+    t.line = start_line;
+    t.col = start_col;
+    t.len = (int)(lex->cur - start);
+    t.u.str.start = start;
+    t.u.str.len = (int)(lex->cur - start);
+    return t;
+}
+
 void ulex_init(Lexer *lex, const char *src, size_t len) {
     lex->src = src;
     lex->end = src + len;
@@ -345,6 +373,9 @@ Token ulex_next(Lexer *lex) {
     default:
         if (c >= '0' && c <= '9') {
             return scan_decimal(lex);
+        }
+        if (is_ident_start(c)) {
+            return scan_ident(lex);
         }
         lex->cur++;
         return make_eof(lex);
