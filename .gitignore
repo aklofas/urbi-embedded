@@ -40,3 +40,32 @@ out/
 *.swp
 *.swo
 .DS_Store
+
+# Extended editor state
+*.iml
+*.code-workspace
+.fleet/
+Session.vim
+.nvimrc
+*~
+\#*\#
+.\#*
+.dir-locals.el
+*.sublime-project
+*.sublime-workspace
+*.tmproj
+Thumbs.db
+
+# Ctags / cscope / GNU Global
+tags
+TAGS
+GTAGS
+GPATH
+GRTAGS
+GSYMS
+cscope.out
+cscope.files
+
+# IDE indexing artifacts (generated, not committed)
+compile_commands.json
+.cache/
