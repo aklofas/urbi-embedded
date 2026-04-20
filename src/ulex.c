@@ -170,7 +170,11 @@ static Token scan_decimal(Lexer *lex) {
             lex->cur += 2;
             return scan_radix(lex, start, 16, LEX_MALFORMED_HEX);
         }
-        /* 0b and 0o arrive in later commits. */
+        if (c2 == 'b' || c2 == 'B') {
+            lex->cur += 2;
+            return scan_radix(lex, start, 2, LEX_MALFORMED_BIN);
+        }
+        /* 0o arrives next. */
         if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
             /* Consume the leading-zero sequence so caller advances. */
             lex->cur++;

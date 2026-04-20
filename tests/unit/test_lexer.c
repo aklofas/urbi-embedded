@@ -302,6 +302,48 @@ static void hex_trailing_underscore(void) {
     UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
 }
 
+static void bin_simple(void) {
+    Lexer l; ulex_init(&l, "0b1010", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 10);
+}
+
+static void bin_upper_prefix(void) {
+    Lexer l; ulex_init(&l, "0B1111", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 15);
+}
+
+static void bin_with_underscores(void) {
+    Lexer l; ulex_init(&l, "0b1010_0101", 11);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0xA5);
+}
+
+static void bin_empty_radix(void) {
+    Lexer l; ulex_init(&l, "0b", 2);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
+}
+
+static void bin_malformed_digit(void) {
+    Lexer l; ulex_init(&l, "0b2", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_MALFORMED_BIN);
+}
+
+static void bin_leading_underscore(void) {
+    Lexer l; ulex_init(&l, "0b_1010", 7);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -343,4 +385,10 @@ void test_lexer_suite(void) {
     utest_run("hex_malformed_digit", hex_malformed_digit);
     utest_run("hex_leading_underscore", hex_leading_underscore);
     utest_run("hex_trailing_underscore", hex_trailing_underscore);
+    utest_run("bin_simple", bin_simple);
+    utest_run("bin_upper_prefix", bin_upper_prefix);
+    utest_run("bin_with_underscores", bin_with_underscores);
+    utest_run("bin_empty_radix", bin_empty_radix);
+    utest_run("bin_malformed_digit", bin_malformed_digit);
+    utest_run("bin_leading_underscore", bin_leading_underscore);
 }
