@@ -246,6 +246,62 @@ static void int_double_zero_is_ambiguous(void) {
     UASSERT_EQ(t.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
 }
 
+static void hex_lower_prefix(void) {
+    Lexer l; ulex_init(&l, "0x2A", 4);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 42);
+}
+
+static void hex_upper_prefix(void) {
+    Lexer l; ulex_init(&l, "0XFF", 4);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 255);
+}
+
+static void hex_with_underscores(void) {
+    Lexer l; ulex_init(&l, "0xDEAD_BEEF", 11);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0xDEADBEEF);
+}
+
+static void hex_i64_max(void) {
+    Lexer l; ulex_init(&l, "0x7FFF_FFFF_FFFF_FFFF", 21);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0x7FFFFFFFFFFFFFFFLL);
+}
+
+static void hex_empty_radix(void) {
+    Lexer l; ulex_init(&l, "0x", 2);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
+}
+
+static void hex_malformed_digit(void) {
+    Lexer l; ulex_init(&l, "0xG", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_MALFORMED_HEX);
+}
+
+static void hex_leading_underscore(void) {
+    Lexer l; ulex_init(&l, "0x_42", 5);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
+}
+
+static void hex_trailing_underscore(void) {
+    Lexer l; ulex_init(&l, "0x42_", 5);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -279,4 +335,12 @@ void test_lexer_suite(void) {
     utest_run("int_leading_zero_ambiguous", int_leading_zero_ambiguous);
     utest_run("int_zero_alone_is_legal", int_zero_alone_is_legal);
     utest_run("int_double_zero_is_ambiguous", int_double_zero_is_ambiguous);
+    utest_run("hex_lower_prefix", hex_lower_prefix);
+    utest_run("hex_upper_prefix", hex_upper_prefix);
+    utest_run("hex_with_underscores", hex_with_underscores);
+    utest_run("hex_i64_max", hex_i64_max);
+    utest_run("hex_empty_radix", hex_empty_radix);
+    utest_run("hex_malformed_digit", hex_malformed_digit);
+    utest_run("hex_leading_underscore", hex_leading_underscore);
+    utest_run("hex_trailing_underscore", hex_trailing_underscore);
 }

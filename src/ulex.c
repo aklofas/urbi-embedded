@@ -69,6 +69,95 @@ static int acc_digit(int64_t *acc, int digit, int base) {
     return 1;
 }
 
+/* Scan a radix-prefixed integer. lex->cur points at the first char after
+   the prefix; start points at the '0' of the prefix; prefix_len is 2.
+   base is 16/2/8; malformed code is the base-appropriate LEX_MALFORMED_*. */
+static Token scan_radix(Lexer *lex, const char *start, int base,
+                        LexErrorCode malformed_code) {
+    int start_col = (int)(start - lex->line_start) + 1;
+    int start_line = lex->line;
+    const char *digits = lex->cur;
+
+    /* Must have at least one digit or underscore. */
+    if (lex->cur >= lex->end) {
+        return make_error(lex, LEX_EMPTY_RADIX, start_line, start_col, 2);
+    }
+    char c0 = *lex->cur;
+    if (c0 == '_') {
+        /* leading underscore after prefix */
+        while (lex->cur < lex->end &&
+               (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
+            lex->cur++;
+        }
+        int len = (int)(lex->cur - start);
+        return make_error(lex, LEX_LEADING_UNDERSCORE,
+                          start_line, start_col, len);
+    }
+    if (digit_value(c0, base) < 0) {
+        /* Either EMPTY_RADIX (followed by non-alpha/digit-ish non-continuation)
+           or MALFORMED — distinguish by whether the char looks like it was
+           trying to be a digit. Any [0-9a-zA-Z] that isn't valid for this
+           base = MALFORMED; anything else = EMPTY_RADIX. */
+        int looks_digitish =
+            (c0 >= '0' && c0 <= '9') ||
+            (c0 >= 'a' && c0 <= 'z') ||
+            (c0 >= 'A' && c0 <= 'Z');
+        if (looks_digitish) {
+            /* Consume the bad digit-ish char so we advance. */
+            lex->cur++;
+            return make_error(lex, malformed_code,
+                              start_line, start_col, 3);
+        }
+        return make_error(lex, LEX_EMPTY_RADIX,
+                          start_line, start_col, 2);
+    }
+
+    int64_t value = 0;
+    char prev = 0;
+    while (lex->cur < lex->end) {
+        char c = *lex->cur;
+        if (c == '_') {
+            if (prev == '_') {
+                int len = (int)(lex->cur - start) + 1;
+                return make_error(lex, LEX_ADJACENT_UNDERSCORES,
+                                  start_line, start_col, len);
+            }
+            prev = '_';
+            lex->cur++;
+            continue;
+        }
+        int d = digit_value(c, base);
+        if (d < 0) break;
+        if (!acc_digit(&value, d, base)) {
+            while (lex->cur < lex->end &&
+                   (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
+                lex->cur++;
+            }
+            int len = (int)(lex->cur - start);
+            return make_error(lex, LEX_INT_OVERFLOW,
+                              start_line, start_col, len);
+        }
+        prev = c;
+        lex->cur++;
+    }
+
+    if (prev == '_') {
+        int len = (int)(lex->cur - start);
+        return make_error(lex, LEX_TRAILING_UNDERSCORE,
+                          start_line, start_col, len);
+    }
+
+    (void)digits;
+    Token t;
+    memset(&t, 0, sizeof(t));
+    t.type = TOK_INT;
+    t.line = start_line;
+    t.col = start_col;
+    t.len = (int)(lex->cur - start);
+    t.u.i = value;
+    return t;
+}
+
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
 static Token scan_decimal(Lexer *lex) {
@@ -76,10 +165,14 @@ static Token scan_decimal(Lexer *lex) {
     int start_col = (int)(start - lex->line_start) + 1;
     int start_line = lex->line;
 
-    /* Leading-zero ambiguity: if first char is '0' and there's any
-       following digit or underscore, reject. Single '0' is legal. */
+    /* Radix-prefix dispatch on a leading '0'. */
     if (*start == '0' && lex->cur + 1 < lex->end) {
         char c2 = lex->cur[1];
+        if (c2 == 'x' || c2 == 'X') {
+            lex->cur += 2;
+            return scan_radix(lex, start, 16, LEX_MALFORMED_HEX);
+        }
+        /* 0b and 0o arrive in later commits. */
         if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
             /* Consume the leading-zero sequence so caller advances. */
             lex->cur++;
