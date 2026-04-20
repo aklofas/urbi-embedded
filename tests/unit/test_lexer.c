@@ -457,6 +457,76 @@ static void digit_then_ident_is_two_tokens(void) {
     UASSERT_EQ(t2.u.str.len, 3);
 }
 
+static void expr_one_plus_two_pipe(void) {
+    /* The M1 walking-skeleton REPL target. */
+    Lexer l; ulex_init(&l, "1 + 2 |", 7);
+    Token t1 = ulex_next(&l);
+    Token t2 = ulex_next(&l);
+    Token t3 = ulex_next(&l);
+    Token t4 = ulex_next(&l);
+    Token t5 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);   UASSERT_EQ(t1.u.i, 1);
+    UASSERT_EQ(t2.type, TOK_PLUS);
+    UASSERT_EQ(t3.type, TOK_INT);   UASSERT_EQ(t3.u.i, 2);
+    UASSERT_EQ(t4.type, TOK_PIPE);
+    UASSERT_EQ(t5.type, TOK_EOF);
+}
+
+static void parenthesized_expression(void) {
+    Lexer l; ulex_init(&l, "(1 + 2) * 3", 11);
+    TokenType expected[] = {
+        TOK_LPAREN, TOK_INT, TOK_PLUS, TOK_INT, TOK_RPAREN,
+        TOK_STAR, TOK_INT, TOK_EOF
+    };
+    for (size_t i = 0; i < sizeof(expected)/sizeof(expected[0]); i++) {
+        Token t = ulex_next(&l);
+        UASSERT_EQ(t.type, expected[i]);
+    }
+}
+
+static void ident_plus_ident(void) {
+    Lexer l; ulex_init(&l, "foo + bar", 9);
+    Token t1 = ulex_next(&l);
+    Token t2 = ulex_next(&l);
+    Token t3 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_IDENT); UASSERT_EQ(t1.u.str.len, 3);
+    UASSERT_EQ(t2.type, TOK_PLUS);
+    UASSERT_EQ(t3.type, TOK_IDENT); UASSERT_EQ(t3.u.str.len, 3);
+}
+
+static void sync_line_accuracy_multi_line(void) {
+    /* Token on line 3, col 5. */
+    const char *src = "\n\n    x";
+    Lexer l; ulex_init(&l, src, 7);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.line, 3);
+    UASSERT_EQ(t.col, 5);
+}
+
+static void sync_line_across_block_comment(void) {
+    const char *src = "/* a\n   b */ x";
+    Lexer l; ulex_init(&l, src, 14);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.line, 2);
+    /* x is the 9th column on line 2: 3 spaces + b + space + star + slash + space */
+    UASSERT_EQ(t.col, 9);
+}
+
+static void sequence_after_error_continues(void) {
+    /* After an error, lexer advances past bad input; next token is valid. */
+    Lexer l; ulex_init(&l, "042 + 1", 7);
+    Token t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_ERROR);
+    UASSERT_EQ(t1.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
+    Token t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_PLUS);
+    Token t3 = ulex_next(&l);
+    UASSERT_EQ(t3.type, TOK_INT);
+    UASSERT_EQ(t3.u.i, 1);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -519,4 +589,10 @@ void test_lexer_suite(void) {
     utest_run("leading_underscore_digit_is_ident", leading_underscore_digit_is_ident);
     utest_run("ident_start_points_into_source", ident_start_points_into_source);
     utest_run("digit_then_ident_is_two_tokens", digit_then_ident_is_two_tokens);
+    utest_run("expr_one_plus_two_pipe", expr_one_plus_two_pipe);
+    utest_run("parenthesized_expression", parenthesized_expression);
+    utest_run("ident_plus_ident", ident_plus_ident);
+    utest_run("sync_line_accuracy_multi_line", sync_line_accuracy_multi_line);
+    utest_run("sync_line_across_block_comment", sync_line_across_block_comment);
+    utest_run("sequence_after_error_continues", sequence_after_error_continues);
 }
