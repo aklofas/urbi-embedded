@@ -27,7 +27,7 @@ static const char *ERR_MSG[] = {
     "integer literal exceeds INT64_MAX"
 };
 
-static Token make_error(LexErrorCode code, int line, int col, int len) {
+static Token make_error(const LexErrorCode code, const int line, const int col, const int len) {
     Token t = {0};
     t.type = TOK_ERROR;
     t.line = line;
@@ -38,8 +38,8 @@ static Token make_error(LexErrorCode code, int line, int col, int len) {
     return t;
 }
 
-static Token make_tok(const Lexer *l, TokenType type,
-                     const char *start, int len) {
+static Token make_tok(const Lexer *l, const TokenType type,
+                     const char *start, const int len) {
     Token t = {0};
     t.type = type;
     t.line = l->line;
@@ -48,7 +48,7 @@ static Token make_tok(const Lexer *l, TokenType type,
     return t;
 }
 
-static int digit_value(char c, int base) {
+static int digit_value(const char c, const int base) {
     int v;
     if (c >= '0' && c <= '9') v = c - '0';
     else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
@@ -58,7 +58,7 @@ static int digit_value(char c, int base) {
 }
 
 /* Accumulate one digit into *acc, returning 0 on overflow. */
-static int acc_digit(int64_t *acc, int digit, int base) {
+static int acc_digit(int64_t *acc, const int digit, const int base) {
     if (*acc > (INT64_MAX - digit) / base) return 0;
     *acc = *acc * base + digit;
     return 1;
@@ -67,8 +67,8 @@ static int acc_digit(int64_t *acc, int digit, int base) {
 /* Scan a radix-prefixed integer. lex->cur points at the first char after
    the prefix; start points at the '0' of the prefix; prefix_len is 2.
    base is 16/2/8; malformed code is the base-appropriate LEX_MALFORMED_*. */
-static Token scan_radix(Lexer *lex, const char *start, int base,
-                        LexErrorCode malformed_code) {
+static Token scan_radix(Lexer *lex, const char *start, const int base,
+                        const LexErrorCode malformed_code) {
     const int start_col = (int)(start - lex->line_start) + 1;
     const int start_line = lex->line;
 
@@ -229,13 +229,13 @@ static Token scan_decimal(Lexer *lex) {
     return t;
 }
 
-static int is_ident_start(char c) {
+static int is_ident_start(const char c) {
     return (c >= 'a' && c <= 'z') ||
            (c >= 'A' && c <= 'Z') ||
            c == '_';
 }
 
-static int is_ident_cont(char c) {
+static int is_ident_cont(const char c) {
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
@@ -256,7 +256,7 @@ static Token scan_ident(Lexer *lex) {
     return t;
 }
 
-void ulex_init(Lexer *lex, const char *src, size_t len) {
+void ulex_init(Lexer *lex, const char *src, const size_t len) {
     lex->src = src;
     lex->end = src + len;
     lex->cur = src;
@@ -372,7 +372,7 @@ Token ulex_next(Lexer *lex) {
     }
 }
 
-const char *ulex_token_name(TokenType t) {
+const char *ulex_token_name(const TokenType t) {
     if ((unsigned)t >= sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0])) {
         return "TOK_UNKNOWN";
     }
