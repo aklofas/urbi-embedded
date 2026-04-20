@@ -2,6 +2,10 @@
 # clang-tidy configuration for urbi-embedded.
 #
 # The project is strict C99 with a deliberate systems-programming style.
+# const-correctness is a project goal: all read-only by-value parameters
+# are const-qualified in definitions (though not in prototypes, where
+# top-level const is stripped by the compiler and is noise).
+#
 # Several clang-tidy check categories are tuned off because they target
 # C++ idioms, conflict with explicit design choices, or produce noise
 # that doesn't help the embedded/robotics audience:
@@ -10,11 +14,6 @@
 # - cppcoreguidelines-* : C++ guidelines; do not apply to C
 # - readability-isolate-declaration : we group related locals intentionally
 # - llvm-header-guard   : we use our own ULEX_H / URBI_H style guards
-# - misc-const-correctness : already applied to production locals where it
-#   added value; remaining hits are top-level const on by-value function
-#   parameters, which is noise in C (invisible in prototypes, mostly not
-#   idiomatic). Revisit if pursuing MISRA-style Tier 3 safety-critical
-#   certification, where const on params becomes required.
 #
 # bugprone-*, performance-*, portability-*, and clang-analyzer-* are kept
 # enabled since they catch real defects and apply cleanly to C.
@@ -22,7 +21,6 @@
 Checks: >
   -modernize-*,
   -cppcoreguidelines-*,
-  -misc-const-correctness,
   -readability-isolate-declaration,
   -llvm-header-guard
 
