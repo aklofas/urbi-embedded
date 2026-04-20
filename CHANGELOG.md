@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Lexer scans integer literals (decimal, hex, binary, octal with underscores), identifiers, single-character operators (`+ - * /`), parentheses, and the statement separator `|`. Full synclines on every token.
+- Structured lexer error codes: unknown character, unterminated block comment, ambiguous leading zero, empty radix, malformed hex/binary/octal, leading/trailing/adjacent underscores, integer overflow.
+- Public lexer API in new header `ulex.h`: `Token`, `Lexer`, `ulex_init`, `ulex_next`, `ulex_token_name`. No allocation; caller owns source buffer.
+
 ### Foundation
 
 - Header-only test harness `utest.h` (zero dependencies, pure C99)
