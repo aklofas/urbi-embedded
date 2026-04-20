@@ -1,8 +1,0 @@
----
-# Inherit root .clang-tidy and additionally quiet const-correctness
-# suggestions for test locals. Tests are write-once by construction
-# and don't benefit from the annotation.
-
-InheritParentConfig: true
-Checks: >
-  -misc-const-correctness
