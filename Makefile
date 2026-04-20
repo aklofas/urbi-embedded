@@ -38,7 +38,20 @@ cross-riscv: clean
 		AR=riscv64-unknown-elf-ar \
 		liburbi.a
 
+# Compilation database for clangd / CLion / VS Code indexing.
+# Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
+# adding/removing source files.
+compile_commands.json:
+	@printf '[\n' > $@
+	@first=1; for f in $(SRC) $(TEST_SRC); do \
+		if [ $$first -eq 0 ]; then printf ',\n' >> $@; fi; \
+		first=0; \
+		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -c %s"}' \
+			"$$PWD" "$$PWD" "$$f" "$(CC)" "$(CFLAGS)" "$(CPPFLAGS)" "$$f" >> $@; \
+	done
+	@printf '\n]\n' >> $@
+
 clean:
 	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json
