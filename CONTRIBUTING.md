@@ -4,23 +4,27 @@
 
 Requires a C99 compiler (GCC or Clang) and GNU Make. No other dependencies.
 
-    make          # build liburbi.a
+    make          # build build/host/liburbi.a
     make test     # run the unit test suite
+
+All build artifacts land under `build/<TARGET>/`. The default `TARGET` is `host`.
+Override with `make TARGET=<name>` if you need a custom output tree.
 
 ## Test modes
 
-    make test-debug    # -O0 -g, for debugging with gdb
-    make test-asan     # AddressSanitizer instrumentation
-    make test-ubsan    # UndefinedBehaviorSanitizer instrumentation
+    make test-debug    # -O0 -g, for debugging with gdb       → build/host-debug/
+    make test-asan     # AddressSanitizer instrumentation     → build/host-asan/
+    make test-ubsan    # UndefinedBehaviorSanitizer           → build/host-ubsan/
 
-All four must pass before any commit is merged.
+All four must pass before any commit is merged. Each variant has its own build
+tree, so they coexist and no `make clean` is required when switching between them.
 
 ## Cross-compile sanity
 
 If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
 
-    make cross-arm     # build liburbi.a for ARM Cortex-M7
-    make cross-riscv   # build liburbi.a for RISC-V rv32imc
+    make cross-arm     # → build/arm-cortex-m7/liburbi.a
+    make cross-riscv   # → build/riscv-rv32imc/liburbi.a
 
 These verify portability; they don't run tests (no target execution environment on the build host).
 

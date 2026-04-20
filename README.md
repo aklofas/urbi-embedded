@@ -33,7 +33,7 @@ Implements **urbiscript** — a prototype-based, parallel-by-default, event-driv
 make
 ```
 
-Produces `liburbi.a`. Skeleton currently exports only `urbi_version()`; the rest fills in across successive release milestones.
+Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<target>/` subtrees — see `CONTRIBUTING.md` for the full list. Skeleton currently exports only `urbi_version()`; the rest fills in across successive release milestones.
 
 ## Source layout
 
