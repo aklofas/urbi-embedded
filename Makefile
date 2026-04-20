@@ -68,8 +68,9 @@ compile_commands.json:
 	@first=1; for f in $(SRC) $(TEST_SRC); do \
 		if [ $$first -eq 0 ]; then printf ',\n' >> $@; fi; \
 		first=0; \
-		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -c %s"}' \
-			"$$PWD" "$$PWD" "$$f" "$(CC)" "$(CFLAGS)" "$(CPPFLAGS)" "$$f" >> $@; \
+		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -c -o %s/%s/%s %s"}' \
+			"$$PWD" "$$PWD" "$$f" "$(CC)" "$(CFLAGS)" "$(CPPFLAGS)" \
+			"$$PWD" "$(BUILDDIR)" "$${f%.c}.o" "$$f" >> $@; \
 	done
 	@printf '\n]\n' >> $@
 
