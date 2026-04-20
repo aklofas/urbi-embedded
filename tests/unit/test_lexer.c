@@ -2,7 +2,6 @@
 
 #include "utest.h"
 #include "ulex.h"
-#include <string.h>
 
 static void eof_on_empty_input(void) {
     Lexer l;

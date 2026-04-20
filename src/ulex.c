@@ -3,6 +3,8 @@
 
 #include "ulex.h"
 
+#include <string.h>
+
 static const char *TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
@@ -20,11 +22,10 @@ void ulex_init(Lexer *lex, const char *src, size_t len) {
 
 static Token make_eof(const Lexer *l) {
     Token t;
+    memset(&t, 0, sizeof(t));
     t.type = TOK_EOF;
     t.line = l->line;
     t.col = (int)(l->cur - l->line_start) + 1;
-    t.len = 0;
-    t.i = 0;
     return t;
 }
 
@@ -34,5 +35,8 @@ Token ulex_next(Lexer *lex) {
 }
 
 const char *ulex_token_name(TokenType t) {
+    if ((unsigned)t >= sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0])) {
+        return "TOK_UNKNOWN";
+    }
     return TOKEN_NAMES[t];
 }

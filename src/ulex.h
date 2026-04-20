@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     TOK_EOF = 0,      /* end of input — sentinel */
     TOK_INT,          /* integer literal */
@@ -51,7 +55,7 @@ typedef struct {
             int code;                       /* LexErrorCode */
             const char *message;            /* static string */
         } err;
-    };
+    } u;
 } Token;
 
 typedef struct {
@@ -65,5 +69,9 @@ typedef struct {
 void ulex_init(Lexer *lex, const char *src, size_t len);
 Token ulex_next(Lexer *lex);
 const char *ulex_token_name(TokenType t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
