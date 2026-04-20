@@ -25,6 +25,7 @@ void utest_run(const char *name, void (*fn)(void)) {
 
 /* Test suite declarations — one per test_*.c file. */
 extern void test_version_suite(void);
+extern void test_lexer_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -32,6 +33,7 @@ int main(void) {
     printf("Running test suites\n");
 
     test_version_suite();
+    test_lexer_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
