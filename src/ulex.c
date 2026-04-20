@@ -75,20 +75,67 @@ static Token scan_decimal(Lexer *lex) {
     const char *start = lex->cur;
     int start_col = (int)(start - lex->line_start) + 1;
     int start_line = lex->line;
-    int64_t value = 0;
-    while (lex->cur < lex->end) {
-        int d = digit_value(*lex->cur, 10);
-        if (d < 0) break;
-        if (!acc_digit(&value, d, 10)) {
-            /* Overflow — consume remaining digits so recovery doesn't re-lex them. */
-            while (lex->cur < lex->end && digit_value(*lex->cur, 10) >= 0) {
+
+    /* Leading-zero ambiguity: if first char is '0' and there's any
+       following digit or underscore, reject. Single '0' is legal. */
+    if (*start == '0' && lex->cur + 1 < lex->end) {
+        char c2 = lex->cur[1];
+        if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
+            /* Consume the leading-zero sequence so caller advances. */
+            lex->cur++;
+            while (lex->cur < lex->end &&
+                   ((*lex->cur >= '0' && *lex->cur <= '9') || *lex->cur == '_')) {
                 lex->cur++;
             }
             int len = (int)(lex->cur - start);
-            return make_error(lex, LEX_INT_OVERFLOW, start_line, start_col, len);
+            return make_error(lex, LEX_AMBIGUOUS_LEADING_ZERO,
+                              start_line, start_col, len);
         }
+    }
+
+    int64_t value = 0;
+    char prev = 0;
+    int digit_seen = 0;
+    while (lex->cur < lex->end) {
+        char c = *lex->cur;
+        if (c == '_') {
+            if (!digit_seen) {
+                /* Underscore before any digit — should never reach here
+                   for a leading '_' since '_' doesn't dispatch to scan_decimal. */
+                return make_error(lex, LEX_LEADING_UNDERSCORE,
+                                  start_line, start_col, 1);
+            }
+            if (prev == '_') {
+                int len = (int)(lex->cur - start) + 1;
+                return make_error(lex, LEX_ADJACENT_UNDERSCORES,
+                                  start_line, start_col, len);
+            }
+            prev = '_';
+            lex->cur++;
+            continue;
+        }
+        int d = digit_value(c, 10);
+        if (d < 0) break;
+        if (!acc_digit(&value, d, 10)) {
+            while (lex->cur < lex->end &&
+                   (digit_value(*lex->cur, 10) >= 0 || *lex->cur == '_')) {
+                lex->cur++;
+            }
+            int len = (int)(lex->cur - start);
+            return make_error(lex, LEX_INT_OVERFLOW,
+                              start_line, start_col, len);
+        }
+        prev = c;
+        digit_seen = 1;
         lex->cur++;
     }
+
+    if (prev == '_') {
+        int len = (int)(lex->cur - start);
+        return make_error(lex, LEX_TRAILING_UNDERSCORE,
+                          start_line, start_col, len);
+    }
+
     Token t;
     memset(&t, 0, sizeof(t));
     t.type = TOK_INT;

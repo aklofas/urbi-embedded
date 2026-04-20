@@ -196,6 +196,56 @@ static void int_overflow(void) {
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
+static void int_with_underscore(void) {
+    Lexer l; ulex_init(&l, "1_000", 5);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 1000);
+    UASSERT_EQ(t.len, 5);
+}
+
+static void int_with_underscores_multi(void) {
+    Lexer l; ulex_init(&l, "1_000_000", 9);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 1000000);
+}
+
+static void int_trailing_underscore_errors(void) {
+    Lexer l; ulex_init(&l, "42_", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
+}
+
+static void int_adjacent_underscores_error(void) {
+    Lexer l; ulex_init(&l, "1__000", 6);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
+}
+
+static void int_leading_zero_ambiguous(void) {
+    Lexer l; ulex_init(&l, "042", 3);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
+}
+
+static void int_zero_alone_is_legal(void) {
+    Lexer l; ulex_init(&l, "0", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0);
+}
+
+static void int_double_zero_is_ambiguous(void) {
+    Lexer l; ulex_init(&l, "00", 2);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -222,4 +272,11 @@ void test_lexer_suite(void) {
     utest_run("int_multi_digit", int_multi_digit);
     utest_run("int_max_i64", int_max_i64);
     utest_run("int_overflow", int_overflow);
+    utest_run("int_with_underscore", int_with_underscore);
+    utest_run("int_with_underscores_multi", int_with_underscores_multi);
+    utest_run("int_trailing_underscore_errors", int_trailing_underscore_errors);
+    utest_run("int_adjacent_underscores_error", int_adjacent_underscores_error);
+    utest_run("int_leading_zero_ambiguous", int_leading_zero_ambiguous);
+    utest_run("int_zero_alone_is_legal", int_zero_alone_is_legal);
+    utest_run("int_double_zero_is_ambiguous", int_double_zero_is_ambiguous);
 }
