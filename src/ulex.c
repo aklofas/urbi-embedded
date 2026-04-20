@@ -306,12 +306,15 @@ static TriviaResult skip_trivia(Lexer *l) {
             l->line++;
             l->line_start = l->cur;
         } else if (c == '\r') {
-            l->cur++;
-            if (l->cur < l->end && *l->cur == '\n') {
-                l->cur++;
+            if (l->cur + 1 < l->end && l->cur[1] == '\n') {
+                l->cur += 2;
+                l->line++;
+                l->line_start = l->cur;
+            } else {
+                /* Lone CR — not a line terminator; let dispatch emit
+                   LEX_UNKNOWN_CHAR on the next ulex_next call. */
+                break;
             }
-            l->line++;
-            l->line_start = l->cur;
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '/') {
             /* Line comment — skip to LF or EOF. */
             l->cur += 2;
@@ -377,8 +380,12 @@ Token ulex_next(Lexer *lex) {
         if (is_ident_start(c)) {
             return scan_ident(lex);
         }
-        lex->cur++;
-        return make_eof(lex);
+        {
+            int col = (int)(lex->cur - lex->line_start) + 1;
+            int line = lex->line;
+            lex->cur++;  /* recovery: advance past the bad byte */
+            return make_error(lex, LEX_UNKNOWN_CHAR, line, col, 1);
+        }
     }
 }
 

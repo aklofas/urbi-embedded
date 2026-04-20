@@ -527,6 +527,43 @@ static void sequence_after_error_continues(void) {
     UASSERT_EQ(t3.u.i, 1);
 }
 
+static void unknown_char_dollar(void) {
+    Lexer l; ulex_init(&l, "$", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+    UASSERT_EQ(t.col, 1);
+}
+
+static void unknown_char_at(void) {
+    Lexer l; ulex_init(&l, "@", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+}
+
+static void unknown_char_semicolon_still_deferred(void) {
+    /* Semicolons land in a later plan with the compound separators. */
+    Lexer l; ulex_init(&l, ";", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+}
+
+static void unknown_char_lone_cr_rejected(void) {
+    /* Lone CR (no LF after) is LEX_UNKNOWN_CHAR per spec. */
+    Lexer l; ulex_init(&l, "\r", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+}
+
+static void unknown_char_message_is_correct(void) {
+    Lexer l; ulex_init(&l, "$", 1);
+    Token t = ulex_next(&l);
+    UASSERT_STR_EQ(t.u.err.message, "unknown character");
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -595,4 +632,9 @@ void test_lexer_suite(void) {
     utest_run("sync_line_accuracy_multi_line", sync_line_accuracy_multi_line);
     utest_run("sync_line_across_block_comment", sync_line_across_block_comment);
     utest_run("sequence_after_error_continues", sequence_after_error_continues);
+    utest_run("unknown_char_dollar", unknown_char_dollar);
+    utest_run("unknown_char_at", unknown_char_at);
+    utest_run("unknown_char_semicolon_still_deferred", unknown_char_semicolon_still_deferred);
+    utest_run("unknown_char_lone_cr_rejected", unknown_char_lone_cr_rejected);
+    utest_run("unknown_char_message_is_correct", unknown_char_message_is_correct);
 }
