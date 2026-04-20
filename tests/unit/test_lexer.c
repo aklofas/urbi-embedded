@@ -65,6 +65,50 @@ static void tabs_are_whitespace(void) {
     UASSERT_EQ(t.col, 4);
 }
 
+static void line_comment_to_eof(void) {
+    Lexer l;
+    ulex_init(&l, "// hello", 8);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+}
+
+static void line_comment_to_newline(void) {
+    Lexer l;
+    const char *s = "// hello\n";
+    ulex_init(&l, s, 9);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+    UASSERT_EQ(t.line, 2);
+}
+
+static void block_comment_single_line(void) {
+    Lexer l;
+    ulex_init(&l, "/* hi */", 8);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+}
+
+static void block_comment_spans_lines(void) {
+    Lexer l;
+    const char *s = "/* a\nb\nc */";
+    ulex_init(&l, s, 11);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+    UASSERT_EQ(t.line, 3);
+}
+
+static void unterminated_block_comment_emits_error(void) {
+    Lexer l;
+    ulex_init(&l, "/* oops", 7);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNTERMINATED_BLOCK_COMMENT);
+    UASSERT_EQ(t.line, 1);
+    UASSERT_EQ(t.col, 1);
+    UASSERT(t.u.err.message != NULL);
+    UASSERT_STR_EQ(t.u.err.message, "unterminated block comment");
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -73,4 +117,9 @@ void test_lexer_suite(void) {
     utest_run("newline_lf_advances_line", newline_lf_advances_line);
     utest_run("newline_crlf_advances_line_once", newline_crlf_advances_line_once);
     utest_run("tabs_are_whitespace", tabs_are_whitespace);
+    utest_run("line_comment_to_eof", line_comment_to_eof);
+    utest_run("line_comment_to_newline", line_comment_to_newline);
+    utest_run("block_comment_single_line", block_comment_single_line);
+    utest_run("block_comment_spans_lines", block_comment_spans_lines);
+    utest_run("unterminated_block_comment_emits_error", unterminated_block_comment_emits_error);
 }
