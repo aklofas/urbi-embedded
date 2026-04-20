@@ -1,0 +1,27 @@
+---
+# clang-tidy configuration for urbi-embedded.
+#
+# The project is strict C99 with a deliberate systems-programming style.
+# Several clang-tidy check categories are tuned off because they target
+# C++ idioms, conflict with explicit design choices, or produce noise
+# that doesn't help the embedded/robotics audience:
+#
+# - modernize-*         : C++-focused (use auto, nullptr, range-for, ...)
+# - cppcoreguidelines-* : C++ guidelines; do not apply to C
+# - readability-isolate-declaration : we group related locals intentionally
+# - llvm-header-guard   : we use our own ULEX_H / URBI_H style guards
+#
+# bugprone-*, performance-*, portability-*, and clang-analyzer-* are kept
+# enabled since they catch real defects and apply cleanly to C.
+
+Checks: >
+  -modernize-*,
+  -cppcoreguidelines-*,
+  -readability-isolate-declaration,
+  -llvm-header-guard
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: '^src/.*\.h$'
+
+FormatStyle: none
