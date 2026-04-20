@@ -28,7 +28,6 @@ GEMINI.md
 *.gcov
 *.gcda
 *.gcno
-tests/unit/runner
 
 # Build directories
 build/
