@@ -7,6 +7,8 @@ TEST_OBJ := $(TEST_SRC:.c=.o)
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 CPPFLAGS += -Isrc -Itests/unit
 
+all: liburbi.a
+
 liburbi.a: $(OBJ)
 	$(AR) rcs $@ $^
 
@@ -39,4 +41,4 @@ cross-riscv: clean
 clean:
 	rm -f $(OBJ) $(TEST_OBJ) liburbi.a tests/unit/runner
 
-.PHONY: test test-asan test-ubsan test-debug cross-arm cross-riscv clean
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean
