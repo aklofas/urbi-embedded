@@ -24,6 +24,14 @@ If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
 
 These verify portability; they don't run tests (no target execution environment on the build host).
 
+## Indexing database for LSP editors
+
+Generate a `compile_commands.json` for clangd, CLion, VS Code, or any LSP-based editor:
+
+    make compile_commands.json
+
+The file is gitignored — regenerate it after changing `CFLAGS`/`CPPFLAGS` or adding/removing source files.
+
 ## Adding a new test file
 
 1. Create `tests/unit/test_<name>.c` containing a suite function `test_<name>_suite(void)` that calls `utest_run("...", static_fn)` for each test case
