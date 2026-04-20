@@ -3,19 +3,24 @@
 #include "utest.h"
 #include "urbi.h"
 
-UTEST(version_is_nonempty) {
+static void version_is_nonempty(void) {
     const char *v = urbi_version();
     UASSERT(v != NULL);
     UASSERT(v[0] != '\0');
 }
 
-UTEST(version_starts_with_zero) {
+static void version_starts_with_zero(void) {
     const char *v = urbi_version();
     UASSERT_EQ(v[0], '0');
 }
 
-UTEST(version_contains_skeleton_suffix) {
+static void version_contains_skeleton_suffix(void) {
     const char *v = urbi_version();
-    const char *found = strstr(v, "skeleton");
-    UASSERT(found != NULL);
+    UASSERT(strstr(v, "skeleton") != NULL);
+}
+
+void test_version_suite(void) {
+    utest_run("version_is_nonempty", version_is_nonempty);
+    utest_run("version_starts_with_zero", version_starts_with_zero);
+    utest_run("version_contains_skeleton_suffix", version_contains_skeleton_suffix);
 }
