@@ -29,8 +29,30 @@ static Token make_eof(const Lexer *l) {
     return t;
 }
 
+static void skip_trivia(Lexer *l) {
+    while (l->cur < l->end) {
+        char c = *l->cur;
+        if (c == ' ' || c == '\t') {
+            l->cur++;
+        } else if (c == '\n') {
+            l->cur++;
+            l->line++;
+            l->line_start = l->cur;
+        } else if (c == '\r') {
+            l->cur++;
+            if (l->cur < l->end && *l->cur == '\n') {
+                l->cur++;
+            }
+            l->line++;
+            l->line_start = l->cur;
+        } else {
+            break;
+        }
+    }
+}
+
 Token ulex_next(Lexer *lex) {
-    /* Stub: always return EOF. Scan logic lands in later steps. */
+    skip_trivia(lex);
     return make_eof(lex);
 }
 
