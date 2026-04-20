@@ -31,7 +31,7 @@ jobs:
       - name: Cross-compile
         run: make cross-arm
       - name: Inspect archive
-        run: arm-none-eabi-ar t liburbi.a
+        run: arm-none-eabi-ar t build/arm-cortex-m7/liburbi.a
 
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
@@ -60,8 +60,8 @@ jobs:
           fi
       - name: Inspect archive
         run: |
-          if [ -f liburbi.a ]; then
-            riscv64-unknown-elf-ar t liburbi.a
+          if [ -f build/riscv-rv32imc/liburbi.a ]; then
+            riscv64-unknown-elf-ar t build/riscv-rv32imc/liburbi.a
           else
             echo "No archive produced; skipped"
           fi
