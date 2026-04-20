@@ -157,6 +157,45 @@ static void plus_position_on_second_line(void) {
     UASSERT_EQ(t.col, 2);
 }
 
+static void int_zero(void) {
+    Lexer l; ulex_init(&l, "0", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 0);
+    UASSERT_EQ(t.len, 1);
+}
+
+static void int_single_digit(void) {
+    Lexer l; ulex_init(&l, "7", 1);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 7);
+}
+
+static void int_multi_digit(void) {
+    Lexer l; ulex_init(&l, "42", 2);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 42);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void int_max_i64(void) {
+    const char *s = "9223372036854775807";
+    Lexer l; ulex_init(&l, s, 19);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 9223372036854775807LL);
+}
+
+static void int_overflow(void) {
+    const char *s = "9223372036854775808";
+    Lexer l; ulex_init(&l, s, 19);
+    Token t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -178,4 +217,9 @@ void test_lexer_suite(void) {
     utest_run("rparen_token", rparen_token);
     utest_run("pipe_token", pipe_token);
     utest_run("plus_position_on_second_line", plus_position_on_second_line);
+    utest_run("int_zero", int_zero);
+    utest_run("int_single_digit", int_single_digit);
+    utest_run("int_multi_digit", int_multi_digit);
+    utest_run("int_max_i64", int_max_i64);
+    utest_run("int_overflow", int_overflow);
 }

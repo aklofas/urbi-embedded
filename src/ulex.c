@@ -3,6 +3,7 @@
 
 #include "ulex.h"
 
+#include <limits.h>
 #include <string.h>
 
 static const char *TOKEN_NAMES[] = {
@@ -49,6 +50,52 @@ static Token make_tok(const Lexer *l, TokenType type,
     t.line = l->line;
     t.col = (int)(start - l->line_start) + 1;
     t.len = len;
+    return t;
+}
+
+static int digit_value(char c, int base) {
+    int v;
+    if (c >= '0' && c <= '9') v = c - '0';
+    else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+    else return -1;
+    return v < base ? v : -1;
+}
+
+/* Accumulate one digit into *acc, returning 0 on overflow. */
+static int acc_digit(int64_t *acc, int digit, int base) {
+    if (*acc > (INT64_MAX - digit) / base) return 0;
+    *acc = *acc * base + digit;
+    return 1;
+}
+
+/* Scan a decimal integer starting at lex->cur.
+   Caller has confirmed *lex->cur is a decimal digit. */
+static Token scan_decimal(Lexer *lex) {
+    const char *start = lex->cur;
+    int start_col = (int)(start - lex->line_start) + 1;
+    int start_line = lex->line;
+    int64_t value = 0;
+    while (lex->cur < lex->end) {
+        int d = digit_value(*lex->cur, 10);
+        if (d < 0) break;
+        if (!acc_digit(&value, d, 10)) {
+            /* Overflow — consume remaining digits so recovery doesn't re-lex them. */
+            while (lex->cur < lex->end && digit_value(*lex->cur, 10) >= 0) {
+                lex->cur++;
+            }
+            int len = (int)(lex->cur - start);
+            return make_error(lex, LEX_INT_OVERFLOW, start_line, start_col, len);
+        }
+        lex->cur++;
+    }
+    Token t;
+    memset(&t, 0, sizeof(t));
+    t.type = TOK_INT;
+    t.line = start_line;
+    t.col = start_col;
+    t.len = (int)(lex->cur - start);
+    t.u.i = value;
     return t;
 }
 
@@ -151,7 +198,9 @@ Token ulex_next(Lexer *lex) {
     case ')': lex->cur++; return make_tok(lex, TOK_RPAREN, start, 1);
     case '|': lex->cur++; return make_tok(lex, TOK_PIPE,   start, 1);
     default:
-        /* Unknown character — populated in a later task. */
+        if (c >= '0' && c <= '9') {
+            return scan_decimal(lex);
+        }
         lex->cur++;
         return make_eof(lex);
     }
