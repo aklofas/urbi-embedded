@@ -45,7 +45,7 @@ The file is gitignored — regenerate it after changing `CFLAGS`/`CPPFLAGS` or a
 
 ## Coding style
 
-Terse and self-documenting. One-line purpose comment at the top of each file. SPDX license identifier on line one. Follow the style of existing `src/*.c` files.
+See `docs/STYLE.md` for the full style guide — naming, memory model, const-correctness, initialization, error handling, headers, tests, and comment conventions. Mechanical rules are enforced by `.editorconfig`, `.clang-tidy`, and the Makefile's warning flags.
 
 ## License
 

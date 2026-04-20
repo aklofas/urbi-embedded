@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** pre-release skeleton. Nothing implemented yet.
+**Status:** pre-release, walking skeleton in progress. Lexer is complete (84 unit tests passing at release / debug / ASan / UBSan; 11 token types; integers in decimal / hex / binary / octal with underscore separators; identifiers; operators; comments). Parser, bytecode emitter, VM, and interactive REPL still to land before the first tagged release (`v0.1.0-skeleton`).
 
 ## Design goals
 
@@ -33,21 +33,27 @@ Implements **urbiscript** — a prototype-based, parallel-by-default, event-driv
 make
 ```
 
-Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Skeleton currently exports only `urbi_version()`; the rest fills in across successive release milestones.
+Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()` and the lexer surface (`ulex_init`, `ulex_next`, `ulex_token_name`); the rest fills in across successive release milestones.
 
 ## Source layout
 
 ```
-src/urbi.h        public C API
+src/urbi.h        public top-level C API
 src/urbi.c        top-level glue, version
+src/ulex.h        public lexer API
 src/ulex.c        lexer
-src/uparse.c      parser
-src/udesugar.c    desugaring pass
-src/uemit.c       bytecode emitter
-src/uvm.c         bytecode interpreter
+src/uparse.c      parser            (stub)
+src/udesugar.c    desugaring pass   (stub)
+src/uemit.c       bytecode emitter  (stub)
+src/uvm.c         bytecode interpreter (stub)
 ```
 
 Lua-style flat layout. Copy `src/*` into a host project and build.
+
+## Documentation
+
+- `CONTRIBUTING.md` — build, test, cross-compile, and contribution how-tos
+- `docs/STYLE.md` — code-level style decisions (naming, const-correctness, error model, initialization, headers, tests)
 
 ## License
 
