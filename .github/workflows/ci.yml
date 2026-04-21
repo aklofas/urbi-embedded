@@ -36,11 +36,6 @@ jobs:
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
     runs-on: ubuntu-latest
-    # RISC-V bare-metal toolchain packaging is inconsistent across Ubuntu releases.
-    # Keep this job non-blocking until P4 (Value system + GC) when we genuinely
-    # need to verify 32-bit RISC-V compatibility — by then we can invest in
-    # a reliable toolchain installation path.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install cross toolchain
