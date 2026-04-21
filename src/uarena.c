@@ -6,7 +6,7 @@
 
 #if __STDC_HOSTED__
 #include <stdlib.h>
-#endif
+#endif /* __STDC_HOSTED__ */
 
 /* Per-chunk layout: header immediately followed by the slab.
    Payload begins at chunk + 1 aligned to ARENA_ALIGN. */
@@ -42,8 +42,8 @@ static unsigned char *chunk_payload(ArenaChunk *c) {
        small (typically 16-64 byte) aligned ranges so the byte loop is not a
        meaningful hot path. --- */
 
-static void arena_zero(void *dst, size_t n) {
-    volatile unsigned char *p = (volatile unsigned char *)dst;
+static void arena_zero(void *const dst, const size_t n) {
+    volatile unsigned char *const p = (volatile unsigned char *)dst;
     for (size_t i = 0; i < n; i++) p[i] = 0;
 }
 
