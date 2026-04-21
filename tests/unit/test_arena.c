@@ -67,6 +67,45 @@ UTEST(arena_destroy_is_safe_on_empty) {
     UASSERT(1);
 }
 
+UTEST(arena_reset_rewinds_chunk) {
+    Arena a;
+    uarena_init(&a, 0);
+    void *p1 = uarena_alloc(&a, 32);
+    uarena_reset(&a);
+    void *p2 = uarena_alloc(&a, 32);
+    /* After reset the first allocation of the same size should reuse
+       the same chunk payload (same address). */
+    UASSERT(p1 == p2);
+    uarena_destroy(&a);
+}
+
+UTEST(arena_reset_clears_oom) {
+    Arena a;
+    uarena_init(&a, 0);
+    a.oom = true; /* simulate a prior OOM flag */
+    uarena_reset(&a);
+    UASSERT(a.oom == false);
+    void *p = uarena_alloc(&a, 16);
+    UASSERT(p != NULL);
+    uarena_destroy(&a);
+}
+
+UTEST(arena_growth_preserves_earlier_pointers) {
+    Arena a;
+    uarena_init(&a, 256); /* small chunk forces growth */
+    unsigned char *p1 = uarena_alloc(&a, 128);
+    UASSERT(p1 != NULL);
+    p1[0] = 0xAA;
+    p1[127] = 0xBB;
+    /* Exceed the remaining capacity of the first chunk. */
+    unsigned char *p2 = uarena_alloc(&a, 512);
+    UASSERT(p2 != NULL);
+    /* p1 must remain valid and unchanged after the growth. */
+    UASSERT_EQ(p1[0], 0xAA);
+    UASSERT_EQ(p1[127], 0xBB);
+    uarena_destroy(&a);
+}
+
 void test_arena_suite(void) {
     utest_run("arena_init_does_not_allocate",       arena_init_does_not_allocate);
     utest_run("arena_basic_alloc_returns_non_null", arena_basic_alloc_returns_non_null);
@@ -74,4 +113,7 @@ void test_arena_suite(void) {
     utest_run("arena_alloc_is_max_aligned",         arena_alloc_is_max_aligned);
     utest_run("arena_custom_chunk_size_respected",  arena_custom_chunk_size_respected);
     utest_run("arena_destroy_is_safe_on_empty",     arena_destroy_is_safe_on_empty);
+    utest_run("arena_reset_rewinds_chunk",              arena_reset_rewinds_chunk);
+    utest_run("arena_reset_clears_oom",                 arena_reset_clears_oom);
+    utest_run("arena_growth_preserves_earlier_pointers", arena_growth_preserves_earlier_pointers);
 }
