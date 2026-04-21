@@ -461,6 +461,70 @@ UTEST(parse_recovery_consecutive_errors_terminate) {
     ctx_destroy(&c);
 }
 
+/* Allocator that fails after N successful calls.  fail_at = N means
+   the first N calls succeed and call N+1 fails.  (Post-increment the
+   counter, compare > fail_at.) */
+typedef struct { int calls; int fail_at; } OomSpy;
+
+static void *oom_alloc(size_t n, void *ud) {
+    OomSpy *s = ud;
+    if (s->calls++ >= s->fail_at) return NULL;
+    void *p = malloc(n);
+    return p;
+}
+
+static void oom_free(void *p, void *ud) {
+    (void)ud;
+    free(p);
+}
+
+UTEST(parse_oom_returns_sentinel_and_sticks) {
+    OomSpy s = { 0, 0 }; /* fail on the very first backing alloc */
+    Lexer lex;
+    Arena arena;
+    Parser p;
+    const char *src = "1 + 2";
+    ulex_init(&lex, src, strlen(src));
+    uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);
+    uparse_init(&p, &lex, &arena);
+
+    AstNode *n1 = uparse_next_statement(&p);
+    UASSERT(n1 != NULL);
+    UASSERT_EQ(n1->kind, AST_ERROR);
+    UASSERT_EQ(n1->u.err.code, PARSE_OOM);
+
+    /* Sticky: next call still returns the sentinel. */
+    AstNode *n2 = uparse_next_statement(&p);
+    UASSERT(n2 != NULL);
+    UASSERT_EQ(n2->kind, AST_ERROR);
+    UASSERT_EQ(n2->u.err.code, PARSE_OOM);
+    /* Same sentinel — pointer equality. */
+    UASSERT(n1 == n2);
+
+    uarena_destroy(&arena);
+}
+
+UTEST(parse_oom_mid_expression) {
+    /* Permit a few allocations, then fail partway through a compound
+       expression.  The pluggable allocator counts chunk allocations; a
+       chunk holds many AST nodes, so we fail the first chunk alloc. */
+    OomSpy s = { 0, 0 };
+    Lexer lex;
+    Arena arena;
+    Parser p;
+    const char *src = "1 + 2 * (3 - 4)";
+    ulex_init(&lex, src, strlen(src));
+    uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);
+    uparse_init(&p, &lex, &arena);
+
+    AstNode *n = uparse_next_statement(&p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_OOM);
+
+    uarena_destroy(&arena);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -498,4 +562,6 @@ void test_parser_suite(void) {
     utest_run("parse_recovery_lex_error_followed_by_clean_statement",
               parse_recovery_lex_error_followed_by_clean_statement);
     utest_run("parse_recovery_consecutive_errors_terminate",   parse_recovery_consecutive_errors_terminate);
+    utest_run("parse_oom_returns_sentinel_and_sticks", parse_oom_returns_sentinel_and_sticks);
+    utest_run("parse_oom_mid_expression",              parse_oom_mid_expression);
 }
