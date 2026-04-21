@@ -79,6 +79,15 @@ static AstNode *make_ident(Parser *p, const char *start, int len, int line, int 
     return n;
 }
 
+static AstNode *make_unary(Parser *p, UnaryOp op, AstNode *operand,
+                           int line, int col) {
+    AstNode *n = make_node(p, AST_UNARY, line, col);
+    if (!n) return NULL;
+    n->u.unary.op = op;
+    n->u.unary.operand = operand;
+    return n;
+}
+
 static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
                            int line, int col) {
     AstNode *n = make_node(p, AST_ERROR, line, col);
@@ -91,7 +100,26 @@ static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
 /* --- Forward declarations for mutual recursion. --- */
 
 static AstNode *parse_expression(Parser *p, int min_prec);
+static AstNode *parse_prefix(Parser *p);
 static AstNode *parse_atom(Parser *p);
+
+/* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
+
+static AstNode *parse_prefix(Parser *p) {
+    Token t = peek(p);
+    if (t.type == TOK_PLUS) {
+        consume(p);
+        return parse_prefix(p);             /* +x is x; no node */
+    }
+    if (t.type == TOK_MINUS) {
+        consume(p);
+        AstNode *operand = parse_prefix(p); /* right-assoc: --3 -> -(-3) */
+        if (!operand) return NULL;
+        if (operand->kind == AST_ERROR) return operand;
+        return make_unary(p, UOP_NEG, operand, t.line, t.col);
+    }
+    return parse_atom(p);
+}
 
 /* --- parse_atom: INT | IDENT | ( expr ) | error. --- */
 
@@ -135,11 +163,11 @@ static AstNode *parse_atom(Parser *p) {
     }
 }
 
-/* --- parse_expression stub: atoms only for now (unary / binary later). --- */
+/* --- parse_expression stub: prefix only for now (binary later). --- */
 
 static AstNode *parse_expression(Parser *p, int min_prec) {
     (void)min_prec;
-    return parse_atom(p);
+    return parse_prefix(p);
 }
 
 /* --- Public API. --- */

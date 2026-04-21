@@ -147,6 +147,50 @@ UTEST(parse_atom_parens_no_wrapper_node) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_unary_neg) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "-42");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(- 42)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_unary_pos_is_noop) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "+42");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "42");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_unary_double_neg_right_assoc) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "--3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(- (- 3))");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_unary_neg_ident) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "-x");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(- x)");
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -155,4 +199,8 @@ void test_parser_suite(void) {
     utest_run("parse_atom_int",                    parse_atom_int);
     utest_run("parse_atom_ident",                  parse_atom_ident);
     utest_run("parse_atom_parens_no_wrapper_node", parse_atom_parens_no_wrapper_node);
+    utest_run("parse_unary_neg",                    parse_unary_neg);
+    utest_run("parse_unary_pos_is_noop",            parse_unary_pos_is_noop);
+    utest_run("parse_unary_double_neg_right_assoc", parse_unary_double_neg_right_assoc);
+    utest_run("parse_unary_neg_ident",              parse_unary_neg_ident);
 }
