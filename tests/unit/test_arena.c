@@ -156,6 +156,87 @@ UTEST(arena_oom_via_failing_allocator) {
     uarena_destroy(&a);
 }
 
+/* Stub allocators that must never be called in static-buffer mode.
+   If they ARE called, the test fails via a visible counter bump — we
+   don't segfault because that would lose the failure message. */
+
+static int static_mode_alloc_called = 0;
+
+static void *must_not_alloc(size_t n, void *ud) {
+    (void)n; (void)ud;
+    static_mode_alloc_called++;
+    return NULL;
+}
+
+static void must_not_free(void *p, void *ud) {
+    (void)p; (void)ud;
+    static_mode_alloc_called++;
+}
+
+UTEST(arena_init_static_does_not_call_allocator) {
+    /* Reference the stubs so -Wunused-function stays quiet; they exist
+       to document the API contract (no allocator hooks in static mode). */
+    (void)must_not_alloc;
+    (void)must_not_free;
+    static_mode_alloc_called = 0;
+    unsigned char buf[256];
+    Arena a;
+    uarena_init_static(&a, buf, sizeof buf);
+    /* Prove the allocator fn pointers are not stored. */
+    UASSERT(a.alloc_fn == NULL);
+    UASSERT(a.free_fn == NULL);
+    UASSERT(a.is_static == true);
+
+    void *p = uarena_alloc(&a, 32);
+    UASSERT(p != NULL);
+    UASSERT(p >= (void *)buf);
+    UASSERT(p < (void *)(buf + sizeof buf));
+    uarena_destroy(&a);
+    UASSERT_EQ(static_mode_alloc_called, 0);
+}
+
+UTEST(arena_static_oom_when_buffer_full) {
+    unsigned char buf[128];
+    Arena a;
+    uarena_init_static(&a, buf, sizeof buf);
+    /* One large allocation consumes the buffer. */
+    void *p1 = uarena_alloc(&a, 64);
+    UASSERT(p1 != NULL);
+    /* A second allocation that does not fit triggers OOM (no growth
+       because dynamic allocation is disabled). */
+    void *p2 = uarena_alloc(&a, 128);
+    UASSERT(p2 == NULL);
+    UASSERT(a.oom == true);
+    uarena_destroy(&a);
+}
+
+UTEST(arena_static_destroy_is_noop) {
+    unsigned char buf[256];
+    Arena a;
+    uarena_init_static(&a, buf, sizeof buf);
+    (void)uarena_alloc(&a, 64);
+    uarena_destroy(&a);
+    /* Caller still owns buf; writing to it must remain safe. */
+    buf[0] = 0x5A;
+    UASSERT_EQ(buf[0], 0x5A);
+}
+
+UTEST(arena_static_too_small_buffer_triggers_oom) {
+    /* Buffer too small to even hold the chunk header + alignment.
+       uarena_init_static must leave head=NULL, and the first alloc
+       must OOM cleanly instead of dereferencing garbage. */
+    unsigned char buf[8];
+    Arena a;
+    uarena_init_static(&a, buf, sizeof buf);
+    UASSERT(a.head == NULL);
+    UASSERT(a.is_static == true);
+    UASSERT(a.oom == false); /* not yet — OOM fires on the alloc attempt */
+    void *p = uarena_alloc(&a, 1);
+    UASSERT(p == NULL);
+    UASSERT(a.oom == true);
+    uarena_destroy(&a);
+}
+
 void test_arena_suite(void) {
     utest_run("arena_init_does_not_allocate",       arena_init_does_not_allocate);
     utest_run("arena_basic_alloc_returns_non_null", arena_basic_alloc_returns_non_null);
@@ -168,4 +249,8 @@ void test_arena_suite(void) {
     utest_run("arena_growth_preserves_earlier_pointers", arena_growth_preserves_earlier_pointers);
     utest_run("arena_init_ex_calls_custom_alloc",  arena_init_ex_calls_custom_alloc);
     utest_run("arena_oom_via_failing_allocator",   arena_oom_via_failing_allocator);
+    utest_run("arena_init_static_does_not_call_allocator", arena_init_static_does_not_call_allocator);
+    utest_run("arena_static_oom_when_buffer_full",         arena_static_oom_when_buffer_full);
+    utest_run("arena_static_destroy_is_noop",              arena_static_destroy_is_noop);
+    utest_run("arena_static_too_small_buffer_triggers_oom", arena_static_too_small_buffer_triggers_oom);
 }
