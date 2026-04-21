@@ -3,8 +3,10 @@
 
 #include "uarena.h"
 #include <stdint.h>
+
+#if __STDC_HOSTED__
 #include <stdlib.h>
-#include <string.h>
+#endif
 
 /* Per-chunk layout: header immediately followed by the slab.
    Payload begins at chunk + 1 aligned to ARENA_ALIGN. */
@@ -34,8 +36,20 @@ static unsigned char *chunk_payload(ArenaChunk *c) {
     return (unsigned char *)base;
 }
 
-/* --- stdlib default allocator pair. --- */
+/* --- Local zero-fill.  Replaces memset so the arena compiles without a
+       hosted <string.h>.  volatile prevents GCC/Clang from recognizing the
+       loop and lowering it back to a memset libcall under -Os.  Called with
+       small (typically 16-64 byte) aligned ranges so the byte loop is not a
+       meaningful hot path. --- */
 
+static void arena_zero(void *dst, size_t n) {
+    volatile unsigned char *p = (volatile unsigned char *)dst;
+    for (size_t i = 0; i < n; i++) p[i] = 0;
+}
+
+/* --- stdlib default allocator pair (hosted only). --- */
+
+#if __STDC_HOSTED__
 static void *stdlib_alloc(size_t n, void *ud) {
     (void)ud;
     return malloc(n);
@@ -45,6 +59,7 @@ static void stdlib_free(void *p, void *ud) {
     (void)ud;
     free(p);
 }
+#endif /* __STDC_HOSTED__ */
 
 /* --- Common init. --- */
 
@@ -60,9 +75,11 @@ static void init_common(Arena *a, size_t chunk_size,
     a->is_static = false;
 }
 
+#if __STDC_HOSTED__
 void uarena_init(Arena *a, size_t chunk_size) {
     init_common(a, chunk_size, stdlib_alloc, stdlib_free, NULL);
 }
+#endif /* __STDC_HOSTED__ */
 
 void uarena_init_ex(Arena *a, size_t chunk_size,
                     UAllocFn alloc, UFreeFn free_fn, void *ud) {
@@ -143,7 +160,7 @@ void *uarena_alloc(Arena *a, size_t nbytes) {
 
     unsigned char *p = chunk_payload(c) + c->used;
     c->used += need;
-    memset(p, 0, need);
+    arena_zero(p, need);
     return p;
 }
 

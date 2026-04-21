@@ -39,8 +39,11 @@ typedef struct {
 
 /* Initialize using stdlib malloc / free for backing allocation.
    chunk_size == 0 selects the default (4096).
-   No allocation is performed; first chunk is lazy on first uarena_alloc. */
+   No allocation is performed; first chunk is lazy on first uarena_alloc.
+   Hosted builds only — freestanding callers must use _ex or _static below. */
+#if __STDC_HOSTED__
 void uarena_init(Arena *a, size_t chunk_size);
+#endif
 
 /* Initialize with a caller-supplied allocator pair.
    chunk_size == 0 selects the default (4096). */
