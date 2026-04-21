@@ -106,6 +106,56 @@ UTEST(arena_growth_preserves_earlier_pointers) {
     uarena_destroy(&a);
 }
 
+/* --- Custom allocator used by the next two tests. --- */
+
+typedef struct {
+    int alloc_calls;
+    int free_calls;
+    int fail_at; /* -1 means never fail */
+} AllocSpy;
+
+static void *spy_alloc(size_t n, void *ud) {
+    AllocSpy *s = ud;
+    s->alloc_calls++;
+    if (s->fail_at >= 0 && s->alloc_calls > s->fail_at) return NULL;
+    return malloc(n);
+}
+
+static void spy_free(void *p, void *ud) {
+    AllocSpy *s = ud;
+    s->free_calls++;
+    free(p);
+}
+
+UTEST(arena_init_ex_calls_custom_alloc) {
+    AllocSpy s = { 0, 0, -1 };
+    Arena a;
+    uarena_init_ex(&a, 0, spy_alloc, spy_free, &s);
+    void *p = uarena_alloc(&a, 64);
+    UASSERT(p != NULL);
+    UASSERT_EQ(s.alloc_calls, 1);
+    UASSERT_EQ(s.free_calls, 0);
+    uarena_destroy(&a);
+    UASSERT_EQ(s.free_calls, 1);
+}
+
+UTEST(arena_oom_via_failing_allocator) {
+    AllocSpy s = { 0, 0, 0 }; /* fail on the very first alloc */
+    Arena a;
+    uarena_init_ex(&a, 0, spy_alloc, spy_free, &s);
+    void *p = uarena_alloc(&a, 16);
+    UASSERT(p == NULL);
+    UASSERT(a.oom == true);
+    /* Sticky flag: further allocs keep returning NULL. */
+    void *p2 = uarena_alloc(&a, 16);
+    UASSERT(p2 == NULL);
+    UASSERT(a.oom == true);
+    /* Reset clears the flag. */
+    uarena_reset(&a);
+    UASSERT(a.oom == false);
+    uarena_destroy(&a);
+}
+
 void test_arena_suite(void) {
     utest_run("arena_init_does_not_allocate",       arena_init_does_not_allocate);
     utest_run("arena_basic_alloc_returns_non_null", arena_basic_alloc_returns_non_null);
@@ -116,4 +166,6 @@ void test_arena_suite(void) {
     utest_run("arena_reset_rewinds_chunk",              arena_reset_rewinds_chunk);
     utest_run("arena_reset_clears_oom",                 arena_reset_clears_oom);
     utest_run("arena_growth_preserves_earlier_pointers", arena_growth_preserves_earlier_pointers);
+    utest_run("arena_init_ex_calls_custom_alloc",  arena_init_ex_calls_custom_alloc);
+    utest_run("arena_oom_via_failing_allocator",   arena_oom_via_failing_allocator);
 }
