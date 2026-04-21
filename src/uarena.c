@@ -1,0 +1,173 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Arena allocator implementation. */
+
+#include "uarena.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Per-chunk layout: header immediately followed by the slab.
+   Payload begins at chunk + 1 aligned to ARENA_ALIGN. */
+struct ArenaChunk {
+    ArenaChunk *next;
+    size_t capacity;   /* payload bytes */
+    size_t used;       /* consumed payload bytes */
+    /* payload follows as a flexible-array-like region (see chunk_payload). */
+};
+
+#define ARENA_DEFAULT_CHUNK_SIZE 4096
+/* Alignment quantum.  alignof(max_align_t) would be ideal but both are C11
+   and the project is locked to -std=c99 per v1.0 impl-design.md §6 Q1.
+   Hardcode 16: it covers long double, void*, and common SIMD types on all
+   v1.0 targets (x86_64, ARM Cortex-M7, RISC-V 32-bit, Xtensa LX7).
+   Over-aligns by 8 bytes per-allocation on 32-bit targets — negligible at
+   our allocation rate (handful of AstNodes per statement). */
+#define ARENA_ALIGN 16
+
+/* --- Chunk payload address and size helpers. --- */
+
+static unsigned char *chunk_payload(ArenaChunk *c) {
+    /* Skip the header, aligning the payload start to max_align_t. */
+    uintptr_t base = (uintptr_t)(c + 1);
+    uintptr_t misalign = base % ARENA_ALIGN;
+    if (misalign) base += ARENA_ALIGN - misalign;
+    return (unsigned char *)base;
+}
+
+/* --- stdlib default allocator pair. --- */
+
+static void *stdlib_alloc(size_t n, void *ud) {
+    (void)ud;
+    return malloc(n);
+}
+
+static void stdlib_free(void *p, void *ud) {
+    (void)ud;
+    free(p);
+}
+
+/* --- Common init. --- */
+
+static void init_common(Arena *a, size_t chunk_size,
+                        UAllocFn alloc, UFreeFn free_fn, void *ud) {
+    a->head = NULL;
+    a->first = NULL;
+    a->chunk_size = chunk_size ? chunk_size : ARENA_DEFAULT_CHUNK_SIZE;
+    a->alloc_fn = alloc;
+    a->free_fn = free_fn;
+    a->alloc_ud = ud;
+    a->oom = false;
+    a->is_static = false;
+}
+
+void uarena_init(Arena *a, size_t chunk_size) {
+    init_common(a, chunk_size, stdlib_alloc, stdlib_free, NULL);
+}
+
+void uarena_init_ex(Arena *a, size_t chunk_size,
+                    UAllocFn alloc, UFreeFn free_fn, void *ud) {
+    init_common(a, chunk_size, alloc, free_fn, ud);
+}
+
+void uarena_init_static(Arena *a, void *buf, size_t bufsz) {
+    a->head = NULL;
+    a->first = NULL;
+    a->chunk_size = 0;
+    a->alloc_fn = NULL;
+    a->free_fn = NULL;
+    a->alloc_ud = NULL;
+    a->oom = false;
+    a->is_static = true;
+
+    /* Carve the caller-provided buffer into one header + payload chunk.
+       If the buffer is too small to hold the header, OOM fires on the
+       first uarena_alloc (head remains NULL). */
+    if (bufsz >= sizeof(ArenaChunk) + ARENA_ALIGN) {
+        ArenaChunk *c = (ArenaChunk *)buf;
+        c->next = NULL;
+        c->used = 0;
+        /* Compute payload capacity after header-and-alignment skip. */
+        unsigned char *payload = chunk_payload(c);
+        uintptr_t payload_off = (uintptr_t)payload - (uintptr_t)buf;
+        c->capacity = bufsz - payload_off;
+        a->first = c;
+        a->head = c;
+    }
+}
+
+/* --- alloc. --- */
+
+static ArenaChunk *new_chunk(Arena *a, size_t min_payload) {
+    size_t want = a->chunk_size;
+    if (min_payload > want) want = min_payload;
+    size_t raw = sizeof(ArenaChunk) + ARENA_ALIGN + want;
+    void *mem = a->alloc_fn(raw, a->alloc_ud);
+    if (!mem) return NULL;
+    ArenaChunk *c = mem;
+    c->next = NULL;
+    c->used = 0;
+    unsigned char *payload = chunk_payload(c);
+    uintptr_t payload_off = (uintptr_t)payload - (uintptr_t)mem;
+    c->capacity = raw - payload_off;
+    return c;
+}
+
+void *uarena_alloc(Arena *a, size_t nbytes) {
+    if (a->oom) return NULL;
+
+    /* Round request up to alignment. */
+    size_t need = nbytes;
+    if (need % ARENA_ALIGN) need += ARENA_ALIGN - (need % ARENA_ALIGN);
+
+    /* Grab or create a chunk with enough room. */
+    ArenaChunk *c = a->head;
+    if (!c || c->used + need > c->capacity) {
+        if (a->is_static) {
+            /* No dynamic allocation in static mode. */
+            a->oom = true;
+            return NULL;
+        }
+        c = new_chunk(a, need);
+        if (!c) {
+            a->oom = true;
+            return NULL;
+        }
+        /* Link at tail to preserve "first" for reset ordering. */
+        if (a->head) {
+            a->head->next = c;
+        } else {
+            a->first = c;
+        }
+        a->head = c;
+    }
+
+    unsigned char *p = chunk_payload(c) + c->used;
+    c->used += need;
+    memset(p, 0, need);
+    return p;
+}
+
+/* --- reset. --- */
+
+void uarena_reset(Arena *a) {
+    for (ArenaChunk *c = a->first; c; c = c->next) c->used = 0;
+    a->head = a->first;
+    a->oom = false;
+}
+
+/* --- destroy. --- */
+
+void uarena_destroy(Arena *a) {
+    if (a->is_static) {
+        /* Caller owns the buffer. */
+        a->head = a->first = NULL;
+        return;
+    }
+    ArenaChunk *c = a->first;
+    while (c) {
+        ArenaChunk *next = c->next;
+        a->free_fn(c, a->alloc_ud);
+        c = next;
+    }
+    a->head = a->first = NULL;
+}
