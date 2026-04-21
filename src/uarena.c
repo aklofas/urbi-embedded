@@ -27,7 +27,7 @@ struct ArenaChunk {
 /* --- Chunk payload address and size helpers. --- */
 
 static unsigned char *chunk_payload(ArenaChunk *c) {
-    /* Skip the header, aligning the payload start to max_align_t. */
+    /* Skip the header, aligning the payload start to ARENA_ALIGN. */
     uintptr_t base = (uintptr_t)(c + 1);
     uintptr_t misalign = base % ARENA_ALIGN;
     if (misalign) base += ARENA_ALIGN - misalign;

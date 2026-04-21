@@ -463,7 +463,7 @@ UTEST(parse_recovery_consecutive_errors_terminate) {
 
 /* Allocator that fails after N successful calls.  fail_at = N means
    the first N calls succeed and call N+1 fails.  (Post-increment the
-   counter, compare > fail_at.) */
+   counter, compare >= fail_at.) */
 typedef struct { int calls; int fail_at; } OomSpy;
 
 static void *oom_alloc(size_t n, void *ud) {

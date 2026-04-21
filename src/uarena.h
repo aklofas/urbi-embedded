@@ -52,7 +52,8 @@ void uarena_init_ex(Arena *a, size_t chunk_size,
    uarena_destroy is a no-op in this mode (caller owns buf). */
 void uarena_init_static(Arena *a, void *buf, size_t bufsz);
 
-/* Allocate nbytes from the arena, aligned to max_align_t.  Returned
+/* Allocate nbytes from the arena, aligned to 16 bytes (ARENA_ALIGN,
+   sufficient for long double / SIMD on all v1.0 targets).  Returned
    memory is zero-filled.  On failure (backing-allocator returns NULL,
    or static buffer is full) sets a->oom and returns NULL. */
 void *uarena_alloc(Arena *a, size_t nbytes);
