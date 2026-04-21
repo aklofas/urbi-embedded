@@ -108,9 +108,51 @@ UTEST(parse_error_name_out_of_range) {
     UASSERT_STR_EQ(uparse_error_name((ParseErrorCode)-1),       "PARSE_UNKNOWN");
 }
 
+/* --- Atom happy-path tests. --- */
+
+UTEST(parse_atom_int) {
+    ParseCtx c;
+    ctx_init(&c, "42");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_INT);
+    UASSERT_EQ(n->u.i, 42);
+    UASSERT_EQ(n->line, 1);
+    UASSERT_EQ(n->col, 1);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_atom_ident) {
+    ParseCtx c;
+    ctx_init(&c, "foo");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_IDENT);
+    UASSERT_EQ(n->u.ident.len, 3);
+    UASSERT(n->u.ident.start != NULL);
+    UASSERT_EQ(n->u.ident.start[0], 'f');
+    UASSERT_EQ(n->u.ident.start[1], 'o');
+    UASSERT_EQ(n->u.ident.start[2], 'o');
+    ctx_destroy(&c);
+}
+
+UTEST(parse_atom_parens_no_wrapper_node) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "(42)");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "42");
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
     utest_run("parse_error_name_out_of_range",   parse_error_name_out_of_range);
     utest_run("parse_ast_dump_int_smoke",        parse_ast_dump_int_smoke);
+    utest_run("parse_atom_int",                    parse_atom_int);
+    utest_run("parse_atom_ident",                  parse_atom_ident);
+    utest_run("parse_atom_parens_no_wrapper_node", parse_atom_parens_no_wrapper_node);
 }
