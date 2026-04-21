@@ -352,6 +352,115 @@ UTEST(parse_whitespace_only_is_eof) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_error_unexpected_eof_after_operator) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "1 +");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_UNEXPECTED_EOF);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(error PARSE_UNEXPECTED_EOF)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_error_expected_expression_closing_paren) {
+    ParseCtx c;
+    ctx_init(&c, "1 + )");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_error_expected_rparen) {
+    ParseCtx c;
+    ctx_init(&c, "(1 + 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_RPAREN);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_error_unexpected_token_at_statement_boundary) {
+    ParseCtx c;
+    ctx_init(&c, "1 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_UNEXPECTED_TOKEN);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_error_lex_error_passthrough) {
+    ParseCtx c;
+    ctx_init(&c, "@");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_LEX_ERROR);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_error_pipe_alone) {
+    ParseCtx c;
+    ctx_init(&c, "|");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_recovery_sync_to_pipe_then_success) {
+    char buf[64];
+    ParseCtx c;
+    /* '*' has no prefix form, so '1 + * 2' triggers PARSE_EXPECTED_EXPRESSION.
+       Recovery must then sync past the first '|' and parse '3 * 4' cleanly. */
+    ctx_init(&c, "1 + * 2 | 3 * 4 |");
+    AstNode *err = uparse_next_statement(&c.p);
+    UASSERT(err != NULL);
+    UASSERT_EQ(err->kind, AST_ERROR);
+    AstNode *ok = uparse_next_statement(&c.p);
+    UASSERT(ok != NULL);
+    ast_dump(ok, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(* 3 4)");
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_recovery_lex_error_followed_by_clean_statement) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "@ | 42 |");
+    AstNode *err = uparse_next_statement(&c.p);
+    UASSERT(err != NULL);
+    UASSERT_EQ(err->kind, AST_ERROR);
+    UASSERT_EQ(err->u.err.code, PARSE_LEX_ERROR);
+    AstNode *ok = uparse_next_statement(&c.p);
+    UASSERT(ok != NULL);
+    ast_dump(ok, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "42");
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_recovery_consecutive_errors_terminate) {
+    ParseCtx c;
+    ctx_init(&c, "+ | + |");
+    AstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    UASSERT_EQ(a->kind, AST_ERROR);
+    AstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b != NULL);
+    UASSERT_EQ(b->kind, AST_ERROR);
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -378,4 +487,15 @@ void test_parser_suite(void) {
     utest_run("parse_two_statements_no_final_pipe", parse_two_statements_no_final_pipe);
     utest_run("parse_eof_is_idempotent",            parse_eof_is_idempotent);
     utest_run("parse_whitespace_only_is_eof",       parse_whitespace_only_is_eof);
+    utest_run("parse_error_unexpected_eof_after_operator",     parse_error_unexpected_eof_after_operator);
+    utest_run("parse_error_expected_expression_closing_paren", parse_error_expected_expression_closing_paren);
+    utest_run("parse_error_expected_rparen",                   parse_error_expected_rparen);
+    utest_run("parse_error_unexpected_token_at_statement_boundary",
+              parse_error_unexpected_token_at_statement_boundary);
+    utest_run("parse_error_lex_error_passthrough",             parse_error_lex_error_passthrough);
+    utest_run("parse_error_pipe_alone",                        parse_error_pipe_alone);
+    utest_run("parse_recovery_sync_to_pipe_then_success",      parse_recovery_sync_to_pipe_then_success);
+    utest_run("parse_recovery_lex_error_followed_by_clean_statement",
+              parse_recovery_lex_error_followed_by_clean_statement);
+    utest_run("parse_recovery_consecutive_errors_terminate",   parse_recovery_consecutive_errors_terminate);
 }

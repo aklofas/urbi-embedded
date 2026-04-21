@@ -219,6 +219,17 @@ static AstNode *parse_expression(Parser *p, int min_prec) {
     return left;
 }
 
+/* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
+   TOK_PIPE, consume it so the next statement starts clean. */
+static void sync_to_statement_boundary(Parser *p) {
+    for (;;) {
+        Token t = peek(p);
+        if (t.type == TOK_PIPE) { consume(p); return; }
+        if (t.type == TOK_EOF) return;
+        consume(p);
+    }
+}
+
 /* --- Public API. --- */
 
 void uparse_init(Parser *p, Lexer *lex, Arena *arena) {
@@ -236,11 +247,29 @@ AstNode *uparse_next_statement(Parser *p) {
     AstNode *expr = parse_expression(p, 0);
     if (!expr || p->arena->oom) return &uparser_oom_sentinel;
 
-    /* Optional trailing '|'. */
-    Token term = peek(p);
-    if (term.type == TOK_PIPE) consume(p);
+    if (expr->kind == AST_ERROR) {
+        sync_to_statement_boundary(p);
+        return expr;
+    }
 
-    return expr;
+    /* Statement boundary: expect '|' or EOF. */
+    Token term = peek(p);
+    if (term.type == TOK_PIPE) {
+        consume(p);
+        return expr;
+    }
+    if (term.type == TOK_EOF) {
+        return expr;
+    }
+
+    /* Unexpected trailing token — discard the valid subtree per the
+       "no partial ASTs on error" rule, emit a single error, and sync. */
+    AstNode *err = make_error(p, PARSE_UNEXPECTED_TOKEN,
+                              kErrorMessages[PARSE_UNEXPECTED_TOKEN],
+                              term.line, term.col);
+    if (!err || p->arena->oom) return &uparser_oom_sentinel;
+    sync_to_statement_boundary(p);
+    return err;
 }
 
 const char *uparse_error_name(ParseErrorCode code) {
