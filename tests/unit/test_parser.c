@@ -525,6 +525,53 @@ UTEST(parse_oom_mid_expression) {
     uarena_destroy(&arena);
 }
 
+UTEST(parse_syncline_int_line_col) {
+    ParseCtx c;
+    ctx_init(&c, "  42");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_INT);
+    UASSERT_EQ(n->line, 1);
+    UASSERT_EQ(n->col, 3);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_syncline_binary_points_at_operator) {
+    ParseCtx c;
+    ctx_init(&c, "1\n+ 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_BINARY);
+    /* '+' is on line 2, column 1. */
+    UASSERT_EQ(n->line, 2);
+    UASSERT_EQ(n->col, 1);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_syncline_unary_points_at_sign) {
+    ParseCtx c;
+    ctx_init(&c, "\n  -3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_UNARY);
+    /* '-' is on line 2, column 3. */
+    UASSERT_EQ(n->line, 2);
+    UASSERT_EQ(n->col, 3);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_syncline_error_at_detection_point) {
+    ParseCtx c;
+    ctx_init(&c, "1 +\n)"); /* ')' on line 2, col 1 */
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ(n->kind, AST_ERROR);
+    UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);
+    UASSERT_EQ(n->line, 2);
+    UASSERT_EQ(n->col, 1);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -564,4 +611,8 @@ void test_parser_suite(void) {
     utest_run("parse_recovery_consecutive_errors_terminate",   parse_recovery_consecutive_errors_terminate);
     utest_run("parse_oom_returns_sentinel_and_sticks", parse_oom_returns_sentinel_and_sticks);
     utest_run("parse_oom_mid_expression",              parse_oom_mid_expression);
+    utest_run("parse_syncline_int_line_col",              parse_syncline_int_line_col);
+    utest_run("parse_syncline_binary_points_at_operator", parse_syncline_binary_points_at_operator);
+    utest_run("parse_syncline_unary_points_at_sign",      parse_syncline_unary_points_at_sign);
+    utest_run("parse_syncline_error_at_detection_point",  parse_syncline_error_at_detection_point);
 }
