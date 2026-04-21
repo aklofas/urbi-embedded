@@ -62,6 +62,23 @@ Abbreviations are fine when the context is tight (`l` for a `Lexer *` inside lex
 - **No global mutable state.** State lives on caller-owned structs (`Lexer`, and later `urbi_state_t`). Multiple instances must coexist without interference.
 - **Stack-allocated state structs.** Callers declare `Lexer l;` on the stack and call `ulex_init(&l, ...)`. No `ulex_destroy` function — nothing to clean up.
 - **Zero-copy where feasible.** `Token.u.str.start` points into the caller's source buffer rather than copying. Document the lifetime contract at the API level.
+- **Freestanding-compilable.** Every `src/*.c` file must compile under `-ffreestanding` on a toolchain without a C library. See "Freestanding discipline" below for the rule.
+
+---
+
+## Freestanding discipline
+
+Every file under `src/` compiles under `-ffreestanding`, including on toolchains that ship no C library at all (e.g. `gcc-riscv64-unknown-elf` on Ubuntu). CI enforces this via the `cross-riscv` job.
+
+Rules:
+
+- **Only C99-mandated freestanding headers are unconditional.** `<float.h>`, `<iso646.h>`, `<limits.h>`, `<stdarg.h>`, `<stdbool.h>`, `<stddef.h>`, `<stdint.h>`. These are provided by the compiler, not the libc, so they are always available.
+- **Hosted headers are guarded.** `<stdlib.h>`, `<string.h>`, `<stdio.h>`, `<time.h>`, `<assert.h>`, etc. Include them behind `#if __STDC_HOSTED__ / #endif`. GCC sets `__STDC_HOSTED__` to 0 under `-ffreestanding`.
+- **Any function that reaches a hosted-only feature is guarded the same way.** If a convenience wrapper calls `malloc`, it and its prototype in the public header both sit inside `#if __STDC_HOSTED__`. Freestanding callers are expected to use the injection-based API (custom allocator, static buffer) that the library already provides.
+- **Don't depend on libc for leaf utilities.** `memset`, `memcpy`, `strlen` are all hosted. Write small local replacements when needed (`arena_zero` in `src/uarena.c` is the pattern). Mark the buffer `volatile` to prevent the compiler from recognizing the loop and lowering it back to a libc call under `-Os`.
+- **Test files are exempt.** `tests/unit/*.c` link against the host toolchain and may freely use hosted headers. The library itself is what must stay freestanding.
+
+The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv` fail, the change is wrong — not the test.
 
 ---
 
