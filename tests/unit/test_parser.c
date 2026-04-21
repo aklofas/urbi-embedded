@@ -279,6 +279,79 @@ UTEST(parse_unary_on_parenthesized) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_trailing_pipe_consumed) {
+    ParseCtx c;
+    ctx_init(&c, "42 |");
+    AstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    UASSERT_EQ(a->kind, AST_INT);
+    /* After consuming '|', next call sees EOF. */
+    AstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_trailing_pipe_optional) {
+    ParseCtx c;
+    ctx_init(&c, "42");
+    AstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    UASSERT_EQ(a->kind, AST_INT);
+    AstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_two_statements_with_pipe) {
+    char buf1[32], buf2[32];
+    ParseCtx c;
+    ctx_init(&c, "1 + 2 | 3 * 4 |");
+    AstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    ast_dump(a, buf1, sizeof buf1);
+    UASSERT_STR_EQ(buf1, "(+ 1 2)");
+    AstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b != NULL);
+    ast_dump(b, buf2, sizeof buf2);
+    UASSERT_STR_EQ(buf2, "(* 3 4)");
+    AstNode *eof = uparse_next_statement(&c.p);
+    UASSERT(eof == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_two_statements_no_final_pipe) {
+    char buf1[32], buf2[32];
+    ParseCtx c;
+    ctx_init(&c, "1 | 2");
+    AstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    ast_dump(a, buf1, sizeof buf1);
+    UASSERT_STR_EQ(buf1, "1");
+    AstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b != NULL);
+    ast_dump(b, buf2, sizeof buf2);
+    UASSERT_STR_EQ(buf2, "2");
+    AstNode *eof = uparse_next_statement(&c.p);
+    UASSERT(eof == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_eof_is_idempotent) {
+    ParseCtx c;
+    ctx_init(&c, "");
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_whitespace_only_is_eof) {
+    ParseCtx c;
+    ctx_init(&c, "   \n\n  ");
+    UASSERT(uparse_next_statement(&c.p) == NULL);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -299,4 +372,10 @@ void test_parser_suite(void) {
     utest_run("parse_parens_override_precedence",      parse_parens_override_precedence);
     utest_run("parse_unary_binds_tighter_than_binary", parse_unary_binds_tighter_than_binary);
     utest_run("parse_unary_on_parenthesized",          parse_unary_on_parenthesized);
+    utest_run("parse_trailing_pipe_consumed",       parse_trailing_pipe_consumed);
+    utest_run("parse_trailing_pipe_optional",       parse_trailing_pipe_optional);
+    utest_run("parse_two_statements_with_pipe",     parse_two_statements_with_pipe);
+    utest_run("parse_two_statements_no_final_pipe", parse_two_statements_no_final_pipe);
+    utest_run("parse_eof_is_idempotent",            parse_eof_is_idempotent);
+    utest_run("parse_whitespace_only_is_eof",       parse_whitespace_only_is_eof);
 }
