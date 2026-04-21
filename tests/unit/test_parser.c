@@ -191,6 +191,94 @@ UTEST(parse_unary_neg_ident) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_binary_add) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "1 + 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(+ 1 2)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_precedence_add_mul) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "1 + 2 * 3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(+ 1 (* 2 3))");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_precedence_mul_add) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "1 * 2 + 3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(+ (* 1 2) 3)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_left_assoc_sub) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "1 - 2 - 3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(- (- 1 2) 3)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_left_assoc_div) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "8 / 4 / 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(/ (/ 8 4) 2)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_parens_override_precedence) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "(1 + 2) * 3");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(* (+ 1 2) 3)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_unary_binds_tighter_than_binary) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "-1 + 2");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(+ (- 1) 2)");
+    ctx_destroy(&c);
+}
+
+UTEST(parse_unary_on_parenthesized) {
+    char buf[64];
+    ParseCtx c;
+    ctx_init(&c, "-(1 + 2)");
+    AstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    ast_dump(n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "(- (+ 1 2))");
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -203,4 +291,12 @@ void test_parser_suite(void) {
     utest_run("parse_unary_pos_is_noop",            parse_unary_pos_is_noop);
     utest_run("parse_unary_double_neg_right_assoc", parse_unary_double_neg_right_assoc);
     utest_run("parse_unary_neg_ident",              parse_unary_neg_ident);
+    utest_run("parse_binary_add",                      parse_binary_add);
+    utest_run("parse_precedence_add_mul",              parse_precedence_add_mul);
+    utest_run("parse_precedence_mul_add",              parse_precedence_mul_add);
+    utest_run("parse_left_assoc_sub",                  parse_left_assoc_sub);
+    utest_run("parse_left_assoc_div",                  parse_left_assoc_div);
+    utest_run("parse_parens_override_precedence",      parse_parens_override_precedence);
+    utest_run("parse_unary_binds_tighter_than_binary", parse_unary_binds_tighter_than_binary);
+    utest_run("parse_unary_on_parenthesized",          parse_unary_on_parenthesized);
 }

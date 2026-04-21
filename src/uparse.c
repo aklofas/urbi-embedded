@@ -88,6 +88,16 @@ static AstNode *make_unary(Parser *p, UnaryOp op, AstNode *operand,
     return n;
 }
 
+static AstNode *make_binary(Parser *p, BinaryOp op, AstNode *lhs, AstNode *rhs,
+                            int line, int col) {
+    AstNode *n = make_node(p, AST_BINARY, line, col);
+    if (!n) return NULL;
+    n->u.binary.op = op;
+    n->u.binary.lhs = lhs;
+    n->u.binary.rhs = rhs;
+    return n;
+}
+
 static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
                            int line, int col) {
     AstNode *n = make_node(p, AST_ERROR, line, col);
@@ -102,6 +112,28 @@ static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
 static AstNode *parse_expression(Parser *p, int min_prec);
 static AstNode *parse_prefix(Parser *p);
 static AstNode *parse_atom(Parser *p);
+
+/* Return the left-binding precedence of an infix token, or 0 if not
+   an infix operator (terminates the Pratt climb). */
+static int infix_prec(TokenType t) {
+    switch (t) {
+    case TOK_PLUS:
+    case TOK_MINUS: return 1;
+    case TOK_STAR:
+    case TOK_SLASH: return 2;
+    default:        return 0;
+    }
+}
+
+static BinaryOp infix_binop(TokenType t) {
+    switch (t) {
+    case TOK_PLUS:  return BOP_ADD;
+    case TOK_MINUS: return BOP_SUB;
+    case TOK_STAR:  return BOP_MUL;
+    case TOK_SLASH: return BOP_DIV;
+    default:        return BOP_ADD; /* unreachable when prec > 0 */
+    }
+}
 
 /* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
 
@@ -163,11 +195,28 @@ static AstNode *parse_atom(Parser *p) {
     }
 }
 
-/* --- parse_expression stub: prefix only for now (binary later). --- */
+/* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
 static AstNode *parse_expression(Parser *p, int min_prec) {
-    (void)min_prec;
-    return parse_prefix(p);
+    AstNode *left = parse_prefix(p);
+    if (!left) return NULL;
+    if (left->kind == AST_ERROR) return left;
+
+    for (;;) {
+        Token op = peek(p);
+        int prec = infix_prec(op.type);
+        if (prec < min_prec || prec == 0) break;
+
+        consume(p);
+        AstNode *right = parse_expression(p, prec + 1);
+        if (!right) return NULL;
+        if (right->kind == AST_ERROR) return right;
+
+        left = make_binary(p, infix_binop(op.type), left, right,
+                           op.line, op.col);
+        if (!left) return NULL;
+    }
+    return left;
 }
 
 /* --- Public API. --- */
