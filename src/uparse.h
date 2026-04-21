@@ -4,6 +4,8 @@
 #ifndef UPARSE_H
 #define UPARSE_H
 
+#include <stdbool.h>
+
 #include "uarena.h"
 #include "uast.h"
 #include "ulex.h"

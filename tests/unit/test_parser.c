@@ -81,6 +81,13 @@ static void ctx_destroy(ParseCtx *c) {
 
 /* --- Scaffolding tests. --- */
 
+UTEST(parse_ast_dump_int_smoke) {
+    AstNode n = { AST_INT, 1, 1, { .i = 42 } };
+    char buf[32];
+    ast_dump(&n, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "42");
+}
+
 UTEST(parse_empty_input_returns_null) {
     ParseCtx c;
     ctx_init(&c, "");
@@ -105,4 +112,5 @@ void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
     utest_run("parse_error_name_out_of_range",   parse_error_name_out_of_range);
+    utest_run("parse_ast_dump_int_smoke",        parse_ast_dump_int_smoke);
 }

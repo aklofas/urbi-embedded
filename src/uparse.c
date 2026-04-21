@@ -46,8 +46,11 @@ void uparse_init(Parser *p, Lexer *lex, Arena *arena) {
 }
 
 AstNode *uparse_next_statement(Parser *p) {
-    /* Placeholder — Task 7 onward wires this to the real parse pipeline. */
-    (void)p;
+    if (p->arena->oom) return &uparser_oom_sentinel;
+    /* Pre-use reference for kErrorMessages — removed once make_error
+       starts consulting the table. */
+    (void)kErrorMessages;
+    /* Placeholder — full parse logic lands in follow-up work. */
     return NULL;
 }
 
