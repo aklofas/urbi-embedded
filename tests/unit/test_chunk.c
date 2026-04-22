@@ -842,6 +842,432 @@ UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     uchunk_destroy(&chunk);
 }
 
+/* Custom allocator that fails after `fails_after` successful calls.
+   Mirrors the LimitAlloc type in test_emit.c. */
+typedef struct { size_t ok_calls; size_t fails_after; } ChunkLimitAlloc;
+
+static void *chunk_limit_alloc(void *ptr, size_t nbytes, void *ud) {
+    ChunkLimitAlloc *la = (ChunkLimitAlloc *)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    if (la->ok_calls >= la->fails_after) return NULL;
+    la->ok_calls++;
+    return realloc(ptr, nbytes);
+}
+
+/* --- Additional coverage tests --- */
+
+UTEST(destroy_null_chunk_is_noop) {
+    /* uchunk_destroy(NULL) must not crash — guards the null branch. */
+    uchunk_destroy(NULL);
+    UASSERT(true);
+}
+
+UTEST(chunk_load_error_name_all_codes) {
+    /* Exercise every UChunkLoadError case in uchunk_load_error_name. */
+    UASSERT_EQ(0, strcmp("ULOAD_OK",                  uchunk_load_error_name(ULOAD_OK)));
+    UASSERT_EQ(0, strcmp("ULOAD_BAD_MAGIC",           uchunk_load_error_name(ULOAD_BAD_MAGIC)));
+    UASSERT_EQ(0, strcmp("ULOAD_UNSUPPORTED_VERSION", uchunk_load_error_name(ULOAD_UNSUPPORTED_VERSION)));
+    UASSERT_EQ(0, strcmp("ULOAD_FLAVOR_MISMATCH",     uchunk_load_error_name(ULOAD_FLAVOR_MISMATCH)));
+    UASSERT_EQ(0, strcmp("ULOAD_TRUNCATED",           uchunk_load_error_name(ULOAD_TRUNCATED)));
+    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT_VARINT",      uchunk_load_error_name(ULOAD_CORRUPT_VARINT)));
+    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT_TAG",         uchunk_load_error_name(ULOAD_CORRUPT_TAG)));
+    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT",             uchunk_load_error_name(ULOAD_CORRUPT)));
+    UASSERT_EQ(0, strcmp("ULOAD_OOM",                 uchunk_load_error_name(ULOAD_OOM)));
+    /* Out-of-range code falls through to ULOAD_UNKNOWN sentinel. */
+    UASSERT(uchunk_load_error_name((UChunkLoadError)99) != NULL);
+}
+
+UTEST(deserialize_null_chunk_returns_truncated) {
+    /* uchunk_deserialize(NULL, ...) must not crash — covers the null guard. */
+    uint8_t buf[24];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    UChunkLoadError rc = uchunk_deserialize(NULL, buf, sizeof buf, NULL, 0);
+    UASSERT_EQ(ULOAD_TRUNCATED, rc);
+}
+
+UTEST(deserialize_oom_on_constants_allocation) {
+    /* Cause ULOAD_OOM during the constants chunk_grow by failing after the
+       initial source_name allocation succeeds (first alloc for source_name)
+       but failing on the next call (constants buffer). */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 2);              /* 2 constants -> triggers grow */
+    buf[off++] = (uint8_t)UVAL_INT;
+    off = put_varint_zz(buf, off, 1);
+    buf[off++] = (uint8_t)UVAL_INT;
+    off = put_varint_zz(buf, off, 2);
+    off = put_varint(buf, off, 0);              /* 0 instructions */
+    off = put_varint(buf, off, 0);              /* 0 deltas */
+    off = put_varint(buf, off, 0);              /* 0 abs_lines */
+
+    ChunkLimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 0;                         /* fail on first alloc (constants grow) */
+    Chunk c = {0};
+    c.alloc_fn = chunk_limit_alloc;
+    c.alloc_ud = &la;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_OOM, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_oom_on_instructions_allocation) {
+    /* Cause ULOAD_OOM during the instructions chunk_grow by allowing the
+       constants allocation to succeed (1 call) but failing the next. */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 1);              /* 1 constant — triggers first grow */
+    buf[off++] = (uint8_t)UVAL_INT;
+    off = put_varint_zz(buf, off, 5);
+    off = put_varint(buf, off, 1);              /* 1 instruction — triggers second grow */
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        const uint32_t ins = (uint32_t)OP_RET;
+        buf[off + 0] = (uint8_t)(ins & 0xFF);
+        buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+        buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+        buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+        off += 4;
+    }
+    off = put_varint(buf, off, 1);
+    buf[off++] = (uint8_t)(int8_t)-128;
+    off = put_varint(buf, off, 1);
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 1);
+
+    /* Allow only the first allocation (constants), fail the second (instructions). */
+    ChunkLimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 1;
+    Chunk c = {0};
+    c.alloc_fn = chunk_limit_alloc;
+    c.alloc_ud = &la;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_OOM, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_loads_float_constant) {
+    /* Exercise the UVAL_FLOAT branch in the constants decode path. */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 1);              /* 1 constant: UVAL_FLOAT */
+    buf[off++] = (uint8_t)UVAL_FLOAT;
+    /* Write a float value (3.14) as raw bytes matching URBI_FLOAT_TYPE. */
+    if (URBI_FLOAT_TYPE == 8) {
+        double fval = 3.14;
+        unsigned char fbytes[8];
+        memcpy(fbytes, &fval, 8);
+        for (i = 0; i < 8; i++) buf[off++] = fbytes[i];
+    } else {
+        float fval = 3.14f;
+        unsigned char fbytes[4];
+        memcpy(fbytes, &fval, 4);
+        for (i = 0; i < 4; i++) buf[off++] = fbytes[i];
+    }
+    /* n_instructions = 0; then write 4-byte alignment padding if needed. */
+    off = put_varint(buf, off, 0);
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    off = put_varint(buf, off, 0);              /* n_deltas = 0 */
+    off = put_varint(buf, off, 0);              /* n_abs_lines = 0 */
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)1, c.const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, c.constants[0].kind);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
+    /* UVAL_NIL/UVAL_BOOL/UVAL_STR constants have no payload at M1.
+       The deserializer rejects them with ULOAD_CORRUPT_TAG via the else branch
+       (they pass the > UVAL_STR range check but are neither INT nor FLOAT). */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 1);              /* 1 constant */
+    buf[off++] = (uint8_t)UVAL_NIL;            /* kind 0 — no INT or FLOAT, hits else */
+    off = put_varint(buf, off, 0);              /* padding */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+    Chunk c = {0};
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT_TAG, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_truncated_at_line_deltas) {
+    /* Build a valid chunk with 1 instruction but truncate the buffer before
+       the line_deltas data — should return ULOAD_TRUNCATED. */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                             /* max_reg */
+    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 0);              /* 0 constants */
+    off = put_varint(buf, off, 1);              /* 1 instruction */
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        const uint32_t ins = (uint32_t)OP_RET;
+        buf[off + 0] = (uint8_t)(ins & 0xFF);
+        buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+        buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+        buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+        off += 4;
+    }
+    /* Write n_deltas=1 but truncate before writing the actual delta byte. */
+    off = put_varint(buf, off, 1);              /* n_deltas = 1 */
+    /* Do NOT write the delta byte; pass off as size so buffer ends here. */
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_TRUNCATED, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_oom_on_abs_lines_allocation) {
+    /* Cause ULOAD_OOM during the abs_lines chunk_grow by allowing constants and
+       instructions and line_deltas allocations to succeed but failing abs_lines. */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* 0 constants */
+    off = put_varint(buf, off, 1);              /* 1 instruction */
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        const uint32_t ins = (uint32_t)OP_RET;
+        buf[off + 0] = (uint8_t)(ins & 0xFF);
+        buf[off + 1] = 0; buf[off + 2] = 0; buf[off + 3] = 0;
+        off += 4;
+    }
+    /* 1 delta (sentinel), 1 abs_line */
+    off = put_varint(buf, off, 1);
+    buf[off++] = (uint8_t)(int8_t)-128;
+    off = put_varint(buf, off, 1);              /* n_abs = 1 */
+    off = put_varint(buf, off, 0);              /* abs_line[0].pc = 0 */
+    off = put_varint(buf, off, 1);              /* abs_line[0].line = 1 */
+
+    /* Allocation order: (1) instructions grow, (2) line_deltas fresh alloc,
+       (3) abs_lines chunk_grow — fail the 3rd. */
+    ChunkLimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 2;
+    Chunk c = {0};
+    c.alloc_fn = chunk_limit_alloc;
+    c.alloc_ud = &la;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_OOM, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
+    /* abs_line pc >= instr_count should return ULOAD_CORRUPT. */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 1);              /* 1 instruction */
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        const uint32_t ins = (uint32_t)OP_RET;
+        buf[off + 0] = (uint8_t)(ins & 0xFF);
+        buf[off + 1] = 0; buf[off + 2] = 0; buf[off + 3] = 0;
+        off += 4;
+    }
+    off = put_varint(buf, off, 1);
+    buf[off++] = (uint8_t)(int8_t)-128;
+    off = put_varint(buf, off, 1);              /* 1 abs_line */
+    off = put_varint(buf, off, 99);             /* pc=99, out of range (instr_count=1) */
+    off = put_varint(buf, off, 5);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "out of range") != NULL || strstr(errmsg, "pc") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_truncated_at_metadata_max_reg) {
+    /* Buffer exactly 24 bytes (valid header but no body) — triggers the
+       "truncated at metadata" guard at the max_reg read. */
+    uint8_t buf[24];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    Chunk c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, sizeof buf, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_TRUNCATED, rc);
+    UASSERT(strstr(errmsg, "truncated") != NULL || strstr(errmsg, "metadata") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_chunk_grow_reuses_existing_cap) {
+    /* Deserialize two chunks from the same buffer back-to-back, reusing
+       the existing constants buffer — triggers the chunk_grow "cap >= new_cap"
+       early-return branch (when cap is already large enough). */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    /* Build a chunk with 2 constants. */
+    int64_t cv[] = {1, 2};
+    const uint32_t instrs[] = { uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    size_t total = build_chunk_bytes(buf, 0, cv, 2, instrs, 1);
+
+    /* First deserialize. */
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c.const_count);
+    /* c now has const_cap >= 8 (first grow starts at 8). */
+
+    /* Reset counts but keep the buffers allocated. */
+    c.const_count = 0;
+    c.instr_count = 0;
+    c.abs_line_count = 0;
+    if (c.line_deltas != NULL) {
+        UChunkAllocFn alloc = c.alloc_fn != NULL ? c.alloc_fn
+                            : (UChunkAllocFn)NULL; /* stdlib handled by destroy later */
+        (void)alloc; /* just keep the pointer, don't free now */
+        free(c.line_deltas); c.line_deltas = NULL;
+    }
+
+    /* Second deserialize into the same chunk — chunk_grow for constants will
+       see const_cap >= 2, triggering the "already large enough" branch. */
+    rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c.const_count);
+
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_trailing_bytes) {
+    /* A valid chunk followed by extra bytes should return ULOAD_CORRUPT. */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    const uint32_t instrs[] = { uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 1);
+    /* Append extra garbage byte. */
+    buf[total] = 0xAB;
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total + 1, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "trailing") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_register_b_gt_max_reg) {
+    /* OP_ADD with B > max_reg should return ULOAD_CORRUPT. */
+    uint8_t buf[256];
+    /* max_reg=0, ADD with B=5 > max_reg */
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_ADD, 0, 5, 0),       /* B=5 > max_reg=0 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "B=") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_register_c_gt_max_reg) {
+    /* OP_ADD with C > max_reg should return ULOAD_CORRUPT. */
+    uint8_t buf[256];
+    /* max_reg=0, ADD with B=0 ok, C=5 > max_reg */
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_ADD, 0, 0, 5),       /* C=5 > max_reg=0 */
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "C=") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_non_monotonic_abs_lines) {
+    /* Build a chunk with two abs_line checkpoints where the second has a
+       lower pc than the first — should return ULOAD_CORRUPT. */
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 1;                             /* max_reg=1 */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* 0 constants */
+    /* 2 instructions */
+    off = put_varint(buf, off, 2);
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        int j;
+        for (j = 0; j < 2; j++) {
+            const uint32_t ins = (uint32_t)OP_RET;
+            buf[off + 0] = (uint8_t)(ins & 0xFF);
+            buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+            buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+            buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+            off += 4;
+        }
+    }
+    /* 2 deltas */
+    off = put_varint(buf, off, 2);
+    buf[off++] = (uint8_t)(int8_t)-128;
+    buf[off++] = (uint8_t)(int8_t)-128;
+    /* 2 abs_line checkpoints — second pc (0) <= first pc (1): non-monotonic */
+    off = put_varint(buf, off, 2);
+    off = put_varint(buf, off, 1);              /* abs_line[0].pc = 1 */
+    off = put_varint(buf, off, 10);
+    off = put_varint(buf, off, 0);              /* abs_line[1].pc = 0 <= prev=1: corrupt */
+    off = put_varint(buf, off, 20);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "monotonic") != NULL);
+    uchunk_destroy(&c);
+}
+
 void test_chunk_suite(void);
 
 void test_chunk_suite(void) {
@@ -914,4 +1340,36 @@ void test_chunk_suite(void) {
               roundtrip_ast_binary_1_plus_2);
     utest_run("roundtrip AST_UNARY -5 emit-serialize-deserialize",
               roundtrip_ast_unary_neg_5);
+    utest_run("destroy NULL chunk is a no-op",
+              destroy_null_chunk_is_noop);
+    utest_run("chunk load error name covers all codes",
+              chunk_load_error_name_all_codes);
+    utest_run("deserialize NULL chunk returns ULOAD_TRUNCATED",
+              deserialize_null_chunk_returns_truncated);
+    utest_run("deserialize OOM on constants allocation returns ULOAD_OOM",
+              deserialize_oom_on_constants_allocation);
+    utest_run("deserialize OOM on instructions allocation returns ULOAD_OOM",
+              deserialize_oom_on_instructions_allocation);
+    utest_run("deserialize loads UVAL_FLOAT constant",
+              deserialize_loads_float_constant);
+    utest_run("deserialize rejects non-monotonic abs_line checkpoints",
+              deserialize_rejects_non_monotonic_abs_lines);
+    utest_run("deserialize rejects NIL/BOOL/STR constant tag as corrupt",
+              deserialize_rejects_nil_bool_str_constant_tag);
+    utest_run("deserialize truncated at line_deltas returns ULOAD_TRUNCATED",
+              deserialize_truncated_at_line_deltas);
+    utest_run("deserialize OOM on abs_lines allocation returns ULOAD_OOM",
+              deserialize_oom_on_abs_lines_allocation);
+    utest_run("deserialize rejects abs_line pc out of range",
+              deserialize_rejects_abs_line_pc_out_of_range);
+    utest_run("deserialize rejects trailing bytes after syncline section",
+              deserialize_rejects_trailing_bytes);
+    utest_run("verifier rejects register B > max_reg",
+              verifier_rejects_register_b_gt_max_reg);
+    utest_run("verifier rejects register C > max_reg",
+              verifier_rejects_register_c_gt_max_reg);
+    utest_run("deserialize truncated at metadata max_reg returns ULOAD_TRUNCATED",
+              deserialize_truncated_at_metadata_max_reg);
+    utest_run("deserialize chunk grow reuses existing buffer cap",
+              deserialize_chunk_grow_reuses_existing_cap);
 }

@@ -473,6 +473,298 @@ UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
     uchunk_destroy(&chunk);
 }
 
+/* --- Additional coverage tests --- */
+
+UTEST(uemit_error_name_covers_all_codes) {
+    /* Exercise every EmitError case in uemit_error_name. */
+    UASSERT_EQ(0, strcmp("EMIT_OK",                 uemit_error_name(EMIT_OK)));
+    UASSERT_EQ(0, strcmp("EMIT_OOM",                uemit_error_name(EMIT_OOM)));
+    UASSERT_EQ(0, strcmp("EMIT_AST_ERROR",          uemit_error_name(EMIT_AST_ERROR)));
+    UASSERT_EQ(0, strcmp("EMIT_UNSUPPORTED_AST",    uemit_error_name(EMIT_UNSUPPORTED_AST)));
+    UASSERT_EQ(0, strcmp("EMIT_REG_EXHAUSTED",      uemit_error_name(EMIT_REG_EXHAUSTED)));
+    UASSERT_EQ(0, strcmp("EMIT_CONSTANT_POOL_FULL", uemit_error_name(EMIT_CONSTANT_POOL_FULL)));
+    UASSERT_EQ(0, strcmp("EMIT_LINE_OVERFLOW",      uemit_error_name(EMIT_LINE_OVERFLOW)));
+    UASSERT_EQ(0, strcmp("EMIT_FINISHED",           uemit_error_name(EMIT_FINISHED)));
+    /* Out-of-range falls through to EMIT_UNKNOWN. */
+    UASSERT(uemit_error_name((EmitError)99) != NULL);
+}
+
+UTEST(disassemble_with_neg_instruction_shows_neg) {
+    /* Emit a NEG instruction so the OP_NEG case in uemit_disassemble is hit. */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    AstNode operand = {0};
+    operand.kind = AST_INT; operand.u.i = 7; operand.line = 1;
+    AstNode neg = {0};
+    neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
+    neg.line = 1;
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &neg));
+
+    char buf[256];
+    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "NEG") != NULL);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
+    /* Use a constant value >= 128 so that varint_write_u and varint_write_zz
+       emit multi-byte (continuation-bit) encoded varints. */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    AstNode n = {0};
+    n.kind = AST_INT; n.u.i = 1000; n.line = 1;  /* 1000 > 63, zigzag = 2000 > 127 */
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+
+    /* Serialize and round-trip to confirm multi-byte varint path works. */
+    ptrdiff_t need = uchunk_serialize(&chunk, NULL, 0);
+    UASSERT((ptrdiff_t)0 < need);
+
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&chunk, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    Chunk dst = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)1, dst.const_count);
+    UASSERT_EQ((int64_t)1000, dst.constants[0].v.i);
+
+    free(buf);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+    uchunk_destroy(&dst);
+}
+
+UTEST(disassemble_chunk_with_all_arithmetic_opcodes) {
+    /* Emit ADD, SUB, MUL, DIV to exercise all opname() paths.
+       Also exercises the "; constants:" section of the disassembler
+       which is reached by any instruction chunk. */
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+
+    /* Each statement emits one binary op. */
+    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+
+    AstNode sub = {0};
+    sub.kind = AST_BINARY; sub.u.binary.op = BOP_SUB;
+    sub.u.binary.lhs = &lhs; sub.u.binary.rhs = &rhs; sub.line = 1;
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &sub));
+
+    AstNode mul = {0};
+    mul.kind = AST_BINARY; mul.u.binary.op = BOP_MUL;
+    mul.u.binary.lhs = &lhs; mul.u.binary.rhs = &rhs; mul.line = 1;
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &mul));
+
+    AstNode div = {0};
+    div.kind = AST_BINARY; div.u.binary.op = BOP_DIV;
+    div.u.binary.lhs = &lhs; div.u.binary.rhs = &rhs; div.line = 1;
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &div));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    char buf[1024];
+    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "SUB")  != NULL);
+    UASSERT(strstr(buf, "MUL")  != NULL);
+    UASSERT(strstr(buf, "DIV")  != NULL);
+    UASSERT(strstr(buf, "RET")  != NULL);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(serialize_chunk_with_float_constant_round_trips) {
+    /* Manually build a chunk with a UVAL_FLOAT constant and serialize/deserialize
+       it to exercise the UVAL_FLOAT branches in chunk_wire_size and uchunk_serialize. */
+    Chunk chunk = {0};
+
+    /* Manually insert a UVAL_FLOAT constant (bypassing the emitter, which only
+       produces INT constants at M1). */
+    chunk.constants = (UConst *)malloc(sizeof(UConst));
+    chunk.const_cap = 1;
+    chunk.const_count = 1;
+    chunk.constants[0].kind = (uint8_t)UVAL_FLOAT;
+    {
+        int p;
+        for (p = 0; p < 7; p++) chunk.constants[0]._pad[p] = 0;
+    }
+#if URBI_FLOAT_TYPE == 8
+    chunk.constants[0].v.f = 2.718281828;
+#else
+    chunk.constants[0].v.f = 2.718f;
+#endif
+
+    /* Add a RET instruction and synclines so the chunk is valid. */
+    chunk.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    chunk.instr_cap = 1;
+    chunk.instr_count = 1;
+    chunk.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    chunk.line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    chunk.line_deltas[0] = (int8_t)-128;
+    chunk.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
+    chunk.abs_line_cap = 1;
+    chunk.abs_line_count = 1;
+    chunk.abs_lines[0].pc = 0;
+    chunk.abs_lines[0].line = 1;
+    chunk.max_reg = 0;
+
+    ptrdiff_t need = uchunk_serialize(&chunk, NULL, 0);
+    UASSERT((ptrdiff_t)0 < need);
+
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&chunk, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    Chunk dst = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)1, dst.const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, dst.constants[0].kind);
+
+    /* Disassemble the float chunk — exercises the ";   K%zu = ?" fallback
+       in the constant-pool dump (FLOAT is not UVAL_INT). */
+    char disbuf[256];
+    size_t disn = uemit_disassemble(&dst, disbuf, sizeof disbuf);
+    UASSERT(disn > 0);
+    UASSERT(strstr(disbuf, "K0 = ?") != NULL);
+
+    free(buf);
+    uchunk_destroy(&chunk);
+    uchunk_destroy(&dst);
+}
+
+UTEST(disassemble_chunk_with_move_instruction_shows_move) {
+    /* OP_MOVE falls through to the default: case in uemit_disassemble,
+       calling opname(OP_MOVE) — covers that branch in opname(). */
+    Chunk chunk = {0};
+    const int64_t consts[] = { 42 };
+    const uint32_t instrs[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 0),         /* R0 = 42 */
+        uinstr_enc_abc(OP_MOVE, 1, 0, 0),       /* R1 = R0 */
+        uinstr_enc_abc(OP_RET, 1, 0, 0)
+    };
+    /* Build a chunk directly. */
+    chunk.constants  = (UConst *)malloc(sizeof(UConst));
+    chunk.const_cap  = 1; chunk.const_count = 1;
+    chunk.constants[0].kind = (uint8_t)UVAL_INT;
+    {
+        int p;
+        for (p = 0; p < 7; p++) chunk.constants[0]._pad[p] = 0;
+    }
+    chunk.constants[0].v.i = consts[0];
+    chunk.instructions = (uint32_t *)malloc(sizeof(instrs));
+    chunk.instr_cap = 3; chunk.instr_count = 3;
+    {
+        int j;
+        for (j = 0; j < 3; j++) chunk.instructions[j] = instrs[j];
+    }
+    chunk.line_deltas = (int8_t *)malloc(3);
+    chunk.line_deltas[0] = (int8_t)-128;
+    chunk.line_deltas[1] = 0;
+    chunk.line_deltas[2] = 0;
+    chunk.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
+    chunk.abs_line_cap = 1; chunk.abs_line_count = 1;
+    chunk.abs_lines[0].pc = 0; chunk.abs_lines[0].line = 1;
+    chunk.max_reg = 1;
+
+    char buf[512];
+    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "MOVE") != NULL);
+
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
+    /* When the line delta is <= INT8_MIN (-128) — i.e. going more than 127
+       lines *backward* — a new abs_line checkpoint is emitted instead of
+       a delta.  Tests the `d <= INT8_MIN` branch in emit_instr. */
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+
+    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
+    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    /* Both statements trigger abs_line checkpoints: first due to "first instruction",
+       second due to delta overflow (|delta| > 127). */
+    UASSERT_EQ((size_t)2, chunk.abs_line_count);
+    UASSERT_EQ((uint32_t)500, chunk.abs_lines[0].line);
+    UASSERT_EQ((uint32_t)1,   chunk.abs_lines[1].line);
+    UASSERT_EQ((int8_t)-128, chunk.line_deltas[1]);  /* sentinel on second LOADK */
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_oom_in_push_abs_line) {
+    /* Drive OOM in emit_push_abs_line by allowing the constant-pool alloc
+       and the instruction alloc to succeed, then failing the abs_lines alloc.
+       The first instruction always triggers emit_push_abs_line.
+       Allocation order: (1) constants grow, (2) instructions grow,
+       (3) abs_lines grow — fail this one. */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    LimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 2;                         /* allow 2, fail 3rd (abs_lines) */
+    chunk.alloc_fn = limit_alloc;
+    chunk.alloc_ud = &la;
+
+    AstNode n = {0};
+    n.kind = AST_INT; n.u.i = 1; n.line = 1;
+    EmitError rc = emit_single_statement(&chunk, &arena, &n);
+    UASSERT_EQ(EMIT_OOM, rc);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_oom_in_push_line_delta) {
+    /* Drive OOM in emit_push_line_delta by allowing constant-pool, instruction,
+       and abs_lines allocs to succeed, then failing the line_deltas alloc.
+       Allocation order: (1) constants grow, (2) instructions grow,
+       (3) abs_lines grow, (4) line_deltas alloc — fail this one. */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    LimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 3;                         /* allow 3, fail 4th (line_deltas) */
+    chunk.alloc_fn = limit_alloc;
+    chunk.alloc_ud = &la;
+
+    AstNode n = {0};
+    n.kind = AST_INT; n.u.i = 1; n.line = 1;
+    EmitError rc = emit_single_statement(&chunk, &arena, &n);
+    UASSERT_EQ(EMIT_OOM, rc);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -516,4 +808,22 @@ void test_emit_suite(void) {
               disassemble_1_plus_2_produces_recognizable_text);
     utest_run("disassemble truncates cleanly when buf is too small",
               disassemble_truncates_cleanly_when_buf_is_too_small);
+    utest_run("uemit_error_name covers all codes",
+              uemit_error_name_covers_all_codes);
+    utest_run("disassemble with NEG instruction shows NEG",
+              disassemble_with_neg_instruction_shows_neg);
+    utest_run("serialize with large constant exercises multi-byte varint",
+              serialize_with_large_constant_exercises_multibyte_varint);
+    utest_run("emit OOM in push_abs_line returns EMIT_OOM",
+              emit_oom_in_push_abs_line);
+    utest_run("emit OOM in push_line_delta returns EMIT_OOM",
+              emit_oom_in_push_line_delta);
+    utest_run("disassemble chunk with all arithmetic opcodes",
+              disassemble_chunk_with_all_arithmetic_opcodes);
+    utest_run("serialize chunk with UVAL_FLOAT constant round-trips",
+              serialize_chunk_with_float_constant_round_trips);
+    utest_run("disassemble chunk with MOVE instruction shows MOVE",
+              disassemble_chunk_with_move_instruction_shows_move);
+    utest_run("emit syncline: negative overflow triggers new abs_line checkpoint",
+              emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint);
 }
