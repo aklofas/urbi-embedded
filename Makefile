@@ -123,7 +123,7 @@ clean:
 # markdown-link-check in PATH; install with:
 #     npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
 
-DOCS_LINT_TARGETS := docs/**/*.md README.md CONTRIBUTING.md CHANGELOG.md
+DOCS_LINT_TARGETS := 'docs/**/*.md' README.md CONTRIBUTING.md CHANGELOG.md
 
 docs-check: docs-check-tools
 	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
