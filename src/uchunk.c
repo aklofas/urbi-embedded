@@ -2,6 +2,7 @@
 /* Bytecode Chunk deserializer + verifier + destroy.  Freestanding. */
 
 #include "uchunk.h"
+#include "uchunk_internal.h"
 
 /* Local zero-fill.  Replaces memset so uchunk.c compiles without a hosted
    <string.h>.  volatile prevents GCC/Clang from recognizing the loop and
@@ -34,6 +35,42 @@ static UChunkAllocFn chunk_allocator(const Chunk *c) {
        error and chunk_grow will propagate it as OOM. */
     return c->alloc_fn;
 #endif
+}
+
+/* --- Varint decode helpers --- */
+
+/* LEB128-style unsigned varint decoder.  7 payload bits per byte; top bit
+   is the continuation flag.  Max 10 bytes for a uint64. */
+UChunkLoadError varint_decode_u(const uint8_t *buf, size_t size,
+                                uint64_t *v, size_t *consumed) {
+    uint64_t result = 0;
+    size_t i = 0;
+    unsigned shift = 0;
+    for (i = 0; i < size; i++) {
+        uint8_t b = buf[i];
+        result |= (uint64_t)(b & 0x7Fu) << shift;
+        if ((b & 0x80u) == 0u) {
+            *v = result;
+            *consumed = i + 1;
+            return ULOAD_OK;
+        }
+        shift += 7;
+        if (shift > 63u) {
+            return ULOAD_CORRUPT_VARINT;
+        }
+    }
+    return ULOAD_TRUNCATED;
+}
+
+/* Zigzag-signed varint decoder. */
+UChunkLoadError varint_decode_zz(const uint8_t *buf, size_t size,
+                                 int64_t *v, size_t *consumed) {
+    uint64_t u = 0;
+    UChunkLoadError rc = varint_decode_u(buf, size, &u, consumed);
+    if (rc != ULOAD_OK) return rc;
+    /* zigzag decode: (u >> 1) ^ -(u & 1) */
+    *v = (int64_t)((u >> 1) ^ (uint64_t)(-(int64_t)(u & 1u)));
+    return ULOAD_OK;
 }
 
 /* --- Public API --- */
