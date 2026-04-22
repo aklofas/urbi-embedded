@@ -23,9 +23,21 @@ static void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
     return realloc(ptr, nbytes);
 }
 
+#endif  /* __STDC_HOSTED__ */
+
+/* Return the allocator to use for chunk c.  Available in both hosted and
+   freestanding builds so that emit_grow (below) can call it unconditionally.
+   In freestanding builds the stdlib fallback is absent; the caller must have
+   supplied alloc_fn, and emit_grow will return false if it is NULL. */
 static UChunkAllocFn emit_alloc_for(const Chunk *c) {
+#if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
+#else
+    return c->alloc_fn;   /* freestanding: caller must supply */
+#endif
 }
+
+#if __STDC_HOSTED__
 
 /* Deep-copy source_name into the chunk using the chunk's allocator.
    Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL. */
