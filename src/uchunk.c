@@ -395,7 +395,9 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
                 }
             } else {
                 uint8_t b = uinstr_b(ins);
-                if (b > chunk->max_reg) {
+                /* B is unused in OP_RET (only A carries the return register);
+                   accept arbitrary B values, same treatment as unused C fields. */
+                if (op != (uint8_t)OP_RET && b > chunk->max_reg) {
                     set_errmsg(errmsg, errcap,
                                "register B=%u > max_reg=%u at pc %zu",
                                (unsigned)b, (unsigned)chunk->max_reg, vi);

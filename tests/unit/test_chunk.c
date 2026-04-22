@@ -634,6 +634,22 @@ UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
     uchunk_destroy(&c);
 }
 
+UTEST(verifier_accepts_ret_with_arbitrary_b_and_c) {
+    uint8_t buf[128];
+    const int64_t consts[] = { 5 };
+    const uint32_t instrs[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 0),
+        /* RET R0 with B=99, C=88 (both unused, must be accepted) */
+        uinstr_enc_abc(OP_RET, 0, 99, 88)
+    };
+    size_t total = build_chunk_bytes(buf, 0, consts, 1, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    uchunk_destroy(&c);
+}
+
 UTEST(verifier_accepts_hand_crafted_op_move_chunk) {
     uint8_t buf[256];
     const int64_t consts[] = { 42 };
@@ -707,6 +723,8 @@ void test_chunk_suite(void) {
               verifier_rejects_last_instruction_not_ret);
     utest_run("verifier accepts unused-operand arbitrary bytes",
               verifier_accepts_unused_operand_arbitrary_bytes);
+    utest_run("verifier accepts RET with arbitrary B and C",
+              verifier_accepts_ret_with_arbitrary_b_and_c);
     utest_run("verifier accepts hand-crafted OP_MOVE chunk",
               verifier_accepts_hand_crafted_op_move_chunk);
 }
