@@ -19,7 +19,7 @@ Four priorities shape every style decision:
 
 ## File layout
 
-```
+```text
 src/
 ├── ulex.h          Public lexer header (only public header for its subsystem)
 ├── ulex.c          Lexer implementation

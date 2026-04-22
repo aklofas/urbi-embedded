@@ -1,0 +1,27 @@
+# urbi-embedded docs — markdownlint ruleset.
+#
+# Rules not listed here fall back to markdownlint defaults.
+
+# MD013 (line-length) — off; prose line-wrap is editorial, not mechanical.
+MD013: false
+
+# MD025 (single H1 at top) — on; Pandoc concatenation assumes this shape.
+MD025:
+  front_matter_title: ""
+
+# MD040 (fenced code blocks must have a language tag) — on.
+MD040: true
+
+# MD033 (inline HTML) — allow the test-extraction comment `<!-- test: ... -->`.
+MD033:
+  allowed_elements: []
+  # Comments pass regardless of this list; the rule is for tags like <div>.
+
+# MD041 (first line must be H1) — on; pairs with MD025.
+MD041: true
+
+# Heading capitalization and style — unforced. Match context.
+MD003: false
+
+# Ordered-list increment style — unforced.
+MD029: false

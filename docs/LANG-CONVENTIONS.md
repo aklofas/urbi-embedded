@@ -91,7 +91,7 @@ Method list (all on `Integer`, with matching C-level intrinsics):
 | Method | Meaning | C equivalent |
 |---|---|---|
 | `bitand(Integer) → Integer` | Bitwise AND | `a & b` |
-| `bitor(Integer) → Integer` | Bitwise OR | `a | b` |
+| `bitor(Integer) → Integer` | Bitwise OR | `a \| b` |
 | `bitxor(Integer) → Integer` | Bitwise XOR | `a ^ b` |
 | `bitnot() → Integer` | Bitwise NOT | `~a` |
 | `bitshl(Integer) → Integer` | Left shift | `a << b` |
@@ -121,7 +121,7 @@ Equality compares numerical value, not runtime tag. `isA(Number)` is true for bo
 
 ### 1.6 Prototype structure
 
-```
+```text
 Number (abstract supertype prototype)
 ├── Integer
 │   └── methods: bitand, bitor, bitxor, shl, shr, bnot, toFloat, ...
@@ -276,7 +276,7 @@ urbi-embedded bytecode is per-ABI-flavor, not portable. The header carries an ex
 
 Every `.urb` bytecode file starts with a magic number, a version byte, and the 8-byte format descriptor:
 
-```
+```text
 offset 0     magic          4 bytes    "URBI"  (0x55 0x52 0x42 0x49)
 offset 4     version        1 byte     bytecode format version (v1: 0x01)
 offset 5     (reserved)     3 bytes    padding to 8-byte alignment (zero)
@@ -427,7 +427,7 @@ The public C API is split across two headers with a strict rule: **aux must be s
 
 ### 6.1 Shape
 
-```
+```text
 src/urbi.h       — core runtime API       (target: < 80 functions at v1)
 src/urbi.c       — core implementation     (one TU)
 src/urbi_aux.h   — convenience layer       (target: ~40–60 functions by v1.x)

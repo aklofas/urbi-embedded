@@ -115,4 +115,32 @@ lint: tidy cppcheck analyzer
 clean:
 	rm -rf build compile_commands.json
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint
+# ---- documentation verification ------------------------------------------
+#
+# docs-check runs markdown lint + intra-repo link checking over docs/ and the
+# top-level README / CONTRIBUTING / CHANGELOG. Gated in CI via the docs-check
+# job (see .github/workflows/ci.yml). Requires markdownlint-cli2 and
+# markdown-link-check in PATH; install with:
+#     npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
+
+DOCS_LINT_TARGETS := docs/**/*.md README.md CONTRIBUTING.md CHANGELOG.md
+
+docs-check: docs-check-tools
+	markdownlint-cli2 --config .markdownlint.yaml $(DOCS_LINT_TARGETS)
+	@echo "--- link-check ---"
+	@find docs README.md CONTRIBUTING.md CHANGELOG.md -name '*.md' -type f \
+	    -exec markdown-link-check --quiet --config .markdown-link-check.json {} +
+
+docs-check-tools:
+	@command -v markdownlint-cli2 >/dev/null 2>&1 || { \
+	    echo "error: markdownlint-cli2 not found in PATH"; \
+	    echo "install: npm install -g markdownlint-cli2@0.13"; \
+	    exit 1; \
+	}
+	@command -v markdown-link-check >/dev/null 2>&1 || { \
+	    echo "error: markdown-link-check not found in PATH"; \
+	    echo "install: npm install -g markdown-link-check@3.12"; \
+	    exit 1; \
+	}
+
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools

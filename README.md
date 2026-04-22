@@ -37,7 +37,7 @@ Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers,
 
 ## Source layout
 
-```
+```text
 src/urbi.h        public top-level C API
 src/urbi.c        top-level glue, version
 src/ulex.h        public lexer API
