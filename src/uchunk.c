@@ -364,6 +364,68 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
         return ULOAD_CORRUPT;
     }
 
+    /* --- verifier sweep --- */
+    if (chunk->instr_count > 0u) {
+        size_t vi;
+        for (vi = 0; vi < chunk->instr_count; vi++) {
+            uint32_t ins;
+            uint8_t  op;
+            uint8_t  a;
+            ins = chunk->instructions[vi];
+            op  = (uint8_t)uinstr_op(ins);
+            if (op >= (uint8_t)OP_MAX) {
+                set_errmsg(errmsg, errcap,
+                           "corrupt opcode %u at pc %zu", (unsigned)op, vi);
+                return ULOAD_CORRUPT;
+            }
+            a = uinstr_a(ins);
+            if (a > chunk->max_reg) {
+                set_errmsg(errmsg, errcap,
+                           "register A=%u > max_reg=%u at pc %zu",
+                           (unsigned)a, (unsigned)chunk->max_reg, vi);
+                return ULOAD_CORRUPT;
+            }
+            if (op == (uint8_t)OP_LOADK) {
+                uint16_t bx = uinstr_bx(ins);
+                if ((size_t)bx >= chunk->const_count) {
+                    set_errmsg(errmsg, errcap,
+                               "LOADK Bx=%u out of range (pool size %zu) at pc %zu",
+                               (unsigned)bx, chunk->const_count, vi);
+                    return ULOAD_CORRUPT;
+                }
+            } else {
+                uint8_t b = uinstr_b(ins);
+                if (b > chunk->max_reg) {
+                    set_errmsg(errmsg, errcap,
+                               "register B=%u > max_reg=%u at pc %zu",
+                               (unsigned)b, (unsigned)chunk->max_reg, vi);
+                    return ULOAD_CORRUPT;
+                }
+                /* C is only meaningful for ADD/SUB/MUL/DIV; MOVE/NEG/RET leave
+                   it unused.  Only range-check C for the opcodes that use it —
+                   arbitrary C values in unused fields are intentionally accepted. */
+                if (op == (uint8_t)OP_ADD || op == (uint8_t)OP_SUB
+                 || op == (uint8_t)OP_MUL || op == (uint8_t)OP_DIV) {
+                    uint8_t c = uinstr_c(ins);
+                    if (c > chunk->max_reg) {
+                        set_errmsg(errmsg, errcap,
+                                   "register C=%u > max_reg=%u at pc %zu",
+                                   (unsigned)c, (unsigned)chunk->max_reg, vi);
+                        return ULOAD_CORRUPT;
+                    }
+                }
+            }
+        }
+        /* Last instruction must be OP_RET. */
+        {
+            uint32_t last = chunk->instructions[chunk->instr_count - 1u];
+            if (uinstr_op(last) != OP_RET) {
+                set_errmsg(errmsg, errcap, "last instruction is not OP_RET");
+                return ULOAD_CORRUPT;
+            }
+        }
+    }
+
     return ULOAD_OK;
 }
 

@@ -509,6 +509,148 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     uchunk_destroy(&c);
 }
 
+/* --- build_chunk_bytes: constructs a well-formed chunk byte blob ---
+   Header + metadata + constants (UVAL_INT) + aligned instructions + synclines.
+   Returns total bytes written.  buf must be at least 256 bytes. */
+static size_t build_chunk_bytes(uint8_t *buf,
+                                uint8_t max_reg,
+                                const int64_t *const_vals, size_t n_const,
+                                const uint32_t *instrs, size_t n_instr) {
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = max_reg;
+    off = put_varint(buf, off, 0);              /* empty source_name */
+    off = put_varint(buf, off, (uint64_t)n_const);
+    size_t ci;
+    for (ci = 0; ci < n_const; ci++) {
+        buf[off++] = (uint8_t)UVAL_INT;
+        off = put_varint_zz(buf, off, const_vals[ci]);
+    }
+    off = put_varint(buf, off, (uint64_t)n_instr);
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    size_t ii;
+    for (ii = 0; ii < n_instr; ii++) {
+        buf[off++] = (uint8_t)(instrs[ii] & 0xFF);
+        buf[off++] = (uint8_t)((instrs[ii] >> 8)  & 0xFF);
+        buf[off++] = (uint8_t)((instrs[ii] >> 16) & 0xFF);
+        buf[off++] = (uint8_t)((instrs[ii] >> 24) & 0xFF);
+    }
+    /* synclines: n_deltas = n_instr (all zero), 0 abs_lines */
+    off = put_varint(buf, off, (uint64_t)n_instr);
+    size_t di;
+    for (di = 0; di < n_instr; di++) buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    return off;
+}
+
+/* --- Task 7: Loader verifier tests --- */
+
+UTEST(verifier_accepts_minimal_ret_only_chunk) {
+    uint8_t buf[256];
+    const uint32_t instrs[] = { uinstr_enc_abc(OP_RET, 0, 0, 0) };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 1);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_opcode_ge_op_max) {
+    uint8_t buf[256];
+    const uint32_t instrs[] = {
+        200u,                                   /* op=200, invalid */
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "opcode") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_register_gt_max_reg) {
+    uint8_t buf[256];
+    /* max_reg=0 but instruction references A=5 */
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_MOVE, 5, 0, 0),
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "register") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
+    uint8_t buf[256];
+    const int64_t consts[] = { 1 };             /* only K[0] exists */
+    const uint32_t instrs[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 5u),        /* Bx=5, out of range */
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, consts, 1, instrs, 2);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "LOADK") != NULL || strstr(errmsg, "Bx") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_rejects_last_instruction_not_ret) {
+    uint8_t buf[256];
+    const uint32_t instrs[] = {
+        uinstr_enc_abc(OP_ADD, 0, 0, 0)         /* no terminating RET */
+    };
+    size_t total = build_chunk_bytes(buf, 0, NULL, 0, instrs, 1);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "RET") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
+    /* OP_NEG with C=99 (unused); verifier must NOT reject. */
+    uint8_t buf[256];
+    const int64_t consts[] = { 5 };
+    const uint32_t instrs[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 0),
+        uinstr_enc_abc(OP_NEG, 0, 0, 99),       /* C=99, officially unused */
+        uinstr_enc_abc(OP_RET, 0, 0, 0)
+    };
+    size_t total = build_chunk_bytes(buf, 0, consts, 1, instrs, 3);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);                   /* MUST accept */
+    uchunk_destroy(&c);
+}
+
+UTEST(verifier_accepts_hand_crafted_op_move_chunk) {
+    uint8_t buf[256];
+    const int64_t consts[] = { 42 };
+    const uint32_t instrs[] = {
+        uinstr_enc_abx(OP_LOADK, 0, 0),         /* R0 = 42 */
+        uinstr_enc_abc(OP_MOVE, 1, 0, 0),       /* R1 = R0 */
+        uinstr_enc_abc(OP_RET, 1, 0, 0)         /* return R1 */
+    };
+    size_t total = build_chunk_bytes(buf, 1, consts, 1, instrs, 3);
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c.instructions[1]));
+    uchunk_destroy(&c);
+}
+
 void test_chunk_suite(void);
 
 void test_chunk_suite(void) {
@@ -553,4 +695,18 @@ void test_chunk_suite(void) {
               deserialize_loads_delta_synclines_and_abs_checkpoints);
     utest_run("deserialize rejects n_deltas not equal n_instructions",
               deserialize_rejects_n_deltas_not_equal_n_instructions);
+    utest_run("verifier accepts minimal RET-only chunk",
+              verifier_accepts_minimal_ret_only_chunk);
+    utest_run("verifier rejects opcode >= OP_MAX",
+              verifier_rejects_opcode_ge_op_max);
+    utest_run("verifier rejects register > max_reg",
+              verifier_rejects_register_gt_max_reg);
+    utest_run("verifier rejects LOADK Bx out of constant range",
+              verifier_rejects_loadk_bx_out_of_constant_range);
+    utest_run("verifier rejects last instruction not RET",
+              verifier_rejects_last_instruction_not_ret);
+    utest_run("verifier accepts unused-operand arbitrary bytes",
+              verifier_accepts_unused_operand_arbitrary_bytes);
+    utest_run("verifier accepts hand-crafted OP_MOVE chunk",
+              verifier_accepts_hand_crafted_op_move_chunk);
 }
