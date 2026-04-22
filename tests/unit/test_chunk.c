@@ -257,6 +257,103 @@ UTEST(deserialize_rejects_wrong_endianness) {
     uchunk_destroy(&c);
 }
 
+/* --- Varint write helpers for building test blobs --- */
+
+/* Append an LEB128 unsigned varint.  Returns new offset. */
+static size_t put_varint(uint8_t *buf, size_t offset, uint64_t v) {
+    while (v >= 0x80u) {
+        buf[offset++] = (uint8_t)((v & 0x7Fu) | 0x80u);
+        v >>= 7;
+    }
+    buf[offset++] = (uint8_t)v;
+    return offset;
+}
+
+/* Append a signed zigzag varint. */
+static size_t put_varint_zz(uint8_t *buf, size_t offset, int64_t v) {
+    uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+    return put_varint(buf, offset, u);
+}
+
+/* --- Body-decode tests (Task 5) --- */
+
+UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    /* metadata: max_reg=5, source_name="repl" */
+    buf[off++] = 5;
+    off = put_varint(buf, off, 4);   /* source_name_len = 4 */
+    memcpy(buf + off, "repl", 4); off += 4;
+    /* constants: 0 */
+    off = put_varint(buf, off, 0);
+    /* instructions: 0 */
+    off = put_varint(buf, off, 0);
+    /* synclines: 0 deltas, 0 abs_lines */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((uint8_t)5, c.max_reg);
+    UASSERT(c.source_name != NULL);
+    UASSERT_EQ(0, strcmp(c.source_name, "repl"));
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_loads_integer_constant_pool) {
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    /* metadata: max_reg=0, no source_name */
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    /* constants: 2 entries — UVAL_INT 1, UVAL_INT -42 */
+    off = put_varint(buf, off, 2);
+    buf[off++] = (uint8_t)UVAL_INT;
+    off = put_varint_zz(buf, off, 1);
+    buf[off++] = (uint8_t)UVAL_INT;
+    off = put_varint_zz(buf, off, -42);
+    /* instructions: 0 */
+    off = put_varint(buf, off, 0);
+    /* synclines: 0, 0 */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c.const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, c.constants[0].kind);
+    UASSERT_EQ((int64_t)1,   c.constants[0].v.i);
+    UASSERT_EQ((uint8_t)UVAL_INT, c.constants[1].kind);
+    UASSERT_EQ((int64_t)-42, c.constants[1].v.i);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_out_of_range_uconst_tag) {
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                         /* max_reg */
+    off = put_varint(buf, off, 0);          /* source_name_len */
+    off = put_varint(buf, off, 1);          /* 1 constant */
+    buf[off++] = 99;                        /* invalid kind */
+    off = put_varint_zz(buf, off, 0);       /* payload (ignored, rejected first) */
+    Chunk c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT_TAG, uchunk_deserialize(&c, buf, off, NULL, 0));
+    uchunk_destroy(&c);
+}
+
 void test_chunk_suite(void);
 
 void test_chunk_suite(void) {
@@ -287,4 +384,10 @@ void test_chunk_suite(void) {
               deserialize_rejects_wrong_instr_width);
     utest_run("deserialize rejects wrong endianness",
               deserialize_rejects_wrong_endianness);
+    utest_run("deserialize loads metadata max_reg and source_name",
+              deserialize_loads_metadata_max_reg_and_source_name);
+    utest_run("deserialize loads integer constant pool",
+              deserialize_loads_integer_constant_pool);
+    utest_run("deserialize rejects out-of-range UConst tag",
+              deserialize_rejects_out_of_range_uconst_tag);
 }

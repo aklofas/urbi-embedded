@@ -25,6 +25,14 @@ static int chunk_memcmp(const void *a, const void *b, size_t n) {
     return 0;
 }
 
+/* Local byte-copy.  Replaces memcpy so uchunk.c compiles without
+   <string.h> under -ffreestanding. */
+static void chunk_memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *pd = (unsigned char *)dst;
+    const unsigned char *ps = (const unsigned char *)src;
+    for (size_t i = 0; i < n; i++) pd[i] = ps[i];
+}
+
 /* Canonical canary bytes — LANG-CONVENTIONS §4 / spec §5.1. */
 static const uint8_t kCanary[6] = { 0x19, 0x93, '\r', '\n', 0x1A, '\n' };
 
@@ -69,6 +77,23 @@ static UChunkAllocFn chunk_allocator(const Chunk *c) {
        error and chunk_grow will propagate it as OOM. */
     return c->alloc_fn;
 #endif
+}
+
+/* Grow *data in-place to hold at least new_cap elements of elem_size.
+   Doubling policy.  Returns false on allocation failure.  No-op when
+   already large enough. */
+static bool chunk_grow(Chunk *c, void **data, size_t *cap,
+                       size_t new_cap, size_t elem_size) {
+    if (*cap >= new_cap) return true;
+    UChunkAllocFn alloc = chunk_allocator(c);
+    if (alloc == NULL) return false;
+    size_t target = *cap == 0u ? 8u : *cap;
+    while (target < new_cap) target *= 2u;
+    void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
+    if (fresh == NULL) return false;
+    *data = fresh;
+    *cap  = target;
+    return true;
 }
 
 /* --- Varint decode helpers --- */
@@ -172,9 +197,116 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
     }
     /* buf[16..23] reserved — not validated (forward-compat) */
 
-    /* --- body decode stub — Task 5 fills in --- */
-    (void)errcap;
-    (void)errmsg;
+    size_t off = 24;
+
+    /* --- metadata --- */
+    if (off + 1u > size) { set_errmsg(errmsg, errcap, "truncated at metadata"); return ULOAD_TRUNCATED; }
+    chunk->max_reg = buf[off++];
+
+    uint64_t src_len = 0;
+    size_t consumed = 0;
+    UChunkLoadError rc = varint_decode_u(buf + off, size - off, &src_len, &consumed);
+    if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at source_name_len"); return rc; }
+    off += consumed;
+    if (off + src_len > size) { set_errmsg(errmsg, errcap, "truncated at source_name"); return ULOAD_TRUNCATED; }
+    if (src_len > 0u) {
+        UChunkAllocFn alloc = chunk_allocator(chunk);
+        if (alloc == NULL) { set_errmsg(errmsg, errcap, "no allocator for source_name"); return ULOAD_OOM; }
+        char *name = (char *)alloc(NULL, src_len + 1u, chunk->alloc_ud);
+        if (name == NULL) return ULOAD_OOM;
+        chunk_memcpy(name, buf + off, src_len);
+        name[src_len] = '\0';
+        chunk->source_name = name;
+        off += src_len;
+    }
+
+    /* --- constants --- */
+    uint64_t n_const = 0;
+    rc = varint_decode_u(buf + off, size - off, &n_const, &consumed);
+    if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_constants"); return rc; }
+    off += consumed;
+    if (n_const > (uint64_t)UINT16_MAX + 1u) { set_errmsg(errmsg, errcap, "n_constants too large"); return ULOAD_CORRUPT; }
+    if (n_const > 0u) {
+        if (!chunk_grow(chunk, (void **)&chunk->constants, &chunk->const_cap, (size_t)n_const, sizeof(UConst))) {
+            return ULOAD_OOM;
+        }
+    }
+    for (uint64_t i = 0; i < n_const; i++) {
+        if (off + 1u > size) { set_errmsg(errmsg, errcap, "truncated at constant kind"); return ULOAD_TRUNCATED; }
+        uint8_t kind = buf[off++];
+        if (kind > (uint8_t)UVAL_STR) {
+            set_errmsg(errmsg, errcap, "constant kind %u not yet decodable at M1", (unsigned)kind);
+            return ULOAD_CORRUPT_TAG;
+        }
+        chunk->constants[chunk->const_count].kind = kind;
+        if (kind == (uint8_t)UVAL_INT) {
+            int64_t v = 0;
+            rc = varint_decode_zz(buf + off, size - off, &v, &consumed);
+            if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint in UVAL_INT"); return rc; }
+            off += consumed;
+            chunk->constants[chunk->const_count].v.i = v;
+        } else if (kind == (uint8_t)UVAL_FLOAT) {
+#if URBI_FLOAT_TYPE == 8
+            if (off + 8u > size) { set_errmsg(errmsg, errcap, "truncated at UVAL_FLOAT"); return ULOAD_TRUNCATED; }
+            chunk_memcpy(&chunk->constants[chunk->const_count].v.f, buf + off, 8);
+            off += 8;
+#else
+            if (off + 4u > size) { set_errmsg(errmsg, errcap, "truncated at UVAL_FLOAT"); return ULOAD_TRUNCATED; }
+            chunk_memcpy(&chunk->constants[chunk->const_count].v.f, buf + off, 4);
+            off += 4;
+#endif
+        } else {
+            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload at M1.
+               M1 should not encounter these in produced bytecode, but the
+               loader must not crash if hand-crafted. */
+            set_errmsg(errmsg, errcap, "constant kind %u not yet decodable at M1", (unsigned)kind);
+            return ULOAD_CORRUPT_TAG;
+        }
+        chunk->const_count++;
+    }
+
+    /* --- instructions --- */
+    uint64_t n_instr = 0;
+    rc = varint_decode_u(buf + off, size - off, &n_instr, &consumed);
+    if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_instructions"); return rc; }
+    off += consumed;
+    /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
+    while ((off & 3u) != 0u) {
+        if (off >= size) { set_errmsg(errmsg, errcap, "truncated at instruction alignment padding"); return ULOAD_TRUNCATED; }
+        if (buf[off] != 0u) { set_errmsg(errmsg, errcap, "non-zero instruction-align padding at offset %zu", off); return ULOAD_CORRUPT; }
+        off++;
+    }
+    if (n_instr > 0u) {
+        if (!chunk_grow(chunk, (void **)&chunk->instructions, &chunk->instr_cap, (size_t)n_instr, sizeof(uint32_t))) {
+            return ULOAD_OOM;
+        }
+    }
+    for (uint64_t i = 0; i < n_instr; i++) {
+        if (off + 4u > size) { set_errmsg(errmsg, errcap, "truncated at instruction %llu", (unsigned long long)i); return ULOAD_TRUNCATED; }
+        /* Read uint32 little-endian (v1 endianness = LE). */
+        chunk->instructions[chunk->instr_count] =
+              (uint32_t)buf[off + 0]
+            | ((uint32_t)buf[off + 1] << 8)
+            | ((uint32_t)buf[off + 2] << 16)
+            | ((uint32_t)buf[off + 3] << 24);
+        off += 4;
+        chunk->instr_count++;
+    }
+
+    /* --- synclines gate — Task 6 replaces this with real decode --- */
+    uint64_t n_deltas = 0;
+    rc = varint_decode_u(buf + off, size - off, &n_deltas, &consumed);
+    if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_deltas"); return rc; }
+    off += consumed;
+    uint64_t n_abs_lines = 0;
+    rc = varint_decode_u(buf + off, size - off, &n_abs_lines, &consumed);
+    if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_abs_lines"); return rc; }
+    off += consumed;
+    if (n_deltas > 0u || n_abs_lines > 0u || off < size) {
+        set_errmsg(errmsg, errcap, "syncline decode not implemented yet");
+        return ULOAD_CORRUPT;
+    }
+
     return ULOAD_OK;
 }
 
@@ -186,6 +318,7 @@ void uchunk_destroy(Chunk *chunk) {
         if (chunk->constants    != NULL) (void)alloc(chunk->constants,    0, chunk->alloc_ud);
         if (chunk->line_deltas  != NULL) (void)alloc(chunk->line_deltas,  0, chunk->alloc_ud);
         if (chunk->abs_lines    != NULL) (void)alloc(chunk->abs_lines,    0, chunk->alloc_ud);
+        if (chunk->source_name  != NULL) (void)alloc(chunk->source_name,  0, chunk->alloc_ud);
     }
     /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
        alloc_ud are all reset; caller must re-init before re-use). */

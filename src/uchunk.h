@@ -126,7 +126,7 @@ typedef struct Chunk {
     size_t     abs_line_cap;
 
     uint8_t    max_reg;           /* VM allocates (max_reg + 1) register slots */
-    const char *source_name;      /* non-owning view */
+    char       *source_name;      /* owned (allocator-allocated, null-terminated); NULL if absent */
 
     /* allocator hook; NULL -> use stdlib realloc (hosted builds only) */
     UChunkAllocFn alloc_fn;
