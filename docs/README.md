@@ -141,7 +141,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 
 **Cross-links are repo-relative.** All links in this tree use paths relative to the file containing the link, resolved within the repository. They render correctly on GitHub, in local Markdown previewers, and in concatenated PDF output. Do not use absolute paths or external URLs when linking between docs in this tree.
 
-**Single-page PDF.** A nightly build starting at `v1.0.0` will concatenate the tree into a single PDF for the release page. The docs use Pandoc-friendly Markdown only: no admonition-extension syntax, no static-site-generator frontmatter blocks. All code blocks carry explicit language tags.
+**Single-page PDF.** Starting at `v1.0.0`, a release-time Pandoc export will concatenate the tree into a single PDF for the release page. The docs use Pandoc-friendly Markdown only: no admonition-extension syntax, no static-site-generator frontmatter blocks. All code blocks carry explicit language tags.
 
 **Unwritten docs.** Entries in the index tables that have no Markdown link do not exist yet in the tree. They are listed to show the intended shape of the full documentation set and the release where each will first ship. Do not create stub or placeholder files for planned docs — an empty file is more confusing than no file.
 
