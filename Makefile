@@ -97,7 +97,22 @@ cppcheck: compile_commands.json
 	         --inline-suppr \
 	         --quiet
 
+# Static analysis — GCC -fanalyzer (advisory).
+# Dedicated build variant so the 20% compile-time penalty only applies
+# when explicitly requested.  Diagnostics go to stderr during compile;
+# the resulting build/host-analyzer/liburbi.a is a valid archive
+# (-fanalyzer is diagnostic-only, doesn't change codegen).
+analyzer:
+	$(MAKE) TARGET=host-analyzer \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -fanalyzer" \
+		all
+
+# Aggregate: gating tidy, advisory cppcheck, advisory analyzer.
+# CI invokes this as one step per-target so failures clearly name
+# which tool caught the issue.
+lint: tidy cppcheck analyzer
+
 clean:
 	rm -rf build compile_commands.json
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint
