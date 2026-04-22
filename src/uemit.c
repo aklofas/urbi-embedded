@@ -51,6 +51,111 @@ static void emit_copy_source_name(Emitter *e, const char *src) {
 
 #endif  /* __STDC_HOSTED__ */
 
+/* --- Internal helpers --- */
+
+/* Grow *data to at least new_cap elements of elem_size.  Doubling policy.
+   Mirror of chunk_grow in uchunk.c; used by constant-pool and instruction
+   array in the emitter. */
+static bool emit_grow(Chunk *c, void **data, size_t *cap,
+                      size_t new_cap, size_t elem_size) {
+    if (*cap >= new_cap) return true;
+    UChunkAllocFn alloc = emit_alloc_for(c);
+    if (alloc == NULL) return false;
+    size_t target = *cap == 0u ? 8u : *cap;
+    while (target < new_cap) target *= 2u;
+    void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
+    if (fresh == NULL) return false;
+    *data  = fresh;
+    *cap   = target;
+    return true;
+}
+
+/* Bump the register-allocator cursor and track high-water mark.
+   Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
+   all 256 slots are consumed (cursor at 255 before call). */
+static uint8_t alloc_reg(Emitter *e) {
+    if (e->next_reg == 255u) { e->error = EMIT_REG_EXHAUSTED; return 0u; }
+    uint8_t r = e->next_reg++;
+    if (r > e->max_reg_seen) e->max_reg_seen = r;
+    return r;
+}
+
+/* Release the most-recently-allocated register (stack discipline). */
+static void free_reg(Emitter *e) {
+    if (e->next_reg > 0u) e->next_reg--;
+}
+
+/* Linear-scan dedup over the integer pool.  Returns existing index if
+   a UVAL_INT entry with the same value already exists; otherwise appends
+   a new entry and returns its index.  Sets e->error and returns 0 on
+   pool-full (> UINT16_MAX entries) or OOM. */
+static uint16_t add_const_int(Emitter *e, const int64_t v) {
+    size_t i;
+    for (i = 0; i < e->chunk->const_count; i++) {
+        if (e->chunk->constants[i].kind == (uint8_t)UVAL_INT
+         && e->chunk->constants[i].v.i == v) {
+            return (uint16_t)i;
+        }
+    }
+    if (e->chunk->const_count > (size_t)UINT16_MAX) {
+        e->error = EMIT_CONSTANT_POOL_FULL;
+        return 0u;
+    }
+    if (!emit_grow(e->chunk, (void **)&e->chunk->constants, &e->chunk->const_cap,
+                   e->chunk->const_count + 1u, sizeof(UConst))) {
+        e->error = EMIT_OOM;
+        return 0u;
+    }
+    {
+        const size_t idx = e->chunk->const_count;
+        int p;
+        e->chunk->constants[idx].kind = (uint8_t)UVAL_INT;
+        /* Clear pad bytes for deterministic serialization. */
+        for (p = 0; p < 7; p++) e->chunk->constants[idx]._pad[p] = 0u;
+        e->chunk->constants[idx].v.i = v;
+        e->chunk->const_count++;
+        return (uint16_t)idx;
+    }
+}
+
+/* Append one encoded instruction.  Stores line in prev_line for Task 13
+   (syncline delta encoding).  No-op when e->error is already set. */
+static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
+    if (e->error != EMIT_OK) return;
+    if (!emit_grow(e->chunk, (void **)&e->chunk->instructions,
+                   &e->chunk->instr_cap,
+                   e->chunk->instr_count + 1u, sizeof(uint32_t))) {
+        e->error = EMIT_OOM;
+        return;
+    }
+    e->chunk->instructions[e->chunk->instr_count++] = ins;
+    e->prev_line = line;
+}
+
+/* AST walker — returns the register holding the result of the expression.
+   Returns 0 and sets e->error on any failure. */
+static uint8_t emit_expr(Emitter *e, AstNode *n) {
+    if (e->error != EMIT_OK) return 0u;
+    switch (n->kind) {
+    case AST_INT: {
+        const uint8_t r = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0u;
+        const uint16_t k = add_const_int(e, n->u.i);
+        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+        return r;
+    }
+    case AST_BINARY:
+    case AST_UNARY:
+    case AST_IDENT:
+    case AST_ERROR:
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0u;
+    }
+    e->error = EMIT_UNSUPPORTED_AST;
+    return 0u;
+}
+
 /* --- Public API --- */
 
 void uemit_init(Emitter *e, Chunk *chunk, Arena *arena, const char *source_name) {
@@ -61,17 +166,26 @@ void uemit_init(Emitter *e, Chunk *chunk, Arena *arena, const char *source_name)
 }
 
 EmitError uemit_statement(Emitter *e, AstNode *stmt) {
+    uint8_t result;
     if (e->finished) return EMIT_FINISHED;
     if (e->error != EMIT_OK) return e->error;
-    (void)stmt;
-    /* Task 9 fills in. */
+    /* Fresh register-allocator cursor per statement at M1
+       (no locals persist across statement boundaries). */
+    e->next_reg = 0u;
+    result = emit_expr(e, stmt);
+    if (e->error != EMIT_OK) return e->error;
+    e->last_result_reg = result;
+    e->any_stmt_emitted = true;
+    free_reg(e);                    /* release result slot (stack discipline) */
     return EMIT_OK;
 }
 
 EmitError uemit_finish(Emitter *e) {
     if (e->finished) return e->error;
-    /* Task 11 will emit OP_RET here when any_stmt_emitted is true.
-       For this task: just mark finished and copy max_reg to the chunk. */
+    if (e->error == EMIT_OK && e->any_stmt_emitted) {
+        emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0u, 0u),
+                   e->prev_line);
+    }
     e->finished = true;
     e->chunk->max_reg = e->max_reg_seen;
     return e->error;

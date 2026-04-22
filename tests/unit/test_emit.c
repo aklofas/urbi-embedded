@@ -69,6 +69,78 @@ UTEST(uemit_error_name_returns_sensible_strings) {
     UASSERT(uemit_error_name(EMIT_UNSUPPORTED_AST) != NULL);
 }
 
+/* Helper: drive one statement through init/statement/finish and return the
+   resulting EmitError.  chunk and arena are caller-owned; call uchunk_destroy
+   and uarena_destroy when done. */
+static EmitError emit_single_statement(Chunk *chunk, Arena *arena, AstNode *ast) {
+    Emitter e;
+    EmitError rc;
+    uemit_init(&e, chunk, arena, "test");
+    rc = uemit_statement(&e, ast);
+    if (rc != EMIT_OK) return rc;
+    return uemit_finish(&e);
+}
+
+UTEST(emit_ast_int_single_literal_loadk_then_ret) {
+    Chunk chunk = {0};
+    Arena arena;
+    AstNode n = {0};
+    uarena_init(&arena, 0);
+    n.kind = AST_INT;
+    n.u.i  = 42;
+    n.line = 1;
+    n.col  = 1;
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+
+    /* Two instructions: LOADK R0 K0 ; RET R0 */
+    UASSERT_EQ((size_t)2, chunk.instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(chunk.instructions[0]));
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(chunk.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[1]));
+
+    /* Constant pool: one UVAL_INT entry, value 42 */
+    UASSERT_EQ((size_t)1,      chunk.const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, chunk.constants[0].kind);
+    UASSERT_EQ((int64_t)42,    chunk.constants[0].v.i);
+    UASSERT_EQ((uint8_t)0,     chunk.max_reg);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
+    /* Three statements: literal 1, literal 1, literal 2.
+       Linear-scan dedup should yield a pool of size 2 (not 3). */
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    AstNode a = {0};
+    AstNode b = {0};
+    AstNode c = {0};
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, "test");
+
+    a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    b.kind = AST_INT; b.u.i = 1; b.line = 1;
+    c.kind = AST_INT; c.u.i = 2; c.line = 1;
+
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &c));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    /* Pool must have exactly 2 entries: 1 (deduped) and 2. */
+    UASSERT_EQ((size_t)2,   chunk.const_count);
+    UASSERT_EQ((int64_t)1,  chunk.constants[0].v.i);
+    UASSERT_EQ((int64_t)2,  chunk.constants[1].v.i);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -80,4 +152,8 @@ void test_emit_suite(void) {
               uemit_finish_is_idempotent_and_statement_after_finish_returns_finished);
     utest_run("uemit_error_name returns a sensible string",
               uemit_error_name_returns_sensible_strings);
+    utest_run("emit AST_INT single literal -> LOADK then RET",
+              emit_ast_int_single_literal_loadk_then_ret);
+    utest_run("emit AST_INT dedups repeated literal in constant pool",
+              emit_ast_int_dedups_repeated_literal_in_constant_pool);
 }
