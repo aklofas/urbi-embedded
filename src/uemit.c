@@ -169,7 +169,15 @@ static uint8_t emit_expr(Emitter *e, AstNode *n) {
         free_reg(e);              /* rhs released; lhs holds result in place */
         return lhs_reg;
     }
-    case AST_UNARY:
+    case AST_UNARY: {
+        /* M1: parser strips UOP_PLUS at parse time, so AST_UNARY is always
+           negation.  Emit the operand into src_reg, then NEG in-place. */
+        const uint8_t src_reg = emit_expr(e, n->u.unary.operand);
+        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abc(OP_NEG, src_reg, src_reg, 0u),
+                   (uint32_t)n->line);
+        return src_reg;   /* dest reuses src; no free_reg */
+    }
     case AST_IDENT:
     case AST_ERROR:
         e->error = EMIT_UNSUPPORTED_AST;

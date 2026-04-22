@@ -231,6 +231,45 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
     uchunk_destroy(&chunk);
 }
 
+UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
+    /* AST_UNARY(UOP_NEG, AST_INT 5) -> LOADK R0 K0 ; NEG R0 R0 ; RET R0 */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    AstNode operand = {0};
+    operand.kind = AST_INT;
+    operand.u.i  = 5;
+    operand.line = 1;
+
+    AstNode unary = {0};
+    unary.kind = AST_UNARY;
+    unary.u.unary.op      = UOP_NEG;
+    unary.u.unary.operand = &operand;
+    unary.line = 1;
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &unary));
+
+    UASSERT_EQ((size_t)3, chunk.instr_count);
+
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(chunk.instructions[0]));
+
+    UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(chunk.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_b(chunk.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_c(chunk.instructions[1]));
+
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(chunk.instructions[2]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[2]));
+
+    UASSERT_EQ((uint8_t)0,    chunk.max_reg);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -252,4 +291,6 @@ void test_emit_suite(void) {
               emit_ast_binary_sub_mul_div_map_to_correct_opcodes);
     utest_run("emit nested (1+2)+(3+4) stays at max_reg=1 via destination reuse",
               emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1);
+    utest_run("emit AST_UNARY neg 5 -> LOADK R0 K0 ; NEG R0 R0 ; RET R0",
+              emit_ast_unary_neg_5_loadk_then_neg_then_ret);
 }
