@@ -270,6 +270,86 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     uchunk_destroy(&chunk);
 }
 
+/* Custom allocator that fails after `fails_after` successful calls.
+   Used to drive EMIT_OOM without touching the default stdlib allocator. */
+typedef struct { size_t ok_calls; size_t fails_after; } LimitAlloc;
+
+static void *limit_alloc(void *ptr, size_t nbytes, void *ud) {
+    LimitAlloc *la = (LimitAlloc *)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    if (la->ok_calls >= la->fails_after) return NULL;
+    la->ok_calls++;
+    return realloc(ptr, nbytes);
+}
+
+UTEST(emit_ast_error_returns_emit_ast_error) {
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+    AstNode err = {0};
+    err.kind = AST_ERROR;
+    err.u.err.code = 1;
+    err.u.err.message = "parser error";
+    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&chunk, &arena, &err));
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+    AstNode id = {0};
+    id.kind = AST_IDENT;
+    id.u.ident.start = "x";
+    id.u.ident.len = 1;
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&chunk, &arena, &id));
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+
+    AstNode err = {0};
+    err.kind = AST_ERROR;
+    err.u.err.code = 1;
+    err.u.err.message = "x";
+    UASSERT_EQ(EMIT_AST_ERROR, uemit_statement(&e, &err));
+
+    /* Subsequent valid AST_INT still returns the latched error. */
+    AstNode ok = {0};
+    ok.kind = AST_INT;
+    ok.u.i = 7;
+    UASSERT_EQ(EMIT_AST_ERROR, uemit_statement(&e, &ok));
+
+    UASSERT_EQ(EMIT_AST_ERROR, uemit_finish(&e));
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+    LimitAlloc la;
+    la.ok_calls = 0;
+    la.fails_after = 0;
+    chunk.alloc_fn = limit_alloc;
+    chunk.alloc_ud = &la;
+
+    AstNode n = {0};
+    n.kind = AST_INT;
+    n.u.i = 1;
+    UASSERT_EQ(EMIT_OOM, emit_single_statement(&chunk, &arena, &n));
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -293,4 +373,12 @@ void test_emit_suite(void) {
               emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1);
     utest_run("emit AST_UNARY neg 5 -> LOADK R0 K0 ; NEG R0 R0 ; RET R0",
               emit_ast_unary_neg_5_loadk_then_neg_then_ret);
+    utest_run("emit AST_ERROR -> EMIT_AST_ERROR",
+              emit_ast_error_returns_emit_ast_error);
+    utest_run("emit AST_IDENT -> EMIT_UNSUPPORTED_AST (no globals at M1)",
+              emit_ast_ident_returns_emit_unsupported_ast);
+    utest_run("emit first error latches; subsequent statements short-circuit",
+              emit_first_error_latches_and_subsequent_statements_short_circuit);
+    utest_run("emit EMIT_OOM when constant-pool realloc fails",
+              emit_emit_oom_when_constant_pool_realloc_fails);
 }

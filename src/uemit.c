@@ -191,8 +191,10 @@ static uint8_t emit_expr(Emitter *e, AstNode *n) {
         return src_reg;   /* dest reuses src; no free_reg */
     }
     case AST_IDENT:
-    case AST_ERROR:
         e->error = EMIT_UNSUPPORTED_AST;
+        return 0u;
+    case AST_ERROR:
+        e->error = EMIT_AST_ERROR;
         return 0u;
     }
     e->error = EMIT_UNSUPPORTED_AST;
