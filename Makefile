@@ -74,7 +74,17 @@ compile_commands.json:
 	done
 	@printf '\n]\n' >> $@
 
+# Static analysis — clang-tidy gating via run-clang-tidy.
+# Fails on any clang-tidy warning (-warnings-as-errors='*').
+# Check list is configured in .clang-tidy; CLI flag promotes warnings to errors.
+tidy: compile_commands.json
+	run-clang-tidy -p . -j $$(nproc) -warnings-as-errors='*' -quiet $(SRC)
+
+# Local convenience: run clang-tidy with --fix.  Not invoked by CI.
+tidy-fix: compile_commands.json
+	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
+
 clean:
 	rm -rf build compile_commands.json
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix

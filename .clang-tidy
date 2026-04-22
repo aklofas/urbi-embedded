@@ -15,14 +15,35 @@
 # - readability-isolate-declaration : we group related locals intentionally
 # - llvm-header-guard   : we use our own ULEX_H / URBI_H style guards
 #
+# Three additional individual checks are disabled because they are
+# famously noisy or collide with strict-C99 / embedded conventions.
+# The rationale per check:
+#
+# - cert-err33-c : flags every call whose return value is "expected" to be
+#   checked (printf family, fgets, ...).  In embedded code the prints are
+#   often debug aids and ignoring the return is deliberate.
+#
+# - bugprone-easily-swappable-parameters : flags any function with two
+#   adjacent same-typed parameters as "easily swappable" without semantic
+#   analysis.  Floods projects that use paired parameters like (lo, hi),
+#   (src, dst), (line, col) with false positives.
+#
+# - readability-identifier-length : conflicts with canonical C style
+#   (`i` loop index, `p` cursor, `n` count).  STYLE.md explicitly endorses
+#   short names in tight scopes.
+#
 # bugprone-*, performance-*, portability-*, and clang-analyzer-* are kept
-# enabled since they catch real defects and apply cleanly to C.
+# enabled (via clang-tidy defaults) since they catch real defects and
+# apply cleanly to C.
 
 Checks: >
   -modernize-*,
   -cppcoreguidelines-*,
   -readability-isolate-declaration,
-  -llvm-header-guard
+  -llvm-header-guard,
+  -cert-err33-c,
+  -bugprone-easily-swappable-parameters,
+  -readability-identifier-length
 
 WarningsAsErrors: ''
 
