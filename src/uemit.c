@@ -3,8 +3,6 @@
 
 #include "uemit.h"
 
-#include <stddef.h>
-
 /* Public-API stubs — filled in by later tasks. */
 
 void uemit_init(Emitter *e, Chunk *chunk, Arena *arena, const char *source_name) {

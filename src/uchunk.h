@@ -98,9 +98,12 @@ typedef struct {
 /* --- pluggable allocator (matches uarena pattern) --- */
 
 typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
-/* realloc semantics: ptr == NULL -> malloc(nbytes);
-   nbytes == 0 && ptr != NULL -> free(ptr), return NULL;
-   both -> realloc(ptr, nbytes). */
+/* Standard realloc semantics:
+ *   ptr == NULL && nbytes > 0  : allocate fresh buffer; return non-NULL or NULL on OOM.
+ *   ptr != NULL && nbytes == 0 : free ptr; return NULL.
+ *   ptr != NULL && nbytes > 0  : reallocate ptr to nbytes (may move); return non-NULL or NULL on OOM.
+ *   ptr == NULL && nbytes == 0 : no-op; return NULL.
+ * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
 /* --- Chunk struct --- */
 
@@ -113,7 +116,10 @@ typedef struct Chunk {
     size_t     const_count;
     size_t     const_cap;
 
-    int8_t    *line_deltas;       /* size == instr_count after finalization */
+    /* Lua-5.5-style delta encoding; one byte per instruction (size == instr_count).
+     * INT8_MIN (-128) is a sentinel: the source line at this pc is in abs_lines,
+     * not recoverable by summing deltas from the previous checkpoint. */
+    int8_t    *line_deltas;
 
     AbsLine   *abs_lines;
     size_t     abs_line_count;
