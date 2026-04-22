@@ -64,16 +64,48 @@ Following Lua 5.3's evolution model:
 | `/` | **Float** (always) | Float | Float |
 | `//` | Integer (floor-division) | Float | Float |
 | `%` | Integer | Float | Float |
-| `&` `\|` `^` `<<` `>>` `~` | Integer | **TypeError** | **TypeError** |
 
 Key rules:
 
 - **`/` always returns Float.** `3 / 2 == 1.5`, never `1`. Integer division must use `//`.
 - **`//` is floor-division**, not truncating division. `-3 // 2 == -2`. The result is Integer when both operands are Integer, Float otherwise.
-- **Bitwise operators require both operands to be Integer.** Applying `&` to a Float raises `TypeError` with the operand index named. There is no implicit truncation. If truncation is wanted, the program writes it: `x.toInt() & mask`.
 - **Integer overflow wraps, two's-complement.** `INT64_MAX + 1 == INT64_MIN`. This is the Lua 5.3 default. Overflow detection is a v1.x deferred decision; v1 commits to wrap and lets programs cope.
+- **Bitwise operations are methods on Integer, not symbolic operators** — see §1.4 below.  `|` and `&` in urbiscript are concurrency-composition operators at the statement level and are never overloaded for bit manipulation.
 
-### 1.4 Cross-type comparison
+### 1.4 Bitwise operations
+
+Bitwise ops live as methods on the `Integer` prototype, not as infix operators.  Rationale: `|` and `&` are already taken at the statement level (sequential-atomic and parallel-join composition respectively); overloading the same glyphs for integer-level bit manipulation conflates two different abstraction layers and forces a context-sensitive parser.  Using methods instead keeps the two layers cleanly separated.
+
+```urbi
+var flags = 0x0F
+flags.bitand(0x03)        // 3
+flags.bitor(0x10)         // 31
+flags.bitxor(0xFF)        // 240
+flags.bitnot()            // -16 (two's complement)
+flags.bitshl(2)           // 60
+flags.bitshr(1)           // 7
+```
+
+Method list (all on `Integer`, with matching C-level intrinsics):
+
+| Method | Meaning | C equivalent |
+|---|---|---|
+| `bitand(Integer) → Integer` | Bitwise AND | `a & b` |
+| `bitor(Integer) → Integer` | Bitwise OR | `a | b` |
+| `bitxor(Integer) → Integer` | Bitwise XOR | `a ^ b` |
+| `bitnot() → Integer` | Bitwise NOT | `~a` |
+| `bitshl(Integer) → Integer` | Left shift | `a << b` |
+| `bitshr(Integer) → Integer` | Right shift (arithmetic) | `a >> b` |
+
+All six methods require the receiver to be Integer and (for binary forms) the argument to be Integer.  Applying to a Float raises `TypeError`.  There is no implicit truncation; if a program has a Float and wants to bit-manipulate, it coerces first: `x.toInt().bitand(mask)`.
+
+Shift semantics: `bitshr` is arithmetic (sign-extending).  A logical-shift-right variant may be added in v1.x if a concrete use case surfaces; for now, if the user wants logical-shift-right they mask after shift: `x.bitshr(n).bitand((1_shl(64 - n)) - 1)` or similar.
+
+Shift counts that are negative or >= 64 are defined behavior: the result is 0 for `bitshl`, and `-1` or `0` for `bitshr` depending on the sign of the receiver.  This mirrors Lua 5.3's documented rule and differs from C's undefined behavior on out-of-range shifts.
+
+Boolean operators (`and`, `or`, `not`, plus their synonyms `&&`, `||`, `!`) are separate from bitwise.  They operate on truthiness, short-circuit, and return one of the operands (Python-style) rather than a Boolean.  Do not mix the two sets — if you want bitwise, call a method; if you want short-circuit, use the keyword.
+
+### 1.5 Cross-type comparison
 
 Comparison across types works by numerical value:
 
@@ -87,7 +119,7 @@ type(3) == type(3.0)   // false — the runtime tags differ even when values com
 
 Equality compares numerical value, not runtime tag. `isA(Number)` is true for both; `isA(Integer)` and `isA(Float)` distinguish them.
 
-### 1.5 Prototype structure
+### 1.6 Prototype structure
 
 ```
 Number (abstract supertype prototype)
@@ -101,7 +133,7 @@ Number (abstract supertype prototype)
 
 `.round()`, `.floor()`, `.ceil()` return Integer by v1.0 (recommended direction — §5 of the spec flags this as deferred, but Integer is the useful answer for array-index and counter use cases). Legacy urbi returned Float; this is a deliberate post-2.x evolution.
 
-### 1.6 Consequence for the `.chk` corpus
+### 1.7 Consequence for the `.chk` corpus
 
 Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x conformance corpus that assert `.isA(Float)` on integer literals (`3`, `100`) will fail against v1.0. Expected porting work is 1–2 days at M5: type-assertion sites get updated to `.isA(Integer)` or `.isA(Number)` as appropriate. Value-level assertions (`assert(1 + 2 == 3)`) pass unchanged — the number system changes what things *are*, not what they *equal*.
 
