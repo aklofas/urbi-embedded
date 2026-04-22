@@ -14,9 +14,23 @@ static void emit_zero(void *const dst, const size_t n) {
     for (size_t i = 0; i < n; i++) p[i] = 0u;
 }
 
+/* Local byte-copy.  Replaces memcpy so the serializer compiles without
+   a hosted <string.h>.  Same pattern as chunk_memcpy in uchunk.c. */
+static void emit_memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *pd = (unsigned char *)dst;
+    const unsigned char *ps = (const unsigned char *)src;
+    for (size_t i = 0; i < n; i++) pd[i] = ps[i];
+}
+
+/* Local strlen replacement (byte-loop).  Freestanding-safe. */
+static size_t emit_strlen(const char *s) {
+    size_t n = 0;
+    while (s[n] != '\0') n++;
+    return n;
+}
+
 #if __STDC_HOSTED__
 #  include <stdlib.h>
-#  include <string.h>
 
 static void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
@@ -44,12 +58,12 @@ static UChunkAllocFn emit_alloc_for(const Chunk *c) {
    Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL. */
 static void emit_copy_source_name(Emitter *e, const char *src) {
     if (src == NULL) return;
-    size_t len = strlen(src);
+    size_t len = emit_strlen(src);
     UChunkAllocFn alloc = emit_alloc_for(e->chunk);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     char *copy = (char *)alloc(NULL, len + 1u, e->chunk->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
-    memcpy(copy, src, len + 1u);
+    emit_memcpy(copy, src, len + 1u);
     e->chunk->source_name = copy;
 }
 
@@ -312,10 +326,152 @@ size_t uemit_disassemble(const Chunk *chunk, char *buf, size_t cap) {
     return 0;
 }
 
+/* --- Varint encode helpers (write side mirrors uchunk.c decode side) --- */
+
+/* LEB128 unsigned varint: returns the number of bytes needed to encode v. */
+static size_t varint_size_u(uint64_t v) {
+    size_t n = 1u;
+    while (v >= 0x80u) { v >>= 7; n++; }
+    return n;
+}
+
+/* Zigzag-encode v then return its LEB128 byte count. */
+static size_t varint_size_zz(const int64_t v) {
+    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+    return varint_size_u(u);
+}
+
+/* Write LEB128 unsigned varint to buf at offset off.  Returns new offset.
+   Caller guarantees sufficient space (pre-computed via varint_size_u). */
+static size_t varint_write_u(uint8_t *buf, size_t off, uint64_t v) {
+    while (v >= 0x80u) {
+        buf[off++] = (uint8_t)((v & 0x7Fu) | 0x80u);
+        v >>= 7;
+    }
+    buf[off++] = (uint8_t)v;
+    return off;
+}
+
+/* Zigzag-encode v then write its LEB128 representation. */
+static size_t varint_write_zz(uint8_t *buf, const size_t off, const int64_t v) {
+    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+    return varint_write_u(buf, off, u);
+}
+
+/* Compute total serialized byte count.  Must match the write path
+   in uchunk_serialize byte-for-byte. */
+static size_t chunk_wire_size(const Chunk *c) {
+    size_t i;
+    size_t n = 24u;                                   /* fixed header */
+    size_t src_len;
+
+    /* metadata */
+    n += 1u;                                          /* max_reg */
+    src_len = (c->source_name != NULL) ? emit_strlen(c->source_name) : 0u;
+    n += varint_size_u((uint64_t)src_len);
+    n += src_len;
+
+    /* constants */
+    n += varint_size_u((uint64_t)c->const_count);
+    for (i = 0u; i < c->const_count; i++) {
+        n += 1u;                                      /* kind byte */
+        if (c->constants[i].kind == (uint8_t)UVAL_INT) {
+            n += varint_size_zz(c->constants[i].v.i);
+        } else if (c->constants[i].kind == (uint8_t)UVAL_FLOAT) {
+            n += (URBI_FLOAT_TYPE == 8) ? 8u : 4u;
+        }
+        /* Other kinds: not produced by M1 emitter; serialize leaves them
+           with just the kind byte (payload omitted). */
+    }
+
+    /* instructions: varint count + 0-3 alignment pad bytes + raw 4-byte words */
+    n += varint_size_u((uint64_t)c->instr_count);
+    while ((n & 3u) != 0u) n++;                       /* pad to 4-byte boundary */
+    n += c->instr_count * 4u;
+
+    /* synclines */
+    n += varint_size_u((uint64_t)c->instr_count);     /* n_deltas */
+    n += c->instr_count;                              /* one int8 per instruction */
+    n += varint_size_u((uint64_t)c->abs_line_count);
+    for (i = 0u; i < c->abs_line_count; i++) {
+        n += varint_size_u((uint64_t)c->abs_lines[i].pc);
+        n += varint_size_u((uint64_t)c->abs_lines[i].line);
+    }
+
+    return n;
+}
+
 ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
-    /* Task 14. */
-    (void)chunk;
-    (void)buf;
-    (void)cap;
-    return 0;
+    size_t i;
+    size_t off;
+    size_t src_len;
+    const size_t need = chunk_wire_size(chunk);
+
+    /* Size query: buf == NULL means "how many bytes would you write?" */
+    if (buf == NULL) return (ptrdiff_t)need;
+    if (cap < need)  return -(ptrdiff_t)ULOAD_TRUNCATED;
+
+    /* --- 24-byte header --- */
+    buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
+    buf[4] = 0x10u;              /* version v1.0 */
+    buf[5] = 0x00u;              /* flags: none defined */
+    buf[6]  = 0x19u; buf[7]  = 0x93u;   /* canary bytes 0-1 */
+    buf[8]  = '\r';  buf[9]  = '\n';    /* canary bytes 2-3 */
+    buf[10] = 0x1Au; buf[11] = '\n';   /* canary bytes 4-5 */
+    buf[12] = (uint8_t)URBI_INT_WIDTH;
+    buf[13] = (uint8_t)URBI_FLOAT_TYPE;
+    buf[14] = (uint8_t)URBI_INSTR_WIDTH;
+    buf[15] = (uint8_t)URBI_ENDIANNESS;
+    buf[16] = 0u; buf[17] = 0u; buf[18] = 0u; buf[19] = 0u;  /* reserved */
+    buf[20] = 0u; buf[21] = 0u; buf[22] = 0u; buf[23] = 0u;  /* reserved */
+
+    off = 24u;
+
+    /* --- metadata --- */
+    buf[off++] = chunk->max_reg;
+    src_len = (chunk->source_name != NULL) ? emit_strlen(chunk->source_name) : 0u;
+    off = varint_write_u(buf, off, (uint64_t)src_len);
+    if (src_len > 0u) {
+        emit_memcpy(buf + off, chunk->source_name, src_len);
+        off += src_len;
+    }
+
+    /* --- constants --- */
+    off = varint_write_u(buf, off, (uint64_t)chunk->const_count);
+    for (i = 0u; i < chunk->const_count; i++) {
+        buf[off++] = chunk->constants[i].kind;
+        if (chunk->constants[i].kind == (uint8_t)UVAL_INT) {
+            off = varint_write_zz(buf, off, chunk->constants[i].v.i);
+        } else if (chunk->constants[i].kind == (uint8_t)UVAL_FLOAT) {
+            const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8u : 4u;
+            emit_memcpy(buf + off, &chunk->constants[i].v.f, fsz);
+            off += fsz;
+        }
+    }
+
+    /* --- instructions: varint count + align pad + raw LE uint32s --- */
+    off = varint_write_u(buf, off, (uint64_t)chunk->instr_count);
+    while ((off & 3u) != 0u) buf[off++] = 0u;         /* zero alignment pad */
+    for (i = 0u; i < chunk->instr_count; i++) {
+        const uint32_t ins = chunk->instructions[i];
+        buf[off + 0u] = (uint8_t)(ins         & 0xFFu);
+        buf[off + 1u] = (uint8_t)((ins >>  8) & 0xFFu);
+        buf[off + 2u] = (uint8_t)((ins >> 16) & 0xFFu);
+        buf[off + 3u] = (uint8_t)((ins >> 24) & 0xFFu);
+        off += 4u;
+    }
+
+    /* --- synclines: delta array then abs-line checkpoints --- */
+    off = varint_write_u(buf, off, (uint64_t)chunk->instr_count);  /* n_deltas */
+    if (chunk->instr_count > 0u) {
+        emit_memcpy(buf + off, chunk->line_deltas, chunk->instr_count);
+        off += chunk->instr_count;
+    }
+    off = varint_write_u(buf, off, (uint64_t)chunk->abs_line_count);
+    for (i = 0u; i < chunk->abs_line_count; i++) {
+        off = varint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].pc);
+        off = varint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].line);
+    }
+
+    return (ptrdiff_t)off;
 }

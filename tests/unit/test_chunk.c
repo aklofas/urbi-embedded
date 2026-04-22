@@ -4,6 +4,8 @@
 
 #include "uchunk.h"
 #include "uchunk_internal.h"
+#include "uarena.h"
+#include "uemit.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -667,6 +669,91 @@ UTEST(verifier_accepts_hand_crafted_op_move_chunk) {
     uchunk_destroy(&c);
 }
 
+/* --- Serializer tests (Task 14) --- */
+
+UTEST(serialize_empty_chunk_produces_24_byte_header_plus_zero_sized_sections) {
+    /* Empty chunk (no statements): 24-byte header + 6 body bytes.
+       Body = max_reg(1) + src_len varint 0(1) + n_const varint 0(1)
+            + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
+            + n_abs varint 0(1) = 6 bytes.  Total = 30. */
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+    (void)uemit_finish(&e);
+
+    /* Size query (buf == NULL) */
+    ptrdiff_t n = uchunk_serialize(&chunk, NULL, 0);
+    UASSERT_EQ((ptrdiff_t)30, n);
+
+    /* Write pass */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
+    ptrdiff_t written = uchunk_serialize(&chunk, buf, sizeof buf);
+    UASSERT_EQ((ptrdiff_t)30, written);
+
+    /* Header field checks */
+    UASSERT_EQ((uint8_t)'U', buf[0]);
+    UASSERT_EQ((uint8_t)'R', buf[1]);
+    UASSERT_EQ((uint8_t)'B', buf[2]);
+    UASSERT_EQ((uint8_t)'I', buf[3]);
+    UASSERT_EQ((uint8_t)0x10, buf[4]);               /* version */
+    UASSERT_EQ((uint8_t)0x00, buf[5]);               /* flags */
+    UASSERT_EQ((uint8_t)0x19, buf[6]);               /* canary[0] */
+    UASSERT_EQ((uint8_t)0x93, buf[7]);               /* canary[1] */
+    UASSERT_EQ((uint8_t)'\r', buf[8]);               /* canary[2] */
+    UASSERT_EQ((uint8_t)'\n', buf[9]);               /* canary[3] */
+    UASSERT_EQ((uint8_t)0x1A, buf[10]);              /* canary[4] */
+    UASSERT_EQ((uint8_t)'\n', buf[11]);              /* canary[5] */
+    UASSERT_EQ((uint8_t)URBI_INT_WIDTH,   buf[12]);
+    UASSERT_EQ((uint8_t)URBI_FLOAT_TYPE,  buf[13]);
+    UASSERT_EQ((uint8_t)URBI_INSTR_WIDTH, buf[14]);
+    UASSERT_EQ((uint8_t)URBI_ENDIANNESS,  buf[15]);
+
+    /* Verify the output round-trips cleanly */
+    Chunk c2 = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c2, buf, (size_t)written, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    uchunk_destroy(&c2);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(serialize_cap_0_returns_required_size_without_writing) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+    (void)uemit_finish(&e);
+
+    ptrdiff_t needed = uchunk_serialize(&chunk, NULL, 0);
+    UASSERT((ptrdiff_t)0 < needed);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+    (void)uemit_finish(&e);
+
+    uint8_t buf[10];
+    ptrdiff_t rc = uchunk_serialize(&chunk, buf, sizeof buf);
+    UASSERT_EQ(-(ptrdiff_t)ULOAD_TRUNCATED, rc);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_chunk_suite(void);
 
 void test_chunk_suite(void) {
@@ -727,4 +814,10 @@ void test_chunk_suite(void) {
               verifier_accepts_ret_with_arbitrary_b_and_c);
     utest_run("verifier accepts hand-crafted OP_MOVE chunk",
               verifier_accepts_hand_crafted_op_move_chunk);
+    utest_run("serialize empty chunk produces 24-byte header plus zero-sized sections",
+              serialize_empty_chunk_produces_24_byte_header_plus_zero_sized_sections);
+    utest_run("serialize cap=0 returns required size without writing",
+              serialize_cap_0_returns_required_size_without_writing);
+    utest_run("serialize cap too small returns ULOAD_TRUNCATED negative",
+              serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative);
 }
