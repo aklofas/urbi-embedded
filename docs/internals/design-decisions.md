@@ -1,0 +1,374 @@
+# Design Decisions
+
+## Overview
+
+This document records design decisions whose rationale is worth preserving long
+term but whose current behavior is described elsewhere. Each entry names the
+decision, lists alternatives considered, explains why the chosen path won, and
+notes what the decision constrains for future work.
+
+The document is organized by decision topic, not by subsystem or milestone. The
+intended reader is someone evaluating whether a decision should be changed, not
+someone looking up how a feature currently works. For current behavior, follow
+the reference links at the top of each entry.
+
+---
+
+## Decision format
+
+Each entry follows this template:
+
+```markdown
+### <short decision title>
+
+**Locked:** YYYY-MM-DD
+**Status:** active | superseded | under review
+**Reference docs:** links to where this is described descriptively
+
+**Decision.** One-paragraph statement.
+
+**Alternatives considered.**
+- Alternative name — what it is, why rejected.
+
+**Why this one.** 1–3 paragraphs of reasoning.
+
+**Implications.** What this constrains for future work.
+```
+
+---
+
+## Decisions
+
+### Per-target bytecode flavor, not universal portability
+
+**Locked:** 2026-04-21
+**Status:** active
+**Reference docs:**
+[`internals/bytecode-format.md` — Header (24 bytes)](bytecode-format.md#header-24-bytes),
+[`internals/bytecode-format.md` — v1.0 Supported Flavor Combinations](bytecode-format.md#v10-supported-flavor-combinations)
+
+**Decision.** The `.urb` bytecode format carries an 8-byte flavor descriptor in
+its 24-byte header. The descriptor records `int_width`, `float_type`,
+`instr_width`, and `endianness`. The loader checks each field against the VM's
+compile-time configuration and refuses any mismatch with a diagnostic that names
+the offending field. No run-time coercion of a mismatched file is attempted.
+
+**Alternatives considered.**
+
+- *Universal portable bytecode with load-time coercion.* One `.urb` file runs on
+  every target; the loader widens or narrows value types as needed to match the
+  host. Rejected: see "Why this one" below.
+
+- *Implicit flavor from context.* Omit the descriptor entirely and let the loader
+  infer the format from build configuration. Rejected: silent mismatch is worse
+  than loud refusal — an inferred-format file used on the wrong target produces
+  garbage arithmetic, not an error.
+
+**Why this one.**
+
+The portability objection to per-target bytecode is that a single `.urb` file
+could, in principle, describe a program runnable on any target. That picture
+breaks down as soon as you look at what coercion would actually do. Converting
+f64 constants to f32 is lossy: `3.141592653589793` becomes
+`3.1415927` with ~6 significant digits. Converting in the other direction (f32
+to f64) produces a value that is technically wider but carries only f32
+precision. The coercion is silent — the user gets a different program than the
+one they compiled, with no indication of where the values changed.
+
+Load-time coercion also doesn't simplify the runtime. To handle both widths at
+run time, the VM's register file must be able to hold either an f32 or an f64,
+which means it carries tagged 8-byte slots regardless. If the target uses f32,
+the top four bytes of every float slot are wasted, but they're still allocated.
+A per-target flavor avoids that wasted space without sacrificing clarity:
+the target's float width is pinned at compile time, the VM is compiled once for
+that width, and the loader rejects files compiled for a different target.
+
+Lua 5.5 makes a partial-portability compromise: its bytecode is not formally
+portable but the format is not versioned per ABI either. This produces a
+situation where some bytecode files happen to transfer between compatible hosts
+and others silently corrupt. We choose not to replicate that ambiguity. A `.urb`
+file is a per-target artifact. Shipping a program for multiple targets means
+shipping multiple `.urb` files — the cost is proportional to flash for the
+bytecode sections, not to any runtime overhead.
+
+**Implications.** Build toolchains that produce `.urb` files must know their
+target. Cross-compile recipes in a project's Makefile or build config always
+name the target explicitly (e.g. `urbi-compile --target=cortex-m4`). The
+default target when `--target` is omitted is `host-native`, making local
+development friction-free. New targets are supported by adding a row to the
+compiler's target table; no format-version bump is needed as long as the field
+encoding fits within the declared byte layout.
+
+---
+
+### Register-based VM over stack-based
+
+**Locked:** 2026-04-22
+**Status:** active
+**Reference docs:**
+[`internals/opcodes.md`](opcodes.md),
+[`LANG-CONVENTIONS.md` §1.3](../LANG-CONVENTIONS.md#13-arithmetic-semantics)
+
+**Decision.** The VM and bytecode instruction set are register-based. Each
+arithmetic instruction names its destination and source registers directly:
+`ADD R0, R1, R2`. The emitter carries a register allocator that assigns and
+reuses register slots as expressions are compiled.
+
+**Alternatives considered.**
+
+- *Stack-based VM.* Instructions implicitly pop operands from and push results
+  onto a stack. Requires no register allocation in the emitter. Rejected: design
+  reference and performance data both favor register-based at this scale.
+
+- *Stack + register hybrid.* Use a stack for expression evaluation and named
+  registers for locals. Rejected: provides neither the simplicity of a pure
+  stack VM nor the density and performance of a pure register VM.
+
+**Why this one.**
+
+Lua's transition from a stack-based VM (Lua 5.0) to a register-based VM
+(Lua 5.1) produced measured speedups of 20–50% on typical workloads. The
+arithmetic is straightforward: one `ADD R0, R1, R2` instruction replaces the
+four instructions a stack VM needs (`PUSH R1`, `PUSH R2`, `OP_ADD`,
+`POP R0`). At the bytecode level this is a 4x reduction in instruction count
+for binary operations, which is most of what a numeric expression evaluator
+does.
+
+The cost at M1 is a ~100-line stack-based register allocator in the emitter.
+That cost is paid once. The benefit — lower instruction count, simpler dispatch
+loop, Lua 5.1+ idioms carrying forward — accumulates across every subsequent
+milestone.
+
+**Implications.** Bytecode density is higher than a stack VM, which matters
+for flash-constrained targets. The emitter must perform register allocation; at
+M1 this is a simple next-free-register stack with destination reuse, adequate
+for expression trees. Later milestones (locals, upvalues, closures) will extend
+the allocator without changing the opcode encoding. Lua 5.1+ literature and
+tooling applies to the VM design with minimal adaptation.
+
+---
+
+### Byte-aligned 8/8/8/8 instruction encoding
+
+**Locked:** 2026-04-22
+**Status:** active
+**Reference docs:** [`internals/opcodes.md` — Instruction encoding](opcodes.md#instruction-encoding)
+
+**Decision.** Each `uint32_t` instruction is encoded as four 8-bit fields:
+`op(8) | A(8) | B(8) | C(8)` in ABC form, or `op(8) | A(8) | Bx(16)` in ABx
+form. Fields align on byte boundaries. Decoding any field is a byte read
+followed by a mask or a shift, with no multi-bit boundary crossing.
+
+**Alternatives considered.**
+
+- *Lua 5.5 bit-packed encoding: `op(7) | A(8) | k(1) | B(8) | C(8)`.* The `k`
+  flag distinguishes whether operand B is a register index or a constant-pool
+  index. Saves one `OP_LOADK` per constant-operand instruction. Rejected: the
+  byte-alignment benefit outweighs the density gain at M1's opcode count; the
+  `k` flag also complicates the verifier (B means two different things depending
+  on the flag).
+
+- *Variable-length instructions.* Common opcodes encode in 2 bytes; rare ones
+  use 4 or 6. Rejected: variable-length instructions defeat 4-byte-aligned
+  dispatch, make the verifier stateful (you can't scan forward from an arbitrary
+  PC without decoding from the start), and complicate any future JIT
+  compilation.
+
+**Why this one.**
+
+The 8-bit opcode field is not a waste. Lua 5.5 ships 85 opcodes on a 7-bit
+field; the v1.0 opcode budget is 8 at M1 and realistically under 64 by v1.0
+complete. The "lost bit" on the opcode is irrelevant. What byte-alignment buys
+is concrete: the verifier's opcode-range check is one comparison, the
+disassembler's decoder is three byte reads, and 8-bit-addressable targets
+(Cortex-M4, RV32I) decode without sub-byte masking in the hot dispatch path.
+
+Eliminating the `k` flag means one more `OP_LOADK` per constant-operand
+instruction. When that density gap becomes measurable, the response is to add
+`LOADI`-style immediate variants as distinct opcodes — clearer to disassemble,
+simpler to verify, and equivalent in density — rather than retrofitting a flag
+bit into the existing encoding. The encoding stays byte-aligned throughout.
+
+**Implications.** The opcode field accommodates 256 distinct opcodes, far more
+than v1.0 needs. Reserved opcodes 8–255 are available for M2+ without a format
+change. Instruction streams are 4-byte aligned in the file (the format includes
+an explicit alignment pad before the instruction section), which satisfies the
+alignment requirement for any direct-memory dispatch or future JIT code emission.
+
+---
+
+### `OP_LOADK` ABx form with 16-bit constant index
+
+**Locked:** 2026-04-22
+**Status:** active
+**Reference docs:** [`internals/opcodes.md` — Opcode table](opcodes.md#opcode-table)
+
+**Decision.** `OP_LOADK` uses the ABx instruction form. The destination register
+is encoded in the 8-bit A field. The constant-pool index is encoded in the 16-bit
+Bx field, supporting up to 65 536 constants per chunk.
+
+**Alternatives considered.**
+
+- *8-bit constant index with LOADKX overflow opcode.* Use an 8-bit Bx for indices
+  0–255; when the index exceeds 255, emit a two-instruction sequence: `LOADKX`
+  (which reads the next instruction word as a full constant index) followed by the
+  actual `OP_LOADK`. Mirrors Lua 5.4's overflow mechanism. Rejected: 256 constants
+  per chunk is too small for real programs; the two-instruction overhead on every
+  out-of-range constant doubles the decode cost for a common case.
+
+- *Varint-encoded constant index.* Pack the index using a variable-length encoding
+  to keep small indices short. Rejected: breaks the invariant that every
+  instruction is exactly 4 bytes. A variable-length field inside an otherwise
+  fixed-width instruction format produces an instruction stream where scanning
+  forward by PC requires decoding, not just offsetting.
+
+**Why this one.**
+
+The Bx form provides 65 536 index slots using the space that B and C occupy in
+the ABC form. Real programs — even small ones — accumulate constants quickly:
+every distinct integer literal, every string, every float literal is a pool
+entry. Deduplication reduces the count, but a chunk that processes an enum with
+hundreds of values or a lookup table with dozens of float keys can easily exceed
+256 constants without any pathological structure.
+
+The ABx form resolves this with no instruction overhead. One `OP_LOADK` per
+constant load, one 16-bit index, the same 4-byte instruction width as every
+other opcode. The decode cost is identical to the ABC form.
+
+**Implications.** Constant pools are bounded at 65 536 entries per chunk. In
+practice this ceiling is unlikely to be hit in M1–M3 scope. If it ever becomes
+binding, a `LOADKX` overflow opcode remains a v1.x option: the encoding
+reserves the opcode byte space, and the ABx form at full 16-bit range already
+handles every realistic case. The Bx field gives the verifier a trivial bounds
+check: Bx must be strictly less than the pool's constant count.
+
+---
+
+### Delta-encoded synclines with `INT8_MIN` sentinel
+
+**Locked:** 2026-04-22
+**Status:** active
+**Reference docs:** [`internals/bytecode-format.md` — Synclines: Delta Encoding](bytecode-format.md#synclines-delta-encoding)
+
+**Decision.** Per-instruction source-line information is stored as a stream of
+signed 8-bit delta values. Each byte encodes the difference between the current
+instruction's source line and the previous one. The value `INT8_MIN` (`-128`,
+`0x80`) is a sentinel: it means the line for this instruction is recorded as an
+absolute-line checkpoint in a separate table rather than derivable from the delta
+stream alone.
+
+**Alternatives considered.**
+
+- *Uncompressed parallel array.* One 4-byte `(line, col)` pair per instruction.
+  Simple to read; direct random access by PC. Rejected: at a 10 000-instruction
+  chunk, this costs 40 KB per chunk. For a format targeting embedded systems
+  where the bytecode section lives in flash, 40 KB of debug overhead per chunk
+  is not acceptable.
+
+- *Uniform 16-bit delta.* Store a 16-bit signed delta per instruction. Handles
+  any realistic source file without sentinels. Rejected: 2 bytes per instruction
+  doubles the syncline section compared to 1 byte and still can't reach files
+  longer than 32 767 lines — an unlikely ceiling, but not a real saving relative
+  to the sentinel approach.
+
+- *Run-length encoding.* Store a count alongside each line number, describing
+  how many consecutive instructions share that line. Rejected: run-length
+  encoding saves space only when many consecutive instructions share the same
+  line, which is the common case but not guaranteed. Decoding requires more
+  state than delta scanning (you track a remaining-count per run), and the
+  density advantage over deltas on typical compiled code is marginal.
+
+**Why this one.**
+
+Most consecutive instructions in a compiled expression-statement are on the same
+or adjacent lines. A signed delta of zero means "same line as the previous
+instruction"; a delta of +1 or -1 covers line changes within a short source span.
+Both fit in a signed byte with room to spare. The sentinel handles the uncommon
+case — a long function spanning many source lines where a delta would overflow
+an int8 — by writing a checkpoint record into the absolute-line table. The
+checkpoint costs 8 bytes (a PC varint and a line varint) and resets the delta
+accumulator. Small deltas remain cheap; large jumps are rare and their cost is
+proportional to their infrequency.
+
+The approach matches Lua 5.5's delta-with-checkpoint scheme closely. Lua uses
+the same signed-byte delta width and an absolute-line table for seek
+acceleration; the difference is Lua emits periodic checkpoints at fixed
+PC intervals for binary-search lookups, while this implementation emits
+checkpoints only when a delta would overflow an int8. The sentinel encoding
+collapses the two concepts into a single mechanism: one byte means "use the
+delta," one reserved byte value means "read the next checkpoint instead."
+
+**Implications.** Recovering the source line for an arbitrary PC requires
+scanning from the nearest absolute-line checkpoint before that PC. This is a
+cold-path operation — it only runs when formatting a VM error message, never
+during expression evaluation. Checkpoints are emitted whenever the line delta
+would overflow an int8, which means deeply nested multi-line expressions or
+files with large blank-section jumps produce checkpoints proportionally. Source
+files with tightly sequential line numbers never trigger a checkpoint between
+the bootstrap record at PC 0 and the end of the function.
+
+---
+
+### Pluggable allocator on `Chunk` via `UChunkAllocFn`
+
+**Locked:** 2026-04-22
+**Status:** active
+**Reference docs:**
+[`internals/bytecode-format.md` — Sections](bytecode-format.md#sections),
+`src/uchunk.h`
+
+**Decision.** The chunk deserializer (`uchunk_deserialize`) accepts a
+realloc-semantics allocator callback `UChunkAllocFn`. The host passes in a
+function pointer matching `void *(*)(void *ptr, size_t nbytes, void *ud)`.
+When `nbytes` is zero, the call is a free. When `ptr` is null and `nbytes` is
+nonzero, the call is a malloc. Otherwise it is a realloc. The callback and a
+user-data pointer (`ud`) are stored in the `Chunk` struct and reused for the
+chunk's lifetime, including `uchunk_destroy`.
+
+**Alternatives considered.**
+
+- *Hard-wired `malloc` / `free`.* Call standard library allocation directly.
+  Simple. Rejected: the runtime targets embedded systems where there is no
+  standard library allocator. On FreeRTOS or bare-metal targets the host
+  provides a pool allocator or a bump allocator from a statically declared
+  buffer; hard-wiring `malloc` makes the loader unusable without a hosted libc.
+
+- *Separate static-buffer and stdlib variants, like `uarena`.* Provide
+  `uchunk_deserialize_static(buf, size, ...)` and
+  `uchunk_deserialize_stdlib(...)` as two entry points. The arena module uses
+  this shape to manage the `__STDC_HOSTED__` boundary. Rejected for chunks: the
+  arena is initialized once and then used in place; a chunk loaded at runtime
+  on an embedded target is read from flash or a communication interface, and the
+  number of chunks loaded is not known at compile time. A static-buffer variant
+  would require the host to size a single buffer for the largest chunk it will
+  ever load — an impractical constraint for a runtime that may receive code over
+  a remote REPL or load bytecode from a file system.
+
+**Why this one.**
+
+The callback approach puts the host in control of every allocation the chunk
+loader performs without requiring the loader to know anything about the host's
+memory subsystem. A FreeRTOS target wires in `pvPortMalloc` / `vPortFree`; a
+pool-allocator target wires in its pool; a hosted target wires in
+`realloc` / `free`. The loader code changes not at all.
+
+The realloc-semantics callback is also how the upstream allocator hook
+(`urbi_set_allocator`) at the VM level will work. Adopting the same shape in
+the chunk loader means the two APIs compose naturally: a host that sets a
+custom allocator at VM init can pass the same callback down through bytecode
+loading without any adaptation.
+
+The callback is stored on the `Chunk` struct so that `uchunk_destroy` can free
+the chunk's sections through the same allocator that allocated them. This is
+essential on embedded targets where the allocator is stateful — freeing through
+a different allocator than the one used to allocate is a hard error.
+
+**Implications.** Hosts that want to lock down their heap after startup — a
+common embedded pattern where all dynamic allocation happens at boot and none
+happens thereafter — can wire in an allocator that panics on any call after a
+lock flag is set. Because every chunk allocation goes through the callback,
+this pattern is enforced mechanically rather than by audit. The same property
+holds for certified builds that must demonstrate no dynamic allocation during
+normal operation: load all required chunks at startup through the allocator,
+lock the heap, run. The allocator callback records when locking was requested
+and asserts if a post-lock allocation is attempted.
