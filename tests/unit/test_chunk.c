@@ -669,6 +669,94 @@ UTEST(verifier_accepts_hand_crafted_op_move_chunk) {
     uchunk_destroy(&c);
 }
 
+/* --- Round-trip integration tests (Task 15) --- */
+
+/* Returns true if two chunks are semantically equivalent. */
+static bool chunks_equivalent(const Chunk *a, const Chunk *b) {
+    size_t i;
+    if (a->instr_count     != b->instr_count)     return false;
+    if (a->const_count     != b->const_count)     return false;
+    if (a->abs_line_count  != b->abs_line_count)  return false;
+    if (a->max_reg         != b->max_reg)         return false;
+    for (i = 0; i < a->instr_count; i++) {
+        if (a->instructions[i] != b->instructions[i]) return false;
+        if (a->line_deltas[i]  != b->line_deltas[i])  return false;
+    }
+    for (i = 0; i < a->const_count; i++) {
+        if (a->constants[i].kind != b->constants[i].kind) return false;
+        if (a->constants[i].kind == UVAL_INT
+         && a->constants[i].v.i  != b->constants[i].v.i)  return false;
+    }
+    for (i = 0; i < a->abs_line_count; i++) {
+        if (a->abs_lines[i].pc   != b->abs_lines[i].pc)   return false;
+        if (a->abs_lines[i].line != b->abs_lines[i].line) return false;
+    }
+    /* source_name: both NULL, or strcmp == 0 */
+    if ((a->source_name == NULL) != (b->source_name == NULL)) return false;
+    if (a->source_name != NULL && strcmp(a->source_name, b->source_name) != 0) return false;
+    return true;
+}
+
+/* Emit ast, serialize to a heap buffer, deserialize into a second chunk,
+   assert round-trip equivalence, then clean up both chunks and the arena. */
+static void roundtrip_ast(AstNode *ast, const char *source_name) {
+    Chunk src = {0};
+    Arena arena;
+    Emitter e;
+    char errmsg[256];
+    uint8_t *buf;
+    Chunk dst = {0};
+    ptrdiff_t need;
+    ptrdiff_t wrote;
+    UChunkLoadError rc;
+
+    uarena_init(&arena, 0);
+    uemit_init(&e, &src, &arena, source_name);
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, ast));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    need = uchunk_serialize(&src, NULL, 0);
+    UASSERT((ptrdiff_t)0 < need);
+
+    buf = (uint8_t *)malloc((size_t)need);
+    wrote = uchunk_serialize(&src, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    errmsg[0] = '\0';
+    rc = uchunk_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT(chunks_equivalent(&src, &dst));
+
+    free(buf);
+    uarena_destroy(&arena);
+    uchunk_destroy(&src);
+    uchunk_destroy(&dst);
+}
+
+UTEST(roundtrip_ast_int_literal) {
+    AstNode n = {0};
+    n.kind = AST_INT; n.u.i = 42; n.line = 1;
+    roundtrip_ast(&n, "test");
+}
+
+UTEST(roundtrip_ast_binary_1_plus_2) {
+    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    AstNode bin = {0};
+    bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
+    bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs;
+    bin.line = 1;
+    roundtrip_ast(&bin, NULL);
+}
+
+UTEST(roundtrip_ast_unary_neg_5) {
+    AstNode operand = {0}; operand.kind = AST_INT; operand.u.i = 5; operand.line = 1;
+    AstNode neg = {0};
+    neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
+    neg.line = 1;
+    roundtrip_ast(&neg, "a/b/c.u");
+}
+
 /* --- Serializer tests (Task 14) --- */
 
 UTEST(serialize_empty_chunk_produces_24_byte_header_plus_zero_sized_sections) {
@@ -820,4 +908,10 @@ void test_chunk_suite(void) {
               serialize_cap_0_returns_required_size_without_writing);
     utest_run("serialize cap too small returns ULOAD_TRUNCATED negative",
               serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative);
+    utest_run("roundtrip AST_INT literal emit-serialize-deserialize",
+              roundtrip_ast_int_literal);
+    utest_run("roundtrip AST_BINARY 1+2 emit-serialize-deserialize",
+              roundtrip_ast_binary_1_plus_2);
+    utest_run("roundtrip AST_UNARY -5 emit-serialize-deserialize",
+              roundtrip_ast_unary_neg_5);
 }
