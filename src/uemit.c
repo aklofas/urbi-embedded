@@ -3,6 +3,7 @@
 
 #include "uemit.h"
 
+#include <limits.h>
 #include <stddef.h>
 
 /* Local zero-fill.  Replaces memset so uemit.c compiles without a hosted
@@ -130,10 +131,41 @@ static uint16_t add_const_int(Emitter *e, const int64_t v) {
     }
 }
 
-/* Append one encoded instruction.  Stores line in prev_line for Task 13
-   (syncline delta encoding).  No-op when e->error is already set. */
+/* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow. */
+static void emit_push_abs_line(Emitter *e, const uint32_t pc, const uint32_t line) {
+    if (!emit_grow(e->chunk, (void **)&e->chunk->abs_lines, &e->chunk->abs_line_cap,
+                   e->chunk->abs_line_count + 1u, sizeof(AbsLine))) {
+        e->error = EMIT_OOM;
+        return;
+    }
+    e->chunk->abs_lines[e->chunk->abs_line_count].pc   = pc;
+    e->chunk->abs_lines[e->chunk->abs_line_count].line = line;
+    e->chunk->abs_line_count++;
+}
+
+/* Append one delta byte to line_deltas.  line_deltas has no cap field —
+   it is sized exactly to instr_count.  Called after instr_count has been
+   incremented so the new slot is at [instr_count - 1]. */
+static void emit_push_line_delta(Emitter *e, const int8_t delta) {
+    UChunkAllocFn alloc = emit_alloc_for(e->chunk);
+    if (alloc == NULL) { e->error = EMIT_OOM; return; }
+    void *fresh = alloc(e->chunk->line_deltas,
+                        e->chunk->instr_count * sizeof(int8_t),
+                        e->chunk->alloc_ud);
+    if (fresh == NULL) { e->error = EMIT_OOM; return; }
+    e->chunk->line_deltas = (int8_t *)fresh;
+    e->chunk->line_deltas[e->chunk->instr_count - 1u] = delta;
+}
+
+/* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
+   No-op when e->error is already set. */
 static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
+    uint32_t pc;
+    int8_t delta;
+    bool needs_abs;
+
     if (e->error != EMIT_OK) return;
+    if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
     if (!emit_grow(e->chunk, (void **)&e->chunk->instructions,
                    &e->chunk->instr_cap,
                    e->chunk->instr_count + 1u, sizeof(uint32_t))) {
@@ -141,6 +173,29 @@ static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
         return;
     }
     e->chunk->instructions[e->chunk->instr_count++] = ins;
+
+    /* Delta encoding.  INT8_MIN (-128) is the sentinel; valid range [-127,+127]. */
+    pc = (uint32_t)(e->chunk->instr_count - 1u);
+    delta = 0;
+    needs_abs = false;
+    if (e->prev_line == 0u) {
+        /* First instruction ever: bootstrap abs checkpoint regardless of line value. */
+        needs_abs = true;
+    } else {
+        const int64_t d = (int64_t)line - (int64_t)e->prev_line;
+        if (d <= (int64_t)INT8_MIN || d > (int64_t)INT8_MAX) {
+            needs_abs = true;
+        } else {
+            delta = (int8_t)d;
+        }
+    }
+    if (needs_abs) {
+        delta = (int8_t)-128;
+        emit_push_abs_line(e, pc, line);
+        if (e->error != EMIT_OK) return;
+    }
+    emit_push_line_delta(e, delta);
+    if (e->error != EMIT_OK) return;
     e->prev_line = line;
 }
 

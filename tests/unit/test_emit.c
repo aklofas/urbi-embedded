@@ -350,6 +350,73 @@ UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
     uchunk_destroy(&chunk);
 }
 
+UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+    AstNode n = {0};
+    n.kind = AST_INT; n.u.i = 1; n.line = 10;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+    UASSERT_EQ((size_t)2, chunk.instr_count);  /* LOADK ; RET */
+    /* First instruction has INT8_MIN sentinel delta (triggers abs_line lookup). */
+    UASSERT_EQ((int8_t)-128, chunk.line_deltas[0]);
+    UASSERT_EQ((size_t)1, chunk.abs_line_count);
+    UASSERT_EQ((uint32_t)0,  chunk.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, chunk.abs_lines[0].line);
+    /* Second instruction (RET) is on the same line, delta 0. */
+    UASSERT_EQ((int8_t)0, chunk.line_deltas[1]);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+
+    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    /* Two LOADKs and a RET.  First LOADK at line 1 — abs checkpoint.
+       Second LOADK at line 3 — delta = +2 stored inline. */
+    UASSERT_EQ((size_t)3, chunk.instr_count);
+    UASSERT_EQ((int8_t)-128, chunk.line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    chunk.line_deltas[1]);
+    UASSERT_EQ((int8_t)0,    chunk.line_deltas[2]);     /* RET shares line with last instr */
+    UASSERT_EQ((size_t)1, chunk.abs_line_count);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+
+    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
+    UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    UASSERT_EQ((size_t)2, chunk.abs_line_count);
+    UASSERT_EQ((uint32_t)1,   chunk.abs_lines[0].line);
+    UASSERT_EQ((uint32_t)500, chunk.abs_lines[1].line);
+    /* pc=0 first abs_line; pc=1 second abs_line (second LOADK). */
+    UASSERT_EQ((uint32_t)0, chunk.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, chunk.abs_lines[1].pc);
+    UASSERT_EQ((int8_t)-128, chunk.line_deltas[1]);        /* sentinel */
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -381,4 +448,10 @@ void test_emit_suite(void) {
               emit_first_error_latches_and_subsequent_statements_short_circuit);
     utest_run("emit EMIT_OOM when constant-pool realloc fails",
               emit_emit_oom_when_constant_pool_realloc_fails);
+    utest_run("emit syncline: first instruction triggers abs_line checkpoint",
+              emit_syncline_first_instruction_triggers_abs_line_checkpoint);
+    utest_run("emit syncline: small delta between statements uses delta byte",
+              emit_syncline_small_delta_between_statements_uses_delta_byte);
+    utest_run("emit syncline: overflow triggers new abs_line checkpoint",
+              emit_syncline_overflow_triggers_new_abs_line_checkpoint);
 }
