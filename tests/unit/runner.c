@@ -28,6 +28,8 @@ extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_arena_suite(void);
 extern void test_parser_suite(void);
+extern void test_chunk_suite(void);
+extern void test_emit_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -38,6 +40,8 @@ int main(void) {
     test_lexer_suite();
     test_arena_suite();
     test_parser_suite();
+    test_chunk_suite();
+    test_emit_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
