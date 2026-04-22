@@ -25,7 +25,7 @@ urbiscript has two numeric types: **Integer** and **Float**. Both descend from a
 | Type | Width | Target variance |
 |---|---|---|
 | Integer | i64, signed two's-complement | Identical on every target |
-| Float | f32 on SP-FPU / no-FPU targets (Cortex-M4, ESP32-C3, ESP32-S3); f64 everywhere else (Linux, STM32H7) | Per-ABI flavor — see §4 |
+| Float | f32 on SP-FPU / no-FPU targets (Cortex-M4, ESP32-C3, ESP32-S3); f64 everywhere else (Linux, STM32H7) | Per-ABI flavor — see [internals/bytecode-format.md](internals/bytecode-format.md) |
 
 Integer is fixed-width across every target on purpose. Counter semantics (ms-since-boot, list indices, coroutine IDs, tag generations) need exact range and no silent wrap on 32-bit embedded; i64 gives ±9.2e18 at the cost of one extra word on 32-bit MCUs and a small libgcc helper set (`__muldi3`, `__divdi3`, `__moddi3` — ~1–2 KB flash on no-FPU parts).
 
@@ -266,75 +266,7 @@ Each gets a typed `urbi_<noun>_t` enum on the C side and a matching singleton pr
 - **Typo safety.** Caught by the C compiler on one side, by the slot-not-found path on the other. Neither side permits "this might be a typo that compiles and runs with silent fallback."
 - **Refactor safety.** Renaming an enumerator updates every call site mechanically on the C side and forces a slot-rename commit on the urbiscript side. The number of overlooked sites is zero.
 
----
-
-## 4. Bytecode format descriptor
-
-urbi-embedded bytecode is per-ABI-flavor, not portable. The header carries an explicit descriptor; the loader refuses a mismatch with a diagnostic. There is no run-time coercion.
-
-### 4.1 Header layout
-
-Every `.urb` bytecode file starts with a magic number, a version byte, and the 8-byte format descriptor:
-
-```text
-offset 0     magic          4 bytes    "URBI"  (0x55 0x52 0x42 0x49)
-offset 4     version        1 byte     bytecode format version (v1: 0x01)
-offset 5     (reserved)     3 bytes    padding to 8-byte alignment (zero)
-
-offset 8     format descriptor (8 bytes):
-  byte 0:    int_width      1 byte     v1: always 8 (i64)
-  byte 1:    float_type     1 byte     v1: 4 (f32) or 8 (f64)
-  byte 2:    instr_width    1 byte     v1: always 4 (uint32)
-  byte 3:    endianness     1 byte     v1: 0 (little) or 1 (big); diagnostic only
-  byte 4-7:  reserved       4 bytes    future flags (Integer subtype, alt VM modes, etc.)
-```
-
-After the descriptor: varint-encoded sections (constant pool, function table, instructions, synclines, symbol table). All size and integer fields in the body are varint — Lua 5.5's `ldump.c` approach. No endianness issue in the body because varints are byte-level. The only fixed-width fields in the format are Integer and Float constants in the constant pool; those are endian-correct for the declared flavor.
-
-### 4.2 v1 supported combinations
-
-| `int_width` | `float_type` | `instr_width` | Target triples |
-|---|---|---|---|
-| 8 | 8 | 4 | `linux-x86_64`, `stm32h7` |
-| 8 | 4 | 4 | `cortex-m4`, `esp32-c3`, `esp32-s3` |
-
-Every other combination (e.g. `int_width=4`, `float_type=16`) is refused at load time in v1. The reserved bytes leave room for future extensions without a header-version bump.
-
-### 4.3 Loader behavior on mismatch
-
-The loader reads the header, compares each field against the VM's compile-time constants (`URBI_INT_WIDTH`, `URBI_FLOAT_TYPE`, `URBI_INSTR_WIDTH`), and if any field disagrees:
-
-- returns `URBI_ERR_BYTECODE_FLAVOR_MISMATCH`,
-- sets the VM's last-error buffer to a diagnostic of the form
-  `"bytecode flavor mismatch: expected float_type=8 (f64), got float_type=4 (f32)"`,
-- does not attempt partial load or coercion.
-
-The diagnostic names the specific field that disagrees so the user can fix their toolchain invocation without reading a hex dump. Endianness mismatch is diagnostic-only — it produces the same refusal, but v1 ships only little-endian targets, so this field is there for future-proofing, not current use.
-
-### 4.4 Compiler tool: `urbi-compile --target`
-
-The host bytecode compiler is target-aware:
-
-```sh
-urbi-compile --target=cortex-m4   file.u -o file.urb   # int_width=8 float_type=4
-urbi-compile --target=stm32h7     file.u -o file.urb   # int_width=8 float_type=8
-urbi-compile --target=linux-x86_64 file.u -o file.urb  # int_width=8 float_type=8
-urbi-compile file.u -o file.urb                         # host-native (default)
-```
-
-The default target when `--target` is unspecified is `host-native` — the flavor matching the machine running `urbi-compile`. This makes local development friction-free and forces embedded builds to be explicit, which is the right direction. Cross-build recipes in the user's Makefile or buildroot config always name the target explicitly.
-
-v1 ships five supported triples as above. New triples become supported by adding a row to the compiler's target table and teaching the loader to accept the new flavor combination. No format-version bump required as long as the field widths stay within the declared byte layout.
-
-### 4.5 Why per-ABI rather than universally portable
-
-The alternative — a single portable bytecode with per-target coercion at load time — has been rejected. Reasons:
-
-- **Coercion is either lossy or expensive.** f64→f32 loses precision. i64→i32 loses range. Doing the conversion at load time hides a silent behavior change behind a nominal compatibility guarantee.
-- **Load-time coercion still requires runtime tagging that distinguishes the original.** Which means the VM has to carry both widths anyway.
-- **The user's toolchain knows the target.** Baking flavor into the artifact is an honest declaration, not a lost flexibility. If someone wants to ship one `.urb` to run on both, they ship two `.urb` files — the cost is 2x the flash for bytecode, not 2x the runtime.
-
-Lua 5.5's partial bytecode portability is a design compromise we're declining on purpose.
+*Section 4 (Bytecode format descriptor) moved to [internals/bytecode-format.md](internals/bytecode-format.md).*
 
 ---
 

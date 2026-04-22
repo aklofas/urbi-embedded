@@ -33,7 +33,7 @@ static void chunk_memcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) pd[i] = ps[i];
 }
 
-/* Canonical canary bytes — LANG-CONVENTIONS §4 / spec §5.1. */
+/* Canonical canary bytes — docs/internals/bytecode-format.md §Header. */
 static const uint8_t kCanary[6] = { 0x19, 0x93, '\r', '\n', 0x1A, '\n' };
 
 #if __STDC_HOSTED__
