@@ -52,10 +52,10 @@ void uchunk_destroy(Chunk *chunk) {
     if (chunk == NULL) return;
     UChunkAllocFn alloc = chunk_allocator(chunk);
     if (alloc != NULL) {
-        (void)alloc(chunk->instructions, 0, chunk->alloc_ud);
-        (void)alloc(chunk->constants,    0, chunk->alloc_ud);
-        (void)alloc(chunk->line_deltas,  0, chunk->alloc_ud);
-        (void)alloc(chunk->abs_lines,    0, chunk->alloc_ud);
+        if (chunk->instructions != NULL) (void)alloc(chunk->instructions, 0, chunk->alloc_ud);
+        if (chunk->constants    != NULL) (void)alloc(chunk->constants,    0, chunk->alloc_ud);
+        if (chunk->line_deltas  != NULL) (void)alloc(chunk->line_deltas,  0, chunk->alloc_ud);
+        if (chunk->abs_lines    != NULL) (void)alloc(chunk->abs_lines,    0, chunk->alloc_ud);
     }
     /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
        alloc_ud are all reset; caller must re-init before re-use). */
