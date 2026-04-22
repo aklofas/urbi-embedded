@@ -76,3 +76,17 @@ jobs:
         run: make cppcheck
       - name: GCC -fanalyzer (advisory)
         run: make analyzer
+
+  docs-check:
+    name: docs-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install markdown tools
+        run: npm install -g markdownlint-cli2@0.13 markdown-link-check@3.12
+      - name: Run docs-check
+        run: make docs-check
