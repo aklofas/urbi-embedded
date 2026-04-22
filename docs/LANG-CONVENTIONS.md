@@ -12,7 +12,7 @@ Three priorities shape every convention in this doc:
 
 1. **No ambiguity at the C/urbiscript boundary.** A value that crosses the ABI has exactly one shape, one interpretation, one failure mode. Magic strings ("queue", "drop") are banned; enums are the discipline that makes typos and refactors safe on both sides.
 2. **Per-target flavors are explicit, not implicit.** Bytecode is not pretend-portable. A format descriptor declares the flavor in the header, and the loader refuses a mismatch with a diagnostic that names the field. No silent coercion.
-3. **Certification-aware from v1.** Conventions that make MISRA / DO-178 territory cheaper to reach (enum discipline, strict core/aux split, typed numeric system) are adopted now even when the v1 cost is small. The alternative is a retrofit, which is always more expensive.
+3. **Discipline-aware from v1.** Conventions that keep long-term options open (enum discipline, strict core/aux split, typed numeric system) are adopted now even when the v1 cost is small. The alternative is a retrofit, which is always more expensive.
 
 ---
 
@@ -193,7 +193,7 @@ Three failure modes a magic-string API produces:
 
 1. **Typos that compile.** `exhaust_policy = "quueue"` succeeds at write time, fails at first firing, and points at the assignment site — not the definition.
 2. **Refactor erosion.** Renaming `"drop"` to `"drop_newest"` in the runtime leaves every call site holding the old value. Grep finds some; grep does not find them all.
-3. **Ambient typo tolerance.** Runtime dispatches coded as `if (strcmp(s, "queue") == 0)` gain a tacit "we'll accept whatever sort of works" habit. That's incompatible with a MISRA audit pass and incompatible with the discipline this doc enforces.
+3. **Ambient typo tolerance.** Runtime dispatches coded as `if (strcmp(s, "queue") == 0)` gain a tacit "we'll accept whatever sort of works" habit. That's incompatible with the discipline this doc enforces.
 
 Enums solve all three at the language level.
 
@@ -262,7 +262,7 @@ Each gets a typed `urbi_<noun>_t` enum on the C side and a matching singleton pr
 
 ### 3.5 What this buys
 
-- **MISRA discipline.** MISRA C Rule 10.x demands essential-type consistency; enums are the canonical way to express categorical values. Magic strings are essential-type `char *`, which is not a category.
+- **Type discipline.** Safety-focused C conventions treat categorical values as distinct types; enums are the canonical expression. Magic strings collapse the category into `char *`, which is not a category — the type system loses information the programmer intended to preserve.
 - **Typo safety.** Caught by the C compiler on one side, by the slot-not-found path on the other. Neither side permits "this might be a typo that compiles and runs with silent fallback."
 - **Refactor safety.** Renaming an enumerator updates every call site mechanically on the C side and forces a slot-rename commit on the urbiscript side. The number of overlooked sites is zero.
 
@@ -503,7 +503,7 @@ If no, the PR is not merged as-is. The reviewer and author pick path (1) or path
 
 ### 6.6 Certification consequence
 
-When v2.0 or later pursues MISRA / DO-178 territory, the audit scope is the core. Aux can be audited separately with its own narrower rule set, or excluded from the certified build entirely. This is the real structural reason for the split — not Lua-parity cosmetics. If aux cheats on the rule, it becomes audit-poisonous, and the split stops buying us anything.
+If v2.0 or later pursues a formal audit path, the audit scope is the core. Aux can be audited separately with its own narrower rule set, or excluded from the certified build entirely. This is the real structural reason for the split — not Lua-parity cosmetics. If aux cheats on the rule, it becomes audit-poisonous, and the split stops buying us anything.
 
 The discipline is a long-term commitment. The v1 payoff is small (a slightly smaller `urbi.h`); the v2 payoff is being able to certify at all.
 

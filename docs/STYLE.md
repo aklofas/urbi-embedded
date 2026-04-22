@@ -12,7 +12,7 @@ Four priorities shape every style decision:
 
 1. **Lua-grade embeddability.** Zero external dependencies. Pure C99. `cc src/*.c` builds a static library. No heap allocation; the host plugs in an allocator. No global mutable state; multiple VM instances coexist.
 2. **Embedded-first discipline.** The runtime must fit a Cortex-M4 with 16 KB of RAM. Every line is measured against that target. Convenience that can't be stripped on embedded is convenience we don't add.
-3. **Path toward safety-critical.** The long-term roadmap includes a hard-real-time subset and eventual MISRA-style certification. Styles that make that path cheaper are preferred now, even at small readability cost today. Full `const`-correctness is the most visible example.
+3. **Path toward safety-critical.** The long-term roadmap includes a hard-real-time subset and the option of formal certification later. Styles that make that path cheaper are preferred now, even at small readability cost today. Full `const`-correctness is the most visible example.
 4. **Honest terseness.** Self-documenting names, one-line purpose comments at the top of files, `/* why */` over `/* what */`. Never emojis.
 
 ---
@@ -89,7 +89,7 @@ The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv
 - **Const on read-only locals.** Any local that's computed or assigned once and then only read gets `const`. Loop accumulators and cursor-driven state stay mutable.
 - **Const on tables.** `static const char *TOKEN_NAMES[]`, `static const char *ERR_MSG[]`. Makes it explicit that these are compile-time-frozen lookup data.
 
-Rationale: the project is on a path toward MISRA-aligned certification where const-correctness is a rule-set requirement. Leaning into it now costs nothing and avoids a retrofit later.
+Rationale: the long-term path includes formal-audit territory where const-correctness is a rule-set requirement. Leaning into it now costs nothing and avoids a retrofit later.
 
 ---
 

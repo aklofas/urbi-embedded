@@ -67,7 +67,7 @@ README badges show conformance %, coverage %, p99 GC pause, fuzzer uptime, and p
 
 ## Non-goals for v1.0
 
-- **Not safety-critical.** No IEC 61508, DO-178, or MISRA certification. Out of scope unless customer-funded.
+- **Not safety-critical.** No formal safety-certification in v1 scope. Out of scope unless customer-funded.
 - **Not bug-compatible with urbi 2.x.** Language is preserved; minor semantic divergences are documented with rationale rather than emulated. Conformance is measured against the 2.x corpus, but the gate is "≥ 95% pass," not "100% bug-for-bug."
 - **Not a JIT.** Bytecode interpreter only. A method JIT for Linux is a post-v1.0 consideration; tracing JIT is the wrong shape for event-driven code and stays out.
 - **Not multi-threaded per VM.** One cooperative scheduler per VM. Parallelism comes from multiple VM instances on multiple host threads.
