@@ -177,7 +177,10 @@ Commit hygiene is covered in `CONTRIBUTING.md`. Briefly:
 | File | Enforces |
 |---|---|
 | `.editorconfig` | Indent style, trailing whitespace, line endings, final newline |
-| `.clang-tidy` | A chosen subset of clang-tidy checks (bugprone, performance, portability, clang-analyzer); disables C++-focused categories that don't apply to C |
+| `.clang-tidy` | A chosen subset of clang-tidy checks (bugprone, performance, portability, clang-analyzer); disables C++-focused categories and three individually-noisy checks |
+| `Makefile:tidy` | Gating clang-tidy via `run-clang-tidy --warnings-as-errors='*'`, reading `compile_commands.json` |
+| `Makefile:cppcheck` | Advisory cppcheck sweep over the same compile database; exits 0 regardless of findings |
+| `Makefile:analyzer` | Advisory GCC `-fanalyzer` compile-time pass in the dedicated `build/host-analyzer/` variant |
 | `Makefile` | C99 standard, `-Wall -Wextra -Wpedantic`, sanitizer variants, zero-deps static-library build |
 | `.gitignore` | Build artifacts, per-editor state, AI-tool config files |
 
