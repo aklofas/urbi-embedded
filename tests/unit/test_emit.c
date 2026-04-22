@@ -417,6 +417,62 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     uchunk_destroy(&chunk);
 }
 
+UTEST(disassemble_empty_chunk_produces_short_placeholder) {
+    Chunk chunk = {0};
+    Arena arena;
+    Emitter e;
+    uarena_init(&arena, 0);
+    uemit_init(&e, &chunk, &arena, NULL);
+    (void)uemit_finish(&e);
+
+    char buf[256];
+    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "(empty)") != NULL || n <= 32);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(disassemble_1_plus_2_produces_recognizable_text) {
+    Chunk chunk = {0};
+    Arena arena;
+    AstNode lhs = {0};
+    AstNode rhs = {0};
+    AstNode bin = {0};
+    uarena_init(&arena, 0);
+    lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
+    bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs; bin.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
+
+    char buf[512];
+    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "LOADK") != NULL);
+    UASSERT(strstr(buf, "ADD")   != NULL);
+    UASSERT(strstr(buf, "RET")   != NULL);
+    UASSERT(strstr(buf, "R0")    != NULL);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
+    Chunk chunk = {0};
+    Arena arena;
+    AstNode n = {0};
+    uarena_init(&arena, 0);
+    n.kind = AST_INT; n.u.i = 1; n.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+
+    char buf[8];
+    size_t written = uemit_disassemble(&chunk, buf, sizeof buf);
+    UASSERT(written < sizeof buf);
+    UASSERT_EQ('\0', buf[sizeof buf - 1]);
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -454,4 +510,10 @@ void test_emit_suite(void) {
               emit_syncline_small_delta_between_statements_uses_delta_byte);
     utest_run("emit syncline: overflow triggers new abs_line checkpoint",
               emit_syncline_overflow_triggers_new_abs_line_checkpoint);
+    utest_run("disassemble empty chunk produces a short placeholder",
+              disassemble_empty_chunk_produces_short_placeholder);
+    utest_run("disassemble 1 + 2 produces recognizable text",
+              disassemble_1_plus_2_produces_recognizable_text);
+    utest_run("disassemble truncates cleanly when buf is too small",
+              disassemble_truncates_cleanly_when_buf_is_too_small);
 }

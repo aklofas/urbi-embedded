@@ -4,6 +4,7 @@
 #include "uemit.h"
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stddef.h>
 
 /* Local zero-fill.  Replaces memset so uemit.c compiles without a hosted
@@ -319,12 +320,104 @@ const char *uemit_error_name(EmitError code) {
     return "EMIT_UNKNOWN";
 }
 
-size_t uemit_disassemble(const Chunk *chunk, char *buf, size_t cap) {
-    /* Task 16. */
+#if __STDC_HOSTED__
+#  include <stdio.h>
+#  include <inttypes.h>
+
+static const char *opname(const UOpcode op) {
+    switch (op) {
+    case OP_LOADK: return "LOADK";
+    case OP_MOVE:  return "MOVE";
+    case OP_ADD:   return "ADD";
+    case OP_SUB:   return "SUB";
+    case OP_MUL:   return "MUL";
+    case OP_DIV:   return "DIV";
+    case OP_NEG:   return "NEG";
+    case OP_RET:   return "RET";
+    case OP_MAX:   break;
+    }
+    return "OP?";
+}
+
+/* snprintf into (buf+off, cap-off), advancing *off.  Returns false when
+   capacity is exhausted; always null-terminates buf when cap > 0. */
+static bool dis_printf(char *buf, const size_t cap, size_t *off,
+                       const char *fmt, ...) {
+    va_list ap;
+    int n;
+    if (*off >= cap) return false;
+    va_start(ap, fmt);
+    n = vsnprintf(buf + *off, cap - *off, fmt, ap);
+    va_end(ap);
+    if (n < 0) return false;
+    if ((size_t)n >= cap - *off) {
+        *off = cap - 1u;
+        buf[*off] = '\0';
+        return false;
+    }
+    *off += (size_t)n;
+    return true;
+}
+
+size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
+    size_t off;
+    size_t i;
+    if (cap == 0 || buf == NULL) return 0;
+    buf[0] = '\0';
+    off = 0;
+    if (chunk->instr_count == 0) {
+        dis_printf(buf, cap, &off, "(empty)\n");
+        return off;
+    }
+    for (i = 0; i < chunk->instr_count; i++) {
+        const uint32_t ins = chunk->instructions[i];
+        const UOpcode  op  = uinstr_op(ins);
+        const uint8_t  a   = uinstr_a(ins);
+        bool ok;
+        switch (op) {
+        case OP_LOADK:
+            ok = dis_printf(buf, cap, &off, "%04zu  LOADK R%u, K%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_bx(ins));
+            break;
+        case OP_RET:
+            ok = dis_printf(buf, cap, &off, "%04zu  RET R%u\n",
+                            i, (unsigned)a);
+            break;
+        case OP_NEG:
+            ok = dis_printf(buf, cap, &off, "%04zu  NEG R%u, R%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins));
+            break;
+        default:
+            ok = dis_printf(buf, cap, &off, "%04zu  %s R%u, R%u, R%u\n",
+                            i, opname(op), (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        }
+        if (!ok) return off;
+    }
+    if (!dis_printf(buf, cap, &off, "; constants:\n")) return off;
+    for (i = 0; i < chunk->const_count; i++) {
+        bool ok;
+        if (chunk->constants[i].kind == (uint8_t)UVAL_INT) {
+            ok = dis_printf(buf, cap, &off, ";   K%zu = INT %" PRId64 "\n",
+                            i, chunk->constants[i].v.i);
+        } else {
+            ok = dis_printf(buf, cap, &off, ";   K%zu = ?\n", i);
+        }
+        if (!ok) return off;
+    }
+    return off;
+}
+
+#else  /* freestanding */
+
+size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
     (void)chunk;
     if (cap > 0 && buf != NULL) buf[0] = '\0';
     return 0;
 }
+
+#endif  /* __STDC_HOSTED__ */
 
 /* --- Varint encode helpers (write side mirrors uchunk.c decode side) --- */
 
