@@ -293,17 +293,74 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
         chunk->instr_count++;
     }
 
-    /* --- synclines gate — Task 6 replaces this with real decode --- */
+    /* --- synclines: delta array + absolute-line checkpoints --- */
     uint64_t n_deltas = 0;
     rc = varint_decode_u(buf + off, size - off, &n_deltas, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_deltas"); return rc; }
     off += consumed;
-    uint64_t n_abs_lines = 0;
-    rc = varint_decode_u(buf + off, size - off, &n_abs_lines, &consumed);
+    if (n_deltas != (uint64_t)chunk->instr_count) {
+        set_errmsg(errmsg, errcap,
+                   "n_deltas=%llu does not match n_instructions=%zu",
+                   (unsigned long long)n_deltas, chunk->instr_count);
+        return ULOAD_CORRUPT;
+    }
+    if (n_deltas > 0u) {
+        UChunkAllocFn alloc = chunk_allocator(chunk);
+        if (alloc == NULL) return ULOAD_OOM;
+        chunk->line_deltas = (int8_t *)alloc(NULL, (size_t)n_deltas, chunk->alloc_ud);
+        if (chunk->line_deltas == NULL) return ULOAD_OOM;
+        if (off + (size_t)n_deltas > size) {
+            set_errmsg(errmsg, errcap, "truncated at line_deltas");
+            return ULOAD_TRUNCATED;
+        }
+        chunk_memcpy(chunk->line_deltas, buf + off, (size_t)n_deltas);
+        off += (size_t)n_deltas;
+    }
+
+    uint64_t n_abs = 0;
+    rc = varint_decode_u(buf + off, size - off, &n_abs, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_abs_lines"); return rc; }
     off += consumed;
-    if (n_deltas > 0u || n_abs_lines > 0u || off < size) {
-        set_errmsg(errmsg, errcap, "syncline decode not implemented yet");
+    if (n_abs > 0u) {
+        if (!chunk_grow(chunk, (void **)&chunk->abs_lines, &chunk->abs_line_cap,
+                        (size_t)n_abs, sizeof(AbsLine))) {
+            return ULOAD_OOM;
+        }
+    }
+    uint32_t prev_pc_checkpoint = 0;
+    bool first_checkpoint = true;
+    for (uint64_t i = 0; i < n_abs; i++) {
+        uint64_t pc64 = 0;
+        uint64_t line64 = 0;
+        rc = varint_decode_u(buf + off, size - off, &pc64, &consumed);
+        if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at abs_line pc"); return rc; }
+        off += consumed;
+        rc = varint_decode_u(buf + off, size - off, &line64, &consumed);
+        if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at abs_line line"); return rc; }
+        off += consumed;
+        if (pc64 >= (uint64_t)chunk->instr_count) {
+            set_errmsg(errmsg, errcap,
+                       "abs_line pc=%llu out of range (instr_count=%zu)",
+                       (unsigned long long)pc64, chunk->instr_count);
+            return ULOAD_CORRUPT;
+        }
+        if (!first_checkpoint && (uint32_t)pc64 <= prev_pc_checkpoint) {
+            set_errmsg(errmsg, errcap,
+                       "abs_lines not monotonic in pc at %llu",
+                       (unsigned long long)pc64);
+            return ULOAD_CORRUPT;
+        }
+        chunk->abs_lines[chunk->abs_line_count].pc   = (uint32_t)pc64;
+        chunk->abs_lines[chunk->abs_line_count].line = (uint32_t)line64;
+        chunk->abs_line_count++;
+        prev_pc_checkpoint = (uint32_t)pc64;
+        first_checkpoint = false;
+    }
+
+    /* Trailing bytes after syncline section indicate a corrupt or mis-versioned blob. */
+    if (off != size) {
+        set_errmsg(errmsg, errcap,
+                   "trailing %zu bytes after syncline section", size - off);
         return ULOAD_CORRUPT;
     }
 

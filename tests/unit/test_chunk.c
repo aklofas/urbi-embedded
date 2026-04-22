@@ -354,6 +354,161 @@ UTEST(deserialize_rejects_out_of_range_uconst_tag) {
     uchunk_destroy(&c);
 }
 
+/* --- Instruction-stream + syncline tests (Task 5 deferred + Task 6) --- */
+
+UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    /* metadata: max_reg=1, no source name */
+    buf[off++] = 1;
+    off = put_varint(buf, off, 0);
+    /* constants: 0 */
+    off = put_varint(buf, off, 0);
+    /* instructions: 1.  varint 1 = 1 byte.  off before = 27; 27 mod 4 = 3, pad 1 byte. */
+    off = put_varint(buf, off, 1);
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    /* OP_RET R0: op=7, A=0, B=0, C=0 */
+    const uint32_t instr = (uint32_t)OP_RET;
+    buf[off + 0] = (uint8_t)(instr & 0xFF);
+    buf[off + 1] = (uint8_t)((instr >> 8)  & 0xFF);
+    buf[off + 2] = (uint8_t)((instr >> 16) & 0xFF);
+    buf[off + 3] = (uint8_t)((instr >> 24) & 0xFF);
+    off += 4;
+    /* synclines: n_deltas=1, 1 abs_line (pc=0, line=5) */
+    off = put_varint(buf, off, 1);
+    buf[off++] = (uint8_t)(int8_t)-128;     /* INT8_MIN sentinel */
+    off = put_varint(buf, off, 1);
+    off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
+    off = put_varint(buf, off, 5);          /* abs_line[0].line = 5 */
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)1, c.instr_count);
+    UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c.instructions[0]));
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_non_zero_alignment_padding) {
+    /* To force a padding byte, we need off to be non-4-aligned after the
+       n_instructions varint.  Use source_name_len=1 ("x") to shift layout:
+       24 (hdr) + 1 (max_reg) + 1 (src_len varint 1) + 1 ("x") +
+       1 (n_constants=0) + 1 (n_instructions=1) = off=29; 29 mod 4 = 1,
+       so 3 pad bytes are needed. */
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                         /* max_reg */
+    off = put_varint(buf, off, 1);          /* source_name_len = 1 */
+    buf[off++] = 'x';                       /* source_name = "x" */
+    off = put_varint(buf, off, 0);          /* n_constants */
+    off = put_varint(buf, off, 1);          /* n_instructions=1 */
+    /* off is now 29 (29 mod 4 == 1); 3 pad bytes needed — corrupt them */
+    while ((off & 3u) != 0u) buf[off++] = 0xFF;
+    /* instruction body (alignment check fires before reading this) */
+    buf[off + 0] = (uint8_t)OP_RET;
+    buf[off + 1] = 0; buf[off + 2] = 0; buf[off + 3] = 0;
+    off += 4;
+    /* minimal synclines to avoid trailing-bytes complaint */
+    off = put_varint(buf, off, 1);
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "align") != NULL);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    /* metadata */
+    buf[off++] = 1;
+    off = put_varint(buf, off, 0);
+    /* constants: 0 */
+    off = put_varint(buf, off, 0);
+    /* instructions: 3 */
+    off = put_varint(buf, off, 3);
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        int j;
+        for (j = 0; j < 3; j++) {
+            const uint32_t ins = (uint32_t)OP_RET;
+            buf[off + 0] = (uint8_t)(ins & 0xFF);
+            buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+            buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+            buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+            off += 4;
+        }
+    }
+    /* synclines: 3 deltas (INT8_MIN, +2, -1), 1 abs checkpoint (pc=0, line=10) */
+    off = put_varint(buf, off, 3);
+    buf[off++] = (uint8_t)(int8_t)-128;     /* INT8_MIN */
+    buf[off++] = (uint8_t)(int8_t)2;        /* +2 */
+    buf[off++] = (uint8_t)(int8_t)-1;       /* -1 */
+    off = put_varint(buf, off, 1);
+    off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
+    off = put_varint(buf, off, 10);         /* abs_line[0].line = 10 */
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)3, c.instr_count);
+    UASSERT_EQ((int8_t)-128, c.line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    c.line_deltas[1]);
+    UASSERT_EQ((int8_t)-1,   c.line_deltas[2]);
+    UASSERT_EQ((size_t)1, c.abs_line_count);
+    UASSERT_EQ((uint32_t)0,  c.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, c.abs_lines[0].line);
+    uchunk_destroy(&c);
+}
+
+UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
+    uint8_t buf[128];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 1);          /* 1 instruction */
+    while ((off & 3u) != 0u) buf[off++] = 0;
+    {
+        const uint32_t ins = (uint32_t)OP_RET;
+        buf[off + 0] = (uint8_t)(ins & 0xFF);
+        buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+        buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+        buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+        off += 4;
+    }
+    /* claim 2 deltas but only 1 instruction */
+    off = put_varint(buf, off, 2);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+
+    Chunk c = {0};
+    char errmsg[128];
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UASSERT(strstr(errmsg, "n_deltas") != NULL);
+    uchunk_destroy(&c);
+}
+
 void test_chunk_suite(void);
 
 void test_chunk_suite(void) {
@@ -390,4 +545,12 @@ void test_chunk_suite(void) {
               deserialize_loads_integer_constant_pool);
     utest_run("deserialize rejects out-of-range UConst tag",
               deserialize_rejects_out_of_range_uconst_tag);
+    utest_run("deserialize loads instruction stream with 4-byte alignment",
+              deserialize_loads_instruction_stream_with_4_byte_alignment);
+    utest_run("deserialize rejects non-zero alignment padding",
+              deserialize_rejects_non_zero_alignment_padding);
+    utest_run("deserialize loads delta synclines and abs checkpoints",
+              deserialize_loads_delta_synclines_and_abs_checkpoints);
+    utest_run("deserialize rejects n_deltas not equal n_instructions",
+              deserialize_rejects_n_deltas_not_equal_n_instructions);
 }
