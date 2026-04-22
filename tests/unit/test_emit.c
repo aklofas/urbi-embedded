@@ -141,6 +141,96 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     uchunk_destroy(&chunk);
 }
 
+UTEST(emit_ast_binary_1_plus_2) {
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    AstNode bin = {0};
+    bin.kind = AST_BINARY;
+    bin.u.binary.op = BOP_ADD;
+    bin.u.binary.lhs = &lhs;
+    bin.u.binary.rhs = &rhs;
+    bin.line = 1;
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
+    /* LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0 */
+    UASSERT_EQ((size_t)4, chunk.instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[1]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(chunk.instructions[1]));
+    UASSERT_EQ((int)OP_ADD, (int)uinstr_op(chunk.instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(chunk.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_c(chunk.instructions[2]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(chunk.instructions[3]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[3]));
+    UASSERT_EQ((uint8_t)1, chunk.max_reg);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
+UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
+    struct { BinaryOp bop; int expected_op; } cases[] = {
+        { BOP_SUB, (int)OP_SUB },
+        { BOP_MUL, (int)OP_MUL },
+        { BOP_DIV, (int)OP_DIV }
+    };
+    size_t i;
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        Chunk chunk = {0};
+        Arena arena;
+        uarena_init(&arena, 0);
+        AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+        AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+        AstNode bin = {0};
+        bin.kind = AST_BINARY;
+        bin.u.binary.op = cases[i].bop;
+        bin.u.binary.lhs = &lhs;
+        bin.u.binary.rhs = &rhs;
+        bin.line = 1;
+        UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
+        UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(chunk.instructions[2]));
+        uarena_destroy(&arena);
+        uchunk_destroy(&chunk);
+    }
+}
+
+UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
+    /* (1+2)+(3+4) — 6 AstNodes.  Destination-reuse keeps max_reg==1. */
+    Chunk chunk = {0};
+    Arena arena;
+    uarena_init(&arena, 0);
+
+    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;
+    AstNode c = {0}; c.kind = AST_INT; c.u.i = 3; c.line = 1;
+    AstNode d = {0}; d.kind = AST_INT; d.u.i = 4; d.line = 1;
+    AstNode ab = {0};
+    ab.kind = AST_BINARY; ab.u.binary.op = BOP_ADD;
+    ab.u.binary.lhs = &a; ab.u.binary.rhs = &b; ab.line = 1;
+    AstNode cd = {0};
+    cd.kind = AST_BINARY; cd.u.binary.op = BOP_ADD;
+    cd.u.binary.lhs = &c; cd.u.binary.rhs = &d; cd.line = 1;
+    AstNode top = {0};
+    top.kind = AST_BINARY; top.u.binary.op = BOP_ADD;
+    top.u.binary.lhs = &ab; top.u.binary.rhs = &cd; top.line = 1;
+
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &top));
+    /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
+       child still needs its own register simultaneously.  For the two-level
+       tree (ab)+(cd) the peak is R2: emitting `d` requires R0(ab-lhs),
+       R1(cd-lhs), R2(d) live at once before the inner free_reg. */
+    UASSERT_EQ((uint8_t)2, chunk.max_reg);
+
+    uarena_destroy(&arena);
+    uchunk_destroy(&chunk);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -156,4 +246,10 @@ void test_emit_suite(void) {
               emit_ast_int_single_literal_loadk_then_ret);
     utest_run("emit AST_INT dedups repeated literal in constant pool",
               emit_ast_int_dedups_repeated_literal_in_constant_pool);
+    utest_run("emit AST_BINARY 1 + 2 -> LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0",
+              emit_ast_binary_1_plus_2);
+    utest_run("emit AST_BINARY SUB/MUL/DIV map to correct opcodes",
+              emit_ast_binary_sub_mul_div_map_to_correct_opcodes);
+    utest_run("emit nested (1+2)+(3+4) stays at max_reg=1 via destination reuse",
+              emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1);
 }

@@ -132,6 +132,18 @@ static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
     e->prev_line = line;
 }
 
+/* Map BinaryOp to the corresponding arithmetic opcode. */
+static UOpcode binop_to_opcode(const BinaryOp op) {
+    switch (op) {
+    case BOP_ADD: return OP_ADD;
+    case BOP_SUB: return OP_SUB;
+    case BOP_MUL: return OP_MUL;
+    case BOP_DIV: return OP_DIV;
+    }
+    /* unreachable — parser produces only these four. */
+    return OP_ADD;
+}
+
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure. */
 static uint8_t emit_expr(Emitter *e, AstNode *n) {
@@ -145,7 +157,18 @@ static uint8_t emit_expr(Emitter *e, AstNode *n) {
         emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
         return r;
     }
-    case AST_BINARY:
+    case AST_BINARY: {
+        const uint8_t lhs_reg = emit_expr(e, n->u.binary.lhs);
+        if (e->error != EMIT_OK) return 0u;
+        const uint8_t rhs_reg = emit_expr(e, n->u.binary.rhs);
+        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e,
+                   uinstr_enc_abc(binop_to_opcode(n->u.binary.op),
+                                  lhs_reg, lhs_reg, rhs_reg),
+                   (uint32_t)n->line);
+        free_reg(e);              /* rhs released; lhs holds result in place */
+        return lhs_reg;
+    }
     case AST_UNARY:
     case AST_IDENT:
     case AST_ERROR:
