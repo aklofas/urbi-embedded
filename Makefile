@@ -84,7 +84,20 @@ tidy: compile_commands.json
 tidy-fix: compile_commands.json
 	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
 
+# Static analysis — cppcheck (advisory).
+# Different engine from clang-tidy; catches value-flow, UAF, null-deref
+# that clang-tidy's AST-level checks miss.  Exits 0 regardless of
+# warnings — promote to gating via a separate commit after the noise
+# floor is known.
+cppcheck: compile_commands.json
+	cppcheck --project=compile_commands.json \
+	         --std=c99 \
+	         --enable=warning,style,performance,portability \
+	         --suppress=missingIncludeSystem \
+	         --inline-suppr \
+	         --quiet
+
 clean:
 	rm -rf build compile_commands.json
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck
