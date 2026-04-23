@@ -669,6 +669,142 @@ UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_destroy(&vm);
 }
 
+/* --- Coverage-completing tests (Task 16) --- */
+
+/* OP_MUL TypeError path (lines 435-439 in uvm.c): Bool*Int is ill-typed. */
+UTEST(vm_mul_bool_int_is_type_error) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "OP_MUL") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* OP_DIV TypeError path (lines 450-454 in uvm.c): Bool/Int is ill-typed. */
+UTEST(vm_div_bool_int_is_type_error) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "OP_DIV") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* kind_name "Float" path (line 132): Float operand in a binary TypeError.
+   Float+Bool: b=Float (number), c=Bool (not number) → error; b_kind=UVAL_FLOAT. */
+UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "Float") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* kind_name "String" path (line 134): fabricate a UVAL_STR constant as
+   one operand; triggers a TypeError that prints "String". */
+UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
+    c.constants[0].kind = UVAL_STR;  /* override to String */
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "String") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* kind_name "unknown" path (line 136): use an out-of-range kind value.
+   This exercises the default fallback in kind_name. */
+UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
+    c.constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "unknown") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* diag_write_u32 zero branch (line 196): type error at pc=0 with no synclines
+   produces "instr 0: ..." which calls diag_write_u32(w, 0). */
+UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
+    /* Build: LOADK R[0]=Bool, LOADK R[1]=Int not needed — just ADD at pc=0
+       directly using a 1-instruction chunk with Bool in both slots. */
+    Chunk c;
+    memset(&c, 0, sizeof(c));
+    c.max_reg = 2;
+    c.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    c.instr_cap = 1; c.instr_count = 1;
+    c.instructions[0] = uinstr_enc_abc(OP_ADD, 0, 1, 2);
+    /* No constants needed — frame is zero-initialized to Nil, so
+       ADD R[0]=R[1]+R[2] where R[1] and R[2] are Nil → TypeError at pc=0. */
+    /* No line_deltas (NULL) → prefix falls back to "instr 0:". */
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "instr 0:") != NULL);
+    free(c.instructions);
+    uvm_destroy(&vm);
+}
+
+/* DiagWriter truncation path (lines 176-184): a source_name long enough to
+   push past the UVM_ERRMSG_CAP boundary. The message ends with "...". */
+UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    /* 110-character source name exceeds buffer capacity (128 bytes total),
+       forcing truncation. malloc+memcpy avoids strdup (POSIX, not C99). */
+    const char *long_name =
+        "very_long_path/that/intentionally/exceeds/the/fixed/"
+        "error/message/buffer/capacity/to/trigger/truncation";
+    size_t name_len = strlen(long_name) + 1;
+    c.source_name = (char *)malloc(name_len);
+    memcpy(c.source_name, long_name, name_len);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    size_t msg_len = strlen(vm.last_errmsg);
+    UASSERT(msg_len > 0);
+    UASSERT(msg_len < UVM_ERRMSG_CAP);
+    UASSERT(vm.last_errmsg[msg_len - 3] == '.' &&
+            vm.last_errmsg[msg_len - 2] == '.' &&
+            vm.last_errmsg[msg_len - 1] == '.');
+    free(c.source_name);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+/* vm_line_for_pc abs_lines branch (lines 234-241): build a chunk whose
+   line_deltas[0] == INT8_MIN (abs checkpoint sentinel) with a matching
+   abs_lines entry. The resulting diagnostic prefix uses "line N:" from
+   the abs checkpoint rather than summing deltas. */
+UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    /* Override line_deltas: set delta[0..3] = INT8_MIN for all 4 instrs so
+       every instruction references an abs checkpoint. */
+    free(c.line_deltas);
+    c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    c.line_deltas[0] = INT8_MIN;
+    c.line_deltas[1] = INT8_MIN;
+    c.line_deltas[2] = INT8_MIN;
+    c.line_deltas[3] = INT8_MIN;
+    /* Allocate abs_lines with 4 entries — one per instruction. */
+    c.abs_lines = (AbsLine *)malloc(sizeof(AbsLine) * 4);
+    c.abs_line_count = 4;
+    c.abs_lines[0].pc = 0; c.abs_lines[0].line = 10;
+    c.abs_lines[1].pc = 1; c.abs_lines[1].line = 11;
+    c.abs_lines[2].pc = 2; c.abs_lines[2].line = 12;
+    c.abs_lines[3].pc = 3; c.abs_lines[3].line = 13;
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    /* ADD is at pc=2; abs_lines[2].line == 12 → prefix "line 12:". */
+    UASSERT(strstr(vm.last_errmsg, "line 12:") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -740,4 +876,20 @@ void test_vm_suite(void) {
               vm_oom_returns_uvm_oom_with_diagnostic);
     utest_run("uvm OOM first alloc fails produces diagnostic",
               vm_oom_first_alloc_fails_second_would_succeed);
+    utest_run("uvm OP_MUL Bool*Int raises TypeError",
+              vm_mul_bool_int_is_type_error);
+    utest_run("uvm OP_DIV Bool/Int raises TypeError",
+              vm_div_bool_int_is_type_error);
+    utest_run("uvm ADD Float+Bool diagnostic shows Float kind",
+              vm_add_float_bool_diagnostic_shows_float_kind);
+    utest_run("uvm ADD String+Int diagnostic shows String kind",
+              vm_add_string_int_diagnostic_shows_string_kind);
+    utest_run("uvm ADD unknown kind diagnostic shows 'unknown'",
+              vm_add_unknown_kind_diagnostic_shows_unknown);
+    utest_run("uvm TypeError at pc=0 without synclines shows 'instr 0:'",
+              vm_type_error_at_pc_zero_writes_instr_zero);
+    utest_run("uvm TypeError diagnostic truncates with '...' when message too long",
+              vm_type_error_diagnostic_truncates_to_ellipsis);
+    utest_run("uvm vm_line_for_pc abs checkpoint used in diagnostic",
+              vm_line_for_pc_abs_checkpoint_used_in_diagnostic);
 }
