@@ -64,6 +64,43 @@ valgrind-tools:
 	    exit 1; \
 	}
 
+# libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's
+# compiler-rt).  Builds each harness as a standalone binary against the
+# full src/ tree; no .a dependency because libFuzzer needs the sanitizer
+# runtimes linked in.  Local-only (no CI); see docs/internals/test-harness.md
+# for time-budget guidance.
+FUZZ_BUILDDIR := build/host-fuzz
+FUZZ_CC       ?= clang
+FUZZ_CFLAGS   := -std=c99 -Wall -Wextra -Wpedantic -O1 -g \
+                 -fsanitize=fuzzer,address,undefined \
+                 -fno-omit-frame-pointer
+
+$(FUZZ_BUILDDIR):
+	@mkdir -p $@
+
+$(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c
+
+$(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c
+
+fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
+	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
+	$(FUZZ_BUILDDIR)/fuzz_lex
+
+fuzz-parse: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_parse
+	@echo "running fuzz_parse (Ctrl-C to stop; use -runs=N for bounded)"
+	$(FUZZ_BUILDDIR)/fuzz_parse
+
+fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse
+
+fuzz-tools:
+	@command -v $(FUZZ_CC) >/dev/null 2>&1 || { \
+	    echo "error: $(FUZZ_CC) not found in PATH"; \
+	    echo "install: sudo apt-get install -y clang libclang-rt-18-dev"; \
+	    exit 1; \
+	}
+
 # Cross-compile sanity (builds liburbi.a only; no test runner).
 cross-arm:
 	$(MAKE) TARGET=arm-cortex-m7 \
@@ -187,4 +224,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-build fuzz-tools
