@@ -224,3 +224,86 @@ it pass, verify the uncovered lines, and add cases until the gap closes.
    ```
 
    A fix that is not covered by a regression test is likely to resurface.
+
+## Correctness tooling beyond the unit suite
+
+The unit suite is the primary feedback loop. Three further targets add
+complementary correctness signal; each one lands under its own
+`build/<target>/` directory and can coexist with any other build variant.
+
+### Coverage — `make coverage`
+
+Builds the test runner with GCC's `--coverage` instrumentation
+(`-fprofile-arcs -ftest-coverage`) at `-O0 -g`, runs the full suite, and
+then invokes `gcovr` to produce:
+
+- A per-file summary on stdout (lines executed / total, percent).
+- An HTML report tree at `build/host-coverage/report.html` plus
+  per-source-file detail pages.
+
+Report filter is `--filter 'src/'` — tests themselves are excluded from
+coverage counts. Requires `gcovr` in `PATH`; install via
+`sudo apt-get install -y gcovr` or `pip install --user gcovr`.
+
+CI runs this as an **advisory** job — it won't fail the pipeline even on
+tool crashes. Will promote to gating (with `--fail-under-line 90` line
+floor) in a follow-up commit once 2–3 CI runs have established the noise
+floor. The HTML report is uploaded as a CI artifact (`coverage-report`)
+with a 14-day retention.
+
+Repeated local runs: the target clears stale `.gcda` files at start so
+successive runs produce clean counts.
+
+### Valgrind memcheck — `make test-valgrind`
+
+Builds the test runner at `-O0 -g` (no sanitizers) and runs it under
+`valgrind --tool=memcheck` with `--error-exitcode=1`,
+`--leak-check=full`, `--track-origins=yes`, and `--show-leak-kinds=all`.
+Any memcheck finding fails the build.
+
+Complements — does not replace — the ASan and UBSan variants
+(`make test-asan`, `make test-ubsan`). Memcheck's bit-precise uninit
+tracking catches reads of uninitialized memory that ASan misses.
+Memcheck is slower (~20–50× real-time overhead) but deterministic.
+
+CI runs this as a **gating** job. Failure indicates a real bug; do not
+suppress with `continue-on-error`.
+
+### Fuzz testing — `make fuzz-lex`, `make fuzz-parse`
+
+Clang + libFuzzer harnesses over the lexer and parser. Each harness
+feeds raw bytes into the corresponding compiler-internal API
+(`ulex_next`, `uparse_next_statement`) and asserts only "no crash".
+Target property: both components produce a finite, non-crashing stream
+of Tokens or AstNodes (including structured error values) for any byte
+sequence.
+
+Build + run:
+
+```sh
+make fuzz-build                    # builds both fuzzers
+./build/host-fuzz/fuzz_lex   -runs=100000    # ~10s smoke budget
+./build/host-fuzz/fuzz_parse -runs=100000
+```
+
+libFuzzer writes any finding to `crash-<hash>` in the current
+directory; reproduce with
+`./build/host-fuzz/fuzz_lex crash-<hash>`. The `.gitignore` excludes
+crash / leak / timeout / oom artifacts, but do commit them to a local
+tracking branch if you want to preserve the reproducer while
+investigating.
+
+Local-only: CI has no scheduled fuzz job yet. Requires clang and
+`libclang-rt-18-dev` (for the libFuzzer + ASan runtime archives);
+install with
+`sudo apt-get install -y clang libclang-rt-18-dev`.
+
+Seed corpus: the `tests/fuzz/corpus/` directory is gitignored and
+optional. You can supply existing `.chk` fragments, existing test
+inputs, or any other representative bytes as seeds — libFuzzer handles
+coverage-guided exploration from there. Corpus seeding can cut
+time-to-first-finding significantly on a cold start; it's not required.
+
+Not covered: `fuzz-emit`. The emitter takes structured AST input, not
+byte streams; a typed fuzzer (random-AST generator → emit → deserialize
+round-trip) is a separate design.
