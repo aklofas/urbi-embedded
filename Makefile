@@ -46,6 +46,15 @@ test-ubsan:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
 		test
 
+# test-switch — builds with -DURBI_VM_FORCE_SWITCH=1 to force the portable
+# switch-based VM dispatch path even on GCC/Clang. Keeps both dispatch
+# paths compiling and passing continuously; see
+# docs/superpowers/specs/2026-04-23-urbi-embedded-vm-design.md §2.4.
+test-switch:
+	$(MAKE) TARGET=host-switch \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
+		test
+
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
@@ -224,4 +233,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-build fuzz-tools
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-build fuzz-tools

@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [test, test-asan, test-ubsan, test-debug]
+        mode: [test, test-asan, test-ubsan, test-debug, test-switch]
     steps:
       - uses: actions/checkout@v5
       - name: Install tools

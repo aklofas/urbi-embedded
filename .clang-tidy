@@ -32,6 +32,14 @@
 #   (`i` loop index, `p` cursor, `n` count).  STYLE.md explicitly endorses
 #   short names in tight scopes.
 #
+# - clang-diagnostic-gnu-label-as-value : fired by `&&label` and `goto *ptr`
+#   in the computed-goto dispatch path of uvm.c (UVM_USE_COMPUTED_GOTO).
+#   These extensions are intentional: they implement threaded dispatch and are
+#   gated behind `#if defined(__GNUC__) || defined(__clang__)`, so the code
+#   only activates on compilers that support the extensions.  Suppressing the
+#   diagnostic here keeps clang-tidy clean without the `-Wno-gnu-*` flags
+#   needed by the GCC build.
+#
 # bugprone-*, performance-*, portability-*, and clang-analyzer-* are kept
 # enabled (via clang-tidy defaults) since they catch real defects and
 # apply cleanly to C.
@@ -43,7 +51,8 @@ Checks: >
   -llvm-header-guard,
   -cert-err33-c,
   -bugprone-easily-swappable-parameters,
-  -readability-identifier-length
+  -readability-identifier-length,
+  -clang-diagnostic-gnu-label-as-value
 
 WarningsAsErrors: ''
 
