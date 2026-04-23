@@ -297,6 +297,15 @@ static void vm_format_type_error_unary(UVM *vm, const Chunk *chunk, size_t pc,
     diag_write_cstr(&w, ")");
 }
 
+/* Format: "out of memory allocating register frame (<N> bytes requested)" */
+static void vm_format_oom(UVM *vm, size_t nbytes) {
+    DiagWriter w;
+    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    diag_write_cstr(&w, "out of memory allocating register frame (");
+    diag_write_size(&w, nbytes);
+    diag_write_cstr(&w, " bytes requested)");
+}
+
 /* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
        recognizing the loop and lowering it to a memset libcall under
        -Os, which would break freestanding builds.
@@ -349,7 +358,7 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     UConst *frame = (UConst *)vm->alloc_fn(NULL, frame_bytes, vm->alloc_ud);
     if (frame == NULL) {
         vm->last_error = UVM_OOM;
-        vm->last_errmsg[0] = '\0';  /* diagnostic formatting in a later task */
+        vm_format_oom(vm, frame_bytes);
         return UVM_OOM;
     }
     vm_zero(frame, frame_bytes);

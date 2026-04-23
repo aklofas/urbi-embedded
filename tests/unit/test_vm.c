@@ -621,6 +621,54 @@ UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
     uvm_destroy(&vm);
 }
 
+/* Allocator hook that always returns NULL. */
+static void *uvm_alloc_always_null(void *ptr, size_t nbytes, void *ud) {
+    (void)ptr; (void)nbytes; (void)ud;
+    return NULL;
+}
+
+/* Allocator that returns NULL on first call (frame alloc), then
+   forwards to stdlib (for the destroy path, which is a free = nbytes=0
+   and safe to no-op too). Only used to exercise the first-alloc-fails
+   path. */
+static int uvm_alloc_fail_first_count = 0;
+static void *uvm_alloc_fail_first(void *ptr, size_t nbytes, void *ud) {
+    (void)ud;
+    if (nbytes > 0 && uvm_alloc_fail_first_count == 0) {
+        uvm_alloc_fail_first_count++;
+        return NULL;  /* fail the frame allocation */
+    }
+    if (nbytes == 0) { free(ptr); return NULL; }
+    return realloc(ptr, nbytes);
+}
+
+UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
+    Chunk c; fab_chunk_ret_only(&c, 0);
+    UVM vm; uvm_init(&vm, uvm_alloc_always_null, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OOM, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_NIL, out.kind);
+    UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "register frame") != NULL);
+    /* frame size is (max_reg + 1) * sizeof(UConst) = 1 * 16 = 16 */
+    UASSERT(strstr(vm.last_errmsg, "16") != NULL);
+    free(c.instructions);
+    free(c.line_deltas);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
+    uvm_alloc_fail_first_count = 0;  /* reset */
+    Chunk c; fab_chunk_ret_only(&c, 0);
+    UVM vm; uvm_init(&vm, uvm_alloc_fail_first, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OOM, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
+    free(c.instructions);
+    free(c.line_deltas);
+    uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -688,4 +736,8 @@ void test_vm_suite(void) {
               vm_type_error_diagnostic_unary_op);
     utest_run("uvm TypeError diagnostic without synclines uses 'instr N:'",
               vm_type_error_diagnostic_no_synclines_uses_instr_prefix);
+    utest_run("uvm OOM returns UVM_OOM with 'out of memory' diagnostic",
+              vm_oom_returns_uvm_oom_with_diagnostic);
+    utest_run("uvm OOM first alloc fails produces diagnostic",
+              vm_oom_first_alloc_fails_second_would_succeed);
 }
