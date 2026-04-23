@@ -372,3 +372,69 @@ holds for certified builds that must demonstrate no dynamic allocation during
 normal operation: load all required chunks at startup through the allocator,
 lock the heap, run. The allocator callback records when locking was requested
 and asserts if a post-lock allocation is attempted.
+
+---
+
+### Uniform 16-byte `UConst` value layout
+
+**Locked:** 2026-04-23
+**Status:** active
+**Reference docs:**
+[`internals/bytecode-format.md` — Header (24 bytes)](bytecode-format.md#header-24-bytes),
+[`../LANG-CONVENTIONS.md` §1.1](../LANG-CONVENTIONS.md#11-numeric-types),
+`src/uchunk.h`
+
+**Decision.** Every urbi-embedded target — 64-bit Linux, 32-bit Cortex-M,
+RISC-V rv32imc — uses the same 16-byte `UConst` tagged struct for both
+constants-pool entries and runtime register values. No per-host NaN-boxing;
+no per-host split.
+
+**Alternatives considered.**
+
+- *NaN-boxing on 64-bit hosts, tagged struct on 32-bit.* Pack type tag and
+  payload into a single `uint64_t` using the unused bits of a quiet NaN.
+  Reduces register-file size from 16 bytes to 8 bytes on 64-bit hosts.
+  Rejected: see "Why this one" below.
+
+- *Pointer-tagging (low-bit tags on aligned pointers).* Use the low bits of
+  a `void *` to carry a type tag for pointer-sized values. Rejected: does
+  not accommodate i64 Integer values that exceed the pointer width on 32-bit
+  targets; also non-portable across ABIs that do not guarantee pointer
+  alignment beyond 1 byte.
+
+**Why this one.**
+
+The 2026-04-19 impl-design spec committed to NaN-boxing on 64-bit hosts (8-byte
+values; type tag packed into unused bits of a quiet NaN; payload capped at
+~48 bits). That commitment predates the 2026-04-21 language-and-runtime spec
+which locked Integer = i64 across every target. A 64-bit integer does not fit
+in a 48-bit NaN payload, so NaN-boxing would require heap-boxing any Integer
+with |x| > ~1.4e14. That threshold is routinely crossed by monotonic ns
+timestamps (four years of uptime crosses it), so programs doing time arithmetic
+would hit the heap-boxed path in normal use, forcing allocation during
+arithmetic and violating the "no emergency GC inside the allocator" commitment
+from the language-and-runtime spec §2.2.
+
+Lua 5.5 reached the same conclusion when Lua 5.3 added i64 Integer: Lua dropped
+NaN-boxing and uses a uniform 16-byte `TValue` across all platforms. We follow
+the same path.
+
+**Cost.** Eight extra bytes per register on 64-bit hosts compared to a
+hypothetical NaN-boxed layout. A typical function frame is <16 registers = 256
+bytes, fits in a single cache line either way. On the embedded targets that
+actually constrain the RAM budget, the tagged struct would have been required
+regardless — NaN-boxing savings never applied to 32-bit targets.
+
+**Implications.** The register file is uniformly 16 bytes wide per slot. The
+dispatch loop decodes tag and value with two field reads; no NaN-pattern
+matching, no bit masking of payloads. Future GC write barriers operate on the
+tag byte directly. Adding new value kinds (object pointer, bool, nil, symbol)
+requires a new tag constant and a new union member in `UConst`, without
+touching the bit-packing scheme.
+
+**See also.**
+
+- `2026-04-23-urbi-embedded-vm-design.md` §2.1 — full rationale with worked
+  examples
+- `../LANG-CONVENTIONS.md` §1.1 — Integer = i64 decision
+- `src/uchunk.h` — `UConst` struct definition
