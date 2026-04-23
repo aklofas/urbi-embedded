@@ -54,7 +54,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
 /* Run chunk to completion. On UVM_OK, *out receives the RET value. On
    error, vm->last_error and vm->last_errmsg are populated and *out is
-   set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed). */
+   set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
+   last_error and last_errmsg are reset at entry — a caller may inspect
+   them after each uvm_run call without stale state from prior runs. */
 UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */

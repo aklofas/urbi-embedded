@@ -342,6 +342,11 @@ static void vm_zero(void *const dst, const size_t n) {
 /* --- uvm_run --- */
 
 UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
+    /* Reset error state at entry so callers who run multiple chunks
+       don't see stale last_error from a prior failure. */
+    vm->last_error = UVM_OK;
+    vm->last_errmsg[0] = '\0';
+
     /* Initialize out to Nil; overwritten on OP_RET success. */
     UConst nil = {0};  /* kind = UVAL_NIL, payload zeroed */
     *out = nil;

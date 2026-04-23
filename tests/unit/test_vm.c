@@ -805,6 +805,33 @@ UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* --- uvm_run entry-state reset --- */
+
+UTEST(vm_run_resets_last_error_on_successful_run) {
+    /* First run fails with TypeError; second run succeeds; last_error
+       and last_errmsg should reflect only the second run. */
+    UVM vm; uvm_init(&vm, NULL, NULL);
+
+    /* Run 1 — force TypeError. */
+    Chunk c1; fab_chunk_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c1, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, vm.last_error);
+    UASSERT(vm.last_errmsg[0] != '\0');
+    free_fab_chunk(&c1);
+
+    /* Run 2 — succeeds. last_error and last_errmsg should be reset. */
+    Chunk c2; fab_chunk_loadk_int_ret(&c2, 42);
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c2, &out));
+    UASSERT_EQ(UVM_OK, vm.last_error);
+    UASSERT_EQ('\0', vm.last_errmsg[0]);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(42, out.v.i);
+    free_fab_chunk(&c2);
+
+    uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -892,4 +919,6 @@ void test_vm_suite(void) {
               vm_type_error_diagnostic_truncates_to_ellipsis);
     utest_run("uvm vm_line_for_pc abs checkpoint used in diagnostic",
               vm_line_for_pc_abs_checkpoint_used_in_diagnostic);
+    utest_run("uvm_run resets last_error/last_errmsg on entry",
+              vm_run_resets_last_error_on_successful_run);
 }
