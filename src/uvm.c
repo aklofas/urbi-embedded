@@ -122,6 +122,181 @@ static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
     return UVM_OK;
 }
 
+/* --- Diagnostic infrastructure. --- */
+
+/* Map UValKind to a human-readable name for diagnostic messages. */
+static const char *kind_name(uint8_t kind) {
+    switch (kind) {
+        case UVAL_NIL:   return "Nil";
+        case UVAL_INT:   return "Integer";
+        case UVAL_FLOAT: return "Float";
+        case UVAL_BOOL:  return "Bool";
+        case UVAL_STR:   return "String";
+    }
+    return "unknown";
+}
+
+/* Map UOpcode to its mnemonic name for diagnostic messages. */
+static const char *op_name(uint8_t op) {
+    switch (op) {
+        case OP_LOADK: return "OP_LOADK";
+        case OP_MOVE:  return "OP_MOVE";
+        case OP_ADD:   return "OP_ADD";
+        case OP_SUB:   return "OP_SUB";
+        case OP_MUL:   return "OP_MUL";
+        case OP_DIV:   return "OP_DIV";
+        case OP_NEG:   return "OP_NEG";
+        case OP_RET:   return "OP_RET";
+    }
+    return "unknown";
+}
+
+/* Fixed-buffer diagnostic writer. Truncates with "..." when the buffer
+   fills. Freestanding: no snprintf, no <stdio.h>. */
+typedef struct DiagWriter {
+    char   *buf;
+    size_t  cap;   /* buffer capacity */
+    size_t  used;  /* bytes written so far (excluding trailing NUL) */
+    bool    truncated;
+} DiagWriter;
+
+static void diag_init(DiagWriter *w, char *buf, size_t cap) {
+    w->buf = buf;
+    w->cap = cap;
+    w->used = 0;
+    w->truncated = false;
+    if (cap > 0) buf[0] = '\0';
+}
+
+static void diag_write_cstr(DiagWriter *w, const char *s) {
+    if (w->truncated) return;
+    while (*s) {
+        /* Leave 4 bytes for "..." + NUL. */
+        if (w->used + 4 >= w->cap) {
+            w->truncated = true;
+            /* Rewind to make room for ellipsis. */
+            size_t ellipsis_pos = (w->cap >= 4) ? w->cap - 4 : 0;
+            if (w->used > ellipsis_pos) w->used = ellipsis_pos;
+            w->buf[w->used++] = '.';
+            w->buf[w->used++] = '.';
+            w->buf[w->used++] = '.';
+            w->buf[w->used]   = '\0';
+            return;
+        }
+        w->buf[w->used++] = *s++;
+    }
+    w->buf[w->used] = '\0';
+}
+
+/* Write an unsigned integer in decimal. */
+static void diag_write_u32(DiagWriter *w, uint32_t n) {
+    char tmp[12];
+    size_t i = 0;
+    if (n == 0) {
+        tmp[i++] = '0';
+    } else {
+        while (n > 0 && i < sizeof(tmp)) {
+            tmp[i++] = '0' + (char)(n % 10);
+            n /= 10;
+        }
+    }
+    /* Reverse into the writer. */
+    while (i > 0) {
+        char one[2]; one[0] = tmp[--i]; one[1] = '\0';
+        diag_write_cstr(w, one);
+    }
+}
+
+static void diag_write_size(DiagWriter *w, size_t n) {
+    /* size_t is at most 64 bits on our targets; fits in u32 for any
+       realistic frame size or pc. Cap for safety. */
+    if (n > UINT32_MAX) n = UINT32_MAX;
+    diag_write_u32(w, (uint32_t)n);
+}
+
+static void diag_write_kind_name(DiagWriter *w, uint8_t kind) {
+    diag_write_cstr(w, kind_name(kind));
+}
+
+/* Decode source line number for the given PC. Walks line_deltas from
+   index 0, summing deltas; abs_lines entries (triggered by INT8_MIN
+   sentinel) replace the accumulator. Returns 0 on absent syncline
+   data or out-of-range pc. */
+static uint32_t vm_line_for_pc(const Chunk *chunk, size_t pc) {
+    if (chunk->line_deltas == NULL) return 0;
+    if (pc >= chunk->instr_count) return 0;
+    uint32_t line = 0;
+    size_t abs_idx = 0;
+    for (size_t i = 0; i <= pc; i++) {
+        int8_t d = chunk->line_deltas[i];
+        if (d == INT8_MIN) {
+            /* Consult abs_lines; find the entry whose pc matches i. */
+            while (abs_idx < chunk->abs_line_count &&
+                   chunk->abs_lines[abs_idx].pc < i) {
+                abs_idx++;
+            }
+            if (abs_idx < chunk->abs_line_count &&
+                chunk->abs_lines[abs_idx].pc == i) {
+                line = chunk->abs_lines[abs_idx].line;
+                abs_idx++;
+            }
+        } else {
+            /* Signed add. Cast to int32_t for the intermediate to avoid
+               sign-extending an int8_t into a larger unsigned value. */
+            line = (uint32_t)((int32_t)line + (int32_t)d);
+        }
+    }
+    return line;
+}
+
+/* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
+static void diag_write_prefix(DiagWriter *w, const Chunk *chunk, size_t pc) {
+    uint32_t line = vm_line_for_pc(chunk, pc);
+    if (line == 0) {
+        diag_write_cstr(w, "instr ");
+        diag_write_size(w, pc);
+        diag_write_cstr(w, ": ");
+        return;
+    }
+    if (chunk->source_name != NULL) {
+        diag_write_cstr(w, chunk->source_name);
+        diag_write_cstr(w, ":");
+    } else {
+        diag_write_cstr(w, "line ");
+    }
+    diag_write_u32(w, line);
+    diag_write_cstr(w, ": ");
+}
+
+/* Binary-op TypeError: two operand kinds reported.
+   Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
+static void vm_format_type_error_binary(UVM *vm, const Chunk *chunk, size_t pc,
+                                        uint8_t op, uint8_t b_kind, uint8_t c_kind) {
+    DiagWriter w;
+    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    diag_write_prefix(&w, chunk, pc);
+    diag_write_cstr(&w, "TypeError: ");
+    diag_write_cstr(&w, op_name(op));
+    diag_write_cstr(&w, " operands must be Integer or Float (got ");
+    diag_write_kind_name(&w, b_kind);
+    diag_write_cstr(&w, ", ");
+    diag_write_kind_name(&w, c_kind);
+    diag_write_cstr(&w, ")");
+}
+
+/* Unary-op TypeError: one operand kind reported. */
+static void vm_format_type_error_unary(UVM *vm, const Chunk *chunk, size_t pc,
+                                       uint8_t op, uint8_t b_kind) {
+    DiagWriter w;
+    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    diag_write_prefix(&w, chunk, pc);
+    diag_write_cstr(&w, "TypeError: ");
+    diag_write_cstr(&w, op_name(op));
+    diag_write_cstr(&w, " operand must be Integer or Float (got ");
+    diag_write_kind_name(&w, b_kind);
+    diag_write_cstr(&w, ")");
+}
+
 /* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
        recognizing the loop and lowering it to a memset libcall under
        -Os, which would break freestanding builds.
@@ -219,7 +394,9 @@ dispatch:
             rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm->last_errmsg[0] = '\0';  /* formatting lands in Task 13 */
+                vm_format_type_error_binary(vm, chunk,
+                    (size_t)(pc - chunk->instructions),
+                    OP_ADD, b->kind, cc->kind);
                 HALT();
             }
             NEXT();
@@ -232,7 +409,9 @@ dispatch:
             rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm->last_errmsg[0] = '\0';
+                vm_format_type_error_binary(vm, chunk,
+                    (size_t)(pc - chunk->instructions),
+                    OP_SUB, b->kind, cc->kind);
                 HALT();
             }
             NEXT();
@@ -245,7 +424,9 @@ dispatch:
             rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm->last_errmsg[0] = '\0';
+                vm_format_type_error_binary(vm, chunk,
+                    (size_t)(pc - chunk->instructions),
+                    OP_MUL, b->kind, cc->kind);
                 HALT();
             }
             NEXT();
@@ -258,7 +439,9 @@ dispatch:
             rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm->last_errmsg[0] = '\0';
+                vm_format_type_error_binary(vm, chunk,
+                    (size_t)(pc - chunk->instructions),
+                    OP_DIV, b->kind, cc->kind);
                 HALT();
             }
             NEXT();
@@ -270,7 +453,9 @@ dispatch:
             rc = arith_neg(a, b);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm->last_errmsg[0] = '\0';
+                vm_format_type_error_unary(vm, chunk,
+                    (size_t)(pc - chunk->instructions),
+                    OP_NEG, b->kind);
                 HALT();
             }
             NEXT();

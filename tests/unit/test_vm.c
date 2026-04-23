@@ -560,6 +560,67 @@ UTEST(vm_neg_nil_is_type_error) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* --- Diagnostic format tests --- */
+
+UTEST(vm_type_error_diagnostic_binary_op) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    /* Without source_name, prefix is "line N:". line_deltas is [1, 0, 0, 0]
+       (set by fab_chunk_int_add_int which fab_chunk_add_mixed uses as base),
+       so ADD at pc=2 reports line 1. */
+    UASSERT(strstr(vm.last_errmsg, "line 1:") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "TypeError") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "OP_ADD") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "Integer") != NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_type_error_diagnostic_with_source_name) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    /* Allocate a source-name string via malloc+memcpy (strdup is POSIX, not
+       C99; free_fab_chunk doesn't know about this field, so free explicitly). */
+    const char src[] = "foo.u";
+    c.source_name = (char *)malloc(sizeof(src));
+    memcpy(c.source_name, src, sizeof(src));
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "foo.u:1:") != NULL);
+    free(c.source_name);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_type_error_diagnostic_unary_op) {
+    Chunk c; fab_chunk_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_NIL;
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "OP_NEG") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "Nil") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "operand") != NULL);
+    /* Singular "operand", not plural "operands" */
+    UASSERT(strstr(vm.last_errmsg, "operands") == NULL);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    /* Null out line_deltas to simulate a chunk built without syncline info. */
+    free(c.line_deltas);
+    c.line_deltas = NULL;
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT(strstr(vm.last_errmsg, "instr 2:") != NULL);
+    /* free_fab_chunk would double-free the already-freed line_deltas. */
+    free(c.instructions); free(c.constants);
+    uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -619,4 +680,12 @@ void test_vm_suite(void) {
               vm_neg_int64_min_wraps_to_int64_min);
     utest_run("uvm OP_NEG Float", vm_neg_float);
     utest_run("uvm OP_NEG Nil raises TypeError", vm_neg_nil_is_type_error);
+    utest_run("uvm TypeError diagnostic for binary op includes line + kinds",
+              vm_type_error_diagnostic_binary_op);
+    utest_run("uvm TypeError diagnostic with source_name uses source:line:",
+              vm_type_error_diagnostic_with_source_name);
+    utest_run("uvm TypeError diagnostic for unary op uses 'operand' not 'operands'",
+              vm_type_error_diagnostic_unary_op);
+    utest_run("uvm TypeError diagnostic without synclines uses 'instr N:'",
+              vm_type_error_diagnostic_no_synclines_uses_instr_prefix);
 }
