@@ -377,6 +377,71 @@ UTEST(vm_mul_float_int_promotes) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* --- OP_DIV --- */
+
+UTEST(vm_div_int_int_always_float) {
+    Chunk c; fab_chunk_binop_int(&c, OP_DIV, 5, 2);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 2.49 && out.v.f < 2.51);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_div_int_int_exact_still_float) {
+    Chunk c; fab_chunk_binop_int(&c, OP_DIV, 10, 2);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 4.99 && out.v.f < 5.01);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_div_by_zero_positive_is_inf) {
+    Chunk c; fab_chunk_binop_int(&c, OP_DIV, 5, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    /* +Inf is greater than any finite float. */
+    UASSERT(out.v.f > 1e30);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_div_by_zero_negative_is_neg_inf) {
+    Chunk c; fab_chunk_binop_int(&c, OP_DIV, -5, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f < -1e30);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_div_zero_by_zero_is_nan) {
+    Chunk c; fab_chunk_binop_int(&c, OP_DIV, 0, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    /* NaN is the only float that compares unequal to itself. */
+    UASSERT(out.v.f != out.v.f);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_div_float_float) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 7.5, UVAL_FLOAT, 0, 2.5);
+    c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 2.99 && out.v.f < 3.01);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
@@ -480,4 +545,14 @@ void test_vm_suite(void) {
     utest_run("uvm OP_MUL INT64_MIN*-1 wraps to INT64_MIN",
               vm_mul_int_int_min_times_neg_one_wraps_to_min);
     utest_run("uvm OP_MUL Float*Int promotes", vm_mul_float_int_promotes);
+    utest_run("uvm OP_DIV Int/Int produces Float (never Integer)",
+              vm_div_int_int_always_float);
+    utest_run("uvm OP_DIV Int/Int exact still returns Float",
+              vm_div_int_int_exact_still_float);
+    utest_run("uvm OP_DIV positive/0 is +Inf",
+              vm_div_by_zero_positive_is_inf);
+    utest_run("uvm OP_DIV negative/0 is -Inf",
+              vm_div_by_zero_negative_is_neg_inf);
+    utest_run("uvm OP_DIV 0/0 is NaN", vm_div_zero_by_zero_is_nan);
+    utest_run("uvm OP_DIV Float/Float", vm_div_float_float);
 }

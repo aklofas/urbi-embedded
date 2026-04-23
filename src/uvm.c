@@ -88,6 +88,15 @@ static UVMError arith_mul(UConst *a, const UConst *b, const UConst *c) {
     return UVM_OK;
 }
 
+static UVMError arith_div(UConst *a, const UConst *b, const UConst *c) {
+    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
+    /* DIV always produces Float per LANG-CONVENTIONS §1.3. IEEE 754
+       handles div-by-zero and 0/0 naturally — +Inf for positive/0,
+       -Inf for negative/0, NaN for 0/0. */
+    uconst_set_float(a, uconst_to_double(b) / uconst_to_double(c));
+    return UVM_OK;
+}
+
 static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
@@ -174,8 +183,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
         [OP_ADD]   = &&label_OP_ADD,
         [OP_SUB]   = &&label_OP_SUB,
         [OP_MUL]   = &&label_OP_MUL,
+        [OP_DIV]   = &&label_OP_DIV,
         [OP_RET]   = &&label_OP_RET,
-        /* OP_DIV/NEG added in Tasks 10-11 */
+        /* OP_NEG added in Task 11 */
     };
     if (dispatch_table[uinstr_op(*pc)] == NULL) goto label_unknown;
     DISPATCH();
@@ -225,6 +235,19 @@ dispatch:
             const UConst *b = &frame[uinstr_b(*pc)];
             const UConst *cc = &frame[uinstr_c(*pc)];
             rc = arith_mul(a, b, cc);
+            if (rc != UVM_OK) {
+                vm->last_error = rc;
+                vm->last_errmsg[0] = '\0';
+                HALT();
+            }
+            NEXT();
+        }
+
+        CASE(OP_DIV) {
+            UConst *a = &frame[uinstr_a(*pc)];
+            const UConst *b = &frame[uinstr_b(*pc)];
+            const UConst *cc = &frame[uinstr_c(*pc)];
+            rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
                 vm->last_errmsg[0] = '\0';
