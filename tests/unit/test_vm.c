@@ -501,6 +501,65 @@ UTEST(vm_move_self_copy_is_noop) {
     uvm_destroy(&vm);
 }
 
+/* --- OP_NEG --- */
+
+/* LOADK R[0]=value; NEG R[1]=R[0]; RET R[1]. */
+static void fab_chunk_neg_int(Chunk *c, int64_t value) {
+    memset(c, 0, sizeof(*c));
+    c->max_reg = 1;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
+    c->instr_cap = 3; c->instr_count = 3;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abc(OP_NEG, 1, 0, 0);
+    c->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
+    c->constants = (UConst *)malloc(sizeof(UConst));
+    c->const_cap = 1; c->const_count = 1;
+    c->constants[0].kind = UVAL_INT; c->constants[0].v.i = value;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
+    c->line_deltas[0] = 1; c->line_deltas[1] = 0; c->line_deltas[2] = 0;
+}
+
+UTEST(vm_neg_int_normal) {
+    Chunk c; fab_chunk_neg_int(&c, 5);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(-5, out.v.i);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_neg_int64_min_wraps_to_int64_min) {
+    Chunk c; fab_chunk_neg_int(&c, INT64_MIN);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == INT64_MIN);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_neg_float) {
+    Chunk c; fab_chunk_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_FLOAT;
+    c.constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? 3.25 : (float)3.25;
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > -3.26 && out.v.f < -3.24);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_neg_nil_is_type_error) {
+    Chunk c; fab_chunk_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_NIL;
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -555,4 +614,9 @@ void test_vm_suite(void) {
               vm_div_by_zero_negative_is_neg_inf);
     utest_run("uvm OP_DIV 0/0 is NaN", vm_div_zero_by_zero_is_nan);
     utest_run("uvm OP_DIV Float/Float", vm_div_float_float);
+    utest_run("uvm OP_NEG Int normal", vm_neg_int_normal);
+    utest_run("uvm OP_NEG INT64_MIN wraps to INT64_MIN (no UB)",
+              vm_neg_int64_min_wraps_to_int64_min);
+    utest_run("uvm OP_NEG Float", vm_neg_float);
+    utest_run("uvm OP_NEG Nil raises TypeError", vm_neg_nil_is_type_error);
 }

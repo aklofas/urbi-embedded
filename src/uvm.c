@@ -97,6 +97,20 @@ static UVMError arith_div(UConst *a, const UConst *b, const UConst *c) {
     return UVM_OK;
 }
 
+static UVMError arith_neg(UConst *a, const UConst *b) {
+    if (!is_number(b)) return UVM_TYPE_ERROR;
+    if (b->kind == UVAL_INT) {
+        a->kind = UVAL_INT;
+        /* (int64_t)(-(uint64_t)v) wraps INT64_MIN to INT64_MIN.
+           Defined behavior; UBSan clean. */
+        a->v.i = (int64_t)(-(uint64_t)b->v.i);
+        return UVM_OK;
+    }
+    /* Float negation; IEEE 754 flips the sign bit, defined for NaN/Inf. */
+    uconst_set_float(a, -uconst_to_double(b));
+    return UVM_OK;
+}
+
 static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
@@ -169,14 +183,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     UVMError rc = UVM_OK;
 
 #if UVM_USE_COMPUTED_GOTO
-    /* Dispatch table keyed by opcode. LOADK, MOVE, ADD, SUB, RET slots are
-       populated; MUL/DIV/NEG are NULL and Tasks 9-11 populate them. The
-       guard below catches an unimplemented-opcode-as-FIRST-instruction only
-       — subsequent NEXT() calls bypass it. Between now and Task 11 this is
-       a narrow defensive window; the VM's own test suite only constructs
-       chunks using already-implemented opcodes. Task 11 removes the guard
-       entirely once all 8 slots are populated, at which point
-       loader-validated chunks cannot reach NULL slots. */
+    /* Dispatch table keyed by opcode. All 8 M1 opcodes populated;
+       loader validates opcode is in [0, OP_MAX) so no unknown-opcode
+       guard is needed at this point. */
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK] = &&label_OP_LOADK,
         [OP_MOVE]  = &&label_OP_MOVE,
@@ -184,10 +193,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
         [OP_SUB]   = &&label_OP_SUB,
         [OP_MUL]   = &&label_OP_MUL,
         [OP_DIV]   = &&label_OP_DIV,
+        [OP_NEG]   = &&label_OP_NEG,
         [OP_RET]   = &&label_OP_RET,
-        /* OP_NEG added in Task 11 */
     };
-    if (dispatch_table[uinstr_op(*pc)] == NULL) goto label_unknown;
     DISPATCH();
 #else
 dispatch:
@@ -256,19 +264,27 @@ dispatch:
             NEXT();
         }
 
+        CASE(OP_NEG) {
+            UConst *a = &frame[uinstr_a(*pc)];
+            const UConst *b = &frame[uinstr_b(*pc)];
+            rc = arith_neg(a, b);
+            if (rc != UVM_OK) {
+                vm->last_error = rc;
+                vm->last_errmsg[0] = '\0';
+                HALT();
+            }
+            NEXT();
+        }
+
         CASE(OP_RET) {
             *out = frame[uinstr_a(*pc)];
             HALT();
         }
 
-#if UVM_USE_COMPUTED_GOTO
-        label_unknown:
-            rc = UVM_TYPE_ERROR;
-            HALT();
-#else
+#if !UVM_USE_COMPUTED_GOTO
         default: {
-            /* Unreachable — loader rejects unknown opcodes; opcodes added in
-               later tasks plug in here. */
+            /* Unreachable — loader rejects unknown opcodes before uvm_run
+               is called. The default: branch satisfies -Wswitch-enum. */
             rc = UVM_TYPE_ERROR;
             HALT();
         }
