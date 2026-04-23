@@ -103,12 +103,15 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     UVMError rc = UVM_OK;
 
 #if UVM_USE_COMPUTED_GOTO
-    /* Dispatch table keyed by opcode. Only the slots we've implemented
-       are populated; unpopulated slots would NULL-deref on unknown opcodes,
-       but the loader already rejects opcodes outside [0, OP_MAX), so this
-       is unreachable for loader-validated chunks. The label_unknown guard
-       below is belt-and-suspenders defensive coverage during the walk-up
-       from 3 to 8 populated slots (Tasks 6-11). */
+    /* Dispatch table keyed by opcode. At this task stage (Task 5) only
+       LOADK, MOVE, RET slots are populated; ADD/SUB/MUL/DIV/NEG are NULL
+       and Tasks 6-11 populate them. The guard below catches an
+       unimplemented-opcode-as-FIRST-instruction only — subsequent NEXT()
+       calls bypass it. Between now and Task 11 this is a narrow defensive
+       window; the VM's own test suite only constructs chunks using
+       already-implemented opcodes. Task 11 removes the guard entirely
+       once all 8 slots are populated, at which point loader-validated
+       chunks cannot reach NULL slots. */
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK] = &&label_OP_LOADK,
         [OP_MOVE]  = &&label_OP_MOVE,
