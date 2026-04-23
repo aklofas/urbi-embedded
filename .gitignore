@@ -29,6 +29,14 @@ GEMINI.md
 *.gcda
 *.gcno
 
+# Fuzz outputs
+tests/fuzz/corpus/
+tests/fuzz/crashes-*/
+crash-*
+leak-*
+timeout-*
+oom-*
+
 # Build directories
 build/
 dist/
