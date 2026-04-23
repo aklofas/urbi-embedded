@@ -56,7 +56,7 @@ cross-arm:
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
 		CC=riscv64-unknown-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding -DURBI_FLOAT_TYPE=4" \
 		AR=riscv64-unknown-elf-ar \
 		all
 
