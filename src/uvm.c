@@ -42,4 +42,56 @@ const char *uvm_error_name(UVMError code) {
     return "UVM_UNKNOWN";
 }
 
-/* uvm_run implemented in Task 2. */
+/* --- Dispatch macros. Switch expansion at this stage; computed-goto
+       added in a later task. --- */
+
+#define DISPATCH()  switch (uinstr_op(*pc))
+#define CASE(op)    case (op):
+#define NEXT()      do { pc++; goto dispatch; } while (0)
+#define HALT()      goto halt
+
+/* --- uvm_run --- */
+
+UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
+    /* Initialize out to Nil; overwritten on OP_RET success. */
+    UConst nil = {0};  /* kind = UVAL_NIL, payload zeroed */
+    *out = nil;
+
+    /* Empty chunk: no instructions to dispatch; return Nil. */
+    if (chunk->instr_count == 0) {
+        return UVM_OK;
+    }
+
+    /* Allocate the register frame via the VM's allocator hook.
+       (max_reg + 1) slots; zero-initialized so every register starts Nil. */
+    const size_t frame_slots = (size_t)(chunk->max_reg + 1);
+    const size_t frame_bytes = frame_slots * sizeof(UConst);
+    UConst *frame = (UConst *)vm->alloc_fn(NULL, frame_bytes, vm->alloc_ud);
+    if (frame == NULL) {
+        vm->last_error = UVM_OOM;
+        vm->last_errmsg[0] = '\0';  /* diagnostic formatting in a later task */
+        return UVM_OOM;
+    }
+    for (size_t i = 0; i < frame_bytes; i++) ((unsigned char *)frame)[i] = 0;
+
+    const uint32_t *pc = chunk->instructions;
+    UVMError rc = UVM_OK;
+
+dispatch:
+    DISPATCH() {
+        CASE(OP_RET) {
+            *out = frame[uinstr_a(*pc)];
+            HALT();
+        }
+        default: {
+            /* Unreachable — loader rejects unknown opcodes; opcodes added in
+               later tasks plug in here. */
+            rc = UVM_TYPE_ERROR;
+            HALT();
+        }
+    }
+
+halt:
+    vm->alloc_fn(frame, 0, vm->alloc_ud);
+    return rc;
+}
