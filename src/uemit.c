@@ -2,6 +2,7 @@
 /* Bytecode emitter. */
 
 #include "uemit.h"
+#include "uvarint.h"
 
 #include <limits.h>
 #include <stdarg.h>
@@ -419,38 +420,6 @@ size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
 
 #endif  /* __STDC_HOSTED__ */
 
-/* --- Varint encode helpers (write side mirrors uchunk.c decode side) --- */
-
-/* LEB128 unsigned varint: returns the number of bytes needed to encode v. */
-static size_t varint_size_u(uint64_t v) {
-    size_t n = 1u;
-    while (v >= 0x80u) { v >>= 7; n++; }
-    return n;
-}
-
-/* Zigzag-encode v then return its LEB128 byte count. */
-static size_t varint_size_zz(const int64_t v) {
-    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
-    return varint_size_u(u);
-}
-
-/* Write LEB128 unsigned varint to buf at offset off.  Returns new offset.
-   Caller guarantees sufficient space (pre-computed via varint_size_u). */
-static size_t varint_write_u(uint8_t *buf, size_t off, uint64_t v) {
-    while (v >= 0x80u) {
-        buf[off++] = (uint8_t)((v & 0x7Fu) | 0x80u);
-        v >>= 7;
-    }
-    buf[off++] = (uint8_t)v;
-    return off;
-}
-
-/* Zigzag-encode v then write its LEB128 representation. */
-static size_t varint_write_zz(uint8_t *buf, const size_t off, const int64_t v) {
-    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
-    return varint_write_u(buf, off, u);
-}
-
 /* Compute total serialized byte count.  Must match the write path
    in uchunk_serialize byte-for-byte. */
 static size_t chunk_wire_size(const Chunk *c) {
@@ -461,15 +430,15 @@ static size_t chunk_wire_size(const Chunk *c) {
     /* metadata */
     n += 1u;                                          /* max_reg */
     src_len = (c->source_name != NULL) ? emit_strlen(c->source_name) : 0u;
-    n += varint_size_u((uint64_t)src_len);
+    n += uvarint_size_u((uint64_t)src_len);
     n += src_len;
 
     /* constants */
-    n += varint_size_u((uint64_t)c->const_count);
+    n += uvarint_size_u((uint64_t)c->const_count);
     for (i = 0u; i < c->const_count; i++) {
         n += 1u;                                      /* kind byte */
         if (c->constants[i].kind == (uint8_t)UVAL_INT) {
-            n += varint_size_zz(c->constants[i].v.i);
+            n += uvarint_size_zz(c->constants[i].v.i);
         } else if (c->constants[i].kind == (uint8_t)UVAL_FLOAT) {
             n += (URBI_FLOAT_TYPE == 8) ? 8u : 4u;
         }
@@ -478,17 +447,17 @@ static size_t chunk_wire_size(const Chunk *c) {
     }
 
     /* instructions: varint count + 0-3 alignment pad bytes + raw 4-byte words */
-    n += varint_size_u((uint64_t)c->instr_count);
+    n += uvarint_size_u((uint64_t)c->instr_count);
     while ((n & 3u) != 0u) n++;                       /* pad to 4-byte boundary */
     n += c->instr_count * 4u;
 
     /* synclines */
-    n += varint_size_u((uint64_t)c->instr_count);     /* n_deltas */
+    n += uvarint_size_u((uint64_t)c->instr_count);     /* n_deltas */
     n += c->instr_count;                              /* one int8 per instruction */
-    n += varint_size_u((uint64_t)c->abs_line_count);
+    n += uvarint_size_u((uint64_t)c->abs_line_count);
     for (i = 0u; i < c->abs_line_count; i++) {
-        n += varint_size_u((uint64_t)c->abs_lines[i].pc);
-        n += varint_size_u((uint64_t)c->abs_lines[i].line);
+        n += uvarint_size_u((uint64_t)c->abs_lines[i].pc);
+        n += uvarint_size_u((uint64_t)c->abs_lines[i].line);
     }
 
     return n;
@@ -523,18 +492,18 @@ ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
     /* --- metadata --- */
     buf[off++] = chunk->max_reg;
     src_len = (chunk->source_name != NULL) ? emit_strlen(chunk->source_name) : 0u;
-    off = varint_write_u(buf, off, (uint64_t)src_len);
+    off = uvarint_write_u(buf, off, (uint64_t)src_len);
     if (src_len > 0u) {
         emit_memcpy(buf + off, chunk->source_name, src_len);
         off += src_len;
     }
 
     /* --- constants --- */
-    off = varint_write_u(buf, off, (uint64_t)chunk->const_count);
+    off = uvarint_write_u(buf, off, (uint64_t)chunk->const_count);
     for (i = 0u; i < chunk->const_count; i++) {
         buf[off++] = chunk->constants[i].kind;
         if (chunk->constants[i].kind == (uint8_t)UVAL_INT) {
-            off = varint_write_zz(buf, off, chunk->constants[i].v.i);
+            off = uvarint_write_zz(buf, off, chunk->constants[i].v.i);
         } else if (chunk->constants[i].kind == (uint8_t)UVAL_FLOAT) {
             const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8u : 4u;
             emit_memcpy(buf + off, &chunk->constants[i].v.f, fsz);
@@ -543,7 +512,7 @@ ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
     }
 
     /* --- instructions: varint count + align pad + raw LE uint32s --- */
-    off = varint_write_u(buf, off, (uint64_t)chunk->instr_count);
+    off = uvarint_write_u(buf, off, (uint64_t)chunk->instr_count);
     while ((off & 3u) != 0u) buf[off++] = 0u;         /* zero alignment pad */
     for (i = 0u; i < chunk->instr_count; i++) {
         const uint32_t ins = chunk->instructions[i];
@@ -555,15 +524,15 @@ ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
     }
 
     /* --- synclines: delta array then abs-line checkpoints --- */
-    off = varint_write_u(buf, off, (uint64_t)chunk->instr_count);  /* n_deltas */
+    off = uvarint_write_u(buf, off, (uint64_t)chunk->instr_count);  /* n_deltas */
     if (chunk->instr_count > 0u) {
         emit_memcpy(buf + off, chunk->line_deltas, chunk->instr_count);
         off += chunk->instr_count;
     }
-    off = varint_write_u(buf, off, (uint64_t)chunk->abs_line_count);
+    off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_line_count);
     for (i = 0u; i < chunk->abs_line_count; i++) {
-        off = varint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].pc);
-        off = varint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].line);
+        off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].pc);
+        off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].line);
     }
 
     return (ptrdiff_t)off;
