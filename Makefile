@@ -11,6 +11,7 @@ RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 CPPFLAGS += -Isrc -Itests/unit
+RUNNER_WRAPPER ?=
 
 all: $(LIB)
 
@@ -28,7 +29,7 @@ $(BUILDDIR)/src $(BUILDDIR)/tests/unit:
 
 test: $(LIB) $(TEST_OBJ)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
-	$(RUNNER)
+	$(RUNNER_WRAPPER) $(RUNNER)
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
@@ -44,6 +45,24 @@ test-ubsan:
 	$(MAKE) TARGET=host-ubsan \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
 		test
+
+# Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
+# Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
+# memcheck's bit-precise tracking catches uninit reads that ASan misses.
+# Uses -O0 -g for readable stack traces; --error-exitcode=1 makes any
+# finding fail the build.
+test-valgrind: valgrind-tools
+	$(MAKE) TARGET=host-valgrind \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" \
+		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full --track-origins=yes --show-leak-kinds=all -q" \
+		test
+
+valgrind-tools:
+	@command -v valgrind >/dev/null 2>&1 || { \
+	    echo "error: valgrind not found in PATH"; \
+	    echo "install: sudo apt-get install -y valgrind"; \
+	    exit 1; \
+	}
 
 # Cross-compile sanity (builds liburbi.a only; no test runner).
 cross-arm:
@@ -168,4 +187,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools
