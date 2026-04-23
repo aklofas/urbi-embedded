@@ -233,6 +233,68 @@ UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* ADD R[2] = R[0] + R[1] with mixed Int/Float constants. Accepts both
+   Int and Float literals via the UConst `kind` parameter. */
+static void fab_chunk_add_mixed(Chunk *c,
+                                UValKind kind_a, int64_t ai, double af,
+                                UValKind kind_b, int64_t bi, double bf) {
+    fab_chunk_int_add_int(c, 0, 0);  /* shape is identical */
+    c->constants[0].kind = kind_a;
+    if (kind_a == UVAL_INT) c->constants[0].v.i = ai;
+    else c->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? af : (float)af;
+    c->constants[1].kind = kind_b;
+    if (kind_b == UVAL_INT) c->constants[1].v.i = bi;
+    else c->constants[1].v.f = (URBI_FLOAT_TYPE == 8) ? bf : (float)bf;
+}
+
+UTEST(vm_add_int_float_promotes) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 2, 0, UVAL_FLOAT, 0, 1.5);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 3.49 && out.v.f < 3.51);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_float_int_promotes) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 2.5, UVAL_INT, 3, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 5.49 && out.v.f < 5.51);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_float_float) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.25, UVAL_FLOAT, 0, 2.75);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 3.99 && out.v.f < 4.01);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_bool_int_is_type_error) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_NIL, out.kind);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_int_nil_is_type_error) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_NIL, out.kind);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
@@ -317,4 +379,13 @@ void test_vm_suite(void) {
               vm_add_int_int_max_plus_one_wraps);
     utest_run("uvm OP_ADD Int+Int MAX+MAX wraps to -2",
               vm_add_int_int_max_plus_max_wraps_to_minus_two);
+    utest_run("uvm OP_ADD Int+Float promotes to Float",
+              vm_add_int_float_promotes);
+    utest_run("uvm OP_ADD Float+Int promotes to Float",
+              vm_add_float_int_promotes);
+    utest_run("uvm OP_ADD Float+Float stays Float", vm_add_float_float);
+    utest_run("uvm OP_ADD Bool+Int raises TypeError",
+              vm_add_bool_int_is_type_error);
+    utest_run("uvm OP_ADD Int+Nil raises TypeError",
+              vm_add_int_nil_is_type_error);
 }
