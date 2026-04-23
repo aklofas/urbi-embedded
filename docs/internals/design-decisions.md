@@ -410,7 +410,7 @@ values; type tag packed into unused bits of a quiet NaN; payload capped at
 which locked Integer = i64 across every target. A 64-bit integer does not fit
 in a 48-bit NaN payload, so NaN-boxing would require heap-boxing any Integer
 with |x| > ~1.4e14. That threshold is routinely crossed by monotonic ns
-timestamps (four years of uptime crosses it), so programs doing time arithmetic
+timestamps (a system running for less than two days crosses it), so programs doing time arithmetic
 would hit the heap-boxed path in normal use, forcing allocation during
 arithmetic and violating the "no emergency GC inside the allocator" commitment
 from the language-and-runtime spec §2.2.
@@ -421,7 +421,7 @@ the same path.
 
 **Cost.** Eight extra bytes per register on 64-bit hosts compared to a
 hypothetical NaN-boxed layout. A typical function frame is <16 registers = 256
-bytes, fits in a single cache line either way. On the embedded targets that
+bytes, compact enough that active registers stay hot in L1 cache on any target. On the embedded targets that
 actually constrain the RAM budget, the tagged struct would have been required
 regardless — NaN-boxing savings never applied to 32-bit targets.
 
