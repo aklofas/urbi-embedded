@@ -92,6 +92,10 @@ dispatch:
             frame[uinstr_a(*pc)] = chunk->constants[uinstr_bx(*pc)];
             NEXT();
         }
+        CASE(OP_MOVE) {
+            frame[uinstr_a(*pc)] = frame[uinstr_b(*pc)];
+            NEXT();
+        }
         CASE(OP_RET) {
             *out = frame[uinstr_a(*pc)];
             HALT();
