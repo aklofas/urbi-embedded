@@ -42,6 +42,15 @@ const char *uvm_error_name(UVMError code) {
     return "UVM_UNKNOWN";
 }
 
+/* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
+       recognizing the loop and lowering it to a memset libcall under
+       -Os, which would break freestanding builds.
+       Matches uarena.c's arena_zero pattern precisely. --- */
+static void vm_zero(void *const dst, const size_t n) {
+    volatile unsigned char *const p = (volatile unsigned char *)dst;
+    for (size_t i = 0; i < n; i++) p[i] = 0;
+}
+
 /* --- Dispatch macros. Switch expansion at this stage; computed-goto
        added in a later task. --- */
 
@@ -72,7 +81,7 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
         vm->last_errmsg[0] = '\0';  /* diagnostic formatting in a later task */
         return UVM_OOM;
     }
-    for (size_t i = 0; i < frame_bytes; i++) ((unsigned char *)frame)[i] = 0;
+    vm_zero(frame, frame_bytes);
 
     const uint32_t *pc = chunk->instructions;
     UVMError rc = UVM_OK;
