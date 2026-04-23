@@ -7,6 +7,15 @@
 
 #define UTEST(name) static void name(void)
 
+/* Sentinel allocator for testing that uvm_init preserves an explicit
+   alloc_fn. Real function address, so the test is ISO-C-clean (no
+   object-to-function-pointer cast) and genuinely proves the stdlib
+   shim did not overwrite the caller's choice. */
+static void *noop_alloc(void *ptr, size_t nbytes, void *ud) {
+    (void)ptr; (void)nbytes; (void)ud;
+    return NULL;
+}
+
 UTEST(vm_error_name_covers_all_codes) {
     UASSERT_EQ(0, strcmp("UVM_OK",         uvm_error_name(UVM_OK)));
     UASSERT_EQ(0, strcmp("UVM_TYPE_ERROR", uvm_error_name(UVM_TYPE_ERROR)));
@@ -24,9 +33,10 @@ UTEST(vm_init_hosted_null_alloc_falls_back_to_stdlib) {
 
 UTEST(vm_init_with_explicit_alloc_preserves_it) {
     UVM vm;
-    uvm_init(&vm, (UVMAllocFn)(void *)0xDEADBEEFull, (void *)0xCAFEBABEull);
-    UASSERT(vm.alloc_fn == (UVMAllocFn)(void *)0xDEADBEEFull);
-    UASSERT(vm.alloc_ud == (void *)0xCAFEBABEull);
+    void *sentinel_ud = (void *)&vm;  /* any non-NULL object pointer works */
+    uvm_init(&vm, noop_alloc, sentinel_ud);
+    UASSERT(vm.alloc_fn == noop_alloc);
+    UASSERT(vm.alloc_ud == sentinel_ud);
     uvm_destroy(&vm);
 }
 
