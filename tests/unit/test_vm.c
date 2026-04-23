@@ -180,6 +180,59 @@ UTEST(vm_loadk_float) {
     uvm_destroy(&vm);
 }
 
+/* --- OP_ADD --- */
+
+/* Build LOADK R[0]=a, LOADK R[1]=b, ADD R[2]=R[0]+R[1], RET R[2]. */
+static void fab_chunk_int_add_int(Chunk *c, int64_t a, int64_t b) {
+    memset(c, 0, sizeof(*c));
+    c->max_reg = 2;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
+    c->instr_cap = 4; c->instr_count = 4;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abx(OP_LOADK, 1, 1);
+    c->instructions[2] = uinstr_enc_abc(OP_ADD, 2, 0, 1);
+    c->instructions[3] = uinstr_enc_abc(OP_RET, 2, 0, 0);
+    c->constants = (UConst *)malloc(sizeof(UConst) * 2);
+    c->const_cap = 2; c->const_count = 2;
+    c->constants[0].kind = UVAL_INT; c->constants[0].v.i = a;
+    c->constants[1].kind = UVAL_INT; c->constants[1].v.i = b;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    c->line_deltas[0] = 1;
+    c->line_deltas[1] = 0;
+    c->line_deltas[2] = 0;
+    c->line_deltas[3] = 0;
+}
+
+UTEST(vm_add_int_int_normal) {
+    Chunk c; fab_chunk_int_add_int(&c, 2, 3);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(5, out.v.i);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_int_int_max_plus_one_wraps) {
+    Chunk c; fab_chunk_int_add_int(&c, INT64_MAX, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == INT64_MIN);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
+    Chunk c; fab_chunk_int_add_int(&c, INT64_MAX, INT64_MAX);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == -2);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
@@ -259,4 +312,9 @@ void test_vm_suite(void) {
     utest_run("uvm OP_LOADK Float into register", vm_loadk_float);
     utest_run("uvm OP_MOVE copies register", vm_move_copies_register);
     utest_run("uvm OP_MOVE self-copy is no-op", vm_move_self_copy_is_noop);
+    utest_run("uvm OP_ADD Int+Int normal", vm_add_int_int_normal);
+    utest_run("uvm OP_ADD Int+Int INT64_MAX+1 wraps to INT64_MIN",
+              vm_add_int_int_max_plus_one_wraps);
+    utest_run("uvm OP_ADD Int+Int MAX+MAX wraps to -2",
+              vm_add_int_int_max_plus_max_wraps_to_minus_two);
 }

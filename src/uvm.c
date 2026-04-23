@@ -42,6 +42,41 @@ const char *uvm_error_name(UVMError code) {
     return "UVM_UNKNOWN";
 }
 
+/* --- Arithmetic helpers.
+       Each returns UVM_OK with result written into *a, or UVM_TYPE_ERROR
+       leaving *a untouched. Integer overflow uses the unsigned-cast
+       trick for portable two's-complement wrap (defined behavior; UBSan
+       clean). Float promotion follows LANG-CONVENTIONS §1.3. --- */
+
+/* Convenience: promote an Int/Float UConst to the target Float type. */
+static double uconst_to_double(const UConst *v) {
+    return v->kind == UVAL_INT ? (double)v->v.i : (double)v->v.f;
+}
+
+static void uconst_set_float(UConst *a, const double val) {
+    a->kind = UVAL_FLOAT;
+#if URBI_FLOAT_TYPE == 8
+    a->v.f = val;
+#else
+    a->v.f = (float)val;
+#endif
+}
+
+static bool is_number(const UConst *v) {
+    return v->kind == UVAL_INT || v->kind == UVAL_FLOAT;
+}
+
+static UVMError arith_add(UConst *a, const UConst *b, const UConst *c) {
+    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
+    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
+        a->kind = UVAL_INT;
+        a->v.i = (int64_t)((uint64_t)b->v.i + (uint64_t)c->v.i);
+        return UVM_OK;
+    }
+    uconst_set_float(a, uconst_to_double(b) + uconst_to_double(c));
+    return UVM_OK;
+}
+
 /* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
        recognizing the loop and lowering it to a memset libcall under
        -Os, which would break freestanding builds.
@@ -103,9 +138,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     UVMError rc = UVM_OK;
 
 #if UVM_USE_COMPUTED_GOTO
-    /* Dispatch table keyed by opcode. At this task stage (Task 5) only
-       LOADK, MOVE, RET slots are populated; ADD/SUB/MUL/DIV/NEG are NULL
-       and Tasks 6-11 populate them. The guard below catches an
+    /* Dispatch table keyed by opcode. At this task stage (Task 6) only
+       LOADK, MOVE, ADD, RET slots are populated; SUB/MUL/DIV/NEG are NULL
+       and Tasks 8-11 populate them. The guard below catches an
        unimplemented-opcode-as-FIRST-instruction only — subsequent NEXT()
        calls bypass it. Between now and Task 11 this is a narrow defensive
        window; the VM's own test suite only constructs chunks using
@@ -115,8 +150,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK] = &&label_OP_LOADK,
         [OP_MOVE]  = &&label_OP_MOVE,
+        [OP_ADD]   = &&label_OP_ADD,
         [OP_RET]   = &&label_OP_RET,
-        /* OP_ADD/SUB/MUL/DIV/NEG added in Tasks 6-11 */
+        /* OP_SUB/MUL/DIV/NEG added in Tasks 8-11 */
     };
     if (dispatch_table[uinstr_op(*pc)] == NULL) goto label_unknown;
     DISPATCH();
@@ -132,6 +168,19 @@ dispatch:
 
         CASE(OP_MOVE) {
             frame[uinstr_a(*pc)] = frame[uinstr_b(*pc)];
+            NEXT();
+        }
+
+        CASE(OP_ADD) {
+            UConst *a = &frame[uinstr_a(*pc)];
+            const UConst *b = &frame[uinstr_b(*pc)];
+            const UConst *cc = &frame[uinstr_c(*pc)];
+            rc = arith_add(a, b, cc);
+            if (rc != UVM_OK) {
+                vm->last_error = rc;
+                vm->last_errmsg[0] = '\0';  /* formatting lands in Task 13 */
+                HALT();
+            }
             NEXT();
         }
 
