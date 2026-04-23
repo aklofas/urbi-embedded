@@ -258,8 +258,9 @@ successive runs produce clean counts.
 
 Builds the test runner at `-O0 -g` (no sanitizers) and runs it under
 `valgrind --tool=memcheck` with `--error-exitcode=1`,
-`--leak-check=full`, `--track-origins=yes`, and `--show-leak-kinds=all`.
-Any memcheck finding fails the build.
+`--leak-check=full`, `--track-origins=yes`, `--show-leak-kinds=all`,
+and `-q` (quiet — suppresses per-error output so the test runner's
+own output stays readable). Any memcheck finding fails the build.
 
 Complements — does not replace — the ASan and UBSan variants
 (`make test-asan`, `make test-ubsan`). Memcheck's bit-precise uninit
@@ -286,8 +287,8 @@ make fuzz-build                    # builds both fuzzers
 ./build/host-fuzz/fuzz_parse -runs=100000
 ```
 
-libFuzzer writes any finding to `crash-<hash>` in the current
-directory; reproduce with
+libFuzzer writes a finding file named `crash-<hash>`, `leak-<hash>`,
+`timeout-<hash>`, or `oom-<hash>` in the current directory; reproduce with
 `./build/host-fuzz/fuzz_lex crash-<hash>`. The `.gitignore` excludes
 crash / leak / timeout / oom artifacts, but do commit them to a local
 tracking branch if you want to preserve the reproducer while
