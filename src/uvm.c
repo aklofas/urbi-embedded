@@ -77,6 +77,17 @@ static UVMError arith_add(UConst *a, const UConst *b, const UConst *c) {
     return UVM_OK;
 }
 
+static UVMError arith_mul(UConst *a, const UConst *b, const UConst *c) {
+    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
+    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
+        a->kind = UVAL_INT;
+        a->v.i = (int64_t)((uint64_t)b->v.i * (uint64_t)c->v.i);
+        return UVM_OK;
+    }
+    uconst_set_float(a, uconst_to_double(b) * uconst_to_double(c));
+    return UVM_OK;
+}
+
 static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
@@ -162,8 +173,9 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
         [OP_MOVE]  = &&label_OP_MOVE,
         [OP_ADD]   = &&label_OP_ADD,
         [OP_SUB]   = &&label_OP_SUB,
+        [OP_MUL]   = &&label_OP_MUL,
         [OP_RET]   = &&label_OP_RET,
-        /* OP_MUL/DIV/NEG added in Tasks 9-11 */
+        /* OP_DIV/NEG added in Tasks 10-11 */
     };
     if (dispatch_table[uinstr_op(*pc)] == NULL) goto label_unknown;
     DISPATCH();
@@ -200,6 +212,19 @@ dispatch:
             const UConst *b = &frame[uinstr_b(*pc)];
             const UConst *cc = &frame[uinstr_c(*pc)];
             rc = arith_sub(a, b, cc);
+            if (rc != UVM_OK) {
+                vm->last_error = rc;
+                vm->last_errmsg[0] = '\0';
+                HALT();
+            }
+            NEXT();
+        }
+
+        CASE(OP_MUL) {
+            UConst *a = &frame[uinstr_a(*pc)];
+            const UConst *b = &frame[uinstr_b(*pc)];
+            const UConst *cc = &frame[uinstr_c(*pc)];
+            rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
                 vm->last_errmsg[0] = '\0';

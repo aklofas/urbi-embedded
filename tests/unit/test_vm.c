@@ -344,6 +344,39 @@ UTEST(vm_sub_bool_operand_is_type_error) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* --- OP_MUL --- */
+
+UTEST(vm_mul_int_int_normal) {
+    Chunk c; fab_chunk_binop_int(&c, OP_MUL, 6, 7);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(42, out.v.i);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_mul_int_int_min_times_neg_one_wraps_to_min) {
+    Chunk c; fab_chunk_binop_int(&c, OP_MUL, INT64_MIN, -1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == INT64_MIN);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_mul_float_int_promotes) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.5, UVAL_INT, 4, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 5.99 && out.v.f < 6.01);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
@@ -443,4 +476,8 @@ void test_vm_suite(void) {
     utest_run("uvm OP_SUB Float-Float", vm_sub_float_float);
     utest_run("uvm OP_SUB Bool operand raises TypeError",
               vm_sub_bool_operand_is_type_error);
+    utest_run("uvm OP_MUL Int*Int normal", vm_mul_int_int_normal);
+    utest_run("uvm OP_MUL INT64_MIN*-1 wraps to INT64_MIN",
+              vm_mul_int_int_min_times_neg_one_wraps_to_min);
+    utest_run("uvm OP_MUL Float*Int promotes", vm_mul_float_int_promotes);
 }
