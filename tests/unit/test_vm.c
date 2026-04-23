@@ -114,6 +114,72 @@ UTEST(vm_run_ret_on_uninitialized_register_returns_nil) {
     uvm_destroy(&vm);
 }
 
+/* Build a chunk with one LOADK A=0 Bx=0 then RET R[0]. The constant is
+   Integer `value`. */
+static void fab_chunk_loadk_int_ret(Chunk *c, int64_t value) {
+    memset(c, 0, sizeof(*c));
+    c->max_reg = 0;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 2);
+    c->instr_cap = 2;
+    c->instr_count = 2;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    c->constants = (UConst *)malloc(sizeof(UConst) * 1);
+    c->const_cap = 1;
+    c->const_count = 1;
+    c->constants[0].kind = UVAL_INT;
+    c->constants[0].v.i  = value;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 2);
+    c->line_deltas[0] = 1;
+    c->line_deltas[1] = 0;
+}
+
+static void fab_chunk_loadk_float_ret(Chunk *c, double value) {
+    fab_chunk_loadk_int_ret(c, 0);  /* shape is identical */
+    c->constants[0].kind = UVAL_FLOAT;
+    c->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? value : (float)value;
+}
+
+static void free_fab_chunk(Chunk *c) {
+    free(c->instructions);
+    free(c->constants);
+    free(c->line_deltas);
+    free(c->abs_lines);
+}
+
+UTEST(vm_loadk_int) {
+    Chunk c; fab_chunk_loadk_int_ret(&c, 42);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(42, out.v.i);
+    free_fab_chunk(&c);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_loadk_int_large) {
+    Chunk c; fab_chunk_loadk_int_ret(&c, INT64_MAX);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == INT64_MAX);
+    free_fab_chunk(&c);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_loadk_float) {
+    Chunk c; fab_chunk_loadk_float_ret(&c, 3.14);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 3.13 && out.v.f < 3.15);
+    free_fab_chunk(&c);
+    uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -129,4 +195,7 @@ void test_vm_suite(void) {
               vm_run_empty_chunk_returns_nil);
     utest_run("uvm_run RET on uninitialized register returns Nil",
               vm_run_ret_on_uninitialized_register_returns_nil);
+    utest_run("uvm OP_LOADK Integer into register", vm_loadk_int);
+    utest_run("uvm OP_LOADK Integer INT64_MAX preserves value", vm_loadk_int_large);
+    utest_run("uvm OP_LOADK Float into register", vm_loadk_float);
 }

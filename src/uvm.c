@@ -88,6 +88,10 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
 
 dispatch:
     DISPATCH() {
+        CASE(OP_LOADK) {
+            frame[uinstr_a(*pc)] = chunk->constants[uinstr_bx(*pc)];
+            NEXT();
+        }
         CASE(OP_RET) {
             *out = frame[uinstr_a(*pc)];
             HALT();
