@@ -2,7 +2,7 @@
 /* Bytecode Chunk deserializer + verifier + destroy.  Freestanding. */
 
 #include "uchunk.h"
-#include "uchunk_internal.h"
+#include "uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 
@@ -96,40 +96,28 @@ static bool chunk_grow(Chunk *c, void **data, size_t *cap,
     return true;
 }
 
-/* --- Varint decode helpers --- */
+/* --- Varint decode wrappers ---
+   Delegate to uvarint.{c,h} and translate UVarintError into UChunkLoadError so
+   existing call sites continue to return/compare against ULOAD_* values. */
 
-/* LEB128-style unsigned varint decoder.  7 payload bits per byte; top bit
-   is the continuation flag.  Max 10 bytes for a uint64. */
-UChunkLoadError varint_decode_u(const uint8_t *buf, size_t size,
-                                uint64_t *v, size_t *consumed) {
-    uint64_t result = 0;
-    size_t i = 0;
-    unsigned shift = 0;
-    for (i = 0; i < size; i++) {
-        uint8_t b = buf[i];
-        result |= (uint64_t)(b & 0x7Fu) << shift;
-        if ((b & 0x80u) == 0u) {
-            *v = result;
-            *consumed = i + 1;
-            return ULOAD_OK;
-        }
-        shift += 7;
-        if (shift > 63u) {
-            return ULOAD_CORRUPT_VARINT;
-        }
+static UChunkLoadError chunk_decode_varint_u(const uint8_t *buf, size_t size,
+                                             uint64_t *v, size_t *consumed) {
+    switch (uvarint_decode_u(buf, size, v, consumed)) {
+        case UVARINT_OK:        return ULOAD_OK;
+        case UVARINT_TRUNCATED: return ULOAD_TRUNCATED;
+        case UVARINT_OVERSIZE:  return ULOAD_CORRUPT_VARINT;
     }
-    return ULOAD_TRUNCATED;
+    return ULOAD_CORRUPT;  /* unreachable under -Wswitch-enum */
 }
 
-/* Zigzag-signed varint decoder. */
-UChunkLoadError varint_decode_zz(const uint8_t *buf, size_t size,
-                                 int64_t *v, size_t *consumed) {
-    uint64_t u = 0;
-    UChunkLoadError rc = varint_decode_u(buf, size, &u, consumed);
-    if (rc != ULOAD_OK) return rc;
-    /* zigzag decode: (u >> 1) ^ -(u & 1) */
-    *v = (int64_t)((u >> 1) ^ (uint64_t)(-(int64_t)(u & 1u)));
-    return ULOAD_OK;
+static UChunkLoadError chunk_decode_varint_zz(const uint8_t *buf, size_t size,
+                                              int64_t *v, size_t *consumed) {
+    switch (uvarint_decode_zz(buf, size, v, consumed)) {
+        case UVARINT_OK:        return ULOAD_OK;
+        case UVARINT_TRUNCATED: return ULOAD_TRUNCATED;
+        case UVARINT_OVERSIZE:  return ULOAD_CORRUPT_VARINT;
+    }
+    return ULOAD_CORRUPT;  /* unreachable */
 }
 
 /* --- Public API --- */
@@ -205,7 +193,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
 
     uint64_t src_len = 0;
     size_t consumed = 0;
-    UChunkLoadError rc = varint_decode_u(buf + off, size - off, &src_len, &consumed);
+    UChunkLoadError rc = chunk_decode_varint_u(buf + off, size - off, &src_len, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at source_name_len"); return rc; }
     off += consumed;
     if (off + src_len > size) { set_errmsg(errmsg, errcap, "truncated at source_name"); return ULOAD_TRUNCATED; }
@@ -222,7 +210,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
 
     /* --- constants --- */
     uint64_t n_const = 0;
-    rc = varint_decode_u(buf + off, size - off, &n_const, &consumed);
+    rc = chunk_decode_varint_u(buf + off, size - off, &n_const, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_constants"); return rc; }
     off += consumed;
     if (n_const > (uint64_t)UINT16_MAX + 1u) { set_errmsg(errmsg, errcap, "n_constants too large"); return ULOAD_CORRUPT; }
@@ -241,7 +229,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
         chunk->constants[chunk->const_count].kind = kind;
         if (kind == (uint8_t)UVAL_INT) {
             int64_t v = 0;
-            rc = varint_decode_zz(buf + off, size - off, &v, &consumed);
+            rc = chunk_decode_varint_zz(buf + off, size - off, &v, &consumed);
             if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint in UVAL_INT"); return rc; }
             off += consumed;
             chunk->constants[chunk->const_count].v.i = v;
@@ -267,7 +255,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
 
     /* --- instructions --- */
     uint64_t n_instr = 0;
-    rc = varint_decode_u(buf + off, size - off, &n_instr, &consumed);
+    rc = chunk_decode_varint_u(buf + off, size - off, &n_instr, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_instructions"); return rc; }
     off += consumed;
     /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
@@ -295,7 +283,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
 
     /* --- synclines: delta array + absolute-line checkpoints --- */
     uint64_t n_deltas = 0;
-    rc = varint_decode_u(buf + off, size - off, &n_deltas, &consumed);
+    rc = chunk_decode_varint_u(buf + off, size - off, &n_deltas, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_deltas"); return rc; }
     off += consumed;
     if (n_deltas != (uint64_t)chunk->instr_count) {
@@ -318,7 +306,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
     }
 
     uint64_t n_abs = 0;
-    rc = varint_decode_u(buf + off, size - off, &n_abs, &consumed);
+    rc = chunk_decode_varint_u(buf + off, size - off, &n_abs, &consumed);
     if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at n_abs_lines"); return rc; }
     off += consumed;
     if (n_abs > 0u) {
@@ -332,10 +320,10 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
     for (uint64_t i = 0; i < n_abs; i++) {
         uint64_t pc64 = 0;
         uint64_t line64 = 0;
-        rc = varint_decode_u(buf + off, size - off, &pc64, &consumed);
+        rc = chunk_decode_varint_u(buf + off, size - off, &pc64, &consumed);
         if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at abs_line pc"); return rc; }
         off += consumed;
-        rc = varint_decode_u(buf + off, size - off, &line64, &consumed);
+        rc = chunk_decode_varint_u(buf + off, size - off, &line64, &consumed);
         if (rc != ULOAD_OK) { set_errmsg(errmsg, errcap, "bad varint at abs_line line"); return rc; }
         off += consumed;
         if (pc64 >= (uint64_t)chunk->instr_count) {
