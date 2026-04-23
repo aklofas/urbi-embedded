@@ -29,9 +29,9 @@ Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
 
-At the time of the v0.1.0-skeleton tag the VM and REPL subsystems are in
-active development; the architecture described here is the target shape the
-v0.1.0-skeleton release implements.
+At the time of the v0.1.0-skeleton tag the VM subsystem is shipped; the REPL
+is in active development. The architecture described here is the target shape
+the v0.1.0-skeleton release implements.
 
 ---
 
@@ -321,11 +321,15 @@ zero-initialized `Chunk`.
 
 ## VM
 
-**Source:** `src/uvm.c` (in active development)
+**Source:** `src/uvm.c` / `src/uvm.h`
 
 The VM is a register-based interpreter. It takes a populated `Chunk`,
 allocates a register frame of `max_reg + 1` tagged-value slots, and dispatches
-each instruction in a switch-based decode loop.
+each instruction using a computed-goto table under GCC/Clang (`__GNUC__` /
+`__clang__` detected at compile time) or a `switch`-based loop otherwise.
+The `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise the
+switch path on GCC/Clang hosts; CI uses this flag in a dedicated `test-switch`
+matrix entry to keep both paths compiling and passing.
 
 Register values share the `UConst` layout from `src/uchunk.h`: 16 bytes
 per slot, with a `kind` byte (`UValKind`) discriminating Integer, Float, Bool,
@@ -352,8 +356,12 @@ serialize/deserialize round-trip is needed. An embedded host loading compiled
 bytecode from flash calls `uchunk_deserialize` first, then hands the resulting
 `Chunk` to the VM.
 
-At the time of the v0.1.0-skeleton tag the VM is in active development; the
-architecture described here is the target shape the release implements.
+The persistent `UVM` struct supports an `init` / `run` / `destroy` lifecycle
+and carries a VM-owned allocator hook (distinct from the `Chunk` loader's
+allocator). A 128-byte fixed error-message buffer provides
+`source:line:`-prefixed diagnostics for `UVM_TYPE_ERROR` and `UVM_OOM`
+without depending on `<stdio.h>`, `<string.h>`, or `<stdlib.h>` (the
+stdlib-realloc shim is `__STDC_HOSTED__`-gated).
 
 ---
 
@@ -462,6 +470,9 @@ src/
   uemit.h             Emitter API: Emitter, EmitError; also declares uchunk_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
                       uemit_disassemble, uchunk_serialize
+  uvm.h               VM API: UVM, UVMError, UVal, uvm_init, uvm_run, uvm_destroy
+  uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
+                      type matrix, TypeError/OOM diagnostics, syncline decoder
 
 tests/unit/
   utest.h             Header-only test harness — see internals/test-harness.md
@@ -472,4 +483,5 @@ tests/unit/
   test_varint.c       Varint codec test suite
   test_chunk.c        Chunk loader / verifier test suite
   test_emit.c         Emitter test suite
+  test_vm.c           VM test suite
 ```

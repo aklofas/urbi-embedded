@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### VM (M1 phase 5)
+
+- New module `src/uvm.{c,h}` implements the M1 register-based bytecode
+  interpreter. Handles the 8-opcode M1 set (LOADK, MOVE, ADD, SUB, MUL,
+  DIV, NEG, RET) with type-dispatched arithmetic per
+  `docs/LANG-CONVENTIONS.md` §1.3: Int+Int wraps two's-complement,
+  Int+Float promotes to Float, DIV always produces Float.
+- Persistent `UVM` struct with `init`/`run`/`destroy` lifecycle and a
+  VM-owned allocator hook distinct from the Chunk loader's allocator.
+  The 128-byte fixed error-message buffer carries
+  `source:line:`-prefixed diagnostics for `UVM_TYPE_ERROR` and
+  `UVM_OOM`; freestanding-compilable with no dependency on `<stdio.h>`
+  / `<string.h>` / `<stdlib.h>` (stdlib-realloc shim is
+  `__STDC_HOSTED__`-gated).
+- Dispatch macros (`CASE` / `DISPATCH` / `NEXT`) expand to computed-goto
+  under `__GNUC__` / `__clang__` and to `switch`/`case`/`continue`
+  otherwise. Opcode bodies are written once; a new
+  `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise
+  the switch path on GCC/Clang hosts.
+
+### Tests
+
+- `tests/unit/test_vm.c` — new test suite covering lifecycle,
+  per-opcode happy paths, arithmetic type matrix, wrap semantics
+  (INT64_MAX+1, INT64_MIN*-1, etc.), IEEE 754 DIV corners (±Inf, NaN),
+  TypeError paths, OOM path, diagnostic prefix variants (`source:line:`,
+  `line N:`, `instr N:`), and DiagWriter truncation. Coverage on
+  `src/uvm.c` reaches 97% line.
+- `tests/fuzz/fuzz_vm.c` — libFuzzer harness deserializing arbitrary
+  bytes and executing any accepted chunk. 100K-iteration smoke run
+  passes clean under ASan+UBSan.
+
+### VM build and tooling
+
+- New Make targets: `test-switch` (build with `-DURBI_VM_FORCE_SWITCH=1`
+  for switch-dispatch CI parity) and `fuzz-vm` (libFuzzer harness
+  build + run). `fuzz-build` aggregate extended to include `fuzz_vm`.
+- `.clang-tidy` — `-clang-diagnostic-gnu-label-as-value` suppressed
+  for the intentional GCC/Clang computed-goto extension.
+- CI `host` job matrix extended with `test-switch`, bringing the matrix
+  to 5 host modes.
+- `docs/internals/design-decisions.md` — new entry explaining the
+  uniform `UConst` tagged-struct decision across all targets.
+- `docs/internals/architecture.md` — VM marked shipped; source table
+  updated with `uvm.{c,h}` and `test_vm.c`.
+
 ### Portability
 
 - Compiler front-end compiles under `-ffreestanding` on toolchains without a C library (e.g. `gcc-riscv64-unknown-elf` on Ubuntu). `uarena_init` and the internal stdlib-backed allocator pair are guarded behind `__STDC_HOSTED__`; `uarena_alloc` uses a local byte-fill in place of `memset`. Freestanding callers must use `uarena_init_ex` or `uarena_init_static`.
