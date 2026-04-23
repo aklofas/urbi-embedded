@@ -93,6 +93,9 @@ $(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(SRC) | $(FUZZ_BUILDDIR)
 $(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(SRC) | $(FUZZ_BUILDDIR)
 	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c
 
+$(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(SRC) | $(FUZZ_BUILDDIR)
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c
+
 fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
 	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_lex
@@ -101,7 +104,11 @@ fuzz-parse: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_parse
 	@echo "running fuzz_parse (Ctrl-C to stop; use -runs=N for bounded)"
 	$(FUZZ_BUILDDIR)/fuzz_parse
 
-fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse
+fuzz-vm: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_vm
+	@echo "running fuzz_vm (Ctrl-C to stop; use -runs=N for bounded)"
+	$(FUZZ_BUILDDIR)/fuzz_vm
+
+fuzz-build: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex $(FUZZ_BUILDDIR)/fuzz_parse $(FUZZ_BUILDDIR)/fuzz_vm
 
 fuzz-tools:
 	@command -v $(FUZZ_CC) >/dev/null 2>&1 || { \
@@ -233,4 +240,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-build fuzz-tools
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools
