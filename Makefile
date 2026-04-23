@@ -107,6 +107,31 @@ analyzer:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -fanalyzer" \
 		all
 
+# Coverage — instruments the test runner with gcov, runs it, and produces
+# a gcovr summary on stdout + browsable HTML report at
+# build/host-coverage/report.html.  Source filter restricts reports to
+# src/ (not tests/unit/).  Requires gcovr in PATH; clobbers prior .gcda
+# so repeated runs produce clean counts.
+coverage: coverage-tools
+	rm -f build/host-coverage/src/*.gcda build/host-coverage/tests/unit/*.gcda
+	$(MAKE) TARGET=host-coverage \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
+		test
+	gcovr --root . \
+	      --object-directory build/host-coverage \
+	      --filter 'src/' \
+	      --txt \
+	      --html-details build/host-coverage/report.html
+	@echo ""
+	@echo "HTML report: build/host-coverage/report.html"
+
+coverage-tools:
+	@command -v gcovr >/dev/null 2>&1 || { \
+	    echo "error: gcovr not found in PATH"; \
+	    echo "install: sudo apt-get install -y gcovr  # or: pip install --user gcovr"; \
+	    exit 1; \
+	}
+
 # Aggregate: gating tidy, advisory cppcheck, advisory analyzer.
 # CI invokes this as one step per-target so failures clearly name
 # which tool caught the issue.
@@ -143,4 +168,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools
+.PHONY: all test test-asan test-ubsan test-debug cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools
