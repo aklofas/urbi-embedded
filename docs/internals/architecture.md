@@ -18,13 +18,13 @@ source (const char *)
      │
      ▼  [uemit.c]    produces  Chunk (bytecode, constants, synclines, max_reg)
      │
-     ▼  [uvm.c]      produces  result (UVal tagged value)
+     ▼  [uvm.c]      produces  result (UConst tagged value)
      │
      ▼  [urbi CLI]   prints    result to REPL output
 ```
 
 The key invariant is that the hand-off between stages is a small, typed struct
-— `Token`, `AstNode *`, `Chunk *`, `UVal` — not an implicit shared global.
+— `Token`, `AstNode *`, `Chunk *`, `UConst` — not an implicit shared global.
 Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
@@ -470,7 +470,7 @@ src/
   uemit.h             Emitter API: Emitter, EmitError; also declares uchunk_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
                       uemit_disassemble, uchunk_serialize
-  uvm.h               VM API: UVM, UVMError, UVal, uvm_init, uvm_run, uvm_destroy
+  uvm.h               VM API: UVM, UVMError, UConst, uvm_init, uvm_run, uvm_destroy
   uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
                       type matrix, TypeError/OOM diagnostics, syncline decoder
 
