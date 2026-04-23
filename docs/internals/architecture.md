@@ -273,8 +273,12 @@ time) and the pluggable allocator pair `(alloc_fn, alloc_ud)`.
 
 The `Chunk` can be populated in two ways: by the emitter (in-process, no
 serialize/deserialize round-trip) or by `uchunk_deserialize` (loading a
-serialized `.urb` file). Both paths produce the same struct layout; the VM
-does not distinguish between them.
+serialized `.urb` file). Both paths produce the same struct layout with the
+same ownership contract — every field, including `source_name`, is allocated
+through the chunk's own allocator and freed by `uchunk_destroy`. The
+`uemit_init` `source_name` parameter is borrowed and copied into the chunk at
+init time; the caller's string does not need to outlive the chunk. The VM
+does not distinguish between the two population paths.
 
 ### On-disk format
 

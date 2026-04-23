@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** pre-release, walking skeleton in progress. Lexer is complete (84 unit tests passing at release / debug / ASan / UBSan; 11 token types; integers in decimal / hex / binary / octal with underscore separators; identifiers; operators; comments). Parser, bytecode emitter, VM, and interactive REPL still to land before the first tagged release (`v0.1.0-skeleton`).
+**Status:** pre-release, walking skeleton in progress. Lexer, parser, arena allocator, bytecode emitter, and chunk loader + verifier are complete; 222 unit tests passing at release / debug / ASan / UBSan / cross-ARM / cross-RISC-V. VM and interactive REPL still to land before the first tagged release (`v0.1.0-skeleton`).
 
 ## Design goals
 
@@ -33,19 +33,24 @@ Implements **urbiscript** — a prototype-based, parallel-by-default, event-driv
 make
 ```
 
-Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()` and the lexer surface (`ulex_init`, `ulex_next`, `ulex_token_name`); the rest fills in across successive release milestones.
+Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()`; compiler-internal module surfaces (lexer, parser, arena, chunk, emitter) are stable within the library but not yet re-exported through `urbi.h`. The host embedding API arrives at the C API milestone.
 
 ## Source layout
 
 ```text
 src/urbi.h        public top-level C API
 src/urbi.c        top-level glue, version
-src/ulex.h        public lexer API
+src/ulex.h        lexer API
 src/ulex.c        lexer
-src/uparse.c      parser            (stub)
-src/udesugar.c    desugaring pass   (stub)
-src/uemit.c       bytecode emitter  (stub)
-src/uvm.c         bytecode interpreter (stub)
+src/uast.h        AST node types
+src/uarena.h      arena allocator API
+src/uarena.c      chunk-list bump allocator (hosted / pluggable / static)
+src/uparse.h      parser API
+src/uparse.c      streaming Pratt-style parser
+src/uchunk.h      Chunk struct, UConst, opcodes, instruction helpers
+src/uchunk.c      chunk deserializer + verifier
+src/uemit.h       emitter API
+src/uemit.c       single-pass emitter + disassembler + serializer
 ```
 
 Lua-style flat layout. Copy `src/*` into a host project and build.
