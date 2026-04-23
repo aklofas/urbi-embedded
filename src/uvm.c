@@ -77,6 +77,17 @@ static UVMError arith_add(UConst *a, const UConst *b, const UConst *c) {
     return UVM_OK;
 }
 
+static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
+    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
+    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
+        a->kind = UVAL_INT;
+        a->v.i = (int64_t)((uint64_t)b->v.i - (uint64_t)c->v.i);
+        return UVM_OK;
+    }
+    uconst_set_float(a, uconst_to_double(b) - uconst_to_double(c));
+    return UVM_OK;
+}
+
 /* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
        recognizing the loop and lowering it to a memset libcall under
        -Os, which would break freestanding builds.
@@ -138,21 +149,21 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     UVMError rc = UVM_OK;
 
 #if UVM_USE_COMPUTED_GOTO
-    /* Dispatch table keyed by opcode. At this task stage (Task 6) only
-       LOADK, MOVE, ADD, RET slots are populated; SUB/MUL/DIV/NEG are NULL
-       and Tasks 8-11 populate them. The guard below catches an
-       unimplemented-opcode-as-FIRST-instruction only — subsequent NEXT()
-       calls bypass it. Between now and Task 11 this is a narrow defensive
-       window; the VM's own test suite only constructs chunks using
-       already-implemented opcodes. Task 11 removes the guard entirely
-       once all 8 slots are populated, at which point loader-validated
-       chunks cannot reach NULL slots. */
+    /* Dispatch table keyed by opcode. LOADK, MOVE, ADD, SUB, RET slots are
+       populated; MUL/DIV/NEG are NULL and Tasks 9-11 populate them. The
+       guard below catches an unimplemented-opcode-as-FIRST-instruction only
+       — subsequent NEXT() calls bypass it. Between now and Task 11 this is
+       a narrow defensive window; the VM's own test suite only constructs
+       chunks using already-implemented opcodes. Task 11 removes the guard
+       entirely once all 8 slots are populated, at which point
+       loader-validated chunks cannot reach NULL slots. */
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK] = &&label_OP_LOADK,
         [OP_MOVE]  = &&label_OP_MOVE,
         [OP_ADD]   = &&label_OP_ADD,
+        [OP_SUB]   = &&label_OP_SUB,
         [OP_RET]   = &&label_OP_RET,
-        /* OP_SUB/MUL/DIV/NEG added in Tasks 8-11 */
+        /* OP_MUL/DIV/NEG added in Tasks 9-11 */
     };
     if (dispatch_table[uinstr_op(*pc)] == NULL) goto label_unknown;
     DISPATCH();
@@ -179,6 +190,19 @@ dispatch:
             if (rc != UVM_OK) {
                 vm->last_error = rc;
                 vm->last_errmsg[0] = '\0';  /* formatting lands in Task 13 */
+                HALT();
+            }
+            NEXT();
+        }
+
+        CASE(OP_SUB) {
+            UConst *a = &frame[uinstr_a(*pc)];
+            const UConst *b = &frame[uinstr_b(*pc)];
+            const UConst *cc = &frame[uinstr_c(*pc)];
+            rc = arith_sub(a, b, cc);
+            if (rc != UVM_OK) {
+                vm->last_error = rc;
+                vm->last_errmsg[0] = '\0';
                 HALT();
             }
             NEXT();

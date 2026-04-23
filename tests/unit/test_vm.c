@@ -295,6 +295,55 @@ UTEST(vm_add_int_nil_is_type_error) {
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
 
+/* --- OP_SUB --- */
+
+/* Build an opcode of form R[2] = R[0] OP R[1]; RET R[2]. Parameterized
+   over opcode so we can reuse for SUB / MUL / DIV. */
+static void fab_chunk_binop_int(Chunk *c, UOpcode op, int64_t a, int64_t b) {
+    fab_chunk_int_add_int(c, a, b);
+    c->instructions[2] = uinstr_enc_abc(op, 2, 0, 1);
+}
+
+UTEST(vm_sub_int_int_normal) {
+    Chunk c; fab_chunk_binop_int(&c, OP_SUB, 5, 3);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(2, out.v.i);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_sub_int_int_min_minus_one_wraps) {
+    Chunk c; fab_chunk_binop_int(&c, OP_SUB, INT64_MIN, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT(out.v.i == INT64_MAX);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_sub_float_float) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 5.5, UVAL_FLOAT, 0, 1.25);
+    c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
+    UASSERT_EQ(UVAL_FLOAT, out.kind);
+    UASSERT(out.v.f > 4.24 && out.v.f < 4.26);
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
+UTEST(vm_sub_bool_operand_is_type_error) {
+    Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_BOOL, 1, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
+    UVM vm; uvm_init(&vm, NULL, NULL);
+    UConst out;
+    UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
+    free_fab_chunk(&c); uvm_destroy(&vm);
+}
+
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
@@ -388,4 +437,10 @@ void test_vm_suite(void) {
               vm_add_bool_int_is_type_error);
     utest_run("uvm OP_ADD Int+Nil raises TypeError",
               vm_add_int_nil_is_type_error);
+    utest_run("uvm OP_SUB Int-Int normal", vm_sub_int_int_normal);
+    utest_run("uvm OP_SUB INT64_MIN-1 wraps to INT64_MAX",
+              vm_sub_int_int_min_minus_one_wraps);
+    utest_run("uvm OP_SUB Float-Float", vm_sub_float_float);
+    utest_run("uvm OP_SUB Bool operand raises TypeError",
+              vm_sub_bool_operand_is_type_error);
 }
