@@ -25,6 +25,18 @@
 - Structured lexer error codes: unknown character, unterminated block comment, ambiguous leading zero, empty radix, malformed hex/binary/octal, leading/trailing/adjacent underscores, integer overflow.
 - Public lexer API in new header `ulex.h`: `Token`, `Lexer`, `ulex_init`, `ulex_next`, `ulex_token_name`. No allocation; caller owns source buffer.
 
+### Refactoring
+
+- LEB128 varint encode/decode extracted into a standalone freestanding module
+  `uvarint.{c,h}` with its own error enum (`UVarintError`). `uchunk.c` now
+  consumes it via two translation wrappers that map `UVarintError` into
+  `UChunkLoadError` at the boundary; `uemit.c` drops the four private `static`
+  varint helpers and consumes the module directly. The test-only header
+  `src/uchunk_internal.h` is retired; varint coverage moves into a new
+  `test_varint_suite` (11 cases) that exercises encode and decode directly,
+  replacing the indirect serialize→deserialize-only encode coverage of prior
+  state.
+
 ### Foundation
 
 - Header-only test harness `utest.h` (zero dependencies, pure C99)

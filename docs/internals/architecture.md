@@ -457,7 +457,8 @@ src/
   uparse.c            Parser implementation: uparse_init, uparse_next_statement, uparse_error_name
   uchunk.h            Chunk struct, UConst, UOpcode, UValKind, instruction encode/decode helpers
   uchunk.c            Chunk deserializer, verifier, destroy: uchunk_deserialize, uchunk_destroy
-  uchunk_internal.h   Internal varint helpers (test surface only; not a public header)
+  uvarint.h           LEB128 varint codec API: UVarintError, size/write/decode for u + zz
+  uvarint.c           LEB128 varint implementation: pure byte math, freestanding-clean
   uemit.h             Emitter API: Emitter, EmitError; also declares uchunk_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
                       uemit_disassemble, uchunk_serialize
@@ -468,6 +469,7 @@ tests/unit/
   test_lexer.c        Lexer test suite
   test_arena.c        Arena allocator test suite
   test_parser.c       Parser test suite
+  test_varint.c       Varint codec test suite
   test_chunk.c        Chunk loader / verifier test suite
   test_emit.c         Emitter test suite
 ```

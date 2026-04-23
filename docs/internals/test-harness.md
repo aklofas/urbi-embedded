@@ -30,7 +30,7 @@ Three assertion macros cover most needs:
 - `UASSERT_STR_EQ(a, b)` — calls `strcmp` and prints the differing strings on
   failure.
 
-Here is a real excerpt from `tests/unit/test_chunk.c` that shows two cases and
+Here is a real excerpt from `tests/unit/test_varint.c` that shows two cases and
 the corresponding portion of the suite function:
 
 ```c
@@ -45,23 +45,22 @@ UTEST(destroy_empty_chunk_is_noop) {
     UASSERT_EQ((size_t)0, c.const_count);
 }
 
-UTEST(varint_decode_u_single_byte) {
+UTEST(decode_u_single_byte) {
     const uint8_t buf[] = {0x00};
     uint64_t v = 0;
     size_t consumed = 0;
-    UASSERT_EQ(ULOAD_OK, varint_decode_u(buf, sizeof buf, &v, &consumed));
+    UASSERT_EQ(UVARINT_OK, uvarint_decode_u(buf, sizeof buf, &v, &consumed));
     UASSERT_EQ((uint64_t)0, v);
     UASSERT_EQ((size_t)1, consumed);
 
     const uint8_t buf2[] = {0x7F};   /* 127 — max single-byte */
-    UASSERT_EQ(ULOAD_OK, varint_decode_u(buf2, sizeof buf2, &v, &consumed));
+    UASSERT_EQ(UVARINT_OK, uvarint_decode_u(buf2, sizeof buf2, &v, &consumed));
     UASSERT_EQ((uint64_t)127, v);
     UASSERT_EQ((size_t)1, consumed);
 }
 
-void test_chunk_suite(void) {
-    utest_run("destroy empty chunk is a no-op",  destroy_empty_chunk_is_noop);
-    utest_run("varint decode u single byte",     varint_decode_u_single_byte);
+void test_varint_suite(void) {
+    utest_run("varint decode u single byte",     decode_u_single_byte);
     /* ... more cases ... */
 }
 ```
