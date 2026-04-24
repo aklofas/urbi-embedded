@@ -6,6 +6,7 @@
 #include "umodule.h"
 #include "uvalue.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -84,6 +85,72 @@ UTEST(uvalue_int_min) {
     UASSERT_STR_EQ(buf, "-9223372036854775808");
 }
 
+/* --- UVAL_FLOAT ---
+ * Lua-5.4-style: %.14g (f64) or %.7g (f32), with trailing ".0" appended when
+ * the formatted output contains none of '.', 'e', 'E', 'n', 'i'.  This makes
+ * whole-number floats visually distinct from integers. */
+
+UTEST(uvalue_float_two_point_five) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = 2.5;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "2.5");
+}
+
+UTEST(uvalue_float_whole_gets_dot_zero) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = 3.0;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "3.0");
+}
+
+UTEST(uvalue_float_negative_zero) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = -0.0;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "-0.0");
+}
+
+UTEST(uvalue_float_scientific_no_append) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = 1.5e+20;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    /* result contains 'e' so .0 is NOT appended */
+    UASSERT(strchr(buf, 'e') != NULL);
+    UASSERT(strstr(buf, ".0") == NULL || strstr(buf, ".0") < strchr(buf, 'e'));
+}
+
+UTEST(uvalue_float_nan) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = (double)NAN;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    /* snprintf produces "nan" on glibc; scan rule sees 'n' and skips append */
+    UASSERT(strstr(buf, "nan") != NULL);
+    UASSERT(strstr(buf, "nan.0") == NULL);
+}
+
+UTEST(uvalue_float_pos_inf) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = (double)INFINITY;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT(strstr(buf, "inf") != NULL);
+    UASSERT(strstr(buf, "inf.0") == NULL);
+}
+
+UTEST(uvalue_float_neg_inf) {
+    UValue v = { .kind = UVAL_FLOAT };
+    v.v.f = -(double)INFINITY;
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT(strstr(buf, "-inf") != NULL);
+}
+
 void test_uvalue_suite(void) {
     utest_run("uvalue: nil -> \"nil\"", uvalue_nil_formats_as_nil);
     utest_run("uvalue: bool true", uvalue_bool_true);
@@ -93,4 +160,11 @@ void test_uvalue_suite(void) {
     utest_run("uvalue: int -42", uvalue_int_negative);
     utest_run("uvalue: int INT64_MAX", uvalue_int_max);
     utest_run("uvalue: int INT64_MIN", uvalue_int_min);
+    utest_run("uvalue: float 2.5", uvalue_float_two_point_five);
+    utest_run("uvalue: float 3.0 -> 3.0", uvalue_float_whole_gets_dot_zero);
+    utest_run("uvalue: float -0.0 preserves sign", uvalue_float_negative_zero);
+    utest_run("uvalue: float 1.5e+20 no .0 append", uvalue_float_scientific_no_append);
+    utest_run("uvalue: float NaN", uvalue_float_nan);
+    utest_run("uvalue: float +Inf", uvalue_float_pos_inf);
+    utest_run("uvalue: float -Inf", uvalue_float_neg_inf);
 }
