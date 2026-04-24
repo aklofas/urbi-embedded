@@ -38,7 +38,7 @@ typedef enum {
     PARSE_EXPECTED_RPAREN,
     PARSE_LEX_ERROR,
     PARSE_OOM
-} ParseErrorCode;
+} UParseError;
 
 /*
  * UAstNode — tagged union, arena-allocated by the parser.
@@ -52,7 +52,7 @@ typedef enum {
  *   u.ident  — AST_IDENT:  zero-copy lexeme view
  *   u.unary  — AST_UNARY:  prefix operator + operand pointer
  *   u.binary — AST_BINARY: infix operator + two operand pointers
- *   u.err    — AST_ERROR:  ParseErrorCode + static message string
+ *   u.err    — AST_ERROR:  UParseError + static message string
  *
  * Position fields line/col are 1-based, matching the lexer.  For
  * AST_BINARY the position points at the operator token; for AST_ERROR

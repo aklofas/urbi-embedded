@@ -30,7 +30,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     Arena arena;
     uarena_init(&arena, 4096);
 
-    Parser p;
+    UParser p;
     uparse_init(&p, &lex, &arena);
 
     UAstNode *node;

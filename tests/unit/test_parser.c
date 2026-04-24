@@ -47,7 +47,7 @@ static void dump_rec(const UAstNode *n, char **cur, char *end) {
     }
     case AST_ERROR:
         *cur += snprintf(*cur, (size_t)(end - *cur), "(error %s)",
-                         uparse_error_name((ParseErrorCode)n->u.err.code));
+                         uparse_error_name((UParseError)n->u.err.code));
         return;
     }
 }
@@ -66,7 +66,7 @@ static void ast_dump(const UAstNode *n, char *buf, size_t bufsz) {
 typedef struct {
     ULexer lex;
     Arena arena;
-    Parser p;
+    UParser p;
 } ParseCtx;
 
 static void ctx_init(ParseCtx *c, const char *src) {
@@ -104,8 +104,8 @@ UTEST(parse_error_name_known_codes) {
 }
 
 UTEST(parse_error_name_out_of_range) {
-    UASSERT_STR_EQ(uparse_error_name((ParseErrorCode)999),      "PARSE_UNKNOWN");
-    UASSERT_STR_EQ(uparse_error_name((ParseErrorCode)-1),       "PARSE_UNKNOWN");
+    UASSERT_STR_EQ(uparse_error_name((UParseError)999),      "PARSE_UNKNOWN");
+    UASSERT_STR_EQ(uparse_error_name((UParseError)-1),       "PARSE_UNKNOWN");
 }
 
 /* --- Atom happy-path tests. --- */
@@ -482,7 +482,7 @@ UTEST(parse_oom_returns_sentinel_and_sticks) {
     OomSpy s = { 0, 0 }; /* fail on the very first backing alloc */
     ULexer lex;
     Arena arena;
-    Parser p;
+    UParser p;
     const char *src = "1 + 2";
     ulex_init(&lex, src, strlen(src));
     uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);
@@ -511,7 +511,7 @@ UTEST(parse_oom_mid_expression) {
     OomSpy s = { 0, 0 };
     ULexer lex;
     Arena arena;
-    Parser p;
+    UParser p;
     const char *src = "1 + 2 * (3 - 4)";
     ulex_init(&lex, src, strlen(src));
     uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);

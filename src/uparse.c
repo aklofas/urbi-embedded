@@ -4,7 +4,7 @@
 #include "uparse.h"
 #include <stddef.h>
 
-/* --- Static error-message table.  Indices must match ParseErrorCode. --- */
+/* --- Static error-message table.  Indices must match UParseError. --- */
 
 static const char * const kErrorMessages[] = {
     "ok",
@@ -39,7 +39,7 @@ static UAstNode uparser_oom_sentinel = {
 
 /* --- ULexer lookahead helpers. --- */
 
-static UToken peek(Parser *p) {
+static UToken peek(UParser *p) {
     if (!p->have_peek) {
         p->peek = ulex_next(p->lex);
         p->have_peek = true;
@@ -47,7 +47,7 @@ static UToken peek(Parser *p) {
     return p->peek;
 }
 
-static UToken consume(Parser *p) {
+static UToken consume(UParser *p) {
     UToken t = peek(p);
     p->have_peek = false;
     return t;
@@ -55,7 +55,7 @@ static UToken consume(Parser *p) {
 
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
-static UAstNode *make_node(Parser *p, UAstKind k, int line, int col) {
+static UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
     UAstNode *n = uarena_alloc(p->arena, sizeof *n);
     if (!n) return NULL;
     n->kind = k;
@@ -64,14 +64,14 @@ static UAstNode *make_node(Parser *p, UAstKind k, int line, int col) {
     return n;
 }
 
-static UAstNode *make_int(Parser *p, int64_t v, int line, int col) {
+static UAstNode *make_int(UParser *p, int64_t v, int line, int col) {
     UAstNode *n = make_node(p, AST_INT, line, col);
     if (!n) return NULL;
     n->u.i = v;
     return n;
 }
 
-static UAstNode *make_ident(Parser *p, const char *start, int len, int line, int col) {
+static UAstNode *make_ident(UParser *p, const char *start, int len, int line, int col) {
     UAstNode *n = make_node(p, AST_IDENT, line, col);
     if (!n) return NULL;
     n->u.ident.start = start;
@@ -79,7 +79,7 @@ static UAstNode *make_ident(Parser *p, const char *start, int len, int line, int
     return n;
 }
 
-static UAstNode *make_unary(Parser *p, UAstUnaryOp op, UAstNode *operand,
+static UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
                            int line, int col) {
     UAstNode *n = make_node(p, AST_UNARY, line, col);
     if (!n) return NULL;
@@ -88,7 +88,7 @@ static UAstNode *make_unary(Parser *p, UAstUnaryOp op, UAstNode *operand,
     return n;
 }
 
-static UAstNode *make_binary(Parser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
+static UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
                             int line, int col) {
     UAstNode *n = make_node(p, AST_BINARY, line, col);
     if (!n) return NULL;
@@ -98,7 +98,7 @@ static UAstNode *make_binary(Parser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode
     return n;
 }
 
-static UAstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
+static UAstNode *make_error(UParser *p, UParseError code, const char *msg,
                            int line, int col) {
     UAstNode *n = make_node(p, AST_ERROR, line, col);
     if (!n) return NULL;
@@ -109,9 +109,9 @@ static UAstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
 
 /* --- Forward declarations for mutual recursion. --- */
 
-static UAstNode *parse_expression(Parser *p, int min_prec);
-static UAstNode *parse_prefix(Parser *p);
-static UAstNode *parse_atom(Parser *p);
+static UAstNode *parse_expression(UParser *p, int min_prec);
+static UAstNode *parse_prefix(UParser *p);
+static UAstNode *parse_atom(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb). */
@@ -137,7 +137,7 @@ static UAstBinaryOp infix_binop(UTokenType t) {
 
 /* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
 
-static UAstNode *parse_prefix(Parser *p) {
+static UAstNode *parse_prefix(UParser *p) {
     UToken t = peek(p);
     if (t.type == TOK_PLUS) {
         consume(p);
@@ -155,7 +155,7 @@ static UAstNode *parse_prefix(Parser *p) {
 
 /* --- parse_atom: INT | IDENT | ( expr ) | error. --- */
 
-static UAstNode *parse_atom(Parser *p) {
+static UAstNode *parse_atom(UParser *p) {
     UToken t = peek(p);
     switch (t.type) {
     case TOK_INT:
@@ -197,7 +197,7 @@ static UAstNode *parse_atom(Parser *p) {
 
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
-static UAstNode *parse_expression(Parser *p, int min_prec) {
+static UAstNode *parse_expression(UParser *p, int min_prec) {
     UAstNode *left = parse_prefix(p);
     if (!left) return NULL;
     if (left->kind == AST_ERROR) return left;
@@ -221,7 +221,7 @@ static UAstNode *parse_expression(Parser *p, int min_prec) {
 
 /* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
    TOK_PIPE, consume it so the next statement starts clean. */
-static void sync_to_statement_boundary(Parser *p) {
+static void sync_to_statement_boundary(UParser *p) {
     for (;;) {
         UToken t = peek(p);
         if (t.type == TOK_PIPE) { consume(p); return; }
@@ -232,13 +232,13 @@ static void sync_to_statement_boundary(Parser *p) {
 
 /* --- Public API. --- */
 
-void uparse_init(Parser *p, ULexer *lex, Arena *arena) {
+void uparse_init(UParser *p, ULexer *lex, Arena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;
 }
 
-UAstNode *uparse_next_statement(Parser *p) {
+UAstNode *uparse_next_statement(UParser *p) {
     if (p->arena->oom) return &uparser_oom_sentinel;
 
     UToken t = peek(p);
@@ -272,7 +272,7 @@ UAstNode *uparse_next_statement(Parser *p) {
     return err;
 }
 
-const char *uparse_error_name(ParseErrorCode code) {
+const char *uparse_error_name(UParseError code) {
     int i = (int)code;
     if (i < 0 || i >= N_PARSE_ERROR_CODES) return "PARSE_UNKNOWN";
     return kErrorNames[i];

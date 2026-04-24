@@ -15,8 +15,8 @@ extern "C" {
 #endif
 
 /*
- * Parser — stack-allocated by the caller; initialized by uparse_init.
- * Borrows both ULexer and Arena; both must outlive the Parser and any
+ * UParser — stack-allocated by the caller; initialized by uparse_init.
+ * Borrows both ULexer and Arena; both must outlive the UParser and any
  * UAstNode returned from uparse_next_statement.
  */
 typedef struct {
@@ -24,10 +24,10 @@ typedef struct {
     Arena *arena;
     UToken peek;
     bool have_peek;
-} Parser;
+} UParser;
 
 /* Initialize.  No allocation.  Both lex and arena must outlive p. */
-void uparse_init(Parser *p, ULexer *lex, Arena *arena);
+void uparse_init(UParser *p, ULexer *lex, Arena *arena);
 
 /*
  * Parse the next statement.
@@ -43,12 +43,12 @@ void uparse_init(Parser *p, ULexer *lex, Arena *arena);
  * on the arena.  Typical use: process the tree, then call
  * uarena_reset(arena) before the next uparse_next_statement call.
  */
-UAstNode *uparse_next_statement(Parser *p);
+UAstNode *uparse_next_statement(UParser *p);
 
 /* Return a static string such as "PARSE_EXPECTED_RPAREN" for the given
    code.  Debug helper; bounds-guarded (out-of-range returns
    "PARSE_UNKNOWN").  Never allocates. */
-const char *uparse_error_name(ParseErrorCode code);
+const char *uparse_error_name(UParseError code);
 
 #ifdef __cplusplus
 }

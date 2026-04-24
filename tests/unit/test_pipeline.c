@@ -41,7 +41,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     Emitter e;
     uemit_init(&e, &module, &arena, NULL);
 
-    Parser p;
+    UParser p;
     uparse_init(&p, &lex, &arena);
 
     UAstNode *node;
