@@ -2,7 +2,19 @@
 
 ## Unreleased
 
-### REPL (M1 phase 6)
+## v0.1.0-skeleton — 2026-04-24
+
+The walking-skeleton milestone. A complete end-to-end compile-and-execute
+pipeline — lexer, parser, arena allocator, bytecode emitter + module
+format, register-based VM, interactive REPL, and the first `.chk`
+conformance fixture (`arithmetic.chk`). Not a production runtime — the
+language surface is an 8-opcode Int/Float arithmetic subset — but the
+pipeline is genuinely end-to-end, and every subsystem is covered by
+unit tests, sanitizers, a valgrind-gated memcheck job, and coverage
+instrumentation. Freestanding-clean front end cross-compiles for
+Cortex-M7 and RV32IMC.
+
+### REPL
 
 - New binary `urbi` — the M1 walking-skeleton REPL. Drives the full
   `ulex` → `uparse` → `uemit` → `uvm` pipeline. Five modes: `urbi -i`
@@ -60,7 +72,7 @@
   CLI mode and error path (30 cases). Runs against `$(BUILDDIR)/urbi`
   as part of `make test`.
 
-### VM (M1 phase 5)
+### VM
 
 - New module `src/uvm.{c,h}` implements the M1 register-based bytecode
   interpreter. Handles the 8-opcode M1 set (LOADK, MOVE, ADD, SUB, MUL,
@@ -105,6 +117,47 @@
   uniform `UValue` tagged-struct decision across all targets.
 - `docs/internals/architecture.md` — VM marked shipped; source table
   updated with `uvm.{c,h}` and `test_vm.c`.
+
+### Documentation
+
+- New `docs/` tree covering the first tranche of audience-A / audience-B
+  / audience-C docs per the documentation-strategy design: `docs/README.md`
+  (hub), `docs/language/getting-started.md`, `docs/internals/architecture.md`,
+  `docs/internals/bytecode-format.md`, `docs/internals/opcodes.md`,
+  `docs/internals/test-harness.md`, `docs/internals/design-decisions.md`.
+  ~1500 lines of prose total.
+- `docs/internals/test-harness.md` gains a Conformance fixtures section
+  covering the `.chk` format, normalization rule, `make test-chk` entry
+  point, and authoring flow.
+- `docs/internals/test-harness.md` and `CONTRIBUTING.md`: acknowledge
+  `make test-valgrind` as CI-gating (too slow for every commit, required
+  before a milestone tag).
+- `docs/internals/test-harness.md` Coverage expectations block replaces
+  the stale `gcov`-on-debug-build language with `make coverage` (gcovr +
+  HTML report + advisory CI job).
+- `make docs-check` infrastructure + gating CI job: markdownlint-cli2
+  over the `docs/` tree + intra-repo link-check.
+- `.markdownlint.yaml` ships the ruleset (MD013 off; MD025/MD040/MD041
+  on; neutral ordered-list-increment and heading-style).
+- `WORKFLOW.md` §7 milestone ritual gains a "docs-for-this-release"
+  step; §9 CHANGELOG cadence gains a `Documentation` subsection rule.
+
+### Fixed
+
+- `uvarint_decode_u` now rejects 10-byte encodings whose terminal-byte
+  payload exceeds `0x01` as `UVARINT_OVERSIZE`. The previous code
+  silently truncated values like `0x02..0x7F` at the 10th byte (payload
+  bit shifts fall off the end of `uint64_t`), which could mask a
+  corrupt bytecode module during loader verification. Paired
+  positive-boundary test (`UINT64_MAX` at 10 bytes must succeed) added.
+  The fix is defense-in-depth only — the loader verifier would have
+  caught the resulting mis-decoded value downstream via `LOADK Bx`
+  bounds or opcode range checks.
+- `uvarint_size_zz` and `uvarint_write_zz` replace the
+  implementation-defined `(v >> 63)` signed shift with a portable
+  sign-extended mask built from `(v < 0)`. Equivalent on every
+  mainstream compiler; defined by the C standard on all conforming
+  implementations.
 
 ### Portability
 

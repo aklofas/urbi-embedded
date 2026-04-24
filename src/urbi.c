@@ -2,6 +2,6 @@
 
 #include "urbi.h"
 
-#define URBI_VERSION "0.0.1-skeleton"
+#define URBI_VERSION "0.1.0-skeleton"
 
 const char *urbi_version(void) { return URBI_VERSION; }

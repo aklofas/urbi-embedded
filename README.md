@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** pre-release, walking skeleton. Lexer, parser, arena allocator, bytecode emitter, module loader + verifier, VM, and interactive REPL are complete; 338 unit + integration tests passing at release / debug / ASan / UBSan / cross-ARM / cross-RISC-V. Ready to tag `v0.1.0-skeleton`.
+**Status:** walking skeleton. Lexer, parser, arena allocator, bytecode emitter, module loader + verifier, register-based VM, interactive REPL, and `.chk` conformance-fixture runner are complete. 314 unit tests + 30 REPL integration cases + the first `.chk` fixture (`arithmetic.chk`) all passing at release / debug / ASan / UBSan / switch-dispatch / valgrind / cross-ARM / cross-RISC-V. Tagged `v0.1.0-skeleton`.
 
 ## Design goals
 

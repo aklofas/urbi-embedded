@@ -56,8 +56,9 @@ architecture.
 make test
 ```
 
-Expected output: 222 cases, 732 checks, 0 failed. The suite completes in under
-five seconds on typical development hardware.
+Expected output: `<N> cases, <N> checks, 0 failed`, where `<N>` grows with
+each milestone. The suite completes in under five seconds on typical
+development hardware.
 
 Three additional build modes run the same suite with extra instrumentation:
 
@@ -68,7 +69,9 @@ Three additional build modes run the same suite with extra instrumentation:
 - `make test-debug` — debug build without sanitizers: enables assertions and
   keeps symbols for GDB.
 
-All three modes must pass before a change lands on `main`. See
+All three modes must pass before a change lands on `main`. `make test-valgrind`
+runs the suite under memcheck and is enforced in CI; run it periodically and
+always before a milestone tag, not on every commit. See
 [../internals/test-harness.md](../internals/test-harness.md) for the full
 harness documentation, including how to add tests and read coverage reports.
 
