@@ -39,8 +39,8 @@
 
 - New Makefile targets: `$(BUILDDIR)/urbi` (the REPL binary),
   `urbi-bin` (phony), `test-integration` (phony running the shell
-  harness). `test` aggregate now depends on `test-integration`, so unit
-  + integration run together under every sanitizer variant.
+  harness). `test` aggregate now depends on `test-integration`, so
+  unit and integration run together under every sanitizer variant.
 - `make tidy` scope widened to include `tools/urbi.c`.
   `tools/linenoise.c` stays outside the first-party tidy scope.
 - `tools/linenoise.c` compiles with `-D_POSIX_C_SOURCE=200809L
@@ -76,7 +76,7 @@
   `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise
   the switch path on GCC/Clang hosts.
 
-### Tests
+### Tests (VM)
 
 - `tests/unit/test_vm.c` — new test suite covering lifecycle,
   per-opcode happy paths, arithmetic type matrix, wrap semantics

@@ -58,10 +58,12 @@ urbi-bin: $(BUILDDIR)/urbi
 #
 # test-integration runs the REPL shell harness against the built binary.
 # Folded into the existing `test` aggregate so it runs under every
-# sanitizer variant automatically.
+# sanitizer variant automatically. The shell script itself is NOT wrapped
+# by $(RUNNER_WRAPPER) because dash's own "still-reachable" blocks break
+# valgrind; the urbi binary is memory-clean when invoked directly.
 
 test-integration: $(BUILDDIR)/urbi
-	$(RUNNER_WRAPPER) tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
+	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
 test: $(LIB) $(TEST_OBJ) test-integration
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
