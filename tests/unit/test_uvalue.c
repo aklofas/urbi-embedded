@@ -197,6 +197,27 @@ UTEST(uvalue_str_quote_escape) {
     UASSERT_STR_EQ(buf, "\"a\\\"b\"");
 }
 
+UTEST(uvalue_str_tab_escape) {
+    UValue v = make_str("a\tb");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\tb\"");
+}
+
+UTEST(uvalue_str_cr_escape) {
+    UValue v = make_str("a\rb");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\rb\"");
+}
+
+UTEST(uvalue_str_hex_escape) {
+    UValue v = make_str("a\x01""b");  /* 0x01 is non-printable */
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\x01b\"");
+}
+
 /* --- Truncation + unknown kind --- */
 
 UTEST(uvalue_truncation_cap_zero) {
@@ -259,6 +280,9 @@ void test_uvalue_suite(void) {
     utest_run("uvalue: str \\n escape", uvalue_str_newline_escape);
     utest_run("uvalue: str \\\\ escape", uvalue_str_backslash_escape);
     utest_run("uvalue: str \\\" escape", uvalue_str_quote_escape);
+    utest_run("uvalue: str \\t escape", uvalue_str_tab_escape);
+    utest_run("uvalue: str \\r escape", uvalue_str_cr_escape);
+    utest_run("uvalue: str \\xNN hex escape", uvalue_str_hex_escape);
     utest_run("uvalue: truncation cap=0", uvalue_truncation_cap_zero);
     utest_run("uvalue: truncation cap=1", uvalue_truncation_cap_one);
     utest_run("uvalue: truncation cap=3", uvalue_truncation_cap_three);

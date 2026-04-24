@@ -435,7 +435,8 @@ int main(int argc, char *argv[]) {
             memcpy(buf, expr, len);
 
             size_t t = len;
-            while (t > 0 && (buf[t - 1] == ' ' || buf[t - 1] == '\t')) t--;
+            while (t > 0 && (buf[t - 1] == ' ' || buf[t - 1] == '\t' ||
+                             buf[t - 1] == '\n' || buf[t - 1] == '\r')) t--;
 
             size_t final_len;
             if (t > 0 && buf[t - 1] == '|') {
