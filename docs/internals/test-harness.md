@@ -345,11 +345,16 @@ milestone of urbiscript.
 
 ### Normalization rule
 
-Exactly one rule: strip the `^\[[^]]*\]` prefix (including the
-following space) from every line on both sides before diffing. File
-paths, line and column numbers, trailing whitespace, and everything
-else is compared literally. This is deliberately strict — `sed
-'s/ *$//'` would mask regressions.
+Exactly one rule: strip the bracketed frame prefix plus its single
+trailing space from every line on both sides before diffing, using:
+
+```sh
+sed -E 's/^\[[^]]*\] //'
+```
+
+File paths, line and column numbers, trailing whitespace, and
+everything else is compared literally. This is deliberately strict —
+`sed 's/ *$//'` would mask regressions.
 
 At M2+, when legacy fixtures are ported, the rule may extend to
 cover span-notation normalization (`input.u:@.L-C:` → `<stdin>:L:C:`
@@ -373,10 +378,13 @@ make test-chk
 `make test-chk` is a dependency of `make test`, so every sanitizer
 variant (`test`, `test-asan`, `test-ubsan`, `test-debug`,
 `test-switch`) runs the fixture corpus automatically. `make
-test-valgrind` does NOT run the fixtures — valgrind-wrapping a shell
-pipeline produces false-positives from dash internals rather than
-signal about the runtime. ASan coverage under `make test-asan`
-provides the memcheck story for the integration path.
+test-valgrind` also runs the fixtures (via the `test` prerequisite
+chain) but does not wrap them under valgrind — `$(RUNNER_WRAPPER)`
+is applied only to the unit runner, not to `test-chk`, because
+valgrind-wrapping a shell pipeline produces false-positives from
+dash internals rather than signal about the runtime. ASan coverage
+under `make test-asan` provides the memcheck story for the
+integration path.
 
 ### Authoring a new fixture
 
