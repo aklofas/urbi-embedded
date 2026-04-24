@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "uchunk.h"  /* Chunk, UConst, UValKind, UOpcode */
+#include "uchunk.h"  /* Chunk, UValue, UValKind, UOpcode */
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,7 +57,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
    them after each uvm_run call without stale state from prior runs. */
-UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out);
+UVMError uvm_run(UVM *vm, const Chunk *chunk, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void uvm_destroy(UVM *vm);

@@ -52,7 +52,7 @@ typedef struct {
         float   f;
 #endif
     } v;
-} UConst;                         /* 16 bytes */
+} UValue;                         /* 16 bytes */
 
 /* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
 
@@ -112,7 +112,7 @@ typedef struct Chunk {
     size_t     instr_count;
     size_t     instr_cap;
 
-    UConst    *constants;
+    UValue    *constants;
     size_t     const_count;
     size_t     const_cap;
 

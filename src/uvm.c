@@ -48,12 +48,12 @@ const char *uvm_error_name(UVMError code) {
        trick for portable two's-complement wrap (defined behavior; UBSan
        clean). Float promotion follows LANG-CONVENTIONS §1.3. --- */
 
-/* Convenience: promote an Int/Float UConst to the target Float type. */
-static double uconst_to_double(const UConst *v) {
+/* Convenience: promote an Int/Float UValue to the target Float type. */
+static double uvalue_to_double(const UValue *v) {
     return v->kind == UVAL_INT ? (double)v->v.i : (double)v->v.f;
 }
 
-static void uconst_set_float(UConst *a, const double val) {
+static void uvalue_set_float(UValue *a, const double val) {
     a->kind = UVAL_FLOAT;
 #if URBI_FLOAT_TYPE == 8
     a->v.f = val;
@@ -62,42 +62,42 @@ static void uconst_set_float(UConst *a, const double val) {
 #endif
 }
 
-static bool is_number(const UConst *v) {
+static bool is_number(const UValue *v) {
     return v->kind == UVAL_INT || v->kind == UVAL_FLOAT;
 }
 
-static UVMError arith_add(UConst *a, const UConst *b, const UConst *c) {
+static UVMError arith_add(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
         a->kind = UVAL_INT;
         a->v.i = (int64_t)((uint64_t)b->v.i + (uint64_t)c->v.i);
         return UVM_OK;
     }
-    uconst_set_float(a, uconst_to_double(b) + uconst_to_double(c));
+    uvalue_set_float(a, uvalue_to_double(b) + uvalue_to_double(c));
     return UVM_OK;
 }
 
-static UVMError arith_mul(UConst *a, const UConst *b, const UConst *c) {
+static UVMError arith_mul(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
         a->kind = UVAL_INT;
         a->v.i = (int64_t)((uint64_t)b->v.i * (uint64_t)c->v.i);
         return UVM_OK;
     }
-    uconst_set_float(a, uconst_to_double(b) * uconst_to_double(c));
+    uvalue_set_float(a, uvalue_to_double(b) * uvalue_to_double(c));
     return UVM_OK;
 }
 
-static UVMError arith_div(UConst *a, const UConst *b, const UConst *c) {
+static UVMError arith_div(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     /* DIV always produces Float per LANG-CONVENTIONS §1.3. IEEE 754
        handles div-by-zero and 0/0 naturally — +Inf for positive/0,
        -Inf for negative/0, NaN for 0/0. */
-    uconst_set_float(a, uconst_to_double(b) / uconst_to_double(c));
+    uvalue_set_float(a, uvalue_to_double(b) / uvalue_to_double(c));
     return UVM_OK;
 }
 
-static UVMError arith_neg(UConst *a, const UConst *b) {
+static UVMError arith_neg(UValue *a, const UValue *b) {
     if (!is_number(b)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT) {
         a->kind = UVAL_INT;
@@ -107,18 +107,18 @@ static UVMError arith_neg(UConst *a, const UConst *b) {
         return UVM_OK;
     }
     /* Float negation; IEEE 754 flips the sign bit, defined for NaN/Inf. */
-    uconst_set_float(a, -uconst_to_double(b));
+    uvalue_set_float(a, -uvalue_to_double(b));
     return UVM_OK;
 }
 
-static UVMError arith_sub(UConst *a, const UConst *b, const UConst *c) {
+static UVMError arith_sub(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
         a->kind = UVAL_INT;
         a->v.i = (int64_t)((uint64_t)b->v.i - (uint64_t)c->v.i);
         return UVM_OK;
     }
-    uconst_set_float(a, uconst_to_double(b) - uconst_to_double(c));
+    uvalue_set_float(a, uvalue_to_double(b) - uvalue_to_double(c));
     return UVM_OK;
 }
 
@@ -341,14 +341,14 @@ static void vm_zero(void *const dst, const size_t n) {
 
 /* --- uvm_run --- */
 
-UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
+UVMError uvm_run(UVM *vm, const Chunk *chunk, UValue *out) {
     /* Reset error state at entry so callers who run multiple chunks
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
 
     /* Initialize out to Nil; overwritten on OP_RET success. */
-    UConst nil = {0};  /* kind = UVAL_NIL, payload zeroed */
+    UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
     *out = nil;
 
     /* Empty chunk: no instructions to dispatch; return Nil. */
@@ -359,8 +359,8 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UConst *out) {
     /* Allocate the register frame via the VM's allocator hook.
        (max_reg + 1) slots; zero-initialized so every register starts Nil. */
     const size_t frame_slots = (size_t)(chunk->max_reg + 1);
-    const size_t frame_bytes = frame_slots * sizeof(UConst);
-    UConst *frame = (UConst *)vm->alloc_fn(NULL, frame_bytes, vm->alloc_ud);
+    const size_t frame_bytes = frame_slots * sizeof(UValue);
+    UValue *frame = (UValue *)vm->alloc_fn(NULL, frame_bytes, vm->alloc_ud);
     if (frame == NULL) {
         vm->last_error = UVM_OOM;
         vm_format_oom(vm, frame_bytes);
@@ -402,9 +402,9 @@ dispatch:
         }
 
         CASE(OP_ADD) {
-            UConst *a = &frame[uinstr_a(*pc)];
-            const UConst *b = &frame[uinstr_b(*pc)];
-            const UConst *cc = &frame[uinstr_c(*pc)];
+            UValue *a = &frame[uinstr_a(*pc)];
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *cc = &frame[uinstr_c(*pc)];
             rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
@@ -417,9 +417,9 @@ dispatch:
         }
 
         CASE(OP_SUB) {
-            UConst *a = &frame[uinstr_a(*pc)];
-            const UConst *b = &frame[uinstr_b(*pc)];
-            const UConst *cc = &frame[uinstr_c(*pc)];
+            UValue *a = &frame[uinstr_a(*pc)];
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *cc = &frame[uinstr_c(*pc)];
             rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
@@ -432,9 +432,9 @@ dispatch:
         }
 
         CASE(OP_MUL) {
-            UConst *a = &frame[uinstr_a(*pc)];
-            const UConst *b = &frame[uinstr_b(*pc)];
-            const UConst *cc = &frame[uinstr_c(*pc)];
+            UValue *a = &frame[uinstr_a(*pc)];
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *cc = &frame[uinstr_c(*pc)];
             rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
@@ -447,9 +447,9 @@ dispatch:
         }
 
         CASE(OP_DIV) {
-            UConst *a = &frame[uinstr_a(*pc)];
-            const UConst *b = &frame[uinstr_b(*pc)];
-            const UConst *cc = &frame[uinstr_c(*pc)];
+            UValue *a = &frame[uinstr_a(*pc)];
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *cc = &frame[uinstr_c(*pc)];
             rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
@@ -462,8 +462,8 @@ dispatch:
         }
 
         CASE(OP_NEG) {
-            UConst *a = &frame[uinstr_a(*pc)];
-            const UConst *b = &frame[uinstr_b(*pc)];
+            UValue *a = &frame[uinstr_a(*pc)];
+            const UValue *b = &frame[uinstr_b(*pc)];
             rc = arith_neg(a, b);
             if (rc != UVM_OK) {
                 vm->last_error = rc;

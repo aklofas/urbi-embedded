@@ -44,7 +44,7 @@
 - CI `host` job matrix extended with `test-switch`, bringing the matrix
   to 5 host modes.
 - `docs/internals/design-decisions.md` — new entry explaining the
-  uniform `UConst` tagged-struct decision across all targets.
+  uniform `UValue` tagged-struct decision across all targets.
 - `docs/internals/architecture.md` — VM marked shipped; source table
   updated with `uvm.{c,h}` and `test_vm.c`.
 
@@ -74,6 +74,12 @@
 
 ### Refactoring
 
+- `UConst` renamed to `UValue` across sources, tests, and internals docs. The
+  type has always been the universal tagged-value cell — constants-pool entry,
+  register-frame slot, arithmetic operand, `uvm_run` result — so the new name
+  reflects what it actually is. The `UValKind` enum and `UVAL_*` tags are
+  unchanged (they already wore the `val` prefix); `uconst_to_double` /
+  `uconst_set_float` become `uvalue_to_double` / `uvalue_set_float`.
 - LEB128 varint encode/decode extracted into a standalone freestanding module
   `uvarint.{c,h}` with its own error enum (`UVarintError`). `uchunk.c` now
   consumes it via two translation wrappers that map `UVarintError` into

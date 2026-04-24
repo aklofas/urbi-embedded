@@ -215,7 +215,7 @@ UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size
     off += consumed;
     if (n_const > (uint64_t)UINT16_MAX + 1u) { set_errmsg(errmsg, errcap, "n_constants too large"); return ULOAD_CORRUPT; }
     if (n_const > 0u) {
-        if (!chunk_grow(chunk, (void **)&chunk->constants, &chunk->const_cap, (size_t)n_const, sizeof(UConst))) {
+        if (!chunk_grow(chunk, (void **)&chunk->constants, &chunk->const_cap, (size_t)n_const, sizeof(UValue))) {
             return ULOAD_OOM;
         }
     }

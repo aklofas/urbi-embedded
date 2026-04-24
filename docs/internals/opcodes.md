@@ -43,7 +43,7 @@ Encode helpers: `uinstr_enc_abc(op, a, b, c)`, `uinstr_enc_abx(op, a, bx)`.
 
 Registers are 0-based per chunk. `chunk->max_reg` records the highest register
 index the chunk uses. At VM setup the runtime allocates `max_reg + 1`
-tagged-value slots. Register values share the `UConst` shape from
+tagged-value slots. Register values share the `UValue` shape from
 `src/uchunk.h`: 16 bytes, with a `kind` byte (see `UValKind`), 7 bytes of
 padding, and an 8-byte value union — `int64_t i` for integer values, `f` for
 float values whose type (`double` or `float`) is selected by `URBI_FLOAT_TYPE`

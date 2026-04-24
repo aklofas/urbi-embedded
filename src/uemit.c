@@ -131,7 +131,7 @@ static uint16_t add_const_int(Emitter *e, const int64_t v) {
         return 0u;
     }
     if (!emit_grow(e->chunk, (void **)&e->chunk->constants, &e->chunk->const_cap,
-                   e->chunk->const_count + 1u, sizeof(UConst))) {
+                   e->chunk->const_count + 1u, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0u;
     }

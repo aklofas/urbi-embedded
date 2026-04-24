@@ -76,7 +76,7 @@ the loaded `Chunk`.
 
 | Field        | Encoding       | Notes                        |
 |---|---|---|
-| `n_constants`| uvarint        | count of `UConst` records    |
+| `n_constants`| uvarint        | count of `UValue` records    |
 | records      | see below      | one record per constant       |
 
 Each record starts with a 1-byte kind tag (`UValKind`):

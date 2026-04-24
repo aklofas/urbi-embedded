@@ -594,7 +594,7 @@ UTEST(serialize_chunk_with_float_constant_round_trips) {
 
     /* Manually insert a UVAL_FLOAT constant (bypassing the emitter, which only
        produces INT constants at M1). */
-    chunk.constants = (UConst *)malloc(sizeof(UConst));
+    chunk.constants = (UValue *)malloc(sizeof(UValue));
     chunk.const_cap = 1;
     chunk.const_count = 1;
     chunk.constants[0].kind = (uint8_t)UVAL_FLOAT;
@@ -659,7 +659,7 @@ UTEST(disassemble_chunk_with_move_instruction_shows_move) {
         uinstr_enc_abc(OP_RET, 1, 0, 0)
     };
     /* Build a chunk directly. */
-    chunk.constants  = (UConst *)malloc(sizeof(UConst));
+    chunk.constants  = (UValue *)malloc(sizeof(UValue));
     chunk.const_cap  = 1; chunk.const_count = 1;
     chunk.constants[0].kind = (uint8_t)UVAL_INT;
     {

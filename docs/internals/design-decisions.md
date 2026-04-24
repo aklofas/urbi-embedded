@@ -375,7 +375,7 @@ and asserts if a post-lock allocation is attempted.
 
 ---
 
-### Uniform 16-byte `UConst` value layout
+### Uniform 16-byte `UValue` value layout
 
 **Locked:** 2026-04-23
 **Status:** active
@@ -385,7 +385,7 @@ and asserts if a post-lock allocation is attempted.
 `src/uchunk.h`
 
 **Decision.** Every urbi-embedded target — 64-bit Linux, 32-bit Cortex-M,
-RISC-V rv32imc — uses the same 16-byte `UConst` tagged struct for both
+RISC-V rv32imc — uses the same 16-byte `UValue` tagged struct for both
 constants-pool entries and runtime register values. No per-host NaN-boxing;
 no per-host split.
 
@@ -429,7 +429,7 @@ regardless — NaN-boxing savings never applied to 32-bit targets.
 dispatch loop decodes tag and value with two field reads; no NaN-pattern
 matching, no bit masking of payloads. Future GC write barriers operate on the
 tag byte directly. Adding new value kinds (object pointer, bool, nil, symbol)
-requires a new tag constant and a new union member in `UConst`, without
+requires a new tag constant and a new union member in `UValue`, without
 touching the bit-packing scheme.
 
 **See also.**
@@ -437,4 +437,4 @@ touching the bit-packing scheme.
 - `2026-04-23-urbi-embedded-vm-design.md` §2.1 — full rationale with worked
   examples
 - `../LANG-CONVENTIONS.md` §1.1 — Integer = i64 decision
-- `src/uchunk.h` — `UConst` struct definition
+- `src/uchunk.h` — `UValue` struct definition

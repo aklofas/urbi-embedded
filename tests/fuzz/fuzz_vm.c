@@ -31,7 +31,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     UVM vm;
     uvm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
 
-    UConst result;
+    UValue result;
     (void)uvm_run(&vm, &chunk, &result);
     /* Touch result so the compiler keeps the run-path live. */
     if ((int)result.kind < 0) {

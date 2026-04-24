@@ -47,7 +47,7 @@ src/uarena.h      arena allocator API
 src/uarena.c      chunk-list bump allocator (hosted / pluggable / static)
 src/uparse.h      parser API
 src/uparse.c      streaming Pratt-style parser
-src/uchunk.h      Chunk struct, UConst, opcodes, instruction helpers
+src/uchunk.h      Chunk struct, UValue, opcodes, instruction helpers
 src/uchunk.c      chunk deserializer + verifier
 src/uemit.h       emitter API
 src/uemit.c       single-pass emitter + disassembler + serializer

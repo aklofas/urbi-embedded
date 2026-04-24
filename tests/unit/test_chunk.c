@@ -34,7 +34,7 @@ UTEST(destroy_chunk_with_buffers_frees_them) {
     c.instructions[0] = 0x11223344;
     c.instructions[1] = 0x55667788;
 
-    c.constants = (UConst *)malloc(sizeof(UConst) * 2);
+    c.constants = (UValue *)malloc(sizeof(UValue) * 2);
     c.const_cap = 2;
     c.const_count = 1;
 
@@ -268,7 +268,7 @@ UTEST(deserialize_loads_integer_constant_pool) {
     uchunk_destroy(&c);
 }
 
-UTEST(deserialize_rejects_out_of_range_uconst_tag) {
+UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1225,8 +1225,8 @@ void test_chunk_suite(void) {
               deserialize_loads_metadata_max_reg_and_source_name);
     utest_run("deserialize loads integer constant pool",
               deserialize_loads_integer_constant_pool);
-    utest_run("deserialize rejects out-of-range UConst tag",
-              deserialize_rejects_out_of_range_uconst_tag);
+    utest_run("deserialize rejects out-of-range UValue tag",
+              deserialize_rejects_out_of_range_uvalue_tag);
     utest_run("deserialize loads instruction stream with 4-byte alignment",
               deserialize_loads_instruction_stream_with_4_byte_alignment);
     utest_run("deserialize rejects non-zero alignment padding",

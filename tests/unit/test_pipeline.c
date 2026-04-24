@@ -30,7 +30,7 @@
 /* Run one source string end-to-end through the pipeline.
    Returns UVM_OK with *out set on success, or the first non-OK error.
    All pipeline allocations are freed before return. */
-static UVMError pipeline_eval(const char *src, UConst *out) {
+static UVMError pipeline_eval(const char *src, UValue *out) {
     Lexer lex;
     ulex_init(&lex, src, strlen(src));
 
@@ -53,7 +53,7 @@ static UVMError pipeline_eval(const char *src, UConst *out) {
         uarena_reset(&arena);
     }
 
-    UConst nil = {0};
+    UValue nil = {0};
     *out = nil;
     UVMError vm_rc = UVM_OK;
 
@@ -71,7 +71,7 @@ static UVMError pipeline_eval(const char *src, UConst *out) {
 
 /* 1 + 2: two integer literals, addition, Integer result. */
 UTEST(pipeline_int_plus_int) {
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, pipeline_eval("1 + 2", &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(3, out.v.i);
@@ -79,7 +79,7 @@ UTEST(pipeline_int_plus_int) {
 
 /* 5 / 2: integer division always produces Float per LANG-CONVENTIONS §1.3. */
 UTEST(pipeline_int_div_int) {
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, pipeline_eval("5 / 2", &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 2.49 && out.v.f < 2.51);
@@ -88,7 +88,7 @@ UTEST(pipeline_int_div_int) {
 /* 1 + 5 / 2: division yields Float 2.5; adding Integer 1 promotes to Float 3.5.
    This exercises the Int+Float promotion path through the full pipeline. */
 UTEST(pipeline_int_plus_div_result_promotes_to_float) {
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, pipeline_eval("1 + 5 / 2", &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.49 && out.v.f < 3.51);

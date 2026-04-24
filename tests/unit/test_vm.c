@@ -93,7 +93,7 @@ static void fab_chunk_ret_only(Chunk *c, uint8_t reg) {
 UTEST(vm_run_empty_chunk_returns_nil) {
     Chunk c; fab_chunk_empty(&c);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     memset(&out, 0xAA, sizeof(out));  /* pre-dirty to confirm VM writes it */
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
@@ -106,7 +106,7 @@ UTEST(vm_run_ret_on_uninitialized_register_returns_nil) {
        no LOADK returns Nil. */
     Chunk c; fab_chunk_ret_only(&c, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free(c.instructions);
@@ -124,7 +124,7 @@ static void fab_chunk_loadk_int_ret(Chunk *c, int64_t value) {
     c->instr_count = 2;
     c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
     c->instructions[1] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    c->constants = (UConst *)malloc(sizeof(UConst) * 1);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 1);
     c->const_cap = 1;
     c->const_count = 1;
     c->constants[0].kind = UVAL_INT;
@@ -150,7 +150,7 @@ static void free_fab_chunk(Chunk *c) {
 UTEST(vm_loadk_int) {
     Chunk c; fab_chunk_loadk_int_ret(&c, 42);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(42, out.v.i);
@@ -161,7 +161,7 @@ UTEST(vm_loadk_int) {
 UTEST(vm_loadk_int_large) {
     Chunk c; fab_chunk_loadk_int_ret(&c, INT64_MAX);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MAX);
@@ -172,7 +172,7 @@ UTEST(vm_loadk_int_large) {
 UTEST(vm_loadk_float) {
     Chunk c; fab_chunk_loadk_float_ret(&c, 3.14);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.13 && out.v.f < 3.15);
@@ -192,7 +192,7 @@ static void fab_chunk_int_add_int(Chunk *c, int64_t a, int64_t b) {
     c->instructions[1] = uinstr_enc_abx(OP_LOADK, 1, 1);
     c->instructions[2] = uinstr_enc_abc(OP_ADD, 2, 0, 1);
     c->instructions[3] = uinstr_enc_abc(OP_RET, 2, 0, 0);
-    c->constants = (UConst *)malloc(sizeof(UConst) * 2);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 2);
     c->const_cap = 2; c->const_count = 2;
     c->constants[0].kind = UVAL_INT; c->constants[0].v.i = a;
     c->constants[1].kind = UVAL_INT; c->constants[1].v.i = b;
@@ -206,7 +206,7 @@ static void fab_chunk_int_add_int(Chunk *c, int64_t a, int64_t b) {
 UTEST(vm_add_int_int_normal) {
     Chunk c; fab_chunk_int_add_int(&c, 2, 3);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(5, out.v.i);
@@ -216,7 +216,7 @@ UTEST(vm_add_int_int_normal) {
 UTEST(vm_add_int_int_max_plus_one_wraps) {
     Chunk c; fab_chunk_int_add_int(&c, INT64_MAX, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
@@ -226,7 +226,7 @@ UTEST(vm_add_int_int_max_plus_one_wraps) {
 UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
     Chunk c; fab_chunk_int_add_int(&c, INT64_MAX, INT64_MAX);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == -2);
@@ -234,7 +234,7 @@ UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
 }
 
 /* ADD R[2] = R[0] + R[1] with mixed Int/Float constants. Accepts both
-   Int and Float literals via the UConst `kind` parameter. */
+   Int and Float literals via the UValue `kind` parameter. */
 static void fab_chunk_add_mixed(Chunk *c,
                                 UValKind kind_a, int64_t ai, double af,
                                 UValKind kind_b, int64_t bi, double bf) {
@@ -250,7 +250,7 @@ static void fab_chunk_add_mixed(Chunk *c,
 UTEST(vm_add_int_float_promotes) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 2, 0, UVAL_FLOAT, 0, 1.5);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.49 && out.v.f < 3.51);
@@ -260,7 +260,7 @@ UTEST(vm_add_int_float_promotes) {
 UTEST(vm_add_float_int_promotes) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 2.5, UVAL_INT, 3, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 5.49 && out.v.f < 5.51);
@@ -270,7 +270,7 @@ UTEST(vm_add_float_int_promotes) {
 UTEST(vm_add_float_float) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.25, UVAL_FLOAT, 0, 2.75);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.99 && out.v.f < 4.01);
@@ -280,7 +280,7 @@ UTEST(vm_add_float_float) {
 UTEST(vm_add_bool_int_is_type_error) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -289,7 +289,7 @@ UTEST(vm_add_bool_int_is_type_error) {
 UTEST(vm_add_int_nil_is_type_error) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -307,7 +307,7 @@ static void fab_chunk_binop_int(Chunk *c, UOpcode op, int64_t a, int64_t b) {
 UTEST(vm_sub_int_int_normal) {
     Chunk c; fab_chunk_binop_int(&c, OP_SUB, 5, 3);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(2, out.v.i);
@@ -317,7 +317,7 @@ UTEST(vm_sub_int_int_normal) {
 UTEST(vm_sub_int_int_min_minus_one_wraps) {
     Chunk c; fab_chunk_binop_int(&c, OP_SUB, INT64_MIN, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MAX);
@@ -328,7 +328,7 @@ UTEST(vm_sub_float_float) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 5.5, UVAL_FLOAT, 0, 1.25);
     c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 4.24 && out.v.f < 4.26);
@@ -339,7 +339,7 @@ UTEST(vm_sub_bool_operand_is_type_error) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_BOOL, 1, 0);
     c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
@@ -349,7 +349,7 @@ UTEST(vm_sub_bool_operand_is_type_error) {
 UTEST(vm_mul_int_int_normal) {
     Chunk c; fab_chunk_binop_int(&c, OP_MUL, 6, 7);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(42, out.v.i);
@@ -359,7 +359,7 @@ UTEST(vm_mul_int_int_normal) {
 UTEST(vm_mul_int_int_min_times_neg_one_wraps_to_min) {
     Chunk c; fab_chunk_binop_int(&c, OP_MUL, INT64_MIN, -1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
@@ -370,7 +370,7 @@ UTEST(vm_mul_float_int_promotes) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.5, UVAL_INT, 4, 0);
     c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 5.99 && out.v.f < 6.01);
@@ -382,7 +382,7 @@ UTEST(vm_mul_float_int_promotes) {
 UTEST(vm_div_int_int_always_float) {
     Chunk c; fab_chunk_binop_int(&c, OP_DIV, 5, 2);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 2.49 && out.v.f < 2.51);
@@ -392,7 +392,7 @@ UTEST(vm_div_int_int_always_float) {
 UTEST(vm_div_int_int_exact_still_float) {
     Chunk c; fab_chunk_binop_int(&c, OP_DIV, 10, 2);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 4.99 && out.v.f < 5.01);
@@ -402,7 +402,7 @@ UTEST(vm_div_int_int_exact_still_float) {
 UTEST(vm_div_by_zero_positive_is_inf) {
     Chunk c; fab_chunk_binop_int(&c, OP_DIV, 5, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     /* +Inf is greater than any finite float. */
@@ -413,7 +413,7 @@ UTEST(vm_div_by_zero_positive_is_inf) {
 UTEST(vm_div_by_zero_negative_is_neg_inf) {
     Chunk c; fab_chunk_binop_int(&c, OP_DIV, -5, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f < -1e30);
@@ -423,7 +423,7 @@ UTEST(vm_div_by_zero_negative_is_neg_inf) {
 UTEST(vm_div_zero_by_zero_is_nan) {
     Chunk c; fab_chunk_binop_int(&c, OP_DIV, 0, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     /* NaN is the only float that compares unequal to itself. */
@@ -435,7 +435,7 @@ UTEST(vm_div_float_float) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 7.5, UVAL_FLOAT, 0, 2.5);
     c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 2.99 && out.v.f < 3.01);
@@ -454,7 +454,7 @@ static void fab_chunk_loadk_move_ret(Chunk *c, int64_t value) {
     c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
     c->instructions[1] = uinstr_enc_abc(OP_MOVE, 1, 0, 0);
     c->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
-    c->constants = (UConst *)malloc(sizeof(UConst) * 1);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 1);
     c->const_cap = 1;
     c->const_count = 1;
     c->constants[0].kind = UVAL_INT;
@@ -468,7 +468,7 @@ static void fab_chunk_loadk_move_ret(Chunk *c, int64_t value) {
 UTEST(vm_move_copies_register) {
     Chunk c; fab_chunk_loadk_move_ret(&c, 99);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(99, out.v.i);
@@ -486,14 +486,14 @@ UTEST(vm_move_self_copy_is_noop) {
     c.instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
     c.instructions[1] = uinstr_enc_abc(OP_MOVE, 0, 0, 0);
     c.instructions[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    c.constants = (UConst *)malloc(sizeof(UConst));
+    c.constants = (UValue *)malloc(sizeof(UValue));
     c.const_cap = 1; c.const_count = 1;
     c.constants[0].kind = UVAL_INT; c.constants[0].v.i = 7;
     c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
     c.line_deltas[0] = 1; c.line_deltas[1] = 0; c.line_deltas[2] = 0;
 
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(7, out.v.i);
@@ -512,7 +512,7 @@ static void fab_chunk_neg_int(Chunk *c, int64_t value) {
     c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
     c->instructions[1] = uinstr_enc_abc(OP_NEG, 1, 0, 0);
     c->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
-    c->constants = (UConst *)malloc(sizeof(UConst));
+    c->constants = (UValue *)malloc(sizeof(UValue));
     c->const_cap = 1; c->const_count = 1;
     c->constants[0].kind = UVAL_INT; c->constants[0].v.i = value;
     c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
@@ -522,7 +522,7 @@ static void fab_chunk_neg_int(Chunk *c, int64_t value) {
 UTEST(vm_neg_int_normal) {
     Chunk c; fab_chunk_neg_int(&c, 5);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(-5, out.v.i);
@@ -532,7 +532,7 @@ UTEST(vm_neg_int_normal) {
 UTEST(vm_neg_int64_min_wraps_to_int64_min) {
     Chunk c; fab_chunk_neg_int(&c, INT64_MIN);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
@@ -544,7 +544,7 @@ UTEST(vm_neg_float) {
     c.constants[0].kind = UVAL_FLOAT;
     c.constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? 3.25 : (float)3.25;
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OK, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > -3.26 && out.v.f < -3.24);
@@ -555,7 +555,7 @@ UTEST(vm_neg_nil_is_type_error) {
     Chunk c; fab_chunk_neg_int(&c, 0);
     c.constants[0].kind = UVAL_NIL;
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     free_fab_chunk(&c); uvm_destroy(&vm);
 }
@@ -565,7 +565,7 @@ UTEST(vm_neg_nil_is_type_error) {
 UTEST(vm_type_error_diagnostic_binary_op) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     /* Without source_name, prefix is "line N:". line_deltas is [1, 0, 0, 0]
        (set by fab_chunk_int_add_int which fab_chunk_add_mixed uses as base),
@@ -586,7 +586,7 @@ UTEST(vm_type_error_diagnostic_with_source_name) {
     c.source_name = (char *)malloc(sizeof(src));
     memcpy(c.source_name, src, sizeof(src));
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "foo.u:1:") != NULL);
     free(c.source_name);
@@ -597,7 +597,7 @@ UTEST(vm_type_error_diagnostic_unary_op) {
     Chunk c; fab_chunk_neg_int(&c, 0);
     c.constants[0].kind = UVAL_NIL;
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_NEG") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Nil") != NULL);
@@ -613,7 +613,7 @@ UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
     free(c.line_deltas);
     c.line_deltas = NULL;
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 2:") != NULL);
     /* free_fab_chunk would double-free the already-freed line_deltas. */
@@ -645,12 +645,12 @@ static void *uvm_alloc_fail_first(void *ptr, size_t nbytes, void *ud) {
 UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
     Chunk c; fab_chunk_ret_only(&c, 0);
     UVM vm; uvm_init(&vm, uvm_alloc_always_null, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OOM, uvm_run(&vm, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
     UASSERT(strstr(vm.last_errmsg, "register frame") != NULL);
-    /* frame size is (max_reg + 1) * sizeof(UConst) = 1 * 16 = 16 */
+    /* frame size is (max_reg + 1) * sizeof(UValue) = 1 * 16 = 16 */
     UASSERT(strstr(vm.last_errmsg, "16") != NULL);
     free(c.instructions);
     free(c.line_deltas);
@@ -661,7 +661,7 @@ UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_first_count = 0;  /* reset */
     Chunk c; fab_chunk_ret_only(&c, 0);
     UVM vm; uvm_init(&vm, uvm_alloc_fail_first, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_OOM, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
     free(c.instructions);
@@ -676,7 +676,7 @@ UTEST(vm_mul_bool_int_is_type_error) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
     c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_MUL") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
@@ -688,7 +688,7 @@ UTEST(vm_div_bool_int_is_type_error) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
     c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_DIV") != NULL);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -699,7 +699,7 @@ UTEST(vm_div_bool_int_is_type_error) {
 UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "Float") != NULL);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -711,7 +711,7 @@ UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
     c.constants[0].kind = UVAL_STR;  /* override to String */
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "String") != NULL);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -723,7 +723,7 @@ UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
     Chunk c; fab_chunk_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
     c.constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "unknown") != NULL);
     free_fab_chunk(&c); uvm_destroy(&vm);
@@ -744,7 +744,7 @@ UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
        ADD R[0]=R[1]+R[2] where R[1] and R[2] are Nil → TypeError at pc=0. */
     /* No line_deltas (NULL) → prefix falls back to "instr 0:". */
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 0:") != NULL);
     free(c.instructions);
@@ -764,7 +764,7 @@ UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
     c.source_name = (char *)malloc(name_len);
     memcpy(c.source_name, long_name, name_len);
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     size_t msg_len = strlen(vm.last_errmsg);
     UASSERT(msg_len > 0);
@@ -798,7 +798,7 @@ UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
     c.abs_lines[2].pc = 2; c.abs_lines[2].line = 12;
     c.abs_lines[3].pc = 3; c.abs_lines[3].line = 13;
     UVM vm; uvm_init(&vm, NULL, NULL);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c, &out));
     /* ADD is at pc=2; abs_lines[2].line == 12 → prefix "line 12:". */
     UASSERT(strstr(vm.last_errmsg, "line 12:") != NULL);
@@ -814,7 +814,7 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
 
     /* Run 1 — force TypeError. */
     Chunk c1; fab_chunk_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
-    UConst out;
+    UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, uvm_run(&vm, &c1, &out));
     UASSERT_EQ(UVM_TYPE_ERROR, vm.last_error);
     UASSERT(vm.last_errmsg[0] != '\0');

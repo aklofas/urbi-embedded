@@ -18,13 +18,13 @@ source (const char *)
      │
      ▼  [uemit.c]    produces  Chunk (bytecode, constants, synclines, max_reg)
      │
-     ▼  [uvm.c]      produces  result (UConst tagged value)
+     ▼  [uvm.c]      produces  result (UValue tagged value)
      │
      ▼  [urbi CLI]   prints    result to REPL output
 ```
 
 The key invariant is that the hand-off between stages is a small, typed struct
-— `Token`, `AstNode *`, `Chunk *`, `UConst` — not an implicit shared global.
+— `Token`, `AstNode *`, `Chunk *`, `UValue` — not an implicit shared global.
 Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
@@ -263,7 +263,7 @@ The `Chunk` is the interface between the front end (emitter) and the back end
 (VM). It is a plain struct that carries five owned arrays:
 
 - `instructions` — array of `uint32_t`, 4-byte aligned.
-- `constants` — array of `UConst` (16-byte tagged-value records).
+- `constants` — array of `UValue` (16-byte tagged-value records).
 - `line_deltas` — array of `int8_t`, one per instruction.
 - `abs_lines` — array of `(pc, line)` checkpoint records.
 - `source_name` — null-terminated string, or `NULL` if absent.
@@ -331,7 +331,7 @@ The `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise the
 switch path on GCC/Clang hosts; CI uses this flag in a dedicated `test-switch`
 matrix entry to keep both paths compiling and passing.
 
-Register values share the `UConst` layout from `src/uchunk.h`: 16 bytes
+Register values share the `UValue` layout from `src/uchunk.h`: 16 bytes
 per slot, with a `kind` byte (`UValKind`) discriminating Integer, Float, Bool,
 String, or Nil, 7 bytes of alignment padding, and an 8-byte value union
 (`int64_t i` for Integer; `double` or `float f` for Float, selected by
@@ -463,14 +463,14 @@ src/
   uarena.c            Arena implementation: uarena_init, _ex, _static, alloc, reset, destroy
   uparse.h            Parser API: Parser
   uparse.c            Parser implementation: uparse_init, uparse_next_statement, uparse_error_name
-  uchunk.h            Chunk struct, UConst, UOpcode, UValKind, instruction encode/decode helpers
+  uchunk.h            Chunk struct, UValue, UOpcode, UValKind, instruction encode/decode helpers
   uchunk.c            Chunk deserializer, verifier, destroy: uchunk_deserialize, uchunk_destroy
   uvarint.h           LEB128 varint codec API: UVarintError, size/write/decode for u + zz
   uvarint.c           LEB128 varint implementation: pure byte math, freestanding-clean
   uemit.h             Emitter API: Emitter, EmitError; also declares uchunk_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
                       uemit_disassemble, uchunk_serialize
-  uvm.h               VM API: UVM, UVMError, UConst, uvm_init, uvm_run, uvm_destroy
+  uvm.h               VM API: UVM, UVMError, UValue, uvm_init, uvm_run, uvm_destroy
   uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
                       type matrix, TypeError/OOM diagnostics, syncline decoder
 
