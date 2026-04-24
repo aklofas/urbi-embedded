@@ -129,6 +129,40 @@ valgrind-tools:
 	    exit 1; \
 	}
 
+# --- Release test aggregate --------------------------------------------
+#
+# releasetest runs every host-side gate the CI matrix runs, in sequence.
+# Cross-compile jobs (cross-arm, cross-riscv) are excluded — their
+# toolchains are not universally installable. CI remains authoritative
+# for cross-compile verification; this target is for local pre-release
+# confidence that a branch will pass CI end-to-end.
+#
+# Runtime: ~3-5 minutes on typical development hardware (dominated by
+# test-valgrind). Invoked manually before tagging a release, or before
+# pushing a branch that touches multiple subsystems.
+#
+# Uses recursive $(MAKE) rather than prerequisite-style target chaining
+# so that a failure identifies exactly which gate broke, and so the
+# sanitizer variants run their own nested rebuild rather than sharing
+# object files with the previous target.
+
+releasetest:
+	@echo "=== releasetest: unit + sanitizer matrix ==="
+	$(MAKE) test
+	$(MAKE) test-asan
+	$(MAKE) test-ubsan
+	$(MAKE) test-debug
+	$(MAKE) test-switch
+	@echo "=== releasetest: valgrind memcheck ==="
+	$(MAKE) test-valgrind
+	@echo "=== releasetest: static analysis ==="
+	$(MAKE) lint
+	@echo "=== releasetest: documentation ==="
+	$(MAKE) docs-check
+	@echo "=== releasetest: coverage ==="
+	$(MAKE) coverage
+	@echo "=== releasetest: all gates passed ==="
+
 # libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's
 # compiler-rt).  Builds each harness as a standalone binary against the
 # full src/ tree; no .a dependency because libFuzzer needs the sanitizer
@@ -301,4 +335,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest

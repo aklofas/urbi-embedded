@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Build (infra)
+
+- Added `make releasetest` aggregate target that runs every host-side
+  CI gate in sequence (sanitizer matrix, valgrind memcheck, lint,
+  docs-check, coverage). Invoked manually before tagging a release
+  or pushing branches touching multiple subsystems. Cross-compile
+  targets are excluded; CI remains authoritative for cross-compile
+  verification.
+
 ## v0.1.0-skeleton — 2026-04-24
 
 The walking-skeleton milestone. A complete end-to-end compile-and-execute
