@@ -18,6 +18,9 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
     case UVAL_BOOL:
         n = snprintf(buf, cap, "%s", v->v.i ? "true" : "false");
         break;
+    case UVAL_INT:
+        n = snprintf(buf, cap, "%lld", (long long)v->v.i);
+        break;
     default:
         n = snprintf(buf, cap, "<?>");
         break;
