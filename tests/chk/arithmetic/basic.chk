@@ -1,8 +1,10 @@
-# M1 arithmetic exit fixture.
-# Covers the 8-opcode VM: Int/Float +, -, *, /, unary -, parens, |
-# terminator, Int/Int -> Float promotion, Int literal variants.
-# Includes one lex-error and one parse-error case to exercise error-
-# recovery end-to-end through the REPL.
+# Fixture: arithmetic/basic
+# Milestone: M1
+# Covers: Int/Float arithmetic, Int/Int -> Float promotion;
+#         8-opcode VM (LOADK, MOVE, ADD, SUB, MUL, DIV, NEG, RET);
+#         Int literal variants (hex, binary, octal, underscore);
+#         unary neg, parens, precedence; | terminator; lex-error and
+#         parse-error recovery through the REPL.
 
 # --- Integer arithmetic
 1 + 2

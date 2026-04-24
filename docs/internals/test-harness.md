@@ -435,14 +435,43 @@ integration path.
 
 ### Authoring a new fixture
 
+Every fixture opens with a 3-line header block in comment form,
+immediately at the top of the file before any REPL exchanges:
+
+```text
+# Fixture: <feature>/<name>
+# Milestone: <M1 | M2 | ... | v1.0>
+# Covers: <comma-separated topic list; may wrap across lines with
+#          leading `#          ` continuation indent>
+```
+
+The header is checked by humans only — there is no parser or lint
+rule — but keeping the three fields machine-searchable pays off at
+corpus scale. `grep -l 'Covers:.*promotion' tests/chk/**/*.chk` and
+`grep -l '^# Milestone: M3' tests/chk/**/*.chk` are the target
+queries.
+
+The `Covers:` list should name language features, opcodes, or
+error classes exercised by the fixture. It's descriptive, not
+exhaustive — "the reader knows what to expect" is the bar.
+
+After the header, a blank line, then the fixture body.
+
+Authoring steps:
+
 1. Run the expressions you care about against `urbi -i` interactively
    and capture the exact framed output.
-2. Interleave the inputs and captured outputs in a new file under
-   `tests/chk/`, one pair per REPL exchange.
-3. Add `# --- <section name>` comment markers for readability.
-4. Run `tests/integration/run_chk.sh build/host/urbi
-   tests/chk/<feature>/<name>.chk` and confirm `PASS:`. If it fails, diff the
-   expected output against what the binary actually produces — the
-   fixture records what the implementation does, not what you wish
-   it did.
-5. Commit with the `chk:` subsystem prefix.
+2. Create the file at `tests/chk/<feature>/<name>.chk` (create the
+   `<feature>/` subdir if it doesn't yet exist; see the "Fixture
+   layout" subsection above for the canonical taxonomy).
+3. Write the 3-line `Fixture:` / `Milestone:` / `Covers:` header,
+   then a blank line.
+4. Interleave the inputs and captured outputs in the body, one pair
+   per REPL exchange. Group related exchanges under
+   `# --- <section name>` comment markers for readability.
+5. Run `tests/integration/run_chk.sh build/host/urbi
+   tests/chk/<feature>/<name>.chk` and confirm `PASS:`. If it fails,
+   diff the expected output against what the binary actually produces
+   — the fixture records what the implementation does, not what you
+   wish it did.
+6. Commit with the `chk:` subsystem prefix.

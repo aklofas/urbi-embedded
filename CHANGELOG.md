@@ -19,6 +19,11 @@
   `make releasetest` is the pre-release gate (~3–5 min). Extended
   the target-reference table with a Runtime column and the
   previously-undocumented `test-switch` and `releasetest` rows.
+- Codified the `.chk` fixture header schema (`Fixture:` /
+  `Milestone:` / `Covers:` comment lines) in the "Authoring a new
+  fixture" subsection of `docs/internals/test-harness.md`. Applied
+  the schema to `tests/chk/arithmetic/basic.chk`. Enables
+  `grep`-based discovery across the corpus at scale.
 
 ### Tests (chk-layout)
 
