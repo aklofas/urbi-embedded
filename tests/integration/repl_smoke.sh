@@ -155,5 +155,80 @@ else
     fail "-e (no expr): rc=$rc"
 fi
 
+# --- -f / positional file ---
+test_case
+f="$TMPDIR_LOCAL/prog1.urb"
+printf '1 + 2 |\n' > "$f"
+out=$("$URBI" "$f")
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+    ok 'positional file with "1 + 2 |" runs, prints nothing, exit 0'
+else
+    fail "positional file: rc=$rc, out='$out'"
+fi
+
+test_case
+out=$("$URBI" -f "$f")
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+    ok '-f file with "1 + 2 |" runs, prints nothing, exit 0'
+else
+    fail "-f file: rc=$rc, out='$out'"
+fi
+
+# --- multi-statement file: runs all, prints nothing ---
+test_case
+f2="$TMPDIR_LOCAL/prog2.urb"
+printf '1 + 2 |\n3 * 4 |\n' > "$f2"
+out=$("$URBI" "$f2")
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+    ok 'multi-statement file runs, prints nothing, exit 0'
+else
+    fail "multi-statement file: rc=$rc, out='$out'"
+fi
+
+# --- file not found ---
+test_case
+out=$("$URBI" "$TMPDIR_LOCAL/does-not-exist.urb" 2>&1 >/dev/null)
+rc=$?
+if [ "$rc" -eq 2 ] && printf '%s\n' "$out" | grep -q '^urbi:'; then
+    ok 'file-not-found -> rc=2, urbi: on stderr'
+else
+    fail "file-not-found: rc=$rc, out='$out'"
+fi
+
+# --- -f missing argument ---
+test_case
+out=$("$URBI" -f 2>&1 >/dev/null)
+rc=$?
+if [ "$rc" -eq 2 ]; then
+    ok '-f with no path -> rc=2'
+else
+    fail "-f (no path): rc=$rc"
+fi
+
+# --- piped stdin as script ---
+test_case
+out=$(printf '1 + 2 |\n' | "$URBI")
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+    ok 'piped stdin (non-tty) runs as script, prints nothing'
+else
+    fail "piped stdin: rc=$rc, out='$out'"
+fi
+
+# --- -f with a malformed file ---
+test_case
+f3="$TMPDIR_LOCAL/bad.urb"
+printf '0xG |\n' > "$f3"
+out=$("$URBI" -f "$f3" 2>&1 >/dev/null)
+rc=$?
+if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q '^urbi:'; then
+    ok '-f with lex error -> rc=1'
+else
+    fail "-f malformed: rc=$rc, out='$out'"
+fi
+
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"
 [ "$FAIL" -eq 0 ]

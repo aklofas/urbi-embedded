@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "uarena.h"
 #include "uast.h"
@@ -109,6 +110,82 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     return true;
 }
 
+#define URBI_REPL_MAX_FILE (1024u * 1024u)
+
+/* Slurp a file (or stdin, with path=="-") into a freshly-malloc'd buffer.
+   Returns pointer on success, NULL on error (message printed to stderr).
+   *out_len receives the byte count. */
+static char *slurp(const char *path, size_t *out_len) {
+    FILE *fp = NULL;
+    if (strcmp(path, "-") == 0) {
+        fp = stdin;
+    } else {
+        fp = fopen(path, "rb");
+        if (!fp) {
+            fprintf(stderr, "urbi: cannot open %s\n", path);
+            return NULL;
+        }
+    }
+
+    size_t cap = 4096, len = 0;
+    char *buf = malloc(cap);
+    if (!buf) { fprintf(stderr, "urbi: out of memory\n"); goto fail; }
+
+    for (;;) {
+        if (len + 4096 > cap) {
+            if (cap >= URBI_REPL_MAX_FILE) {
+                fprintf(stderr, "urbi: %s exceeds %u byte cap\n",
+                        path, URBI_REPL_MAX_FILE);
+                goto fail;
+            }
+            size_t ncap = cap * 2;
+            if (ncap > URBI_REPL_MAX_FILE) ncap = URBI_REPL_MAX_FILE;
+            char *n = realloc(buf, ncap);
+            if (!n) { fprintf(stderr, "urbi: out of memory\n"); goto fail; }
+            buf = n;
+            cap = ncap;
+        }
+        size_t r = fread(buf + len, 1, cap - len, fp);
+        len += r;
+        if (r == 0) break;
+    }
+
+    if (fp != stdin) fclose(fp);
+    *out_len = len;
+    return buf;
+
+fail:
+    free(buf);
+    if (fp && fp != stdin) fclose(fp);
+    return NULL;
+}
+
+/* Run a source file: compile, execute, discard result (scripts produce
+   output via side effects, which do not exist at M1). */
+static int run_file(UVM *vm, const char *path) {
+    size_t len = 0;
+    char *src = slurp(path, &len);
+    if (!src) return 2;
+
+    UArena arena;
+    UModule module;
+    int rc = 1;
+    if (compile_source(src, len, path, &module, &arena)) {
+        UValue out;
+        UVMError vrc = uvm_run(vm, &module, &out);
+        if (vrc == UVM_OK) {
+            rc = 0;
+        } else {
+            print_vm_error(vm);
+            rc = 1;
+        }
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+    }
+    free(src);
+    return rc;
+}
+
 /* Run one expression string, print result to stdout, return 0 on success. */
 static int run_expression(UVM *vm, const char *expr) {
     /* Append " |" to terminate the statement if the expression doesn't already
@@ -194,6 +271,46 @@ int main(int argc, char *argv[]) {
         UVM vm;
         uvm_init(&vm, NULL, NULL);
         int rc = run_expression(&vm, expr);
+        uvm_destroy(&vm);
+        return rc;
+    }
+
+    /* Scan for -f. */
+    const char *file_arg = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (eq(argv[i], "-f")) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "urbi: -f requires a path argument\n");
+                return 2;
+            }
+            file_arg = argv[i + 1];
+            break;
+        }
+    }
+
+    /* Positional file: first non-flag argument that isn't an -e/-f value. */
+    if (!file_arg) {
+        for (int i = 1; i < argc; i++) {
+            if (argv[i][0] != '-') {
+                file_arg = argv[i];
+                break;
+            }
+        }
+    }
+
+    if (file_arg) {
+        UVM vm;
+        uvm_init(&vm, NULL, NULL);
+        int rc = run_file(&vm, file_arg);
+        uvm_destroy(&vm);
+        return rc;
+    }
+
+    /* No -e, no file: check stdin. */
+    if (argc == 1 && !isatty(fileno(stdin))) {
+        UVM vm;
+        uvm_init(&vm, NULL, NULL);
+        int rc = run_file(&vm, "-");
         uvm_destroy(&vm);
         return rc;
     }
