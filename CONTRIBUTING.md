@@ -15,9 +15,13 @@ Override with `make TARGET=<name>` if you need a custom output tree.
     make test-debug    # -O0 -g, for debugging with gdb       → build/host-debug/
     make test-asan     # AddressSanitizer instrumentation     → build/host-asan/
     make test-ubsan    # UndefinedBehaviorSanitizer           → build/host-ubsan/
+    make test-valgrind # valgrind memcheck (CI-gating)        → build/host-valgrind/
 
-All four must pass before any commit is merged. Each variant has its own build
-tree, so they coexist and no `make clean` is required when switching between them.
+All four fast variants (`test`, `test-debug`, `test-asan`, `test-ubsan`) must
+pass before any commit is merged; each variant has its own build tree, so
+they coexist and no `make clean` is required when switching between them.
+`test-valgrind` is enforced in CI but runs ~20–50× slower than a plain build
+— run it periodically and always before a milestone tag, not on every commit.
 
 ## Cross-compile sanity
 

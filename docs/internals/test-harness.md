@@ -157,10 +157,13 @@ without requiring a `make clean` when switching between them.
 | `make test-debug` | `-O0 -g`                      | `build/host-debug/`  | Routinely; prerequisite for gdb sessions         |
 | `make test-asan` | AddressSanitizer (`-O1 -g`)   | `build/host-asan/`   | After any change to `src/*.c`                    |
 | `make test-ubsan` | UndefinedBehaviorSanitizer (`-O1 -g`) | `build/host-ubsan/` | After any change to `src/*.c`          |
+| `make test-valgrind` | `-O0 -g`, run under memcheck | `build/host-valgrind/` | CI-gating; ~20–50× slower than plain build    |
 
-All four must pass before any commit lands. Running `make test` alone is
-sufficient for documentation-only or tooling changes; after touching
-implementation code, run all four.
+The four fast variants must pass before any commit lands. Running `make test`
+alone is sufficient for documentation-only or tooling changes; after touching
+implementation code, run all four. `make test-valgrind` is enforced in CI but
+is slower; run it periodically and always before a milestone tag, not on
+every commit.
 
 Cross-compile variants build `liburbi.a` for Cortex-M7 (`make cross-arm`) and
 RISC-V rv32imc (`make cross-riscv`) but do not execute tests — there is no
@@ -171,14 +174,17 @@ catch host-only assumptions.
 ## Coverage expectations
 
 The project targets at least 90% line coverage and at least 80% branch coverage
-at v1.0 (see `../ROADMAP.md`, "Quality bars at v1.0"). Coverage is measured with
-`gcov` against the debug build. There is no automated CI gate on coverage at the
-current development stage, but the expectation is that every new `src/*.c` module
-ships with a corresponding `tests/unit/test_<module>.c` that exercises it to at
-least 90% line coverage before the module is merged. The subsystems shipped to
-date — lexer, parser, arena, module, and emitter — all exceed 96% line coverage,
-so the bar is achievable with normal TDD discipline: write a failing test, make
-it pass, verify the uncovered lines, and add cases until the gap closes.
+at v1.0 (see `../ROADMAP.md`, "Quality bars at v1.0"). Coverage is measured via
+`make coverage`, which builds the test runner with `--coverage`-instrumented
+`-O0 -g` under `build/host-coverage/`, runs the full suite, and produces an
+HTML report plus a per-file stdout summary via `gcovr` (see "Coverage —
+`make coverage`" below). CI runs this as an advisory job. The expectation is
+that every new `src/*.c` module ships with a corresponding
+`tests/unit/test_<module>.c` that exercises it to at least 90% line coverage
+before the module is merged. The subsystems shipped to date — lexer, parser,
+arena, module, emitter, VM, and uvalue — all exceed 96% line coverage, so the
+bar is achievable with normal TDD discipline: write a failing test, make it
+pass, verify the uncovered lines, and add cases until the gap closes.
 
 ## Debugging a failing test
 
