@@ -3,8 +3,8 @@
    Used by umodule (deserialize) and uemit (serialize).  No allocator, no
    stdlib dependencies — only byte math over caller-supplied buffers. */
 
-#ifndef URBI_UVARINT_H
-#define URBI_UVARINT_H
+#ifndef UVARINT_H
+#define UVARINT_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -54,4 +54,4 @@ UVarintError uvarint_decode_zz(const uint8_t *buf, size_t size,
 }
 #endif
 
-#endif  /* URBI_UVARINT_H */
+#endif  /* UVARINT_H */
