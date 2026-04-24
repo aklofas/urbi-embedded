@@ -66,6 +66,9 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
             case '\n': esc = "\\n"; break;
             case '\t': esc = "\\t"; break;
             case '\r': esc = "\\r"; break;
+            /* Unreachable during normal iteration — the outer for-loop
+               terminates at '\0'. Kept as defensive coverage for
+               callers that ever iterate past the terminator. */
             case '\0': esc = "\\0"; break;
             default:
                 if (c >= 0x20 && c < 0x7f) { single = (char)c; }

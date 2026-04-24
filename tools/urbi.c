@@ -114,6 +114,9 @@ static int run_dump(const char *src, size_t len, const char *src_name) {
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
+    /* 4 KiB is adequate for M1 — the 8-opcode VM produces tiny
+       disassemblies. Revisit (promote to a heap allocation) when M2
+       programs exceed this. */
     char buf[4096];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
     fwrite(buf, 1, n, stdout);
@@ -241,6 +244,9 @@ static int run_expression(UVM *vm, const char *expr) {
         UValue out;
         UVMError vrc = uvm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
+            /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
+               M2 string literals may truncate silently — promote to
+               UVALUE_FORMAT_MAX or heap when strings land. */
             char fmt[64];
             uvalue_format(&out, fmt, sizeof fmt);
             puts(fmt);
@@ -337,6 +343,8 @@ static int run_interactive(UVM *vm) {
             UValue out;
             UVMError vrc = uvm_run(vm, &module, &out);
             if (vrc == UVM_OK) {
+                /* See run_expression for the 64-byte rationale; M2
+                   strings may silently truncate here too. */
                 char fmt[64];
                 uvalue_format(&out, fmt, sizeof fmt);
                 printf("[%08u] %s\n", ms_since_start(), fmt);
@@ -415,7 +423,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Positional file: first non-flag argument that isn't an -e/-f value. */
+    /* Positional file: first non-flag argument that isn't an -e/-f value.
+       Note: this loop does NOT skip -e/-f argument values — it's safe at
+       M1 because the -e branch above already returns before reaching
+       here, and a positional file with a leading '-' is unsupported. If
+       new flags with non-returning handlers land in M2+, this scan must
+       skip their argument values explicitly. */
     if (!file_arg) {
         for (int i = 1; i < argc; i++) {
             if (argv[i][0] != '-') {
