@@ -1,0 +1,65 @@
+# M1 arithmetic exit fixture.
+# Covers the 8-opcode VM: Int/Float +, -, *, /, unary -, parens, |
+# terminator, Int/Int -> Float promotion, Int literal variants.
+# Includes one lex-error and one parse-error case to exercise error-
+# recovery end-to-end through the REPL.
+
+# --- Integer arithmetic
+1 + 2
+[00000001] 3
+
+5 * 7
+[00000002] 35
+
+10 - 3
+[00000003] 7
+
+# --- Precedence and parens
+1 + 2 * 3
+[00000004] 7
+
+(1 + 2) * 3
+[00000005] 9
+
+# --- Unary
+-5
+[00000006] -5
+
+-(1 + 2)
+[00000007] -3
+
+# --- Int literal variants
+0xFF
+[00000008] 255
+
+0b1010
+[00000009] 10
+
+0o17
+[00000010] 15
+
+1_000 + 1
+[00000011] 1001
+
+# --- Int/Int division promotes to Float
+5 / 2
+[00000012] 2.5
+
+4 / 2
+[00000013] 2.0
+
+# --- Int + Float promotion (via /)
+1 + 5 / 2
+[00000014] 3.5
+
+# --- Lex-error recovery
+0xG
+[00000015] !!! <stdin>:1:1: malformed hex literal
+
+# --- Parse-error recovery
+1 +
+[00000016] !!! <stdin>:1:5: expected expression
+
+# --- Confirm REPL recovered
+42
+[00000017] 42
