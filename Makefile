@@ -65,7 +65,27 @@ urbi-bin: $(BUILDDIR)/urbi
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
-test: $(LIB) $(TEST_OBJ) test-integration
+# --- .chk conformance fixtures -----------------------------------------
+#
+# test-chk iterates all tests/chk/**/*.chk against the built urbi binary
+# via tests/integration/run_chk.sh. One REPL session per fixture. Folded
+# into `test` alongside test-integration so every sanitizer variant
+# runs the fixtures automatically. Not valgrind-wrapped (same rationale
+# as test-integration — urbi itself is memory-clean, and wrapping the
+# sh+awk+sed pipeline adds noise, not signal).
+
+test-chk: $(BUILDDIR)/urbi
+	@set -e; \
+	count=0; \
+	for f in tests/chk/*.chk $$(find tests/chk -mindepth 2 -name '*.chk' \
+	        2>/dev/null); do \
+	    [ -r "$$f" ] || continue; \
+	    count=$$((count + 1)); \
+	    tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
+	done; \
+	echo "$$count chk fixture(s) passed"
+
+test: $(LIB) $(TEST_OBJ) test-integration test-chk
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
 	$(RUNNER_WRAPPER) $(RUNNER)
 
@@ -278,4 +298,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk
