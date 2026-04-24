@@ -77,9 +77,7 @@ test-integration: $(BUILDDIR)/urbi
 test-chk: $(BUILDDIR)/urbi
 	@set -e; \
 	count=0; \
-	for f in tests/chk/*.chk $$(find tests/chk -mindepth 2 -name '*.chk' \
-	        2>/dev/null); do \
-	    [ -r "$$f" ] || continue; \
+	for f in $$(find tests/chk -name '*.chk' 2>/dev/null | sort); do \
 	    count=$$((count + 1)); \
 	    tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
 	done; \
@@ -232,9 +230,14 @@ cppcheck: compile_commands.json
 # when explicitly requested.  Diagnostics go to stderr during compile;
 # the resulting build/host-analyzer/liburbi.a is a valid archive
 # (-fanalyzer is diagnostic-only, doesn't change codegen).
+# -Wpedantic is intentionally omitted here: the label-as-value
+# computed-goto dispatch in uvm.c would otherwise emit 16 pedantic
+# warnings per build. Noise, not signal — pedantic is enforced on the
+# regular `test` target instead. The -fanalyzer diagnostics are the
+# whole point of this build variant.
 analyzer:
 	$(MAKE) TARGET=host-analyzer \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -fanalyzer" \
+		CFLAGS="-std=c99 -Wall -Wextra -Os -fanalyzer" \
 		all
 
 # Coverage — instruments the test runner with gcov, runs it, and produces
