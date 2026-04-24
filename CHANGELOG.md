@@ -49,6 +49,10 @@
 
 ### Tests
 
+- Added `.chk` conformance-fixture runner at `tests/integration/run_chk.sh`
+  and the first fixture `tests/chk/arithmetic.chk` covering the M1 8-opcode
+  VM. Folded into the `test` aggregate via a new `test-chk` Make target,
+  so every sanitizer variant runs the fixture corpus automatically.
 - `tests/unit/test_uvalue.c` — ~25 unit cases covering all 5 UValKinds,
   edge cases (INT64_MAX/MIN, -0.0, NaN, Inf, whole-number floats,
   scientific notation), and truncation (cap=0/1/3).
