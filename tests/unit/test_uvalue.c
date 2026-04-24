@@ -151,6 +151,52 @@ UTEST(uvalue_float_neg_inf) {
     UASSERT(strstr(buf, "-inf") != NULL);
 }
 
+/* --- UVAL_STR ---
+ * M1 placeholder: UValue carries the string pointer in the same slot as
+ * v.i, reinterpreted.  Replace with a proper union member at M2 when
+ * string literals become reachable. */
+
+static UValue make_str(const char *s) {
+    UValue v = { .kind = UVAL_STR };
+    v.v.i = (int64_t)(intptr_t)s;
+    return v;
+}
+
+UTEST(uvalue_str_empty) {
+    UValue v = make_str("");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"\"");
+}
+
+UTEST(uvalue_str_printable) {
+    UValue v = make_str("hello");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"hello\"");
+}
+
+UTEST(uvalue_str_newline_escape) {
+    UValue v = make_str("a\nb");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\nb\"");
+}
+
+UTEST(uvalue_str_backslash_escape) {
+    UValue v = make_str("a\\b");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\\\b\"");
+}
+
+UTEST(uvalue_str_quote_escape) {
+    UValue v = make_str("a\"b");
+    char buf[32] = {0};
+    uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "\"a\\\"b\"");
+}
+
 void test_uvalue_suite(void) {
     utest_run("uvalue: nil -> \"nil\"", uvalue_nil_formats_as_nil);
     utest_run("uvalue: bool true", uvalue_bool_true);
@@ -167,4 +213,9 @@ void test_uvalue_suite(void) {
     utest_run("uvalue: float NaN", uvalue_float_nan);
     utest_run("uvalue: float +Inf", uvalue_float_pos_inf);
     utest_run("uvalue: float -Inf", uvalue_float_neg_inf);
+    utest_run("uvalue: str empty", uvalue_str_empty);
+    utest_run("uvalue: str printable", uvalue_str_printable);
+    utest_run("uvalue: str \\n escape", uvalue_str_newline_escape);
+    utest_run("uvalue: str \\\\ escape", uvalue_str_backslash_escape);
+    utest_run("uvalue: str \\\" escape", uvalue_str_quote_escape);
 }
