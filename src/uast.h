@@ -17,18 +17,18 @@ typedef enum {
     AST_UNARY,
     AST_BINARY,
     AST_ERROR
-} AstKind;
+} UAstKind;
 
 typedef enum {
     UOP_NEG = 0
-} UnaryOp;
+} UAstUnaryOp;
 
 typedef enum {
     BOP_ADD = 0,
     BOP_SUB,
     BOP_MUL,
     BOP_DIV
-} BinaryOp;
+} UAstBinaryOp;
 
 typedef enum {
     PARSE_OK = 0,                  /* sentinel; never emitted */
@@ -41,7 +41,7 @@ typedef enum {
 } ParseErrorCode;
 
 /*
- * AstNode — tagged union, arena-allocated by the parser.
+ * UAstNode — tagged union, arena-allocated by the parser.
  *
  * Lifetime: the `ident.start` pointer is a non-owning view into the
  * caller's source buffer, which MUST outlive the AST.  `err.message`
@@ -58,9 +58,9 @@ typedef enum {
  * AST_BINARY the position points at the operator token; for AST_ERROR
  * the position points at the detection site.
  */
-typedef struct AstNode AstNode;
-struct AstNode {
-    AstKind kind;
+typedef struct UAstNode UAstNode;
+struct UAstNode {
+    UAstKind kind;
     int line;
     int col;
     union {
@@ -70,13 +70,13 @@ struct AstNode {
             int len;
         } ident;
         struct {
-            UnaryOp op;
-            AstNode *operand;
+            UAstUnaryOp op;
+            UAstNode *operand;
         } unary;
         struct {
-            BinaryOp op;
-            AstNode *lhs;
-            AstNode *rhs;
+            UAstBinaryOp op;
+            UAstNode *lhs;
+            UAstNode *rhs;
         } binary;
         struct {
             int code;

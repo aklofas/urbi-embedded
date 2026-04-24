@@ -55,7 +55,7 @@ UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
     EmitError second = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, second);              /* finish is idempotent-OK */
     /* Dummy AST_INT to attempt a statement after finish. */
-    AstNode dummy = {0};
+    UAstNode dummy = {0};
     dummy.kind = AST_INT;
     dummy.u.i = 7;
     UASSERT_EQ(EMIT_FINISHED, uemit_statement(&e, &dummy));
@@ -72,7 +72,7 @@ UTEST(uemit_error_name_returns_sensible_strings) {
 /* Helper: drive one statement through init/statement/finish and return the
    resulting EmitError.  module and arena are caller-owned; call umodule_destroy
    and uarena_destroy when done. */
-static EmitError emit_single_statement(UModule *module, Arena *arena, AstNode *ast) {
+static EmitError emit_single_statement(UModule *module, Arena *arena, UAstNode *ast) {
     Emitter e;
     EmitError rc;
     uemit_init(&e, module, arena, "test");
@@ -84,7 +84,7 @@ static EmitError emit_single_statement(UModule *module, Arena *arena, AstNode *a
 UTEST(emit_ast_int_single_literal_loadk_then_ret) {
     UModule module = {0};
     Arena arena;
-    AstNode n = {0};
+    UAstNode n = {0};
     uarena_init(&arena, 0);
     n.kind = AST_INT;
     n.u.i  = 42;
@@ -117,9 +117,9 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UModule module = {0};
     Arena arena;
     Emitter e;
-    AstNode a = {0};
-    AstNode b = {0};
-    AstNode c = {0};
+    UAstNode a = {0};
+    UAstNode b = {0};
+    UAstNode c = {0};
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, "test");
 
@@ -146,9 +146,9 @@ UTEST(emit_ast_binary_1_plus_2) {
     Arena arena;
     uarena_init(&arena, 0);
 
-    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
-    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
-    AstNode bin = {0};
+    UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    UAstNode bin = {0};
     bin.kind = AST_BINARY;
     bin.u.binary.op = BOP_ADD;
     bin.u.binary.lhs = &lhs;
@@ -175,7 +175,7 @@ UTEST(emit_ast_binary_1_plus_2) {
 }
 
 UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
-    struct { BinaryOp bop; int expected_op; } cases[] = {
+    struct { UAstBinaryOp bop; int expected_op; } cases[] = {
         { BOP_SUB, (int)OP_SUB },
         { BOP_MUL, (int)OP_MUL },
         { BOP_DIV, (int)OP_DIV }
@@ -185,9 +185,9 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         UModule module = {0};
         Arena arena;
         uarena_init(&arena, 0);
-        AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
-        AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
-        AstNode bin = {0};
+        UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+        UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+        UAstNode bin = {0};
         bin.kind = AST_BINARY;
         bin.u.binary.op = cases[i].bop;
         bin.u.binary.lhs = &lhs;
@@ -201,22 +201,22 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
 }
 
 UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
-    /* (1+2)+(3+4) — 6 AstNodes.  Destination-reuse keeps max_reg==1. */
+    /* (1+2)+(3+4) — 6 UAstNodes.  Destination-reuse keeps max_reg==1. */
     UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
-    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
-    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;
-    AstNode c = {0}; c.kind = AST_INT; c.u.i = 3; c.line = 1;
-    AstNode d = {0}; d.kind = AST_INT; d.u.i = 4; d.line = 1;
-    AstNode ab = {0};
+    UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;
+    UAstNode c = {0}; c.kind = AST_INT; c.u.i = 3; c.line = 1;
+    UAstNode d = {0}; d.kind = AST_INT; d.u.i = 4; d.line = 1;
+    UAstNode ab = {0};
     ab.kind = AST_BINARY; ab.u.binary.op = BOP_ADD;
     ab.u.binary.lhs = &a; ab.u.binary.rhs = &b; ab.line = 1;
-    AstNode cd = {0};
+    UAstNode cd = {0};
     cd.kind = AST_BINARY; cd.u.binary.op = BOP_ADD;
     cd.u.binary.lhs = &c; cd.u.binary.rhs = &d; cd.line = 1;
-    AstNode top = {0};
+    UAstNode top = {0};
     top.kind = AST_BINARY; top.u.binary.op = BOP_ADD;
     top.u.binary.lhs = &ab; top.u.binary.rhs = &cd; top.line = 1;
 
@@ -237,12 +237,12 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     Arena arena;
     uarena_init(&arena, 0);
 
-    AstNode operand = {0};
+    UAstNode operand = {0};
     operand.kind = AST_INT;
     operand.u.i  = 5;
     operand.line = 1;
 
-    AstNode unary = {0};
+    UAstNode unary = {0};
     unary.kind = AST_UNARY;
     unary.u.unary.op      = UOP_NEG;
     unary.u.unary.operand = &operand;
@@ -286,7 +286,7 @@ UTEST(emit_ast_error_returns_emit_ast_error) {
     UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
-    AstNode err = {0};
+    UAstNode err = {0};
     err.kind = AST_ERROR;
     err.u.err.code = 1;
     err.u.err.message = "parser error";
@@ -299,7 +299,7 @@ UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
     UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
-    AstNode id = {0};
+    UAstNode id = {0};
     id.kind = AST_IDENT;
     id.u.ident.start = "x";
     id.u.ident.len = 1;
@@ -315,14 +315,14 @@ UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
 
-    AstNode err = {0};
+    UAstNode err = {0};
     err.kind = AST_ERROR;
     err.u.err.code = 1;
     err.u.err.message = "x";
     UASSERT_EQ(EMIT_AST_ERROR, uemit_statement(&e, &err));
 
     /* Subsequent valid AST_INT still returns the latched error. */
-    AstNode ok = {0};
+    UAstNode ok = {0};
     ok.kind = AST_INT;
     ok.u.i = 7;
     UASSERT_EQ(EMIT_AST_ERROR, uemit_statement(&e, &ok));
@@ -342,7 +342,7 @@ UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
     module.alloc_fn = limit_alloc;
     module.alloc_ud = &la;
 
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT;
     n.u.i = 1;
     UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &n));
@@ -354,7 +354,7 @@ UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
     UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 10;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
     UASSERT_EQ((size_t)2, module.instr_count);  /* LOADK ; RET */
@@ -376,8 +376,8 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
 
-    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
-    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
+    UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
@@ -400,8 +400,8 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
 
-    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
-    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
+    UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
+    UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
@@ -436,9 +436,9 @@ UTEST(disassemble_empty_module_produces_short_placeholder) {
 UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     UModule module = {0};
     Arena arena;
-    AstNode lhs = {0};
-    AstNode rhs = {0};
-    AstNode bin = {0};
+    UAstNode lhs = {0};
+    UAstNode rhs = {0};
+    UAstNode bin = {0};
     uarena_init(&arena, 0);
     lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
@@ -460,7 +460,7 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
 UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
     UModule module = {0};
     Arena arena;
-    AstNode n = {0};
+    UAstNode n = {0};
     uarena_init(&arena, 0);
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
@@ -495,9 +495,9 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
     Arena arena;
     uarena_init(&arena, 0);
 
-    AstNode operand = {0};
+    UAstNode operand = {0};
     operand.kind = AST_INT; operand.u.i = 7; operand.line = 1;
-    AstNode neg = {0};
+    UAstNode neg = {0};
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
 
@@ -519,7 +519,7 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     Arena arena;
     uarena_init(&arena, 0);
 
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1000; n.line = 1;  /* 1000 > 63, zigzag = 2000 > 127 */
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
@@ -556,20 +556,20 @@ UTEST(disassemble_module_with_all_arithmetic_opcodes) {
     uemit_init(&e, &module, &arena, NULL);
 
     /* Each statement emits one binary op. */
-    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
-    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
 
-    AstNode sub = {0};
+    UAstNode sub = {0};
     sub.kind = AST_BINARY; sub.u.binary.op = BOP_SUB;
     sub.u.binary.lhs = &lhs; sub.u.binary.rhs = &rhs; sub.line = 1;
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &sub));
 
-    AstNode mul = {0};
+    UAstNode mul = {0};
     mul.kind = AST_BINARY; mul.u.binary.op = BOP_MUL;
     mul.u.binary.lhs = &lhs; mul.u.binary.rhs = &rhs; mul.line = 1;
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &mul));
 
-    AstNode div = {0};
+    UAstNode div = {0};
     div.kind = AST_BINARY; div.u.binary.op = BOP_DIV;
     div.u.binary.lhs = &lhs; div.u.binary.rhs = &rhs; div.line = 1;
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &div));
@@ -700,8 +700,8 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
 
-    AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
-    AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
+    UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
+    UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &a));
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
@@ -732,7 +732,7 @@ UTEST(emit_oom_in_push_abs_line) {
     module.alloc_fn = limit_alloc;
     module.alloc_ud = &la;
 
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
     EmitError rc = emit_single_statement(&module, &arena, &n);
     UASSERT_EQ(EMIT_OOM, rc);
@@ -756,7 +756,7 @@ UTEST(emit_oom_in_push_line_delta) {
     module.alloc_fn = limit_alloc;
     module.alloc_ud = &la;
 
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
     EmitError rc = emit_single_statement(&module, &arena, &n);
     UASSERT_EQ(EMIT_OOM, rc);

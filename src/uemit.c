@@ -215,8 +215,8 @@ static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
     e->prev_line = line;
 }
 
-/* Map BinaryOp to the corresponding arithmetic opcode. */
-static UOpcode binop_to_opcode(const BinaryOp op) {
+/* Map UAstBinaryOp to the corresponding arithmetic opcode. */
+static UOpcode binop_to_opcode(const UAstBinaryOp op) {
     switch (op) {
     case BOP_ADD: return OP_ADD;
     case BOP_SUB: return OP_SUB;
@@ -229,7 +229,7 @@ static UOpcode binop_to_opcode(const BinaryOp op) {
 
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure. */
-static uint8_t emit_expr(Emitter *e, AstNode *n) {
+static uint8_t emit_expr(Emitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0u;
     switch (n->kind) {
     case AST_INT: {
@@ -281,7 +281,7 @@ void uemit_init(Emitter *e, UModule *module, Arena *arena, const char *source_na
     emit_copy_source_name(e, source_name);
 }
 
-EmitError uemit_statement(Emitter *e, AstNode *stmt) {
+EmitError uemit_statement(Emitter *e, UAstNode *stmt) {
     uint8_t result;
     if (e->finished) return EMIT_FINISHED;
     if (e->error != EMIT_OK) return e->error;

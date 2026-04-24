@@ -14,7 +14,7 @@
 
 /* --- S-expression dump helper.  Bounds-guarded; truncates on overflow. --- */
 
-static void dump_rec(const AstNode *n, char **cur, char *end) {
+static void dump_rec(const UAstNode *n, char **cur, char *end) {
     if (*cur >= end) return;
     if (!n) { *cur += snprintf(*cur, (size_t)(end - *cur), "(null)"); return; }
     switch (n->kind) {
@@ -52,7 +52,7 @@ static void dump_rec(const AstNode *n, char **cur, char *end) {
     }
 }
 
-static void ast_dump(const AstNode *n, char *buf, size_t bufsz) {
+static void ast_dump(const UAstNode *n, char *buf, size_t bufsz) {
     if (bufsz == 0) return;
     char *cur = buf;
     char *end = buf + bufsz - 1; /* leave room for terminator */
@@ -82,7 +82,7 @@ static void ctx_destroy(ParseCtx *c) {
 /* --- Scaffolding tests. --- */
 
 UTEST(parse_ast_dump_int_smoke) {
-    AstNode n = { AST_INT, 1, 1, { .i = 42 } };
+    UAstNode n = { AST_INT, 1, 1, { .i = 42 } };
     char buf[32];
     ast_dump(&n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "42");
@@ -91,7 +91,7 @@ UTEST(parse_ast_dump_int_smoke) {
 UTEST(parse_empty_input_returns_null) {
     ParseCtx c;
     ctx_init(&c, "");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n == NULL);
     ctx_destroy(&c);
 }
@@ -113,7 +113,7 @@ UTEST(parse_error_name_out_of_range) {
 UTEST(parse_atom_int) {
     ParseCtx c;
     ctx_init(&c, "42");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_INT);
     UASSERT_EQ(n->u.i, 42);
@@ -125,7 +125,7 @@ UTEST(parse_atom_int) {
 UTEST(parse_atom_ident) {
     ParseCtx c;
     ctx_init(&c, "foo");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_IDENT);
     UASSERT_EQ(n->u.ident.len, 3);
@@ -140,7 +140,7 @@ UTEST(parse_atom_parens_no_wrapper_node) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "(42)");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "42");
@@ -151,7 +151,7 @@ UTEST(parse_unary_neg) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "-42");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(- 42)");
@@ -162,7 +162,7 @@ UTEST(parse_unary_pos_is_noop) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "+42");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "42");
@@ -173,7 +173,7 @@ UTEST(parse_unary_double_neg_right_assoc) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "--3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(- (- 3))");
@@ -184,7 +184,7 @@ UTEST(parse_unary_neg_ident) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "-x");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(- x)");
@@ -195,7 +195,7 @@ UTEST(parse_binary_add) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "1 + 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(+ 1 2)");
@@ -206,7 +206,7 @@ UTEST(parse_precedence_add_mul) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "1 + 2 * 3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(+ 1 (* 2 3))");
@@ -217,7 +217,7 @@ UTEST(parse_precedence_mul_add) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "1 * 2 + 3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(+ (* 1 2) 3)");
@@ -228,7 +228,7 @@ UTEST(parse_left_assoc_sub) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "1 - 2 - 3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(- (- 1 2) 3)");
@@ -239,7 +239,7 @@ UTEST(parse_left_assoc_div) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "8 / 4 / 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(/ (/ 8 4) 2)");
@@ -250,7 +250,7 @@ UTEST(parse_parens_override_precedence) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "(1 + 2) * 3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(* (+ 1 2) 3)");
@@ -261,7 +261,7 @@ UTEST(parse_unary_binds_tighter_than_binary) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "-1 + 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(+ (- 1) 2)");
@@ -272,7 +272,7 @@ UTEST(parse_unary_on_parenthesized) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "-(1 + 2)");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     ast_dump(n, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(- (+ 1 2))");
@@ -282,11 +282,11 @@ UTEST(parse_unary_on_parenthesized) {
 UTEST(parse_trailing_pipe_consumed) {
     ParseCtx c;
     ctx_init(&c, "42 |");
-    AstNode *a = uparse_next_statement(&c.p);
+    UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
     UASSERT_EQ(a->kind, AST_INT);
     /* After consuming '|', next call sees EOF. */
-    AstNode *b = uparse_next_statement(&c.p);
+    UAstNode *b = uparse_next_statement(&c.p);
     UASSERT(b == NULL);
     ctx_destroy(&c);
 }
@@ -294,10 +294,10 @@ UTEST(parse_trailing_pipe_consumed) {
 UTEST(parse_trailing_pipe_optional) {
     ParseCtx c;
     ctx_init(&c, "42");
-    AstNode *a = uparse_next_statement(&c.p);
+    UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
     UASSERT_EQ(a->kind, AST_INT);
-    AstNode *b = uparse_next_statement(&c.p);
+    UAstNode *b = uparse_next_statement(&c.p);
     UASSERT(b == NULL);
     ctx_destroy(&c);
 }
@@ -306,15 +306,15 @@ UTEST(parse_two_statements_with_pipe) {
     char buf1[32], buf2[32];
     ParseCtx c;
     ctx_init(&c, "1 + 2 | 3 * 4 |");
-    AstNode *a = uparse_next_statement(&c.p);
+    UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
     ast_dump(a, buf1, sizeof buf1);
     UASSERT_STR_EQ(buf1, "(+ 1 2)");
-    AstNode *b = uparse_next_statement(&c.p);
+    UAstNode *b = uparse_next_statement(&c.p);
     UASSERT(b != NULL);
     ast_dump(b, buf2, sizeof buf2);
     UASSERT_STR_EQ(buf2, "(* 3 4)");
-    AstNode *eof = uparse_next_statement(&c.p);
+    UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
 }
@@ -323,15 +323,15 @@ UTEST(parse_two_statements_no_final_pipe) {
     char buf1[32], buf2[32];
     ParseCtx c;
     ctx_init(&c, "1 | 2");
-    AstNode *a = uparse_next_statement(&c.p);
+    UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
     ast_dump(a, buf1, sizeof buf1);
     UASSERT_STR_EQ(buf1, "1");
-    AstNode *b = uparse_next_statement(&c.p);
+    UAstNode *b = uparse_next_statement(&c.p);
     UASSERT(b != NULL);
     ast_dump(b, buf2, sizeof buf2);
     UASSERT_STR_EQ(buf2, "2");
-    AstNode *eof = uparse_next_statement(&c.p);
+    UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
 }
@@ -356,7 +356,7 @@ UTEST(parse_error_unexpected_eof_after_operator) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "1 +");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_UNEXPECTED_EOF);
@@ -368,7 +368,7 @@ UTEST(parse_error_unexpected_eof_after_operator) {
 UTEST(parse_error_expected_expression_closing_paren) {
     ParseCtx c;
     ctx_init(&c, "1 + )");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);
@@ -378,7 +378,7 @@ UTEST(parse_error_expected_expression_closing_paren) {
 UTEST(parse_error_expected_rparen) {
     ParseCtx c;
     ctx_init(&c, "(1 + 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_RPAREN);
@@ -388,7 +388,7 @@ UTEST(parse_error_expected_rparen) {
 UTEST(parse_error_unexpected_token_at_statement_boundary) {
     ParseCtx c;
     ctx_init(&c, "1 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_UNEXPECTED_TOKEN);
@@ -398,7 +398,7 @@ UTEST(parse_error_unexpected_token_at_statement_boundary) {
 UTEST(parse_error_lex_error_passthrough) {
     ParseCtx c;
     ctx_init(&c, "@");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_LEX_ERROR);
@@ -408,7 +408,7 @@ UTEST(parse_error_lex_error_passthrough) {
 UTEST(parse_error_pipe_alone) {
     ParseCtx c;
     ctx_init(&c, "|");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);
@@ -421,10 +421,10 @@ UTEST(parse_recovery_sync_to_pipe_then_success) {
     /* '*' has no prefix form, so '1 + * 2' triggers PARSE_EXPECTED_EXPRESSION.
        Recovery must then sync past the first '|' and parse '3 * 4' cleanly. */
     ctx_init(&c, "1 + * 2 | 3 * 4 |");
-    AstNode *err = uparse_next_statement(&c.p);
+    UAstNode *err = uparse_next_statement(&c.p);
     UASSERT(err != NULL);
     UASSERT_EQ(err->kind, AST_ERROR);
-    AstNode *ok = uparse_next_statement(&c.p);
+    UAstNode *ok = uparse_next_statement(&c.p);
     UASSERT(ok != NULL);
     ast_dump(ok, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "(* 3 4)");
@@ -436,11 +436,11 @@ UTEST(parse_recovery_lex_error_followed_by_clean_statement) {
     char buf[64];
     ParseCtx c;
     ctx_init(&c, "@ | 42 |");
-    AstNode *err = uparse_next_statement(&c.p);
+    UAstNode *err = uparse_next_statement(&c.p);
     UASSERT(err != NULL);
     UASSERT_EQ(err->kind, AST_ERROR);
     UASSERT_EQ(err->u.err.code, PARSE_LEX_ERROR);
-    AstNode *ok = uparse_next_statement(&c.p);
+    UAstNode *ok = uparse_next_statement(&c.p);
     UASSERT(ok != NULL);
     ast_dump(ok, buf, sizeof buf);
     UASSERT_STR_EQ(buf, "42");
@@ -451,10 +451,10 @@ UTEST(parse_recovery_lex_error_followed_by_clean_statement) {
 UTEST(parse_recovery_consecutive_errors_terminate) {
     ParseCtx c;
     ctx_init(&c, "+ | + |");
-    AstNode *a = uparse_next_statement(&c.p);
+    UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
     UASSERT_EQ(a->kind, AST_ERROR);
-    AstNode *b = uparse_next_statement(&c.p);
+    UAstNode *b = uparse_next_statement(&c.p);
     UASSERT(b != NULL);
     UASSERT_EQ(b->kind, AST_ERROR);
     UASSERT(uparse_next_statement(&c.p) == NULL);
@@ -488,13 +488,13 @@ UTEST(parse_oom_returns_sentinel_and_sticks) {
     uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);
     uparse_init(&p, &lex, &arena);
 
-    AstNode *n1 = uparse_next_statement(&p);
+    UAstNode *n1 = uparse_next_statement(&p);
     UASSERT(n1 != NULL);
     UASSERT_EQ(n1->kind, AST_ERROR);
     UASSERT_EQ(n1->u.err.code, PARSE_OOM);
 
     /* Sticky: next call still returns the sentinel. */
-    AstNode *n2 = uparse_next_statement(&p);
+    UAstNode *n2 = uparse_next_statement(&p);
     UASSERT(n2 != NULL);
     UASSERT_EQ(n2->kind, AST_ERROR);
     UASSERT_EQ(n2->u.err.code, PARSE_OOM);
@@ -517,7 +517,7 @@ UTEST(parse_oom_mid_expression) {
     uarena_init_ex(&arena, 0, oom_alloc, oom_free, &s);
     uparse_init(&p, &lex, &arena);
 
-    AstNode *n = uparse_next_statement(&p);
+    UAstNode *n = uparse_next_statement(&p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_OOM);
@@ -528,7 +528,7 @@ UTEST(parse_oom_mid_expression) {
 UTEST(parse_syncline_int_line_col) {
     ParseCtx c;
     ctx_init(&c, "  42");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_INT);
     UASSERT_EQ(n->line, 1);
@@ -539,7 +539,7 @@ UTEST(parse_syncline_int_line_col) {
 UTEST(parse_syncline_binary_points_at_operator) {
     ParseCtx c;
     ctx_init(&c, "1\n+ 2");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_BINARY);
     /* '+' is on line 2, column 1. */
@@ -551,7 +551,7 @@ UTEST(parse_syncline_binary_points_at_operator) {
 UTEST(parse_syncline_unary_points_at_sign) {
     ParseCtx c;
     ctx_init(&c, "\n  -3");
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_UNARY);
     /* '-' is on line 2, column 3. */
@@ -563,7 +563,7 @@ UTEST(parse_syncline_unary_points_at_sign) {
 UTEST(parse_syncline_error_at_detection_point) {
     ParseCtx c;
     ctx_init(&c, "1 +\n)"); /* ')' on line 2, col 1 */
-    AstNode *n = uparse_next_statement(&c.p);
+    UAstNode *n = uparse_next_statement(&c.p);
     UASSERT(n != NULL);
     UASSERT_EQ(n->kind, AST_ERROR);
     UASSERT_EQ(n->u.err.code, PARSE_EXPECTED_EXPRESSION);

@@ -30,7 +30,7 @@ static const char * const kErrorNames[] = {
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
-static AstNode uparser_oom_sentinel = {
+static UAstNode uparser_oom_sentinel = {
     AST_ERROR,
     0,
     0,
@@ -55,8 +55,8 @@ static UToken consume(Parser *p) {
 
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
-static AstNode *make_node(Parser *p, AstKind k, int line, int col) {
-    AstNode *n = uarena_alloc(p->arena, sizeof *n);
+static UAstNode *make_node(Parser *p, UAstKind k, int line, int col) {
+    UAstNode *n = uarena_alloc(p->arena, sizeof *n);
     if (!n) return NULL;
     n->kind = k;
     n->line = line;
@@ -64,33 +64,33 @@ static AstNode *make_node(Parser *p, AstKind k, int line, int col) {
     return n;
 }
 
-static AstNode *make_int(Parser *p, int64_t v, int line, int col) {
-    AstNode *n = make_node(p, AST_INT, line, col);
+static UAstNode *make_int(Parser *p, int64_t v, int line, int col) {
+    UAstNode *n = make_node(p, AST_INT, line, col);
     if (!n) return NULL;
     n->u.i = v;
     return n;
 }
 
-static AstNode *make_ident(Parser *p, const char *start, int len, int line, int col) {
-    AstNode *n = make_node(p, AST_IDENT, line, col);
+static UAstNode *make_ident(Parser *p, const char *start, int len, int line, int col) {
+    UAstNode *n = make_node(p, AST_IDENT, line, col);
     if (!n) return NULL;
     n->u.ident.start = start;
     n->u.ident.len = len;
     return n;
 }
 
-static AstNode *make_unary(Parser *p, UnaryOp op, AstNode *operand,
+static UAstNode *make_unary(Parser *p, UAstUnaryOp op, UAstNode *operand,
                            int line, int col) {
-    AstNode *n = make_node(p, AST_UNARY, line, col);
+    UAstNode *n = make_node(p, AST_UNARY, line, col);
     if (!n) return NULL;
     n->u.unary.op = op;
     n->u.unary.operand = operand;
     return n;
 }
 
-static AstNode *make_binary(Parser *p, BinaryOp op, AstNode *lhs, AstNode *rhs,
+static UAstNode *make_binary(Parser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
                             int line, int col) {
-    AstNode *n = make_node(p, AST_BINARY, line, col);
+    UAstNode *n = make_node(p, AST_BINARY, line, col);
     if (!n) return NULL;
     n->u.binary.op = op;
     n->u.binary.lhs = lhs;
@@ -98,9 +98,9 @@ static AstNode *make_binary(Parser *p, BinaryOp op, AstNode *lhs, AstNode *rhs,
     return n;
 }
 
-static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
+static UAstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
                            int line, int col) {
-    AstNode *n = make_node(p, AST_ERROR, line, col);
+    UAstNode *n = make_node(p, AST_ERROR, line, col);
     if (!n) return NULL;
     n->u.err.code = (int)code;
     n->u.err.message = msg ? msg : kErrorMessages[code];
@@ -109,9 +109,9 @@ static AstNode *make_error(Parser *p, ParseErrorCode code, const char *msg,
 
 /* --- Forward declarations for mutual recursion. --- */
 
-static AstNode *parse_expression(Parser *p, int min_prec);
-static AstNode *parse_prefix(Parser *p);
-static AstNode *parse_atom(Parser *p);
+static UAstNode *parse_expression(Parser *p, int min_prec);
+static UAstNode *parse_prefix(Parser *p);
+static UAstNode *parse_atom(Parser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb). */
@@ -125,7 +125,7 @@ static int infix_prec(UTokenType t) {
     }
 }
 
-static BinaryOp infix_binop(UTokenType t) {
+static UAstBinaryOp infix_binop(UTokenType t) {
     switch (t) {
     case TOK_PLUS:  return BOP_ADD;
     case TOK_MINUS: return BOP_SUB;
@@ -137,7 +137,7 @@ static BinaryOp infix_binop(UTokenType t) {
 
 /* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
 
-static AstNode *parse_prefix(Parser *p) {
+static UAstNode *parse_prefix(Parser *p) {
     UToken t = peek(p);
     if (t.type == TOK_PLUS) {
         consume(p);
@@ -145,7 +145,7 @@ static AstNode *parse_prefix(Parser *p) {
     }
     if (t.type == TOK_MINUS) {
         consume(p);
-        AstNode *operand = parse_prefix(p); /* right-assoc: --3 -> -(-3) */
+        UAstNode *operand = parse_prefix(p); /* right-assoc: --3 -> -(-3) */
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
         return make_unary(p, UOP_NEG, operand, t.line, t.col);
@@ -155,7 +155,7 @@ static AstNode *parse_prefix(Parser *p) {
 
 /* --- parse_atom: INT | IDENT | ( expr ) | error. --- */
 
-static AstNode *parse_atom(Parser *p) {
+static UAstNode *parse_atom(Parser *p) {
     UToken t = peek(p);
     switch (t.type) {
     case TOK_INT:
@@ -166,7 +166,7 @@ static AstNode *parse_atom(Parser *p) {
         return make_ident(p, t.u.str.start, t.u.str.len, t.line, t.col);
     case TOK_LPAREN: {
         consume(p);
-        AstNode *inner = parse_expression(p, 0);
+        UAstNode *inner = parse_expression(p, 0);
         if (!inner) return NULL;
         if (inner->kind == AST_ERROR) return inner;
         UToken r = peek(p);
@@ -197,8 +197,8 @@ static AstNode *parse_atom(Parser *p) {
 
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
-static AstNode *parse_expression(Parser *p, int min_prec) {
-    AstNode *left = parse_prefix(p);
+static UAstNode *parse_expression(Parser *p, int min_prec) {
+    UAstNode *left = parse_prefix(p);
     if (!left) return NULL;
     if (left->kind == AST_ERROR) return left;
 
@@ -208,7 +208,7 @@ static AstNode *parse_expression(Parser *p, int min_prec) {
         if (prec < min_prec || prec == 0) break;
 
         consume(p);
-        AstNode *right = parse_expression(p, prec + 1);
+        UAstNode *right = parse_expression(p, prec + 1);
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
@@ -238,13 +238,13 @@ void uparse_init(Parser *p, ULexer *lex, Arena *arena) {
     p->have_peek = false;
 }
 
-AstNode *uparse_next_statement(Parser *p) {
+UAstNode *uparse_next_statement(Parser *p) {
     if (p->arena->oom) return &uparser_oom_sentinel;
 
     UToken t = peek(p);
     if (t.type == TOK_EOF) return NULL;
 
-    AstNode *expr = parse_expression(p, 0);
+    UAstNode *expr = parse_expression(p, 0);
     if (!expr || p->arena->oom) return &uparser_oom_sentinel;
 
     if (expr->kind == AST_ERROR) {
@@ -264,7 +264,7 @@ AstNode *uparse_next_statement(Parser *p) {
 
     /* Unexpected trailing token — discard the valid subtree per the
        "no partial ASTs on error" rule, emit a single error, and sync. */
-    AstNode *err = make_error(p, PARSE_UNEXPECTED_TOKEN,
+    UAstNode *err = make_error(p, PARSE_UNEXPECTED_TOKEN,
                               kErrorMessages[PARSE_UNEXPECTED_TOKEN],
                               term.line, term.col);
     if (!err || p->arena->oom) return &uparser_oom_sentinel;

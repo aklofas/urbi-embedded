@@ -627,7 +627,7 @@ static bool modules_equivalent(const UModule *a, const UModule *b) {
 
 /* Emit ast, serialize to a heap buffer, deserialize into a second module,
    assert round-trip equivalence, then clean up both modules and the arena. */
-static void roundtrip_ast(AstNode *ast, const char *source_name) {
+static void roundtrip_ast(UAstNode *ast, const char *source_name) {
     UModule src = {0};
     Arena arena;
     Emitter e;
@@ -662,15 +662,15 @@ static void roundtrip_ast(AstNode *ast, const char *source_name) {
 }
 
 UTEST(roundtrip_ast_int_literal) {
-    AstNode n = {0};
+    UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 42; n.line = 1;
     roundtrip_ast(&n, "test");
 }
 
 UTEST(roundtrip_ast_binary_1_plus_2) {
-    AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
-    AstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
-    AstNode bin = {0};
+    UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    UAstNode bin = {0};
     bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
     bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs;
     bin.line = 1;
@@ -678,8 +678,8 @@ UTEST(roundtrip_ast_binary_1_plus_2) {
 }
 
 UTEST(roundtrip_ast_unary_neg_5) {
-    AstNode operand = {0}; operand.kind = AST_INT; operand.u.i = 5; operand.line = 1;
-    AstNode neg = {0};
+    UAstNode operand = {0}; operand.kind = AST_INT; operand.u.i = 5; operand.line = 1;
+    UAstNode neg = {0};
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
     roundtrip_ast(&neg, "a/b/c.u");

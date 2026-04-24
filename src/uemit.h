@@ -52,7 +52,7 @@ void uemit_init(Emitter *e, UModule *module, Arena *arena, const char *source_na
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
    AST_ERROR nodes are rejected with EMIT_AST_ERROR.  On first error, the
    error latches; subsequent calls return it without touching the module. */
-EmitError uemit_statement(Emitter *e, AstNode *stmt);
+EmitError uemit_statement(Emitter *e, UAstNode *stmt);
 
 /* Finalize: emit OP_RET (if any statement was emitted) and record max_reg.
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first

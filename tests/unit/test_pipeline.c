@@ -44,7 +44,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     Parser p;
     uparse_init(&p, &lex, &arena);
 
-    AstNode *node;
+    UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) break;
         (void)uemit_statement(&e, node);
