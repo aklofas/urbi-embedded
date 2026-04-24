@@ -27,7 +27,43 @@ $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c | $(BUILDDIR)/tests/unit
 $(BUILDDIR)/src $(BUILDDIR)/tests/unit:
 	@mkdir -p $@
 
-test: $(LIB) $(TEST_OBJ)
+# --- REPL binary --------------------------------------------------------
+#
+# urbi — the REPL binary.  Builds from tools/urbi.c + vendored linenoise
+# against the library archive.  Never built on cross-compile targets
+# (tools/ depends on POSIX stdio / termios).
+
+TOOLS_SRC := tools/urbi.c tools/linenoise.c
+
+$(BUILDDIR)/tools:
+	@mkdir -p $@
+
+# linenoise is vendored third-party code; compile it separately with
+# -D_POSIX_C_SOURCE + -w to suppress upstream strict-C99 warnings
+# (variadic macro and strcasecmp declaration).  urbi.c is compiled
+# with the standard CFLAGS.
+$(BUILDDIR)/tools/linenoise.o: tools/linenoise.c | $(BUILDDIR)/tools
+	$(CC) -std=c99 -Os -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 \
+	    -w -Itools -c -o $@ $<
+
+$(BUILDDIR)/tools/urbi.o: tools/urbi.c | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -c -o $@ $<
+
+$(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
+
+urbi-bin: $(BUILDDIR)/urbi
+
+# --- Integration tests --------------------------------------------------
+#
+# test-integration runs the REPL shell harness against the built binary.
+# Folded into the existing `test` aggregate so it runs under every
+# sanitizer variant automatically.
+
+test-integration: $(BUILDDIR)/urbi
+	$(RUNNER_WRAPPER) tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
+
+test: $(LIB) $(TEST_OBJ) test-integration
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
 	$(RUNNER_WRAPPER) $(RUNNER)
 
@@ -240,4 +276,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration
