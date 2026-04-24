@@ -9,7 +9,7 @@
 
 #define UTEST(name) static void name(void)
 
-/* --- Decode (moved from test_chunk.c) --- */
+/* --- Decode (moved from test_module.c) --- */
 
 UTEST(decode_u_single_byte) {
     const uint8_t buf[] = {0x00};

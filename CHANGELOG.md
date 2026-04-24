@@ -10,7 +10,7 @@
   `docs/LANG-CONVENTIONS.md` §1.3: Int+Int wraps two's-complement,
   Int+Float promotes to Float, DIV always produces Float.
 - Persistent `UVM` struct with `init`/`run`/`destroy` lifecycle and a
-  VM-owned allocator hook distinct from the Chunk loader's allocator.
+  VM-owned allocator hook distinct from the UModule loader's allocator.
   The 128-byte fixed error-message buffer carries
   `source:line:`-prefixed diagnostics for `UVM_TYPE_ERROR` and
   `UVM_OOM`; freestanding-compilable with no dependency on `<stdio.h>`
@@ -31,7 +31,7 @@
   `line N:`, `instr N:`), and DiagWriter truncation. Coverage on
   `src/uvm.c` reaches 97% line.
 - `tests/fuzz/fuzz_vm.c` — libFuzzer harness deserializing arbitrary
-  bytes and executing any accepted chunk. 100K-iteration smoke run
+  bytes and executing any accepted module. 100K-iteration smoke run
   passes clean under ASan+UBSan.
 
 ### VM build and tooling
@@ -51,7 +51,7 @@
 ### Portability
 
 - Compiler front-end compiles under `-ffreestanding` on toolchains without a C library (e.g. `gcc-riscv64-unknown-elf` on Ubuntu). `uarena_init` and the internal stdlib-backed allocator pair are guarded behind `__STDC_HOSTED__`; `uarena_alloc` uses a local byte-fill in place of `memset`. Freestanding callers must use `uarena_init_ex` or `uarena_init_static`.
-- `uchunk.c` and `uemit.c` follow the same freestanding discipline: local `chunk_zero` / `chunk_memcpy` / `chunk_memcmp` helpers in place of `<string.h>`, `stdlib_alloc` and `vsnprintf`-based `set_errmsg` guarded behind `__STDC_HOSTED__`, pluggable allocator on `Chunk` via `UChunkAllocFn`. Chunks hot-loaded in embedded builds (future M6) use caller-supplied allocators.
+- `umodule.c` and `uemit.c` follow the same freestanding discipline: local `module_zero` / `module_memcpy` / `module_memcmp` helpers in place of `<string.h>`, `stdlib_alloc` and `vsnprintf`-based `set_errmsg` guarded behind `__STDC_HOSTED__`, pluggable allocator on `UModule` via `UModuleAllocFn`. UModules hot-loaded in embedded builds (future M6) use caller-supplied allocators.
 
 ### Tooling
 
@@ -62,10 +62,10 @@
 
 ### Added
 
-- Bytecode emitter walks AST nodes into a `Chunk`: register-based instruction stream (byte-aligned 8/8/8/8 encoding), single tagged constant pool with linear-scan dedup, Lua-5.5-style delta-encoded synclines with absolute-line checkpoints, stack-discipline register allocator with destination-reuse. 8-opcode M1 set (`LOADK`, `MOVE`, `ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `RET`). Reserved opcode slots 8–255 for M2+ additions (locals, control flow, calls, reactive primitives).
+- Bytecode emitter walks AST nodes into a `UModule`: register-based instruction stream (byte-aligned 8/8/8/8 encoding), single tagged constant pool with linear-scan dedup, Lua-5.5-style delta-encoded synclines with absolute-line checkpoints, stack-discipline register allocator with destination-reuse. 8-opcode M1 set (`LOADK`, `MOVE`, `ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `RET`). Reserved opcode slots 8–255 for M2+ additions (locals, control flow, calls, reactive primitives).
 - `.urb` on-disk format: 24-byte header (magic `"URBI"` + 16·major+minor version + 6-byte FTP/paste-corruption canary + 8-byte flavor descriptor) followed by varint-delimited sections (metadata, constants, 4-byte-aligned instruction stream, delta synclines). Per-target flavor pinned at compile time (`URBI_INT_WIDTH` / `URBI_FLOAT_TYPE` / `URBI_INSTR_WIDTH` / `URBI_ENDIANNESS`); loader refuses mismatches with field-specific diagnostics.
 - Loader verifier sweep after byte-level decode: opcode range, register range, `LOADK` Bx bounds, terminal `OP_RET`, abs-line pc monotonicity, 4-byte instruction alignment. `OP_RET` B operand and `OP_MOVE`/`OP_NEG` C operand intentionally not enforced (unused bytes, no runtime effect).
-- Emitter and chunk APIs in new headers `uemit.h` / `uchunk.h`: `Emitter` accumulator (init / statement / finish), `Chunk` struct, `uchunk_deserialize`, `uchunk_serialize`, `uemit_disassemble`, error-name tables. Compiler-internal — `urbi.h` unchanged.
+- Emitter and module APIs in new headers `uemit.h` / `umodule.h`: `Emitter` accumulator (init / statement / finish), `UModule` struct, `umodule_deserialize`, `umodule_serialize`, `uemit_disassemble`, error-name tables. Compiler-internal — `urbi.h` unchanged.
 - Streaming Pratt parser consumes the lexer's token stream and produces one `AstNode` per statement (integer literal, identifier, unary, binary, error). Recursive-descent statements + precedence climber for `+ - * /` with parens, unary `+ -` (plus is parse-time no-op), panic-mode recovery via `|`, in-stream `AST_ERROR` nodes, OOM sentinel path. Public parser API in `uparse.h`: `Parser`, `uparse_init`, `uparse_next_statement`, `uparse_error_name`.
 - Internal chunk-list bump-allocator arena (`uarena.h` / `uarena.c`) backing the AST and emit arenas. Three init variants — `uarena_init` (stdlib), `uarena_init_ex` (pluggable allocator for embedded), `uarena_init_static` (fixed caller buffer for freestanding) — plus `uarena_alloc`, `uarena_reset`, `uarena_destroy`. No copy between chunks; pointers stable across growth.
 - Lexer scans integer literals (decimal, hex, binary, octal with underscores), identifiers, single-character operators (`+ - * /`), parentheses, and the statement separator `|`. Full synclines on every token.
@@ -74,6 +74,14 @@
 
 ### Refactoring
 
+- Bytecode `Chunk` renamed to `UModule` across the codebase, and the
+  `src/uchunk.{c,h}` + `tests/unit/test_chunk.c` module renamed to
+  `src/umodule.{c,h}` + `tests/unit/test_module.c`. The type is the
+  compilation-unit record — instructions + constants + synclines +
+  metadata — so the new name reflects what it actually is. `UChunkLoadError`
+  → `UModuleLoadError`, `UChunkAllocFn` → `UModuleAllocFn`, `uchunk_*`
+  → `umodule_*`. The `ULOAD_*` error tags and the arena's internal
+  chunk-list terminology are unchanged.
 - `UConst` renamed to `UValue` across sources, tests, and internals docs. The
   type has always been the universal tagged-value cell — constants-pool entry,
   register-frame slot, arithmetic operand, `uvm_run` result — so the new name
@@ -81,11 +89,11 @@
   unchanged (they already wore the `val` prefix); `uconst_to_double` /
   `uconst_set_float` become `uvalue_to_double` / `uvalue_set_float`.
 - LEB128 varint encode/decode extracted into a standalone freestanding module
-  `uvarint.{c,h}` with its own error enum (`UVarintError`). `uchunk.c` now
+  `uvarint.{c,h}` with its own error enum (`UVarintError`). `umodule.c` now
   consumes it via two translation wrappers that map `UVarintError` into
-  `UChunkLoadError` at the boundary; `uemit.c` drops the four private `static`
+  `UModuleLoadError` at the boundary; `uemit.c` drops the four private `static`
   varint helpers and consumes the module directly. The test-only header
-  `src/uchunk_internal.h` is retired; varint coverage moves into a new
+  `src/umodule_internal.h` is retired; varint coverage moves into a new
   `test_varint_suite` (11 cases) that exercises encode and decode directly,
   replacing the indirect serialize→deserialize-only encode coverage of prior
   state.

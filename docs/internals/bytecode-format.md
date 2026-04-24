@@ -2,13 +2,13 @@
 
 ## Overview
 
-`.urb` is the on-disk serialized form of a `Chunk` — the interface between the
+`.urb` is the on-disk serialized form of a `UModule` — the interface between the
 front end (emitter) and the back end (VM). The format is pinned to the v1.0
 flavor descriptor in the header; the loader rejects any field mismatch with a
 field-specific diagnostic. No run-time coercion is attempted.
 
-Source: `src/uchunk.c` (deserializer + verifier), `src/uemit.c` (serializer),
-`src/uchunk.h` (structs, enums, error codes).
+Source: `src/umodule.c` (deserializer + verifier), `src/uemit.c` (serializer),
+`src/umodule.h` (structs, enums, error codes).
 
 ---
 
@@ -50,14 +50,14 @@ The loader accepts exactly these combinations:
 
 Any other combination produces `ULOAD_FLAVOR_MISMATCH`.
 
-The compile-time macros that pin these values are defined in `src/uchunk.h`:
+The compile-time macros that pin these values are defined in `src/umodule.h`:
 `URBI_INT_WIDTH`, `URBI_FLOAT_TYPE`, `URBI_INSTR_WIDTH`, `URBI_ENDIANNESS`.
 
 ---
 
 ## Sections
 
-After the 24-byte header the chunk body is a sequence of sections in fixed
+After the 24-byte header the module body is a sequence of sections in fixed
 order. All counts and length prefixes use unsigned LEB128 varints except where
 noted. All signed integers use zigzag LEB128 (see [Appendix](#appendix-varint-encoding)).
 
@@ -70,7 +70,7 @@ noted. All signed integers use zigzag LEB128 (see [Appendix](#appendix-varint-en
 | `source_name`    | raw bytes          | UTF-8, not NUL-terminated on wire; loader appends NUL when allocating |
 
 When `source_name_len` is 0, no bytes follow and `source_name` is NULL in
-the loaded `Chunk`.
+the loaded `UModule`.
 
 ### Constants
 
@@ -153,7 +153,7 @@ Absolute-line checkpoints: `n_abs_lines=1`, record `(pc=0, line=10)`.
 
 ## Loader Verification
 
-`uchunk_deserialize` checks the following. On the first failed check it
+`umodule_deserialize` checks the following. On the first failed check it
 stops, sets the diagnostic string, and returns the indicated error code.
 
 **Header checks** (error code `ULOAD_BAD_MAGIC` or `ULOAD_UNSUPPORTED_VERSION`
@@ -199,7 +199,7 @@ or `ULOAD_FLAVOR_MISMATCH`):
 
 On success the function returns `ULOAD_OK`.
 
-Error code names are returned by `uchunk_load_error_name(UChunkLoadError)`.
+Error code names are returned by `umodule_load_error_name(UModuleLoadError)`.
 
 ---
 

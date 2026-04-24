@@ -205,7 +205,7 @@ alignment requirement for any direct-memory dispatch or future JIT code emission
 
 **Decision.** `OP_LOADK` uses the ABx instruction form. The destination register
 is encoded in the 8-bit A field. The constant-pool index is encoded in the 16-bit
-Bx field, supporting up to 65 536 constants per chunk.
+Bx field, supporting up to 65 536 constants per module.
 
 **Alternatives considered.**
 
@@ -213,7 +213,7 @@ Bx field, supporting up to 65 536 constants per chunk.
   0–255; when the index exceeds 255, emit a two-instruction sequence: `LOADKX`
   (which reads the next instruction word as a full constant index) followed by the
   actual `OP_LOADK`. Mirrors Lua 5.4's overflow mechanism. Rejected: 256 constants
-  per chunk is too small for real programs; the two-instruction overhead on every
+  per module is too small for real programs; the two-instruction overhead on every
   out-of-range constant doubles the decode cost for a common case.
 
 - *Varint-encoded constant index.* Pack the index using a variable-length encoding
@@ -227,7 +227,7 @@ Bx field, supporting up to 65 536 constants per chunk.
 The Bx form provides 65 536 index slots using the space that B and C occupy in
 the ABC form. Real programs — even small ones — accumulate constants quickly:
 every distinct integer literal, every string, every float literal is a pool
-entry. Deduplication reduces the count, but a chunk that processes an enum with
+entry. Deduplication reduces the count, but a module that processes an enum with
 hundreds of values or a lookup table with dozens of float keys can easily exceed
 256 constants without any pathological structure.
 
@@ -235,7 +235,7 @@ The ABx form resolves this with no instruction overhead. One `OP_LOADK` per
 constant load, one 16-bit index, the same 4-byte instruction width as every
 other opcode. The decode cost is identical to the ABC form.
 
-**Implications.** Constant pools are bounded at 65 536 entries per chunk. In
+**Implications.** Constant pools are bounded at 65 536 entries per module. In
 practice this ceiling is unlikely to be hit in M1–M3 scope. If it ever becomes
 binding, a `LOADKX` overflow opcode remains a v1.x option: the encoding
 reserves the opcode byte space, and the ABx form at full 16-bit range already
@@ -261,8 +261,8 @@ stream alone.
 
 - *Uncompressed parallel array.* One 4-byte `(line, col)` pair per instruction.
   Simple to read; direct random access by PC. Rejected: at a 10 000-instruction
-  chunk, this costs 40 KB per chunk. For a format targeting embedded systems
-  where the bytecode section lives in flash, 40 KB of debug overhead per chunk
+  module, this costs 40 KB per module. For a format targeting embedded systems
+  where the bytecode section lives in flash, 40 KB of debug overhead per module
   is not acceptable.
 
 - *Uniform 16-bit delta.* Store a 16-bit signed delta per instruction. Handles
@@ -309,21 +309,21 @@ the bootstrap record at PC 0 and the end of the function.
 
 ---
 
-### Pluggable allocator on `Chunk` via `UChunkAllocFn`
+### Pluggable allocator on `UModule` via `UModuleAllocFn`
 
 **Locked:** 2026-04-22
 **Status:** active
 **Reference docs:**
 [`internals/bytecode-format.md` — Sections](bytecode-format.md#sections),
-`src/uchunk.h`
+`src/umodule.h`
 
-**Decision.** The chunk deserializer (`uchunk_deserialize`) accepts a
-realloc-semantics allocator callback `UChunkAllocFn`. The host passes in a
+**Decision.** The module deserializer (`umodule_deserialize`) accepts a
+realloc-semantics allocator callback `UModuleAllocFn`. The host passes in a
 function pointer matching `void *(*)(void *ptr, size_t nbytes, void *ud)`.
 When `nbytes` is zero, the call is a free. When `ptr` is null and `nbytes` is
 nonzero, the call is a malloc. Otherwise it is a realloc. The callback and a
-user-data pointer (`ud`) are stored in the `Chunk` struct and reused for the
-chunk's lifetime, including `uchunk_destroy`.
+user-data pointer (`ud`) are stored in the `UModule` struct and reused for the
+module's lifetime, including `umodule_destroy`.
 
 **Alternatives considered.**
 
@@ -334,19 +334,19 @@ chunk's lifetime, including `uchunk_destroy`.
   buffer; hard-wiring `malloc` makes the loader unusable without a hosted libc.
 
 - *Separate static-buffer and stdlib variants, like `uarena`.* Provide
-  `uchunk_deserialize_static(buf, size, ...)` and
-  `uchunk_deserialize_stdlib(...)` as two entry points. The arena module uses
-  this shape to manage the `__STDC_HOSTED__` boundary. Rejected for chunks: the
-  arena is initialized once and then used in place; a chunk loaded at runtime
+  `umodule_deserialize_static(buf, size, ...)` and
+  `umodule_deserialize_stdlib(...)` as two entry points. The arena module uses
+  this shape to manage the `__STDC_HOSTED__` boundary. Rejected for modules: the
+  arena is initialized once and then used in place; a module loaded at runtime
   on an embedded target is read from flash or a communication interface, and the
-  number of chunks loaded is not known at compile time. A static-buffer variant
-  would require the host to size a single buffer for the largest chunk it will
+  number of modules loaded is not known at compile time. A static-buffer variant
+  would require the host to size a single buffer for the largest module it will
   ever load — an impractical constraint for a runtime that may receive code over
   a remote REPL or load bytecode from a file system.
 
 **Why this one.**
 
-The callback approach puts the host in control of every allocation the chunk
+The callback approach puts the host in control of every allocation the module
 loader performs without requiring the loader to know anything about the host's
 memory subsystem. A FreeRTOS target wires in `pvPortMalloc` / `vPortFree`; a
 pool-allocator target wires in its pool; a hosted target wires in
@@ -354,22 +354,22 @@ pool-allocator target wires in its pool; a hosted target wires in
 
 The realloc-semantics callback is also how the upstream allocator hook
 (`urbi_set_allocator`) at the VM level will work. Adopting the same shape in
-the chunk loader means the two APIs compose naturally: a host that sets a
+the module loader means the two APIs compose naturally: a host that sets a
 custom allocator at VM init can pass the same callback down through bytecode
 loading without any adaptation.
 
-The callback is stored on the `Chunk` struct so that `uchunk_destroy` can free
-the chunk's sections through the same allocator that allocated them. This is
+The callback is stored on the `UModule` struct so that `umodule_destroy` can free
+the module's sections through the same allocator that allocated them. This is
 essential on embedded targets where the allocator is stateful — freeing through
 a different allocator than the one used to allocate is a hard error.
 
 **Implications.** Hosts that want to lock down their heap after startup — a
 common embedded pattern where all dynamic allocation happens at boot and none
 happens thereafter — can wire in an allocator that panics on any call after a
-lock flag is set. Because every chunk allocation goes through the callback,
+lock flag is set. Because every module allocation goes through the callback,
 this pattern is enforced mechanically rather than by audit. The same property
 holds for certified builds that must demonstrate no dynamic allocation during
-normal operation: load all required chunks at startup through the allocator,
+normal operation: load all required modules at startup through the allocator,
 lock the heap, run. The allocator callback records when locking was requested
 and asserts if a post-lock allocation is attempted.
 
@@ -382,7 +382,7 @@ and asserts if a post-lock allocation is attempted.
 **Reference docs:**
 [`internals/bytecode-format.md` — Header (24 bytes)](bytecode-format.md#header-24-bytes),
 [`../LANG-CONVENTIONS.md` §1.1](../LANG-CONVENTIONS.md#11-numeric-types),
-`src/uchunk.h`
+`src/umodule.h`
 
 **Decision.** Every urbi-embedded target — 64-bit Linux, 32-bit Cortex-M,
 RISC-V rv32imc — uses the same 16-byte `UValue` tagged struct for both
@@ -437,4 +437,4 @@ touching the bit-packing scheme.
 - `2026-04-23-urbi-embedded-vm-design.md` §2.1 — full rationale with worked
   examples
 - `../LANG-CONVENTIONS.md` §1.1 — Integer = i64 decision
-- `src/uchunk.h` — `UValue` struct definition
+- `src/umodule.h` — `UValue` struct definition

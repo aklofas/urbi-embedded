@@ -2,14 +2,14 @@
 /* End-to-end pipeline tests: lex → parse → emit → VM.
  * Covers VM spec §11 success criterion 7.
  * This is the first test file that exercises the full pipeline
- * composition rather than hand-fabricated Chunks.
+ * composition rather than hand-fabricated UModules.
  *
  * Note: the M1 lexer produces only integer literals (TOK_INT); there is
  * no float-literal token.  Float results arise from division (OP_DIV always
  * produces Float) or from mixed-type arithmetic where one operand is already
  * Float — neither of which is reachable from source text alone at M1.
  * The spec §11 criterion "1 + 2.0 → Float 3.0" therefore cannot be tested
- * through the lexer; it is covered by hand-fabricated Chunk tests in
+ * through the lexer; it is covered by hand-fabricated UModule tests in
  * test_vm.c (vm_add_int_float_promotes).  The three source-text cases
  * exercised here are those achievable with the M1 grammar. */
 
@@ -17,7 +17,7 @@
 
 #include "uarena.h"
 #include "uast.h"
-#include "uchunk.h"
+#include "umodule.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
@@ -37,9 +37,9 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     Arena arena;
     uarena_init(&arena, 4096);
 
-    Chunk chunk = {0};
+    UModule module = {0};
     Emitter e;
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     Parser p;
     uparse_init(&p, &lex, &arena);
@@ -60,11 +60,11 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     if (uemit_finish(&e) == EMIT_OK) {
         UVM vm;
         uvm_init(&vm, NULL, NULL);
-        vm_rc = uvm_run(&vm, &chunk, out);
+        vm_rc = uvm_run(&vm, &module, out);
         uvm_destroy(&vm);
     }
 
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
     uarena_destroy(&arena);
     return vm_rc;
 }

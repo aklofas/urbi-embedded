@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* LEB128 varint encode/decode (unsigned + zigzag-signed).  Freestanding.
-   Used by uchunk (deserialize) and uemit (serialize).  No allocator, no
+   Used by umodule (deserialize) and uemit (serialize).  No allocator, no
    stdlib dependencies — only byte math over caller-supplied buffers. */
 
 #ifndef URBI_UVARINT_H
@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /* Decode outcome. Translate to a caller-specific error domain at the
-   boundary (see uchunk.c for the UChunkLoadError mapping). */
+   boundary (see umodule.c for the UModuleLoadError mapping). */
 typedef enum {
     UVARINT_OK = 0,
     UVARINT_TRUNCATED,       /* buffer ended before the varint completed */

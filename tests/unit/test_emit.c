@@ -10,12 +10,12 @@
 
 #define UTEST(name) static void name(void)
 
-UTEST(uemit_init_zeros_emitter_and_does_not_touch_chunk) {
-    Chunk chunk = {0};
+UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     Emitter e;
-    uemit_init(&e, &chunk, &arena, "repl");
+    uemit_init(&e, &module, &arena, "repl");
 
     UASSERT_EQ((uint8_t)0, e.next_reg);
     UASSERT_EQ((uint8_t)0, e.max_reg_seen);
@@ -23,34 +23,34 @@ UTEST(uemit_init_zeros_emitter_and_does_not_touch_chunk) {
     UASSERT(e.any_stmt_emitted == false);
     UASSERT(e.finished == false);
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((Chunk *)&chunk, e.chunk);
+    UASSERT_EQ((UModule *)&module, e.module);
     UASSERT_EQ((Arena *)&arena, e.arena);
-    UASSERT_EQ((size_t)0, chunk.instr_count);
+    UASSERT_EQ((size_t)0, module.instr_count);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
-UTEST(uemit_finish_on_empty_chunk_emits_nothing_and_returns_ok) {
-    Chunk chunk = {0};
+UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     Emitter e;
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
     EmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(e.finished == true);
-    UASSERT_EQ((size_t)0, chunk.instr_count);  /* no RET emitted when no statements */
-    UASSERT_EQ((uint8_t)0, chunk.max_reg);
+    UASSERT_EQ((size_t)0, module.instr_count);  /* no RET emitted when no statements */
+    UASSERT_EQ((uint8_t)0, module.max_reg);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     Emitter e;
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
     (void)uemit_finish(&e);
     EmitError second = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, second);              /* finish is idempotent-OK */
@@ -60,7 +60,7 @@ UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
     dummy.u.i = 7;
     UASSERT_EQ(EMIT_FINISHED, uemit_statement(&e, &dummy));
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(uemit_error_name_returns_sensible_strings) {
@@ -70,19 +70,19 @@ UTEST(uemit_error_name_returns_sensible_strings) {
 }
 
 /* Helper: drive one statement through init/statement/finish and return the
-   resulting EmitError.  chunk and arena are caller-owned; call uchunk_destroy
+   resulting EmitError.  module and arena are caller-owned; call umodule_destroy
    and uarena_destroy when done. */
-static EmitError emit_single_statement(Chunk *chunk, Arena *arena, AstNode *ast) {
+static EmitError emit_single_statement(UModule *module, Arena *arena, AstNode *ast) {
     Emitter e;
     EmitError rc;
-    uemit_init(&e, chunk, arena, "test");
+    uemit_init(&e, module, arena, "test");
     rc = uemit_statement(&e, ast);
     if (rc != EMIT_OK) return rc;
     return uemit_finish(&e);
 }
 
 UTEST(emit_ast_int_single_literal_loadk_then_ret) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     AstNode n = {0};
     uarena_init(&arena, 0);
@@ -91,37 +91,37 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
     n.line = 1;
     n.col  = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
 
     /* Two instructions: LOADK R0 K0 ; RET R0 */
-    UASSERT_EQ((size_t)2, chunk.instr_count);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[0]));
-    UASSERT_EQ((uint16_t)0,   uinstr_bx(chunk.instructions[0]));
-    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(chunk.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[1]));
+    UASSERT_EQ((size_t)2, module.instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
 
     /* Constant pool: one UVAL_INT entry, value 42 */
-    UASSERT_EQ((size_t)1,      chunk.const_count);
-    UASSERT_EQ((uint8_t)UVAL_INT, chunk.constants[0].kind);
-    UASSERT_EQ((int64_t)42,    chunk.constants[0].v.i);
-    UASSERT_EQ((uint8_t)0,     chunk.max_reg);
+    UASSERT_EQ((size_t)1,      module.const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, module.constants[0].kind);
+    UASSERT_EQ((int64_t)42,    module.constants[0].v.i);
+    UASSERT_EQ((uint8_t)0,     module.max_reg);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     /* Three statements: literal 1, literal 1, literal 2.
        Linear-scan dedup should yield a pool of size 2 (not 3). */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     Emitter e;
     AstNode a = {0};
     AstNode b = {0};
     AstNode c = {0};
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, "test");
+    uemit_init(&e, &module, &arena, "test");
 
     a.kind = AST_INT; a.u.i = 1; a.line = 1;
     b.kind = AST_INT; b.u.i = 1; b.line = 1;
@@ -133,16 +133,16 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Pool must have exactly 2 entries: 1 (deduped) and 2. */
-    UASSERT_EQ((size_t)2,   chunk.const_count);
-    UASSERT_EQ((int64_t)1,  chunk.constants[0].v.i);
-    UASSERT_EQ((int64_t)2,  chunk.constants[1].v.i);
+    UASSERT_EQ((size_t)2,   module.const_count);
+    UASSERT_EQ((int64_t)1,  module.constants[0].v.i);
+    UASSERT_EQ((int64_t)2,  module.constants[1].v.i);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_ast_binary_1_plus_2) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
@@ -155,23 +155,23 @@ UTEST(emit_ast_binary_1_plus_2) {
     bin.u.binary.rhs = &rhs;
     bin.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
     /* LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0 */
-    UASSERT_EQ((size_t)4, chunk.instr_count);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[0]));
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[1]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(chunk.instructions[1]));
-    UASSERT_EQ((int)OP_ADD, (int)uinstr_op(chunk.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_b(chunk.instructions[2]));
-    UASSERT_EQ((uint8_t)1, uinstr_c(chunk.instructions[2]));
-    UASSERT_EQ((int)OP_RET, (int)uinstr_op(chunk.instructions[3]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(chunk.instructions[3]));
-    UASSERT_EQ((uint8_t)1, chunk.max_reg);
+    UASSERT_EQ((size_t)4, module.instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[1]));
+    UASSERT_EQ((int)OP_ADD, (int)uinstr_op(module.instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_c(module.instructions[2]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[3]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[3]));
+    UASSERT_EQ((uint8_t)1, module.max_reg);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
@@ -182,7 +182,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
     };
     size_t i;
     for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
-        Chunk chunk = {0};
+        UModule module = {0};
         Arena arena;
         uarena_init(&arena, 0);
         AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
@@ -193,16 +193,16 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         bin.u.binary.lhs = &lhs;
         bin.u.binary.rhs = &rhs;
         bin.line = 1;
-        UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
-        UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(chunk.instructions[2]));
+        UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
+        UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
         uarena_destroy(&arena);
-        uchunk_destroy(&chunk);
+        umodule_destroy(&module);
     }
 }
 
 UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
     /* (1+2)+(3+4) — 6 AstNodes.  Destination-reuse keeps max_reg==1. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
@@ -220,20 +220,20 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
     top.kind = AST_BINARY; top.u.binary.op = BOP_ADD;
     top.u.binary.lhs = &ab; top.u.binary.rhs = &cd; top.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &top));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &top));
     /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
        child still needs its own register simultaneously.  For the two-level
        tree (ab)+(cd) the peak is R2: emitting `d` requires R0(ab-lhs),
        R1(cd-lhs), R2(d) live at once before the inner free_reg. */
-    UASSERT_EQ((uint8_t)2, chunk.max_reg);
+    UASSERT_EQ((uint8_t)2, module.max_reg);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     /* AST_UNARY(UOP_NEG, AST_INT 5) -> LOADK R0 K0 ; NEG R0 R0 ; RET R0 */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
@@ -248,26 +248,26 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     unary.u.unary.operand = &operand;
     unary.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &unary));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &unary));
 
-    UASSERT_EQ((size_t)3, chunk.instr_count);
+    UASSERT_EQ((size_t)3, module.instr_count);
 
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(chunk.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[0]));
-    UASSERT_EQ((uint16_t)0,   uinstr_bx(chunk.instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
 
-    UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(chunk.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_b(chunk.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_c(chunk.instructions[1]));
+    UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(module.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_b(module.instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_c(module.instructions[1]));
 
-    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(chunk.instructions[2]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(chunk.instructions[2]));
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[2]));
+    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[2]));
 
-    UASSERT_EQ((uint8_t)0,    chunk.max_reg);
+    UASSERT_EQ((uint8_t)0,    module.max_reg);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 /* Custom allocator that fails after `fails_after` successful calls.
@@ -283,37 +283,37 @@ static void *limit_alloc(void *ptr, size_t nbytes, void *ud) {
 }
 
 UTEST(emit_ast_error_returns_emit_ast_error) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     AstNode err = {0};
     err.kind = AST_ERROR;
     err.u.err.code = 1;
     err.u.err.message = "parser error";
-    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&chunk, &arena, &err));
+    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, &err));
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     AstNode id = {0};
     id.kind = AST_IDENT;
     id.u.ident.start = "x";
     id.u.ident.len = 1;
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&chunk, &arena, &id));
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&module, &arena, &id));
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     AstNode err = {0};
     err.kind = AST_ERROR;
@@ -329,52 +329,52 @@ UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
 
     UASSERT_EQ(EMIT_AST_ERROR, uemit_finish(&e));
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     LimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 0;
-    chunk.alloc_fn = limit_alloc;
-    chunk.alloc_ud = &la;
+    module.alloc_fn = limit_alloc;
+    module.alloc_ud = &la;
 
     AstNode n = {0};
     n.kind = AST_INT;
     n.u.i = 1;
-    UASSERT_EQ(EMIT_OOM, emit_single_statement(&chunk, &arena, &n));
+    UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &n));
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
     AstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 10;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
-    UASSERT_EQ((size_t)2, chunk.instr_count);  /* LOADK ; RET */
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ((size_t)2, module.instr_count);  /* LOADK ; RET */
     /* First instruction has INT8_MIN sentinel delta (triggers abs_line lookup). */
-    UASSERT_EQ((int8_t)-128, chunk.line_deltas[0]);
-    UASSERT_EQ((size_t)1, chunk.abs_line_count);
-    UASSERT_EQ((uint32_t)0,  chunk.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)10, chunk.abs_lines[0].line);
+    UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
+    UASSERT_EQ((size_t)1, module.abs_line_count);
+    UASSERT_EQ((uint32_t)0,  module.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, module.abs_lines[0].line);
     /* Second instruction (RET) is on the same line, delta 0. */
-    UASSERT_EQ((int8_t)0, chunk.line_deltas[1]);
+    UASSERT_EQ((int8_t)0, module.line_deltas[1]);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
@@ -384,21 +384,21 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
 
     /* Two LOADKs and a RET.  First LOADK at line 1 — abs checkpoint.
        Second LOADK at line 3 — delta = +2 stored inline. */
-    UASSERT_EQ((size_t)3, chunk.instr_count);
-    UASSERT_EQ((int8_t)-128, chunk.line_deltas[0]);
-    UASSERT_EQ((int8_t)2,    chunk.line_deltas[1]);
-    UASSERT_EQ((int8_t)0,    chunk.line_deltas[2]);     /* RET shares line with last instr */
-    UASSERT_EQ((size_t)1, chunk.abs_line_count);
+    UASSERT_EQ((size_t)3, module.instr_count);
+    UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    module.line_deltas[1]);
+    UASSERT_EQ((int8_t)0,    module.line_deltas[2]);     /* RET shares line with last instr */
+    UASSERT_EQ((size_t)1, module.abs_line_count);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
@@ -406,35 +406,35 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
-    UASSERT_EQ((size_t)2, chunk.abs_line_count);
-    UASSERT_EQ((uint32_t)1,   chunk.abs_lines[0].line);
-    UASSERT_EQ((uint32_t)500, chunk.abs_lines[1].line);
+    UASSERT_EQ((size_t)2, module.abs_line_count);
+    UASSERT_EQ((uint32_t)1,   module.abs_lines[0].line);
+    UASSERT_EQ((uint32_t)500, module.abs_lines[1].line);
     /* pc=0 first abs_line; pc=1 second abs_line (second LOADK). */
-    UASSERT_EQ((uint32_t)0, chunk.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)1, chunk.abs_lines[1].pc);
-    UASSERT_EQ((int8_t)-128, chunk.line_deltas[1]);        /* sentinel */
+    UASSERT_EQ((uint32_t)0, module.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, module.abs_lines[1].pc);
+    UASSERT_EQ((int8_t)-128, module.line_deltas[1]);        /* sentinel */
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
-UTEST(disassemble_empty_chunk_produces_short_placeholder) {
-    Chunk chunk = {0};
+UTEST(disassemble_empty_module_produces_short_placeholder) {
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
     (void)uemit_finish(&e);
 
     char buf[256];
-    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "(empty)") != NULL || n <= 32);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(disassemble_1_plus_2_produces_recognizable_text) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     AstNode lhs = {0};
     AstNode rhs = {0};
@@ -444,33 +444,33 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
     bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
     bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs; bin.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
 
     char buf[512];
-    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "LOADK") != NULL);
     UASSERT(strstr(buf, "ADD")   != NULL);
     UASSERT(strstr(buf, "RET")   != NULL);
     UASSERT(strstr(buf, "R0")    != NULL);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     AstNode n = {0};
     uarena_init(&arena, 0);
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
 
     char buf[8];
-    size_t written = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t written = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(written < sizeof buf);
     UASSERT_EQ('\0', buf[sizeof buf - 1]);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 /* --- Additional coverage tests --- */
@@ -491,7 +491,7 @@ UTEST(uemit_error_name_covers_all_codes) {
 
 UTEST(disassemble_with_neg_instruction_shows_neg) {
     /* Emit a NEG instruction so the OP_NEG case in uemit_disassemble is hit. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
@@ -501,59 +501,59 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &neg));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &neg));
 
     char buf[256];
-    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "NEG") != NULL);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     /* Use a constant value >= 128 so that varint_write_u and varint_write_zz
        emit multi-byte (continuation-bit) encoded varints. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
     AstNode n = {0};
     n.kind = AST_INT; n.u.i = 1000; n.line = 1;  /* 1000 > 63, zigzag = 2000 > 127 */
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&chunk, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
 
     /* Serialize and round-trip to confirm multi-byte varint path works. */
-    ptrdiff_t need = uchunk_serialize(&chunk, NULL, 0);
+    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
-    ptrdiff_t wrote = uchunk_serialize(&chunk, buf, (size_t)need);
+    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
-    Chunk dst = {0};
+    UModule dst = {0};
     char errmsg[128];
-    UChunkLoadError rc = uchunk_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((size_t)1, dst.const_count);
     UASSERT_EQ((int64_t)1000, dst.constants[0].v.i);
 
     free(buf);
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
-    uchunk_destroy(&dst);
+    umodule_destroy(&module);
+    umodule_destroy(&dst);
 }
 
-UTEST(disassemble_chunk_with_all_arithmetic_opcodes) {
+UTEST(disassemble_module_with_all_arithmetic_opcodes) {
     /* Emit ADD, SUB, MUL, DIV to exercise all opname() paths.
        Also exercises the "; constants:" section of the disassembler
-       which is reached by any instruction chunk. */
-    Chunk chunk = {0};
+       which is reached by any instruction module. */
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     /* Each statement emits one binary op. */
     AstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
@@ -576,7 +576,7 @@ UTEST(disassemble_chunk_with_all_arithmetic_opcodes) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     char buf[1024];
-    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "SUB")  != NULL);
     UASSERT(strstr(buf, "MUL")  != NULL);
@@ -584,59 +584,59 @@ UTEST(disassemble_chunk_with_all_arithmetic_opcodes) {
     UASSERT(strstr(buf, "RET")  != NULL);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
-UTEST(serialize_chunk_with_float_constant_round_trips) {
-    /* Manually build a chunk with a UVAL_FLOAT constant and serialize/deserialize
-       it to exercise the UVAL_FLOAT branches in chunk_wire_size and uchunk_serialize. */
-    Chunk chunk = {0};
+UTEST(serialize_module_with_float_constant_round_trips) {
+    /* Manually build a module with a UVAL_FLOAT constant and serialize/deserialize
+       it to exercise the UVAL_FLOAT branches in module_wire_size and umodule_serialize. */
+    UModule module = {0};
 
     /* Manually insert a UVAL_FLOAT constant (bypassing the emitter, which only
        produces INT constants at M1). */
-    chunk.constants = (UValue *)malloc(sizeof(UValue));
-    chunk.const_cap = 1;
-    chunk.const_count = 1;
-    chunk.constants[0].kind = (uint8_t)UVAL_FLOAT;
+    module.constants = (UValue *)malloc(sizeof(UValue));
+    module.const_cap = 1;
+    module.const_count = 1;
+    module.constants[0].kind = (uint8_t)UVAL_FLOAT;
     {
         int p;
-        for (p = 0; p < 7; p++) chunk.constants[0]._pad[p] = 0;
+        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
     }
 #if URBI_FLOAT_TYPE == 8
-    chunk.constants[0].v.f = 2.718281828;
+    module.constants[0].v.f = 2.718281828;
 #else
-    chunk.constants[0].v.f = 2.718f;
+    module.constants[0].v.f = 2.718f;
 #endif
 
-    /* Add a RET instruction and synclines so the chunk is valid. */
-    chunk.instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    chunk.instr_cap = 1;
-    chunk.instr_count = 1;
-    chunk.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    chunk.line_deltas = (int8_t *)malloc(sizeof(int8_t));
-    chunk.line_deltas[0] = (int8_t)-128;
-    chunk.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
-    chunk.abs_line_cap = 1;
-    chunk.abs_line_count = 1;
-    chunk.abs_lines[0].pc = 0;
-    chunk.abs_lines[0].line = 1;
-    chunk.max_reg = 0;
+    /* Add a RET instruction and synclines so the module is valid. */
+    module.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    module.instr_cap = 1;
+    module.instr_count = 1;
+    module.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    module.line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    module.line_deltas[0] = (int8_t)-128;
+    module.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
+    module.abs_line_cap = 1;
+    module.abs_line_count = 1;
+    module.abs_lines[0].pc = 0;
+    module.abs_lines[0].line = 1;
+    module.max_reg = 0;
 
-    ptrdiff_t need = uchunk_serialize(&chunk, NULL, 0);
+    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
-    ptrdiff_t wrote = uchunk_serialize(&chunk, buf, (size_t)need);
+    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
-    Chunk dst = {0};
+    UModule dst = {0};
     char errmsg[128];
-    UChunkLoadError rc = uchunk_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((size_t)1, dst.const_count);
     UASSERT_EQ((uint8_t)UVAL_FLOAT, dst.constants[0].kind);
 
-    /* Disassemble the float chunk — exercises the ";   K%zu = ?" fallback
+    /* Disassemble the float module — exercises the ";   K%zu = ?" fallback
        in the constant-pool dump (FLOAT is not UVAL_INT). */
     char disbuf[256];
     size_t disn = uemit_disassemble(&dst, disbuf, sizeof disbuf);
@@ -644,61 +644,61 @@ UTEST(serialize_chunk_with_float_constant_round_trips) {
     UASSERT(strstr(disbuf, "K0 = ?") != NULL);
 
     free(buf);
-    uchunk_destroy(&chunk);
-    uchunk_destroy(&dst);
+    umodule_destroy(&module);
+    umodule_destroy(&dst);
 }
 
-UTEST(disassemble_chunk_with_move_instruction_shows_move) {
+UTEST(disassemble_module_with_move_instruction_shows_move) {
     /* OP_MOVE falls through to the default: case in uemit_disassemble,
        calling opname(OP_MOVE) — covers that branch in opname(). */
-    Chunk chunk = {0};
+    UModule module = {0};
     const int64_t consts[] = { 42 };
     const uint32_t instrs[] = {
         uinstr_enc_abx(OP_LOADK, 0, 0),         /* R0 = 42 */
         uinstr_enc_abc(OP_MOVE, 1, 0, 0),       /* R1 = R0 */
         uinstr_enc_abc(OP_RET, 1, 0, 0)
     };
-    /* Build a chunk directly. */
-    chunk.constants  = (UValue *)malloc(sizeof(UValue));
-    chunk.const_cap  = 1; chunk.const_count = 1;
-    chunk.constants[0].kind = (uint8_t)UVAL_INT;
+    /* Build a module directly. */
+    module.constants  = (UValue *)malloc(sizeof(UValue));
+    module.const_cap  = 1; module.const_count = 1;
+    module.constants[0].kind = (uint8_t)UVAL_INT;
     {
         int p;
-        for (p = 0; p < 7; p++) chunk.constants[0]._pad[p] = 0;
+        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
     }
-    chunk.constants[0].v.i = consts[0];
-    chunk.instructions = (uint32_t *)malloc(sizeof(instrs));
-    chunk.instr_cap = 3; chunk.instr_count = 3;
+    module.constants[0].v.i = consts[0];
+    module.instructions = (uint32_t *)malloc(sizeof(instrs));
+    module.instr_cap = 3; module.instr_count = 3;
     {
         int j;
-        for (j = 0; j < 3; j++) chunk.instructions[j] = instrs[j];
+        for (j = 0; j < 3; j++) module.instructions[j] = instrs[j];
     }
-    chunk.line_deltas = (int8_t *)malloc(3);
-    chunk.line_deltas[0] = (int8_t)-128;
-    chunk.line_deltas[1] = 0;
-    chunk.line_deltas[2] = 0;
-    chunk.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
-    chunk.abs_line_cap = 1; chunk.abs_line_count = 1;
-    chunk.abs_lines[0].pc = 0; chunk.abs_lines[0].line = 1;
-    chunk.max_reg = 1;
+    module.line_deltas = (int8_t *)malloc(3);
+    module.line_deltas[0] = (int8_t)-128;
+    module.line_deltas[1] = 0;
+    module.line_deltas[2] = 0;
+    module.abs_lines = (AbsLine *)malloc(sizeof(AbsLine));
+    module.abs_line_cap = 1; module.abs_line_count = 1;
+    module.abs_lines[0].pc = 0; module.abs_lines[0].line = 1;
+    module.max_reg = 1;
 
     char buf[512];
-    size_t n = uemit_disassemble(&chunk, buf, sizeof buf);
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "MOVE") != NULL);
 
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     /* When the line delta is <= INT8_MIN (-128) — i.e. going more than 127
        lines *backward* — a new abs_line checkpoint is emitted instead of
        a delta.  Tests the `d <= INT8_MIN` branch in emit_instr. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     Emitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &chunk, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL);
 
     AstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
     AstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
@@ -708,12 +708,12 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
 
     /* Both statements trigger abs_line checkpoints: first due to "first instruction",
        second due to delta overflow (|delta| > 127). */
-    UASSERT_EQ((size_t)2, chunk.abs_line_count);
-    UASSERT_EQ((uint32_t)500, chunk.abs_lines[0].line);
-    UASSERT_EQ((uint32_t)1,   chunk.abs_lines[1].line);
-    UASSERT_EQ((int8_t)-128, chunk.line_deltas[1]);  /* sentinel on second LOADK */
+    UASSERT_EQ((size_t)2, module.abs_line_count);
+    UASSERT_EQ((uint32_t)500, module.abs_lines[0].line);
+    UASSERT_EQ((uint32_t)1,   module.abs_lines[1].line);
+    UASSERT_EQ((int8_t)-128, module.line_deltas[1]);  /* sentinel on second LOADK */
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_oom_in_push_abs_line) {
@@ -722,23 +722,23 @@ UTEST(emit_oom_in_push_abs_line) {
        The first instruction always triggers emit_push_abs_line.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow — fail this one. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
     LimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 2;                         /* allow 2, fail 3rd (abs_lines) */
-    chunk.alloc_fn = limit_alloc;
-    chunk.alloc_ud = &la;
+    module.alloc_fn = limit_alloc;
+    module.alloc_ud = &la;
 
     AstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    EmitError rc = emit_single_statement(&chunk, &arena, &n);
+    EmitError rc = emit_single_statement(&module, &arena, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 UTEST(emit_oom_in_push_line_delta) {
@@ -746,32 +746,32 @@ UTEST(emit_oom_in_push_line_delta) {
        and abs_lines allocs to succeed, then failing the line_deltas alloc.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow, (4) line_deltas alloc — fail this one. */
-    Chunk chunk = {0};
+    UModule module = {0};
     Arena arena;
     uarena_init(&arena, 0);
 
     LimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 3;                         /* allow 3, fail 4th (line_deltas) */
-    chunk.alloc_fn = limit_alloc;
-    chunk.alloc_ud = &la;
+    module.alloc_fn = limit_alloc;
+    module.alloc_ud = &la;
 
     AstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    EmitError rc = emit_single_statement(&chunk, &arena, &n);
+    EmitError rc = emit_single_statement(&module, &arena, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
-    uchunk_destroy(&chunk);
+    umodule_destroy(&module);
 }
 
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
-    utest_run("uemit_init zeros emitter and does not touch chunk",
-              uemit_init_zeros_emitter_and_does_not_touch_chunk);
-    utest_run("uemit_finish on empty chunk emits nothing and returns OK",
-              uemit_finish_on_empty_chunk_emits_nothing_and_returns_ok);
+    utest_run("uemit_init zeros emitter and does not touch module",
+              uemit_init_zeros_emitter_and_does_not_touch_module);
+    utest_run("uemit_finish on empty module emits nothing and returns OK",
+              uemit_finish_on_empty_module_emits_nothing_and_returns_ok);
     utest_run("uemit_finish is idempotent; subsequent statement returns FINISHED",
               uemit_finish_is_idempotent_and_statement_after_finish_returns_finished);
     utest_run("uemit_error_name returns a sensible string",
@@ -802,8 +802,8 @@ void test_emit_suite(void) {
               emit_syncline_small_delta_between_statements_uses_delta_byte);
     utest_run("emit syncline: overflow triggers new abs_line checkpoint",
               emit_syncline_overflow_triggers_new_abs_line_checkpoint);
-    utest_run("disassemble empty chunk produces a short placeholder",
-              disassemble_empty_chunk_produces_short_placeholder);
+    utest_run("disassemble empty module produces a short placeholder",
+              disassemble_empty_module_produces_short_placeholder);
     utest_run("disassemble 1 + 2 produces recognizable text",
               disassemble_1_plus_2_produces_recognizable_text);
     utest_run("disassemble truncates cleanly when buf is too small",
@@ -818,12 +818,12 @@ void test_emit_suite(void) {
               emit_oom_in_push_abs_line);
     utest_run("emit OOM in push_line_delta returns EMIT_OOM",
               emit_oom_in_push_line_delta);
-    utest_run("disassemble chunk with all arithmetic opcodes",
-              disassemble_chunk_with_all_arithmetic_opcodes);
-    utest_run("serialize chunk with UVAL_FLOAT constant round-trips",
-              serialize_chunk_with_float_constant_round_trips);
-    utest_run("disassemble chunk with MOVE instruction shows MOVE",
-              disassemble_chunk_with_move_instruction_shows_move);
+    utest_run("disassemble module with all arithmetic opcodes",
+              disassemble_module_with_all_arithmetic_opcodes);
+    utest_run("serialize module with UVAL_FLOAT constant round-trips",
+              serialize_module_with_float_constant_round_trips);
+    utest_run("disassemble module with MOVE instruction shows MOVE",
+              disassemble_module_with_move_instruction_shows_move);
     utest_run("emit syncline: negative overflow triggers new abs_line checkpoint",
               emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint);
 }

@@ -129,7 +129,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 
 | Doc | Description | Since |
 | --- | ----------- | ----- |
-| Glossary | Definitions for terms used across the docs: watcher, coroutine, tag, arena, chunk, lobby, syncline | `v1.0.0` |
+| Glossary | Definitions for terms used across the docs: watcher, coroutine, tag, arena, module, lobby, syncline | `v1.0.0` |
 | FAQ | Frequently asked questions on language semantics, embedding patterns, and platform support | `v1.0.0` |
 | Bibliography | Academic papers, language standards, and prior work that informed the design | `v1.0.0` |
 

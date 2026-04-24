@@ -36,9 +36,9 @@ the corresponding portion of the suite function:
 ```c
 #define UTEST(name) static void name(void)
 
-UTEST(destroy_empty_chunk_is_noop) {
-    Chunk c = {0};
-    uchunk_destroy(&c);
+UTEST(destroy_empty_module_is_noop) {
+    UModule c = {0};
+    umodule_destroy(&c);
     UASSERT_EQ((void *)NULL, (void *)c.instructions);
     UASSERT_EQ((void *)NULL, (void *)c.constants);
     UASSERT_EQ((size_t)0, c.instr_count);
@@ -176,7 +176,7 @@ at v1.0 (see `../ROADMAP.md`, "Quality bars at v1.0"). Coverage is measured with
 current development stage, but the expectation is that every new `src/*.c` module
 ships with a corresponding `tests/unit/test_<module>.c` that exercises it to at
 least 90% line coverage before the module is merged. The subsystems shipped to
-date — lexer, parser, arena, chunk, and emitter — all exceed 96% line coverage,
+date — lexer, parser, arena, module, and emitter — all exceed 96% line coverage,
 so the bar is achievable with normal TDD discipline: write a failing test, make
 it pass, verify the uncovered lines, and add cases until the gap closes.
 

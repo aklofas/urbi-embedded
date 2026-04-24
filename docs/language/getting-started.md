@@ -76,14 +76,14 @@ harness documentation, including how to add tests and read coverage reports.
 
 ## What is in the walking skeleton today
 
-The lexer, parser, bump-allocator arena, bytecode emitter, and `.urb` chunk
+The lexer, parser, bump-allocator arena, bytecode emitter, and `.urb` module
 loader are complete and tested. The lexer tokenizes the full urbiscript token
 set including time and angle literals, multi-radix integers, and identifiers.
 The parser builds an AST using the arena allocator, with Pratt precedence
 climbing for arithmetic and panic-mode recovery at statement boundaries. The
 emitter compiles AST nodes down to an 8-opcode bytecode and serializes them to
 the `.urb` on-disk format with a header, constant pool, instructions, and debug
-synclines. The chunk loader deserializes and verifies `.urb` files.
+synclines. The module loader deserializes and verifies `.urb` files.
 
 The VM — which executes the bytecode — and the interactive `urbi` REPL are the
 final pieces of the `v0.1.0-skeleton` release and arrive together. Until that
@@ -149,7 +149,7 @@ now, the cross targets confirm portability of `src/`.
 ## Next steps
 
 - [../internals/architecture.md](../internals/architecture.md) — how the lexer,
-  parser, arena, emitter, chunk loader, and VM fit together.
+  parser, arena, emitter, module loader, and VM fit together.
 - [../internals/test-harness.md](../internals/test-harness.md) — how to run
   tests, add new test cases, and read coverage reports.
 - [../ROADMAP.md](../ROADMAP.md) — what each release delivers and the quality

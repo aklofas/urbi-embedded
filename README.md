@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** pre-release, walking skeleton in progress. Lexer, parser, arena allocator, bytecode emitter, and chunk loader + verifier are complete; 222 unit tests passing at release / debug / ASan / UBSan / cross-ARM / cross-RISC-V. VM and interactive REPL still to land before the first tagged release (`v0.1.0-skeleton`).
+**Status:** pre-release, walking skeleton in progress. Lexer, parser, arena allocator, bytecode emitter, and module loader + verifier are complete; 222 unit tests passing at release / debug / ASan / UBSan / cross-ARM / cross-RISC-V. VM and interactive REPL still to land before the first tagged release (`v0.1.0-skeleton`).
 
 ## Design goals
 
@@ -33,7 +33,7 @@ Implements **urbiscript** — a prototype-based, parallel-by-default, event-driv
 make
 ```
 
-Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()`; compiler-internal module surfaces (lexer, parser, arena, chunk, emitter) are stable within the library but not yet re-exported through `urbi.h`. The host embedding API arrives at the C API milestone.
+Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()`; compiler-internal module surfaces (lexer, parser, arena, module, emitter) are stable within the library but not yet re-exported through `urbi.h`. The host embedding API arrives at the C API milestone.
 
 ## Source layout
 
@@ -47,8 +47,8 @@ src/uarena.h      arena allocator API
 src/uarena.c      chunk-list bump allocator (hosted / pluggable / static)
 src/uparse.h      parser API
 src/uparse.c      streaming Pratt-style parser
-src/uchunk.h      Chunk struct, UValue, opcodes, instruction helpers
-src/uchunk.c      chunk deserializer + verifier
+src/umodule.h     UModule struct, UValue, opcodes, instruction helpers
+src/umodule.c     module deserializer + verifier
 src/uemit.h       emitter API
 src/uemit.c       single-pass emitter + disassembler + serializer
 ```

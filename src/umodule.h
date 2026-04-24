@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Bytecode Chunk — the front-end / back-end interface.  Freestanding. */
+/* Bytecode UModule — the front-end / back-end interface.  Freestanding. */
 
-#ifndef UCHUNK_H
-#define UCHUNK_H
+#ifndef UMODULE_H
+#define UMODULE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -97,7 +97,7 @@ typedef struct {
 
 /* --- pluggable allocator (matches uarena pattern) --- */
 
-typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
+typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
 /* Standard realloc semantics:
  *   ptr == NULL && nbytes > 0  : allocate fresh buffer; return non-NULL or NULL on OOM.
  *   ptr != NULL && nbytes == 0 : free ptr; return NULL.
@@ -105,9 +105,9 @@ typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr == NULL && nbytes == 0 : no-op; return NULL.
  * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
-/* --- Chunk struct --- */
+/* --- UModule struct --- */
 
-typedef struct Chunk {
+typedef struct UModule {
     uint32_t  *instructions;
     size_t     instr_count;
     size_t     instr_cap;
@@ -129,9 +129,9 @@ typedef struct Chunk {
     char       *source_name;      /* owned (allocator-allocated, null-terminated); NULL if absent */
 
     /* allocator hook; NULL -> use stdlib realloc (hosted builds only) */
-    UChunkAllocFn alloc_fn;
+    UModuleAllocFn alloc_fn;
     void         *alloc_ud;
-} Chunk;
+} UModule;
 
 /* --- errors --- */
 
@@ -145,24 +145,24 @@ typedef enum {
     ULOAD_CORRUPT_TAG,
     ULOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
     ULOAD_OOM
-} UChunkLoadError;
+} UModuleLoadError;
 
 /* --- API --- */
 
-/* Populate chunk from buf.  chunk must be zero-initialized before call;
-   if chunk->alloc_fn is NULL on entry, the stdlib realloc is used
+/* Populate module from buf.  module must be zero-initialized before call;
+   if module->alloc_fn is NULL on entry, the stdlib realloc is used
    (hosted builds only).  errmsg/errcap receive a human-readable
    diagnostic on failure; pass (NULL, 0) to suppress.
-   On error the chunk is left empty (destroy is safe but a no-op). */
-UChunkLoadError uchunk_deserialize(Chunk *chunk, const uint8_t *buf, size_t size,
+   On error the module is left empty (destroy is safe but a no-op). */
+UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
 /* Free all owned buffers and zero the struct (preserving nothing).
-   Safe to call on a zero-initialized Chunk. */
-void uchunk_destroy(Chunk *chunk);
+   Safe to call on a zero-initialized UModule. */
+void umodule_destroy(UModule *module);
 
 /* Return a static string such as "ULOAD_BAD_MAGIC" for debug. */
-const char *uchunk_load_error_name(UChunkLoadError code);
+const char *umodule_load_error_name(UModuleLoadError code);
 
 #ifdef __cplusplus
 }

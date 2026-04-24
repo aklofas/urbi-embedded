@@ -16,7 +16,7 @@ source (const char *)
      │
      ▼  [uparse.c]   produces  AstNode statements (UArena-allocated)
      │
-     ▼  [uemit.c]    produces  Chunk (bytecode, constants, synclines, max_reg)
+     ▼  [uemit.c]    produces  UModule (bytecode, constants, synclines, max_reg)
      │
      ▼  [uvm.c]      produces  result (UValue tagged value)
      │
@@ -24,7 +24,7 @@ source (const char *)
 ```
 
 The key invariant is that the hand-off between stages is a small, typed struct
-— `Token`, `AstNode *`, `Chunk *`, `UValue` — not an implicit shared global.
+— `Token`, `AstNode *`, `UModule *`, `UValue` — not an implicit shared global.
 Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
@@ -171,7 +171,7 @@ Three initialization modes share the same `uarena_alloc`, `uarena_reset`, and
 
 Pointer stability: once an `AstNode *` is returned from `uarena_alloc`, it
 remains valid at the same address until `uarena_reset` or `uarena_destroy`.
-Chunk-list growth never moves existing allocations. This allows the emitter to
+UModule-list growth never moves existing allocations. This allows the emitter to
 hold raw pointers into AST trees without any pinning protocol.
 
 `uarena_alloc` zero-fills all returned memory and aligns to 16 bytes —
@@ -183,13 +183,13 @@ sufficient for `long double` and SIMD on all v1.0 targets.
 
 **Source:** `src/uemit.c` / `src/uemit.h`
 
-The emitter consumes an `AstNode` tree and writes bytecode into a `Chunk`.
-It is initialized once per chunk with `uemit_init`, then driven with one
+The emitter consumes an `AstNode` tree and writes bytecode into a `UModule`.
+It is initialized once per module with `uemit_init`, then driven with one
 `uemit_statement(e, stmt)` call per top-level statement, and finalized with
 `uemit_finish(e)`. After `uemit_finish`, the caller owns a fully populated
-`Chunk` ready for the VM or for serialization.
+`UModule` ready for the VM or for serialization.
 
-The `Emitter` struct is stack-allocated by the caller. It borrows the `Chunk`
+The `Emitter` struct is stack-allocated by the caller. It borrows the `UModule`
 and the `Arena`; both must outlive the `Emitter`.
 
 ### Register allocation
@@ -201,17 +201,17 @@ enclosing expression. This means the register count at any point equals the
 depth of the expression tree, not the total number of nodes visited.
 
 A sticky `max_reg_seen` watermark tracks the highest register index used.
-After `uemit_finish`, this value is written into `chunk->max_reg`; the VM
+After `uemit_finish`, this value is written into `module->max_reg`; the VM
 allocates exactly `max_reg + 1` tagged-value slots — no waste, no guessing.
 
 ### Constant pool
 
-Integer and float constants are stored in the chunk's constant pool, not
+Integer and float constants are stored in the module's constant pool, not
 inlined into instructions. Before emitting a `LOADK` instruction the emitter
 scans the existing pool for a duplicate; if found, it reuses the existing
 index. The scan is linear, which is efficient for the constant-pool sizes that
 arise in expression compilation. The 16-bit Bx field in `OP_LOADK` supports
-up to 65 536 constants per chunk; see [opcodes.md](opcodes.md) for the
+up to 65 536 constants per module; see [opcodes.md](opcodes.md) for the
 encoding.
 
 ### Synclines
@@ -229,7 +229,7 @@ for the full encoding specification.
 
 The `Emitter` maintains a sticky error field. The first error latches;
 subsequent `uemit_statement` calls return the same error without touching the
-`Chunk`. After `uemit_finish` the accumulated error is returned. Seven error
+`UModule`. After `uemit_finish` the accumulated error is returned. Seven error
 codes cover the observable failure modes: `EMIT_OOM`, `EMIT_AST_ERROR`,
 `EMIT_UNSUPPORTED_AST`, `EMIT_REG_EXHAUSTED`, `EMIT_CONSTANT_POOL_FULL`,
 `EMIT_LINE_OVERFLOW`, and `EMIT_FINISHED`.
@@ -251,15 +251,15 @@ The eight opcodes at the walking-skeleton stage are described in full in
 | `OP_RET` | ABC | `return R[A]` |
 
 **Public API:** `uemit_init`, `uemit_statement`, `uemit_finish`,
-`uemit_error_name`, `uemit_disassemble`, `uchunk_serialize`.
+`uemit_error_name`, `uemit_disassemble`, `umodule_serialize`.
 
 ---
 
-## Chunk
+## UModule
 
-**Source:** `src/uchunk.c` / `src/uchunk.h`
+**Source:** `src/umodule.c` / `src/umodule.h`
 
-The `Chunk` is the interface between the front end (emitter) and the back end
+The `UModule` is the interface between the front end (emitter) and the back end
 (VM). It is a plain struct that carries five owned arrays:
 
 - `instructions` — array of `uint32_t`, 4-byte aligned.
@@ -271,18 +271,18 @@ The `Chunk` is the interface between the front end (emitter) and the back end
 Plus two scalar fields: `max_reg` (the highest register index, set at emit
 time) and the pluggable allocator pair `(alloc_fn, alloc_ud)`.
 
-The `Chunk` can be populated in two ways: by the emitter (in-process, no
-serialize/deserialize round-trip) or by `uchunk_deserialize` (loading a
+The `UModule` can be populated in two ways: by the emitter (in-process, no
+serialize/deserialize round-trip) or by `umodule_deserialize` (loading a
 serialized `.urb` file). Both paths produce the same struct layout with the
 same ownership contract — every field, including `source_name`, is allocated
-through the chunk's own allocator and freed by `uchunk_destroy`. The
-`uemit_init` `source_name` parameter is borrowed and copied into the chunk at
-init time; the caller's string does not need to outlive the chunk. The VM
+through the module's own allocator and freed by `umodule_destroy`. The
+`uemit_init` `source_name` parameter is borrowed and copied into the module at
+init time; the caller's string does not need to outlive the module. The VM
 does not distinguish between the two population paths.
 
 ### On-disk format
 
-`uchunk_serialize` (declared in `uemit.h`, implemented in `uemit.c`) writes
+`umodule_serialize` (declared in `uemit.h`, implemented in `uemit.c`) writes
 the `.urb` binary format: a 24-byte header carrying a magic number, a version
 byte, a 6-byte FTP/paste canary, and an 8-byte flavor descriptor. The body
 contains varint-prefixed sections for metadata, the constant pool, the
@@ -291,31 +291,31 @@ specified in [bytecode-format.md](bytecode-format.md).
 
 ### Loader and verifier
 
-`uchunk_deserialize` both reads and verifies the byte stream. It checks the
+`umodule_deserialize` both reads and verifies the byte stream. It checks the
 header, all structural invariants (varint bounds, section counts, alignment
 pad), and then sweeps every instruction to verify opcode range, register
 range, `OP_LOADK` Bx bounds, and a terminal `OP_RET`. The full verification
 checklist is in [bytecode-format.md](bytecode-format.md#loader-verification).
 
-On any check failure, `uchunk_deserialize` stops, writes a diagnostic string
-into the caller-supplied buffer, and returns a `UChunkLoadError` code.
-`uchunk_load_error_name` maps codes to static strings for debug output.
+On any check failure, `umodule_deserialize` stops, writes a diagnostic string
+into the caller-supplied buffer, and returns a `UModuleLoadError` code.
+`umodule_load_error_name` maps codes to static strings for debug output.
 
 ### Pluggable allocator
 
-The `Chunk` allocator follows realloc semantics: a single callback
-`UChunkAllocFn` handles allocate, reallocate, and free based on whether `ptr`
+The `UModule` allocator follows realloc semantics: a single callback
+`UModuleAllocFn` handles allocate, reallocate, and free based on whether `ptr`
 and `nbytes` are null/zero. The callback and its `ud` cookie are stored on the
-struct; `uchunk_destroy` frees all owned arrays through the same callback that
+struct; `umodule_destroy` frees all owned arrays through the same callback that
 allocated them. This ensures that hosted targets using `stdlib` realloc and
 embedded targets using a pool allocator each free through the allocator that
 made the allocations. The design rationale is in
-[design-decisions.md](design-decisions.md#pluggable-allocator-on-chunk-via-uchunkallocfn).
+[design-decisions.md](design-decisions.md#pluggable-allocator-on-umodule-via-umoduleallocfn).
 
-`uchunk_destroy` zeros the struct after freeing; it is safe to call on a
-zero-initialized `Chunk`.
+`umodule_destroy` zeros the struct after freeing; it is safe to call on a
+zero-initialized `UModule`.
 
-**Public API:** `uchunk_deserialize`, `uchunk_destroy`, `uchunk_load_error_name`.
+**Public API:** `umodule_deserialize`, `umodule_destroy`, `umodule_load_error_name`.
 
 ---
 
@@ -323,7 +323,7 @@ zero-initialized `Chunk`.
 
 **Source:** `src/uvm.c` / `src/uvm.h`
 
-The VM is a register-based interpreter. It takes a populated `Chunk`,
+The VM is a register-based interpreter. It takes a populated `UModule`,
 allocates a register frame of `max_reg + 1` tagged-value slots, and dispatches
 each instruction using a computed-goto table under GCC/Clang (`__GNUC__` /
 `__clang__` detected at compile time) or a `switch`-based loop otherwise.
@@ -331,7 +331,7 @@ The `URBI_VM_FORCE_SWITCH` build flag overrides the detection to exercise the
 switch path on GCC/Clang hosts; CI uses this flag in a dedicated `test-switch`
 matrix entry to keep both paths compiling and passing.
 
-Register values share the `UValue` layout from `src/uchunk.h`: 16 bytes
+Register values share the `UValue` layout from `src/umodule.h`: 16 bytes
 per slot, with a `kind` byte (`UValKind`) discriminating Integer, Float, Bool,
 String, or Nil, 7 bytes of alignment padding, and an 8-byte value union
 (`int64_t i` for Integer; `double` or `float f` for Float, selected by
@@ -350,14 +350,14 @@ Arithmetic dispatch follows the rules in
 `OP_RET` terminates dispatch and returns the tagged value from the named
 register to the caller.
 
-The chunk is consumed by reference; the VM does not own it and does not free
-it. In-process use (REPL loop) passes the emitter's `Chunk` directly — no
+The module is consumed by reference; the VM does not own it and does not free
+it. In-process use (REPL loop) passes the emitter's `UModule` directly — no
 serialize/deserialize round-trip is needed. An embedded host loading compiled
-bytecode from flash calls `uchunk_deserialize` first, then hands the resulting
-`Chunk` to the VM.
+bytecode from flash calls `umodule_deserialize` first, then hands the resulting
+`UModule` to the VM.
 
 The persistent `UVM` struct supports an `init` / `run` / `destroy` lifecycle
-and carries a VM-owned allocator hook (distinct from the `Chunk` loader's
+and carries a VM-owned allocator hook (distinct from the `UModule` loader's
 allocator). A 128-byte fixed error-message buffer provides
 `source:line:`-prefixed diagnostics for `UVM_TYPE_ERROR` and `UVM_OOM`
 without depending on `<stdio.h>`, `<string.h>`, or `<stdlib.h>` (the
@@ -463,13 +463,13 @@ src/
   uarena.c            Arena implementation: uarena_init, _ex, _static, alloc, reset, destroy
   uparse.h            Parser API: Parser
   uparse.c            Parser implementation: uparse_init, uparse_next_statement, uparse_error_name
-  uchunk.h            Chunk struct, UValue, UOpcode, UValKind, instruction encode/decode helpers
-  uchunk.c            Chunk deserializer, verifier, destroy: uchunk_deserialize, uchunk_destroy
+  umodule.h           UModule struct, UValue, UOpcode, UValKind, instruction encode/decode helpers
+  umodule.c           UModule deserializer, verifier, destroy: umodule_deserialize, umodule_destroy
   uvarint.h           LEB128 varint codec API: UVarintError, size/write/decode for u + zz
   uvarint.c           LEB128 varint implementation: pure byte math, freestanding-clean
-  uemit.h             Emitter API: Emitter, EmitError; also declares uchunk_serialize
+  uemit.h             Emitter API: Emitter, EmitError; also declares umodule_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
-                      uemit_disassemble, uchunk_serialize
+                      uemit_disassemble, umodule_serialize
   uvm.h               VM API: UVM, UVMError, UValue, uvm_init, uvm_run, uvm_destroy
   uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
                       type matrix, TypeError/OOM diagnostics, syncline decoder
@@ -481,7 +481,7 @@ tests/unit/
   test_arena.c        Arena allocator test suite
   test_parser.c       Parser test suite
   test_varint.c       Varint codec test suite
-  test_chunk.c        Chunk loader / verifier test suite
+  test_module.c       UModule loader / verifier test suite
   test_emit.c         Emitter test suite
   test_vm.c           VM test suite
 ```

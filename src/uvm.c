@@ -222,22 +222,22 @@ static void diag_write_kind_name(DiagWriter *w, uint8_t kind) {
    index 0, summing deltas; abs_lines entries (triggered by INT8_MIN
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
-static uint32_t vm_line_for_pc(const Chunk *chunk, size_t pc) {
-    if (chunk->line_deltas == NULL) return 0;
-    if (pc >= chunk->instr_count) return 0;
+static uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
+    if (module->line_deltas == NULL) return 0;
+    if (pc >= module->instr_count) return 0;
     uint32_t line = 0;
     size_t abs_idx = 0;
     for (size_t i = 0; i <= pc; i++) {
-        int8_t d = chunk->line_deltas[i];
+        int8_t d = module->line_deltas[i];
         if (d == INT8_MIN) {
             /* Consult abs_lines; find the entry whose pc matches i. */
-            while (abs_idx < chunk->abs_line_count &&
-                   chunk->abs_lines[abs_idx].pc < i) {
+            while (abs_idx < module->abs_line_count &&
+                   module->abs_lines[abs_idx].pc < i) {
                 abs_idx++;
             }
-            if (abs_idx < chunk->abs_line_count &&
-                chunk->abs_lines[abs_idx].pc == i) {
-                line = chunk->abs_lines[abs_idx].line;
+            if (abs_idx < module->abs_line_count &&
+                module->abs_lines[abs_idx].pc == i) {
+                line = module->abs_lines[abs_idx].line;
                 abs_idx++;
             }
         } else {
@@ -250,16 +250,16 @@ static uint32_t vm_line_for_pc(const Chunk *chunk, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-static void diag_write_prefix(DiagWriter *w, const Chunk *chunk, size_t pc) {
-    uint32_t line = vm_line_for_pc(chunk, pc);
+static void diag_write_prefix(DiagWriter *w, const UModule *module, size_t pc) {
+    uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
         diag_write_cstr(w, "instr ");
         diag_write_size(w, pc);
         diag_write_cstr(w, ": ");
         return;
     }
-    if (chunk->source_name != NULL) {
-        diag_write_cstr(w, chunk->source_name);
+    if (module->source_name != NULL) {
+        diag_write_cstr(w, module->source_name);
         diag_write_cstr(w, ":");
     } else {
         diag_write_cstr(w, "line ");
@@ -270,11 +270,11 @@ static void diag_write_prefix(DiagWriter *w, const Chunk *chunk, size_t pc) {
 
 /* Binary-op TypeError: two operand kinds reported.
    Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
-static void vm_format_type_error_binary(UVM *vm, const Chunk *chunk, size_t pc,
+static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
                                         uint8_t op, uint8_t b_kind, uint8_t c_kind) {
     DiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_prefix(&w, chunk, pc);
+    diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
     diag_write_cstr(&w, op_name(op));
     diag_write_cstr(&w, " operands must be Integer or Float (got ");
@@ -285,11 +285,11 @@ static void vm_format_type_error_binary(UVM *vm, const Chunk *chunk, size_t pc,
 }
 
 /* Unary-op TypeError: one operand kind reported. */
-static void vm_format_type_error_unary(UVM *vm, const Chunk *chunk, size_t pc,
+static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
                                        uint8_t op, uint8_t b_kind) {
     DiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
-    diag_write_prefix(&w, chunk, pc);
+    diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
     diag_write_cstr(&w, op_name(op));
     diag_write_cstr(&w, " operand must be Integer or Float (got ");
@@ -341,8 +341,8 @@ static void vm_zero(void *const dst, const size_t n) {
 
 /* --- uvm_run --- */
 
-UVMError uvm_run(UVM *vm, const Chunk *chunk, UValue *out) {
-    /* Reset error state at entry so callers who run multiple chunks
+UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
+    /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
@@ -351,14 +351,14 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UValue *out) {
     UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
     *out = nil;
 
-    /* Empty chunk: no instructions to dispatch; return Nil. */
-    if (chunk->instr_count == 0) {
+    /* Empty module: no instructions to dispatch; return Nil. */
+    if (module->instr_count == 0) {
         return UVM_OK;
     }
 
     /* Allocate the register frame via the VM's allocator hook.
        (max_reg + 1) slots; zero-initialized so every register starts Nil. */
-    const size_t frame_slots = (size_t)(chunk->max_reg + 1);
+    const size_t frame_slots = (size_t)(module->max_reg + 1);
     const size_t frame_bytes = frame_slots * sizeof(UValue);
     UValue *frame = (UValue *)vm->alloc_fn(NULL, frame_bytes, vm->alloc_ud);
     if (frame == NULL) {
@@ -368,7 +368,7 @@ UVMError uvm_run(UVM *vm, const Chunk *chunk, UValue *out) {
     }
     vm_zero(frame, frame_bytes);
 
-    const uint32_t *pc = chunk->instructions;
+    const uint32_t *pc = module->instructions;
     UVMError rc = UVM_OK;
 
 #if UVM_USE_COMPUTED_GOTO
@@ -392,7 +392,7 @@ dispatch:
 #endif
 
         CASE(OP_LOADK) {
-            frame[uinstr_a(*pc)] = chunk->constants[uinstr_bx(*pc)];
+            frame[uinstr_a(*pc)] = module->constants[uinstr_bx(*pc)];
             NEXT();
         }
 
@@ -408,8 +408,8 @@ dispatch:
             rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, chunk,
-                    (size_t)(pc - chunk->instructions),
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions),
                     OP_ADD, b->kind, cc->kind);
                 HALT();
             }
@@ -423,8 +423,8 @@ dispatch:
             rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, chunk,
-                    (size_t)(pc - chunk->instructions),
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions),
                     OP_SUB, b->kind, cc->kind);
                 HALT();
             }
@@ -438,8 +438,8 @@ dispatch:
             rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, chunk,
-                    (size_t)(pc - chunk->instructions),
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions),
                     OP_MUL, b->kind, cc->kind);
                 HALT();
             }
@@ -453,8 +453,8 @@ dispatch:
             rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, chunk,
-                    (size_t)(pc - chunk->instructions),
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions),
                     OP_DIV, b->kind, cc->kind);
                 HALT();
             }
@@ -467,8 +467,8 @@ dispatch:
             rc = arith_neg(a, b);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_unary(vm, chunk,
-                    (size_t)(pc - chunk->instructions),
+                vm_format_type_error_unary(vm, module,
+                    (size_t)(pc - module->instructions),
                     OP_NEG, b->kind);
                 HALT();
             }

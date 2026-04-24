@@ -17,7 +17,7 @@ static void emit_zero(void *const dst, const size_t n) {
 }
 
 /* Local byte-copy.  Replaces memcpy so the serializer compiles without
-   a hosted <string.h>.  Same pattern as chunk_memcpy in uchunk.c. */
+   a hosted <string.h>.  Same pattern as module_memcpy in umodule.c. */
 static void emit_memcpy(void *dst, const void *src, size_t n) {
     unsigned char *pd = (unsigned char *)dst;
     const unsigned char *ps = (const unsigned char *)src;
@@ -42,11 +42,11 @@ static void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
 
 #endif  /* __STDC_HOSTED__ */
 
-/* Return the allocator to use for chunk c.  Available in both hosted and
+/* Return the allocator to use for module c.  Available in both hosted and
    freestanding builds so that emit_grow (below) can call it unconditionally.
    In freestanding builds the stdlib fallback is absent; the caller must have
    supplied alloc_fn, and emit_grow will return false if it is NULL. */
-static UChunkAllocFn emit_alloc_for(const Chunk *c) {
+static UModuleAllocFn emit_alloc_for(const UModule *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
 #else
@@ -56,17 +56,17 @@ static UChunkAllocFn emit_alloc_for(const Chunk *c) {
 
 #if __STDC_HOSTED__
 
-/* Deep-copy source_name into the chunk using the chunk's allocator.
+/* Deep-copy source_name into the module using the module's allocator.
    Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL. */
 static void emit_copy_source_name(Emitter *e, const char *src) {
     if (src == NULL) return;
     size_t len = emit_strlen(src);
-    UChunkAllocFn alloc = emit_alloc_for(e->chunk);
+    UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
-    char *copy = (char *)alloc(NULL, len + 1u, e->chunk->alloc_ud);
+    char *copy = (char *)alloc(NULL, len + 1u, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
     emit_memcpy(copy, src, len + 1u);
-    e->chunk->source_name = copy;
+    e->module->source_name = copy;
 }
 
 #else  /* freestanding */
@@ -83,12 +83,12 @@ static void emit_copy_source_name(Emitter *e, const char *src) {
 /* --- Internal helpers --- */
 
 /* Grow *data to at least new_cap elements of elem_size.  Doubling policy.
-   Mirror of chunk_grow in uchunk.c; used by constant-pool and instruction
+   Mirror of module_grow in umodule.c; used by constant-pool and instruction
    array in the emitter. */
-static bool emit_grow(Chunk *c, void **data, size_t *cap,
+static bool emit_grow(UModule *c, void **data, size_t *cap,
                       size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
-    UChunkAllocFn alloc = emit_alloc_for(c);
+    UModuleAllocFn alloc = emit_alloc_for(c);
     if (alloc == NULL) return false;
     size_t target = *cap == 0u ? 8u : *cap;
     while (target < new_cap) target *= 2u;
@@ -120,57 +120,57 @@ static void free_reg(Emitter *e) {
    pool-full (> UINT16_MAX entries) or OOM. */
 static uint16_t add_const_int(Emitter *e, const int64_t v) {
     size_t i;
-    for (i = 0; i < e->chunk->const_count; i++) {
-        if (e->chunk->constants[i].kind == (uint8_t)UVAL_INT
-         && e->chunk->constants[i].v.i == v) {
+    for (i = 0; i < e->module->const_count; i++) {
+        if (e->module->constants[i].kind == (uint8_t)UVAL_INT
+         && e->module->constants[i].v.i == v) {
             return (uint16_t)i;
         }
     }
-    if (e->chunk->const_count > (size_t)UINT16_MAX) {
+    if (e->module->const_count > (size_t)UINT16_MAX) {
         e->error = EMIT_CONSTANT_POOL_FULL;
         return 0u;
     }
-    if (!emit_grow(e->chunk, (void **)&e->chunk->constants, &e->chunk->const_cap,
-                   e->chunk->const_count + 1u, sizeof(UValue))) {
+    if (!emit_grow(e->module, (void **)&e->module->constants, &e->module->const_cap,
+                   e->module->const_count + 1u, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0u;
     }
     {
-        const size_t idx = e->chunk->const_count;
+        const size_t idx = e->module->const_count;
         int p;
-        e->chunk->constants[idx].kind = (uint8_t)UVAL_INT;
+        e->module->constants[idx].kind = (uint8_t)UVAL_INT;
         /* Clear pad bytes for deterministic serialization. */
-        for (p = 0; p < 7; p++) e->chunk->constants[idx]._pad[p] = 0u;
-        e->chunk->constants[idx].v.i = v;
-        e->chunk->const_count++;
+        for (p = 0; p < 7; p++) e->module->constants[idx]._pad[p] = 0u;
+        e->module->constants[idx].v.i = v;
+        e->module->const_count++;
         return (uint16_t)idx;
     }
 }
 
 /* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow. */
 static void emit_push_abs_line(Emitter *e, const uint32_t pc, const uint32_t line) {
-    if (!emit_grow(e->chunk, (void **)&e->chunk->abs_lines, &e->chunk->abs_line_cap,
-                   e->chunk->abs_line_count + 1u, sizeof(AbsLine))) {
+    if (!emit_grow(e->module, (void **)&e->module->abs_lines, &e->module->abs_line_cap,
+                   e->module->abs_line_count + 1u, sizeof(AbsLine))) {
         e->error = EMIT_OOM;
         return;
     }
-    e->chunk->abs_lines[e->chunk->abs_line_count].pc   = pc;
-    e->chunk->abs_lines[e->chunk->abs_line_count].line = line;
-    e->chunk->abs_line_count++;
+    e->module->abs_lines[e->module->abs_line_count].pc   = pc;
+    e->module->abs_lines[e->module->abs_line_count].line = line;
+    e->module->abs_line_count++;
 }
 
 /* Append one delta byte to line_deltas.  line_deltas has no cap field —
    it is sized exactly to instr_count.  Called after instr_count has been
    incremented so the new slot is at [instr_count - 1]. */
 static void emit_push_line_delta(Emitter *e, const int8_t delta) {
-    UChunkAllocFn alloc = emit_alloc_for(e->chunk);
+    UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
-    void *fresh = alloc(e->chunk->line_deltas,
-                        e->chunk->instr_count * sizeof(int8_t),
-                        e->chunk->alloc_ud);
+    void *fresh = alloc(e->module->line_deltas,
+                        e->module->instr_count * sizeof(int8_t),
+                        e->module->alloc_ud);
     if (fresh == NULL) { e->error = EMIT_OOM; return; }
-    e->chunk->line_deltas = (int8_t *)fresh;
-    e->chunk->line_deltas[e->chunk->instr_count - 1u] = delta;
+    e->module->line_deltas = (int8_t *)fresh;
+    e->module->line_deltas[e->module->instr_count - 1u] = delta;
 }
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
@@ -182,16 +182,16 @@ static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
 
     if (e->error != EMIT_OK) return;
     if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
-    if (!emit_grow(e->chunk, (void **)&e->chunk->instructions,
-                   &e->chunk->instr_cap,
-                   e->chunk->instr_count + 1u, sizeof(uint32_t))) {
+    if (!emit_grow(e->module, (void **)&e->module->instructions,
+                   &e->module->instr_cap,
+                   e->module->instr_count + 1u, sizeof(uint32_t))) {
         e->error = EMIT_OOM;
         return;
     }
-    e->chunk->instructions[e->chunk->instr_count++] = ins;
+    e->module->instructions[e->module->instr_count++] = ins;
 
     /* Delta encoding.  INT8_MIN (-128) is the sentinel; valid range [-127,+127]. */
-    pc = (uint32_t)(e->chunk->instr_count - 1u);
+    pc = (uint32_t)(e->module->instr_count - 1u);
     delta = 0;
     needs_abs = false;
     if (e->prev_line == 0u) {
@@ -274,9 +274,9 @@ static uint8_t emit_expr(Emitter *e, AstNode *n) {
 
 /* --- Public API --- */
 
-void uemit_init(Emitter *e, Chunk *chunk, Arena *arena, const char *source_name) {
+void uemit_init(Emitter *e, UModule *module, Arena *arena, const char *source_name) {
     emit_zero(e, sizeof(*e));
-    e->chunk = chunk;
+    e->module = module;
     e->arena = arena;
     emit_copy_source_name(e, source_name);
 }
@@ -303,7 +303,7 @@ EmitError uemit_finish(Emitter *e) {
                    e->prev_line);
     }
     e->finished = true;
-    e->chunk->max_reg = e->max_reg_seen;
+    e->module->max_reg = e->max_reg_seen;
     return e->error;
 }
 
@@ -360,18 +360,18 @@ static bool dis_printf(char *buf, const size_t cap, size_t *off,
     return true;
 }
 
-size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
+size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
     size_t off;
     size_t i;
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
     off = 0;
-    if (chunk->instr_count == 0) {
+    if (module->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");
         return off;
     }
-    for (i = 0; i < chunk->instr_count; i++) {
-        const uint32_t ins = chunk->instructions[i];
+    for (i = 0; i < module->instr_count; i++) {
+        const uint32_t ins = module->instructions[i];
         const UOpcode  op  = uinstr_op(ins);
         const uint8_t  a   = uinstr_a(ins);
         bool ok;
@@ -397,11 +397,11 @@ size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
         if (!ok) return off;
     }
     if (!dis_printf(buf, cap, &off, "; constants:\n")) return off;
-    for (i = 0; i < chunk->const_count; i++) {
+    for (i = 0; i < module->const_count; i++) {
         bool ok;
-        if (chunk->constants[i].kind == (uint8_t)UVAL_INT) {
+        if (module->constants[i].kind == (uint8_t)UVAL_INT) {
             ok = dis_printf(buf, cap, &off, ";   K%zu = INT %" PRId64 "\n",
-                            i, chunk->constants[i].v.i);
+                            i, module->constants[i].v.i);
         } else {
             ok = dis_printf(buf, cap, &off, ";   K%zu = ?\n", i);
         }
@@ -412,8 +412,8 @@ size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
 
 #else  /* freestanding */
 
-size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
-    (void)chunk;
+size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
+    (void)module;
     if (cap > 0 && buf != NULL) buf[0] = '\0';
     return 0;
 }
@@ -421,8 +421,8 @@ size_t uemit_disassemble(const Chunk *chunk, char *buf, const size_t cap) {
 #endif  /* __STDC_HOSTED__ */
 
 /* Compute total serialized byte count.  Must match the write path
-   in uchunk_serialize byte-for-byte. */
-static size_t chunk_wire_size(const Chunk *c) {
+   in umodule_serialize byte-for-byte. */
+static size_t module_wire_size(const UModule *c) {
     size_t i;
     size_t n = 24u;                                   /* fixed header */
     size_t src_len;
@@ -463,11 +463,11 @@ static size_t chunk_wire_size(const Chunk *c) {
     return n;
 }
 
-ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
+ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     size_t i;
     size_t off;
     size_t src_len;
-    const size_t need = chunk_wire_size(chunk);
+    const size_t need = module_wire_size(module);
 
     /* Size query: buf == NULL means "how many bytes would you write?" */
     if (buf == NULL) return (ptrdiff_t)need;
@@ -490,32 +490,32 @@ ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
     off = 24u;
 
     /* --- metadata --- */
-    buf[off++] = chunk->max_reg;
-    src_len = (chunk->source_name != NULL) ? emit_strlen(chunk->source_name) : 0u;
+    buf[off++] = module->max_reg;
+    src_len = (module->source_name != NULL) ? emit_strlen(module->source_name) : 0u;
     off = uvarint_write_u(buf, off, (uint64_t)src_len);
     if (src_len > 0u) {
-        emit_memcpy(buf + off, chunk->source_name, src_len);
+        emit_memcpy(buf + off, module->source_name, src_len);
         off += src_len;
     }
 
     /* --- constants --- */
-    off = uvarint_write_u(buf, off, (uint64_t)chunk->const_count);
-    for (i = 0u; i < chunk->const_count; i++) {
-        buf[off++] = chunk->constants[i].kind;
-        if (chunk->constants[i].kind == (uint8_t)UVAL_INT) {
-            off = uvarint_write_zz(buf, off, chunk->constants[i].v.i);
-        } else if (chunk->constants[i].kind == (uint8_t)UVAL_FLOAT) {
+    off = uvarint_write_u(buf, off, (uint64_t)module->const_count);
+    for (i = 0u; i < module->const_count; i++) {
+        buf[off++] = module->constants[i].kind;
+        if (module->constants[i].kind == (uint8_t)UVAL_INT) {
+            off = uvarint_write_zz(buf, off, module->constants[i].v.i);
+        } else if (module->constants[i].kind == (uint8_t)UVAL_FLOAT) {
             const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8u : 4u;
-            emit_memcpy(buf + off, &chunk->constants[i].v.f, fsz);
+            emit_memcpy(buf + off, &module->constants[i].v.f, fsz);
             off += fsz;
         }
     }
 
     /* --- instructions: varint count + align pad + raw LE uint32s --- */
-    off = uvarint_write_u(buf, off, (uint64_t)chunk->instr_count);
+    off = uvarint_write_u(buf, off, (uint64_t)module->instr_count);
     while ((off & 3u) != 0u) buf[off++] = 0u;         /* zero alignment pad */
-    for (i = 0u; i < chunk->instr_count; i++) {
-        const uint32_t ins = chunk->instructions[i];
+    for (i = 0u; i < module->instr_count; i++) {
+        const uint32_t ins = module->instructions[i];
         buf[off + 0u] = (uint8_t)(ins         & 0xFFu);
         buf[off + 1u] = (uint8_t)((ins >>  8) & 0xFFu);
         buf[off + 2u] = (uint8_t)((ins >> 16) & 0xFFu);
@@ -524,15 +524,15 @@ ptrdiff_t uchunk_serialize(const Chunk *chunk, uint8_t *buf, size_t cap) {
     }
 
     /* --- synclines: delta array then abs-line checkpoints --- */
-    off = uvarint_write_u(buf, off, (uint64_t)chunk->instr_count);  /* n_deltas */
-    if (chunk->instr_count > 0u) {
-        emit_memcpy(buf + off, chunk->line_deltas, chunk->instr_count);
-        off += chunk->instr_count;
+    off = uvarint_write_u(buf, off, (uint64_t)module->instr_count);  /* n_deltas */
+    if (module->instr_count > 0u) {
+        emit_memcpy(buf + off, module->line_deltas, module->instr_count);
+        off += module->instr_count;
     }
-    off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_line_count);
-    for (i = 0u; i < chunk->abs_line_count; i++) {
-        off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].pc);
-        off = uvarint_write_u(buf, off, (uint64_t)chunk->abs_lines[i].line);
+    off = uvarint_write_u(buf, off, (uint64_t)module->abs_line_count);
+    for (i = 0u; i < module->abs_line_count; i++) {
+        off = uvarint_write_u(buf, off, (uint64_t)module->abs_lines[i].pc);
+        off = uvarint_write_u(buf, off, (uint64_t)module->abs_lines[i].line);
     }
 
     return (ptrdiff_t)off;
