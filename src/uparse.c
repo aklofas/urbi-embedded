@@ -37,9 +37,9 @@ static AstNode uparser_oom_sentinel = {
     { .err = { PARSE_OOM, "out of memory during parsing" } }
 };
 
-/* --- Lexer lookahead helpers. --- */
+/* --- ULexer lookahead helpers. --- */
 
-static Token peek(Parser *p) {
+static UToken peek(Parser *p) {
     if (!p->have_peek) {
         p->peek = ulex_next(p->lex);
         p->have_peek = true;
@@ -47,8 +47,8 @@ static Token peek(Parser *p) {
     return p->peek;
 }
 
-static Token consume(Parser *p) {
-    Token t = peek(p);
+static UToken consume(Parser *p) {
+    UToken t = peek(p);
     p->have_peek = false;
     return t;
 }
@@ -115,7 +115,7 @@ static AstNode *parse_atom(Parser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb). */
-static int infix_prec(TokenType t) {
+static int infix_prec(UTokenType t) {
     switch (t) {
     case TOK_PLUS:
     case TOK_MINUS: return 1;
@@ -125,7 +125,7 @@ static int infix_prec(TokenType t) {
     }
 }
 
-static BinaryOp infix_binop(TokenType t) {
+static BinaryOp infix_binop(UTokenType t) {
     switch (t) {
     case TOK_PLUS:  return BOP_ADD;
     case TOK_MINUS: return BOP_SUB;
@@ -138,7 +138,7 @@ static BinaryOp infix_binop(TokenType t) {
 /* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
 
 static AstNode *parse_prefix(Parser *p) {
-    Token t = peek(p);
+    UToken t = peek(p);
     if (t.type == TOK_PLUS) {
         consume(p);
         return parse_prefix(p);             /* +x is x; no node */
@@ -156,7 +156,7 @@ static AstNode *parse_prefix(Parser *p) {
 /* --- parse_atom: INT | IDENT | ( expr ) | error. --- */
 
 static AstNode *parse_atom(Parser *p) {
-    Token t = peek(p);
+    UToken t = peek(p);
     switch (t.type) {
     case TOK_INT:
         consume(p);
@@ -169,7 +169,7 @@ static AstNode *parse_atom(Parser *p) {
         AstNode *inner = parse_expression(p, 0);
         if (!inner) return NULL;
         if (inner->kind == AST_ERROR) return inner;
-        Token r = peek(p);
+        UToken r = peek(p);
         if (r.type != TOK_RPAREN) {
             return make_error(p, PARSE_EXPECTED_RPAREN,
                               kErrorMessages[PARSE_EXPECTED_RPAREN],
@@ -203,7 +203,7 @@ static AstNode *parse_expression(Parser *p, int min_prec) {
     if (left->kind == AST_ERROR) return left;
 
     for (;;) {
-        Token op = peek(p);
+        UToken op = peek(p);
         int prec = infix_prec(op.type);
         if (prec < min_prec || prec == 0) break;
 
@@ -223,7 +223,7 @@ static AstNode *parse_expression(Parser *p, int min_prec) {
    TOK_PIPE, consume it so the next statement starts clean. */
 static void sync_to_statement_boundary(Parser *p) {
     for (;;) {
-        Token t = peek(p);
+        UToken t = peek(p);
         if (t.type == TOK_PIPE) { consume(p); return; }
         if (t.type == TOK_EOF) return;
         consume(p);
@@ -232,7 +232,7 @@ static void sync_to_statement_boundary(Parser *p) {
 
 /* --- Public API. --- */
 
-void uparse_init(Parser *p, Lexer *lex, Arena *arena) {
+void uparse_init(Parser *p, ULexer *lex, Arena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;
@@ -241,7 +241,7 @@ void uparse_init(Parser *p, Lexer *lex, Arena *arena) {
 AstNode *uparse_next_statement(Parser *p) {
     if (p->arena->oom) return &uparser_oom_sentinel;
 
-    Token t = peek(p);
+    UToken t = peek(p);
     if (t.type == TOK_EOF) return NULL;
 
     AstNode *expr = parse_expression(p, 0);
@@ -253,7 +253,7 @@ AstNode *uparse_next_statement(Parser *p) {
     }
 
     /* Statement boundary: expect '|' or EOF. */
-    Token term = peek(p);
+    UToken term = peek(p);
     if (term.type == TOK_PIPE) {
         consume(p);
         return expr;

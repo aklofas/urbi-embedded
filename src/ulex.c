@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Lexer. */
+/* ULexer. */
 
 #include "ulex.h"
 
@@ -27,8 +27,8 @@ static const char *ERR_MSG[] = {
     "integer literal exceeds INT64_MAX"
 };
 
-static Token make_error(const LexErrorCode code, const int line, const int col, const int len) {
-    Token t = {0};
+static UToken make_error(const ULexError code, const int line, const int col, const int len) {
+    UToken t = {0};
     t.type = TOK_ERROR;
     t.line = line;
     t.col = col;
@@ -38,9 +38,9 @@ static Token make_error(const LexErrorCode code, const int line, const int col, 
     return t;
 }
 
-static Token make_tok(const Lexer *l, const TokenType type,
+static UToken make_tok(const ULexer *l, const UTokenType type,
                      const char *start, const int len) {
-    Token t = {0};
+    UToken t = {0};
     t.type = type;
     t.line = l->line;
     t.col = (int)(start - l->line_start) + 1;
@@ -67,8 +67,8 @@ static int acc_digit(int64_t *acc, const int digit, const int base) {
 /* Scan a radix-prefixed integer. lex->cur points at the first char after
    the prefix; start points at the '0' of the prefix; prefix_len is 2.
    base is 16/2/8; malformed code is the base-appropriate LEX_MALFORMED_*. */
-static Token scan_radix(Lexer *lex, const char *start, const int base,
-                        const LexErrorCode malformed_code) {
+static UToken scan_radix(ULexer *lex, const char *start, const int base,
+                        const ULexError malformed_code) {
     const int start_col = (int)(start - lex->line_start) + 1;
     const int start_line = lex->line;
 
@@ -141,7 +141,7 @@ static Token scan_radix(Lexer *lex, const char *start, const int base,
                           start_line, start_col, len);
     }
 
-    Token t = {0};
+    UToken t = {0};
     t.type = TOK_INT;
     t.line = start_line;
     t.col = start_col;
@@ -152,7 +152,7 @@ static Token scan_radix(Lexer *lex, const char *start, const int base,
 
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
-static Token scan_decimal(Lexer *lex) {
+static UToken scan_decimal(ULexer *lex) {
     const char *start = lex->cur;
     const int start_col = (int)(start - lex->line_start) + 1;
     const int start_line = lex->line;
@@ -220,7 +220,7 @@ static Token scan_decimal(Lexer *lex) {
                           start_line, start_col, len);
     }
 
-    Token t = {0};
+    UToken t = {0};
     t.type = TOK_INT;
     t.line = start_line;
     t.col = start_col;
@@ -239,14 +239,14 @@ static int is_ident_cont(const char c) {
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
-static Token scan_ident(Lexer *lex) {
+static UToken scan_ident(ULexer *lex) {
     const char *start = lex->cur;
     const int start_col = (int)(start - lex->line_start) + 1;
     const int start_line = lex->line;
     while (lex->cur < lex->end && is_ident_cont(*lex->cur)) {
         lex->cur++;
     }
-    Token t = {0};
+    UToken t = {0};
     t.type = TOK_IDENT;
     t.line = start_line;
     t.col = start_col;
@@ -256,7 +256,7 @@ static Token scan_ident(Lexer *lex) {
     return t;
 }
 
-void ulex_init(Lexer *lex, const char *src, const size_t len) {
+void ulex_init(ULexer *lex, const char *src, const size_t len) {
     lex->src = src;
     lex->end = src + len;
     lex->cur = src;
@@ -264,8 +264,8 @@ void ulex_init(Lexer *lex, const char *src, const size_t len) {
     lex->line_start = src;
 }
 
-static Token make_eof(const Lexer *l) {
-    Token t = {0};
+static UToken make_eof(const ULexer *l) {
+    UToken t = {0};
     t.type = TOK_EOF;
     t.line = l->line;
     t.col = (int)(l->cur - l->line_start) + 1;
@@ -273,12 +273,12 @@ static Token make_eof(const Lexer *l) {
 }
 
 typedef struct {
-    LexErrorCode code;
+    ULexError code;
     int line;
     int col;
 } TriviaResult;
 
-static TriviaResult skip_trivia(Lexer *l) {
+static TriviaResult skip_trivia(ULexer *l) {
     TriviaResult r = {LEX_OK, 0, 0};
     while (l->cur < l->end) {
         const char c = *l->cur;
@@ -337,7 +337,7 @@ static TriviaResult skip_trivia(Lexer *l) {
     return r;
 }
 
-Token ulex_next(Lexer *lex) {
+UToken ulex_next(ULexer *lex) {
     TriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
         return make_error(tr.code, tr.line, tr.col, 2);
@@ -372,7 +372,7 @@ Token ulex_next(Lexer *lex) {
     }
 }
 
-const char *ulex_token_name(const TokenType t) {
+const char *ulex_token_name(const UTokenType t) {
     if ((unsigned)t >= sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0])) {
         return "TOK_UNKNOWN";
     }

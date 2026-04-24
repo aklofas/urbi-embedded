@@ -3,7 +3,7 @@
  *
  * Feeds raw bytes through ulex_init + ulex_next until TOK_EOF, asserting
  * nothing more than "no crash".  Target property: the lexer produces a
- * finite stream of well-formed Tokens (including TOK_ERROR for malformed
+ * finite stream of well-formed UTokens (including TOK_ERROR for malformed
  * input) from any byte sequence, without reading past the end of the
  * buffer and without crashing.  Coverage-guided fuzzing explores the
  * error-recovery paths in particular.
@@ -23,10 +23,10 @@
 #include "ulex.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    Lexer lex;
+    ULexer lex;
     ulex_init(&lex, (const char *)data, size);
     for (;;) {
-        Token t = ulex_next(&lex);
+        UToken t = ulex_next(&lex);
         if (t.type == TOK_EOF) break;
     }
     return 0;

@@ -16,18 +16,18 @@ extern "C" {
 
 /*
  * Parser — stack-allocated by the caller; initialized by uparse_init.
- * Borrows both Lexer and Arena; both must outlive the Parser and any
+ * Borrows both ULexer and Arena; both must outlive the Parser and any
  * AstNode returned from uparse_next_statement.
  */
 typedef struct {
-    Lexer *lex;
+    ULexer *lex;
     Arena *arena;
-    Token peek;
+    UToken peek;
     bool have_peek;
 } Parser;
 
 /* Initialize.  No allocation.  Both lex and arena must outlive p. */
-void uparse_init(Parser *p, Lexer *lex, Arena *arena);
+void uparse_init(Parser *p, ULexer *lex, Arena *arena);
 
 /*
  * Parse the next statement.

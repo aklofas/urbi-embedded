@@ -4,20 +4,20 @@
 #include "ulex.h"
 
 static void eof_on_empty_input(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "", 0);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 1);
     UASSERT_EQ(t.col, 1);
 }
 
 static void eof_is_idempotent(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "", 0);
-    const Token t1 = ulex_next(&l);
-    const Token t2 = ulex_next(&l);
-    const Token t3 = ulex_next(&l);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
     UASSERT_EQ(t1.type, TOK_EOF);
     UASSERT_EQ(t2.type, TOK_EOF);
     UASSERT_EQ(t3.type, TOK_EOF);
@@ -29,36 +29,36 @@ static void token_name_returns_static_strings(void) {
 }
 
 static void whitespace_only_yields_eof_at_correct_position(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "   ", 3);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 1);
     UASSERT_EQ(t.col, 4);
 }
 
 static void newline_lf_advances_line(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "\n\n", 2);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 3);
     UASSERT_EQ(t.col, 1);
 }
 
 static void newline_crlf_advances_line_once(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "\r\n\r\n", 4);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 3);
     UASSERT_EQ(t.col, 1);
 }
 
 static void tabs_are_whitespace(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "\t\t\t", 3);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 1);
     /* tab counts as one column per spec §8 */
@@ -66,41 +66,41 @@ static void tabs_are_whitespace(void) {
 }
 
 static void line_comment_to_eof(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "// hello", 8);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
 }
 
 static void line_comment_to_newline(void) {
-    Lexer l;
+    ULexer l;
     const char *s = "// hello\n";
     ulex_init(&l, s, 9);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 2);
 }
 
 static void block_comment_single_line(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "/* hi */", 8);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
 }
 
 static void block_comment_spans_lines(void) {
-    Lexer l;
+    ULexer l;
     const char *s = "/* a\nb\nc */";
     ulex_init(&l, s, 11);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_EOF);
     UASSERT_EQ(t.line, 3);
 }
 
 static void unterminated_block_comment_emits_error(void) {
-    Lexer l;
+    ULexer l;
     ulex_init(&l, "/* oops", 7);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_UNTERMINATED_BLOCK_COMMENT);
     UASSERT_EQ(t.line, 1);
@@ -110,71 +110,71 @@ static void unterminated_block_comment_emits_error(void) {
 }
 
 static void plus_token(void) {
-    Lexer l; ulex_init(&l, "+", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "+", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_PLUS);
     UASSERT_EQ(t.len, 1);
     UASSERT_EQ(t.col, 1);
 }
 
 static void minus_token(void) {
-    Lexer l; ulex_init(&l, "-", 1);
+    ULexer l; ulex_init(&l, "-", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_MINUS);
 }
 
 static void star_token(void) {
-    Lexer l; ulex_init(&l, "*", 1);
+    ULexer l; ulex_init(&l, "*", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_STAR);
 }
 
 static void slash_token(void) {
-    Lexer l; ulex_init(&l, "/", 1);
+    ULexer l; ulex_init(&l, "/", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_SLASH);
 }
 
 static void lparen_token(void) {
-    Lexer l; ulex_init(&l, "(", 1);
+    ULexer l; ulex_init(&l, "(", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_LPAREN);
 }
 
 static void rparen_token(void) {
-    Lexer l; ulex_init(&l, ")", 1);
+    ULexer l; ulex_init(&l, ")", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_RPAREN);
 }
 
 static void pipe_token(void) {
-    Lexer l; ulex_init(&l, "|", 1);
+    ULexer l; ulex_init(&l, "|", 1);
     UASSERT_EQ(ulex_next(&l).type, TOK_PIPE);
 }
 
 static void plus_position_on_second_line(void) {
-    Lexer l;
+    ULexer l;
     const char *s = "  \n +";
     ulex_init(&l, s, 5);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_PLUS);
     UASSERT_EQ(t.line, 2);
     UASSERT_EQ(t.col, 2);
 }
 
 static void int_zero(void) {
-    Lexer l; ulex_init(&l, "0", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0);
     UASSERT_EQ(t.len, 1);
 }
 
 static void int_single_digit(void) {
-    Lexer l; ulex_init(&l, "7", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "7", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 7);
 }
 
 static void int_multi_digit(void) {
-    Lexer l; ulex_init(&l, "42", 2);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "42", 2);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 42);
     UASSERT_EQ(t.len, 2);
@@ -182,265 +182,265 @@ static void int_multi_digit(void) {
 
 static void int_max_i64(void) {
     const char *s = "9223372036854775807";
-    Lexer l; ulex_init(&l, s, 19);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, s, 19);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 9223372036854775807LL);
 }
 
 static void int_overflow(void) {
     const char *s = "9223372036854775808";
-    Lexer l; ulex_init(&l, s, 19);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, s, 19);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
 static void int_with_underscore(void) {
-    Lexer l; ulex_init(&l, "1_000", 5);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "1_000", 5);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 1000);
     UASSERT_EQ(t.len, 5);
 }
 
 static void int_with_underscores_multi(void) {
-    Lexer l; ulex_init(&l, "1_000_000", 9);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "1_000_000", 9);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 1000000);
 }
 
 static void int_trailing_underscore_errors(void) {
-    Lexer l; ulex_init(&l, "42_", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "42_", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
 }
 
 static void int_adjacent_underscores_error(void) {
-    Lexer l; ulex_init(&l, "1__000", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "1__000", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
 }
 
 static void int_leading_zero_ambiguous(void) {
-    Lexer l; ulex_init(&l, "042", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "042", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
 }
 
 static void int_zero_alone_is_legal(void) {
-    Lexer l; ulex_init(&l, "0", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0);
 }
 
 static void int_double_zero_is_ambiguous(void) {
-    Lexer l; ulex_init(&l, "00", 2);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "00", 2);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
 }
 
 static void hex_lower_prefix(void) {
-    Lexer l; ulex_init(&l, "0x2A", 4);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x2A", 4);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 42);
 }
 
 static void hex_upper_prefix(void) {
-    Lexer l; ulex_init(&l, "0XFF", 4);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0XFF", 4);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 255);
 }
 
 static void hex_with_underscores(void) {
-    Lexer l; ulex_init(&l, "0xDEAD_BEEF", 11);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0xDEAD_BEEF", 11);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0xDEADBEEF);
 }
 
 static void hex_i64_max(void) {
-    Lexer l; ulex_init(&l, "0x7FFF_FFFF_FFFF_FFFF", 21);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x7FFF_FFFF_FFFF_FFFF", 21);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0x7FFFFFFFFFFFFFFFLL);
 }
 
 static void hex_empty_radix(void) {
-    Lexer l; ulex_init(&l, "0x", 2);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x", 2);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
 }
 
 static void hex_malformed_digit(void) {
-    Lexer l; ulex_init(&l, "0xG", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0xG", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_MALFORMED_HEX);
 }
 
 static void hex_leading_underscore(void) {
-    Lexer l; ulex_init(&l, "0x_42", 5);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x_42", 5);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
 }
 
 static void hex_trailing_underscore(void) {
-    Lexer l; ulex_init(&l, "0x42_", 5);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x42_", 5);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
 }
 
 static void bin_simple(void) {
-    Lexer l; ulex_init(&l, "0b1010", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b1010", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 10);
 }
 
 static void bin_upper_prefix(void) {
-    Lexer l; ulex_init(&l, "0B1111", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0B1111", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 15);
 }
 
 static void bin_with_underscores(void) {
-    Lexer l; ulex_init(&l, "0b1010_0101", 11);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b1010_0101", 11);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0xA5);
 }
 
 static void bin_empty_radix(void) {
-    Lexer l; ulex_init(&l, "0b", 2);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b", 2);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
 }
 
 static void bin_malformed_digit(void) {
-    Lexer l; ulex_init(&l, "0b2", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b2", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_MALFORMED_BIN);
 }
 
 static void bin_leading_underscore(void) {
-    Lexer l; ulex_init(&l, "0b_1010", 7);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b_1010", 7);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
 }
 
 static void oct_simple(void) {
-    Lexer l; ulex_init(&l, "0o42", 4);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o42", 4);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 34);
 }
 
 static void oct_upper_prefix(void) {
-    Lexer l; ulex_init(&l, "0O755", 5);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0O755", 5);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 493);
 }
 
 static void oct_with_underscores(void) {
-    Lexer l; ulex_init(&l, "0o177_777", 9);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o177_777", 9);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_INT);
     UASSERT_EQ(t.u.i, 0177777);
 }
 
 static void oct_empty_radix(void) {
-    Lexer l; ulex_init(&l, "0o", 2);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o", 2);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_EMPTY_RADIX);
 }
 
 static void oct_malformed_eight(void) {
-    Lexer l; ulex_init(&l, "0o8", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o8", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_MALFORMED_OCT);
 }
 
 static void oct_malformed_nine(void) {
-    Lexer l; ulex_init(&l, "0o9", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o9", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_MALFORMED_OCT);
 }
 
 static void ident_single_letter(void) {
-    Lexer l; ulex_init(&l, "x", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "x", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 1);
     UASSERT_EQ(t.u.str.start[0], 'x');
 }
 
 static void ident_underscore_alone(void) {
-    Lexer l; ulex_init(&l, "_", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "_", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 1);
 }
 
 static void ident_underscore_prefixed(void) {
-    Lexer l; ulex_init(&l, "_private", 8);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "_private", 8);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 8);
 }
 
 static void ident_with_digits(void) {
-    Lexer l; ulex_init(&l, "foo123", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "foo123", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 6);
 }
 
 static void ident_camel_case(void) {
-    Lexer l; ulex_init(&l, "camelCase", 9);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "camelCase", 9);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 9);
 }
 
 static void ident_snake_case(void) {
-    Lexer l; ulex_init(&l, "snake_case", 10);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "snake_case", 10);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 10);
 }
 
 static void leading_underscore_digit_is_ident(void) {
     /* Identifiers win at leading '_'. */
-    Lexer l; ulex_init(&l, "_42", 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "_42", 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.u.str.len, 3);
 }
 
 static void ident_start_points_into_source(void) {
     const char *src = "foo";
-    Lexer l; ulex_init(&l, src, 3);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, src, 3);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     /* zero-copy: t.u.str.start is exactly src */
     UASSERT(t.u.str.start == src);
@@ -448,9 +448,9 @@ static void ident_start_points_into_source(void) {
 
 static void digit_then_ident_is_two_tokens(void) {
     /* 123foo lexes as TOK_INT(123) then TOK_IDENT(foo). */
-    Lexer l; ulex_init(&l, "123foo", 6);
-    const Token t1 = ulex_next(&l);
-    const Token t2 = ulex_next(&l);
+    ULexer l; ulex_init(&l, "123foo", 6);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
     UASSERT_EQ(t1.type, TOK_INT);
     UASSERT_EQ(t1.u.i, 123);
     UASSERT_EQ(t2.type, TOK_IDENT);
@@ -459,12 +459,12 @@ static void digit_then_ident_is_two_tokens(void) {
 
 static void expr_one_plus_two_pipe(void) {
     /* The M1 walking-skeleton REPL target. */
-    Lexer l; ulex_init(&l, "1 + 2 |", 7);
-    const Token t1 = ulex_next(&l);
-    const Token t2 = ulex_next(&l);
-    const Token t3 = ulex_next(&l);
-    const Token t4 = ulex_next(&l);
-    const Token t5 = ulex_next(&l);
+    ULexer l; ulex_init(&l, "1 + 2 |", 7);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
+    const UToken t4 = ulex_next(&l);
+    const UToken t5 = ulex_next(&l);
     UASSERT_EQ(t1.type, TOK_INT);   UASSERT_EQ(t1.u.i, 1);
     UASSERT_EQ(t2.type, TOK_PLUS);
     UASSERT_EQ(t3.type, TOK_INT);   UASSERT_EQ(t3.u.i, 2);
@@ -473,32 +473,32 @@ static void expr_one_plus_two_pipe(void) {
 }
 
 static void parenthesized_expression(void) {
-    Lexer l; ulex_init(&l, "(1 + 2) * 3", 11);
-    const TokenType expected[] = {
+    ULexer l; ulex_init(&l, "(1 + 2) * 3", 11);
+    const UTokenType expected[] = {
         TOK_LPAREN, TOK_INT, TOK_PLUS, TOK_INT, TOK_RPAREN,
         TOK_STAR, TOK_INT, TOK_EOF
     };
     for (size_t i = 0; i < sizeof(expected)/sizeof(expected[0]); i++) {
-        const Token t = ulex_next(&l);
+        const UToken t = ulex_next(&l);
         UASSERT_EQ(t.type, expected[i]);
     }
 }
 
 static void ident_plus_ident(void) {
-    Lexer l; ulex_init(&l, "foo + bar", 9);
-    const Token t1 = ulex_next(&l);
-    const Token t2 = ulex_next(&l);
-    const Token t3 = ulex_next(&l);
+    ULexer l; ulex_init(&l, "foo + bar", 9);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
     UASSERT_EQ(t1.type, TOK_IDENT); UASSERT_EQ(t1.u.str.len, 3);
     UASSERT_EQ(t2.type, TOK_PLUS);
     UASSERT_EQ(t3.type, TOK_IDENT); UASSERT_EQ(t3.u.str.len, 3);
 }
 
 static void sync_line_accuracy_multi_line(void) {
-    /* Token on line 3, col 5. */
+    /* UToken on line 3, col 5. */
     const char *src = "\n\n    x";
-    Lexer l; ulex_init(&l, src, 7);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, src, 7);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.line, 3);
     UASSERT_EQ(t.col, 5);
@@ -506,8 +506,8 @@ static void sync_line_accuracy_multi_line(void) {
 
 static void sync_line_across_block_comment(void) {
     const char *src = "/* a\n   b */ x";
-    Lexer l; ulex_init(&l, src, 14);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, src, 14);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_IDENT);
     UASSERT_EQ(t.line, 2);
     /* x is the 9th column on line 2: 3 spaces + b + space + star + slash + space */
@@ -516,120 +516,120 @@ static void sync_line_across_block_comment(void) {
 
 static void sequence_after_error_continues(void) {
     /* After an error, lexer advances past bad input; next token is valid. */
-    Lexer l; ulex_init(&l, "042 + 1", 7);
-    const Token t1 = ulex_next(&l);
+    ULexer l; ulex_init(&l, "042 + 1", 7);
+    const UToken t1 = ulex_next(&l);
     UASSERT_EQ(t1.type, TOK_ERROR);
     UASSERT_EQ(t1.u.err.code, LEX_AMBIGUOUS_LEADING_ZERO);
-    const Token t2 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
     UASSERT_EQ(t2.type, TOK_PLUS);
-    const Token t3 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
     UASSERT_EQ(t3.type, TOK_INT);
     UASSERT_EQ(t3.u.i, 1);
 }
 
 static void unknown_char_dollar(void) {
-    Lexer l; ulex_init(&l, "$", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "$", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
     UASSERT_EQ(t.col, 1);
 }
 
 static void unknown_char_at(void) {
-    Lexer l; ulex_init(&l, "@", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "@", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
 }
 
 static void unknown_char_semicolon_still_deferred(void) {
     /* Semicolons are out of current scope; they land with the compound separators. */
-    Lexer l; ulex_init(&l, ";", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, ";", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
 }
 
 static void unknown_char_lone_cr_rejected(void) {
     /* Lone CR (no LF after) is LEX_UNKNOWN_CHAR per spec. */
-    Lexer l; ulex_init(&l, "\r", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "\r", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
 }
 
 static void unknown_char_message_is_correct(void) {
-    Lexer l; ulex_init(&l, "$", 1);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "$", 1);
+    const UToken t = ulex_next(&l);
     UASSERT_STR_EQ(t.u.err.message, "unknown character");
 }
 
 /* Hex — fills the adjacent-underscores gap. */
 static void hex_adjacent_underscores(void) {
-    Lexer l; ulex_init(&l, "0xFF__00", 8);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0xFF__00", 8);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
 }
 
 static void hex_overflow(void) {
     /* 0x8000_0000_0000_0000 = INT64_MAX + 1 */
-    Lexer l; ulex_init(&l, "0x8000000000000000", 18);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0x8000000000000000", 18);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
 /* Binary — trailing, adjacent, overflow. */
 static void bin_trailing_underscore(void) {
-    Lexer l; ulex_init(&l, "0b1010_", 7);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b1010_", 7);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
 }
 
 static void bin_adjacent_underscores(void) {
-    Lexer l; ulex_init(&l, "0b10__01", 8);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0b10__01", 8);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
 }
 
 static void bin_overflow(void) {
     /* 64 binary digits = 2^64 = INT64_MAX + 1 range */
-    Lexer l; ulex_init(&l,
+    ULexer l; ulex_init(&l,
         "0b10000000000000000000000000000000000000000000000000000000000000000", 67);
-    const Token t = ulex_next(&l);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
 /* Octal — leading, trailing, adjacent, overflow. */
 static void oct_leading_underscore(void) {
-    Lexer l; ulex_init(&l, "0o_755", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o_755", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_LEADING_UNDERSCORE);
 }
 
 static void oct_trailing_underscore(void) {
-    Lexer l; ulex_init(&l, "0o755_", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o755_", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_TRAILING_UNDERSCORE);
 }
 
 static void oct_adjacent_underscores(void) {
-    Lexer l; ulex_init(&l, "0o7__5", 6);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o7__5", 6);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_ADJACENT_UNDERSCORES);
 }
 
 static void oct_overflow(void) {
     /* 0o1000000000000000000000 = 2^63 = INT64_MAX + 1 */
-    Lexer l; ulex_init(&l, "0o1000000000000000000000", 24);
-    const Token t = ulex_next(&l);
+    ULexer l; ulex_init(&l, "0o1000000000000000000000", 24);
+    const UToken t = ulex_next(&l);
     UASSERT_EQ(t.type, TOK_ERROR);
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }

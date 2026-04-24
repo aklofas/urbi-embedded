@@ -31,7 +31,7 @@
    Returns UVM_OK with *out set on success, or the first non-OK error.
    All pipeline allocations are freed before return. */
 static UVMError pipeline_eval(const char *src, UValue *out) {
-    Lexer lex;
+    ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
     Arena arena;

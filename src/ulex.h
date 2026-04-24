@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /* Full token-type space of the lexer.  Every call to ulex_next returns
-   exactly one of these values in Token.type. */
+   exactly one of these values in UToken.type. */
 typedef enum {
     TOK_EOF = 0,      /* end of input — sentinel */
     TOK_INT,          /* integer literal */
@@ -25,9 +25,9 @@ typedef enum {
     TOK_RPAREN,       /* ) */
     TOK_PIPE,         /* | */
     TOK_ERROR         /* malformed input */
-} TokenType;
+} UTokenType;
 
-/* Error codes carried in Token.u.err.code when Token.type == TOK_ERROR. */
+/* Error codes carried in UToken.u.err.code when UToken.type == TOK_ERROR. */
 typedef enum {
     LEX_OK = 0,
     LEX_UNKNOWN_CHAR,
@@ -41,24 +41,24 @@ typedef enum {
     LEX_TRAILING_UNDERSCORE,
     LEX_ADJACENT_UNDERSCORES,
     LEX_INT_OVERFLOW
-} LexErrorCode;
+} ULexError;
 
 /*
- * Token — returned by value from ulex_next; no heap allocation.
+ * UToken — returned by value from ulex_next; no heap allocation.
  *
  * Lifetime: u.str.start is a non-owning pointer into the caller's source
- * buffer.  The source buffer MUST outlive any Token that references it.
+ * buffer.  The source buffer MUST outlive any UToken that references it.
  *
  * Union invariants (active member per type):
  *   u.i    — TOK_INT: the parsed integer value
  *   u.str  — TOK_IDENT: start/len point into the source buffer
- *   u.err  — TOK_ERROR: code (LexErrorCode) + static message string
+ *   u.err  — TOK_ERROR: code (ULexError) + static message string
  *   (other types leave u zero-valued)
  *
  * Position fields: line and col are 1-based; len is the span in source bytes.
  */
 typedef struct {
-    TokenType type;
+    UTokenType type;
     int line;         /* 1-based */
     int col;          /* 1-based column of first char */
     int len;          /* span length in source chars */
@@ -69,17 +69,17 @@ typedef struct {
             int len;
         } str;
         struct {                            /* TOK_ERROR */
-            int code;                       /* LexErrorCode */
+            int code;                       /* ULexError */
             const char *message;            /* static string */
         } err;
     } u;
-} Token;
+} UToken;
 
 /*
- * Lexer — stack-allocated by the caller; zero-initialized by ulex_init.
+ * ULexer — stack-allocated by the caller; zero-initialized by ulex_init.
  * No heap allocation at any point during lexing.
  *
- * The source buffer (src) must outlive the Lexer and any Tokens derived
+ * The source buffer (src) must outlive the ULexer and any UTokens derived
  * from it, and must not be modified while lexing is in progress.
  */
 typedef struct {
@@ -88,22 +88,22 @@ typedef struct {
     const char *cur;
     int line;
     const char *line_start;
-} Lexer;
+} ULexer;
 
-/* Initialize the Lexer over a source buffer.  No allocation.
+/* Initialize the ULexer over a source buffer.  No allocation.
    src must point to at least len valid bytes and must remain valid and
-   unmodified for the lifetime of the Lexer and all Tokens it produces. */
-void ulex_init(Lexer *lex, const char *src, size_t len);
+   unmodified for the lifetime of the ULexer and all UTokens it produces. */
+void ulex_init(ULexer *lex, const char *src, size_t len);
 
-/* Read and return the next Token.  Idempotent at EOF — subsequent calls
+/* Read and return the next UToken.  Idempotent at EOF — subsequent calls
    keep returning TOK_EOF.  After TOK_ERROR the cursor has advanced past the
    offending byte; the caller may continue lexing for error recovery. */
-Token ulex_next(Lexer *lex);
+UToken ulex_next(ULexer *lex);
 
 /* Return a static string such as "TOK_PLUS" for the given type.
    Debug helper; bounds-guarded (out-of-range returns "TOK_UNKNOWN").
    Never allocates. */
-const char *ulex_token_name(TokenType t);
+const char *ulex_token_name(UTokenType t);
 
 #ifdef __cplusplus
 }

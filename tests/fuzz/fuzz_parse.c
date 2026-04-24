@@ -24,7 +24,7 @@
 #include "uparse.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    Lexer lex;
+    ULexer lex;
     ulex_init(&lex, (const char *)data, size);
 
     Arena arena;

@@ -64,7 +64,7 @@ static void ast_dump(const AstNode *n, char *buf, size_t bufsz) {
 /* --- Convenience: parse a source string, return the first statement. --- */
 
 typedef struct {
-    Lexer lex;
+    ULexer lex;
     Arena arena;
     Parser p;
 } ParseCtx;
@@ -480,7 +480,7 @@ static void oom_free(void *p, void *ud) {
 
 UTEST(parse_oom_returns_sentinel_and_sticks) {
     OomSpy s = { 0, 0 }; /* fail on the very first backing alloc */
-    Lexer lex;
+    ULexer lex;
     Arena arena;
     Parser p;
     const char *src = "1 + 2";
@@ -509,7 +509,7 @@ UTEST(parse_oom_mid_expression) {
        expression.  The pluggable allocator counts chunk allocations; a
        chunk holds many AST nodes, so we fail the first chunk alloc. */
     OomSpy s = { 0, 0 };
-    Lexer lex;
+    ULexer lex;
     Arena arena;
     Parser p;
     const char *src = "1 + 2 * (3 - 4)";
