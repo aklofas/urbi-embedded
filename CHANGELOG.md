@@ -15,7 +15,7 @@
 
 - Documented the tiered test-target convention in
   `docs/internals/test-harness.md` — `make test` and the three fast
-  sanitizer variants form the pre-commit gate (~30 s combined);
+  companion variants form the pre-commit gate (~30 s combined);
   `make releasetest` is the pre-release gate (~3–5 min). Extended
   the target-reference table with a Runtime column and the
   previously-undocumented `test-switch` and `releasetest` rows.
