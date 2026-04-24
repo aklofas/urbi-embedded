@@ -65,15 +65,32 @@
 - Bytecode emitter walks AST nodes into a `UModule`: register-based instruction stream (byte-aligned 8/8/8/8 encoding), single tagged constant pool with linear-scan dedup, Lua-5.5-style delta-encoded synclines with absolute-line checkpoints, stack-discipline register allocator with destination-reuse. 8-opcode M1 set (`LOADK`, `MOVE`, `ADD`, `SUB`, `MUL`, `DIV`, `NEG`, `RET`). Reserved opcode slots 8–255 for M2+ additions (locals, control flow, calls, reactive primitives).
 - `.urb` on-disk format: 24-byte header (magic `"URBI"` + 16·major+minor version + 6-byte FTP/paste-corruption canary + 8-byte flavor descriptor) followed by varint-delimited sections (metadata, constants, 4-byte-aligned instruction stream, delta synclines). Per-target flavor pinned at compile time (`URBI_INT_WIDTH` / `URBI_FLOAT_TYPE` / `URBI_INSTR_WIDTH` / `URBI_ENDIANNESS`); loader refuses mismatches with field-specific diagnostics.
 - Loader verifier sweep after byte-level decode: opcode range, register range, `LOADK` Bx bounds, terminal `OP_RET`, abs-line pc monotonicity, 4-byte instruction alignment. `OP_RET` B operand and `OP_MOVE`/`OP_NEG` C operand intentionally not enforced (unused bytes, no runtime effect).
-- Emitter and module APIs in new headers `uemit.h` / `umodule.h`: `Emitter` accumulator (init / statement / finish), `UModule` struct, `umodule_deserialize`, `umodule_serialize`, `uemit_disassemble`, error-name tables. Compiler-internal — `urbi.h` unchanged.
-- Streaming Pratt parser consumes the lexer's token stream and produces one `AstNode` per statement (integer literal, identifier, unary, binary, error). Recursive-descent statements + precedence climber for `+ - * /` with parens, unary `+ -` (plus is parse-time no-op), panic-mode recovery via `|`, in-stream `AST_ERROR` nodes, OOM sentinel path. Public parser API in `uparse.h`: `Parser`, `uparse_init`, `uparse_next_statement`, `uparse_error_name`.
+- UEmitter and module APIs in new headers `uemit.h` / `umodule.h`: `UEmitter` accumulator (init / statement / finish), `UModule` struct, `umodule_deserialize`, `umodule_serialize`, `uemit_disassemble`, error-name tables. Compiler-internal — `urbi.h` unchanged.
+- Streaming Pratt parser consumes the lexer's token stream and produces one `UAstNode` per statement (integer literal, identifier, unary, binary, error). Recursive-descent statements + precedence climber for `+ - * /` with parens, unary `+ -` (plus is parse-time no-op), panic-mode recovery via `|`, in-stream `AST_ERROR` nodes, OOM sentinel path. Public parser API in `uparse.h`: `UParser`, `uparse_init`, `uparse_next_statement`, `uparse_error_name`.
 - Internal chunk-list bump-allocator arena (`uarena.h` / `uarena.c`) backing the AST and emit arenas. Three init variants — `uarena_init` (stdlib), `uarena_init_ex` (pluggable allocator for embedded), `uarena_init_static` (fixed caller buffer for freestanding) — plus `uarena_alloc`, `uarena_reset`, `uarena_destroy`. No copy between chunks; pointers stable across growth.
 - Lexer scans integer literals (decimal, hex, binary, octal with underscores), identifiers, single-character operators (`+ - * /`), parentheses, and the statement separator `|`. Full synclines on every token.
 - Structured lexer error codes: unknown character, unterminated block comment, ambiguous leading zero, empty radix, malformed hex/binary/octal, leading/trailing/adjacent underscores, integer overflow.
-- Public lexer API in new header `ulex.h`: `Token`, `Lexer`, `ulex_init`, `ulex_next`, `ulex_token_name`. No allocation; caller owns source buffer.
+- Public lexer API in new header `ulex.h`: `UToken`, `ULexer`, `ulex_init`, `ulex_next`, `ulex_token_name`. No allocation; caller owns source buffer.
 
 ### Refactoring
 
+- Added the `U` prefix to every public struct and enum in the source tree so
+  host embedders can include any header without type-name collisions. `Lexer`
+  → `ULexer`, `Token` → `UToken`, `TokenType` → `UTokenType`,
+  `LexErrorCode` → `ULexError`, `Parser` → `UParser`,
+  `ParseErrorCode` → `UParseError`, `AstNode` → `UAstNode`,
+  `AstKind` → `UAstKind`, `UnaryOp` → `UAstUnaryOp`,
+  `BinaryOp` → `UAstBinaryOp`, `Arena` → `UArena`,
+  `ArenaChunk` → `UArenaChunk`, `Emitter` → `UEmitter`,
+  `EmitError` → `UEmitError`, `AbsLine` → `UAbsLine`. Error-type suffix
+  normalized: `LexErrorCode` and `ParseErrorCode` drop the redundant `Code`
+  suffix to match the existing `UVMError`/`UEmitError` pattern. Enum tag
+  values (`TOK_*`, `AST_*`, `LEX_*`, `PARSE_*`, `EMIT_*`, `OP_*`, `UOP_*`,
+  `BOP_*`) are unchanged — they are namespaced by prefix already, and
+  renaming them risks cross-family collisions (e.g. `UOP_*` already denotes
+  unary-op values, so opcode values can't take the same prefix). `src/uvarint.h`'s
+  include guard normalized from `URBI_UVARINT_H` to `UVARINT_H` to match
+  every other header.
 - Bytecode `Chunk` renamed to `UModule` across the codebase, and the
   `src/uchunk.{c,h}` + `tests/unit/test_chunk.c` module renamed to
   `src/umodule.{c,h}` + `tests/unit/test_module.c`. The type is the

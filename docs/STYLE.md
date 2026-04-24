@@ -42,7 +42,7 @@ Guidelines:
 
 | Kind | Form | Examples |
 |---|---|---|
-| Public types | `TitleCase` | `Token`, `Lexer`, `TokenType`, `LexErrorCode` |
+| Public types | `U` + `TitleCase` | `UToken`, `ULexer`, `UTokenType`, `ULexError` |
 | Public functions | `u<subsys>_<verb>` | `ulex_init`, `ulex_next`, `urbi_version` |
 | Public enum values | `SCREAMING_CASE` with subsystem prefix | `TOK_EOF`, `LEX_UNKNOWN_CHAR` |
 | Static helpers | `snake_case` | `scan_radix`, `make_error`, `is_ident_start` |
@@ -50,7 +50,7 @@ Guidelines:
 | Locals | `snake_case` | `start_col`, `digit_seen`, `looks_digitish` |
 | File-scope tables | `SCREAMING_CASE` | `TOKEN_NAMES`, `ERR_MSG` |
 
-Abbreviations are fine when the context is tight (`l` for a `Lexer *` inside lexer code, `t` for a `Token` inside a constructor). Prefer expansion at public surfaces (`TokenType` not `TT`).
+Abbreviations are fine when the context is tight (`l` for a `ULexer *` inside lexer code, `t` for a `UToken` inside a constructor). Prefer expansion at public surfaces (`UTokenType` not `TT`).
 
 ---
 
@@ -59,9 +59,9 @@ Abbreviations are fine when the context is tight (`l` for a `Lexer *` inside lex
 - **No heap allocation inside the library.** The public API exposes a pluggable allocator to the host; the library itself never calls `malloc` / `free` / `calloc` / `realloc` directly.
 - **No I/O inside the library.** No `printf`, `fprintf`, `stderr`, `fopen`. The host plugs in output sinks.
 - **No POSIX API calls.** No threading primitives, no `time(2)`, no `signal(2)`, no sockets. The host provides time and scheduling hooks if the subsystem needs them.
-- **No global mutable state.** State lives on caller-owned structs (`Lexer`, and later `urbi_state_t`). Multiple instances must coexist without interference.
-- **Stack-allocated state structs.** Callers declare `Lexer l;` on the stack and call `ulex_init(&l, ...)`. No `ulex_destroy` function — nothing to clean up.
-- **Zero-copy where feasible.** `Token.u.str.start` points into the caller's source buffer rather than copying. Document the lifetime contract at the API level.
+- **No global mutable state.** State lives on caller-owned structs (`ULexer`, and later `urbi_state_t`). Multiple instances must coexist without interference.
+- **Stack-allocated state structs.** Callers declare `ULexer l;` on the stack and call `ulex_init(&l, ...)`. No `ulex_destroy` function — nothing to clean up.
+- **Zero-copy where feasible.** `UToken.u.str.start` points into the caller's source buffer rather than copying. Document the lifetime contract at the API level.
 - **Freestanding-compilable.** Every `src/*.c` file must compile under `-ffreestanding` on a toolchain without a C library. See "Freestanding discipline" below for the rule.
 
 ---
@@ -84,7 +84,7 @@ The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv
 
 ## Const-correctness
 
-- **Pointer-to-const for read-only parameter data.** `const char *src`, `const Lexer *l`. Mutates through a pointer arg require non-const (`Lexer *lex`).
+- **Pointer-to-const for read-only parameter data.** `const char *src`, `const ULexer *l`. Mutates through a pointer arg require non-const (`ULexer *lex`).
 - **Top-level const on by-value function parameters, in definitions only.** `static int digit_value(const char c, const int base)`. Header declarations stay un-const-qualified — C strips top-level const from prototypes, so it's noise there.
 - **Const on read-only locals.** Any local that's computed or assigned once and then only read gets `const`. Loop accumulators and cursor-driven state stay mutable.
 - **Const on tables.** `static const char *TOKEN_NAMES[]`, `static const char *ERR_MSG[]`. Makes it explicit that these are compile-time-frozen lookup data.
@@ -98,7 +98,7 @@ Rationale: the long-term path includes formal-audit territory where const-correc
 Use aggregate zero-initialization for value-type structs:
 
 ```c
-Token t = {0};
+UToken t = {0};
 t.type = TOK_EOF;
 t.line = lex->line;
 ```
@@ -111,7 +111,7 @@ Exception: if a future use case does involve `memcmp` / hashing / wire-serializa
 
 ## Error handling
 
-- **Structured error codes in an enum.** One enum per subsystem (`LexErrorCode`), densely numbered, with `LEX_OK = 0` as the never-emitted sentinel.
+- **Structured error codes in an enum.** One enum per subsystem (`ULexError`), densely numbered, with `LEX_OK = 0` as the never-emitted sentinel.
 - **Static message table indexed by code.** `static const char *ERR_MSG[] = {...}`, one string per code, order mirrors the enum. Messages describe the error class, not the specific input (input position is tracked separately).
 - **In-stream errors.** Errors surface as a token variant (`TOK_ERROR`) with a structured payload, not as return codes or out-parameters. The caller chooses recovery policy: stop on first error, or keep scanning for subsequent tokens.
 - **Static error messages, never allocated.** Error tokens carry a pointer to the compile-time table; no `strdup`, no formatting at error time.
@@ -121,9 +121,9 @@ Exception: if a future use case does involve `memcmp` / hashing / wire-serializa
 
 ## Value types and tagged unions
 
-- **Prefer value-returned structs over out-parameters** for small aggregates. `ulex_next` returns `Token` by value; no allocation, no lifetime question.
+- **Prefer value-returned structs over out-parameters** for small aggregates. `ulex_next` returns `UToken` by value; no allocation, no lifetime question.
 - **Named unions, not anonymous.** `union { ... } u;` instead of `union { ... };`. Anonymous unions are a C11 feature; we're strict C99. Access is `t.u.i`, `t.u.str.start`, `t.u.err.code`.
-- **Tagged unions with a discriminator.** `Token.type` is the tag; only the union member matching the tag is valid to read. Other members are zero-initialized (per the `= {0}` rule) and must not be interpreted.
+- **Tagged unions with a discriminator.** `UToken.type` is the tag; only the union member matching the tag is valid to read. Other members are zero-initialized (per the `= {0}` rule) and must not be interpreted.
 
 ---
 
@@ -142,7 +142,7 @@ Exception: if a future use case does involve `memcmp` / hashing / wire-serializa
 - **TDD throughout.** Every new subsystem behavior: write a failing test, see it fail, write the minimal implementation that makes it pass, see it pass, commit. Not "write code, then add tests."
 - **One test file per subsystem** under `tests/unit/test_<subsys>.c`. Wire it into `tests/unit/runner.c` via an `extern` declaration and a call inside `main`.
 - **Each test case is a static function with a descriptive name.** `int_overflow`, `hex_leading_underscore`, `sync_line_across_block_comment`. Register with `utest_run("name", fn);` inside a `test_<subsys>_suite()` function.
-- **Const on test locals.** `const Token t = ulex_next(&l);` — tokens are write-once in tests. Matches the production-code const rule.
+- **Const on test locals.** `const UToken t = ulex_next(&l);` — tokens are write-once in tests. Matches the production-code const rule.
 - **Meaningful checks, not tautologies.** A test that reads `UASSERT_EQ(t.type, TOK_EOF)` after `ulex_next` on `""` is meaningful. A test that reads `UASSERT_EQ(1, 1)` is noise.
 - **Every reachable error code gets a test.** If `LEX_FOO_BAR` can be emitted by production code, a test must exercise it and assert the specific code.
 
@@ -153,7 +153,7 @@ Coverage targets: ≥ 90% line coverage, ≥ 80% branch coverage per subsystem. 
 ## Comments and documentation
 
 - **SPDX license identifier on line 1 of every source file.** `/* SPDX-License-Identifier: BSD-3-Clause */` — required, tool-consumable, lawyer-friendly.
-- **One-line purpose comment on line 2.** `/* Lexer. */`. What this file is, not how it works.
+- **One-line purpose comment on line 2.** `/* ULexer. */`. What this file is, not how it works.
 - **`/* why */` over `/* what */` in function bodies.** Well-named identifiers describe the what. Comments explain non-obvious choices: invariants, subtle ordering, workarounds for a specific compiler or platform.
 - **Block comments on public API declarations.** See Headers, above.
 - **No emojis.** Anywhere. Commits, code, comments, docs.

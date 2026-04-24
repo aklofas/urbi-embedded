@@ -12,9 +12,9 @@ independently testable.
 ```text
 source (const char *)
      │
-     ▼  [ulex.c]     produces  Token stream with line/col synclines
+     ▼  [ulex.c]     produces  UToken stream with line/col synclines
      │
-     ▼  [uparse.c]   produces  AstNode statements (UArena-allocated)
+     ▼  [uparse.c]   produces  UAstNode statements (UArena-allocated)
      │
      ▼  [uemit.c]    produces  UModule (bytecode, constants, synclines, max_reg)
      │
@@ -24,7 +24,7 @@ source (const char *)
 ```
 
 The key invariant is that the hand-off between stages is a small, typed struct
-— `Token`, `AstNode *`, `UModule *`, `UValue` — not an implicit shared global.
+— `UToken`, `UAstNode *`, `UModule *`, `UValue` — not an implicit shared global.
 Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
@@ -40,17 +40,17 @@ the v0.1.0-skeleton release implements.
 **Source:** `src/ulex.c` / `src/ulex.h`
 
 The lexer consumes a caller-owned, null-terminated-or-length-bounded source
-buffer and produces a stream of `Token` values via repeated calls to
-`ulex_next`. It performs no allocation of any kind: the `Lexer` struct is
-stack-allocated by the caller and initialized with `ulex_init`; each `Token`
+buffer and produces a stream of `UToken` values via repeated calls to
+`ulex_next`. It performs no allocation of any kind: the `ULexer` struct is
+stack-allocated by the caller and initialized with `ulex_init`; each `UToken`
 is returned by value.
 
 Lexemes are zero-copy. When the lexer produces `TOK_IDENT`, the resulting
-`Token` carries a `(const char *start, int len)` pair that points directly
-into the caller's source buffer. The buffer must outlive the `Lexer` and any
-`Token` derived from it. No copy is made.
+`UToken` carries a `(const char *start, int len)` pair that points directly
+into the caller's source buffer. The buffer must outlive the `ULexer` and any
+`UToken` derived from it. No copy is made.
 
-Every `Token` carries its source position: `line` and `col` are 1-based,
+Every `UToken` carries its source position: `line` and `col` are 1-based,
 matching the convention used throughout the pipeline. The `len` field records
 the span in source bytes. This position information flows downstream into AST
 nodes, then into the emitter's synclines, and ultimately into the `.urb`
@@ -58,7 +58,7 @@ bytecode as the delta-encoded line table — ensuring error messages from the VM
 can name the original source line.
 
 When the lexer encounters malformed input it returns a `TOK_ERROR` token
-rather than aborting. The error variant carries a `LexErrorCode` and a static
+rather than aborting. The error variant carries a `ULexError` and a static
 diagnostic string. The twelve error codes cover the observable failure modes:
 
 - `LEX_UNKNOWN_CHAR` — a byte that begins no valid token.
@@ -87,15 +87,15 @@ Eleven token types cover the walking-skeleton grammar: `TOK_EOF`, `TOK_INT`,
 
 **Source:** `src/uparse.c` / `src/uparse.h` / `src/uast.h`
 
-The parser consumes a `Lexer` and a caller-provided `Arena`, and produces one
-`AstNode *` per statement via `uparse_next_statement`. It is streaming: each
+The parser consumes a `ULexer` and a caller-provided `UArena`, and produces one
+`UAstNode *` per statement via `uparse_next_statement`. It is streaming: each
 call parses exactly one statement and returns. The caller processes the tree,
 then calls `uarena_reset` on the arena before the next statement. Long
 programs never accumulate unbounded AST memory.
 
-The `Parser` struct is stack-allocated by the caller and initialized with
-`uparse_init`. It borrows both the `Lexer` and the `Arena`; both must outlive
-the `Parser` and any `AstNode` returned from it.
+The `UParser` struct is stack-allocated by the caller and initialized with
+`uparse_init`. It borrows both the `ULexer` and the `UArena`; both must outlive
+the `UParser` and any `UAstNode` returned from it.
 
 ### Expression parsing
 
@@ -105,15 +105,15 @@ is: additive (`+`, `-`) < multiplicative (`*`, `/`). Parentheses group via
 standard recursive descent. Unary negation (`-`) is handled as a prefix
 operator at the right-associative unary binding power.
 
-The five `AstKind` values in the tagged union are:
+The five `UAstKind` values in the tagged union are:
 
 | Kind | Active union field | Contents |
 |---|---|---|
 | `AST_INT` | `u.i` | Parsed `int64_t` value |
 | `AST_IDENT` | `u.ident` | Zero-copy `(start, len)` into source buffer |
-| `AST_UNARY` | `u.unary` | `UnaryOp` + pointer to operand node |
-| `AST_BINARY` | `u.binary` | `BinaryOp` + pointers to left and right operand nodes |
-| `AST_ERROR` | `u.err` | `ParseErrorCode` + static message string |
+| `AST_UNARY` | `u.unary` | `UAstUnaryOp` + pointer to operand node |
+| `AST_BINARY` | `u.binary` | `UAstBinaryOp` + pointers to left and right operand nodes |
+| `AST_ERROR` | `u.err` | `UParseError` + static message string |
 
 Position fields `line` and `col` are 1-based on every node, matching the
 lexer. For `AST_BINARY` the position points at the operator token; for
@@ -130,7 +130,7 @@ Callers that want fine-grained error recovery inspect nodes of kind
 fatal inspect the `kind` field and stop.
 
 On allocator exhaustion the function returns an OOM sentinel (a statically
-allocated `AST_ERROR` with code `PARSE_OOM`), which is a valid `AstNode *`
+allocated `AST_ERROR` with code `PARSE_OOM`), which is a valid `UAstNode *`
 the caller can pass to the emitter without a null check. The emitter rejects
 it with `EMIT_AST_ERROR`.
 
@@ -144,8 +144,8 @@ it with `EMIT_AST_ERROR`.
 
 **Source:** `src/uarena.c` / `src/uarena.h`
 
-The `Arena` is a chunk-list bump allocator used by the parser to allocate
-`AstNode` trees and by the emitter's working memory. All allocations from a
+The `UArena` is a chunk-list bump allocator used by the parser to allocate
+`UAstNode` trees and by the emitter's working memory. All allocations from a
 given arena are freed together — there is no per-node `free`. This matches
 the pipeline's access pattern: parse a statement, emit it, reset the arena,
 repeat.
@@ -169,7 +169,7 @@ Three initialization modes share the same `uarena_alloc`, `uarena_reset`, and
   exhausted. `uarena_destroy` is a no-op. Used on freestanding targets
   (Cortex-M, RV32) where there is no heap at all.
 
-Pointer stability: once an `AstNode *` is returned from `uarena_alloc`, it
+Pointer stability: once an `UAstNode *` is returned from `uarena_alloc`, it
 remains valid at the same address until `uarena_reset` or `uarena_destroy`.
 UModule-list growth never moves existing allocations. This allows the emitter to
 hold raw pointers into AST trees without any pinning protocol.
@@ -183,14 +183,14 @@ sufficient for `long double` and SIMD on all v1.0 targets.
 
 **Source:** `src/uemit.c` / `src/uemit.h`
 
-The emitter consumes an `AstNode` tree and writes bytecode into a `UModule`.
+The emitter consumes an `UAstNode` tree and writes bytecode into a `UModule`.
 It is initialized once per module with `uemit_init`, then driven with one
 `uemit_statement(e, stmt)` call per top-level statement, and finalized with
 `uemit_finish(e)`. After `uemit_finish`, the caller owns a fully populated
 `UModule` ready for the VM or for serialization.
 
-The `Emitter` struct is stack-allocated by the caller. It borrows the `UModule`
-and the `Arena`; both must outlive the `Emitter`.
+The `UEmitter` struct is stack-allocated by the caller. It borrows the `UModule`
+and the `UArena`; both must outlive the `UEmitter`.
 
 ### Register allocation
 
@@ -227,7 +227,7 @@ for the full encoding specification.
 
 ### Emit error handling
 
-The `Emitter` maintains a sticky error field. The first error latches;
+The `UEmitter` maintains a sticky error field. The first error latches;
 subsequent `uemit_statement` calls return the same error without touching the
 `UModule`. After `uemit_finish` the accumulated error is returned. Seven error
 codes cover the observable failure modes: `EMIT_OOM`, `EMIT_AST_ERROR`,
@@ -377,7 +377,7 @@ modes:
 
 In all modes the pipeline is: `ulex_init` → `uparse_next_statement` loop →
 `uemit_statement` loop → `uemit_finish` → VM dispatch → result print.
-The REPL reuses a single `Arena` per line, calling `uarena_reset` after each
+The REPL reuses a single `UArena` per line, calling `uarena_reset` after each
 emitter pass to reclaim AST memory without a `destroy`/`init` cycle.
 
 The `urbi` binary does not add any new language-level functionality; it is
@@ -456,18 +456,18 @@ The GC implementation lands in a later release.
 src/
   urbi.h              Public C embedding API (currently: urbi_version())
   urbi.c              Core implementation (minimal at walking-skeleton stage)
-  ulex.h              Lexer API: Token, TokenType, LexErrorCode, Lexer
+  ulex.h              Lexer API: UToken, UTokenType, ULexError, ULexer
   ulex.c              Lexer implementation: ulex_init, ulex_next, ulex_token_name
-  uast.h              AST node types: AstKind, AstNode, UnaryOp, BinaryOp, ParseErrorCode
-  uarena.h            Arena allocator API: Arena, UAllocFn, UFreeFn
+  uast.h              AST node types: UAstKind, UAstNode, UAstUnaryOp, UAstBinaryOp, UParseError
+  uarena.h            Arena allocator API: UArena, UAllocFn, UFreeFn
   uarena.c            Arena implementation: uarena_init, _ex, _static, alloc, reset, destroy
-  uparse.h            Parser API: Parser
+  uparse.h            Parser API: UParser
   uparse.c            Parser implementation: uparse_init, uparse_next_statement, uparse_error_name
   umodule.h           UModule struct, UValue, UOpcode, UValKind, instruction encode/decode helpers
   umodule.c           UModule deserializer, verifier, destroy: umodule_deserialize, umodule_destroy
   uvarint.h           LEB128 varint codec API: UVarintError, size/write/decode for u + zz
   uvarint.c           LEB128 varint implementation: pure byte math, freestanding-clean
-  uemit.h             Emitter API: Emitter, EmitError; also declares umodule_serialize
+  uemit.h             Emitter API: UEmitter, UEmitError; also declares umodule_serialize
   uemit.c             Emitter implementation: uemit_init, uemit_statement, uemit_finish,
                       uemit_disassemble, umodule_serialize
   uvm.h               VM API: UVM, UVMError, UValue, uvm_init, uvm_run, uvm_destroy
