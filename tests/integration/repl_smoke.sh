@@ -41,5 +41,53 @@ printf '=== urbi REPL integration tests ===\n'
 
 # (cases go here; added in later tasks)
 
+# --- --version ---
+test_case
+out=$("$URBI" --version 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^urbi '; then
+    ok '--version prints "urbi ..." and exits 0'
+else
+    fail "--version: rc=$rc, out='$out'"
+fi
+
+test_case
+out=$("$URBI" -V 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^urbi '; then
+    ok '-V prints "urbi ..." and exits 0'
+else
+    fail "-V: rc=$rc, out='$out'"
+fi
+
+# --- --help ---
+test_case
+out=$("$URBI" --help 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'Usage:'; then
+    ok '--help prints usage and exits 0'
+else
+    fail "--help: rc=$rc"
+fi
+
+test_case
+out=$("$URBI" -h 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'Usage:'; then
+    ok '-h prints usage and exits 0'
+else
+    fail "-h: rc=$rc"
+fi
+
+# --- unknown flag ---
+test_case
+out=$("$URBI" --nope 2>&1)
+rc=$?
+if [ "$rc" -eq 2 ]; then
+    ok 'unknown flag exits 2'
+else
+    fail "unknown flag: rc=$rc, expected 2"
+fi
+
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"
 [ "$FAIL" -eq 0 ]
