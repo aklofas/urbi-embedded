@@ -311,7 +311,7 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     off += consumed;
     if (n_abs > 0u) {
         if (!module_grow(module, (void **)&module->abs_lines, &module->abs_line_cap,
-                        (size_t)n_abs, sizeof(AbsLine))) {
+                        (size_t)n_abs, sizeof(UAbsLine))) {
             return ULOAD_OOM;
         }
     }

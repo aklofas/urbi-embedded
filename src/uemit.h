@@ -27,11 +27,11 @@ typedef enum {
     EMIT_CONSTANT_POOL_FULL,      /* > 65535 constants — Bx overflow */
     EMIT_LINE_OVERFLOW,           /* source line > UINT32_MAX (effectively unreachable) */
     EMIT_FINISHED                 /* uemit_statement called after uemit_finish */
-} EmitError;
+} UEmitError;
 
-/* --- Emitter state (caller stack-allocates, emitter fills) --- */
+/* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
-typedef struct Emitter {
+typedef struct UEmitter {
     UModule       *module;           /* non-owning; caller supplies */
     UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
     uint8_t      next_reg;        /* register allocator cursor */
@@ -40,27 +40,27 @@ typedef struct Emitter {
     uint32_t     prev_line;       /* last emitted instruction's source line */
     bool         any_stmt_emitted;/* gates OP_RET at finish */
     bool         finished;
-    EmitError    error;           /* sticky: first error latches */
-} Emitter;
+    UEmitError    error;           /* sticky: first error latches */
+} UEmitter;
 
 /* --- API --- */
 
 /* Initialize.  module and arena must both outlive the emitter.
    source_name may be NULL. */
-void uemit_init(Emitter *e, UModule *module, UArena *arena, const char *source_name);
+void uemit_init(UEmitter *e, UModule *module, UArena *arena, const char *source_name);
 
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
    AST_ERROR nodes are rejected with EMIT_AST_ERROR.  On first error, the
    error latches; subsequent calls return it without touching the module. */
-EmitError uemit_statement(Emitter *e, UAstNode *stmt);
+UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
 
 /* Finalize: emit OP_RET (if any statement was emitted) and record max_reg.
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first
    accumulated error, or EMIT_OK. */
-EmitError uemit_finish(Emitter *e);
+UEmitError uemit_finish(UEmitter *e);
 
 /* Debug helper. */
-const char *uemit_error_name(EmitError code);
+const char *uemit_error_name(UEmitError code);
 
 /* Write a human-readable disassembly of the module into buf.
    Returns bytes written (excluding null terminator).  Truncates if cap is

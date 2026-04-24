@@ -791,7 +791,7 @@ UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
     c.line_deltas[2] = INT8_MIN;
     c.line_deltas[3] = INT8_MIN;
     /* Allocate abs_lines with 4 entries — one per instruction. */
-    c.abs_lines = (AbsLine *)malloc(sizeof(AbsLine) * 4);
+    c.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 4);
     c.abs_line_count = 4;
     c.abs_lines[0].pc = 0; c.abs_lines[0].line = 10;
     c.abs_lines[1].pc = 1; c.abs_lines[1].line = 11;

@@ -58,7 +58,7 @@ static UModuleAllocFn emit_alloc_for(const UModule *c) {
 
 /* Deep-copy source_name into the module using the module's allocator.
    Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL. */
-static void emit_copy_source_name(Emitter *e, const char *src) {
+static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
     size_t len = emit_strlen(src);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
@@ -73,7 +73,7 @@ static void emit_copy_source_name(Emitter *e, const char *src) {
 
 /* Freestanding builds: emit is host-side in all real uses, so source_name
    copy is skipped.  source_name remains NULL in this environment. */
-static void emit_copy_source_name(Emitter *e, const char *src) {
+static void emit_copy_source_name(UEmitter *e, const char *src) {
     (void)e;
     (void)src;
 }
@@ -102,7 +102,7 @@ static bool emit_grow(UModule *c, void **data, size_t *cap,
 /* Bump the register-allocator cursor and track high-water mark.
    Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
    all 256 slots are consumed (cursor at 255 before call). */
-static uint8_t alloc_reg(Emitter *e) {
+static uint8_t alloc_reg(UEmitter *e) {
     if (e->next_reg == 255u) { e->error = EMIT_REG_EXHAUSTED; return 0u; }
     uint8_t r = e->next_reg++;
     if (r > e->max_reg_seen) e->max_reg_seen = r;
@@ -110,7 +110,7 @@ static uint8_t alloc_reg(Emitter *e) {
 }
 
 /* Release the most-recently-allocated register (stack discipline). */
-static void free_reg(Emitter *e) {
+static void free_reg(UEmitter *e) {
     if (e->next_reg > 0u) e->next_reg--;
 }
 
@@ -118,7 +118,7 @@ static void free_reg(Emitter *e) {
    a UVAL_INT entry with the same value already exists; otherwise appends
    a new entry and returns its index.  Sets e->error and returns 0 on
    pool-full (> UINT16_MAX entries) or OOM. */
-static uint16_t add_const_int(Emitter *e, const int64_t v) {
+static uint16_t add_const_int(UEmitter *e, const int64_t v) {
     size_t i;
     for (i = 0; i < e->module->const_count; i++) {
         if (e->module->constants[i].kind == (uint8_t)UVAL_INT
@@ -148,9 +148,9 @@ static uint16_t add_const_int(Emitter *e, const int64_t v) {
 }
 
 /* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow. */
-static void emit_push_abs_line(Emitter *e, const uint32_t pc, const uint32_t line) {
+static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
     if (!emit_grow(e->module, (void **)&e->module->abs_lines, &e->module->abs_line_cap,
-                   e->module->abs_line_count + 1u, sizeof(AbsLine))) {
+                   e->module->abs_line_count + 1u, sizeof(UAbsLine))) {
         e->error = EMIT_OOM;
         return;
     }
@@ -162,7 +162,7 @@ static void emit_push_abs_line(Emitter *e, const uint32_t pc, const uint32_t lin
 /* Append one delta byte to line_deltas.  line_deltas has no cap field —
    it is sized exactly to instr_count.  Called after instr_count has been
    incremented so the new slot is at [instr_count - 1]. */
-static void emit_push_line_delta(Emitter *e, const int8_t delta) {
+static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     void *fresh = alloc(e->module->line_deltas,
@@ -175,7 +175,7 @@ static void emit_push_line_delta(Emitter *e, const int8_t delta) {
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
    No-op when e->error is already set. */
-static void emit_instr(Emitter *e, const uint32_t ins, const uint32_t line) {
+static void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     uint32_t pc;
     int8_t delta;
     bool needs_abs;
@@ -229,7 +229,7 @@ static UOpcode binop_to_opcode(const UAstBinaryOp op) {
 
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure. */
-static uint8_t emit_expr(Emitter *e, UAstNode *n) {
+static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0u;
     switch (n->kind) {
     case AST_INT: {
@@ -274,14 +274,14 @@ static uint8_t emit_expr(Emitter *e, UAstNode *n) {
 
 /* --- Public API --- */
 
-void uemit_init(Emitter *e, UModule *module, UArena *arena, const char *source_name) {
+void uemit_init(UEmitter *e, UModule *module, UArena *arena, const char *source_name) {
     emit_zero(e, sizeof(*e));
     e->module = module;
     e->arena = arena;
     emit_copy_source_name(e, source_name);
 }
 
-EmitError uemit_statement(Emitter *e, UAstNode *stmt) {
+UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
     uint8_t result;
     if (e->finished) return EMIT_FINISHED;
     if (e->error != EMIT_OK) return e->error;
@@ -296,7 +296,7 @@ EmitError uemit_statement(Emitter *e, UAstNode *stmt) {
     return EMIT_OK;
 }
 
-EmitError uemit_finish(Emitter *e) {
+UEmitError uemit_finish(UEmitter *e) {
     if (e->finished) return e->error;
     if (e->error == EMIT_OK && e->any_stmt_emitted) {
         emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0u, 0u),
@@ -307,7 +307,7 @@ EmitError uemit_finish(Emitter *e) {
     return e->error;
 }
 
-const char *uemit_error_name(EmitError code) {
+const char *uemit_error_name(UEmitError code) {
     switch (code) {
     case EMIT_OK:                 return "EMIT_OK";
     case EMIT_OOM:                return "EMIT_OOM";

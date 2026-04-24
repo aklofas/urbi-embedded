@@ -40,7 +40,7 @@ UTEST(destroy_module_with_buffers_frees_them) {
 
     c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
 
-    c.abs_lines = (AbsLine *)malloc(sizeof(AbsLine) * 2);
+    c.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 2);
     c.abs_line_cap = 2;
     c.abs_line_count = 1;
 
@@ -630,7 +630,7 @@ static bool modules_equivalent(const UModule *a, const UModule *b) {
 static void roundtrip_ast(UAstNode *ast, const char *source_name) {
     UModule src = {0};
     UArena arena;
-    Emitter e;
+    UEmitter e;
     char errmsg[256];
     uint8_t *buf;
     UModule dst = {0};
@@ -694,7 +694,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
             + n_abs varint 0(1) = 6 bytes.  Total = 30. */
     UModule module = {0};
     UArena arena;
-    Emitter e;
+    UEmitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
     (void)uemit_finish(&e);
@@ -742,7 +742,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 UTEST(serialize_cap_0_returns_required_size_without_writing) {
     UModule module = {0};
     UArena arena;
-    Emitter e;
+    UEmitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
     (void)uemit_finish(&e);
@@ -757,7 +757,7 @@ UTEST(serialize_cap_0_returns_required_size_without_writing) {
 UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     UModule module = {0};
     UArena arena;
-    Emitter e;
+    UEmitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
     (void)uemit_finish(&e);

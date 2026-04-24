@@ -93,7 +93,7 @@ static inline uint32_t uinstr_enc_abx (UOpcode op, uint8_t a, uint16_t bx) {
 typedef struct {
     uint32_t pc;
     uint32_t line;
-} AbsLine;
+} UAbsLine;
 
 /* --- pluggable allocator (matches uarena pattern) --- */
 
@@ -121,7 +121,7 @@ typedef struct UModule {
      * not recoverable by summing deltas from the previous checkpoint. */
     int8_t    *line_deltas;
 
-    AbsLine   *abs_lines;
+    UAbsLine   *abs_lines;
     size_t     abs_line_count;
     size_t     abs_line_cap;
 

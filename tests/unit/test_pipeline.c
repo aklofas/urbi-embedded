@@ -38,7 +38,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     uarena_init(&arena, 4096);
 
     UModule module = {0};
-    Emitter e;
+    UEmitter e;
     uemit_init(&e, &module, &arena, NULL);
 
     UParser p;
