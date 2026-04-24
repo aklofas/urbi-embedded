@@ -77,6 +77,17 @@ static UVMError arith_add(UValue *a, const UValue *b, const UValue *c) {
     return UVM_OK;
 }
 
+static UVMError arith_sub(UValue *a, const UValue *b, const UValue *c) {
+    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
+    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
+        a->kind = UVAL_INT;
+        a->v.i = (int64_t)((uint64_t)b->v.i - (uint64_t)c->v.i);
+        return UVM_OK;
+    }
+    uvalue_set_float(a, uvalue_to_double(b) - uvalue_to_double(c));
+    return UVM_OK;
+}
+
 static UVMError arith_mul(UValue *a, const UValue *b, const UValue *c) {
     if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
     if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
@@ -111,17 +122,6 @@ static UVMError arith_neg(UValue *a, const UValue *b) {
     return UVM_OK;
 }
 
-static UVMError arith_sub(UValue *a, const UValue *b, const UValue *c) {
-    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
-        a->kind = UVAL_INT;
-        a->v.i = (int64_t)((uint64_t)b->v.i - (uint64_t)c->v.i);
-        return UVM_OK;
-    }
-    uvalue_set_float(a, uvalue_to_double(b) - uvalue_to_double(c));
-    return UVM_OK;
-}
-
 /* --- Diagnostic infrastructure. --- */
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
@@ -136,7 +136,11 @@ static const char *kind_name(uint8_t kind) {
     return "unknown";
 }
 
-/* Map UOpcode to its mnemonic name for diagnostic messages. */
+/* Map UOpcode to its mnemonic name for diagnostic messages.
+   Called only from TypeError/OOM formatting paths, so at M1 the
+   OP_LOADK, OP_MOVE, and OP_RET branches are dead (those opcodes
+   cannot raise TypeError). Kept as defensive coverage for M2+ when
+   new opcodes raise errors and the same formatter is reused. */
 static const char *op_name(uint8_t op) {
     switch (op) {
         case OP_LOADK: return "OP_LOADK";
