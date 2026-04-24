@@ -12,7 +12,11 @@ size_t uvarint_size_u(uint64_t v) {
 }
 
 size_t uvarint_size_zz(int64_t v) {
-    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+    /* Portable sign-extended mask: 0 for v >= 0, UINT64_MAX for v < 0.
+       Avoids the implementation-defined behavior of (v >> 63) on signed
+       negative values. */
+    const uint64_t sign = (uint64_t)(-(uint64_t)(v < 0));
+    const uint64_t u = ((uint64_t)v << 1) ^ sign;
     return uvarint_size_u(u);
 }
 
@@ -26,7 +30,9 @@ size_t uvarint_write_u(uint8_t *buf, size_t off, uint64_t v) {
 }
 
 size_t uvarint_write_zz(uint8_t *buf, size_t off, int64_t v) {
-    const uint64_t u = ((uint64_t)v << 1) ^ (uint64_t)(v >> 63);
+    /* See uvarint_size_zz for the sign-mask rationale. */
+    const uint64_t sign = (uint64_t)(-(uint64_t)(v < 0));
+    const uint64_t u = ((uint64_t)v << 1) ^ sign;
     return uvarint_write_u(buf, off, u);
 }
 
@@ -39,6 +45,12 @@ UVarintError uvarint_decode_u(const uint8_t *buf, size_t size,
     unsigned shift = 0;
     for (i = 0; i < size; i++) {
         uint8_t b = buf[i];
+        /* At shift == 63 (the 10th byte) only bit 0 of the 7-bit
+           payload fits in uint64_t. Payload values 0x02..0x7F at that
+           position would silently overflow; reject them as oversize. */
+        if (shift == 63u && (b & 0x7Eu) != 0u) {
+            return UVARINT_OVERSIZE;
+        }
         result |= (uint64_t)(b & 0x7Fu) << shift;
         if ((b & 0x80u) == 0u) {
             *v = result;

@@ -57,6 +57,31 @@ UTEST(decode_u_oversize) {
     UASSERT_EQ(UVARINT_OVERSIZE, uvarint_decode_u(buf, sizeof buf, &v, &consumed));
 }
 
+UTEST(decode_u_oversize_terminal_byte_overflow) {
+    /* 10 bytes total — within the byte budget — but the terminal byte
+       has a payload value > 0x01 at shift==63. Only bit 0 fits there;
+       0x02..0x7F would overflow uint64_t silently without the explicit
+       guard. Must be rejected as oversize. */
+    const uint8_t buf[] = {0x80, 0x80, 0x80, 0x80, 0x80,
+                           0x80, 0x80, 0x80, 0x80, 0x02};
+    uint64_t v = 0;
+    size_t consumed = 0;
+    UASSERT_EQ(UVARINT_OVERSIZE, uvarint_decode_u(buf, sizeof buf, &v, &consumed));
+}
+
+UTEST(decode_u_max_uint64) {
+    /* Boundary case that must SUCCEED: the canonical 10-byte encoding
+       of UINT64_MAX (bit 63 set at shift==63). Pairs with the
+       oversize-terminal-byte test above. */
+    const uint8_t buf[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                           0xFF, 0xFF, 0xFF, 0xFF, 0x01};
+    uint64_t v = 0;
+    size_t consumed = 0;
+    UASSERT_EQ(UVARINT_OK, uvarint_decode_u(buf, sizeof buf, &v, &consumed));
+    UASSERT_EQ((uint64_t)UINT64_MAX, v);
+    UASSERT_EQ((size_t)10, consumed);
+}
+
 UTEST(decode_zz_round_trip) {
     /* zigzag: 0->0, -1->1, 1->2, -2->3, 2->4, ... */
     struct { int64_t decoded; uint8_t enc[10]; size_t enc_len; } cases[] = {
@@ -171,6 +196,9 @@ void test_varint_suite(void) {
     utest_run("varint decode u multi byte",      decode_u_multi_byte);
     utest_run("varint decode u truncation",      decode_u_truncation);
     utest_run("varint decode u oversize",        decode_u_oversize);
+    utest_run("varint decode u oversize terminal-byte overflow",
+                                                 decode_u_oversize_terminal_byte_overflow);
+    utest_run("varint decode u max uint64",      decode_u_max_uint64);
     utest_run("varint decode zz round trip",     decode_zz_round_trip);
     utest_run("varint size u boundaries",        size_u_boundaries);
     utest_run("varint size zz boundaries",       size_zz_boundaries);

@@ -513,7 +513,7 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
 }
 
 UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
-    /* Use a constant value >= 128 so that varint_write_u and varint_write_zz
+    /* Use a constant value >= 128 so that uvarint_write_u and uvarint_write_zz
        emit multi-byte (continuation-bit) encoded varints. */
     UModule module = {0};
     UArena arena;

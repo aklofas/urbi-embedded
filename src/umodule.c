@@ -117,7 +117,7 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
         case UVARINT_TRUNCATED: return ULOAD_TRUNCATED;
         case UVARINT_OVERSIZE:  return ULOAD_CORRUPT_VARINT;
     }
-    return ULOAD_CORRUPT;  /* unreachable */
+    return ULOAD_CORRUPT;  /* unreachable under -Wswitch-enum */
 }
 
 /* --- Public API --- */
