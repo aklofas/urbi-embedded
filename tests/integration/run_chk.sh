@@ -41,6 +41,12 @@ awk '
   inputs="$TMPDIR_LOCAL/inputs.txt" \
   "$CHK"
 
+# Guard against pathological fixtures (only comments, only expected,
+# only inputs, or fully empty). touch creates the file if awk never
+# fired the corresponding print > file branch.
+[ -f "$TMPDIR_LOCAL/inputs.txt" ]  || touch "$TMPDIR_LOCAL/inputs.txt"
+[ -f "$TMPDIR_LOCAL/expected.raw" ] || touch "$TMPDIR_LOCAL/expected.raw"
+
 # 2. Normalize expected: strip the [...] frame prefix + single trailing space.
 sed -E 's/^\[[^]]*\] //' \
     < "$TMPDIR_LOCAL/expected.raw" \
