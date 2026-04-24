@@ -308,3 +308,86 @@ time-to-first-finding significantly on a cold start; it's not required.
 Not covered: `fuzz-emit`. The emitter takes structured AST input, not
 byte streams; a typed fuzzer (random-AST generator → emit → deserialize
 round-trip) is a separate design.
+
+## Conformance fixtures — `.chk` files and `make test-chk`
+
+`.chk` fixtures are on-disk transcripts of REPL dialogs. Each fixture
+records a sequence of urbiscript inputs paired with the exact REPL
+output each one should produce. The `tests/integration/run_chk.sh`
+runner pipes the inputs through `urbi -i`, normalizes away the
+varying `[########]` timestamp prefix on both sides, and diffs. Pass
+means byte-equal after normalization.
+
+The fixture corpus is how we prove language-level behavior remains
+stable as the implementation grows. Unit tests exercise compiler and
+VM internals in isolation; `.chk` fixtures exercise the whole
+pipeline from source text through to REPL framing, from the outside.
+
+### Fixture format
+
+Three line classes per `.chk` file:
+
+- **Input line** — any line not starting with `[` and not a fixture
+  comment (§below). Fed verbatim as one line into `urbi -i` stdin.
+- **Expected-output line** — a line matching `^\[[^]]*\]` followed by
+  a space, appearing immediately after its paired input line. The
+  bracketed prefix is author-convention only; the runner strips it
+  before diffing, so any content inside the brackets is acceptable.
+  Legacy convention is an 8-digit counter (`[00000001]`, `[00000002]`, …).
+- **Fixture comment** — a line whose first non-space character is `#`,
+  or a blank line. Never forwarded to the REPL.
+
+`#` is the fixture-comment marker rather than `//` because `//` is
+valid urbiscript — the runner must not couple to the urbiscript lexer
+to decide whether a `//` line is intended as REPL input (it is) or
+as fixture-level commentary (it is not). `#` is unambiguous at every
+milestone of urbiscript.
+
+### Normalization rule
+
+Exactly one rule: strip the `^\[[^]]*\]` prefix (including the
+following space) from every line on both sides before diffing. File
+paths, line and column numbers, trailing whitespace, and everything
+else is compared literally. This is deliberately strict — `sed
+'s/ *$//'` would mask regressions.
+
+At M2+, when legacy fixtures are ported, the rule may extend to
+cover span-notation normalization (`input.u:@.L-C:` → `<stdin>:L:C:`
+or similar). That extension lands when a concrete port forces it,
+not preemptively.
+
+### Running
+
+One fixture at a time:
+
+```sh
+tests/integration/run_chk.sh build/host/urbi tests/chk/arithmetic.chk
+```
+
+All fixtures via Make:
+
+```sh
+make test-chk
+```
+
+`make test-chk` is a dependency of `make test`, so every sanitizer
+variant (`test`, `test-asan`, `test-ubsan`, `test-debug`,
+`test-switch`) runs the fixture corpus automatically. `make
+test-valgrind` does NOT run the fixtures — valgrind-wrapping a shell
+pipeline produces false-positives from dash internals rather than
+signal about the runtime. ASan coverage under `make test-asan`
+provides the memcheck story for the integration path.
+
+### Authoring a new fixture
+
+1. Run the expressions you care about against `urbi -i` interactively
+   and capture the exact framed output.
+2. Interleave the inputs and captured outputs in a new file under
+   `tests/chk/`, one pair per REPL exchange.
+3. Add `# --- <section name>` comment markers for readability.
+4. Run `tests/integration/run_chk.sh build/host/urbi
+   tests/chk/<name>.chk` and confirm `PASS:`. If it fails, diff the
+   expected output against what the binary actually produces — the
+   fixture records what the implementation does, not what you wish
+   it did.
+5. Commit with the `chk:` subsystem prefix.
