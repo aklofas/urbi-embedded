@@ -197,6 +197,47 @@ UTEST(uvalue_str_quote_escape) {
     UASSERT_STR_EQ(buf, "\"a\\\"b\"");
 }
 
+/* --- Truncation + unknown kind --- */
+
+UTEST(uvalue_truncation_cap_zero) {
+    UValue v = { .kind = UVAL_BOOL };
+    v.v.i = 1;
+    char buf[4] = { 'x', 'x', 'x', 'x' };
+    size_t n = uvalue_format(&v, buf, 0);
+    UASSERT_EQ(0, (int)n);
+    /* cap=0 means we don't touch buf[0] — no NUL-write guarantee here;
+       the API contract says we NUL-terminate only when cap > 0. */
+    UASSERT_EQ('x', buf[0]);
+}
+
+UTEST(uvalue_truncation_cap_one) {
+    UValue v = { .kind = UVAL_BOOL };
+    v.v.i = 1;
+    char buf[8] = { 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'x' };
+    size_t n = uvalue_format(&v, buf, 1);
+    /* cap=1 -> only NUL fits */
+    UASSERT_EQ(0, (int)n);
+    UASSERT_EQ('\0', buf[0]);
+}
+
+UTEST(uvalue_truncation_cap_three) {
+    UValue v = { .kind = UVAL_BOOL };
+    v.v.i = 1;
+    char buf[4] = {0};
+    size_t n = uvalue_format(&v, buf, 3);
+    /* cap=3 means 2 chars + NUL; "true" truncated to "tr" */
+    UASSERT_EQ(2, (int)n);
+    UASSERT_STR_EQ(buf, "tr");
+}
+
+UTEST(uvalue_unknown_kind) {
+    UValue v = { .kind = 99 };  /* outside the valid 0..4 range */
+    char buf[16] = {0};
+    size_t n = uvalue_format(&v, buf, sizeof buf);
+    UASSERT_STR_EQ(buf, "<?>");
+    UASSERT_EQ(3, (int)n);
+}
+
 void test_uvalue_suite(void) {
     utest_run("uvalue: nil -> \"nil\"", uvalue_nil_formats_as_nil);
     utest_run("uvalue: bool true", uvalue_bool_true);
@@ -218,4 +259,8 @@ void test_uvalue_suite(void) {
     utest_run("uvalue: str \\n escape", uvalue_str_newline_escape);
     utest_run("uvalue: str \\\\ escape", uvalue_str_backslash_escape);
     utest_run("uvalue: str \\\" escape", uvalue_str_quote_escape);
+    utest_run("uvalue: truncation cap=0", uvalue_truncation_cap_zero);
+    utest_run("uvalue: truncation cap=1", uvalue_truncation_cap_one);
+    utest_run("uvalue: truncation cap=3", uvalue_truncation_cap_three);
+    utest_run("uvalue: unknown kind -> <?>", uvalue_unknown_kind);
 }
