@@ -173,10 +173,10 @@ cross-riscv:
 # adding/removing source files.
 compile_commands.json:
 	@printf '[\n' > $@
-	@first=1; for f in $(SRC) $(TEST_SRC); do \
+	@first=1; for f in $(SRC) $(TEST_SRC) tools/urbi.c tools/linenoise.c; do \
 		if [ $$first -eq 0 ]; then printf ',\n' >> $@; fi; \
 		first=0; \
-		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -c -o %s/%s/%s %s"}' \
+		printf '  {"directory": "%s", "file": "%s/%s", "command": "%s %s %s -Itools -c -o %s/%s/%s %s"}' \
 			"$$PWD" "$$PWD" "$$f" "$(CC)" "$(CFLAGS)" "$(CPPFLAGS)" \
 			"$$PWD" "$(BUILDDIR)" "$${f%.c}.o" "$$f" >> $@; \
 	done
@@ -186,11 +186,11 @@ compile_commands.json:
 # Fails on any clang-tidy warning (-warnings-as-errors='*').
 # Check list is configured in .clang-tidy; CLI flag promotes warnings to errors.
 tidy: compile_commands.json
-	run-clang-tidy -p . -j $$(nproc) -warnings-as-errors='*' -quiet $(SRC)
+	run-clang-tidy -p . -j $$(nproc) -warnings-as-errors='*' -quiet $(SRC) tools/urbi.c
 
 # Local convenience: run clang-tidy with --fix.  Not invoked by CI.
 tidy-fix: compile_commands.json
-	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
+	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC) tools/urbi.c
 
 # Static analysis — cppcheck (advisory).
 # Different engine from clang-tidy; catches value-flow, UAF, null-deref
