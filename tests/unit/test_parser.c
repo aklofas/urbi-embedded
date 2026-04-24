@@ -302,6 +302,23 @@ UTEST(parse_trailing_pipe_optional) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_trailing_tokens_without_separator_rejected) {
+    /* "1 2 3" is three integer literals with no '|' between them.
+       The parser must reject the unexpected trailing token(s), not
+       silently swallow them. Panic-mode recovery consumes through
+       the next '|' or EOF — with no '|' in the input, the whole
+       remaining stream is consumed, so the first call returns an
+       error node and the second returns NULL (EOF). */
+    ParseCtx c;
+    ctx_init(&c, "1 2 3");
+    UAstNode *a = uparse_next_statement(&c.p);
+    UASSERT(a != NULL);
+    UASSERT_EQ(a->kind, AST_ERROR);
+    UAstNode *b = uparse_next_statement(&c.p);
+    UASSERT(b == NULL);
+    ctx_destroy(&c);
+}
+
 UTEST(parse_two_statements_with_pipe) {
     char buf1[32], buf2[32];
     ParseCtx c;
@@ -594,6 +611,8 @@ void test_parser_suite(void) {
     utest_run("parse_unary_on_parenthesized",          parse_unary_on_parenthesized);
     utest_run("parse_trailing_pipe_consumed",       parse_trailing_pipe_consumed);
     utest_run("parse_trailing_pipe_optional",       parse_trailing_pipe_optional);
+    utest_run("parse_trailing_tokens_without_separator_rejected",
+                                                    parse_trailing_tokens_without_separator_rejected);
     utest_run("parse_two_statements_with_pipe",     parse_two_statements_with_pipe);
     utest_run("parse_two_statements_no_final_pipe", parse_two_statements_no_final_pipe);
     utest_run("parse_eof_is_idempotent",            parse_eof_is_idempotent);

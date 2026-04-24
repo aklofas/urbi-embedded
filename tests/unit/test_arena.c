@@ -45,8 +45,9 @@ UTEST(arena_alloc_is_max_aligned) {
     void *p = uarena_alloc(&a, 16);
     UASSERT(p != NULL);
     uintptr_t addr = (uintptr_t)p;
-    /* max_align_t is typically 8 on 32-bit, 16 on 64-bit; require >= 8. */
-    UASSERT_EQ(addr % 8, 0);
+    /* Arena alignment is 16 bytes (the stricter of the two common
+       max_align_t values across 32/64-bit hosts). */
+    UASSERT_EQ(addr % 16, 0);
     uarena_destroy(&a);
 }
 
@@ -156,29 +157,7 @@ UTEST(arena_oom_via_failing_allocator) {
     uarena_destroy(&a);
 }
 
-/* Stub allocators that must never be called in static-buffer mode.
-   If they ARE called, the test fails via a visible counter bump — we
-   don't segfault because that would lose the failure message. */
-
-static int static_mode_alloc_called = 0;
-
-static void *must_not_alloc(size_t n, void *ud) {
-    (void)n; (void)ud;
-    static_mode_alloc_called++;
-    return NULL;
-}
-
-static void must_not_free(void *p, void *ud) {
-    (void)p; (void)ud;
-    static_mode_alloc_called++;
-}
-
 UTEST(arena_init_static_does_not_call_allocator) {
-    /* Reference the stubs so -Wunused-function stays quiet; they exist
-       to document the API contract (no allocator hooks in static mode). */
-    (void)must_not_alloc;
-    (void)must_not_free;
-    static_mode_alloc_called = 0;
     unsigned char buf[256];
     UArena a;
     uarena_init_static(&a, buf, sizeof buf);
@@ -192,7 +171,6 @@ UTEST(arena_init_static_does_not_call_allocator) {
     UASSERT(p >= (void *)buf);
     UASSERT(p < (void *)(buf + sizeof buf));
     uarena_destroy(&a);
-    UASSERT_EQ(static_mode_alloc_called, 0);
 }
 
 UTEST(arena_static_oom_when_buffer_full) {
