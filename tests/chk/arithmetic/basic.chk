@@ -1,4 +1,3 @@
-# Fixture: arithmetic/basic
 # Milestone: M1
 # Covers: Int/Float arithmetic, Int/Int -> Float promotion;
 #         8-opcode VM (LOADK, MOVE, ADD, SUB, MUL, DIV, NEG, RET);

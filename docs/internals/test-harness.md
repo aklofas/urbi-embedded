@@ -435,18 +435,19 @@ integration path.
 
 ### Authoring a new fixture
 
-Every fixture opens with a 3-line header block in comment form,
+Every fixture opens with a 2-line header block in comment form,
 immediately at the top of the file before any REPL exchanges:
 
 ```text
-# Fixture: <feature>/<name>
 # Milestone: <M1 | M2 | ... | v1.0>
-# Covers: <comma-separated topic list; may wrap across lines with
-#          leading `#          ` continuation indent>
+# Covers: <comma-separated topic list>
 ```
 
+Long `Covers:` lists wrap with `#` followed by 9 spaces continuation
+indent so values stay column-aligned under the field name.
+
 The header is checked by humans only — there is no parser or lint
-rule — but keeping the three fields machine-searchable pays off at
+rule — but keeping the two fields machine-searchable pays off at
 corpus scale. `grep -l 'Covers:.*promotion' tests/chk/**/*.chk` and
 `grep -l '^# Milestone: M3' tests/chk/**/*.chk` are the target
 queries.
@@ -464,7 +465,7 @@ Authoring steps:
 2. Create the file at `tests/chk/<feature>/<name>.chk` (create the
    `<feature>/` subdir if it doesn't yet exist; see the "Fixture
    layout" subsection above for the canonical taxonomy).
-3. Write the 3-line `Fixture:` / `Milestone:` / `Covers:` header,
+3. Write the 2-line `Milestone:` / `Covers:` header,
    then a blank line.
 4. Interleave the inputs and captured outputs in the body, one pair
    per REPL exchange. Group related exchanges under
