@@ -99,6 +99,9 @@ jobs:
   valgrind:
     name: valgrind (memcheck)
     runs-on: ubuntu-latest
+    # Typical memcheck run is 2–3 minutes; cap defends against a
+    # future memory-bug-induced hang burning the GitHub 6-hour default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
