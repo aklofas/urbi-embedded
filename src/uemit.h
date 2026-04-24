@@ -33,7 +33,7 @@ typedef enum {
 
 typedef struct Emitter {
     UModule       *module;           /* non-owning; caller supplies */
-    Arena       *arena;           /* non-owning; currently unused at M1 but reserved */
+    UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
     uint8_t      last_result_reg; /* register of most recent statement's result */
@@ -47,7 +47,7 @@ typedef struct Emitter {
 
 /* Initialize.  module and arena must both outlive the emitter.
    source_name may be NULL. */
-void uemit_init(Emitter *e, UModule *module, Arena *arena, const char *source_name);
+void uemit_init(Emitter *e, UModule *module, UArena *arena, const char *source_name);
 
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
    AST_ERROR nodes are rejected with EMIT_AST_ERROR.  On first error, the

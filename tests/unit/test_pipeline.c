@@ -34,7 +34,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
-    Arena arena;
+    UArena arena;
     uarena_init(&arena, 4096);
 
     UModule module = {0};

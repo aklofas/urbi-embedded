@@ -629,7 +629,7 @@ static bool modules_equivalent(const UModule *a, const UModule *b) {
    assert round-trip equivalence, then clean up both modules and the arena. */
 static void roundtrip_ast(UAstNode *ast, const char *source_name) {
     UModule src = {0};
-    Arena arena;
+    UArena arena;
     Emitter e;
     char errmsg[256];
     uint8_t *buf;
@@ -693,7 +693,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
             + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
             + n_abs varint 0(1) = 6 bytes.  Total = 30. */
     UModule module = {0};
-    Arena arena;
+    UArena arena;
     Emitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
@@ -741,7 +741,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 
 UTEST(serialize_cap_0_returns_required_size_without_writing) {
     UModule module = {0};
-    Arena arena;
+    UArena arena;
     Emitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);
@@ -756,7 +756,7 @@ UTEST(serialize_cap_0_returns_required_size_without_writing) {
 
 UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     UModule module = {0};
-    Arena arena;
+    UArena arena;
     Emitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL);

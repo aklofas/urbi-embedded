@@ -274,7 +274,7 @@ static uint8_t emit_expr(Emitter *e, UAstNode *n) {
 
 /* --- Public API --- */
 
-void uemit_init(Emitter *e, UModule *module, Arena *arena, const char *source_name) {
+void uemit_init(Emitter *e, UModule *module, UArena *arena, const char *source_name) {
     emit_zero(e, sizeof(*e));
     e->module = module;
     e->arena = arena;

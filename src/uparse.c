@@ -232,7 +232,7 @@ static void sync_to_statement_boundary(UParser *p) {
 
 /* --- Public API. --- */
 
-void uparse_init(UParser *p, ULexer *lex, Arena *arena) {
+void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;

@@ -3,7 +3,7 @@
  *
  * Feeds raw bytes through the full lexer + parser pipeline.  Target
  * property: uparse_next_statement returns a finite, non-crashing stream
- * of UAstNodes (possibly including AST_ERROR) until NULL.  Arena lifetime
+ * of UAstNodes (possibly including AST_ERROR) until NULL.  UArena lifetime
  * covers the full fuzz iteration; destroyed on exit so ASan can see any
  * leak.
  *
@@ -27,7 +27,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ULexer lex;
     ulex_init(&lex, (const char *)data, size);
 
-    Arena arena;
+    UArena arena;
     uarena_init(&arena, 4096);
 
     UParser p;

@@ -8,7 +8,7 @@
 #define UTEST(name) static void name(void)
 
 UTEST(arena_init_does_not_allocate) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     UASSERT(a.first == NULL);
     UASSERT(a.head == NULL);
@@ -18,7 +18,7 @@ UTEST(arena_init_does_not_allocate) {
 }
 
 UTEST(arena_basic_alloc_returns_non_null) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     void *p = uarena_alloc(&a, 16);
     UASSERT(p != NULL);
@@ -27,7 +27,7 @@ UTEST(arena_basic_alloc_returns_non_null) {
 }
 
 UTEST(arena_alloc_is_zero_filled) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     unsigned char *p = uarena_alloc(&a, 32);
     UASSERT(p != NULL);
@@ -38,7 +38,7 @@ UTEST(arena_alloc_is_zero_filled) {
 }
 
 UTEST(arena_alloc_is_max_aligned) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     /* Ask for an odd size first so subsequent alloc must re-align. */
     (void)uarena_alloc(&a, 1);
@@ -51,7 +51,7 @@ UTEST(arena_alloc_is_max_aligned) {
 }
 
 UTEST(arena_custom_chunk_size_respected) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 512);
     UASSERT_EQ(a.chunk_size, 512);
     void *p = uarena_alloc(&a, 64);
@@ -60,7 +60,7 @@ UTEST(arena_custom_chunk_size_respected) {
 }
 
 UTEST(arena_destroy_is_safe_on_empty) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     uarena_destroy(&a);
     /* Should not crash; nothing to assert beyond that. */
@@ -68,7 +68,7 @@ UTEST(arena_destroy_is_safe_on_empty) {
 }
 
 UTEST(arena_reset_rewinds_chunk) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     void *p1 = uarena_alloc(&a, 32);
     uarena_reset(&a);
@@ -80,7 +80,7 @@ UTEST(arena_reset_rewinds_chunk) {
 }
 
 UTEST(arena_reset_clears_oom) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 0);
     a.oom = true; /* simulate a prior OOM flag */
     uarena_reset(&a);
@@ -91,7 +91,7 @@ UTEST(arena_reset_clears_oom) {
 }
 
 UTEST(arena_growth_preserves_earlier_pointers) {
-    Arena a;
+    UArena a;
     uarena_init(&a, 256); /* small chunk forces growth */
     unsigned char *p1 = uarena_alloc(&a, 128);
     UASSERT(p1 != NULL);
@@ -129,7 +129,7 @@ static void spy_free(void *p, void *ud) {
 
 UTEST(arena_init_ex_calls_custom_alloc) {
     AllocSpy s = { 0, 0, -1 };
-    Arena a;
+    UArena a;
     uarena_init_ex(&a, 0, spy_alloc, spy_free, &s);
     void *p = uarena_alloc(&a, 64);
     UASSERT(p != NULL);
@@ -141,7 +141,7 @@ UTEST(arena_init_ex_calls_custom_alloc) {
 
 UTEST(arena_oom_via_failing_allocator) {
     AllocSpy s = { 0, 0, 0 }; /* fail on the very first alloc */
-    Arena a;
+    UArena a;
     uarena_init_ex(&a, 0, spy_alloc, spy_free, &s);
     void *p = uarena_alloc(&a, 16);
     UASSERT(p == NULL);
@@ -180,7 +180,7 @@ UTEST(arena_init_static_does_not_call_allocator) {
     (void)must_not_free;
     static_mode_alloc_called = 0;
     unsigned char buf[256];
-    Arena a;
+    UArena a;
     uarena_init_static(&a, buf, sizeof buf);
     /* Prove the allocator fn pointers are not stored. */
     UASSERT(a.alloc_fn == NULL);
@@ -197,7 +197,7 @@ UTEST(arena_init_static_does_not_call_allocator) {
 
 UTEST(arena_static_oom_when_buffer_full) {
     unsigned char buf[128];
-    Arena a;
+    UArena a;
     uarena_init_static(&a, buf, sizeof buf);
     /* One large allocation consumes the buffer. */
     void *p1 = uarena_alloc(&a, 64);
@@ -212,7 +212,7 @@ UTEST(arena_static_oom_when_buffer_full) {
 
 UTEST(arena_static_destroy_is_noop) {
     unsigned char buf[256];
-    Arena a;
+    UArena a;
     uarena_init_static(&a, buf, sizeof buf);
     (void)uarena_alloc(&a, 64);
     uarena_destroy(&a);
@@ -226,7 +226,7 @@ UTEST(arena_static_too_small_buffer_triggers_oom) {
        uarena_init_static must leave head=NULL, and the first alloc
        must OOM cleanly instead of dereferencing garbage. */
     unsigned char buf[8];
-    Arena a;
+    UArena a;
     uarena_init_static(&a, buf, sizeof buf);
     UASSERT(a.head == NULL);
     UASSERT(a.is_static == true);

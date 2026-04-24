@@ -65,7 +65,7 @@ static void ast_dump(const UAstNode *n, char *buf, size_t bufsz) {
 
 typedef struct {
     ULexer lex;
-    Arena arena;
+    UArena arena;
     UParser p;
 } ParseCtx;
 
@@ -481,7 +481,7 @@ static void oom_free(void *p, void *ud) {
 UTEST(parse_oom_returns_sentinel_and_sticks) {
     OomSpy s = { 0, 0 }; /* fail on the very first backing alloc */
     ULexer lex;
-    Arena arena;
+    UArena arena;
     UParser p;
     const char *src = "1 + 2";
     ulex_init(&lex, src, strlen(src));
@@ -510,7 +510,7 @@ UTEST(parse_oom_mid_expression) {
        chunk holds many AST nodes, so we fail the first chunk alloc. */
     OomSpy s = { 0, 0 };
     ULexer lex;
-    Arena arena;
+    UArena arena;
     UParser p;
     const char *src = "1 + 2 * (3 - 4)";
     ulex_init(&lex, src, strlen(src));
