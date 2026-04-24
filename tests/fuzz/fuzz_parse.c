@@ -38,7 +38,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         /* Forces the compiler to keep the call from being optimized away
          * and forces a branch that reads node->kind, which touches the
          * returned memory and helps libFuzzer credit coverage through
-         * the node-producing paths. */
+         * the node-producing paths. The (int)kind < 0 test is dead
+         * under the current UAstKind enum (values 0..4 = INT, IDENT,
+         * UNARY, BINARY, ERROR); if UAstKind ever gains negative
+         * sentinels, revisit this guard and the compiler-escape intent
+         * together. */
         if ((int)node->kind < 0) break;
     }
 
