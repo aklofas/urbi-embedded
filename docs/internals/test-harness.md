@@ -155,7 +155,7 @@ without requiring a `make clean` when switching between them.
 
 The test targets form two tiers:
 
-- **Pre-commit tier** — `make test` plus the three fast sanitizer
+- **Pre-commit tier** — `make test` plus the three fast companion
   variants (`make test-asan`, `make test-ubsan`, `make test-debug`).
   All four finish in under 30 s combined. These must pass before any
   commit lands on `main`.
@@ -185,7 +185,7 @@ verification.
 
 Runtimes are approximate (typical development hardware); actual numbers
 vary with CPU, disk, and whether `ccache` is in use. `make test-valgrind`
-dominates `releasetest` runtime; the rest is add-noise.
+is the single longest gate within `releasetest`.
 
 Cross-compile variants build `liburbi.a` for Cortex-M7 (`make cross-arm`) and
 RISC-V rv32imc (`make cross-riscv`) but do not execute tests — there is no
