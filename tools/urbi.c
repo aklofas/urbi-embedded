@@ -110,6 +110,23 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     return true;
 }
 
+/* Compile src and print disassembly to stdout.  Does not execute.
+   Returns 0 on success, 1 on compile error. */
+static int run_dump(const char *src, size_t len, const char *src_name) {
+    UArena arena;
+    UModule module;
+    if (!compile_source(src, len, src_name, &module, &arena)) {
+        return 1;
+    }
+    char buf[4096];
+    size_t n = uemit_disassemble(&module, buf, sizeof buf);
+    fwrite(buf, 1, n, stdout);
+    if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    return 0;
+}
+
 #define URBI_REPL_MAX_FILE (1024u * 1024u)
 
 /* Slurp a file (or stdin, with path=="-") into a freshly-malloc'd buffer.
@@ -254,6 +271,19 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Scan for --dump-bytecode; incompatible with -i. */
+    bool dump = false;
+    bool want_interactive = false;
+    for (int i = 1; i < argc; i++) {
+        if (eq(argv[i], "--dump-bytecode")) dump = true;
+        if (eq(argv[i], "-i")) want_interactive = true;
+    }
+
+    if (dump && want_interactive) {
+        fprintf(stderr, "urbi: --dump-bytecode requires -e <expr> or a file\n");
+        return 2;
+    }
+
     /* Scan for -e. */
     const char *expr = NULL;
     for (int i = 1; i < argc; i++) {
@@ -265,14 +295,6 @@ int main(int argc, char *argv[]) {
             expr = argv[i + 1];
             break;
         }
-    }
-
-    if (expr) {
-        UVM vm;
-        uvm_init(&vm, NULL, NULL);
-        int rc = run_expression(&vm, expr);
-        uvm_destroy(&vm);
-        return rc;
     }
 
     /* Scan for -f. */
@@ -296,6 +318,52 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
+    }
+
+    /* --dump-bytecode dispatch: compile and disassemble, no execution. */
+    if (dump) {
+        if (expr) {
+            /* Append " |" to terminate the statement, matching run_expression. */
+            size_t len = strlen(expr);
+            char *buf = malloc(len + 3);
+            if (!buf) { fprintf(stderr, "urbi: out of memory\n"); return 1; }
+            memcpy(buf, expr, len);
+
+            size_t t = len;
+            while (t > 0 && (buf[t - 1] == ' ' || buf[t - 1] == '\t')) t--;
+
+            size_t final_len;
+            if (t > 0 && buf[t - 1] == '|') {
+                buf[len] = '\0';
+                final_len = len;
+            } else {
+                buf[len]     = ' ';
+                buf[len + 1] = '|';
+                buf[len + 2] = '\0';
+                final_len = len + 2;
+            }
+            int rc = run_dump(buf, final_len, "<expr>");
+            free(buf);
+            return rc;
+        }
+        if (file_arg) {
+            size_t flen = 0;
+            char *src = slurp(file_arg, &flen);
+            if (!src) return 2;
+            int rc = run_dump(src, flen, file_arg);
+            free(src);
+            return rc;
+        }
+        fprintf(stderr, "urbi: --dump-bytecode requires -e <expr> or a file\n");
+        return 2;
+    }
+
+    if (expr) {
+        UVM vm;
+        uvm_init(&vm, NULL, NULL);
+        int rc = run_expression(&vm, expr);
+        uvm_destroy(&vm);
+        return rc;
     }
 
     if (file_arg) {
