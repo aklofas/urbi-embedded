@@ -77,3 +77,8 @@ cscope.files
 # IDE indexing artifacts (generated, not committed)
 compile_commands.json
 .cache/
+
+# Local tool installs — docs-check npm deps, etc.
+node_modules/
+package.json
+package-lock.json
