@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### REPL (M1 phase 6)
+
+- New binary `urbi` — the M1 walking-skeleton REPL. Drives the full
+  `ulex` → `uparse` → `uemit` → `uvm` pipeline. Five modes: `urbi -i`
+  (interactive via vendored linenoise, with `~/.urbi_history` persistence
+  and `[%08u] value` timestamp frames via `clock_gettime(CLOCK_MONOTONIC, …)`),
+  `urbi -e <expr>` (evaluate and print), `urbi [-f] <file>` /
+  `urbi <file>` (run script; no per-statement print per Unix convention),
+  `urbi --dump-bytecode` (disassemble via `uemit_disassemble`, incompatible
+  with `-i`), `urbi --version` / `urbi --help`. Persistent `UVM` across
+  interactive lines; fresh `UModule` + `UArena` per line. Implicit `|`
+  statement terminator appended if missing.
+- Source in `tools/urbi.c`, outside `src/` to preserve the `cc src/*.c`
+  drop-in invariant. Never built on cross-compile targets.
+
+### Formatter
+
+- New library module `src/uvalue.{c,h}` — `UValue`-to-string formatter
+  with Lua-5.4-style number formatting. Integer via `%lld`, Float via
+  `%.14g` (f64) or `%.7g` (f32) with trailing `.0` appended on
+  whole-number floats for visual kind-distinction. Bool, Nil, Str also
+  covered (Bool/Str/Nil unreachable from M1 source; ship complete for
+  M2+). Buffer-based, no allocation, thread-safe.
+  `__STDC_HOSTED__`-gated — contributes no symbols under freestanding.
+
+### Vendored
+
+- `tools/linenoise.c` / `tools/linenoise.h` — single-file line editor
+  from `github.com/antirez/linenoise` at commit
+  `a15597057991fc748b3759cc66e157c9ea8bdfff`, BSD-2, preserved verbatim.
+  Provenance ledger at `tools/LINENOISE-UPSTREAM.md`. Only linked into
+  the `urbi` binary; never enters `liburbi.a`.
+
+### Build
+
+- New Makefile targets: `$(BUILDDIR)/urbi` (the REPL binary),
+  `urbi-bin` (phony), `test-integration` (phony running the shell
+  harness). `test` aggregate now depends on `test-integration`, so unit
+  + integration run together under every sanitizer variant.
+- `make tidy` scope widened to include `tools/urbi.c`.
+  `tools/linenoise.c` stays outside the first-party tidy scope.
+- `tools/linenoise.c` compiles with `-D_POSIX_C_SOURCE=200809L
+  -D_XOPEN_SOURCE=700 -w` to suppress vendored-code warnings; `tools/urbi.c`
+  compiles under the standard strict `$(CFLAGS)` discipline.
+
+### Tests
+
+- `tests/unit/test_uvalue.c` — ~25 unit cases covering all 5 UValKinds,
+  edge cases (INT64_MAX/MIN, -0.0, NaN, Inf, whole-number floats,
+  scientific notation), and truncation (cap=0/1/3).
+- `tests/integration/repl_smoke.sh` — POSIX sh harness covering every
+  CLI mode and error path (30 cases). Runs against `$(BUILDDIR)/urbi`
+  as part of `make test`.
+
 ### VM (M1 phase 5)
 
 - New module `src/uvm.{c,h}` implements the M1 register-based bytecode

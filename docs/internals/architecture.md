@@ -29,9 +29,10 @@ Changing the emitter's register-allocation strategy does not touch the lexer.
 Adding a new opcode to the VM does not touch the parser. The boundaries are
 the design.
 
-At the time of the v0.1.0-skeleton tag the VM subsystem is shipped; the REPL
-is in active development. The architecture described here is the target shape
-the v0.1.0-skeleton release implements.
+At the v0.1.0-skeleton tag all stages described here are shipped: lexer,
+parser, arena, emitter, VM, formatter (`uvalue`), and the `urbi` REPL binary.
+The architecture described here is the shape the v0.1.0-skeleton release
+implements.
 
 ---
 
@@ -367,25 +368,41 @@ stdlib-realloc shim is `__STDC_HOSTED__`-gated).
 
 ## REPL
 
-The `urbi` CLI binary drives the full pipeline in a loop. It supports three
-modes:
+**Source:** `tools/urbi.c`
 
-- `-i` — interactive REPL: reads one line at a time from stdin, runs the
-  pipeline, and prints the result.
+The `urbi` CLI binary is the first end-user-visible consumer of the full
+pipeline. It drives the pipeline in a loop and supports five modes:
+
+- `-i` — interactive REPL: reads one line at a time via vendored linenoise,
+  runs the pipeline, prints `[%08u] value` timestamp frames (wall-clock
+  milliseconds via `clock_gettime(CLOCK_MONOTONIC, …)`), and persists
+  history to `~/.urbi_history`.
 - `-e <expr>` — evaluates a single expression string and exits.
-- `-f <file>` — reads and evaluates a source file.
+- `[-f] <file>` / positional file argument — reads and evaluates a source
+  file; no per-statement print (Unix script convention).
+- `--dump-bytecode` — disassembles compiled bytecode via `uemit_disassemble`
+  (incompatible with `-i`).
+- `--version` / `--help` — print version or usage and exit.
 
-In all modes the pipeline is: `ulex_init` → `uparse_next_statement` loop →
-`uemit_statement` loop → `uemit_finish` → VM dispatch → result print.
-The REPL reuses a single `UArena` per line, calling `uarena_reset` after each
-emitter pass to reclaim AST memory without a `destroy`/`init` cycle.
+In all evaluation modes the pipeline is: `ulex_init` → `uparse_next_statement`
+loop → `uemit_statement` loop → `uemit_finish` → VM dispatch → result print.
+The `UVM` is persistent across interactive lines. A fresh `UModule` and
+`UArena` is allocated per line; `uarena_reset` reclaims AST memory after each
+emitter pass without a `destroy`/`init` cycle. An implicit `|` statement
+terminator is appended if the input line is missing one.
 
-The `urbi` binary does not add any new language-level functionality; it is
-purely a driver that wires the existing pipeline stages together with line
-reading and result formatting.
+Result formatting is handled by `src/uvalue.{c,h}` (the `uvalue_format`
+function), which is a separate hosted-only library module — not part of
+`tools/urbi.c` itself. This keeps the formatter testable in isolation and
+available to future embedding scenarios (e.g. a debugger or a remote REPL
+over a byte-stream transport).
 
-At the time of the v0.1.0-skeleton tag the REPL binary is in active
-development; it arrives as part of the same release that completes the VM.
+The `urbi` binary lives in `tools/` rather than `src/` to preserve the
+`cc src/*.c` drop-in invariant. It is never built for cross-compile targets.
+The factoring of the per-line eval logic into a reusable `urbi_repl_eval_line`
+function in `src/urepl.{c,h}` is a scheduled future refactor (see the
+"Embedded REPL over UART / byte-stream transports" backlog entry); at the
+v0.1.0-skeleton tag the logic lives inline in `tools/urbi.c`.
 
 ---
 
@@ -473,6 +490,17 @@ src/
   uvm.h               VM API: UVM, UVMError, UValue, uvm_init, uvm_run, uvm_destroy
   uvm.c               VM implementation: computed-goto / switch dispatch, arithmetic
                       type matrix, TypeError/OOM diagnostics, syncline decoder
+  uvalue.h            UValue-to-string formatter API: uvalue_format
+  uvalue.c            Formatter implementation (hosted only, __STDC_HOSTED__-gated):
+                      Lua-5.4-style number formatting for all 5 UValKinds
+
+tools/
+  urbi.c              REPL binary — the first end-user-visible consumer of the full
+                      pipeline. Five modes: -i (interactive), -e, -f / positional
+                      file, --dump-bytecode, --version / --help. Not part of
+                      liburbi.a; never built on cross-compile targets.
+  linenoise.h         Vendored line editor header (BSD-2, antirez/linenoise)
+  linenoise.c         Vendored line editor implementation; see LINENOISE-UPSTREAM.md
 
 tests/unit/
   utest.h             Header-only test harness — see internals/test-harness.md
@@ -484,4 +512,8 @@ tests/unit/
   test_module.c       UModule loader / verifier test suite
   test_emit.c         Emitter test suite
   test_vm.c           VM test suite
+  test_uvalue.c       UValue formatter test suite
+
+tests/integration/
+  repl_smoke.sh       POSIX sh harness covering every CLI mode and error path
 ```

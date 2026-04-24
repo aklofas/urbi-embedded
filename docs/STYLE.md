@@ -80,6 +80,14 @@ Rules:
 
 The RISC-V CI job is the acceptance test. If your change makes `make cross-riscv` fail, the change is wrong — not the test.
 
+`src/uvalue.c` uses `<stdio.h>` for `snprintf` and is therefore gated behind
+`#if __STDC_HOSTED__`. The header `src/uvalue.h` declares the API
+unconditionally so callers can include it on any target; freestanding callers
+that attempt to link `uvalue_format` get a clear undefined-symbol error at link
+time rather than a silent miscompile. This is the same pattern as
+`src/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
+implementation symbols are hosted-only.
+
 ---
 
 ## Const-correctness
