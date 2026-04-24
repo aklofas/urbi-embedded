@@ -20,6 +20,14 @@
   the target-reference table with a Runtime column and the
   previously-undocumented `test-switch` and `releasetest` rows.
 
+### Tests (chk-layout)
+
+- Reorganized `tests/chk/` into feature subdirectories. Moved
+  `tests/chk/arithmetic.chk` → `tests/chk/arithmetic/basic.chk` and
+  documented the `tests/chk/<feature>/<name>.chk` layout convention
+  in `docs/internals/test-harness.md`. The `test-chk` Makefile target
+  already uses `find ... -name` recursively; no build change required.
+
 ## v0.1.0-skeleton — 2026-04-24
 
 The walking-skeleton milestone. A complete end-to-end compile-and-execute

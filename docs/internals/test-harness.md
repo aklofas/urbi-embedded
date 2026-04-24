@@ -351,6 +351,25 @@ stable as the implementation grows. Unit tests exercise compiler and
 VM internals in isolation; `.chk` fixtures exercise the whole
 pipeline from source text through to REPL framing, from the outside.
 
+### Fixture layout
+
+Fixtures live under `tests/chk/<feature>/<name>.chk`. The `<feature>`
+subdirectory groups fixtures by language area; current and planned
+subdirs are:
+
+- `arithmetic/` — numeric operators, literal variants, promotion
+- `control/` — `if`, `while`, `for`, loop break/continue
+- `object/` — prototype system, slots, inheritance
+- `concurrency/` — `;` / `|` / `,` / `&` separators
+- `reactive/` — `at`, `whenever`, `waituntil`, tag events
+- `tag/` — tag scope, cancellation, `enter`/`leave`
+
+The `test-chk` Makefile target uses `find tests/chk -name '*.chk'`
+recursively, so any depth works. Subdirs are created lazily — add a
+new `<feature>/` directory the first time a fixture for that feature
+lands. There is no empty-subdir policy; unused subdirs would be
+noise.
+
 ### Fixture format
 
 Three line classes per `.chk` file:
@@ -394,7 +413,7 @@ not preemptively.
 One fixture at a time:
 
 ```sh
-tests/integration/run_chk.sh build/host/urbi tests/chk/arithmetic.chk
+tests/integration/run_chk.sh build/host/urbi tests/chk/arithmetic/basic.chk
 ```
 
 All fixtures via Make:
@@ -422,7 +441,7 @@ integration path.
    `tests/chk/`, one pair per REPL exchange.
 3. Add `# --- <section name>` comment markers for readability.
 4. Run `tests/integration/run_chk.sh build/host/urbi
-   tests/chk/<name>.chk` and confirm `PASS:`. If it fails, diff the
+   tests/chk/<feature>/<name>.chk` and confirm `PASS:`. If it fails, diff the
    expected output against what the binary actually produces — the
    fixture records what the implementation does, not what you wish
    it did.
