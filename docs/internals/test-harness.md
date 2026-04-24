@@ -151,19 +151,41 @@ only manual edits required are the `extern` declaration and the `main()` call in
 Each build variant uses its own subdirectory under `build/`, so they coexist
 without requiring a `make clean` when switching between them.
 
-| Target          | CFLAGS                          | Build dir            | When to run                                      |
-| --------------- | ------------------------------- | -------------------- | ------------------------------------------------ |
-| `make test`     | `-Os` release                   | `build/host/`        | Always; under 5 s; every commit                  |
-| `make test-debug` | `-O0 -g`                      | `build/host-debug/`  | Routinely; prerequisite for gdb sessions         |
-| `make test-asan` | AddressSanitizer (`-O1 -g`)   | `build/host-asan/`   | After any change to `src/*.c`                    |
-| `make test-ubsan` | UndefinedBehaviorSanitizer (`-O1 -g`) | `build/host-ubsan/` | After any change to `src/*.c`          |
-| `make test-valgrind` | `-O0 -g`, run under memcheck | `build/host-valgrind/` | CI-gating; ~20–50× slower than plain build    |
+### Test tiers
 
-The four fast variants must pass before any commit lands. Running `make test`
-alone is sufficient for documentation-only or tooling changes; after touching
-implementation code, run all four. `make test-valgrind` is enforced in CI but
-is slower; run it periodically and always before a milestone tag, not on
-every commit.
+The test targets form two tiers:
+
+- **Pre-commit tier** — `make test` plus the three fast sanitizer
+  variants (`make test-asan`, `make test-ubsan`, `make test-debug`).
+  All four finish in under 30 s combined. These must pass before any
+  commit lands on `main`.
+- **Pre-release tier** — `make releasetest` aggregates every host-side
+  gate that CI runs (sanitizer matrix including `test-switch`,
+  `test-valgrind`, `lint`, `docs-check`, `coverage`) into a single
+  ~3–5 min sequential run. Invoked before tagging a milestone or
+  before pushing a branch that touches multiple subsystems; otherwise
+  rely on CI.
+
+Cross-compile targets (`make cross-arm`, `make cross-riscv`) are
+deliberately excluded from `releasetest` — their toolchains are not
+universally installable and CI remains authoritative for cross-compile
+verification.
+
+### Target reference
+
+| Target               | CFLAGS                                 | Build dir              | Runtime       | When to run                                  |
+| -------------------- | -------------------------------------- | ---------------------- | ------------- | -------------------------------------------- |
+| `make test`          | `-Os` release                          | `build/host/`          | ~5 s          | Always; every commit                         |
+| `make test-debug`    | `-O0 -g`                               | `build/host-debug/`    | ~5 s          | Routinely; prereq for gdb sessions           |
+| `make test-asan`     | AddressSanitizer (`-O1 -g`)            | `build/host-asan/`     | ~10 s         | After any `src/*.c` change                   |
+| `make test-ubsan`    | UBSan (`-O1 -g`)                       | `build/host-ubsan/`    | ~10 s         | After any `src/*.c` change                   |
+| `make test-switch`   | `-Os -DURBI_VM_FORCE_SWITCH=1`         | `build/host-switch/`   | ~5 s          | After `src/uvm.c` changes                    |
+| `make test-valgrind` | `-O0 -g` under memcheck                | `build/host-valgrind/` | ~1–3 min      | Before milestone tag; via `releasetest`      |
+| `make releasetest`   | aggregate (sequential recursive `$(MAKE)`) | various            | ~3–5 min      | Before tagging a release; before push if branch spans subsystems |
+
+Runtimes are approximate (typical development hardware); actual numbers
+vary with CPU, disk, and whether `ccache` is in use. `make test-valgrind`
+dominates `releasetest` runtime; the rest is add-noise.
 
 Cross-compile variants build `liburbi.a` for Cortex-M7 (`make cross-arm`) and
 RISC-V rv32imc (`make cross-riscv`) but do not execute tests — there is no

@@ -11,6 +11,15 @@
   targets are excluded; CI remains authoritative for cross-compile
   verification.
 
+### Documentation (test infra)
+
+- Documented the tiered test-target convention in
+  `docs/internals/test-harness.md` — `make test` and the three fast
+  sanitizer variants form the pre-commit gate (~30 s combined);
+  `make releasetest` is the pre-release gate (~3–5 min). Extended
+  the target-reference table with a Runtime column and the
+  previously-undocumented `test-switch` and `releasetest` rows.
+
 ## v0.1.0-skeleton — 2026-04-24
 
 The walking-skeleton milestone. A complete end-to-end compile-and-execute
