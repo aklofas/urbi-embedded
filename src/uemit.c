@@ -57,12 +57,13 @@ static UModuleAllocFn emit_alloc_for(const UModule *c) {
 #if __STDC_HOSTED__
 
 /* Deep-copy source_name into the module using the module's allocator.
-   Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL. */
+   Sets e->error = EMIT_OOM on allocation failure.  No-op if src is NULL.
+   Under __STDC_HOSTED__ emit_alloc_for always returns non-NULL (falls
+   back to the stdlib wrapper), so no NULL guard on `alloc` is needed. */
 static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
     size_t len = emit_strlen(src);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
-    if (alloc == NULL) { e->error = EMIT_OOM; return; }
     char *copy = (char *)alloc(NULL, len + 1u, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
     emit_memcpy(copy, src, len + 1u);

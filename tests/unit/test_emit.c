@@ -200,7 +200,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
     }
 }
 
-UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1) {
+UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     /* (1+2)+(3+4) — 6 UAstNodes.  Destination-reuse keeps max_reg==1. */
     UModule module = {0};
     UArena arena;
@@ -785,7 +785,7 @@ void test_emit_suite(void) {
     utest_run("emit AST_BINARY SUB/MUL/DIV map to correct opcodes",
               emit_ast_binary_sub_mul_div_map_to_correct_opcodes);
     utest_run("emit nested (1+2)+(3+4) stays at max_reg=1 via destination reuse",
-              emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_1);
+              emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2);
     utest_run("emit AST_UNARY neg 5 -> LOADK R0 K0 ; NEG R0 R0 ; RET R0",
               emit_ast_unary_neg_5_loadk_then_neg_then_ret);
     utest_run("emit AST_ERROR -> EMIT_AST_ERROR",
