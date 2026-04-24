@@ -285,5 +285,66 @@ else
     fail "--dump-bytecode alone: rc=$rc"
 fi
 
+# --- -i basic happy paths (stdin piped, no tty) ---
+test_case
+out=$(printf '1 + 2\n' | "$URBI" -i)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^\[[0-9]{8}\] 3$'; then
+    ok '-i "1 + 2" prints [TTTTTTTT] 3'
+else
+    fail "-i 1+2: rc=$rc, out='$out'"
+fi
+
+test_case
+out=$(printf '5 / 2\n' | "$URBI" -i)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^\[[0-9]{8}\] 2\.5$'; then
+    ok '-i "5 / 2" prints [TTTTTTTT] 2.5'
+else
+    fail "-i 5/2: rc=$rc, out='$out'"
+fi
+
+test_case
+out=$(printf '1 + 2\n3 * 4\n' | "$URBI" -i)
+rc=$?
+lines=$(printf '%s\n' "$out" | grep -cE '^\[[0-9]{8}\] ')
+if [ "$rc" -eq 0 ] && [ "$lines" -eq 2 ]; then
+    ok '-i two lines -> two frames'
+else
+    fail "-i multi-line: rc=$rc, lines=$lines, out='$out'"
+fi
+
+# --- -i error recovery: error on line 1, value on line 2 ---
+test_case
+out=$(printf '1 +\n1 + 2\n' | "$URBI" -i)
+rc=$?
+err_lines=$(printf '%s\n' "$out" | grep -cE '^\[[0-9]{8}\] !!!')
+val_lines=$(printf '%s\n' "$out" | grep -cE '^\[[0-9]{8}\] 3$')
+if [ "$rc" -eq 0 ] && [ "$err_lines" -eq 1 ] && [ "$val_lines" -eq 1 ]; then
+    ok '-i recovers from error line, evaluates next line'
+else
+    fail "-i recovery: rc=$rc, err=$err_lines, val=$val_lines"
+fi
+
+# --- -i EOF on empty stdin ---
+test_case
+out=$("$URBI" -i < /dev/null)
+rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+    ok '-i with /dev/null stdin exits cleanly'
+else
+    fail "-i /dev/null: rc=$rc, out='$out'"
+fi
+
+# --- -i with lex error ---
+test_case
+out=$(printf '0xG\n' | "$URBI" -i)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^\[[0-9]{8}\] !!!'; then
+    ok '-i lex error -> framed !!! on stdout'
+else
+    fail "-i lex error: rc=$rc, out='$out'"
+fi
+
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"
 [ "$FAIL" -eq 0 ]

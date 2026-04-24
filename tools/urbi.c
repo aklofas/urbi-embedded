@@ -1,10 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* urbi — the M1 REPL binary.  Host-only. */
 
+/* Enable POSIX interfaces: clock_gettime, struct timespec, fileno, isatty. */
+#define _POSIX_C_SOURCE 200809L
+
+#include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "uarena.h"
@@ -16,6 +22,8 @@
 #include "urbi.h"
 #include "uvalue.h"
 #include "uvm.h"
+
+#include "linenoise.h"
 
 /* --- helpers --- */
 
@@ -46,30 +54,15 @@ static void print_usage(FILE *out) {
 
 static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
-/* Format a parser error (AST_ERROR node) to stderr.
-   Prefix: "urbi: <src>:<line>:<col>: <message>\n". */
-static void print_parse_error(const UAstNode *node, const char *src_name) {
-    const char *msg = node->u.err.message ? node->u.err.message : "parse error";
-    fprintf(stderr, "urbi: %s:%d:%d: %s\n", src_name, node->line, node->col, msg);
-}
-
-static void print_emit_error(const UEmitter *e, const char *src_name) {
-    const char *name = uemit_error_name(e->error);
-    fprintf(stderr, "urbi: %s: emit error: %s\n", src_name, name);
-}
-
-static void print_vm_error(const UVM *vm) {
-    const char *msg = vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)";
-    fprintf(stderr, "urbi: %s\n", msg);
-}
-
 /* Compile src (length len) into *out_module.
    Returns true on success; caller owns the module and must call
    umodule_destroy + uarena_destroy when done.
-   On error, prints to stderr, destroys internal state, and returns false;
-   caller must NOT call umodule_destroy / uarena_destroy (already done). */
+   On failure, writes the formatted error message (no trailing newline) into
+   err_buf (up to err_cap bytes, NUL-terminated), destroys internal state,
+   and returns false; caller must NOT call umodule_destroy / uarena_destroy. */
 static bool compile_source(const char *src, size_t len, const char *src_name,
-                           UModule *out_module, UArena *arena) {
+                           UModule *out_module, UArena *arena,
+                           char *err_buf, size_t err_cap) {
     ULexer lex;
     ulex_init(&lex, src, len);
 
@@ -86,7 +79,8 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     bool had_error = false;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
-            print_parse_error(node, src_name);
+            const char *msg = node->u.err.message ? node->u.err.message : "parse error";
+            snprintf(err_buf, err_cap, "%s:%d:%d: %s", src_name, node->line, node->col, msg);
             had_error = true;
             break;
         }
@@ -101,7 +95,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (uemit_finish(&e) != EMIT_OK) {
-        print_emit_error(&e, src_name);
+        snprintf(err_buf, err_cap, "%s: emit error: %s", src_name, uemit_error_name(e.error));
         umodule_destroy(out_module);
         uarena_destroy(arena);
         return false;
@@ -115,7 +109,9 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
 static int run_dump(const char *src, size_t len, const char *src_name) {
     UArena arena;
     UModule module;
-    if (!compile_source(src, len, src_name, &module, &arena)) {
+    char err[256] = {0};
+    if (!compile_source(src, len, src_name, &module, &arena, err, sizeof err)) {
+        fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
     char buf[4096];
@@ -187,17 +183,21 @@ static int run_file(UVM *vm, const char *path) {
     UArena arena;
     UModule module;
     int rc = 1;
-    if (compile_source(src, len, path, &module, &arena)) {
+    char err[256] = {0};
+    if (compile_source(src, len, path, &module, &arena, err, sizeof err)) {
         UValue out;
         UVMError vrc = uvm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
             rc = 0;
         } else {
-            print_vm_error(vm);
+            fprintf(stderr, "urbi: %s\n",
+                    vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);
+    } else {
+        fprintf(stderr, "urbi: %s\n", err);
     }
     free(src);
     return rc;
@@ -236,7 +236,8 @@ static int run_expression(UVM *vm, const char *expr) {
     UArena arena;
     UModule module;
     int rc = 1;
-    if (compile_source(buf, final_len, "<expr>", &module, &arena)) {
+    char err[256] = {0};
+    if (compile_source(buf, final_len, "<expr>", &module, &arena, err, sizeof err)) {
         UValue out;
         UVMError vrc = uvm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
@@ -245,14 +246,118 @@ static int run_expression(UVM *vm, const char *expr) {
             puts(fmt);
             rc = 0;
         } else {
-            print_vm_error(vm);
+            fprintf(stderr, "urbi: %s\n",
+                    vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);
+    } else {
+        fprintf(stderr, "urbi: %s\n", err);
     }
     free(buf);
     return rc;
+}
+
+/* --- interactive mode --- */
+
+static struct timespec g_start_time;
+static volatile sig_atomic_t g_interrupted = 0;
+
+static uint32_t ms_since_start(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long sec  = (long)(now.tv_sec  - g_start_time.tv_sec);
+    long nsec = now.tv_nsec - g_start_time.tv_nsec;
+    if (nsec < 0) { sec -= 1; nsec += 1000000000L; }
+    uint64_t ms = (uint64_t)sec * 1000ULL + (uint64_t)nsec / 1000000ULL;
+    return (uint32_t)ms;
+}
+
+static void sigint_handler(int sig) { (void)sig; g_interrupted = 1; }
+
+static char *history_path(void) {
+    const char *home = getenv("HOME");
+    if (!home || !home[0]) return NULL;
+    size_t hlen = strlen(home);
+    const char *suffix = "/.urbi_history";
+    size_t slen = strlen(suffix);
+    char *path = malloc(hlen + slen + 1);
+    if (!path) return NULL;
+    memcpy(path, home, hlen);
+    memcpy(path + hlen, suffix, slen);
+    path[hlen + slen] = '\0';
+    return path;
+}
+
+static int run_interactive(UVM *vm) {
+    clock_gettime(CLOCK_MONOTONIC, &g_start_time);
+    signal(SIGINT, sigint_handler);
+
+    char *histpath = history_path();
+    linenoiseHistorySetMaxLen(1000);
+    if (histpath) linenoiseHistoryLoad(histpath);
+
+    for (;;) {
+        if (g_interrupted) { g_interrupted = 0; continue; }
+
+        char *line = linenoise("");
+        if (line == NULL) break;   /* Ctrl-D or error */
+        if (line[0] == '\0') { free(line); continue; }
+
+        linenoiseHistoryAdd(line);
+        if (histpath) linenoiseHistorySave(histpath);
+
+        /* Append " |" if missing. */
+        size_t ll = strlen(line);
+        size_t t  = ll;
+        while (t > 0 && (line[t - 1] == ' ' || line[t - 1] == '\t' ||
+                         line[t - 1] == '\r' || line[t - 1] == '\n')) {
+            t--;
+        }
+        size_t bufcap = ll + 3;
+        char *buf = malloc(bufcap);
+        if (!buf) { free(line); continue; }
+        memcpy(buf, line, ll);
+        size_t final_len;
+        if (t > 0 && line[t - 1] == '|') {
+            buf[ll] = '\0';
+            final_len = ll;
+        } else {
+            buf[ll]     = ' ';
+            buf[ll + 1] = '|';
+            buf[ll + 2] = '\0';
+            final_len   = ll + 2;
+        }
+
+        UArena arena;
+        UModule module;
+        char err[256] = {0};
+        if (compile_source(buf, final_len, "<stdin>", &module, &arena, err, sizeof err)) {
+            UValue out;
+            UVMError vrc = uvm_run(vm, &module, &out);
+            if (vrc == UVM_OK) {
+                char fmt[64];
+                uvalue_format(&out, fmt, sizeof fmt);
+                printf("[%08u] %s\n", ms_since_start(), fmt);
+            } else {
+                const char *msg = vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)";
+                printf("[%08u] !!! %s\n", ms_since_start(), msg);
+            }
+            umodule_destroy(&module);
+            uarena_destroy(&arena);
+        } else {
+            printf("[%08u] !!! %s\n", ms_since_start(), err);
+        }
+        fflush(stdout);
+
+        free(buf);
+        free(line);
+    }
+
+    if (histpath) linenoiseHistorySave(histpath);
+    free(histpath);
+    return 0;
 }
 
 /* --- main --- */
@@ -383,6 +488,16 @@ int main(int argc, char *argv[]) {
         return rc;
     }
 
+    /* -i explicit or (no args, stdin is a tty). */
+    if (want_interactive ||
+        (argc == 1 && isatty(fileno(stdin)))) {
+        UVM vm;
+        uvm_init(&vm, NULL, NULL);
+        int rc = run_interactive(&vm);
+        uvm_destroy(&vm);
+        return rc;
+    }
+
     /* Reject unknown flags (no mode matched). */
     if (argc > 1 && argv[1][0] == '-') {
         fprintf(stderr, "urbi: unknown option: %s\n", argv[1]);
@@ -390,6 +505,5 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
-    /* No other modes implemented yet — further modes land in later tasks. */
     return EXIT_SUCCESS;
 }
