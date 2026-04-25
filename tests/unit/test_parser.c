@@ -810,6 +810,33 @@ UTEST(parse_if_no_paren_is_error) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_while_basic) {
+    /* "while (1 < 10) { 42 }" → AST_WHILE with cond=AST_COMPARE, body=AST_BLOCK */
+    ParseCtx c;
+    ctx_init(&c, "while (1 < 10) { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_WHILE, (int)n->kind);
+    UASSERT(n->u.while_stmt.cond != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->u.while_stmt.cond->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.while_stmt.cond->u.cmp.op);
+    UASSERT(n->u.while_stmt.body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.while_stmt.body->kind);
+    UASSERT_EQ(1, n->u.while_stmt.body->u.block.count);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_while_no_paren_is_error) {
+    /* "while 1 < 10 { 42 }" → AST_ERROR PARSE_EXPECTED_LPAREN */
+    ParseCtx c;
+    ctx_init(&c, "while 1 < 10 { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_LPAREN, n->u.err.code);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -876,4 +903,8 @@ void test_parser_suite(void) {
               parse_if_then_else);
     utest_run("parse: if without '(' is PARSE_EXPECTED_LPAREN",
               parse_if_no_paren_is_error);
+    utest_run("parse: while (1 < 10) { 42 } → AST_WHILE with cond=AST_COMPARE",
+              parse_while_basic);
+    utest_run("parse: while without '(' is PARSE_EXPECTED_LPAREN",
+              parse_while_no_paren_is_error);
 }

@@ -698,6 +698,98 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         return rd;
     }
+    case AST_WHILE: {
+        /* while (cond) { body }
+           Loop structure:
+             loop_start:
+               <cond>               ; result in rx
+               TEST rx, 0, 1        ; skip JMP-to-exit when cond is truthy
+               JMP <exit>           ; exit when falsy
+               <body stmts>         ; body block opened with is_loop=true
+               emit_loop_back_close ; OP_CLOSE if any local captured
+               JMP loop_start       ; back-edge
+             exit: */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        int loop_start = (int)e->module->instr_count;
+
+        /* 1. Compile cond into rx. */
+        uint8_t rx = e->next_reg;
+        emit_expr(e, n->u.while_stmt.cond);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* 2. TEST rx, 0, 1 — skip JMP-to-exit when cond is truthy. */
+        emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
+
+        /* 3. JMP placeholder to exit (patched later). */
+        int jmp_to_exit = (int)e->module->instr_count;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+
+        /* Free cond temp; locals beneath rx stay. */
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->next_reg = e->current_fs->freereg;
+
+        /* 4. Body — open block as is_loop=true (different from AST_BLOCK
+              which opens with is_loop=false). */
+        if (n->u.while_stmt.body->kind != AST_BLOCK) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        {
+            UAstNode *body = n->u.while_stmt.body;
+            if (!uemit_open_block(e, /*is_loop=*/true)) return 0u;
+
+            for (int i = 0; i < body->u.block.count; i++) {
+                emit_expr(e, body->u.block.stmts[i]);
+                if (e->error != EMIT_OK) {
+                    uemit_close_block(e);
+                    return 0u;
+                }
+                /* Release temps between body statements; locals stay. */
+                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->next_reg = e->current_fs->freereg;
+            }
+
+            /* 5. OP_CLOSE-on-back-edge if any local in the loop block was captured. */
+            uemit_emit_loop_back_close(e);
+
+            /* 6. Back-edge JMP to loop_start. */
+            {
+                int back_offset = loop_start - ((int)e->module->instr_count + 1);
+                emit_instr(e, uinstr_enc_abx(OP_JMP, 0u,
+                                             (uint16_t)(32768 + back_offset)),
+                           (uint32_t)n->line);
+            }
+
+            /* 7. Close the loop block (emits OP_CLOSE if has_captured, then pops
+                  actvars back). */
+            if (!uemit_close_block(e)) return 0u;
+        }
+
+        /* 8. Patch the exit JMP to current pc. */
+        {
+            int exit_target = (int)e->module->instr_count;
+            int exit_offset = exit_target - (jmp_to_exit + 1);
+            e->module->instructions[jmp_to_exit] =
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + exit_offset));
+        }
+
+        /* while-loop is a statement; it doesn't produce a value.
+           Return a register that holds nil to give callers a valid reg. */
+        {
+            uint8_t r = e->next_reg;
+            emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0u, 0u),
+                       (uint32_t)n->line);
+            e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+            return r;
+        }
+    }
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0u;

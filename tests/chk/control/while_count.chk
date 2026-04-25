@@ -1,0 +1,7 @@
+# Milestone: M2
+# Covers: while loop execution; back-edge JMP; loop-local variable mutation;
+#         while-loop body opened with is_loop=true for OP_CLOSE correctness.
+
+# --- count up to 5: verify n == 5 after loop
+var n = 0; while (n < 5) { n = n + 1 }; n
+[00000000] 5

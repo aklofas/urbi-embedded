@@ -1107,6 +1107,57 @@ UTEST(emit_if_then_else) {
     emit_ctx_destroy(&c);
 }
 
+UTEST(emit_while_basic) {
+    /* "while (false) { 42 }" — body never executes; verify TEST + two JMPs present.
+       Expected sequence:
+         [0]  LOADBOOL R0 0 0   (cond = false)
+         [1]  TEST R0 0 1       (skip JMP if truthy; won't skip since false)
+         [2]  JMP <exit>        (to after back-edge; patched)
+         [3]  LOADK R? K0       (body: 42, but never reached)
+         [4]  JMP <loop_start>  (back-edge to [0])
+         [5]  LOADNIL R?        (post-loop nil value)
+         [6]  RET R?
+       Key checks: TEST with C=1, two JMPs (exit + back-edge). */
+    EmitCtx c;
+    emit_ctx_init(&c, "while (false) { 42 }");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    bool found_test = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+            found_test = true;
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+        }
+    }
+    UASSERT(found_test);
+    int jmp_count = 0;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_JMP) jmp_count++;
+    }
+    /* Two JMPs: one exit-branch, one back-edge. */
+    UASSERT_EQ(2, jmp_count);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_while_with_assign) {
+    /* "var n = 0; while (n < 3) { n = n + 1 }" — multi-stmt body; verify EMIT_OK
+       and presence of TEST + back-edge JMP with negative offset. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var n = 0; while (n < 3) { n = n + 1 }");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    /* Must have at least one JMP with a negative offset (the back-edge). */
+    bool found_back_edge = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_JMP) {
+            int offset = (int)uinstr_bx(c.module.instructions[i]) - 32768;
+            if (offset < 0) { found_back_edge = true; break; }
+        }
+    }
+    UASSERT(found_back_edge);
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1192,4 +1243,8 @@ void test_emit_suite(void) {
               emit_if_then_only);
     utest_run("emit: if-then-else emits TEST + two JMPs, no LOADNIL",
               emit_if_then_else);
+    utest_run("emit: while (false) { 42 } emits TEST + exit-JMP + back-JMP",
+              emit_while_basic);
+    utest_run("emit: while (n < 3) { n = n + 1 } compiles with back-edge JMP",
+              emit_while_with_assign);
 }

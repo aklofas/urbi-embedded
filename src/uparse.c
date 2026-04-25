@@ -147,6 +147,7 @@ static UAstNode *parse_outer_tier(UParser *p);
 static UAstNode *parse_statement_or_expr(UParser *p);
 static UAstNode *parse_block(UParser *p);
 static UAstNode *parse_if(UParser *p);
+static UAstNode *parse_while(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -349,6 +350,11 @@ static UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
 
 static UAstNode *parse_statement_or_expr(UParser *p) {
     UToken t = peek(p);
+
+    /* while (cond) { body } */
+    if (t.type == TOK_KW_WHILE) {
+        return parse_while(p);
+    }
 
     /* if (cond) { ... } [else { ... }] */
     if (t.type == TOK_KW_IF) {
@@ -568,6 +574,41 @@ static UAstNode *parse_block(UParser *p) {
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.block.stmts = stmts;
     node->u.block.count = count;
+    return node;
+}
+
+/* --- parse_while: `while` `(` cond `)` body-block --- */
+static UAstNode *parse_while(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_WHILE */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_block(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    UAstNode *node = make_node(p, AST_WHILE, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.while_stmt.cond = cond;
+    node->u.while_stmt.body = body;
     return node;
 }
 
