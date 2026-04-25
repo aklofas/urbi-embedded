@@ -443,12 +443,20 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         }
         /* SEP_SEMI: compile each child; OP_YIELD between children (not
            before first, not after last); release temp regs between.
-           Last child's result register is the Nary's value. */
+           Last child's result register is the Nary's value.
+
+           Between children, reset next_reg to freereg (first slot above
+           all declared locals) rather than blindly decrementing.  The
+           decrement-by-one pattern is wrong when a var-decl child has
+           promoted a temp into a permanent local (advancing freereg), or
+           when a non-var child needed more than one temp: both cases leave
+           freereg ahead of where a simple decrement would land. */
         uint8_t r = 0u;
         for (int i = 0; i < n->u.nary.count; i++) {
             if (i > 0) {
-                /* Drop the previous child's result register before yielding. */
-                if (e->next_reg > 0u) e->next_reg--;
+                /* Release all temps allocated by the previous child, but
+                 * keep locals (tracked by freereg / nactvar). */
+                e->next_reg = e->current_fs->freereg;
                 emit_instr(e, uinstr_enc_abc(OP_YIELD, 0u, 0u, 0u),
                            e->prev_line);
                 if (e->error != EMIT_OK) return 0u;
@@ -548,6 +556,147 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 0u, 0u), (uint32_t)n->line);
 
         return rb;
+    }
+    case AST_BLOCK: {
+        /* Scoped sequence of statements inside `{ }`.
+           Opens a block scope so locals declared inside don't outlive the
+           block.  The block's "value" is the last statement's result reg
+           (or nil if empty).  Temps are reset between statements. */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        if (!uemit_open_block(e, false)) return 0u;
+
+        uint8_t r = 0u;
+        for (int i = 0; i < n->u.block.count; i++) {
+            r = emit_expr(e, n->u.block.stmts[i]);
+            if (e->error != EMIT_OK) {
+                uemit_close_block(e);
+                return 0u;
+            }
+            if (i < n->u.block.count - 1) {
+                /* Release temps between statements; locals stay. */
+                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->next_reg = e->current_fs->freereg;
+            }
+        }
+
+        if (!uemit_close_block(e)) return 0u;
+        return r;
+    }
+    case AST_IF: {
+        /* if (cond) then-block [else else-block]
+
+           With else:
+             TEST  rx, 0, 1       ; skip JMP if cond is truthy
+             JMP   else_target    ; jump here when falsy
+             <then-block>         ; result in rd
+             JMP   end_target     ; skip else
+             else_target:
+             <else-block>         ; result in rd
+             end_target:
+
+           Without else:
+             TEST  rx, 0, 1       ; skip JMP if cond is truthy
+             JMP   nil_target     ; jump here when falsy
+             <then-block>         ; result in rd
+             JMP   end_target     ; skip nil-load
+             nil_target:
+             LOADNIL rd
+             end_target:
+
+           Both arms are compiled with next_reg = rd so they write
+           their result into rd.  The if-expr returns rd.
+
+           OP_TEST polarity: "if (truthy(R[A]) == C) pc++" so C=1 skips
+           (falls into then-block) when truthy; C=0 would skip when falsy.
+           C=1 is correct for if-then. */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* 1. rd is the result register; cond is compiled into rx >= rd.
+              Since cond may use multiple regs (e.g. a comparison), compile
+              it first (at current next_reg), record the base as rd, then
+              reset next_reg back to rd before each arm. */
+        uint8_t rd = e->next_reg;
+
+        /* Compile cond starting at rd. */
+        uint8_t rx = rd;
+        uint8_t cond_reg = emit_expr(e, n->u.if_stmt.cond);
+        if (e->error != EMIT_OK) return 0u;
+        (void)cond_reg;  /* rx == cond_reg */
+
+        /* 2. TEST rx, 0, 1 — skip next instr (JMP) when cond is truthy. */
+        emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
+
+        /* 3. JMP placeholder to else/nil target (patched later). */
+        int jmp_to_else = (int)e->module->instr_count;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+
+        /* 4. Reset cursor to rd so then-block allocates starting at rd. */
+        e->next_reg = rd;
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+
+        /* 5. Compile then-block. */
+        uint8_t then_r = emit_expr(e, n->u.if_stmt.then_block);
+        if (e->error != EMIT_OK) return 0u;
+        if (then_r != rd) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, then_r, 0u),
+                       (uint32_t)n->line);
+        }
+
+        /* 6. JMP past else/nil-load to end (patched later). */
+        int jmp_to_end = (int)e->module->instr_count;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+
+        /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
+        {
+            int alt_target = (int)e->module->instr_count;
+            int alt_offset = alt_target - (jmp_to_else + 1);
+            e->module->instructions[jmp_to_else] =
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + alt_offset));
+        }
+
+        /* 8. Reset cursor to rd for else/nil arm. */
+        e->next_reg = rd;
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+
+        /* 9. Compile else-block or emit LOADNIL. */
+        if (n->u.if_stmt.else_block != NULL) {
+            uint8_t else_r = emit_expr(e, n->u.if_stmt.else_block);
+            if (e->error != EMIT_OK) return 0u;
+            if (else_r != rd) {
+                emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, else_r, 0u),
+                           (uint32_t)n->line);
+            }
+        } else {
+            emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u),
+                       (uint32_t)n->line);
+        }
+
+        /* 10. Patch jmp_to_end → current pc. */
+        {
+            int end_target = (int)e->module->instr_count;
+            int end_offset = end_target - (jmp_to_end + 1);
+            e->module->instructions[jmp_to_end] =
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + end_offset));
+        }
+
+        /* Advance past rd so callers can free it as a temp if needed. */
+        e->next_reg = rd + 1u;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs != NULL) {
+            if (e->next_reg > e->current_fs->max_reg_seen)
+                e->current_fs->max_reg_seen = e->next_reg;
+            e->current_fs->freereg = e->next_reg;
+        }
+
+        return rd;
     }
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;

@@ -1036,6 +1036,77 @@ UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
 
+UTEST(emit_if_then_only) {
+    /* "if (true) { 42 }" — verify TEST + JMP fixup + LOADK pattern.
+       Expected sequence:
+         [0] LOADBOOL R0 1 0   (cond)
+         [1] TEST R0 0 1       (skip JMP if truthy)
+         [2] JMP <nil-target>  (to [5])
+         [3] LOADK R0 K0       (then-block: 42)
+         [4] JMP <end-target>  (to [6])
+         [5] LOADNIL R0        (nil arm for no-else)
+         [6] RET R0            */
+    EmitCtx c;
+    emit_ctx_init(&c, "if (true) { 42 }");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    /* Must have TEST instruction. */
+    bool found_test = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+            found_test = true;
+            /* C=1 means skip when truthy. */
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+        }
+    }
+    UASSERT(found_test);
+    /* Must have LOADNIL for the no-else nil path. */
+    bool found_nil = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_LOADNIL) {
+            found_nil = true;
+        }
+    }
+    UASSERT(found_nil);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_if_then_else) {
+    /* "if (false) { 42 } else { 99 }" — both arms compiled; no LOADNIL.
+       Expected:
+         [0] LOADBOOL R0 0 0   (cond = false)
+         [1] TEST R0 0 1       (skip JMP if truthy; won't skip since false)
+         [2] JMP <else>        (to [5])
+         [3] LOADK R0 K(42)    (then)
+         [4] JMP <end>         (to [6])
+         [5] LOADK R0 K(99)    (else)
+         [6] RET R0
+       No LOADNIL needed — else arm fills the slot. */
+    EmitCtx c;
+    emit_ctx_init(&c, "if (false) { 42 } else { 99 }");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    bool found_test = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+            found_test = true;
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+        }
+    }
+    UASSERT(found_test);
+    /* No LOADNIL: else provides the alternative value. */
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        UASSERT((int)uinstr_op(c.module.instructions[i]) != (int)OP_LOADNIL);
+    }
+    /* Two JMP instructions: one for the cond branch, one to skip else. */
+    int jmp_count = 0;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_JMP) jmp_count++;
+    }
+    UASSERT_EQ(2, jmp_count);
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1117,4 +1188,8 @@ void test_emit_suite(void) {
               emit_ast_nil_emits_loadnil);
     utest_run("emit: AST_COMPARE(==) emits 4-instruction branch idiom",
               emit_ast_compare_eq_emits_4_instruction_pattern);
+    utest_run("emit: if-then-only emits TEST + JMP fixup + LOADNIL for no-else",
+              emit_if_then_only);
+    utest_run("emit: if-then-else emits TEST + two JMPs, no LOADNIL",
+              emit_if_then_else);
 }

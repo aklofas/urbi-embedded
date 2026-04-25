@@ -761,6 +761,55 @@ UTEST(parse_nil_literal) {
     ctx_destroy(&c);
 }
 
+/* --- if / else --- */
+
+UTEST(parse_if_then) {
+    /* "if (1 < 2) { 42 }" → AST_IF with cond=AST_COMPARE, then=AST_BLOCK,
+       else_block=NULL */
+    ParseCtx c;
+    ctx_init(&c, "if (1 < 2) { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_IF, (int)n->kind);
+    UASSERT(n->u.if_stmt.cond != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->u.if_stmt.cond->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.if_stmt.cond->u.cmp.op);
+    UASSERT(n->u.if_stmt.then_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.then_block->kind);
+    UASSERT_EQ(1, n->u.if_stmt.then_block->u.block.count);
+    UASSERT(n->u.if_stmt.else_block == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_if_then_else) {
+    /* "if (1 < 2) { 42 } else { 99 }" → AST_IF with else_block != NULL */
+    ParseCtx c;
+    ctx_init(&c, "if (1 < 2) { 42 } else { 99 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_IF, (int)n->kind);
+    UASSERT(n->u.if_stmt.cond != NULL);
+    UASSERT(n->u.if_stmt.then_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.then_block->kind);
+    UASSERT(n->u.if_stmt.else_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.else_block->kind);
+    UASSERT_EQ(1, n->u.if_stmt.else_block->u.block.count);
+    UASSERT_EQ((int)AST_INT, (int)n->u.if_stmt.else_block->u.block.stmts[0]->kind);
+    UASSERT_EQ((int64_t)99, n->u.if_stmt.else_block->u.block.stmts[0]->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_if_no_paren_is_error) {
+    /* "if 1 < 2 { 42 }" → AST_ERROR PARSE_EXPECTED_LPAREN */
+    ParseCtx c;
+    ctx_init(&c, "if 1 < 2 { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_LPAREN, n->u.err.code);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -821,4 +870,10 @@ void test_parser_suite(void) {
     utest_run("parse: true literal",                      parse_true_literal);
     utest_run("parse: false literal",                     parse_false_literal);
     utest_run("parse: nil literal",                       parse_nil_literal);
+    utest_run("parse: if-then produces AST_IF with AST_BLOCK then, no else",
+              parse_if_then);
+    utest_run("parse: if-then-else produces AST_IF with both blocks",
+              parse_if_then_else);
+    utest_run("parse: if without '(' is PARSE_EXPECTED_LPAREN",
+              parse_if_no_paren_is_error);
 }
