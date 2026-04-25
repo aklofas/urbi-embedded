@@ -33,12 +33,14 @@ extern "C" {
 /* --- tagged value shape shared between pool and runtime registers --- */
 
 typedef enum {
-    UVAL_NIL   = 0,
-    UVAL_INT   = 1,
-    UVAL_FLOAT = 2,
-    UVAL_BOOL  = 3,
-    UVAL_STR   = 4
-    /* 5-15 reserved; loader rejects > UVAL_STR at v1.0 */
+    UVAL_NIL     = 0,
+    UVAL_INT     = 1,
+    UVAL_FLOAT   = 2,
+    UVAL_BOOL    = 3,
+    UVAL_STR     = 4,
+    UVAL_CLOSURE = 5,             /* M2: function closure (proto + upvalues); runtime-only */
+    UVAL_VOID    = 6              /* M2: result of `&` separator; runtime-only */
+    /* 7-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
 } UValKind;
 
 typedef struct {
@@ -51,6 +53,7 @@ typedef struct {
 #else
         float   f;
 #endif
+        void   *p;                /* UVAL_CLOSURE: pointer to UClosure (T14) */
     } v;
 } UValue;                         /* 16 bytes */
 

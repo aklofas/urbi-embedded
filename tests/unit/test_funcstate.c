@@ -11,6 +11,10 @@
 #include "umodule.h"
 #include "uvm.h"
 
+/* Expose find_or_install_upvalue for cascade tests. */
+int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
+                            const char *name, int name_len);
+
 #define UTEST(name) static void name(void)
 
 /* --- helpers --- */
@@ -237,6 +241,158 @@ UTEST(block_close_on_empty_stack_sets_error) {
     teardown(&m, &a, &v);
 }
 
+UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    UFuncState *outer = uemit_open_function(&e, NULL);
+    const char *x = ustr_intern(&v, "x", 1);
+    uemit_declare_local(&e, x, 1);                    /* slot 0 in outer */
+
+    UFuncState *inner = uemit_open_function(&e, outer);
+    int idx = find_or_install_upvalue(&e, inner, x, 1);
+    UASSERT_EQ(0, idx);
+    UASSERT_EQ(1, inner->nupvalues);
+    UASSERT(inner->upvalues[0].in_stack == true);
+    UASSERT_EQ((uint8_t)0, inner->upvalues[0].idx);
+    UASSERT(outer->actvars[0].is_captured == true);   /* cppcheck-suppress nullPointerRedundantCheck */
+
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    UFuncState *outer = uemit_open_function(&e, NULL);
+    const char *x = ustr_intern(&v, "x", 1);
+    uemit_declare_local(&e, x, 1);                   /* slot 0 outer */
+
+    UFuncState *mid   = uemit_open_function(&e, outer);
+    UFuncState *inner = uemit_open_function(&e, mid);
+
+    int idx = find_or_install_upvalue(&e, inner, x, 1);
+    UASSERT_EQ(0, idx);
+    UASSERT_EQ(1, mid->nupvalues);                   /* cppcheck-suppress nullPointerRedundantCheck */
+    UASSERT(mid->upvalues[0].in_stack == true);
+    UASSERT_EQ((uint8_t)0, mid->upvalues[0].idx);
+    UASSERT_EQ(1, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
+    UASSERT(inner->upvalues[0].in_stack == false);
+    UASSERT_EQ((uint8_t)0, inner->upvalues[0].idx);
+    UASSERT(outer->actvars[0].is_captured == true);   /* cppcheck-suppress nullPointerRedundantCheck */
+
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(upvalue_repeated_lookup_returns_same_idx) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    UFuncState *outer = uemit_open_function(&e, NULL);
+    const char *x = ustr_intern(&v, "x", 1);
+    uemit_declare_local(&e, x, 1);
+
+    UFuncState *inner = uemit_open_function(&e, outer);
+    int a1 = find_or_install_upvalue(&e, inner, x, 1);
+    int a2 = find_or_install_upvalue(&e, inner, x, 1);
+    UASSERT_EQ(a1, a2);
+    UASSERT_EQ(1, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
+
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(upvalue_unresolved_returns_negative) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *outer = uemit_open_function(&e, NULL);
+    UFuncState *inner = uemit_open_function(&e, outer);
+
+    const char *missing = ustr_intern(&v, "ghost", 5);
+    int idx = find_or_install_upvalue(&e, inner, missing, 5);
+    UASSERT_EQ(-1, idx);
+    UASSERT_EQ(0, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
+
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(upvalue_exhaustion_errors) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    UFuncState *outer = uemit_open_function(&e, NULL);
+    char buf[8];
+    /* Declare UFS_MAX_UPVALUES + 1 locals in outer. */
+    for (int i = 0; i <= UFS_MAX_UPVALUES; i++) {
+        int len = snprintf(buf, sizeof buf, "v%04d", i);
+        uemit_declare_local(&e, ustr_intern(&v, buf, (size_t)len), len);
+    }
+
+    UFuncState *inner = uemit_open_function(&e, outer);
+    /* Capture UFS_MAX_UPVALUES of them — fills the table. */
+    for (int i = 0; i < UFS_MAX_UPVALUES; i++) {
+        int len = snprintf(buf, sizeof buf, "v%04d", i);
+        int slot = find_or_install_upvalue(&e, inner,
+                    ustr_intern(&v, buf, (size_t)len), len);
+        UASSERT(slot >= 0);
+    }
+    /* One more must fail. */
+    int len = snprintf(buf, sizeof buf, "v%04d", UFS_MAX_UPVALUES);
+    int over = find_or_install_upvalue(&e, inner,
+                ustr_intern(&v, buf, (size_t)len), len);
+    UASSERT_EQ(-1, over);
+    UASSERT_EQ((int)EMIT_UPVAL_EXHAUSTED, (int)e.error);
+
+    uemit_close_function(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(loop_back_emit_close_when_captured) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+    uemit_open_block(&e, /*is_loop=*/true);
+    uemit_declare_local(&e, ustr_intern(&v, "i", 1), 1);
+    fs->actvars[0].is_captured = true;               /* cppcheck-suppress nullPointerRedundantCheck */
+    fs->blocks[0].has_captured = true;
+
+    size_t pre = m.instr_count;
+    uemit_emit_loop_back_close(&e);
+    UASSERT_EQ(pre + 1, m.instr_count);
+
+    uint32_t last = m.instructions[m.instr_count - 1];
+    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFu));
+
+    uemit_close_block(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(loop_back_emit_close_no_op_when_not_captured) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    uemit_open_function(&e, NULL);
+    uemit_open_block(&e, /*is_loop=*/true);
+    /* has_captured stays false */
+
+    size_t pre = m.instr_count;
+    uemit_emit_loop_back_close(&e);
+    UASSERT_EQ(pre, m.instr_count);   /* no instruction emitted */
+
+    uemit_close_block(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
 void test_funcstate_suite(void) {
     utest_run("funcstate open zeroes freereg and nactvar",
         funcstate_open_zeroes_freereg_and_nactvar);
@@ -262,4 +418,18 @@ void test_funcstate_suite(void) {
         block_close_with_captured_emits_op_close);
     utest_run("block close on empty stack sets error",
         block_close_on_empty_stack_sets_error);
+    utest_run("upvalue capture immediate parent marks in_stack",
+        upvalue_capture_immediate_parent_marks_in_stack);
+    utest_run("upvalue two-level cascade intermediate in_stack false",
+        upvalue_two_level_cascade_intermediate_in_stack_false);
+    utest_run("upvalue repeated lookup returns same idx",
+        upvalue_repeated_lookup_returns_same_idx);
+    utest_run("upvalue unresolved returns negative",
+        upvalue_unresolved_returns_negative);
+    utest_run("upvalue exhaustion errors",
+        upvalue_exhaustion_errors);
+    utest_run("loop back emit close when captured",
+        loop_back_emit_close_when_captured);
+    utest_run("loop back emit close no-op when not captured",
+        loop_back_emit_close_no_op_when_not_captured);
 }

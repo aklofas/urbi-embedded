@@ -345,6 +345,15 @@ static void vm_zero(void *const dst, const size_t n) {
 #  define HALT()      goto halt
 #endif
 
+/* Generic unsupported-opcode error message.  Used by M2 placeholder arms
+ * that will be replaced by real implementations in later tasks. */
+static void vm_format_type_error_msg(UVM *vm, const char *msg) {
+    DiagWriter w;
+    diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
+    diag_write_cstr(&w, "TypeError: ");
+    diag_write_cstr(&w, msg);
+}
+
 /* --- uvm_run --- */
 
 UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
@@ -382,14 +391,35 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
        loader validates opcode is in [0, OP_MAX) so no unknown-opcode
        guard is needed at this point. */
     static void *dispatch_table[OP_MAX] = {
-        [OP_LOADK] = &&label_OP_LOADK,
-        [OP_MOVE]  = &&label_OP_MOVE,
-        [OP_ADD]   = &&label_OP_ADD,
-        [OP_SUB]   = &&label_OP_SUB,
-        [OP_MUL]   = &&label_OP_MUL,
-        [OP_DIV]   = &&label_OP_DIV,
-        [OP_NEG]   = &&label_OP_NEG,
-        [OP_RET]   = &&label_OP_RET,
+        [OP_LOADK]      = &&label_OP_LOADK,
+        [OP_MOVE]       = &&label_OP_MOVE,
+        [OP_ADD]        = &&label_OP_ADD,
+        [OP_SUB]        = &&label_OP_SUB,
+        [OP_MUL]        = &&label_OP_MUL,
+        [OP_DIV]        = &&label_OP_DIV,
+        [OP_NEG]        = &&label_OP_NEG,
+        [OP_RET]        = &&label_OP_RET,
+        [OP_LOADNIL]    = &&label_OP_LOADNIL,
+        [OP_LOADBOOL]   = &&label_OP_LOADBOOL,
+        [OP_LOADVOID]   = &&label_OP_LOADVOID,
+        [OP_GETUPVAL]   = &&label_OP_GETUPVAL,
+        [OP_SETUPVAL]   = &&label_OP_SETUPVAL,
+        [OP_CLOSURE]    = &&label_OP_CLOSURE,
+        [OP_CLOSE]      = &&label_OP_CLOSE,
+        [OP_CALL]       = &&label_OP_CALL,
+        [OP_JMP]        = &&label_OP_JMP,
+        [OP_TEST]       = &&label_OP_TEST,
+        [OP_TESTSET]    = &&label_OP_TESTSET,
+        [OP_EQ]         = &&label_OP_EQ,
+        [OP_NEQ]        = &&label_OP_NEQ,
+        [OP_LT]         = &&label_OP_LT,
+        [OP_LE]         = &&label_OP_LE,
+        [OP_YIELD]      = &&label_OP_YIELD,
+        [OP_FORK_DETACH]= &&label_OP_FORK_DETACH,
+        [OP_FORK_JOIN]  = &&label_OP_FORK_JOIN,
+        [OP_JOIN_WAIT]  = &&label_OP_JOIN_WAIT,
+        [OP_GETSLOT]    = &&label_OP_GETSLOT,
+        [OP_SETSLOT]    = &&label_OP_SETSLOT,
     };
     DISPATCH();
 #else
@@ -483,6 +513,189 @@ dispatch:
 
         CASE(OP_RET) {
             *out = frame[uinstr_a(*pc)];
+            HALT();
+        }
+
+        CASE(OP_LOADNIL) {
+            frame[uinstr_a(*pc)].kind = (uint8_t)UVAL_NIL;
+            NEXT();
+        }
+
+        CASE(OP_LOADBOOL) {
+            frame[uinstr_a(*pc)].kind  = (uint8_t)UVAL_BOOL;
+            frame[uinstr_a(*pc)].v.i   = uinstr_b(*pc) != 0 ? 1 : 0;
+            if (uinstr_c(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_LOADVOID) {
+            frame[uinstr_a(*pc)].kind = (uint8_t)UVAL_VOID;
+            NEXT();
+        }
+
+        CASE(OP_GETUPVAL) {
+            /* T14: read from current frame's closure->upvals[B].
+             * At T8, no closure-bearing call frame exists. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "GETUPVAL: closures not implemented until T14");
+            HALT();
+        }
+
+        CASE(OP_SETUPVAL) {
+            /* T14: write to current frame's closure->upvals[B]. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "SETUPVAL: closures not implemented until T14");
+            HALT();
+        }
+
+        CASE(OP_CLOSURE) {
+            /* T14: create UClosure pointing at proto[Bx], capturing
+             * upvalues from the prelude pseudo-instructions following. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "CLOSURE: nested protos not available until T14");
+            HALT();
+        }
+
+        CASE(OP_CLOSE) {
+            /* T14: heapify open upvalues at registers >= R[A].
+             * At T8, no open upvalues exist in the VM (no UClosure yet),
+             * so this is a structural no-op. */
+            NEXT();
+        }
+
+        CASE(OP_CALL) {
+            /* T15: function call dispatch. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "CALL: function calls not implemented until T15");
+            HALT();
+        }
+
+        CASE(OP_JMP) {
+            /* ABx: pc += signed(Bx) - 32768.  Offset is applied after the
+             * normal pc++ in NEXT, so we pre-adjust by (offset - 1). */
+            int offset = (int)uinstr_bx(*pc) - 32768;
+            pc += offset;
+            NEXT();
+        }
+
+        CASE(OP_TEST) {
+            /* ABC: if (truthy(R[A]) == C) pc++ (skip next instr) */
+            const UValue *a = &frame[uinstr_a(*pc)];
+            bool truthy = (a->kind != (uint8_t)UVAL_NIL)
+                        && !(a->kind == (uint8_t)UVAL_BOOL && a->v.i == 0);
+            if ((int)truthy == (int)uinstr_c(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_TESTSET) {
+            /* ABC: if (truthy(R[B]) == C) pc++ else R[A] := R[B] */
+            const UValue *b = &frame[uinstr_b(*pc)];
+            bool truthy = (b->kind != (uint8_t)UVAL_NIL)
+                        && !(b->kind == (uint8_t)UVAL_BOOL && b->v.i == 0);
+            if ((int)truthy == (int)uinstr_c(*pc)) {
+                pc++;
+            } else {
+                frame[uinstr_a(*pc)] = *b;
+            }
+            NEXT();
+        }
+
+        CASE(OP_EQ) {
+            /* ABC: if ((R[B]==R[C]) != A) pc++ */
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *c = &frame[uinstr_c(*pc)];
+            bool eq = (b->kind == c->kind) && (b->v.i == c->v.i);
+            if ((int)eq != (int)uinstr_a(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_NEQ) {
+            /* ABC: if ((R[B]!=R[C]) != A) pc++ */
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *c = &frame[uinstr_c(*pc)];
+            bool neq = !((b->kind == c->kind) && (b->v.i == c->v.i));
+            if ((int)neq != (int)uinstr_a(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_LT) {
+            /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric only at T11 */
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *c = &frame[uinstr_c(*pc)];
+            if (!is_number(b) || !is_number(c)) {
+                rc = UVM_TYPE_ERROR;
+                vm->last_error = rc;
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions), OP_LT, b->kind, c->kind);
+                HALT();
+            }
+            bool lt = uvalue_to_double(b) < uvalue_to_double(c);
+            if ((int)lt != (int)uinstr_a(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_LE) {
+            /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric only at T11 */
+            const UValue *b = &frame[uinstr_b(*pc)];
+            const UValue *c = &frame[uinstr_c(*pc)];
+            if (!is_number(b) || !is_number(c)) {
+                rc = UVM_TYPE_ERROR;
+                vm->last_error = rc;
+                vm_format_type_error_binary(vm, module,
+                    (size_t)(pc - module->instructions), OP_LE, b->kind, c->kind);
+                HALT();
+            }
+            bool le = uvalue_to_double(b) <= uvalue_to_double(c);
+            if ((int)le != (int)uinstr_a(*pc)) { pc++; }
+            NEXT();
+        }
+
+        CASE(OP_YIELD) {
+            /* M3 scheduler yield; no-op at M2. */
+            NEXT();
+        }
+
+        CASE(OP_FORK_DETACH) {
+            /* M3 `,` separator runtime. Structural placeholder. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "FORK_DETACH: not implemented until M3");
+            HALT();
+        }
+
+        CASE(OP_FORK_JOIN) {
+            /* M3 `&` separator runtime. Structural placeholder. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "FORK_JOIN: not implemented until M3");
+            HALT();
+        }
+
+        CASE(OP_JOIN_WAIT) {
+            /* M3 `&` join-point. Structural placeholder. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "JOIN_WAIT: not implemented until M3");
+            HALT();
+        }
+
+        CASE(OP_GETSLOT) {
+            /* M4 slot read. Structural placeholder. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "GETSLOT: not implemented until M4");
+            HALT();
+        }
+
+        CASE(OP_SETSLOT) {
+            /* M4 slot write. Structural placeholder. */
+            rc = UVM_TYPE_ERROR;
+            vm->last_error = rc;
+            vm_format_type_error_msg(vm, "SETSLOT: not implemented until M4");
             HALT();
         }
 

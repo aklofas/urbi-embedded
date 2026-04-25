@@ -103,6 +103,11 @@ bool uemit_open_block(UEmitter *e, bool is_loop);
    back to nactvar_on_enter. Returns true on success. */
 bool uemit_close_block(UEmitter *e);
 
+/* For T13 while-loop emit: emit OP_CLOSE before the back-edge JMP when
+ * the topmost block is a loop AND has captured locals (Lua-style
+ * closure-in-loop correctness). No-op otherwise. */
+void uemit_emit_loop_back_close(UEmitter *e);
+
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
 

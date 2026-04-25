@@ -86,6 +86,13 @@ typedef struct UFuncState {
     void *target_proto;              /* opaque; cast to UProto* in T14 */
 } UFuncState;
 
+/* Compile-time upvalue cascade. Walks parent FuncStates to find `name`
+ * (must be interned) and installs it as an upvalue in fs's table.
+ * Returns the upvalue index in fs, or -1 if name is not found in any
+ * enclosing scope. Sets EMIT_UPVAL_EXHAUSTED on overflow. */
+int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
+                            const char *name, int name_len);
+
 #ifdef __cplusplus
 }
 #endif

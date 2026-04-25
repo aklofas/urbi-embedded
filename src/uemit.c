@@ -686,6 +686,81 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     return (ptrdiff_t)off;
 }
 
+/* --- M2 upvalue cascade --- */
+
+/* Find `name` (interned) as a local in fs's actvars. Returns slot or -1. */
+static int local_lookup_for_upvalue(UFuncState *fs, const char *name) {
+    for (int i = fs->nactvar - 1; i >= 0; i--) {
+        if (fs->actvars[i].name == name) return fs->actvars[i].slot;
+    }
+    return -1;
+}
+
+/* Find `name` already installed in fs's upvalue table. Returns idx or -1. */
+static int upvalue_lookup(const UFuncState *fs, const char *name) {
+    for (int i = 0; i < fs->nupvalues; i++) {
+        if (fs->upvalues[i].name == name) return i;
+    }
+    return -1;
+}
+
+/* Install a new upvalue descriptor on fs. Returns the new index, or -1
+ * (sets EMIT_UPVAL_EXHAUSTED) on overflow. */
+static int upvalue_install(UEmitter *e, UFuncState *fs,
+                           const char *name, int name_len,
+                           uint8_t parent_idx, bool in_stack) {
+    if (fs->nupvalues >= UFS_MAX_UPVALUES) {
+        e->error = EMIT_UPVAL_EXHAUSTED;
+        return -1;
+    }
+    int idx = fs->nupvalues++;
+    fs->upvalues[idx].name     = name;
+    fs->upvalues[idx].name_len = name_len;
+    fs->upvalues[idx].idx      = parent_idx;
+    fs->upvalues[idx].in_stack = in_stack;
+    return idx;
+}
+
+/* Recursive upvalue cascade. Returns the upvalue index in fs's table, or -1
+ * if name is not found in any enclosing scope. Marks the parent's actvar and
+ * enclosing block as captured so OP_CLOSE fires on block exit. */
+int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
+                            const char *name, int name_len) {
+    if (fs->parent == NULL) return -1;       /* no enclosing scope to capture from */
+
+    /* Short-circuit: already installed in this function's upvalue table. */
+    int existing = upvalue_lookup(fs, name);
+    if (existing >= 0) return existing;
+
+    /* Check immediate parent's locals. */
+    int parent_local = local_lookup_for_upvalue(fs->parent, name);
+    if (parent_local >= 0) {
+        /* Mark the parent actvar as captured and flag the enclosing block. */
+        for (int i = 0; i < fs->parent->nactvar; i++) {
+            if (fs->parent->actvars[i].name == name) {
+                fs->parent->actvars[i].is_captured = true;
+                /* Find the innermost block in parent that contains this local. */
+                for (int b = fs->parent->nblocks - 1; b >= 0; b--) {
+                    if (fs->parent->blocks[b].first_local_idx <= i) {
+                        fs->parent->blocks[b].has_captured = true;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        return upvalue_install(e, fs, name, name_len,
+                               (uint8_t)parent_local, true);
+    }
+
+    /* Recurse into grandparent — intermediate frame captures via upvalue
+     * (in_stack=false). */
+    int grand_idx = find_or_install_upvalue(e, fs->parent, name, name_len);
+    if (grand_idx < 0) return -1;
+    return upvalue_install(e, fs, name, name_len,
+                           (uint8_t)grand_idx, false);
+}
+
 /* --- M2 UFuncState lifecycle --- */
 
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
@@ -791,4 +866,14 @@ bool uemit_close_block(UEmitter *e) {
     fs->freereg = (uint8_t)fs->nactvar;
     fs->nblocks--;
     return true;
+}
+
+void uemit_emit_loop_back_close(UEmitter *e) {
+    UFuncState *fs = e->current_fs;
+    if (fs == NULL || fs->nblocks == 0) return;
+    const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
+    if (blk->is_loop && blk->has_captured) {
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0u, 0u);
+        emit_instr(e, i, e->prev_line);
+    }
 }
