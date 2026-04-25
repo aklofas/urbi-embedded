@@ -746,3 +746,46 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
     return lv->slot;
 }
+
+bool uemit_open_block(UEmitter *e, bool is_loop) {
+    UFuncState *fs = e->current_fs;
+    if (fs == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return false;
+    }
+    if (fs->nblocks >= UFS_MAX_BLOCKS) {
+        e->error = EMIT_NESTING_TOO_DEEP;
+        return false;
+    }
+    UBlockCtx *blk = &fs->blocks[fs->nblocks++];
+    blk->nactvar_on_enter = fs->nactvar;
+    blk->first_local_idx = fs->nactvar;
+    blk->is_loop = is_loop;
+    blk->has_captured = false;
+    blk->break_chain = -1;
+    blk->continue_chain = -1;
+    return true;
+}
+
+bool uemit_close_block(UEmitter *e) {
+    UFuncState *fs = e->current_fs;
+    if (fs == NULL || fs->nblocks == 0) return false;
+
+    const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
+
+    /* Per allocator spec: emit OP_CLOSE if any local in this block was
+     * captured. base = first slot to close = first_local_idx. */
+    if (blk->has_captured) {
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0u, 0u);
+        emit_instr(e, i, e->prev_line);
+    }
+
+    /* Pop actvars back to entry snapshot; restore freereg.
+     * After block exit, freereg falls back to first_local_idx (locals
+     * are gone; temps above had already been freed at statement
+     * boundaries). */
+    fs->nactvar = blk->nactvar_on_enter;
+    fs->freereg = (uint8_t)fs->nactvar;
+    fs->nblocks--;
+    return true;
+}

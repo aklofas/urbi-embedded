@@ -126,6 +126,103 @@ UTEST(funcstate_close_function_pops_to_parent) {
     teardown(&m, &a, &v);
 }
 
+UTEST(block_open_pushes_ctx_with_snapshot) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+
+    uemit_declare_local(&e, ustr_intern(&v, "x", 1), 1);   /* slot 0 */
+    UASSERT(uemit_open_block(&e, false));
+
+    UASSERT_EQ(1, fs->nblocks);
+    UASSERT_EQ(1, fs->blocks[0].nactvar_on_enter);
+    UASSERT_EQ(1, fs->blocks[0].first_local_idx);
+    UASSERT(fs->blocks[0].is_loop == false);
+    UASSERT(fs->blocks[0].has_captured == false);
+
+    uemit_close_block(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(block_close_restores_nactvar_and_freereg) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+
+    uemit_declare_local(&e, ustr_intern(&v, "outer", 5), 5);  /* slot 0 */
+    uemit_open_block(&e, false);
+    uemit_declare_local(&e, ustr_intern(&v, "inner_a", 7), 7); /* slot 1 */
+    uemit_declare_local(&e, ustr_intern(&v, "inner_b", 7), 7); /* slot 2 */
+    UASSERT_EQ(3, fs->nactvar);
+    UASSERT_EQ((uint8_t)3, fs->freereg);
+
+    uemit_close_block(&e);
+    UASSERT_EQ(1, fs->nactvar);
+    UASSERT_EQ((uint8_t)1, fs->freereg);
+    UASSERT_EQ(0, fs->nblocks);
+
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(block_nested_three_levels) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+
+    UASSERT(uemit_open_block(&e, false));
+    UASSERT(uemit_open_block(&e, false));
+    UASSERT(uemit_open_block(&e, false));
+    UASSERT_EQ(3, fs->nblocks);
+    uemit_close_block(&e);
+    uemit_close_block(&e);
+    uemit_close_block(&e);
+    UASSERT_EQ(0, fs->nblocks);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(block_exhaust_with_proper_error) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    uemit_open_function(&e, NULL);
+
+    for (int i = 0; i < UFS_MAX_BLOCKS; i++) {
+        UASSERT(uemit_open_block(&e, false));
+    }
+    UASSERT(!uemit_open_block(&e, false));
+    UASSERT_EQ((int)EMIT_NESTING_TOO_DEEP, (int)e.error);
+
+    /* Unwind: clear error so close path runs. */
+    e.error = EMIT_OK;
+    for (int i = 0; i < UFS_MAX_BLOCKS; i++) uemit_close_block(&e);
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(block_close_with_captured_emits_op_close) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+
+    uemit_open_block(&e, false);
+    uemit_declare_local(&e, ustr_intern(&v, "captured", 8), 8);  /* slot 0 in this block */
+    fs->actvars[0].is_captured = true;
+    fs->blocks[0].has_captured = true;
+
+    /* Capture instr_count before block close. */
+    size_t pre_count = m.instr_count;
+    uemit_close_block(&e);
+    UASSERT_EQ(pre_count + 1, m.instr_count);
+
+    uint32_t last = m.instructions[m.instr_count - 1];
+    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFu));
+
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
 void test_funcstate_suite(void) {
     utest_run("funcstate open zeroes freereg and nactvar",
         funcstate_open_zeroes_freereg_and_nactvar);
@@ -139,4 +236,14 @@ void test_funcstate_suite(void) {
         funcstate_max_locals_exhausts_with_proper_error);
     utest_run("funcstate close_function pops to parent",
         funcstate_close_function_pops_to_parent);
+    utest_run("block open pushes ctx with snapshot",
+        block_open_pushes_ctx_with_snapshot);
+    utest_run("block close restores nactvar and freereg",
+        block_close_restores_nactvar_and_freereg);
+    utest_run("block nested three levels",
+        block_nested_three_levels);
+    utest_run("block exhaust with proper error",
+        block_exhaust_with_proper_error);
+    utest_run("block close with captured emits OP_CLOSE",
+        block_close_with_captured_emits_op_close);
 }

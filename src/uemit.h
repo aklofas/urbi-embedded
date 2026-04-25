@@ -92,6 +92,17 @@ struct UFuncState *uemit_close_function(UEmitter *e);
    e->error). */
 int uemit_declare_local(UEmitter *e, const char *name, int name_len);
 
+/* Open a lexical block scope. Pushes a UBlockCtx with current
+   nactvar/freereg snapshot. is_loop=true marks while-bodies for
+   T8's OP_CLOSE-before-back-edge rule. Returns true on success;
+   false (with EMIT_NESTING_TOO_DEEP) if UFS_MAX_BLOCKS exceeded. */
+bool uemit_open_block(UEmitter *e, bool is_loop);
+
+/* Close the topmost block. Emits OP_CLOSE if any local in this block
+   was captured. Restores freereg to the pre-open value; pops actvars
+   back to nactvar_on_enter. Returns true on success. */
+bool uemit_close_block(UEmitter *e);
+
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
 
