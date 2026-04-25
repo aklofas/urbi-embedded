@@ -13,7 +13,18 @@ static const char * const kErrorMessages[] = {
     "expected expression",
     "expected ')'",
     "lex error",                    /* overridden by pass-through lexer message */
-    "out of memory during parsing"
+    "out of memory during parsing",
+    "expected '}'",
+    "expected '{'",
+    "expected '('",
+    "expected identifier",
+    "expected '='",
+    "expected ';' or '|'",
+    "bare function form 'function name { body }' is retired at v1.0; use 'function name() { body }'",
+    "the 'closure' keyword is retired at v1.0; use 'function' instead",
+    "trailing '&' is illegal",
+    "'lazy' keyword only allowed in parameter lists",
+    "lazy parameter cannot have a default value"
 };
 
 static const char * const kErrorNames[] = {
@@ -23,7 +34,18 @@ static const char * const kErrorNames[] = {
     "PARSE_EXPECTED_EXPRESSION",
     "PARSE_EXPECTED_RPAREN",
     "PARSE_LEX_ERROR",
-    "PARSE_OOM"
+    "PARSE_OOM",
+    "PARSE_EXPECTED_RBRACE",
+    "PARSE_EXPECTED_LBRACE",
+    "PARSE_EXPECTED_LPAREN",
+    "PARSE_EXPECTED_IDENT",
+    "PARSE_EXPECTED_EQ",
+    "PARSE_EXPECTED_SEMI_OR_PIPE",
+    "PARSE_BARE_FUNCTION",
+    "PARSE_CLOSURE_KEYWORD",
+    "PARSE_TRAILING_AMP",
+    "PARSE_LAZY_OUT_OF_PARAM_LIST",
+    "PARSE_LAZY_PARAM_DEFAULT"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
