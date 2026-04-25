@@ -296,14 +296,10 @@ static UToken scan_ident(ULexer *lex) {
     t.line = start_line;
     t.col = start_col;
     t.len = len;
-    /* For keywords, still populate u.str for downstream error messages. */
-    if (kw_type != TOK_IDENT) {
-        t.u.str.start = start;
-        t.u.str.len = len;
-    } else {
-        t.u.str.start = start;
-        t.u.str.len = len;
-    }
+    /* Populate u.str for both keywords and identifiers; useful for
+     * downstream diagnostics that need to quote the lexeme. */
+    t.u.str.start = start;
+    t.u.str.len = len;
     return t;
 }
 
