@@ -328,15 +328,36 @@ const char *uemit_error_name(UEmitError code) {
 
 static const char *opname(const UOpcode op) {
     switch (op) {
-    case OP_LOADK: return "LOADK";
-    case OP_MOVE:  return "MOVE";
-    case OP_ADD:   return "ADD";
-    case OP_SUB:   return "SUB";
-    case OP_MUL:   return "MUL";
-    case OP_DIV:   return "DIV";
-    case OP_NEG:   return "NEG";
-    case OP_RET:   return "RET";
-    case OP_MAX:   break;
+    case OP_LOADK:        return "LOADK";
+    case OP_MOVE:         return "MOVE";
+    case OP_ADD:          return "ADD";
+    case OP_SUB:          return "SUB";
+    case OP_MUL:          return "MUL";
+    case OP_DIV:          return "DIV";
+    case OP_NEG:          return "NEG";
+    case OP_RET:          return "RET";
+    case OP_LOADNIL:      return "LOADNIL";
+    case OP_LOADBOOL:     return "LOADBOOL";
+    case OP_LOADVOID:     return "LOADVOID";
+    case OP_GETUPVAL:     return "GETUPVAL";
+    case OP_SETUPVAL:     return "SETUPVAL";
+    case OP_CLOSURE:      return "CLOSURE";
+    case OP_CLOSE:        return "CLOSE";
+    case OP_CALL:         return "CALL";
+    case OP_JMP:          return "JMP";
+    case OP_TEST:         return "TEST";
+    case OP_TESTSET:      return "TESTSET";
+    case OP_EQ:           return "EQ";
+    case OP_NEQ:          return "NEQ";
+    case OP_LT:           return "LT";
+    case OP_LE:           return "LE";
+    case OP_YIELD:        return "YIELD";
+    case OP_FORK_DETACH:  return "FORK_DETACH";
+    case OP_FORK_JOIN:    return "FORK_JOIN";
+    case OP_JOIN_WAIT:    return "JOIN_WAIT";
+    case OP_GETSLOT:      return "GETSLOT";
+    case OP_SETSLOT:      return "SETSLOT";
+    case OP_MAX:          break;
     }
     return "OP?";
 }
@@ -388,6 +409,95 @@ size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
         case OP_NEG:
             ok = dis_printf(buf, cap, &off, "%04zu  NEG R%u, R%u\n",
                             i, (unsigned)a, (unsigned)uinstr_b(ins));
+            break;
+        case OP_CLOSURE:
+            ok = dis_printf(buf, cap, &off, "%04zu  CLOSURE R%u, P%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_bx(ins));
+            break;
+        case OP_JMP:
+            ok = dis_printf(buf, cap, &off, "%04zu  JMP %d\n",
+                            i, (int)uinstr_bx(ins) - 32768);
+            break;
+        case OP_LOADNIL:
+            ok = dis_printf(buf, cap, &off, "%04zu  LOADNIL R%u\n",
+                            i, (unsigned)a);
+            break;
+        case OP_LOADBOOL:
+            ok = dis_printf(buf, cap, &off, "%04zu  LOADBOOL R%u, %u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_LOADVOID:
+            ok = dis_printf(buf, cap, &off, "%04zu  LOADVOID R%u\n",
+                            i, (unsigned)a);
+            break;
+        case OP_GETUPVAL:
+            ok = dis_printf(buf, cap, &off, "%04zu  GETUPVAL R%u, U%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins));
+            break;
+        case OP_SETUPVAL:
+            ok = dis_printf(buf, cap, &off, "%04zu  SETUPVAL R%u, U%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins));
+            break;
+        case OP_CLOSE:
+            ok = dis_printf(buf, cap, &off, "%04zu  CLOSE R%u\n",
+                            i, (unsigned)a);
+            break;
+        case OP_CALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  CALL R%u, %u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_TEST:
+            ok = dis_printf(buf, cap, &off, "%04zu  TEST R%u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_c(ins));
+            break;
+        case OP_TESTSET:
+            ok = dis_printf(buf, cap, &off, "%04zu  TESTSET R%u, R%u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_EQ:
+            ok = dis_printf(buf, cap, &off, "%04zu  EQ %u, R%u, R%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_NEQ:
+            ok = dis_printf(buf, cap, &off, "%04zu  NEQ %u, R%u, R%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_LT:
+            ok = dis_printf(buf, cap, &off, "%04zu  LT %u, R%u, R%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_LE:
+            ok = dis_printf(buf, cap, &off, "%04zu  LE %u, R%u, R%u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_YIELD:
+            ok = dis_printf(buf, cap, &off, "%04zu  YIELD\n", i);
+            break;
+        case OP_FORK_DETACH:
+            ok = dis_printf(buf, cap, &off, "%04zu  FORK_DETACH\n", i);
+            break;
+        case OP_FORK_JOIN:
+            ok = dis_printf(buf, cap, &off, "%04zu  FORK_JOIN\n", i);
+            break;
+        case OP_JOIN_WAIT:
+            ok = dis_printf(buf, cap, &off, "%04zu  JOIN_WAIT\n", i);
+            break;
+        case OP_GETSLOT:
+            ok = dis_printf(buf, cap, &off, "%04zu  GETSLOT R%u, R%u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
+            break;
+        case OP_SETSLOT:
+            ok = dis_printf(buf, cap, &off, "%04zu  SETSLOT R%u, R%u, %u\n",
+                            i, (unsigned)a, (unsigned)uinstr_b(ins),
+                            (unsigned)uinstr_c(ins));
             break;
         default:
             ok = dis_printf(buf, cap, &off, "%04zu  %s R%u, R%u, R%u\n",
@@ -476,7 +586,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
-    buf[4] = 0x10u;              /* version v1.0 */
+    buf[4] = 0x11u;              /* version v1.1 */
     buf[5] = 0x00u;              /* flags: none defined */
     buf[6]  = 0x19u; buf[7]  = 0x93u;   /* canary bytes 0-1 */
     buf[8]  = '\r';  buf[9]  = '\n';    /* canary bytes 2-3 */

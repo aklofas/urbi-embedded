@@ -57,14 +57,46 @@ typedef struct {
 /* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
 
 typedef enum {
-    OP_LOADK = 0,                 /* ABx:  R[A] := K[Bx]           */
-    OP_MOVE  = 1,                 /* ABC:  R[A] := R[B]            */
-    OP_ADD   = 2,                 /* ABC:  R[A] := R[B] + R[C]     */
-    OP_SUB   = 3,                 /* ABC:  R[A] := R[B] - R[C]     */
-    OP_MUL   = 4,                 /* ABC:  R[A] := R[B] * R[C]     */
-    OP_DIV   = 5,                 /* ABC:  R[A] := R[B] / R[C]     */
-    OP_NEG   = 6,                 /* ABC:  R[A] := -R[B]  (C=0)    */
-    OP_RET   = 7,                 /* ABC:  return R[A]    (B=C=0)  */
+    OP_LOADK = 0,                 /* ABx:  R[A] := K[Bx]                 */
+    OP_MOVE  = 1,                 /* ABC:  R[A] := R[B]                  */
+    OP_ADD   = 2,                 /* ABC:  R[A] := R[B] + R[C]           */
+    OP_SUB   = 3,                 /* ABC:  R[A] := R[B] - R[C]           */
+    OP_MUL   = 4,                 /* ABC:  R[A] := R[B] * R[C]           */
+    OP_DIV   = 5,                 /* ABC:  R[A] := R[B] / R[C]           */
+    OP_NEG   = 6,                 /* ABC:  R[A] := -R[B]    (C=0)        */
+    OP_RET   = 7,                 /* ABC:  return R[A]      (B=C=0)      */
+
+    /* --- M2 additions (v1.1 bytecode) --- */
+    OP_LOADNIL  = 8,              /* ABC:  R[A] := nil                       */
+    OP_LOADBOOL = 9,              /* ABC:  R[A] := (B != 0); if C, pc++      */
+    OP_LOADVOID = 10,             /* ABC:  R[A] := void   (& separator)      */
+    OP_GETUPVAL = 11,             /* ABC:  R[A] := upvalue[B]                */
+    OP_SETUPVAL = 12,             /* ABC:  upvalue[B] := R[A]                */
+    OP_CLOSURE  = 13,             /* ABx:  R[A] := closure(proto[Bx]) +
+                                     reads NUP "pseudo-instructions" of
+                                     upvalue descriptors immediately
+                                     following (Lua-5.5 prelude pattern) */
+    OP_CLOSE    = 14,             /* ABC:  close upvalues for R >= R[A]      */
+    OP_CALL     = 15,             /* ABC:  R[A], ..., R[A+C-2] :=
+                                     R[A](R[A+1], ..., R[A+B-1])
+                                     B = nargs+1, C = nresults+1            */
+    OP_JMP      = 16,             /* ABx:  pc += signed(Bx) - 32768          */
+    OP_TEST     = 17,             /* ABC:  if (truthy(R[A]) == C) pc++       */
+    OP_TESTSET  = 18,             /* ABC:  if (truthy(R[B]) == C) pc++
+                                     else R[A] := R[B]                       */
+    OP_EQ       = 19,             /* ABC:  if ((R[B]==R[C]) != A) pc++       */
+    OP_NEQ      = 20,             /* ABC:  if ((R[B]!=R[C]) != A) pc++       */
+    OP_LT       = 21,             /* ABC:  if ((R[B]<R[C])  != A) pc++       */
+    OP_LE       = 22,             /* ABC:  if ((R[B]<=R[C]) != A) pc++       */
+    OP_YIELD    = 23,             /* ABC:  yield to scheduler (no-op M2)     */
+
+    /* --- Reserved (emit-time error EMIT_UNSUPPORTED_AST at M2) --- */
+    OP_FORK_DETACH = 24,          /* M3 — `,` separator runtime              */
+    OP_FORK_JOIN   = 25,          /* M3 — `&` separator runtime              */
+    OP_JOIN_WAIT   = 26,          /* M3 — `&` join-point                     */
+    OP_GETSLOT     = 27,          /* M4 — slot read with IC                  */
+    OP_SETSLOT     = 28,          /* M4 — slot write with IC                 */
+
     OP_MAX
 } UOpcode;
 

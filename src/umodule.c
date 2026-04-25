@@ -142,10 +142,11 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
         return ULOAD_BAD_MAGIC;
     }
 
-    /* version byte: 0x10 = v1.0 (16*major + minor) */
-    if (buf[4] != 0x10u) {
+    /* version byte: 0x11 = v1.1 (16*major + minor) */
+    if (buf[4] != 0x11u) {
         set_errmsg(errmsg, errcap,
-                   "unsupported version byte 0x%02x", (unsigned)buf[4]);
+                   "unsupported version byte 0x%02x; this build expects 0x11",
+                   (unsigned)buf[4]);
         return ULOAD_UNSUPPORTED_VERSION;
     }
 

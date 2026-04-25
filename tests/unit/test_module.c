@@ -63,7 +63,7 @@ static void build_good_header(uint8_t hdr[24]) {
     size_t i;
     for (i = 0; i < 24; i++) hdr[i] = 0;
     hdr[0] = 'U'; hdr[1] = 'R'; hdr[2] = 'B'; hdr[3] = 'I'; /* magic */
-    hdr[4] = 0x10;                         /* version v1.0 */
+    hdr[4] = 0x11;                         /* version v1.1 */
     hdr[5] = 0x00;                         /* flags */
     hdr[6]  = 0x19; hdr[7]  = 0x93;        /* canary bytes 0-1 */
     hdr[8]  = '\r'; hdr[9]  = '\n';        /* canary bytes 2-3 */
@@ -132,6 +132,26 @@ UTEST(deserialize_rejects_unsupported_version) {
     hdr[4] = 0x20;  /* would be v2.0 */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, hdr, sizeof hdr, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_rejects_v1_0_module) {
+    /* Build a 24-byte header with version byte = 0x10 (v1.0). */
+    uint8_t buf[30];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x10;  /* version byte (v1.0 — should be rejected) */
+    /* Minimal body: 6 zero-count varints (metadata + sections). */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
     umodule_destroy(&c);
 }
 
@@ -715,7 +735,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UASSERT_EQ((uint8_t)'R', buf[1]);
     UASSERT_EQ((uint8_t)'B', buf[2]);
     UASSERT_EQ((uint8_t)'I', buf[3]);
-    UASSERT_EQ((uint8_t)0x10, buf[4]);               /* version */
+    UASSERT_EQ((uint8_t)0x11, buf[4]);               /* version */
     UASSERT_EQ((uint8_t)0x00, buf[5]);               /* flags */
     UASSERT_EQ((uint8_t)0x19, buf[6]);               /* canary[0] */
     UASSERT_EQ((uint8_t)0x93, buf[7]);               /* canary[1] */
@@ -1213,6 +1233,8 @@ void test_module_suite(void) {
               deserialize_rejects_corrupted_canary_simulated_ftp_ascii);
     utest_run("deserialize rejects unsupported version",
               deserialize_rejects_unsupported_version);
+    utest_run("deserialize rejects v1.0 module",
+              deserialize_rejects_v1_0_module);
     utest_run("deserialize rejects wrong int_width",
               deserialize_rejects_wrong_int_width);
     utest_run("deserialize rejects wrong float_type",
