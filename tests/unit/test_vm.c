@@ -686,8 +686,8 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
     UASSERT_EQ(UVAL_NIL, out.kind);
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
     UASSERT(strstr(vm.last_errmsg, "register frame") != NULL);
-    /* frame size is (max_reg + 1) * sizeof(UValue) = 1 * 16 = 16 */
-    UASSERT(strstr(vm.last_errmsg, "16") != NULL);
+    /* unified stack: UVM_STACK_CAP(2048) * sizeof(UValue)(16) = 32768 bytes */
+    UASSERT(strstr(vm.last_errmsg, "32768") != NULL);
     free(c.instructions);
     free(c.line_deltas);
     uvm_destroy(&vm);

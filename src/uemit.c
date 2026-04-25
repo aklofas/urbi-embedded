@@ -56,6 +56,17 @@ static UModuleAllocFn emit_alloc_for(const UModule *c) {
 #endif
 }
 
+/* Resolve which proto to write instructions/constants/synclines into.
+ * When the current FuncState has a non-NULL target_proto, we are inside a
+ * nested function body — write to the child proto.  Otherwise write to the
+ * module root (the classic M1 path). */
+static UProto *current_proto(const UEmitter *e) {
+    if (e->current_fs != NULL && e->current_fs->target_proto != NULL) {
+        return (UProto *)e->current_fs->target_proto;
+    }
+    return NULL;  /* NULL means: write to module root (legacy path) */
+}
+
 #if __STDC_HOSTED__
 
 /* Deep-copy source_name into the module using the module's allocator.
@@ -102,6 +113,32 @@ static bool emit_grow(UModule *c, void **data, size_t *cap,
     return true;
 }
 
+/* Grow a buffer owned by either the module root or a nested UProto.
+ * When `proto` is NULL, delegates to emit_grow (module root path). */
+static bool proto_grow(UModule *module, UProto *proto,
+                       void **data, size_t *cap,
+                       size_t new_cap, size_t elem_size) {
+    if (proto != NULL) {
+        UModuleAllocFn alloc = proto->alloc_fn;
+        if (alloc == NULL) {
+#if __STDC_HOSTED__
+            alloc = emit_stdlib_alloc;
+#else
+            return false;
+#endif
+        }
+        if (*cap >= new_cap) return true;
+        size_t target = *cap == 0 ? 8 : *cap;
+        while (target < new_cap) target *= 2;
+        void *fresh = alloc(*data, target * elem_size, proto->alloc_ud);
+        if (fresh == NULL) return false;
+        *data = fresh;
+        *cap  = target;
+        return true;
+    }
+    return emit_grow(module, data, cap, new_cap, elem_size);
+}
+
 /* Bump the register-allocator cursor and track high-water mark.
    Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
    all 256 slots are consumed (cursor at 255 before call). */
@@ -120,38 +157,64 @@ static void free_reg(UEmitter *e) {
 /* Linear-scan dedup over the integer pool.  Returns existing index if
    a UVAL_INT entry with the same value already exists; otherwise appends
    a new entry and returns its index.  Sets e->error and returns 0 on
-   pool-full (> UINT16_MAX entries) or OOM. */
+   pool-full (> UINT16_MAX entries) or OOM.
+   Routes to the nested UProto constant pool when in a nested function. */
 static uint16_t add_const_int(UEmitter *e, const int64_t v) {
+    UProto *p = current_proto(e);
+    UValue **pool;
+    size_t  *count;
+    size_t  *cap;
+
+    if (p != NULL) {
+        pool  = &p->constants;
+        count = &p->const_count;
+        cap   = &p->const_cap;
+    } else {
+        pool  = &e->module->constants;
+        count = &e->module->const_count;
+        cap   = &e->module->const_cap;
+    }
+
     size_t i;
-    for (i = 0; i < e->module->const_count; i++) {
-        if (e->module->constants[i].kind == (uint8_t)UVAL_INT
-         && e->module->constants[i].v.i == v) {
+    for (i = 0; i < *count; i++) {
+        if ((*pool)[i].kind == (uint8_t)UVAL_INT && (*pool)[i].v.i == v) {
             return (uint16_t)i;
         }
     }
-    if (e->module->const_count > (size_t)UINT16_MAX) {
+    if (*count > (size_t)UINT16_MAX) {
         e->error = EMIT_CONSTANT_POOL_FULL;
         return 0u;
     }
-    if (!emit_grow(e->module, (void **)&e->module->constants, &e->module->const_cap,
-                   e->module->const_count + 1u, sizeof(UValue))) {
+    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1u, sizeof(UValue))) {
         e->error = EMIT_OOM;
         return 0u;
     }
     {
-        const size_t idx = e->module->const_count;
-        int p;
-        e->module->constants[idx].kind = (uint8_t)UVAL_INT;
-        /* Clear pad bytes for deterministic serialization. */
-        for (p = 0; p < 7; p++) e->module->constants[idx]._pad[p] = 0u;
-        e->module->constants[idx].v.i = v;
-        e->module->const_count++;
+        const size_t idx = *count;
+        int pad;
+        (*pool)[idx].kind = (uint8_t)UVAL_INT;
+        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0u;
+        (*pool)[idx].v.i = v;
+        (*count)++;
         return (uint16_t)idx;
     }
 }
 
-/* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow. */
+/* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow or
+   proto_grow depending on whether we are in a nested function body. */
 static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
+    UProto *p = current_proto(e);
+    if (p != NULL) {
+        if (!proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
+                        p->abs_line_count + 1u, sizeof(UAbsLine))) {
+            e->error = EMIT_OOM;
+            return;
+        }
+        p->abs_lines[p->abs_line_count].pc   = pc;
+        p->abs_lines[p->abs_line_count].line = line;
+        p->abs_line_count++;
+        return;
+    }
     if (!emit_grow(e->module, (void **)&e->module->abs_lines, &e->module->abs_line_cap,
                    e->module->abs_line_count + 1u, sizeof(UAbsLine))) {
         e->error = EMIT_OOM;
@@ -164,8 +227,28 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
 
 /* Append one delta byte to line_deltas.  line_deltas has no cap field —
    it is sized exactly to instr_count.  Called after instr_count has been
-   incremented so the new slot is at [instr_count - 1]. */
+   incremented so the new slot is at [instr_count - 1].
+   When writing to a nested proto, use the proto's allocator. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
+    UProto *p = current_proto(e);
+    if (p != NULL) {
+        /* Nested proto path. */
+        UModuleAllocFn alloc = p->alloc_fn;
+        if (alloc == NULL) {
+#if __STDC_HOSTED__
+            alloc = emit_stdlib_alloc;
+#else
+            e->error = EMIT_OOM; return;
+#endif
+        }
+        void *fresh = alloc(p->line_deltas,
+                            p->instr_count * sizeof(int8_t),
+                            p->alloc_ud);
+        if (fresh == NULL) { e->error = EMIT_OOM; return; }
+        p->line_deltas = (int8_t *)fresh;
+        p->line_deltas[p->instr_count - 1u] = delta;
+        return;
+    }
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     void *fresh = alloc(e->module->line_deltas,
@@ -177,7 +260,8 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
 }
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
-   No-op when e->error is already set. */
+   No-op when e->error is already set.
+   Routes to the nested UProto when current_proto(e) is non-NULL. */
 static void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     uint32_t pc;
     int8_t delta;
@@ -185,6 +269,42 @@ static void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
 
     if (e->error != EMIT_OK) return;
     if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
+
+    UProto *p = current_proto(e);
+    if (p != NULL) {
+        /* Nested proto path: write instruction into the child proto. */
+        if (!proto_grow(e->module, p, (void **)&p->instructions,
+                        &p->instr_cap, p->instr_count + 1u, sizeof(uint32_t))) {
+            e->error = EMIT_OOM;
+            return;
+        }
+        p->instructions[p->instr_count++] = ins;
+
+        pc = (uint32_t)(p->instr_count - 1u);
+        delta = 0;
+        needs_abs = false;
+        if (e->prev_line == 0u) {
+            needs_abs = true;
+        } else {
+            const int64_t d = (int64_t)line - (int64_t)e->prev_line;
+            if (d <= (int64_t)INT8_MIN || d > (int64_t)INT8_MAX) {
+                needs_abs = true;
+            } else {
+                delta = (int8_t)d;
+            }
+        }
+        if (needs_abs) {
+            delta = (int8_t)-128;
+            emit_push_abs_line(e, pc, line);
+            if (e->error != EMIT_OK) return;
+        }
+        emit_push_line_delta(e, delta);
+        if (e->error != EMIT_OK) return;
+        e->prev_line = line;
+        return;
+    }
+
+    /* Root module path (existing behavior). */
     if (!emit_grow(e->module, (void **)&e->module->instructions,
                    &e->module->instr_cap,
                    e->module->instr_count + 1u, sizeof(uint32_t))) {
@@ -216,6 +336,24 @@ static void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     emit_push_line_delta(e, delta);
     if (e->error != EMIT_OK) return;
     e->prev_line = line;
+}
+
+/* Patch instruction at index `pc` in the current proto (root or nested).
+ * Used by JMP back-patching in if/while/function emit. */
+static void emit_patch_instr(UEmitter *e, int pc, uint32_t new_instr) {
+    UProto *p = current_proto(e);
+    if (p != NULL) {
+        p->instructions[pc] = new_instr;
+    } else {
+        e->module->instructions[pc] = new_instr;
+    }
+}
+
+/* Return the current instruction count in the active proto. */
+static size_t emit_instr_count(const UEmitter *e) {
+    UProto *p = current_proto(e);
+    if (p != NULL) return p->instr_count;
+    return e->module->instr_count;
 }
 
 /* Map UAstBinaryOp to the corresponding arithmetic opcode. */
@@ -633,7 +771,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
 
         /* 3. JMP placeholder to else/nil target (patched later). */
-        int jmp_to_else = (int)e->module->instr_count;
+        int jmp_to_else = (int)emit_instr_count(e);
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
 
         /* 4. Reset cursor to rd so then-block allocates starting at rd. */
@@ -650,15 +788,15 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         }
 
         /* 6. JMP past else/nil-load to end (patched later). */
-        int jmp_to_end = (int)e->module->instr_count;
+        int jmp_to_end = (int)emit_instr_count(e);
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
 
         /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
         {
-            int alt_target = (int)e->module->instr_count;
+            int alt_target = (int)emit_instr_count(e);
             int alt_offset = alt_target - (jmp_to_else + 1);
-            e->module->instructions[jmp_to_else] =
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + alt_offset));
+            emit_patch_instr(e, jmp_to_else,
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + alt_offset)));
         }
 
         /* 8. Reset cursor to rd for else/nil arm. */
@@ -681,10 +819,10 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* 10. Patch jmp_to_end → current pc. */
         {
-            int end_target = (int)e->module->instr_count;
+            int end_target = (int)emit_instr_count(e);
             int end_offset = end_target - (jmp_to_end + 1);
-            e->module->instructions[jmp_to_end] =
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + end_offset));
+            emit_patch_instr(e, jmp_to_end,
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + end_offset)));
         }
 
         /* Advance past rd so callers can free it as a temp if needed. */
@@ -714,7 +852,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             return 0u;
         }
 
-        int loop_start = (int)e->module->instr_count;
+        int loop_start = (int)emit_instr_count(e);
 
         /* 1. Compile cond into rx. */
         uint8_t rx = e->next_reg;
@@ -725,7 +863,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
 
         /* 3. JMP placeholder to exit (patched later). */
-        int jmp_to_exit = (int)e->module->instr_count;
+        int jmp_to_exit = (int)emit_instr_count(e);
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
 
         /* Free cond temp; locals beneath rx stay. */
@@ -758,7 +896,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* 6. Back-edge JMP to loop_start. */
             {
-                int back_offset = loop_start - ((int)e->module->instr_count + 1);
+                int back_offset = loop_start - ((int)emit_instr_count(e) + 1);
                 emit_instr(e, uinstr_enc_abx(OP_JMP, 0u,
                                              (uint16_t)(32768 + back_offset)),
                            (uint32_t)n->line);
@@ -771,10 +909,10 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* 8. Patch the exit JMP to current pc. */
         {
-            int exit_target = (int)e->module->instr_count;
+            int exit_target = (int)emit_instr_count(e);
             int exit_offset = exit_target - (jmp_to_exit + 1);
-            e->module->instructions[jmp_to_exit] =
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + exit_offset));
+            emit_patch_instr(e, jmp_to_exit,
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + exit_offset)));
         }
 
         /* while-loop is a statement; it doesn't produce a value.
@@ -788,6 +926,137 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             if (e->current_fs->freereg < e->next_reg)
                 e->current_fs->freereg = e->next_reg;
             return r;
+        }
+    }
+    case AST_CALL: {
+        /* Emit callee into dst register, then args into consecutive registers.
+         * OP_CALL A, B, C: R[A] = callee, args at R[A+1..A+B-1], B = nargs+1.
+         * Result written to R[A] by OP_RET. */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        uint8_t callee_reg = e->next_reg;
+        uint8_t callee_r   = emit_expr(e, n->u.call.callee);
+        if (e->error != EMIT_OK) return 0u;
+        /* Move callee into callee_reg if emit_expr put it elsewhere
+         * (shouldn't happen since next_reg == callee_reg on entry, but be safe). */
+        if (callee_r != callee_reg) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0u),
+                       (uint32_t)n->line);
+        }
+        /* Emit each argument into consecutive registers after callee_reg. */
+        {
+            int ai;
+            for (ai = 0; ai < n->u.call.arg_count; ai++) {
+                uint8_t arg_r = emit_expr(e, n->u.call.args[ai]);
+                if (e->error != EMIT_OK) return 0u;
+                uint8_t expected = callee_reg + 1u + (uint8_t)ai;
+                if (arg_r != expected) {
+                    emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_r, 0u),
+                               (uint32_t)n->line);
+                }
+            }
+        }
+        /* OP_CALL callee_reg, nargs+1, 2 (1 result expected). */
+        uint8_t b = (uint8_t)(n->u.call.arg_count + 1);
+        emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, 2u),
+                   (uint32_t)n->line);
+        /* Result is written to R[callee_reg] by the called function's OP_RET. */
+        e->next_reg = callee_reg + 1u;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs != NULL && e->next_reg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = e->next_reg;
+        return callee_reg;
+    }
+    case AST_FUNCTION: {
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        UFuncState *parent_fs = e->current_fs;
+
+        /* 1. Allocate a new UProto under the module's nested[] list. */
+        UProto *child_proto = umodule_alloc_nested_proto(e->module);
+        if (child_proto == NULL) { e->error = EMIT_OOM; return 0u; }
+        int proto_idx = (int)(e->module->nested_count - 1);
+
+        /* 2. Open a nested FuncState targeting child_proto. */
+        UFuncState *child_fs = uemit_open_function(e, parent_fs);
+        if (child_fs == NULL) return 0u;
+        child_fs->target_proto = child_proto;
+
+        /* 3. Declare parameters as locals in child_fs. */
+        {
+            int pi;
+            for (pi = 0; pi < n->u.func.param_count; pi++) {
+                UAstNode *pn = n->u.func.params[pi];
+                const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
+                                                (size_t)pn->u.param.name_len);
+                if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0u; }
+                int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
+                if (slot < 0) { uemit_close_function(e); return 0u; }
+                if (pn->kind == AST_LAZY_PARAM) {
+                    child_fs->actvars[slot].is_lazy = true;
+                }
+            }
+        }
+        child_proto->nparams = (uint8_t)n->u.func.param_count;
+
+        /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto.
+         *    Save the result register the block returns. */
+        uint8_t body_reg = emit_expr(e, n->u.func.body);
+        if (e->error != EMIT_OK) {
+            uemit_close_function(e);
+            return 0u;
+        }
+
+        /* 5. Final OP_RET in child proto using the block's result register.
+         *    AST_BLOCK returns the last statement's result reg (or 0 for empty).
+         *    If the block was empty or returned nil, body_reg is still valid. */
+        emit_instr(e, uinstr_enc_abc(OP_RET, body_reg, 0u, 0u),
+                   (uint32_t)n->line);
+
+        /* 6. Capture upvalue descriptors before closing child_fs. */
+        int nup = child_fs->nupvalues;
+        UUpvalDesc upvals_copy[UFS_MAX_UPVALUES];
+        {
+            int ui;
+            for (ui = 0; ui < nup; ui++) {
+                upvals_copy[ui] = child_fs->upvalues[ui];
+            }
+        }
+
+        uemit_close_function(e);   /* pops back to parent_fs */
+
+        /* 7. In parent, emit OP_CLOSURE + nup pseudo-instructions. */
+        {
+            uint8_t dst = e->current_fs->freereg;
+            if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            e->current_fs->freereg++;
+            if (e->current_fs->freereg > e->current_fs->max_reg_seen)
+                e->current_fs->max_reg_seen = e->current_fs->freereg;
+            e->next_reg = e->current_fs->freereg;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+
+            emit_instr(e, uinstr_enc_abx(OP_CLOSURE, dst, (uint16_t)proto_idx),
+                       (uint32_t)n->line);
+            {
+                int ui;
+                for (ui = 0; ui < nup; ui++) {
+                    UUpvalDesc *ud = &upvals_copy[ui];
+                    /* Pseudo-instruction: B=in_stack, C=src_idx */
+                    emit_instr(e,
+                        uinstr_enc_abc(OP_MOVE, 0u,
+                                       ud->in_stack ? 1u : 0u,
+                                       (uint8_t)ud->idx),
+                        (uint32_t)n->line);
+                }
+            }
+            return dst;
         }
     }
     case AST_ERROR:
@@ -1302,8 +1571,20 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
 UFuncState *uemit_close_function(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) return NULL;
-    /* T14: roll fs->max_reg_seen into target_proto->max_reg.
-     * At T6, current_fs unwinds to parent; no proto wiring yet. */
+    /* Roll max_reg_seen into target_proto when closing a nested function. */
+    if (fs->target_proto != NULL) {
+        UProto *p = (UProto *)fs->target_proto;
+        p->max_reg  = fs->max_reg_seen;
+        p->nupvals  = (uint8_t)fs->nupvalues;
+    }
+    /* Restore prev_line to a sentinel so the parent proto's next instruction
+     * bootstraps a fresh abs checkpoint after re-entering. This is a subtle
+     * correctness point: without this reset, the first instruction of the
+     * parent emitted after the CLOSURE prelude would compute a delta against
+     * the last line of the child body, producing a wrong delta. */
+    if (fs->parent != NULL && fs->target_proto != NULL) {
+        e->prev_line = 0u;
+    }
     e->current_fs = fs->parent;
     return fs;
 }

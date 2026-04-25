@@ -120,6 +120,44 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
     return ULOAD_CORRUPT;  /* unreachable under -Wswitch-enum */
 }
 
+/* --- Proto helpers --- */
+
+void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
+                                   void *alloc_ud) {
+    if (proto == NULL || alloc == NULL) return;
+    if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
+    if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
+    if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
+    if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
+    /* Zero the proto struct but do not free proto itself (owned by nested[]). */
+    module_zero(proto, sizeof(*proto));
+}
+
+UProto *umodule_alloc_nested_proto(UModule *module) {
+    UModuleAllocFn alloc = module_allocator(module);
+    if (alloc == NULL) return NULL;
+
+    /* Grow nested[] array if needed. */
+    if (module->nested_count >= module->nested_cap) {
+        size_t new_cap = module->nested_cap == 0 ? 4 : module->nested_cap * 2;
+        void *fresh = alloc(module->nested, new_cap * sizeof(UProto *),
+                            module->alloc_ud);
+        if (fresh == NULL) return NULL;
+        module->nested     = (UProto **)fresh;
+        module->nested_cap = new_cap;
+    }
+
+    /* Allocate the UProto struct itself. */
+    UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
+    if (proto == NULL) return NULL;
+    module_zero(proto, sizeof(*proto));
+    proto->alloc_fn = module->alloc_fn;
+    proto->alloc_ud = module->alloc_ud;
+
+    module->nested[module->nested_count++] = proto;
+    return proto;
+}
+
 /* --- Public API --- */
 
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
@@ -427,6 +465,18 @@ void umodule_destroy(UModule *module) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
+        /* Free nested proto buffers and the proto structs themselves. */
+        if (module->nested != NULL) {
+            size_t i;
+            for (i = 0; i < module->nested_count; i++) {
+                UProto *p = module->nested[i];
+                if (p != NULL) {
+                    umodule_proto_destroy_buffers(p, alloc, module->alloc_ud);
+                    alloc(p, 0, module->alloc_ud);
+                }
+            }
+            alloc(module->nested, 0, module->alloc_ud);
+        }
         if (module->instructions != NULL) (void)alloc(module->instructions, 0, module->alloc_ud);
         if (module->constants    != NULL) (void)alloc(module->constants,    0, module->alloc_ud);
         if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);

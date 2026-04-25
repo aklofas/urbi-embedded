@@ -1,0 +1,37 @@
+# Milestone: M2
+# Covers: function definition syntax; OP_CLOSURE in root chunk;
+#         closure values displayed as <?>; bare-function and closure-keyword
+#         rejection errors; zero-param, single-param, multi-param forms;
+#         named function definition (name ignored at v1.0).
+
+# --- zero-param function produces a closure value
+function() { 42 }
+[00000001] <?>
+
+# --- single-param function
+function(x) { x + 1 }
+[00000002] <?>
+
+# --- two-param function
+function(a, b) { a + b }
+[00000003] <?>
+
+# --- named function (name is accepted but ignored at v1.0)
+function add(a, b) { a + b }
+[00000004] <?>
+
+# --- function stored in a var (var statement yields the assigned value)
+var f = function(x) { x * 2 }
+[00000005] <?>
+
+# --- bare function form rejected
+function foo { 1 }
+[00000006] !!! <stdin>:1:10: bare function form 'function name { body }' is retired at v1.0; use 'function name() { body }'
+
+# --- closure keyword rejected
+closure(x) { x }
+[00000007] !!! <stdin>:1:1: the 'closure' keyword is retired at v1.0; use 'function' instead
+
+# --- REPL recovers after error
+42
+[00000008] 42

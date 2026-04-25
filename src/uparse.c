@@ -148,6 +148,7 @@ static UAstNode *parse_statement_or_expr(UParser *p);
 static UAstNode *parse_block(UParser *p);
 static UAstNode *parse_if(UParser *p);
 static UAstNode *parse_while(UParser *p);
+static UAstNode *parse_function(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -276,6 +277,13 @@ static UAstNode *parse_atom(UParser *p) {
         consume(p);
         return inner;
     }
+    case TOK_KW_FUNCTION:
+        return parse_function(p);
+    case TOK_KW_CLOSURE:
+        consume(p);
+        return make_error(p, PARSE_CLOSURE_KEYWORD,
+                          kErrorMessages[PARSE_CLOSURE_KEYWORD],
+                          t.line, t.col);
     case TOK_EOF:
         return make_error(p, PARSE_UNEXPECTED_EOF,
                           kErrorMessages[PARSE_UNEXPECTED_EOF],
@@ -426,6 +434,57 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
     return parse_inner_tier(p);
 }
 
+/* --- parse_call_args: parse `(` arg, arg, ... `)` after a callee expression.
+   Returns an AST_CALL node. callee is already parsed. --- */
+
+static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
+    UToken lparen = consume(p);  /* consume '(' */
+
+    int cap = 4;
+    UAstNode **args = (UAstNode **)uarena_alloc(p->arena,
+                                                (size_t)cap * sizeof(UAstNode *));
+    if (!args) return (UAstNode *)&uparser_oom_sentinel;
+    int count = 0;
+
+    while (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+        UAstNode *arg = parse_inner_tier(p);
+        if (!arg) return (UAstNode *)&uparser_oom_sentinel;
+        if (arg->kind == AST_ERROR) return arg;
+
+        if (count == cap) {
+            int new_cap = cap * 2;
+            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
+                                                           (size_t)new_cap * sizeof(UAstNode *));
+            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
+            int i;
+            for (i = 0; i < count; i++) bigger[i] = args[i];
+            args = bigger;
+            cap = new_cap;
+        }
+        args[count++] = arg;
+
+        if (peek(p).type == TOK_COMMA) {
+            consume(p);
+        } else {
+            break;
+        }
+    }
+
+    if (peek(p).type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          peek(p).line, peek(p).col);
+    }
+    consume(p);  /* consume ')' */
+
+    UAstNode *node = make_node(p, AST_CALL, lparen.line, lparen.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.call.callee    = callee;
+    node->u.call.args      = args;
+    node->u.call.arg_count = count;
+    return node;
+}
+
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
 static UAstNode *parse_expression(UParser *p, int min_prec) {
@@ -435,6 +494,15 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
 
     for (;;) {
         UToken op = peek(p);
+
+        /* Postfix call: `expr(args)` — highest precedence (7). */
+        if (op.type == TOK_LPAREN && min_prec <= 7) {
+            left = parse_call_args(p, left);
+            if (!left) return NULL;
+            if (left->kind == AST_ERROR) return left;
+            continue;
+        }
+
         int prec = infix_prec(op.type);
         if (prec < min_prec || prec == 0) break;
 
@@ -653,6 +721,115 @@ static UAstNode *parse_if(UParser *p) {
     node->u.if_stmt.cond       = cond;
     node->u.if_stmt.then_block = then_block;
     node->u.if_stmt.else_block = else_block;
+    return node;
+}
+
+/* --- parse_function: `function` [`name`] `(` params `)` `{` body `}` --- */
+
+static UAstNode *parse_function(UParser *p) {
+    UToken kw = consume(p);   /* consume TOK_KW_FUNCTION */
+
+    /* Detect bare-function forms and reject them.
+       `function {`    → bare anonymous (no parens)
+       `function name {` → bare named (no parens after name)
+       Both are retired at v1.0. */
+    {
+        UToken next = peek(p);
+        if (next.type == TOK_LBRACE) {
+            return make_error(p, PARSE_BARE_FUNCTION,
+                              kErrorMessages[PARSE_BARE_FUNCTION],
+                              next.line, next.col);
+        }
+        if (next.type == TOK_IDENT) {
+            /* Peek ahead: consume ident, check if next is '{' (bare named form)
+             * or '(' (good: named function with parens — T15 wires named funcs).
+             * For T14 we only support anonymous `function(...)`. If there's an
+             * IDENT followed by LBRACE, reject as bare. If IDENT followed by
+             * LPAREN, we just parse as anonymous (name is ignored for now). */
+            UToken name_tok = consume(p);
+            if (peek(p).type == TOK_LBRACE) {
+                return make_error(p, PARSE_BARE_FUNCTION,
+                                  kErrorMessages[PARSE_BARE_FUNCTION],
+                                  name_tok.line, name_tok.col);
+            }
+            /* IDENT followed by '(' — treat as named function (name stored but
+             * not yet used by emit at T14; T15 will wire named-function emit). */
+            /* Fall through to parse the param list. */
+            /* Note: name_tok is consumed; we don't store it at T14. */
+            (void)name_tok;
+        }
+    }
+
+    if (peek(p).type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          peek(p).line, peek(p).col);
+    }
+    consume(p);  /* consume '(' */
+
+    /* Parameter list. */
+    int cap = 4;
+    UAstNode **params = (UAstNode **)uarena_alloc(p->arena,
+                                                   (size_t)cap * sizeof(UAstNode *));
+    if (!params) return (UAstNode *)&uparser_oom_sentinel;
+    int count = 0;
+
+    while (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+        bool is_lazy = false;
+        if (peek(p).type == TOK_KW_LAZY) {
+            consume(p);
+            is_lazy = true;
+        }
+
+        UToken name = peek(p);
+        if (name.type != TOK_IDENT) {
+            return make_error(p, PARSE_EXPECTED_IDENT,
+                              kErrorMessages[PARSE_EXPECTED_IDENT],
+                              name.line, name.col);
+        }
+        consume(p);
+
+        UAstNode *pn = make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
+                                 name.line, name.col);
+        if (!pn) return (UAstNode *)&uparser_oom_sentinel;
+        pn->u.param.name_start = name.u.str.start;
+        pn->u.param.name_len   = name.u.str.len;
+
+        if (count == cap) {
+            int new_cap = cap * 2;
+            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
+                                                           (size_t)new_cap * sizeof(UAstNode *));
+            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
+            int i;
+            for (i = 0; i < count; i++) bigger[i] = params[i];
+            params = bigger;
+            cap = new_cap;
+        }
+        params[count++] = pn;
+
+        if (peek(p).type == TOK_COMMA) {
+            consume(p);
+        } else {
+            break;
+        }
+    }
+
+    if (peek(p).type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          peek(p).line, peek(p).col);
+    }
+    consume(p);  /* consume ')' */
+
+    UAstNode *body = parse_block(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    UAstNode *node = make_node(p, AST_FUNCTION, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.func.params      = params;
+    node->u.func.param_count = count;
+    node->u.func.body        = body;
     return node;
 }
 
