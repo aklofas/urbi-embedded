@@ -233,6 +233,10 @@ static UOpcode binop_to_opcode(const UAstBinaryOp op) {
    Returns 0 and sets e->error on any failure. */
 static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0u;
+    /* Default arm returns EMIT_UNSUPPORTED_AST for AST kinds not yet
+       emitted by this milestone. Later tasks will add explicit case arms as
+       each construct's emit lands; the NOLINT suppresses clang's switch-
+       exhaustiveness warning until that work completes. */
     // NOLINTNEXTLINE(clang-diagnostic-switch)
     switch (n->kind) {
     case AST_INT: {
