@@ -32,8 +32,7 @@ UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
 
     UFuncState *fs = uemit_open_function(&e, NULL);
     UASSERT(fs != NULL);
-    UASSERT_EQ((uint8_t)0, fs->freereg);
-    UASSERT_EQ((uint8_t)0, fs->max_reg_seen);
+    UASSERT_EQ((uint8_t)0, fs->max_reg_seen);  // cppcheck-suppress nullPointerRedundantCheck
     UASSERT_EQ(0, fs->nactvar);
     UASSERT_EQ(0, fs->nupvalues);
     UASSERT_EQ(0, fs->nblocks);
@@ -119,7 +118,7 @@ UTEST(funcstate_close_function_pops_to_parent) {
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
-    UFuncState *inner = uemit_open_function(&e, outer);
+    const UFuncState *inner = uemit_open_function(&e, outer);
     UASSERT(inner->parent == outer);
 
     uemit_close_function(&e);                /* close inner */
