@@ -223,6 +223,20 @@ UTEST(block_close_with_captured_emits_op_close) {
     teardown(&m, &a, &v);
 }
 
+UTEST(block_close_on_empty_stack_sets_error) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    uemit_open_function(&e, NULL);
+
+    UASSERT(uemit_close_block(&e) == false);
+    UASSERT_EQ((int)EMIT_UNSUPPORTED_AST, (int)e.error);
+
+    /* clear error so close_function can run */
+    e.error = EMIT_OK;
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
 void test_funcstate_suite(void) {
     utest_run("funcstate open zeroes freereg and nactvar",
         funcstate_open_zeroes_freereg_and_nactvar);
@@ -246,4 +260,6 @@ void test_funcstate_suite(void) {
         block_exhaust_with_proper_error);
     utest_run("block close with captured emits OP_CLOSE",
         block_close_with_captured_emits_op_close);
+    utest_run("block close on empty stack sets error",
+        block_close_on_empty_stack_sets_error);
 }

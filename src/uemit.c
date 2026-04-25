@@ -769,7 +769,10 @@ bool uemit_open_block(UEmitter *e, bool is_loop) {
 
 bool uemit_close_block(UEmitter *e) {
     UFuncState *fs = e->current_fs;
-    if (fs == NULL || fs->nblocks == 0) return false;
+    if (fs == NULL || fs->nblocks == 0) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return false;
+    }
 
     const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
 
