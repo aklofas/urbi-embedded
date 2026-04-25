@@ -2,6 +2,7 @@
 /* Bytecode emitter. */
 
 #include "uemit.h"
+#include "uintern.h"
 #include "uvarint.h"
 
 #include <limits.h>
@@ -262,9 +263,26 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                    (uint32_t)n->line);
         return src_reg;   /* dest reuses src; no free_reg */
     }
-    case AST_IDENT:
-        e->error = EMIT_UNSUPPORTED_AST;
+    case AST_IDENT: {
+        /* Intern the lexeme into the per-VM canonical pool. M2 still
+         * treats free identifiers as unresolved (full local/upvalue
+         * resolution lands at T6/T10); for now this validates the
+         * intern handoff. T6 + T10 will replace with proper resolution. */
+        if (e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        const char *canonical = ustr_intern(e->vm, n->u.ident.start,
+                                            (size_t)n->u.ident.len);
+        if (canonical == NULL) {
+            e->error = EMIT_OOM;
+            return 0u;
+        }
+        /* T6 and T10 will use this for local/upvalue resolution. */
+        (void)canonical;
+        e->error = EMIT_UNSUPPORTED_AST;     /* placeholder until T6 lands */
         return 0u;
+    }
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0u;

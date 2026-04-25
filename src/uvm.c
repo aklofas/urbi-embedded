@@ -2,6 +2,7 @@
 /* Bytecode interpreter. */
 
 #include "uvm.h"
+#include "uintern.h"
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -30,9 +31,8 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 }
 
 void uvm_destroy(UVM *vm) {
-    /* Nothing to free at M1 — register frames are allocated and freed
-       within a single uvm_run call, not held across lifecycle. */
-    (void)vm;
+    if (vm == NULL) return;
+    uintern_destroy(vm);
 }
 
 const char *uvm_error_name(UVMError code) {
