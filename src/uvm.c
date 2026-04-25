@@ -3,6 +3,7 @@
 
 #include "uvm.h"
 #include "uintern.h"
+#include "uvalue.h"
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -586,8 +587,7 @@ dispatch:
         CASE(OP_TEST) {
             /* ABC: if (truthy(R[A]) == C) pc++ (skip next instr) */
             const UValue *a = &frame[uinstr_a(*pc)];
-            bool truthy = (a->kind != (uint8_t)UVAL_NIL)
-                        && !(a->kind == (uint8_t)UVAL_BOOL && a->v.i == 0);
+            bool truthy = uvalue_truthy(a);
             if ((int)truthy == (int)uinstr_c(*pc)) { pc++; }
             NEXT();
         }
@@ -595,8 +595,7 @@ dispatch:
         CASE(OP_TESTSET) {
             /* ABC: if (truthy(R[B]) == C) pc++ else R[A] := R[B] */
             const UValue *b = &frame[uinstr_b(*pc)];
-            bool truthy = (b->kind != (uint8_t)UVAL_NIL)
-                        && !(b->kind == (uint8_t)UVAL_BOOL && b->v.i == 0);
+            bool truthy = uvalue_truthy(b);
             if ((int)truthy == (int)uinstr_c(*pc)) {
                 pc++;
             } else {
@@ -609,48 +608,49 @@ dispatch:
             /* ABC: if ((R[B]==R[C]) != A) pc++ */
             const UValue *b = &frame[uinstr_b(*pc)];
             const UValue *c = &frame[uinstr_c(*pc)];
-            bool eq = (b->kind == c->kind) && (b->v.i == c->v.i);
+            bool eq = uvalue_equal(b, c);
             if ((int)eq != (int)uinstr_a(*pc)) { pc++; }
             NEXT();
         }
 
         CASE(OP_NEQ) {
-            /* ABC: if ((R[B]!=R[C]) != A) pc++ */
+            /* ABC: if ((R[B]!=R[C]) != A) pc++ — emitter normalises NEQ to
+               OP_EQ with a_bit=0; this arm handles any residual direct use. */
             const UValue *b = &frame[uinstr_b(*pc)];
             const UValue *c = &frame[uinstr_c(*pc)];
-            bool neq = !((b->kind == c->kind) && (b->v.i == c->v.i));
+            bool neq = !uvalue_equal(b, c);
             if ((int)neq != (int)uinstr_a(*pc)) { pc++; }
             NEXT();
         }
 
         CASE(OP_LT) {
-            /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric only at T11 */
+            /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric only at M2 */
             const UValue *b = &frame[uinstr_b(*pc)];
             const UValue *c = &frame[uinstr_c(*pc)];
-            if (!is_number(b) || !is_number(c)) {
+            bool lt = false;
+            if (uvalue_lt(b, c, &lt) != UVAL_CMP_OK) {
                 rc = UVM_TYPE_ERROR;
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, module,
                     (size_t)(pc - module->instructions), OP_LT, b->kind, c->kind);
                 HALT();
             }
-            bool lt = uvalue_to_double(b) < uvalue_to_double(c);
             if ((int)lt != (int)uinstr_a(*pc)) { pc++; }
             NEXT();
         }
 
         CASE(OP_LE) {
-            /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric only at T11 */
+            /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric only at M2 */
             const UValue *b = &frame[uinstr_b(*pc)];
             const UValue *c = &frame[uinstr_c(*pc)];
-            if (!is_number(b) || !is_number(c)) {
+            bool le = false;
+            if (uvalue_le(b, c, &le) != UVAL_CMP_OK) {
                 rc = UVM_TYPE_ERROR;
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, module,
                     (size_t)(pc - module->instructions), OP_LE, b->kind, c->kind);
                 HALT();
             }
-            bool le = uvalue_to_double(b) <= uvalue_to_double(c);
             if ((int)le != (int)uinstr_a(*pc)) { pc++; }
             NEXT();
         }

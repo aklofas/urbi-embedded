@@ -483,6 +483,72 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                        (uint32_t)n->line);
             return r;
         }
+    case AST_BOOL: {
+        uint8_t r = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, r, n->u.b ? 1u : 0u, 0u),
+                   (uint32_t)n->line);
+        return r;
+    }
+    case AST_NIL: {
+        uint8_t r = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0u, 0u),
+                   (uint32_t)n->line);
+        return r;
+    }
+    case AST_COMPARE: {
+        /* Compile LHS into rb, RHS into the next register. */
+        uint8_t rb = e->next_reg;
+        uint8_t lhs_reg = emit_expr(e, n->u.cmp.lhs);
+        if (e->error != EMIT_OK) return 0u;
+        (void)lhs_reg;  /* rb == lhs_reg; named for clarity */
+        uint8_t rc_reg = e->next_reg;
+        uint8_t rhs_reg = emit_expr(e, n->u.cmp.rhs);
+        if (e->error != EMIT_OK) return 0u;
+        (void)rhs_reg;  /* rc_reg == rhs_reg */
+
+        /* Pick opcode + A bit per operator.
+           CMP_GT / CMP_GE are emitted as swapped OP_LT / OP_LE.
+           The dispatch arm skips the next instruction when (result != A).
+           For bool production: "skip" → LOADBOOL true. So we want skip
+           when the comparison is TRUE → (result != A) must be true when
+           result=true → A=0.  Exception: CMP_NEQ wants skip when eq=false
+           → (false != A) true when A=1. */
+        UOpcode op;
+        uint8_t a_bit;
+        uint8_t b_reg, c_reg;
+        switch (n->u.cmp.op) {
+            case CMP_EQ:  op = OP_EQ;  a_bit = 0u; b_reg = rb;     c_reg = rc_reg; break;
+            case CMP_NEQ: op = OP_EQ;  a_bit = 1u; b_reg = rb;     c_reg = rc_reg; break;
+            case CMP_LT:  op = OP_LT;  a_bit = 0u; b_reg = rb;     c_reg = rc_reg; break;
+            case CMP_LE:  op = OP_LE;  a_bit = 0u; b_reg = rb;     c_reg = rc_reg; break;
+            case CMP_GT:  op = OP_LT;  a_bit = 0u; b_reg = rc_reg; c_reg = rb;     break;
+            case CMP_GE:  op = OP_LE;  a_bit = 0u; b_reg = rc_reg; c_reg = rb;     break;
+            default:      e->error = EMIT_UNSUPPORTED_AST; return 0u;
+        }
+
+        /* Free LHS+RHS temps; result goes into rb. */
+        e->next_reg = rb + 1u;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs != NULL) {
+            if (e->next_reg > e->current_fs->max_reg_seen)
+                e->current_fs->max_reg_seen = e->next_reg;
+        }
+
+        /* 4-instruction Lua-style branch idiom:
+             op A, b_reg, c_reg    ; skip next if comparison matches a_bit
+             JMP +1                ; jump past LOADBOOL true (→ false arm)
+             LOADBOOL rb, 1, 1     ; rb = true; pc++ (skip false arm)
+             LOADBOOL rb, 0, 0     ; rb = false
+        */
+        emit_instr(e, uinstr_enc_abc(op, a_bit, b_reg, c_reg), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768u + 1u)), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 1u, 1u), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 0u, 0u), (uint32_t)n->line);
+
+        return rb;
+    }
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0u;

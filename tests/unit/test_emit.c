@@ -964,6 +964,78 @@ UTEST(emit_assign_to_unresolved_is_error) {
     emit_ctx_destroy(&c);
 }
 
+/* --- Emit tests for bool/nil literals and comparison operator --- */
+
+UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
+    UVM vm; UModule module = {0}; UArena arena;
+    uarena_init(&arena, 0); uvm_init(&vm, NULL, NULL);
+    UAstNode n = {0};
+    n.kind = AST_BOOL; n.u.b = true; n.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    /* Instructions: LOADBOOL R0 1 0 ; RET R0 */
+    UASSERT_EQ((size_t)2, module.instr_count);
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_ast_bool_false_emits_loadbool_0_0) {
+    UVM vm; UModule module = {0}; UArena arena;
+    uarena_init(&arena, 0); uvm_init(&vm, NULL, NULL);
+    UAstNode n = {0};
+    n.kind = AST_BOOL; n.u.b = false; n.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[0]));  /* 0 = false */
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_ast_nil_emits_loadnil) {
+    UVM vm; UModule module = {0}; UArena arena;
+    uarena_init(&arena, 0); uvm_init(&vm, NULL, NULL);
+    UAstNode n = {0};
+    n.kind = AST_NIL; n.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
+    UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
+    /* Build AST for "1 == 2" manually. */
+    UVM vm; UModule module = {0}; UArena arena;
+    uarena_init(&arena, 0); uvm_init(&vm, NULL, NULL);
+    UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
+    UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
+    UAstNode cmp = {0};
+    cmp.kind = AST_COMPARE; cmp.u.cmp.op = CMP_EQ;
+    cmp.u.cmp.lhs = &lhs; cmp.u.cmp.rhs = &rhs; cmp.line = 1;
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &cmp));
+    /* 4-instruction pattern + RET = 5 instructions total */
+    /* LOADK, LOADK, EQ, JMP, LOADBOOL(true+skip), LOADBOOL(false), RET */
+    UASSERT(module.instr_count >= 7);
+    /* First two are LOADK for lhs and rhs. */
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
+    /* Third is OP_EQ with a_bit=0 for CMP_EQ (skip on equal → produce true). */
+    UASSERT_EQ((int)OP_EQ, (int)uinstr_op(module.instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[2]));
+    /* Fourth is OP_JMP. */
+    UASSERT_EQ((int)OP_JMP, (int)uinstr_op(module.instructions[3]));
+    /* Fifth: LOADBOOL rb, 1, 1 (skip next on true). */
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[4]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[4]));
+    UASSERT_EQ((uint8_t)1, uinstr_c(module.instructions[4]));
+    /* Sixth: LOADBOOL rb, 0, 0 (false arm). */
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[5]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[5]));
+    UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[5]));
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1037,4 +1109,12 @@ void test_emit_suite(void) {
               emit_assign_to_existing_local);
     utest_run("emit assign to unresolved name is EMIT_UNRESOLVED_NAME",
               emit_assign_to_unresolved_is_error);
+    utest_run("emit: AST_BOOL true → LOADBOOL R0 1 0",
+              emit_ast_bool_true_emits_loadbool_1_0);
+    utest_run("emit: AST_BOOL false → LOADBOOL R0 0 0",
+              emit_ast_bool_false_emits_loadbool_0_0);
+    utest_run("emit: AST_NIL → LOADNIL R0",
+              emit_ast_nil_emits_loadnil);
+    utest_run("emit: AST_COMPARE(==) emits 4-instruction branch idiom",
+              emit_ast_compare_eq_emits_4_instruction_pattern);
 }

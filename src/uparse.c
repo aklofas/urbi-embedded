@@ -148,13 +148,24 @@ static UAstNode *parse_statement_or_expr(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
-   an infix operator (terminates the Pratt climb). */
+   an infix operator (terminates the Pratt climb).
+   Comparison operators bind looser than arithmetic:
+     3 = equality (==, !=)
+     4 = relational (<, <=, >, >=)
+     5 = additive (+, -)
+     6 = multiplicative (*, /) */
 static int infix_prec(UTokenType t) {
     switch (t) {
+    case TOK_EQEQ:
+    case TOK_NEQ:   return 3;
+    case TOK_LT:
+    case TOK_LE:
+    case TOK_GT:
+    case TOK_GE:    return 4;
     case TOK_PLUS:
-    case TOK_MINUS: return 1;
+    case TOK_MINUS: return 5;
     case TOK_STAR:
-    case TOK_SLASH: return 2;
+    case TOK_SLASH: return 6;
     default:        return 0;
     }
 }
@@ -167,6 +178,47 @@ static UAstBinaryOp infix_binop(UTokenType t) {
     case TOK_SLASH: return BOP_DIV;
     default:        return BOP_ADD; /* unreachable when prec > 0 */
     }
+}
+
+/* True when t is a comparison operator token. */
+static bool is_compare_token(UTokenType t) {
+    return t == TOK_EQEQ || t == TOK_NEQ
+        || t == TOK_LT   || t == TOK_LE
+        || t == TOK_GT   || t == TOK_GE;
+}
+
+static UAstCompareOp compare_op(UTokenType t) {
+    switch (t) {
+    case TOK_EQEQ: return CMP_EQ;
+    case TOK_NEQ:  return CMP_NEQ;
+    case TOK_LT:   return CMP_LT;
+    case TOK_LE:   return CMP_LE;
+    case TOK_GT:   return CMP_GT;
+    case TOK_GE:   return CMP_GE;
+    default:       return CMP_EQ; /* unreachable */
+    }
+}
+
+static UAstNode *make_compare(UParser *p, UAstCompareOp op,
+                              UAstNode *lhs, UAstNode *rhs,
+                              int line, int col) {
+    UAstNode *n = make_node(p, AST_COMPARE, line, col);
+    if (!n) return NULL;
+    n->u.cmp.op  = op;
+    n->u.cmp.lhs = lhs;
+    n->u.cmp.rhs = rhs;
+    return n;
+}
+
+static UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
+    UAstNode *n = make_node(p, AST_BOOL, line, col);
+    if (!n) return NULL;
+    n->u.b = value;
+    return n;
+}
+
+static UAstNode *make_nil_node(UParser *p, int line, int col) {
+    return make_node(p, AST_NIL, line, col);
 }
 
 /* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
@@ -187,7 +239,7 @@ static UAstNode *parse_prefix(UParser *p) {
     return parse_atom(p);
 }
 
-/* --- parse_atom: INT | IDENT | ( expr ) | error. --- */
+/* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error. --- */
 
 static UAstNode *parse_atom(UParser *p) {
     UToken t = peek(p);
@@ -198,6 +250,15 @@ static UAstNode *parse_atom(UParser *p) {
     case TOK_IDENT:
         consume(p);
         return make_ident(p, t.u.str.start, t.u.str.len, t.line, t.col);
+    case TOK_KW_TRUE:
+        consume(p);
+        return make_bool_node(p, true, t.line, t.col);
+    case TOK_KW_FALSE:
+        consume(p);
+        return make_bool_node(p, false, t.line, t.col);
+    case TOK_KW_NIL:
+        consume(p);
+        return make_nil_node(p, t.line, t.col);
     case TOK_LPAREN: {
         consume(p);
         UAstNode *inner = parse_expression(p, 0);
@@ -365,12 +426,20 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
         if (prec < min_prec || prec == 0) break;
 
         consume(p);
+        /* Comparison operators are left-associative; use prec+1 for right
+           so that `a == b == c` is rejected as ambiguous (each side parses
+           as atoms, and chained comparisons are a parse error in urbiscript). */
         UAstNode *right = parse_expression(p, prec + 1);
         if (!right) return NULL;
         if (right->kind == AST_ERROR) return right;
 
-        left = make_binary(p, infix_binop(op.type), left, right,
-                           op.line, op.col);
+        if (is_compare_token(op.type)) {
+            left = make_compare(p, compare_op(op.type), left, right,
+                                op.line, op.col);
+        } else {
+            left = make_binary(p, infix_binop(op.type), left, right,
+                               op.line, op.col);
+        }
         if (!left) return NULL;
     }
     return left;

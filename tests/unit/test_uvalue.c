@@ -259,6 +259,139 @@ UTEST(uvalue_unknown_kind) {
     UASSERT_EQ(3, (int)n);
 }
 
+/* --- uvalue_truthy --- */
+
+UTEST(uvalue_truthy_nil_is_false) {
+    UValue v = { .kind = UVAL_NIL };
+    UASSERT(!uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_bool_false_is_false) {
+    UValue v = { .kind = UVAL_BOOL }; v.v.i = 0;
+    UASSERT(!uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_bool_true_is_true) {
+    UValue v = { .kind = UVAL_BOOL }; v.v.i = 1;
+    UASSERT(uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_void_is_false) {
+    UValue v = { .kind = UVAL_VOID };
+    UASSERT(!uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_int_zero_is_true) {
+    /* Per urbiscript: int 0 is truthy — only nil/false/void are falsy. */
+    UValue v = { .kind = UVAL_INT }; v.v.i = 0;
+    UASSERT(uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_int_nonzero_is_true) {
+    UValue v = { .kind = UVAL_INT }; v.v.i = 42;
+    UASSERT(uvalue_truthy(&v));
+}
+
+UTEST(uvalue_truthy_float_zero_is_true) {
+    /* Float 0.0 is truthy in urbiscript. */
+    UValue v = { .kind = UVAL_FLOAT }; v.v.f = 0.0;
+    UASSERT(uvalue_truthy(&v));
+}
+
+/* --- uvalue_equal --- */
+
+UTEST(uvalue_equal_nil_eq_nil) {
+    UValue a = { .kind = UVAL_NIL };
+    UValue b = { .kind = UVAL_NIL };
+    UASSERT(uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_int_eq_int_same) {
+    UValue a = { .kind = UVAL_INT }; a.v.i = 7;
+    UValue b = { .kind = UVAL_INT }; b.v.i = 7;
+    UASSERT(uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_int_eq_int_diff) {
+    UValue a = { .kind = UVAL_INT }; a.v.i = 7;
+    UValue b = { .kind = UVAL_INT }; b.v.i = 8;
+    UASSERT(!uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_cross_kind_int_float_true) {
+    UValue a = { .kind = UVAL_INT };   a.v.i = 1;
+    UValue b = { .kind = UVAL_FLOAT }; b.v.f = 1.0;
+    UASSERT(uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_cross_kind_float_int_true) {
+    UValue a = { .kind = UVAL_FLOAT }; a.v.f = 2.0;
+    UValue b = { .kind = UVAL_INT };   b.v.i = 2;
+    UASSERT(uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_cross_kind_int_float_false) {
+    UValue a = { .kind = UVAL_INT };   a.v.i = 1;
+    UValue b = { .kind = UVAL_FLOAT }; b.v.f = 2.5;
+    UASSERT(!uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_void_void_is_false) {
+    /* void != void per spec — void is never equal to anything. */
+    UValue a = { .kind = UVAL_VOID };
+    UValue b = { .kind = UVAL_VOID };
+    UASSERT(!uvalue_equal(&a, &b));
+}
+
+UTEST(uvalue_equal_int_vs_nil_is_false) {
+    UValue a = { .kind = UVAL_INT }; a.v.i = 0;
+    UValue b = { .kind = UVAL_NIL };
+    UASSERT(!uvalue_equal(&a, &b));
+}
+
+/* --- uvalue_lt --- */
+
+UTEST(uvalue_lt_int_vs_int) {
+    UValue a = { .kind = UVAL_INT }; a.v.i = 1;
+    UValue b = { .kind = UVAL_INT }; b.v.i = 2;
+    bool out = false;
+    UASSERT_EQ((int)UVAL_CMP_OK, (int)uvalue_lt(&a, &b, &out));
+    UASSERT(out);
+}
+
+UTEST(uvalue_lt_int_vs_float) {
+    UValue a = { .kind = UVAL_INT };   a.v.i = 1;
+    UValue b = { .kind = UVAL_FLOAT }; b.v.f = 2.5;
+    bool out = false;
+    UASSERT_EQ((int)UVAL_CMP_OK, (int)uvalue_lt(&a, &b, &out));
+    UASSERT(out);
+}
+
+UTEST(uvalue_lt_non_numeric_returns_type_error) {
+    UValue a = { .kind = UVAL_NIL };
+    UValue b = { .kind = UVAL_INT }; b.v.i = 1;
+    bool out = false;
+    UASSERT_EQ((int)UVAL_CMP_TYPE_ERROR, (int)uvalue_lt(&a, &b, &out));
+}
+
+/* --- uvalue_le --- */
+
+UTEST(uvalue_le_equal_ints) {
+    UValue a = { .kind = UVAL_INT }; a.v.i = 3;
+    UValue b = { .kind = UVAL_INT }; b.v.i = 3;
+    bool out = false;
+    UASSERT_EQ((int)UVAL_CMP_OK, (int)uvalue_le(&a, &b, &out));
+    UASSERT(out);
+}
+
+UTEST(uvalue_le_float_vs_int) {
+    UValue a = { .kind = UVAL_FLOAT }; a.v.f = 1.5;
+    UValue b = { .kind = UVAL_INT };   b.v.i = 2;
+    bool out = false;
+    UASSERT_EQ((int)UVAL_CMP_OK, (int)uvalue_le(&a, &b, &out));
+    UASSERT(out);
+}
+
 void test_uvalue_suite(void) {
     utest_run("uvalue: nil -> \"nil\"", uvalue_nil_formats_as_nil);
     utest_run("uvalue: bool true", uvalue_bool_true);
@@ -287,4 +420,28 @@ void test_uvalue_suite(void) {
     utest_run("uvalue: truncation cap=1", uvalue_truncation_cap_one);
     utest_run("uvalue: truncation cap=3", uvalue_truncation_cap_three);
     utest_run("uvalue: unknown kind -> <?>", uvalue_unknown_kind);
+    /* truthy rules */
+    utest_run("uvalue_truthy: nil → false",        uvalue_truthy_nil_is_false);
+    utest_run("uvalue_truthy: bool false → false",  uvalue_truthy_bool_false_is_false);
+    utest_run("uvalue_truthy: bool true → true",    uvalue_truthy_bool_true_is_true);
+    utest_run("uvalue_truthy: void → false",        uvalue_truthy_void_is_false);
+    utest_run("uvalue_truthy: int 0 → true (urbiscript semantics)", uvalue_truthy_int_zero_is_true);
+    utest_run("uvalue_truthy: int 42 → true",       uvalue_truthy_int_nonzero_is_true);
+    utest_run("uvalue_truthy: float 0.0 → true",    uvalue_truthy_float_zero_is_true);
+    /* equal */
+    utest_run("uvalue_equal: nil == nil → true",    uvalue_equal_nil_eq_nil);
+    utest_run("uvalue_equal: 7 == 7 → true",        uvalue_equal_int_eq_int_same);
+    utest_run("uvalue_equal: 7 == 8 → false",       uvalue_equal_int_eq_int_diff);
+    utest_run("uvalue_equal: 1(INT) == 1.0(FLOAT) → true",  uvalue_equal_cross_kind_int_float_true);
+    utest_run("uvalue_equal: 2.0(FLOAT) == 2(INT) → true",  uvalue_equal_cross_kind_float_int_true);
+    utest_run("uvalue_equal: 1(INT) == 2.5(FLOAT) → false", uvalue_equal_cross_kind_int_float_false);
+    utest_run("uvalue_equal: void == void → false (per spec)", uvalue_equal_void_void_is_false);
+    utest_run("uvalue_equal: 0(INT) == nil → false",uvalue_equal_int_vs_nil_is_false);
+    /* lt */
+    utest_run("uvalue_lt: 1 < 2 → ok true",        uvalue_lt_int_vs_int);
+    utest_run("uvalue_lt: 1(INT) < 2.5(FLOAT) → ok true", uvalue_lt_int_vs_float);
+    utest_run("uvalue_lt: nil < 1 → type error",   uvalue_lt_non_numeric_returns_type_error);
+    /* le */
+    utest_run("uvalue_le: 3 <= 3 → ok true",        uvalue_le_equal_ints);
+    utest_run("uvalue_le: 1.5(FLOAT) <= 2(INT) → ok true", uvalue_le_float_vs_int);
 }

@@ -653,6 +653,114 @@ UTEST(parse_ident_not_followed_by_eq_is_expression) {
     ctx_destroy(&c);
 }
 
+/* --- Comparison operators --- */
+
+UTEST(parse_eqeq) {
+    ParseCtx c;
+    ctx_init(&c, "1 == 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_EQ, (int)n->u.cmp.op);
+    UASSERT(n->u.cmp.lhs != NULL && n->u.cmp.lhs->kind == AST_INT);
+    UASSERT(n->u.cmp.rhs != NULL && n->u.cmp.rhs->kind == AST_INT);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_neq) {
+    ParseCtx c;
+    ctx_init(&c, "1 != 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_NEQ, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_lt) {
+    ParseCtx c;
+    ctx_init(&c, "1 < 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_le) {
+    ParseCtx c;
+    ctx_init(&c, "1 <= 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_LE, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_gt) {
+    ParseCtx c;
+    ctx_init(&c, "1 > 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_GT, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_ge) {
+    ParseCtx c;
+    ctx_init(&c, "1 >= 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_GE, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_compare_binds_looser_than_add) {
+    /* "1 + 2 == 3" → COMPARE(BINARY(+, 1, 2), 3) not BINARY(+, 1, COMPARE(2, 3)) */
+    ParseCtx c;
+    ctx_init(&c, "1 + 2 == 3");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_EQ, (int)n->u.cmp.op);
+    UASSERT(n->u.cmp.lhs != NULL && n->u.cmp.lhs->kind == AST_BINARY);
+    UASSERT(n->u.cmp.rhs != NULL && n->u.cmp.rhs->kind == AST_INT);
+    ctx_destroy(&c);
+}
+
+/* --- Boolean and nil literals --- */
+
+UTEST(parse_true_literal) {
+    ParseCtx c;
+    ctx_init(&c, "true");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BOOL, (int)n->kind);
+    UASSERT(n->u.b == true);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_false_literal) {
+    ParseCtx c;
+    ctx_init(&c, "false");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BOOL, (int)n->kind);
+    UASSERT(n->u.b == false);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_nil_literal) {
+    ParseCtx c;
+    ctx_init(&c, "nil");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_NIL, (int)n->kind);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -703,4 +811,14 @@ void test_parser_suite(void) {
     utest_run("parse var decl: requires identifier name",  parse_var_decl_requires_ident);
     utest_run("parse assign: basic 'x = 42'",             parse_assign_basic);
     utest_run("parse ident-not-assign: 'x + 1' is binary", parse_ident_not_followed_by_eq_is_expression);
+    utest_run("parse: == produces AST_COMPARE CMP_EQ",    parse_eqeq);
+    utest_run("parse: != produces AST_COMPARE CMP_NEQ",   parse_neq);
+    utest_run("parse: < produces AST_COMPARE CMP_LT",     parse_lt);
+    utest_run("parse: <= produces AST_COMPARE CMP_LE",    parse_le);
+    utest_run("parse: > produces AST_COMPARE CMP_GT",     parse_gt);
+    utest_run("parse: >= produces AST_COMPARE CMP_GE",    parse_ge);
+    utest_run("parse: compare binds looser than add",     parse_compare_binds_looser_than_add);
+    utest_run("parse: true literal",                      parse_true_literal);
+    utest_run("parse: false literal",                     parse_false_literal);
+    utest_run("parse: nil literal",                       parse_nil_literal);
 }

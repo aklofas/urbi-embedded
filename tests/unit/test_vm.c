@@ -4,8 +4,44 @@
 
 #include "uvm.h"
 #include "umodule.h"
+#include "uarena.h"
+#include "uast.h"
+#include "uemit.h"
+#include "ulex.h"
+#include "uparse.h"
 #include <stdlib.h>
 #include <string.h>
+
+/* Minimal parse-emit-run pipeline for VM test helpers. */
+static UVMError vm_pipeline_eval(const char *src, UValue *out) {
+    UVM vm;
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue nil = {0};
+    *out = nil;
+    UVMError vm_rc = UVM_OK;
+    if (uemit_finish(&e) == EMIT_OK) {
+        vm_rc = uvm_run(&vm, &module, out);
+    }
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+    return vm_rc;
+}
 
 #define UTEST(name) static void name(void)
 
@@ -832,6 +868,87 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
     uvm_destroy(&vm);
 }
 
+/* --- Comparison ops + bool/nil literals via pipeline --- */
+
+UTEST(vm_eq_int_int_true) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("1 == 1", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);  /* true */
+}
+
+UTEST(vm_eq_int_int_false) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("1 == 2", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i == 0);  /* false */
+}
+
+UTEST(vm_eq_int_float_cross_kind) {
+    /* 1 == 2/2: INT 1 compared to FLOAT 1.0 (division always produces float). */
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("1 == 2/2", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);  /* true: 1 == 1.0 via cross-kind promotion */
+}
+
+UTEST(vm_eq_int_nil_diff_kinds) {
+    /* Use nil literal directly: 1 == nil → false (different kinds, no promotion). */
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("1 == nil", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i == 0);  /* false: different kinds */
+}
+
+UTEST(vm_lt_basic_true) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("1 < 2", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);  /* true */
+}
+
+UTEST(vm_le_equal_true) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("2 <= 2", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);  /* true */
+}
+
+UTEST(vm_gt_swapped_lt_true) {
+    /* 3 > 1: emitter swaps to OP_LT with operands reversed. */
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("3 > 1", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);  /* true */
+}
+
+UTEST(vm_lt_non_numeric_type_error) {
+    /* nil < 1: OP_LT with non-numeric operand → UVM_TYPE_ERROR */
+    UValue out;
+    UVMError rc = vm_pipeline_eval("nil < 1", &out);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
+}
+
+UTEST(vm_true_literal) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("true", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i != 0);
+}
+
+UTEST(vm_false_literal) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("false", &out));
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT(out.v.i == 0);
+}
+
+UTEST(vm_nil_literal) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("nil", &out));
+    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -921,4 +1038,15 @@ void test_vm_suite(void) {
               vm_line_for_pc_abs_checkpoint_used_in_diagnostic);
     utest_run("uvm_run resets last_error/last_errmsg on entry",
               vm_run_resets_last_error_on_successful_run);
+    utest_run("vm: 1 == 1 → bool true",          vm_eq_int_int_true);
+    utest_run("vm: 1 == 2 → bool false",          vm_eq_int_int_false);
+    utest_run("vm: 1 == 1.0 → bool true (cross-kind)", vm_eq_int_float_cross_kind);
+    utest_run("vm: 1 == nil → bool false",        vm_eq_int_nil_diff_kinds);
+    utest_run("vm: 1 < 2 → bool true",            vm_lt_basic_true);
+    utest_run("vm: 2 <= 2 → bool true",           vm_le_equal_true);
+    utest_run("vm: 3 > 1 → bool true (swap-emit path)", vm_gt_swapped_lt_true);
+    utest_run("vm: nil < 1 → TypeError",          vm_lt_non_numeric_type_error);
+    utest_run("vm: true literal → bool true",     vm_true_literal);
+    utest_run("vm: false literal → bool false",   vm_false_literal);
+    utest_run("vm: nil literal → nil",            vm_nil_literal);
 }
