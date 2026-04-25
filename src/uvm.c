@@ -16,6 +16,9 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
 }
 #endif  /* __STDC_HOSTED__ */
 
+/* Forward declaration: defined after helper functions below. */
+static void vm_free_open_upvalues(UVM *vm);
+
 void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
@@ -42,6 +45,8 @@ void uvm_destroy(UVM *vm) {
         vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
     }
+    /* Free any open upvalue cells left from the last uvm_run(). */
+    vm_free_open_upvalues(vm);
 }
 
 const char *uvm_error_name(UVMError code) {
@@ -374,8 +379,10 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UValue *slot) {
 }
 
 /* Heapify all open cells whose stack address is >= threshold.
- * Called by OP_CLOSE and OP_RET (implicitly via frame pop). */
-static void vm_close_upvalues(UVM *vm, UValue *threshold) {
+ * Removed cells are appended to *closed_list (for per-run bulk free at halt).
+ * Called by OP_CLOSE and OP_RET. */
+static void vm_close_upvalues(UVM *vm, UValue *threshold,
+                              UUpvalCell **closed_list) {
     UUpvalCell **link = &vm->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;
@@ -383,7 +390,9 @@ static void vm_close_upvalues(UVM *vm, UValue *threshold) {
             cell->u.value = *cell->u.stack_ptr;
             cell->on_heap  = true;
             *link = cell->next;
-            cell->next = NULL;
+            /* Thread into closed_list using the now-free next pointer. */
+            cell->next = *closed_list;
+            *closed_list = cell;
         } else {
             link = &cell->next;
         }
@@ -485,6 +494,10 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* Pre-GC closure list: every UClosure allocated this run is threaded
      * here via next_alloc; freed at halt (after *out is copied out). */
     UClosure *closure_list = NULL;
+
+    /* Pre-GC closed upvalue list: every UUpvalCell heapified this run is
+     * threaded here via vm_close_upvalues; freed at halt before closures. */
+    UUpvalCell *closed_cells = NULL;
 
     /* Saved PC base for the current frame — used to compute pc offsets
      * for diagnostic messages.  Updated on every frame push/pop. */
@@ -631,7 +644,8 @@ dispatch:
             /* Close any open upvalues that point into this frame's registers.
              * Threshold = done->base + 1 (first slot of callee's frame was
              * done->base[result_dest_reg + 1], i.e. R_caller[a+1]). */
-            vm_close_upvalues(vm, done->base + done->result_dest_reg + 1);
+            vm_close_upvalues(vm, done->base + done->result_dest_reg + 1,
+                              &closed_cells);
 
             /* Restore caller's register window and instruction pointer. */
             R     = done->base;
@@ -645,9 +659,12 @@ dispatch:
             /* Write return value into caller's result slot R[a]. */
             R[done->result_dest_reg] = retval;
 
+            /* In computed-goto mode, jump directly to the next opcode handler.
+             * In switch mode, re-enter the outer dispatch loop via goto. */
+#if UVM_USE_COMPUTED_GOTO
             DISPATCH();
-#if !UVM_USE_COMPUTED_GOTO
-            break; /* suppress -Wimplicit-fallthrough in switch mode */
+#else
+            goto dispatch;
 #endif
         }
 
@@ -772,7 +789,7 @@ dispatch:
 
         CASE(OP_CLOSE) {
             /* ABC: heapify all open upvalue cells at R >= R[A]. */
-            vm_close_upvalues(vm, &R[uinstr_a(*pc)]);
+            vm_close_upvalues(vm, &R[uinstr_a(*pc)], &closed_cells);
             NEXT();
         }
 
@@ -836,9 +853,12 @@ dispatch:
                 }
             }
 
+            /* In computed-goto mode, jump directly to the callee's first opcode.
+             * In switch mode, re-enter the outer dispatch loop via goto. */
+#if UVM_USE_COMPUTED_GOTO
             DISPATCH();
-#if !UVM_USE_COMPUTED_GOTO
-            break; /* suppress -Wimplicit-fallthrough in switch mode */
+#else
+            goto dispatch;
 #endif
         }
 
@@ -997,5 +1017,19 @@ halt:
             cl = next;
         }
     }
+
+    /* Pre-GC: free every heapified upvalue cell allocated this run.
+     * Closed cells were removed from vm->open_upvals by vm_close_upvalues
+     * and threaded into closed_cells for bulk free here.  Each cell appears
+     * at most once; no reference-counting needed at this pre-GC stage. */
+    {
+        UUpvalCell *cell = closed_cells;
+        while (cell != NULL) {
+            UUpvalCell *next = cell->next;
+            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell = next;
+        }
+    }
+
     return rc;
 }

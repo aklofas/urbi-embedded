@@ -969,6 +969,33 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->current_fs->max_reg_seen = e->next_reg;
         return callee_reg;
     }
+    case AST_RETURN: {
+        /* return [expr]: compile the value (or nil if absent), emit OP_RET.
+         * Only valid inside a function body (current_fs must be non-NULL and
+         * must have a target_proto — top-level return is not meaningful but
+         * is not rejected at emit time; OP_RET at top-level exits uvm_run). */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        uint8_t ret_reg;
+        if (n->u.ret.value != NULL) {
+            ret_reg = emit_expr(e, n->u.ret.value);
+            if (e->error != EMIT_OK) return 0u;
+        } else {
+            /* Bare `return`: return nil. */
+            ret_reg = alloc_reg(e);
+            if (e->error != EMIT_OK) return 0u;
+            emit_instr(e, uinstr_enc_abc(OP_LOADNIL, ret_reg, 0u, 0u),
+                       (uint32_t)n->line);
+        }
+        emit_instr(e, uinstr_enc_abc(OP_RET, ret_reg, 0u, 0u),
+                   (uint32_t)n->line);
+        /* Return the register so the block's last-stmt-reg logic works.
+         * Any instructions after OP_RET in the same block are unreachable
+         * but that is allowed (e.g., the function body auto-appends OP_RET). */
+        return ret_reg;
+    }
     case AST_FUNCTION: {
         if (e->current_fs == NULL || e->vm == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;

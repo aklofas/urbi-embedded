@@ -373,6 +373,97 @@ UTEST(vm_function_body_has_instructions) {
 }
 
 /* -----------------------------------------------------------------------
+ * T15: function calls and return
+ * ----------------------------------------------------------------------- */
+
+UTEST(call_no_args) {
+    /* var f = function() { 7 }; f() → 7 */
+    UValue out;
+    UVMError rc = fn_eval("var f = function() { 7 }; f()", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(7, (int)out.v.i);
+}
+
+UTEST(call_one_arg) {
+    /* var f = function(x) { x }; f(42) → 42 */
+    UValue out;
+    UVMError rc = fn_eval("var f = function(x) { x }; f(42)", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(42, (int)out.v.i);
+}
+
+UTEST(call_two_args) {
+    /* var f = function(a, b) { a + b }; f(3, 4) → 7 */
+    UValue out;
+    UVMError rc = fn_eval("var f = function(a, b) { a + b }; f(3, 4)", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(7, (int)out.v.i);
+}
+
+UTEST(call_wrong_arity_errors) {
+    /* var f = function(x) { x }; f(1, 2) → UVM_TYPE_ERROR */
+    UValue out;
+    UVMError rc = fn_eval("var f = function(x) { x }; f(1, 2)", &out);
+    UASSERT_EQ(UVM_TYPE_ERROR, rc);
+}
+
+UTEST(call_non_callable_errors) {
+    /* var x = 5; x() → UVM_TYPE_ERROR */
+    UValue out;
+    UVMError rc = fn_eval("var x = 5; x()", &out);
+    UASSERT_EQ(UVM_TYPE_ERROR, rc);
+}
+
+UTEST(closure_captures_local) {
+    /* var x = 7; var f = function() { x }; f() → 7 */
+    UValue out;
+    UVMError rc = fn_eval("var x = 7; var f = function() { x }; f()", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(7, (int)out.v.i);
+}
+
+UTEST(closure_writes_outer_local) {
+    /* var x = 0; (function() { x = 9 })(); x → 9 */
+    UValue out;
+    UVMError rc = fn_eval("var x = 0; (function() { x = 9 })(); x", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(9, (int)out.v.i);
+}
+
+UTEST(return_with_value) {
+    /* function with explicit return */
+    UValue out;
+    UVMError rc = fn_eval("var f = function(x) { return x * 2 }; f(5)", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(10, (int)out.v.i);
+}
+
+UTEST(return_early_exit) {
+    /* early return bypasses trailing code */
+    UValue out;
+    UVMError rc = fn_eval(
+        "var f = function(x) { if (x > 0) { return 1 }; 0 }; f(5)", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(1, (int)out.v.i);
+}
+
+UTEST(immediate_call_anonymous) {
+    /* (function(x) { x + 1 })(10) → 11 */
+    UValue out;
+    UVMError rc = fn_eval("(function(x) { x + 1 })(10)", &out);
+    UASSERT_EQ(UVM_OK, rc);
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(11, (int)out.v.i);
+}
+
+/* -----------------------------------------------------------------------
  * Suite
  * ----------------------------------------------------------------------- */
 
@@ -424,4 +515,26 @@ void test_function_suite(void) {
               vm_named_function_def_produces_closure);
     utest_run("vm: function body proto has instructions",
               vm_function_body_has_instructions);
+
+    /* T15: function calls */
+    utest_run("call: zero-arg function call returns body value",
+              call_no_args);
+    utest_run("call: single-arg function passes argument",
+              call_one_arg);
+    utest_run("call: two-arg function adds arguments",
+              call_two_args);
+    utest_run("call: wrong arity → UVM_TYPE_ERROR",
+              call_wrong_arity_errors);
+    utest_run("call: non-callable → UVM_TYPE_ERROR",
+              call_non_callable_errors);
+    utest_run("call: closure captures outer local",
+              closure_captures_local);
+    utest_run("call: closure writes outer local (upvalue write-back)",
+              closure_writes_outer_local);
+    utest_run("call: return with value exits early",
+              return_with_value);
+    utest_run("call: early return bypasses trailing statements",
+              return_early_exit);
+    utest_run("call: immediate anonymous function invocation",
+              immediate_call_anonymous);
 }

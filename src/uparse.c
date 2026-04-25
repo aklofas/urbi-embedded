@@ -142,6 +142,7 @@ static UAstNode *make_error(UParser *p, UParseError code, const char *msg,
 static UAstNode *parse_expression(UParser *p, int min_prec);
 static UAstNode *parse_prefix(UParser *p);
 static UAstNode *parse_atom(UParser *p);
+static UAstNode *parse_call_args(UParser *p, UAstNode *callee);
 static UAstNode *parse_inner_tier(UParser *p);
 static UAstNode *parse_outer_tier(UParser *p);
 static UAstNode *parse_statement_or_expr(UParser *p);
@@ -149,6 +150,7 @@ static UAstNode *parse_block(UParser *p);
 static UAstNode *parse_if(UParser *p);
 static UAstNode *parse_while(UParser *p);
 static UAstNode *parse_function(UParser *p);
+static UAstNode *parse_return(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -374,6 +376,11 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
         return parse_var_decl(p);
     }
 
+    /* return [expr] */
+    if (t.type == TOK_KW_RETURN) {
+        return parse_return(p);
+    }
+
     /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
        If not TOK_EQ, put the ident back as the LHS and continue with
        the normal inner-tier path (Pratt climb + pipe/amp loop). */
@@ -383,15 +390,21 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
             return parse_assign_from_ident(p, name);
         }
         /* Not assignment: build the ident node and finish the Pratt climb
-           for the arithmetic expression, then hand to the inner-tier
-           pipe/amp separator loop. */
+           for the arithmetic expression (including postfix calls), then
+           hand to the inner-tier pipe/amp separator loop. */
         UAstNode *lhs = make_ident(p, name.u.str.start, name.u.str.len,
                                    name.line, name.col);
         if (!lhs) return NULL;
-        /* Pratt climb with min_prec=1 (ident is already parsed; continue
-           climbing for any trailing arithmetic operators). */
+        /* Pratt climb: handle postfix `(args)` and arithmetic operators. */
         for (;;) {
             UToken op = peek(p);
+            /* Postfix call: highest precedence. */
+            if (op.type == TOK_LPAREN) {
+                lhs = parse_call_args(p, lhs);
+                if (!lhs) return NULL;
+                if (lhs->kind == AST_ERROR) return lhs;
+                continue;
+            }
             int prec = infix_prec(op.type);
             if (prec == 0) break;
             consume(p);
@@ -830,6 +843,35 @@ static UAstNode *parse_function(UParser *p) {
     node->u.func.params      = params;
     node->u.func.param_count = count;
     node->u.func.body        = body;
+    return node;
+}
+
+/* --- parse_return: `return [expr]` --- */
+
+static UAstNode *parse_return(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_RETURN */
+
+    /* Determine whether a return value follows.  Stop at any statement-ending
+       token: EOF, `}`, `)`, `|`, `;`, or `,`. */
+    UAstNode *value = NULL;
+    {
+        UTokenType nt = peek(p).type;
+        bool no_value = nt == TOK_EOF
+                     || nt == TOK_RBRACE
+                     || nt == TOK_RPAREN
+                     || nt == TOK_PIPE
+                     || nt == TOK_SEMI
+                     || nt == TOK_COMMA;
+        if (!no_value) {
+            value = parse_inner_tier(p);
+            if (!value) return (UAstNode *)&uparser_oom_sentinel;
+            if (value->kind == AST_ERROR) return value;
+        }
+    }
+
+    UAstNode *node = make_node(p, AST_RETURN, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.ret.value = value;
     return node;
 }
 

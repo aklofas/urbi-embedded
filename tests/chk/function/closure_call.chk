@@ -1,0 +1,6 @@
+# Milestone: M2
+# Covers: higher-order functions; closure-returning function (currying);
+#         inner closure captures outer parameter as upvalue; OP_CALL chains.
+
+var make_adder = function(n) { function(x) { x + n } }; var add5 = make_adder(5); add5(3)
+[00000001] 8

@@ -1,0 +1,7 @@
+# Milestone: M2
+# Covers: recursive function call; function references itself via upvalue;
+#         OP_CALL + OP_RET across multiple stack frames; factorial of 5 = 120.
+#         Pre-declaration pattern: `var fact = nil; fact = function(...)`.
+
+var fact = nil; fact = function(n) { if (n <= 1) { 1 } else { n * fact(n - 1) } }; fact(5)
+[00000001] 120
