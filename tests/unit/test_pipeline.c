@@ -31,15 +31,17 @@
    Returns UVM_OK with *out set on success, or the first non-OK error.
    All pipeline allocations are freed before return. */
 static UVMError pipeline_eval(const char *src, UValue *out) {
+    UVM vm;
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
     UArena arena;
+    uvm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UModule module = {0};
     UEmitter e;
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, &vm, NULL);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -58,14 +60,12 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        UVM vm;
-        uvm_init(&vm, NULL, NULL);
         vm_rc = uvm_run(&vm, &module, out);
-        uvm_destroy(&vm);
     }
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
+    uvm_destroy(&vm);
     return vm_rc;
 }
 

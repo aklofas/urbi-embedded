@@ -34,6 +34,7 @@ typedef enum {
 typedef struct UEmitter {
     UModule       *module;           /* non-owning; caller supplies */
     UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
+    struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
     uint8_t      last_result_reg; /* register of most recent statement's result */
@@ -45,9 +46,12 @@ typedef struct UEmitter {
 
 /* --- API --- */
 
-/* Initialize.  module and arena must both outlive the emitter.
-   source_name may be NULL. */
-void uemit_init(UEmitter *e, UModule *module, UArena *arena, const char *source_name);
+/* Initialize.  module, arena, and vm must all outlive the emitter.
+   source_name may be NULL.  vm parameter (added at M2) lets the
+   emitter intern identifier lexemes into the per-VM string table and
+   stamps module->origin_vm = vm. */
+void uemit_init(UEmitter *e, UModule *module, UArena *arena,
+                struct UVM *vm, const char *source_name);
 
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
    AST_ERROR nodes are rejected with EMIT_AST_ERROR.  On first error, the

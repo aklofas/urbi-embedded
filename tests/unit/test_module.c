@@ -3,6 +3,7 @@
 #include "utest.h"
 
 #include "umodule.h"
+#include "uvm.h"
 #include "uarena.h"
 #include "uemit.h"
 #include <stdlib.h>
@@ -659,7 +660,7 @@ static void roundtrip_ast(UAstNode *ast, const char *source_name) {
     UModuleLoadError rc;
 
     uarena_init(&arena, 0);
-    uemit_init(&e, &src, &arena, source_name);
+    uemit_init(&e, &src, &arena, NULL, source_name);
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, ast));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
@@ -716,7 +717,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL, NULL);
     (void)uemit_finish(&e);
 
     /* Size query (buf == NULL) */
@@ -764,7 +765,7 @@ UTEST(serialize_cap_0_returns_required_size_without_writing) {
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL, NULL);
     (void)uemit_finish(&e);
 
     ptrdiff_t needed = umodule_serialize(&module, NULL, 0);
@@ -779,7 +780,7 @@ UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, NULL, NULL);
     (void)uemit_finish(&e);
 
     uint8_t buf[10];

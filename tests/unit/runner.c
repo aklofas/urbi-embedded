@@ -34,6 +34,7 @@ extern void test_emit_suite(void);
 extern void test_vm_suite(void);
 extern void test_pipeline_suite(void);
 extern void test_uvalue_suite(void);
+extern void test_multi_vm_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -50,6 +51,7 @@ int main(void) {
     test_vm_suite();
     test_pipeline_suite();
     test_uvalue_suite();
+    test_multi_vm_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

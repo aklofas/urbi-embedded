@@ -47,6 +47,7 @@
 Checks: >
   -modernize-*,
   -cppcoreguidelines-*,
+  cppcoreguidelines-avoid-non-const-global-variables,
   -readability-isolate-declaration,
   -llvm-header-guard,
   -cert-err33-c,

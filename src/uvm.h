@@ -40,6 +40,12 @@ typedef struct UVM {
     void      *alloc_ud;
     UVMError   last_error;
     char       last_errmsg[UVM_ERRMSG_CAP];
+
+    /* M2 additions — per pre-m2-multi-vm-audit-design.md */
+    void      *intern_table;     /* opaque; owned by uintern.c (T3) */
+    uint32_t   topology_gen;     /* shape-tree generation; bumped at M4
+                                    on any slot-topology mutation. Zero-
+                                    init; never bumped at M2. */
 } UVM;
 
 /* --- API --- */

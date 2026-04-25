@@ -7,15 +7,18 @@
 
 #include "uarena.h"
 #include "uemit.h"
+#include "uvm.h"
 
 #define UTEST(name) static void name(void)
 
 UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, "repl");
+    uemit_init(&e, &module, &arena, &vm,  "repl");
 
     UASSERT_EQ((uint8_t)0, e.next_reg);
     UASSERT_EQ((uint8_t)0, e.max_reg_seen);
@@ -28,14 +31,17 @@ UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
     UASSERT_EQ((size_t)0, module.instr_count);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
     UEmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(e.finished == true);
@@ -43,14 +49,17 @@ UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
     UASSERT_EQ((uint8_t)0, module.max_reg);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UEmitter e;
-    uemit_init(&e, &module, &arena, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
     (void)uemit_finish(&e);
     UEmitError second = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, second);              /* finish is idempotent-OK */
@@ -61,6 +70,7 @@ UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
     UASSERT_EQ(EMIT_FINISHED, uemit_statement(&e, &dummy));
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(uemit_error_name_returns_sensible_strings) {
@@ -72,26 +82,28 @@ UTEST(uemit_error_name_returns_sensible_strings) {
 /* Helper: drive one statement through init/statement/finish and return the
    resulting UEmitError.  module and arena are caller-owned; call umodule_destroy
    and uarena_destroy when done. */
-static UEmitError emit_single_statement(UModule *module, UArena *arena, UAstNode *ast) {
+static UEmitError emit_single_statement(UModule *module, UArena *arena, UVM *vm, UAstNode *ast) {
     UEmitter e;
     UEmitError rc;
-    uemit_init(&e, module, arena, "test");
+    uemit_init(&e, module, arena, vm, "test");
     rc = uemit_statement(&e, ast);
     if (rc != EMIT_OK) return rc;
     return uemit_finish(&e);
 }
 
 UTEST(emit_ast_int_single_literal_loadk_then_ret) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UAstNode n = {0};
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     n.kind = AST_INT;
     n.u.i  = 42;
     n.line = 1;
     n.col  = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
     /* Two instructions: LOADK R0 K0 ; RET R0 */
     UASSERT_EQ((size_t)2, module.instr_count);
@@ -109,11 +121,13 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     /* Three statements: literal 1, literal 1, literal 2.
        Linear-scan dedup should yield a pool of size 2 (not 3). */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
@@ -121,7 +135,8 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UAstNode b = {0};
     UAstNode c = {0};
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, "test");
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  "test");
 
     a.kind = AST_INT; a.u.i = 1; a.line = 1;
     b.kind = AST_INT; b.u.i = 1; b.line = 1;
@@ -139,12 +154,15 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_binary_1_plus_2) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
@@ -155,7 +173,7 @@ UTEST(emit_ast_binary_1_plus_2) {
     bin.u.binary.rhs = &rhs;
     bin.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
     /* LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0 */
     UASSERT_EQ((size_t)4, module.instr_count);
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
@@ -172,9 +190,11 @@ UTEST(emit_ast_binary_1_plus_2) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
+    UVM vm;
     struct { UAstBinaryOp bop; int expected_op; } cases[] = {
         { BOP_SUB, (int)OP_SUB },
         { BOP_MUL, (int)OP_MUL },
@@ -185,6 +205,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         UModule module = {0};
         UArena arena;
         uarena_init(&arena, 0);
+        uvm_init(&vm, NULL, NULL);
         UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
         UAstNode rhs = {0}; rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
         UAstNode bin = {0};
@@ -193,18 +214,21 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         bin.u.binary.lhs = &lhs;
         bin.u.binary.rhs = &rhs;
         bin.line = 1;
-        UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
+        UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
         UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
         uarena_destroy(&arena);
         umodule_destroy(&module);
     }
+uvm_destroy(&vm);
 }
 
 UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     /* (1+2)+(3+4) — 6 UAstNodes.  Destination-reuse keeps max_reg==1. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;
@@ -220,7 +244,7 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     top.kind = AST_BINARY; top.u.binary.op = BOP_ADD;
     top.u.binary.lhs = &ab; top.u.binary.rhs = &cd; top.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &top));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &top));
     /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
        child still needs its own register simultaneously.  For the two-level
        tree (ab)+(cd) the peak is R2: emitting `d` requires R0(ab-lhs),
@@ -229,13 +253,16 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     /* AST_UNARY(UOP_NEG, AST_INT 5) -> LOADK R0 K0 ; NEG R0 R0 ; RET R0 */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     UAstNode operand = {0};
     operand.kind = AST_INT;
@@ -248,7 +275,7 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     unary.u.unary.operand = &operand;
     unary.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &unary));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &unary));
 
     UASSERT_EQ((size_t)3, module.instr_count);
 
@@ -268,6 +295,7 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 /* Custom allocator that fails after `fails_after` successful calls.
@@ -283,37 +311,45 @@ static void *limit_alloc(void *ptr, size_t nbytes, void *ud) {
 }
 
 UTEST(emit_ast_error_returns_emit_ast_error) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UAstNode err = {0};
     err.kind = AST_ERROR;
     err.u.err.code = 1;
     err.u.err.message = "parser error";
-    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, &err));
+    UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, &vm, &err));
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UAstNode id = {0};
     id.kind = AST_IDENT;
     id.u.ident.start = "x";
     id.u.ident.len = 1;
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&module, &arena, &id));
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&module, &arena, &vm, &id));
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
 
     UAstNode err = {0};
     err.kind = AST_ERROR;
@@ -330,12 +366,15 @@ UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
     UASSERT_EQ(EMIT_AST_ERROR, uemit_finish(&e));
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     LimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 0;
@@ -345,18 +384,21 @@ UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
     UAstNode n = {0};
     n.kind = AST_INT;
     n.u.i = 1;
-    UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &vm, &n));
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 10;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
     UASSERT_EQ((size_t)2, module.instr_count);  /* LOADK ; RET */
     /* First instruction has INT8_MIN sentinel delta (triggers abs_line lookup). */
     UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
@@ -367,14 +409,17 @@ UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)0, module.line_deltas[1]);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 3;
@@ -391,14 +436,17 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
     UASSERT_EQ((size_t)1, module.abs_line_count);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 1;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 500;  /* delta +499, overflow */
@@ -415,14 +463,17 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);        /* sentinel */
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(disassemble_empty_module_produces_short_placeholder) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
     (void)uemit_finish(&e);
 
     char buf[256];
@@ -431,20 +482,23 @@ UTEST(disassemble_empty_module_produces_short_placeholder) {
     UASSERT(strstr(buf, "(empty)") != NULL || n <= 32);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(disassemble_1_plus_2_produces_recognizable_text) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UAstNode lhs = {0};
     UAstNode rhs = {0};
     UAstNode bin = {0};
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
     rhs.kind = AST_INT; rhs.u.i = 2; rhs.line = 1;
     bin.kind = AST_BINARY; bin.u.binary.op = BOP_ADD;
     bin.u.binary.lhs = &lhs; bin.u.binary.rhs = &rhs; bin.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &bin));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
 
     char buf[512];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -455,15 +509,18 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     UASSERT(strstr(buf, "R0")    != NULL);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UAstNode n = {0};
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
     char buf[8];
     size_t written = uemit_disassemble(&module, buf, sizeof buf);
@@ -471,6 +528,7 @@ UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
     UASSERT_EQ('\0', buf[sizeof buf - 1]);
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 /* --- Additional coverage tests --- */
@@ -491,9 +549,11 @@ UTEST(uemit_error_name_covers_all_codes) {
 
 UTEST(disassemble_with_neg_instruction_shows_neg) {
     /* Emit a NEG instruction so the OP_NEG case in uemit_disassemble is hit. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     UAstNode operand = {0};
     operand.kind = AST_INT; operand.u.i = 7; operand.line = 1;
@@ -501,7 +561,7 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &neg));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &neg));
 
     char buf[256];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -510,19 +570,22 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     /* Use a constant value >= 128 so that uvarint_write_u and uvarint_write_zz
        emit multi-byte (continuation-bit) encoded varints. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1000; n.line = 1;  /* 1000 > 63, zigzag = 2000 > 127 */
 
-    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &n));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
     /* Serialize and round-trip to confirm multi-byte varint path works. */
     ptrdiff_t need = umodule_serialize(&module, NULL, 0);
@@ -543,17 +606,20 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     uarena_destroy(&arena);
     umodule_destroy(&module);
     umodule_destroy(&dst);
+uvm_destroy(&vm);
 }
 
 UTEST(disassemble_module_with_all_arithmetic_opcodes) {
     /* Emit ADD, SUB, MUL, DIV to exercise all opname() paths.
        Also exercises the "; constants:" section of the disassembler
        which is reached by any instruction module. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
 
     /* Each statement emits one binary op. */
     UAstNode lhs = {0}; lhs.kind = AST_INT; lhs.u.i = 1; lhs.line = 1;
@@ -585,6 +651,7 @@ UTEST(disassemble_module_with_all_arithmetic_opcodes) {
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(serialize_module_with_float_constant_round_trips) {
@@ -694,11 +761,13 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     /* When the line delta is <= INT8_MIN (-128) — i.e. going more than 127
        lines *backward* — a new abs_line checkpoint is emitted instead of
        a delta.  Tests the `d <= INT8_MIN` branch in emit_instr. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
-    uemit_init(&e, &module, &arena, NULL);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm,  NULL);
 
     UAstNode a = {0}; a.kind = AST_INT; a.u.i = 1; a.line = 500;
     UAstNode b = {0}; b.kind = AST_INT; b.u.i = 2; b.line = 1;  /* delta = 1 - 500 = -499 */
@@ -714,6 +783,7 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);  /* sentinel on second LOADK */
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_oom_in_push_abs_line) {
@@ -722,9 +792,11 @@ UTEST(emit_oom_in_push_abs_line) {
        The first instruction always triggers emit_push_abs_line.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow — fail this one. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     LimitAlloc la;
     la.ok_calls = 0;
@@ -734,11 +806,12 @@ UTEST(emit_oom_in_push_abs_line) {
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UEmitError rc = emit_single_statement(&module, &arena, &n);
+    UEmitError rc = emit_single_statement(&module, &arena, &vm, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 UTEST(emit_oom_in_push_line_delta) {
@@ -746,9 +819,11 @@ UTEST(emit_oom_in_push_line_delta) {
        and abs_lines allocs to succeed, then failing the line_deltas alloc.
        Allocation order: (1) constants grow, (2) instructions grow,
        (3) abs_lines grow, (4) line_deltas alloc — fail this one. */
+    UVM vm;
     UModule module = {0};
     UArena arena;
     uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
 
     LimitAlloc la;
     la.ok_calls = 0;
@@ -758,11 +833,12 @@ UTEST(emit_oom_in_push_line_delta) {
 
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 1;
-    UEmitError rc = emit_single_statement(&module, &arena, &n);
+    UEmitError rc = emit_single_statement(&module, &arena, &vm, &n);
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
+uvm_destroy(&vm);
 }
 
 void test_emit_suite(void);

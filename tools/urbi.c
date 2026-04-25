@@ -61,7 +61,7 @@ static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
    err_buf (up to err_cap bytes, NUL-terminated), destroys internal state,
    and returns false; caller must NOT call umodule_destroy / uarena_destroy. */
 static bool compile_source(const char *src, size_t len, const char *src_name,
-                           UModule *out_module, UArena *arena,
+                           UVM *vm, UModule *out_module, UArena *arena,
                            char *err_buf, size_t err_cap) {
     ULexer lex;
     ulex_init(&lex, src, len);
@@ -70,7 +70,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
 
     *out_module = (UModule){0};
     UEmitter e;
-    uemit_init(&e, out_module, arena, src_name);
+    uemit_init(&e, out_module, arena, vm, src_name);
 
     UParser p;
     uparse_init(&p, &lex, arena);
@@ -106,11 +106,11 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
 
 /* Compile src and print disassembly to stdout.  Does not execute.
    Returns 0 on success, 1 on compile error. */
-static int run_dump(const char *src, size_t len, const char *src_name) {
+static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) {
     UArena arena;
     UModule module;
     char err[256] = {0};
-    if (!compile_source(src, len, src_name, &module, &arena, err, sizeof err)) {
+    if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
@@ -187,7 +187,7 @@ static int run_file(UVM *vm, const char *path) {
     UModule module;
     int rc = 1;
     char err[256] = {0};
-    if (compile_source(src, len, path, &module, &arena, err, sizeof err)) {
+    if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
         UValue out;
         UVMError vrc = uvm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
@@ -240,7 +240,7 @@ static int run_expression(UVM *vm, const char *expr) {
     UModule module;
     int rc = 1;
     char err[256] = {0};
-    if (compile_source(buf, final_len, "<expr>", &module, &arena, err, sizeof err)) {
+    if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {
         UValue out;
         UVMError vrc = uvm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
@@ -339,7 +339,7 @@ static int run_interactive(UVM *vm) {
         UArena arena;
         UModule module;
         char err[256] = {0};
-        if (compile_source(buf, final_len, "<stdin>", &module, &arena, err, sizeof err)) {
+        if (compile_source(buf, final_len, "<stdin>", vm, &module, &arena, err, sizeof err)) {
             UValue out;
             UVMError vrc = uvm_run(vm, &module, &out);
             if (vrc == UVM_OK) {
@@ -461,7 +461,10 @@ int main(int argc, char *argv[]) {
                 buf[len + 2] = '\0';
                 final_len = len + 2;
             }
-            int rc = run_dump(buf, final_len, "<expr>");
+            UVM vm;
+            uvm_init(&vm, NULL, NULL);
+            int rc = run_dump(&vm, buf, final_len, "<expr>");
+            uvm_destroy(&vm);
             free(buf);
             return rc;
         }
@@ -469,7 +472,10 @@ int main(int argc, char *argv[]) {
             size_t flen = 0;
             char *src = slurp(file_arg, &flen);
             if (!src) return 2;
-            int rc = run_dump(src, flen, file_arg);
+            UVM vm;
+            uvm_init(&vm, NULL, NULL);
+            int rc = run_dump(&vm, src, flen, file_arg);
+            uvm_destroy(&vm);
             free(src);
             return rc;
         }

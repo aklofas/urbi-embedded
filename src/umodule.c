@@ -129,6 +129,9 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
         return ULOAD_TRUNCATED;
     }
 
+    /* Zero origin_vm for deserialized modules. */
+    module->origin_vm = NULL;
+
     /* --- 24-byte header --- */
     if (size < 24u) {
         set_errmsg(errmsg, errcap,

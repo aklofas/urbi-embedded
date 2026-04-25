@@ -25,6 +25,8 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 #endif
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
+    vm->intern_table = NULL;
+    vm->topology_gen = 0u;
 }
 
 void uvm_destroy(UVM *vm) {

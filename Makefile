@@ -299,10 +299,13 @@ coverage-tools:
 	    exit 1; \
 	}
 
-# Aggregate: gating tidy, advisory cppcheck, advisory analyzer.
+# Aggregate: gating audit-globals, tidy, advisory cppcheck, advisory analyzer.
 # CI invokes this as one step per-target so failures clearly name
 # which tool caught the issue.
-lint: tidy cppcheck analyzer
+lint: audit-globals tidy cppcheck analyzer
+
+audit-globals:
+	@./tools/audit-globals.sh
 
 clean:
 	rm -rf build compile_commands.json

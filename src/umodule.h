@@ -160,6 +160,12 @@ typedef struct UModule {
     uint8_t    max_reg;           /* VM allocates (max_reg + 1) register slots */
     char       *source_name;      /* owned (allocator-allocated, null-terminated); NULL if absent */
 
+    /* M2 addition — per pre-m2-multi-vm-audit-design.md.
+     * Set by uemit_init at compile time; zero on freshly-deserialized
+     * modules. Used only for optional debug-assert paths in v1.0;
+     * cross-VM module use is UB but not dynamically checked. */
+    struct UVM *origin_vm;
+
     /* allocator hook; NULL -> use stdlib realloc (hosted builds only) */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;

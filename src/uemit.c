@@ -275,10 +275,15 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
 /* --- Public API --- */
 
-void uemit_init(UEmitter *e, UModule *module, UArena *arena, const char *source_name) {
+void uemit_init(UEmitter *e, UModule *module, UArena *arena,
+                struct UVM *vm, const char *source_name) {
     emit_zero(e, sizeof(*e));
     e->module = module;
     e->arena = arena;
+    e->vm = vm;
+    if (vm != NULL) {
+        module->origin_vm = vm;
+    }
     emit_copy_source_name(e, source_name);
 }
 
