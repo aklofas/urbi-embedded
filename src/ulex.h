@@ -17,13 +17,47 @@ typedef enum {
     TOK_EOF = 0,      /* end of input — sentinel */
     TOK_INT,          /* integer literal */
     TOK_IDENT,        /* identifier [a-zA-Z_][a-zA-Z0-9_]* */
+
+    /* arithmetic — M1 */
     TOK_PLUS,         /* + */
     TOK_MINUS,        /* - */
     TOK_STAR,         /* * */
     TOK_SLASH,        /* / */
     TOK_LPAREN,       /* ( */
     TOK_RPAREN,       /* ) */
+
+    /* separators — M2 */
     TOK_PIPE,         /* | */
+    TOK_SEMI,         /* ; */
+    TOK_COMMA,        /* , */
+    TOK_AMP,          /* & */
+
+    /* blocks — M2 */
+    TOK_LBRACE,       /* { */
+    TOK_RBRACE,       /* } */
+
+    /* assignment + comparison — M2 */
+    TOK_EQ,           /* =  */
+    TOK_EQEQ,         /* == */
+    TOK_NEQ,          /* != */
+    TOK_LT,           /* <  */
+    TOK_LE,           /* <= */
+    TOK_GT,           /* >  */
+    TOK_GE,           /* >= */
+
+    /* keywords — M2 */
+    TOK_KW_VAR,
+    TOK_KW_FUNCTION,
+    TOK_KW_RETURN,
+    TOK_KW_IF,
+    TOK_KW_ELSE,
+    TOK_KW_WHILE,
+    TOK_KW_LAZY,
+    TOK_KW_CLOSURE,    /* recognized for migration-error path; no semantics */
+    TOK_KW_TRUE,
+    TOK_KW_FALSE,
+    TOK_KW_NIL,
+
     TOK_ERROR         /* malformed input */
 } UTokenType;
 

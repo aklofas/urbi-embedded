@@ -8,7 +8,13 @@
 static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
-    "TOK_LPAREN", "TOK_RPAREN", "TOK_PIPE",
+    "TOK_LPAREN", "TOK_RPAREN",
+    "TOK_PIPE", "TOK_SEMI", "TOK_COMMA", "TOK_AMP",
+    "TOK_LBRACE", "TOK_RBRACE",
+    "TOK_EQ", "TOK_EQEQ", "TOK_NEQ", "TOK_LT", "TOK_LE", "TOK_GT", "TOK_GE",
+    "TOK_KW_VAR", "TOK_KW_FUNCTION", "TOK_KW_RETURN", "TOK_KW_IF", "TOK_KW_ELSE",
+    "TOK_KW_WHILE", "TOK_KW_LAZY", "TOK_KW_CLOSURE", "TOK_KW_TRUE", "TOK_KW_FALSE",
+    "TOK_KW_NIL",
     "TOK_ERROR"
 };
 
@@ -239,6 +245,42 @@ static int is_ident_cont(const char c) {
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
+typedef struct {
+    const char *name;
+    int         len;
+    UTokenType  type;
+} UKeyword;
+
+/* Sorted by name for human readability; lookup is linear (11 entries —
+ * faster than a hash for this size). */
+static const UKeyword KEYWORDS[] = {
+    { "closure",  7, TOK_KW_CLOSURE  },
+    { "else",     4, TOK_KW_ELSE     },
+    { "false",    5, TOK_KW_FALSE    },
+    { "function", 8, TOK_KW_FUNCTION },
+    { "if",       2, TOK_KW_IF       },
+    { "lazy",     4, TOK_KW_LAZY     },
+    { "nil",      3, TOK_KW_NIL      },
+    { "return",   6, TOK_KW_RETURN   },
+    { "true",     4, TOK_KW_TRUE     },
+    { "var",      3, TOK_KW_VAR      },
+    { "while",    5, TOK_KW_WHILE    }
+};
+#define KEYWORD_COUNT (sizeof KEYWORDS / sizeof KEYWORDS[0])
+
+static UTokenType keyword_lookup(const char *bytes, int len) {
+    for (size_t i = 0; i < KEYWORD_COUNT; i++) {
+        if (KEYWORDS[i].len == len) {
+            int eq = 1;
+            for (int j = 0; j < len; j++) {
+                if (KEYWORDS[i].name[j] != bytes[j]) { eq = 0; break; }
+            }
+            if (eq) return KEYWORDS[i].type;
+        }
+    }
+    return TOK_IDENT;
+}
+
 static UToken scan_ident(ULexer *lex) {
     const char *start = lex->cur;
     const int start_col = (int)(start - lex->line_start) + 1;
@@ -246,13 +288,22 @@ static UToken scan_ident(ULexer *lex) {
     while (lex->cur < lex->end && is_ident_cont(*lex->cur)) {
         lex->cur++;
     }
+    const int len = (int)(lex->cur - start);
+    const UTokenType kw_type = keyword_lookup(start, len);
+
     UToken t = {0};
-    t.type = TOK_IDENT;
+    t.type = kw_type;
     t.line = start_line;
     t.col = start_col;
-    t.len = (int)(lex->cur - start);
-    t.u.str.start = start;
-    t.u.str.len = (int)(lex->cur - start);
+    t.len = len;
+    /* For keywords, still populate u.str for downstream error messages. */
+    if (kw_type != TOK_IDENT) {
+        t.u.str.start = start;
+        t.u.str.len = len;
+    } else {
+        t.u.str.start = start;
+        t.u.str.len = len;
+    }
     return t;
 }
 
@@ -356,6 +407,43 @@ UToken ulex_next(ULexer *lex) {
     case '(': lex->cur++; return make_tok(lex, TOK_LPAREN, start, 1);
     case ')': lex->cur++; return make_tok(lex, TOK_RPAREN, start, 1);
     case '|': lex->cur++; return make_tok(lex, TOK_PIPE,   start, 1);
+    case ';': lex->cur++; return make_tok(lex, TOK_SEMI,   start, 1);
+    case ',': lex->cur++; return make_tok(lex, TOK_COMMA,  start, 1);
+    case '&': lex->cur++; return make_tok(lex, TOK_AMP,    start, 1);
+    case '{': lex->cur++; return make_tok(lex, TOK_LBRACE, start, 1);
+    case '}': lex->cur++; return make_tok(lex, TOK_RBRACE, start, 1);
+    case '=':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_EQEQ, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_EQ, start, 1);
+    case '!':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_NEQ, start, 2);
+        }
+        {
+            const int col = (int)(lex->cur - lex->line_start) + 1;
+            const int line = lex->line;
+            lex->cur++;
+            return make_error(LEX_UNKNOWN_CHAR, line, col, 1);
+        }
+    case '<':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_LE, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_LT, start, 1);
+    case '>':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_GE, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_GT, start, 1);
     default:
         if (c >= '0' && c <= '9') {
             return scan_decimal(lex);

@@ -542,12 +542,15 @@ static void unknown_char_at(void) {
     UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
 }
 
-static void unknown_char_semicolon_still_deferred(void) {
-    /* Semicolons are out of current scope; they land with the compound separators. */
-    ULexer l; ulex_init(&l, ";", 1);
+static void lex_semicolon(void) {
+    ULexer l;
+    ulex_init(&l, ";", 1);
     const UToken t = ulex_next(&l);
-    UASSERT_EQ(t.type, TOK_ERROR);
-    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+    UASSERT_EQ(t.type, TOK_SEMI);
+    UASSERT_EQ(t.line, 1);
+    UASSERT_EQ(t.col, 1);
+    UASSERT_EQ(t.len, 1);
+    UASSERT_EQ(ulex_next(&l).type, TOK_EOF);
 }
 
 static void unknown_char_lone_cr_rejected(void) {
@@ -634,6 +637,136 @@ static void oct_overflow(void) {
     UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
 }
 
+static void lex_eq_vs_eqeq(void) {
+    ULexer l;
+    ulex_init(&l, "= ==", 4);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_EQ);
+    UASSERT_EQ(t1.len, 1);
+    UASSERT_EQ(t2.type, TOK_EQEQ);
+    UASSERT_EQ(t2.len, 2);
+}
+
+static void lex_neq(void) {
+    ULexer l;
+    ulex_init(&l, "!=", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_NEQ);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void lex_le_vs_lt(void) {
+    ULexer l;
+    ulex_init(&l, "< <=", 4);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_LT);
+    UASSERT_EQ(t1.len, 1);
+    UASSERT_EQ(t2.type, TOK_LE);
+    UASSERT_EQ(t2.len, 2);
+}
+
+static void lex_ge_vs_gt(void) {
+    ULexer l;
+    ulex_init(&l, "> >=", 4);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_GT);
+    UASSERT_EQ(t1.len, 1);
+    UASSERT_EQ(t2.type, TOK_GE);
+    UASSERT_EQ(t2.len, 2);
+}
+
+static void lex_braces_amp_comma(void) {
+    ULexer l;
+    ulex_init(&l, "{ } & ,", 7);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
+    const UToken t4 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_LBRACE);
+    UASSERT_EQ(t1.len, 1);
+    UASSERT_EQ(t2.type, TOK_RBRACE);
+    UASSERT_EQ(t2.len, 1);
+    UASSERT_EQ(t3.type, TOK_AMP);
+    UASSERT_EQ(t3.len, 1);
+    UASSERT_EQ(t4.type, TOK_COMMA);
+    UASSERT_EQ(t4.len, 1);
+}
+
+static void lex_lone_bang_is_error(void) {
+    ULexer l;
+    ulex_init(&l, "!", 1);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+}
+
+static void lex_recognizes_var_keyword(void) {
+    ULexer l;
+    ulex_init(&l, "var", 3);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_KW_VAR);
+    UASSERT_EQ(t.len, 3);
+}
+
+static void lex_recognizes_function_keyword(void) {
+    ULexer l;
+    ulex_init(&l, "function", 8);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_KW_FUNCTION);
+    UASSERT_EQ(t.len, 8);
+}
+
+static void lex_recognizes_closure_keyword(void) {
+    ULexer l;
+    ulex_init(&l, "closure", 7);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_KW_CLOSURE);
+    UASSERT_EQ(t.len, 7);
+}
+
+static void lex_keyword_prefix_is_identifier(void) {
+    /* "vary" is an identifier, not "var" + "y". */
+    ULexer l;
+    ulex_init(&l, "vary", 4);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_IDENT);
+    UASSERT_EQ(t.len, 4);
+    UASSERT_EQ(t.u.str.len, 4);
+}
+
+static void lex_all_eleven_keywords(void) {
+    ULexer l;
+    const char *src = "var function return if else while lazy closure true false nil";
+    ulex_init(&l, src, 61);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    const UToken t3 = ulex_next(&l);
+    const UToken t4 = ulex_next(&l);
+    const UToken t5 = ulex_next(&l);
+    const UToken t6 = ulex_next(&l);
+    const UToken t7 = ulex_next(&l);
+    const UToken t8 = ulex_next(&l);
+    const UToken t9 = ulex_next(&l);
+    const UToken t10 = ulex_next(&l);
+    const UToken t11 = ulex_next(&l);
+    const UToken t12 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_KW_VAR);
+    UASSERT_EQ(t2.type, TOK_KW_FUNCTION);
+    UASSERT_EQ(t3.type, TOK_KW_RETURN);
+    UASSERT_EQ(t4.type, TOK_KW_IF);
+    UASSERT_EQ(t5.type, TOK_KW_ELSE);
+    UASSERT_EQ(t6.type, TOK_KW_WHILE);
+    UASSERT_EQ(t7.type, TOK_KW_LAZY);
+    UASSERT_EQ(t8.type, TOK_KW_CLOSURE);
+    UASSERT_EQ(t9.type, TOK_KW_TRUE);
+    UASSERT_EQ(t10.type, TOK_KW_FALSE);
+    UASSERT_EQ(t11.type, TOK_KW_NIL);
+    UASSERT_EQ(t12.type, TOK_EOF);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -713,7 +846,18 @@ void test_lexer_suite(void) {
     utest_run("sequence_after_error_continues", sequence_after_error_continues);
     utest_run("unknown_char_dollar", unknown_char_dollar);
     utest_run("unknown_char_at", unknown_char_at);
-    utest_run("unknown_char_semicolon_still_deferred", unknown_char_semicolon_still_deferred);
+    utest_run("lex_semicolon", lex_semicolon);
     utest_run("unknown_char_lone_cr_rejected", unknown_char_lone_cr_rejected);
     utest_run("unknown_char_message_is_correct", unknown_char_message_is_correct);
+    utest_run("lex_eq_vs_eqeq", lex_eq_vs_eqeq);
+    utest_run("lex_neq", lex_neq);
+    utest_run("lex_le_vs_lt", lex_le_vs_lt);
+    utest_run("lex_ge_vs_gt", lex_ge_vs_gt);
+    utest_run("lex_braces_amp_comma", lex_braces_amp_comma);
+    utest_run("lex_lone_bang_is_error", lex_lone_bang_is_error);
+    utest_run("lex_recognizes_var_keyword", lex_recognizes_var_keyword);
+    utest_run("lex_recognizes_function_keyword", lex_recognizes_function_keyword);
+    utest_run("lex_recognizes_closure_keyword", lex_recognizes_closure_keyword);
+    utest_run("lex_keyword_prefix_is_identifier", lex_keyword_prefix_is_identifier);
+    utest_run("lex_all_eleven_keywords", lex_all_eleven_keywords);
 }
