@@ -45,7 +45,10 @@ typedef enum {
     AST_CALL       = 17,    /* callee(args) */
     AST_RETURN     = 18,    /* return [expr] */
     AST_PARAM      = 19,    /* formal parameter (eager, no `lazy`) */
-    AST_LAZY_PARAM = 20     /* formal parameter (`lazy x`) */
+    AST_LAZY_PARAM = 20,    /* formal parameter (`lazy x`) */
+
+    /* M2 — assignment */
+    AST_ASSIGN     = 21     /* x = expr; assignment to existing local/upvalue */
 } UAstKind;
 
 typedef enum {
@@ -127,6 +130,7 @@ typedef enum {
  *   u.call        — AST_CALL:       function application
  *   u.ret         — AST_RETURN:     early exit with value
  *   u.param       — AST_PARAM, AST_LAZY_PARAM: formal parameters
+ *   u.assign      — AST_ASSIGN: assignment to existing local/upvalue
  *
  * Position fields line/col are 1-based, matching the lexer.  For
  * AST_BINARY the position points at the operator token; for AST_ERROR
@@ -216,6 +220,11 @@ struct UAstNode {
             const char *name_start;
             int         name_len;
         } param;
+        struct {                                            /* AST_ASSIGN */
+            const char *name_start;        /* zero-copy lexeme view */
+            int         name_len;
+            UAstNode   *value;
+        } assign;
     } u;
 };
 

@@ -270,11 +270,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         return src_reg;   /* dest reuses src; no free_reg */
     }
     case AST_IDENT: {
-        /* Intern the lexeme into the per-VM canonical pool. M2 still
-         * treats free identifiers as unresolved (full local/upvalue
-         * resolution lands at T6/T10); for now this validates the
-         * intern handoff. T6 + T10 will replace with proper resolution. */
-        if (e->vm == NULL) {
+        if (e->vm == NULL || e->current_fs == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0u;
         }
@@ -284,10 +280,160 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->error = EMIT_OOM;
             return 0u;
         }
-        /* T6 and T10 will use this for local/upvalue resolution. */
-        (void)canonical;
-        e->error = EMIT_UNSUPPORTED_AST;     /* placeholder until T6 lands */
+
+        /* Local lookup — scan active locals from innermost to outermost. */
+        UFuncState *fs = e->current_fs;
+        int slot = -1;
+        for (int i = fs->nactvar - 1; i >= 0; i--) {
+            if (fs->actvars[i].name == canonical) {
+                slot = (int)fs->actvars[i].slot;
+                break;
+            }
+        }
+        if (slot >= 0) {
+            uint8_t dst = e->next_reg;
+            if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, dst, (uint8_t)slot, 0u),
+                       (uint32_t)n->line);
+            e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->next_reg > fs->max_reg_seen) fs->max_reg_seen = e->next_reg;
+            return dst;
+        }
+
+        /* Upvalue cascade. */
+        int up = find_or_install_upvalue(e, fs, canonical, n->u.ident.len);
+        if (up >= 0) {
+            uint8_t dst = e->next_reg;
+            if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            emit_instr(e, uinstr_enc_abc(OP_GETUPVAL, dst, (uint8_t)up, 0u),
+                       (uint32_t)n->line);
+            e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->next_reg > fs->max_reg_seen) fs->max_reg_seen = e->next_reg;
+            return dst;
+        }
+
+        /* No globals at v1.0. */
+        e->error = EMIT_UNRESOLVED_NAME;
         return 0u;
+    }
+    case AST_VAR_DECL: {
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        UFuncState *fs = e->current_fs;
+
+        /* Intern the variable name. */
+        const char *canonical = ustr_intern(e->vm, n->u.var_decl.name_start,
+                                            (size_t)n->u.var_decl.name_len);
+        if (canonical == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        /* Redeclare check within current block (or whole actvar table). */
+        int search_from = (fs->nblocks > 0)
+            ? fs->blocks[fs->nblocks - 1].first_local_idx
+            : 0;
+        for (int i = search_from; i < fs->nactvar; i++) {
+            if (fs->actvars[i].name == canonical) {
+                e->error = EMIT_LOCAL_REDECLARE;
+                return 0u;
+            }
+        }
+        if (fs->nactvar >= UFS_MAX_LOCALS) {
+            e->error = EMIT_REG_EXHAUSTED;
+            return 0u;
+        }
+
+        /* Record where the init will land: current top-of-stack register.
+           The init expression is emitted at this slot via alloc_reg(). */
+        uint8_t reg_before = e->next_reg;
+
+        /* Emit init expression — lands at reg_before (alloc_reg gives it
+           the next free slot, which is e->next_reg == reg_before). */
+        uint8_t init_reg = emit_expr(e, n->u.var_decl.init);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Sanity: init must have landed at exactly reg_before. */
+        if (init_reg != reg_before) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Absorb the temp into the local zone: register at reg_before is
+           now the local's permanent slot. Do NOT free the register. */
+        ULocalVar *lv = &fs->actvars[fs->nactvar++];
+        lv->name       = canonical;
+        lv->name_len   = n->u.var_decl.name_len;
+        lv->slot       = reg_before;
+        lv->is_captured = false;
+        lv->is_lazy    = false;
+
+        /* Sync freereg: it now equals e->next_reg (one past the local's slot).
+           The local occupies [reg_before]; e->next_reg is already reg_before+1. */
+        fs->freereg = e->next_reg;
+        if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
+
+        /* var-decl "returns" the value in its slot (for use as an expression
+           in separator chains). Caller can free_reg as normal; the slot
+           remains because it is now a local (tracked by nactvar). */
+        return init_reg;
+    }
+    case AST_ASSIGN: {
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        UFuncState *fs = e->current_fs;
+
+        const char *canonical = ustr_intern(e->vm, n->u.assign.name_start,
+                                            (size_t)n->u.assign.name_len);
+        if (canonical == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        /* Resolve target: local first. */
+        int local_slot = -1;
+        for (int i = fs->nactvar - 1; i >= 0; i--) {
+            if (fs->actvars[i].name == canonical) {
+                local_slot = (int)fs->actvars[i].slot;
+                break;
+            }
+        }
+
+        int upvalue_idx = -1;
+        if (local_slot < 0) {
+            upvalue_idx = find_or_install_upvalue(e, fs, canonical,
+                                                  n->u.assign.name_len);
+            if (upvalue_idx < 0) {
+                e->error = EMIT_UNRESOLVED_NAME;
+                return 0u;
+            }
+        }
+
+        /* Emit RHS into top temp. */
+        uint8_t reg_before = e->next_reg;
+        uint8_t rhs_reg = emit_expr(e, n->u.assign.value);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Move into the target slot. */
+        if (local_slot >= 0) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)local_slot,
+                                         rhs_reg, 0u),
+                       (uint32_t)n->line);
+        } else {
+            emit_instr(e, uinstr_enc_abc(OP_SETUPVAL, rhs_reg,
+                                         (uint8_t)upvalue_idx, 0u),
+                       (uint32_t)n->line);
+        }
+        /* Free the temp — it was only needed for the RHS. */
+        e->next_reg = reg_before;
+        /* Assignment expression value is the target slot's value; return it. */
+        return (local_slot >= 0) ? (uint8_t)local_slot : reg_before;
     }
     case AST_NARY: {
         /* `,` parallel semantics land at M3; emit-time error at M2. */
@@ -363,14 +509,29 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
     uint8_t result;
     if (e->finished) return EMIT_FINISHED;
     if (e->error != EMIT_OK) return e->error;
-    /* Fresh register-allocator cursor per statement at M1
-       (no locals persist across statement boundaries). */
-    e->next_reg = 0u;
+
+    /* Lazy-open a top-level FuncState on first statement when the caller
+     * has not already opened one.  This lets existing tests that manage
+     * their own open/close continue to work unchanged. */
+    if (e->current_fs == NULL) {
+        if (uemit_open_function(e, NULL) == NULL) return e->error;
+    }
+
+    /* Sync the flat register cursor to the FuncState freereg so temps
+     * are allocated above any declared locals. */
+    e->next_reg = e->current_fs->freereg;
+
     result = emit_expr(e, stmt);
     if (e->error != EMIT_OK) return e->error;
     e->last_result_reg = result;
     e->any_stmt_emitted = true;
-    free_reg(e);                    /* release result slot (stack discipline) */
+
+    /* Release the result temp (only if it is genuinely a temp — i.e., above
+     * the local zone).  Locals keep their registers across statements. */
+    if (e->next_reg > e->current_fs->freereg) {
+        e->next_reg--;
+    }
+
     return EMIT_OK;
 }
 
@@ -379,6 +540,10 @@ UEmitError uemit_finish(UEmitter *e) {
     if (e->error == EMIT_OK && e->any_stmt_emitted) {
         emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0u, 0u),
                    e->prev_line);
+    }
+    /* Close any lazily-opened top-level FuncState. */
+    if (e->current_fs != NULL && e->current_fs->parent == NULL) {
+        uemit_close_function(e);
     }
     e->finished = true;
     e->module->max_reg = e->max_reg_seen;

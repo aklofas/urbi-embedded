@@ -326,7 +326,9 @@ UTEST(emit_ast_error_returns_emit_ast_error) {
 uvm_destroy(&vm);
 }
 
-UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
+UTEST(emit_ast_ident_unresolved_name_returns_error) {
+    /* After T10, a bare identifier with no matching local or upvalue
+       returns EMIT_UNRESOLVED_NAME (no globals at v1.0). */
     UVM vm;
     UModule module = {0};
     UArena arena;
@@ -334,9 +336,9 @@ UTEST(emit_ast_ident_returns_emit_unsupported_ast) {
     uvm_init(&vm, NULL, NULL);
     UAstNode id = {0};
     id.kind = AST_IDENT;
-    id.u.ident.start = "x";
-    id.u.ident.len = 1;
-    UASSERT_EQ(EMIT_UNSUPPORTED_AST, emit_single_statement(&module, &arena, &vm, &id));
+    id.u.ident.start = "ghost";
+    id.u.ident.len = 5;
+    UASSERT_EQ(EMIT_UNRESOLVED_NAME, emit_single_statement(&module, &arena, &vm, &id));
     uarena_destroy(&arena);
     umodule_destroy(&module);
 uvm_destroy(&vm);
@@ -841,6 +843,127 @@ UTEST(emit_oom_in_push_line_delta) {
 uvm_destroy(&vm);
 }
 
+/* --- var-decl + local resolution emit tests (T10) --- */
+
+#include "ulex.h"
+#include "uparse.h"
+
+/* Helper context used by all T10 emit tests: parse source + emit. */
+typedef struct {
+    ULexer  lex;
+    UArena  arena;
+    UParser p;
+    UModule module;
+    UVM     vm;
+    UEmitter e;
+} EmitCtx;
+
+static void emit_ctx_init(EmitCtx *c, const char *src) {
+    ulex_init(&c->lex, src, strlen(src));
+    uarena_init(&c->arena, 0);
+    uvm_init(&c->vm, NULL, NULL);
+    c->module = (UModule){0};
+    uparse_init(&c->p, &c->lex, &c->arena);
+    uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test");
+}
+
+static UEmitError emit_ctx_run(EmitCtx *c) {
+    UAstNode *stmt;
+    while ((stmt = uparse_next_statement(&c->p)) != NULL) {
+        UEmitError rc = uemit_statement(&c->e, stmt);
+        if (rc != EMIT_OK) return rc;
+    }
+    return uemit_finish(&c->e);
+}
+
+static void emit_ctx_destroy(EmitCtx *c) {
+    uarena_destroy(&c->arena);
+    umodule_destroy(&c->module);
+    uvm_destroy(&c->vm);
+}
+
+UTEST(emit_var_decl_basic_no_op_move) {
+    /* "var x = 7" should emit LOADK for the init (no OP_MOVE for local
+       absorption), then RET. Local x lives at R0. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var x = 7");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    /* Expected: LOADK R0 K0 ; RET R0 — no MOVE instruction. */
+    UASSERT_EQ((size_t)2, c.module.instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(c.module.instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(c.module.instructions[0]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(c.module.instructions[1]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(c.module.instructions[1]));
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_var_then_use_resolves_local) {
+    /* "var x = 7; x + 1" — x resolves to local slot 0, accessed via OP_MOVE.
+       Sequence: LOADK R0 K(7), YIELD, MOVE R1 R0, LOADK R2 K(1), ADD R1 R1 R2, RET R1 */
+    EmitCtx c;
+    emit_ctx_init(&c, "var x = 7; x + 1");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    /* Must have a MOVE instruction for the local read. */
+    bool found_move = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_MOVE) {
+            found_move = true;
+            /* The MOVE copies from slot 0 (x) into a temp. */
+            UASSERT_EQ((uint8_t)0, uinstr_b(c.module.instructions[i]));
+        }
+    }
+    UASSERT(found_move);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_var_redeclare_in_same_scope_is_error) {
+    /* "var x = 1; var x = 2" — second var-decl should fail with
+       EMIT_LOCAL_REDECLARE. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var x = 1; var x = 2");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_LOCAL_REDECLARE, rc);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_unresolved_name_is_error) {
+    /* "ghost" — bare unresolved identifier -> EMIT_UNRESOLVED_NAME */
+    EmitCtx c;
+    emit_ctx_init(&c, "ghost");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_assign_to_existing_local) {
+    /* "var x = 1; x = 42" — should emit cleanly; x still holds 42 after. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var x = 1; x = 42");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    /* Must have a MOVE from the temp into slot 0 for the assignment. */
+    bool found_move_to_zero = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_MOVE
+            && uinstr_a(c.module.instructions[i]) == 0) {
+            found_move_to_zero = true;
+        }
+    }
+    UASSERT(found_move_to_zero);
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_assign_to_unresolved_is_error) {
+    /* "ghost = 7" — assigning to an undeclared name -> EMIT_UNRESOLVED_NAME */
+    EmitCtx c;
+    emit_ctx_init(&c, "ghost = 7");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -866,8 +989,8 @@ void test_emit_suite(void) {
               emit_ast_unary_neg_5_loadk_then_neg_then_ret);
     utest_run("emit AST_ERROR -> EMIT_AST_ERROR",
               emit_ast_error_returns_emit_ast_error);
-    utest_run("emit AST_IDENT -> EMIT_UNSUPPORTED_AST (no globals at M1)",
-              emit_ast_ident_returns_emit_unsupported_ast);
+    utest_run("emit AST_IDENT unresolved name -> EMIT_UNRESOLVED_NAME",
+              emit_ast_ident_unresolved_name_returns_error);
     utest_run("emit first error latches; subsequent statements short-circuit",
               emit_first_error_latches_and_subsequent_statements_short_circuit);
     utest_run("emit EMIT_OOM when constant-pool realloc fails",
@@ -902,4 +1025,16 @@ void test_emit_suite(void) {
               disassemble_module_with_move_instruction_shows_move);
     utest_run("emit syncline: negative overflow triggers new abs_line checkpoint",
               emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint);
+    utest_run("emit var decl: 'var x = 7' no OP_MOVE for local absorption",
+              emit_var_decl_basic_no_op_move);
+    utest_run("emit var then use: 'var x = 7; x + 1' resolves x via OP_MOVE",
+              emit_var_then_use_resolves_local);
+    utest_run("emit var redeclare in same scope is EMIT_LOCAL_REDECLARE",
+              emit_var_redeclare_in_same_scope_is_error);
+    utest_run("emit unresolved name 'ghost' is EMIT_UNRESOLVED_NAME",
+              emit_unresolved_name_is_error);
+    utest_run("emit assign: 'var x = 1; x = 42' emits OP_MOVE to slot 0",
+              emit_assign_to_existing_local);
+    utest_run("emit assign to unresolved name is EMIT_UNRESOLVED_NAME",
+              emit_assign_to_unresolved_is_error);
 }

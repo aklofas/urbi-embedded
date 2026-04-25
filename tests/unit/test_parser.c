@@ -587,6 +587,72 @@ UTEST(parse_syncline_error_at_detection_point) {
     ctx_destroy(&c);
 }
 
+/* --- var-decl and assign parse tests (T10) --- */
+
+UTEST(parse_var_decl_basic) {
+    /* "var x = 7" -> AST_VAR_DECL, name="x", init=AST_INT(7) */
+    ParseCtx c;
+    ctx_init(&c, "var x = 7");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_VAR_DECL, (int)n->kind);
+    UASSERT_EQ(1, n->u.var_decl.name_len);
+    UASSERT_EQ('x', n->u.var_decl.name_start[0]);
+    UASSERT(n->u.var_decl.init != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.var_decl.init->kind);
+    UASSERT_EQ((int64_t)7, n->u.var_decl.init->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_var_decl_requires_init) {
+    /* "var x" (no '=') -> AST_ERROR PARSE_EXPECTED_EQ */
+    ParseCtx c;
+    ctx_init(&c, "var x");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_EQ, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_var_decl_requires_ident) {
+    /* "var = 7" (no name) -> AST_ERROR PARSE_EXPECTED_IDENT */
+    ParseCtx c;
+    ctx_init(&c, "var = 7");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_IDENT, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_assign_basic) {
+    /* "x = 42" -> AST_ASSIGN, name="x", value=AST_INT(42) */
+    ParseCtx c;
+    ctx_init(&c, "x = 42");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ASSIGN, (int)n->kind);
+    UASSERT_EQ(1, n->u.assign.name_len);
+    UASSERT_EQ('x', n->u.assign.name_start[0]);
+    UASSERT(n->u.assign.value != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.assign.value->kind);
+    UASSERT_EQ((int64_t)42, n->u.assign.value->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_ident_not_followed_by_eq_is_expression) {
+    /* "x + 1" should NOT be parsed as an assign — remains AST_BINARY */
+    ParseCtx c;
+    ctx_init(&c, "x + 1");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BINARY, (int)n->kind);
+    UASSERT_EQ((int)BOP_ADD, (int)n->u.binary.op);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.binary.lhs->kind);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -632,4 +698,9 @@ void test_parser_suite(void) {
     utest_run("parse_syncline_binary_points_at_operator", parse_syncline_binary_points_at_operator);
     utest_run("parse_syncline_unary_points_at_sign",      parse_syncline_unary_points_at_sign);
     utest_run("parse_syncline_error_at_detection_point",  parse_syncline_error_at_detection_point);
+    utest_run("parse var decl: basic 'var x = 7'",        parse_var_decl_basic);
+    utest_run("parse var decl: requires initializer",      parse_var_decl_requires_init);
+    utest_run("parse var decl: requires identifier name",  parse_var_decl_requires_ident);
+    utest_run("parse assign: basic 'x = 42'",             parse_assign_basic);
+    utest_run("parse ident-not-assign: 'x + 1' is binary", parse_ident_not_followed_by_eq_is_expression);
 }

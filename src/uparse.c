@@ -144,6 +144,8 @@ static UAstNode *parse_prefix(UParser *p);
 static UAstNode *parse_atom(UParser *p);
 static UAstNode *parse_inner_tier(UParser *p);
 static UAstNode *parse_outer_tier(UParser *p);
+static UAstNode *parse_statement_or_expr(UParser *p);
+static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb). */
@@ -225,6 +227,129 @@ static UAstNode *parse_atom(UParser *p) {
                           kErrorMessages[PARSE_EXPECTED_EXPRESSION],
                           t.line, t.col);
     }
+}
+
+/* --- parse_var_decl: `var x = expr` --- */
+
+static UAstNode *parse_var_decl(UParser *p) {
+    UToken kw = consume(p);          /* consume TOK_KW_VAR */
+    UToken name = peek(p);
+    if (name.type != TOK_IDENT) {
+        return make_error(p, PARSE_EXPECTED_IDENT,
+                          kErrorMessages[PARSE_EXPECTED_IDENT],
+                          name.line, name.col);
+    }
+    consume(p);
+
+    UToken eq = peek(p);
+    if (eq.type != TOK_EQ) {
+        return make_error(p, PARSE_EXPECTED_EQ,
+                          kErrorMessages[PARSE_EXPECTED_EQ],
+                          eq.line, eq.col);
+    }
+    consume(p);
+
+    UAstNode *init = parse_inner_tier(p);
+    if (!init) return NULL;
+    if (init->kind == AST_ERROR) return init;
+
+    UAstNode *node = make_node(p, AST_VAR_DECL, kw.line, kw.col);
+    if (!node) return NULL;
+    node->u.var_decl.name_start = name.u.str.start;
+    node->u.var_decl.name_len   = name.u.str.len;
+    node->u.var_decl.init       = init;
+    return node;
+}
+
+/* --- parse_assign: `x = expr` — IDENT already consumed as `name`. --- */
+
+static UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
+    /* TOK_EQ already peeked/confirmed by caller; consume it. */
+    consume(p);
+
+    UAstNode *value = parse_inner_tier(p);
+    if (!value) return NULL;
+    if (value->kind == AST_ERROR) return value;
+
+    UAstNode *node = make_node(p, AST_ASSIGN, name.line, name.col);
+    if (!node) return NULL;
+    node->u.assign.name_start = name.u.str.start;
+    node->u.assign.name_len   = name.u.str.len;
+    node->u.assign.value      = value;
+    return node;
+}
+
+/* --- parse_statement_or_expr: var-decl, assign, or inner-tier expression.
+   Returns an inner-tier result (arithmetic expression, possibly with
+   | / & separators). Used as the child-entry point for both
+   uparse_next_statement and the outer-tier loop. --- */
+
+static UAstNode *parse_statement_or_expr(UParser *p) {
+    UToken t = peek(p);
+
+    /* var x = expr */
+    if (t.type == TOK_KW_VAR) {
+        return parse_var_decl(p);
+    }
+
+    /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
+       If not TOK_EQ, put the ident back as the LHS and continue with
+       the normal inner-tier path (Pratt climb + pipe/amp loop). */
+    if (t.type == TOK_IDENT) {
+        UToken name = consume(p);
+        if (peek(p).type == TOK_EQ) {
+            return parse_assign_from_ident(p, name);
+        }
+        /* Not assignment: build the ident node and finish the Pratt climb
+           for the arithmetic expression, then hand to the inner-tier
+           pipe/amp separator loop. */
+        UAstNode *lhs = make_ident(p, name.u.str.start, name.u.str.len,
+                                   name.line, name.col);
+        if (!lhs) return NULL;
+        /* Pratt climb with min_prec=1 (ident is already parsed; continue
+           climbing for any trailing arithmetic operators). */
+        for (;;) {
+            UToken op = peek(p);
+            int prec = infix_prec(op.type);
+            if (prec == 0) break;
+            consume(p);
+            UAstNode *rhs = parse_expression(p, prec + 1);
+            if (!rhs) return NULL;
+            if (rhs->kind == AST_ERROR) return rhs;
+            lhs = make_binary(p, infix_binop(op.type), lhs, rhs,
+                              op.line, op.col);
+            if (!lhs) return NULL;
+        }
+        /* Inner-tier pipe/amp separator loop (mirrors parse_inner_tier body). */
+        for (;;) {
+            UToken sep = peek(p);
+            if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
+            consume(p);
+            UAstSeparator s = (sep.type == TOK_PIPE) ? SEP_PIPE : SEP_AMP;
+            bool trail = at_statement_end(p)
+                      || peek(p).type == TOK_SEMI
+                      || peek(p).type == TOK_COMMA
+                      || peek(p).type == TOK_PIPE;
+            if (trail) {
+                if (s == SEP_PIPE) return lhs;
+                return make_error(p, PARSE_TRAILING_AMP,
+                                  kErrorMessages[PARSE_TRAILING_AMP],
+                                  sep.line, sep.col);
+            }
+            UAstNode *rhs = parse_expression(p, 0);
+            if (!rhs) return NULL;
+            if (rhs->kind == AST_ERROR) return rhs;
+            UAstNode *node = make_node(p, AST_BIN_SEP, sep.line, sep.col);
+            if (!node) return NULL;
+            node->u.bin_sep.separator = s;
+            node->u.bin_sep.lhs = lhs;
+            node->u.bin_sep.rhs = rhs;
+            lhs = node;
+        }
+        return lhs;
+    }
+
+    return parse_inner_tier(p);
 }
 
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
@@ -310,7 +435,7 @@ static UAstNode *parse_inner_tier(UParser *p) {
    Trailing `;` or `,` at statement-end is silently dropped.
    Mixing `;` and `,` in the same outer-tier group is an error. */
 static UAstNode *parse_outer_tier(UParser *p) {
-    UAstNode *first = parse_inner_tier(p);
+    UAstNode *first = parse_statement_or_expr(p);
     if (!first) return NULL;
     if (first->kind == AST_ERROR) return first;
 
@@ -334,7 +459,7 @@ static UAstNode *parse_outer_tier(UParser *p) {
     int count = 1;
 
     for (;;) {
-        UAstNode *child = parse_inner_tier(p);
+        UAstNode *child = parse_statement_or_expr(p);
         if (!child) return NULL;
         if (child->kind == AST_ERROR) return child;
 
