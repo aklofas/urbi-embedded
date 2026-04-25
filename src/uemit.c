@@ -233,6 +233,7 @@ static UOpcode binop_to_opcode(const UAstBinaryOp op) {
    Returns 0 and sets e->error on any failure. */
 static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0u;
+    // NOLINTNEXTLINE(clang-diagnostic-switch)
     switch (n->kind) {
     case AST_INT: {
         const uint8_t r = alloc_reg(e);
