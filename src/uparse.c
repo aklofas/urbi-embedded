@@ -30,7 +30,15 @@ static const char * const kErrorNames[] = {
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
-static UAstNode uparser_oom_sentinel = {
+/* Read-only OOM error sentinel returned by parse functions when arena
+ * allocation fails. Declared `static const` to satisfy the per-VM
+ * audit (see tools/audit-globals.sh + pre-M2 multi-VM-audit spec):
+ * functionally immutable, but the public AST API uses `UAstNode *`
+ * (non-const), so callers cast away const at return sites. The cast
+ * is safe because the sentinel is never mutated by anyone — its
+ * contents are inspected only via the const-correct read path
+ * (kind == AST_ERROR && u.err.code == PARSE_OOM). */
+static const UAstNode uparser_oom_sentinel = {
     AST_ERROR,
     0,
     0,
@@ -239,13 +247,13 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
 }
 
 UAstNode *uparse_next_statement(UParser *p) {
-    if (p->arena->oom) return &uparser_oom_sentinel;
+    if (p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
 
     UToken t = peek(p);
     if (t.type == TOK_EOF) return NULL;
 
     UAstNode *expr = parse_expression(p, 0);
-    if (!expr || p->arena->oom) return &uparser_oom_sentinel;
+    if (!expr || p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
 
     if (expr->kind == AST_ERROR) {
         sync_to_statement_boundary(p);
@@ -267,7 +275,7 @@ UAstNode *uparse_next_statement(UParser *p) {
     UAstNode *err = make_error(p, PARSE_UNEXPECTED_TOKEN,
                               kErrorMessages[PARSE_UNEXPECTED_TOKEN],
                               term.line, term.col);
-    if (!err || p->arena->oom) return &uparser_oom_sentinel;
+    if (!err || p->arena->oom) return (UAstNode *)&uparser_oom_sentinel;
     sync_to_statement_boundary(p);
     return err;
 }
