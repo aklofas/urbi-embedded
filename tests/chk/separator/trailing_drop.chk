@@ -1,0 +1,9 @@
+# Milestone: M2
+# Covers: trailing-separator silent-drop rule.
+# Trailing '|' or ';' before REPL boundary (or EOF) is silently dropped.
+
+42 |
+[00000001] 42
+
+99 ;
+[00000002] 99

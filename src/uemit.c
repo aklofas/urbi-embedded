@@ -289,6 +289,54 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         e->error = EMIT_UNSUPPORTED_AST;     /* placeholder until T6 lands */
         return 0u;
     }
+    case AST_NARY: {
+        /* `,` parallel semantics land at M3; emit-time error at M2. */
+        if (n->u.nary.separator == SEP_COMMA) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        /* SEP_SEMI: compile each child; OP_YIELD between children (not
+           before first, not after last); release temp regs between.
+           Last child's result register is the Nary's value. */
+        uint8_t r = 0u;
+        for (int i = 0; i < n->u.nary.count; i++) {
+            if (i > 0) {
+                /* Drop the previous child's result register before yielding. */
+                if (e->next_reg > 0u) e->next_reg--;
+                emit_instr(e, uinstr_enc_abc(OP_YIELD, 0u, 0u, 0u),
+                           e->prev_line);
+                if (e->error != EMIT_OK) return 0u;
+            }
+            r = emit_expr(e, n->u.nary.children[i]);
+            if (e->error != EMIT_OK) return 0u;
+        }
+        return r;
+    }
+    case AST_BIN_SEP: {
+        /* `&` fork/join lands at M3; emit-time error at M2. */
+        if (n->u.bin_sep.separator == SEP_AMP) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        /* SEP_PIPE: lhs then rhs in sequence, no yield.
+           LHS value is discarded; result is rhs. */
+        uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
+        if (e->error != EMIT_OK) return 0u;
+        /* Release lhs register before rhs so rhs may reuse the slot. */
+        (void)lhs_r;
+        if (e->next_reg > 0u) e->next_reg--;
+        uint8_t rhs_r = emit_expr(e, n->u.bin_sep.rhs);
+        return rhs_r;
+    }
+    case AST_NOOP:
+        /* No-op: load nil as the value. */
+        {
+            uint8_t r = alloc_reg(e);
+            if (e->error != EMIT_OK) return 0u;
+            emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0u, 0u),
+                       (uint32_t)n->line);
+            return r;
+        }
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0u;

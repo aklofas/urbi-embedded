@@ -319,35 +319,33 @@ UTEST(parse_trailing_tokens_without_separator_rejected) {
     ctx_destroy(&c);
 }
 
-UTEST(parse_two_statements_with_pipe) {
-    char buf1[32], buf2[32];
+UTEST(parse_pipe_inner_tier_single_statement) {
+    /* '|' is now an inner-tier separator: "1 + 2 | 3 * 4 |" is one statement
+       (AST_BIN_SEP) followed by a trailing '|' that is consumed as the
+       REPL statement-boundary marker, leaving EOF. */
     ParseCtx c;
     ctx_init(&c, "1 + 2 | 3 * 4 |");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    ast_dump(a, buf1, sizeof buf1);
-    UASSERT_STR_EQ(buf1, "(+ 1 2)");
-    UAstNode *b = uparse_next_statement(&c.p);
-    UASSERT(b != NULL);
-    ast_dump(b, buf2, sizeof buf2);
-    UASSERT_STR_EQ(buf2, "(* 3 4)");
+    UASSERT_EQ(a->kind, AST_BIN_SEP);
+    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
+    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_BINARY);
+    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_BINARY);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
 }
 
-UTEST(parse_two_statements_no_final_pipe) {
-    char buf1[32], buf2[32];
+UTEST(parse_pipe_no_trailing_pipe_is_one_stmt) {
+    /* "1 | 2" — inner-tier '|'; one statement AST_BIN_SEP(1, 2). */
     ParseCtx c;
     ctx_init(&c, "1 | 2");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    ast_dump(a, buf1, sizeof buf1);
-    UASSERT_STR_EQ(buf1, "1");
-    UAstNode *b = uparse_next_statement(&c.p);
-    UASSERT(b != NULL);
-    ast_dump(b, buf2, sizeof buf2);
-    UASSERT_STR_EQ(buf2, "2");
+    UASSERT_EQ(a->kind, AST_BIN_SEP);
+    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
+    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_INT);
+    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_INT);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
@@ -613,8 +611,8 @@ void test_parser_suite(void) {
     utest_run("parse_trailing_pipe_optional",       parse_trailing_pipe_optional);
     utest_run("parse_trailing_tokens_without_separator_rejected",
                                                     parse_trailing_tokens_without_separator_rejected);
-    utest_run("parse_two_statements_with_pipe",     parse_two_statements_with_pipe);
-    utest_run("parse_two_statements_no_final_pipe", parse_two_statements_no_final_pipe);
+    utest_run("parse_pipe_inner_tier_single_statement", parse_pipe_inner_tier_single_statement);
+    utest_run("parse_pipe_no_trailing_pipe_is_one_stmt", parse_pipe_no_trailing_pipe_is_one_stmt);
     utest_run("parse_eof_is_idempotent",            parse_eof_is_idempotent);
     utest_run("parse_whitespace_only_is_eof",       parse_whitespace_only_is_eof);
     utest_run("parse_error_unexpected_eof_after_operator",     parse_error_unexpected_eof_after_operator);
