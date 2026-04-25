@@ -563,6 +563,7 @@ dispatch:
             /* T14: heapify open upvalues at registers >= R[A].
              * At T8, no open upvalues exist in the VM (no UClosure yet),
              * so this is a structural no-op. */
+            /* TODO T14: replace this no-op with heapify logic for open upvalues */
             NEXT();
         }
 
