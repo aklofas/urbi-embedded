@@ -2,6 +2,7 @@
 /* Bytecode emitter. */
 
 #include "uemit.h"
+#include "uemit_internal.h"
 #include "uintern.h"
 #include "uvarint.h"
 
@@ -346,6 +347,14 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_CONSTANT_POOL_FULL: return "EMIT_CONSTANT_POOL_FULL";
     case EMIT_LINE_OVERFLOW:      return "EMIT_LINE_OVERFLOW";
     case EMIT_FINISHED:           return "EMIT_FINISHED";
+    case EMIT_UPVAL_EXHAUSTED:    return "EMIT_UPVAL_EXHAUSTED";
+    case EMIT_LOCAL_REDECLARE:    return "EMIT_LOCAL_REDECLARE";
+    case EMIT_UNRESOLVED_NAME:    return "EMIT_UNRESOLVED_NAME";
+    case EMIT_NESTING_TOO_DEEP:   return "EMIT_NESTING_TOO_DEEP";
+    case EMIT_BARE_LAZY_FUNCTION: return "EMIT_BARE_LAZY_FUNCTION";
+    case EMIT_CLOSURE_KEYWORD:    return "EMIT_CLOSURE_KEYWORD";
+    case EMIT_LAZY_ON_METHOD:     return "EMIT_LAZY_ON_METHOD";
+    case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
     }
     return "EMIT_UNKNOWN";
 }
@@ -675,4 +684,65 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     }
 
     return (ptrdiff_t)off;
+}
+
+/* --- M2 UFuncState lifecycle --- */
+
+UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
+    if (e->error != EMIT_OK) return NULL;
+
+    UFuncState *fs = uarena_alloc(e->arena, sizeof(UFuncState));
+    if (fs == NULL) {
+        e->error = EMIT_OOM;
+        return NULL;
+    }
+    /* zero-init via byte-loop — UFuncState is POD */
+    emit_zero(fs, sizeof(UFuncState));
+    fs->parent = parent;
+    fs->target_proto = NULL;            /* T14 wires nested-proto bufs */
+    e->current_fs = fs;
+    return fs;
+}
+
+UFuncState *uemit_close_function(UEmitter *e) {
+    UFuncState *fs = e->current_fs;
+    if (fs == NULL) return NULL;
+    /* T14: roll fs->max_reg_seen into target_proto->max_reg.
+     * At T6, current_fs unwinds to parent; no proto wiring yet. */
+    e->current_fs = fs->parent;
+    return fs;
+}
+
+int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
+    UFuncState *fs = e->current_fs;
+    if (fs == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return -1;
+    }
+    /* Search current block (or whole actvars table at no-block scope) for
+     * duplicate. T7 will use blocks[].first_local_idx; for T6 we just
+     * scan from 0. */
+    int search_from = (fs->nblocks > 0)
+                    ? fs->blocks[fs->nblocks - 1].first_local_idx
+                    : 0;
+    for (int i = search_from; i < fs->nactvar; i++) {
+        if (fs->actvars[i].name == name) {
+            e->error = EMIT_LOCAL_REDECLARE;
+            return -1;
+        }
+    }
+    if (fs->nactvar >= UFS_MAX_LOCALS) {
+        e->error = EMIT_REG_EXHAUSTED;
+        return -1;
+    }
+    ULocalVar *lv = &fs->actvars[fs->nactvar];
+    lv->name = name;
+    lv->name_len = name_len;
+    lv->slot = fs->freereg;
+    lv->is_captured = false;
+    lv->is_lazy = false;
+    fs->nactvar++;
+    fs->freereg++;
+    if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
+    return lv->slot;
 }

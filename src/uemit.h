@@ -26,8 +26,21 @@ typedef enum {
     EMIT_REG_EXHAUSTED,           /* > 255 registers needed — deep expression */
     EMIT_CONSTANT_POOL_FULL,      /* > 65535 constants — Bx overflow */
     EMIT_LINE_OVERFLOW,           /* source line > UINT32_MAX (effectively unreachable) */
-    EMIT_FINISHED                 /* uemit_statement called after uemit_finish */
+    EMIT_FINISHED,                /* uemit_statement called after uemit_finish */
+
+    /* M2 additions */
+    EMIT_UPVAL_EXHAUSTED,         /* > UFS_MAX_UPVALUES captures (T8) */
+    EMIT_LOCAL_REDECLARE,         /* duplicate `var x` in same block */
+    EMIT_UNRESOLVED_NAME,         /* identifier not local/upvalue/global */
+    EMIT_NESTING_TOO_DEEP,        /* > UFS_MAX_BLOCKS or function-nesting cap (T7) */
+    EMIT_BARE_LAZY_FUNCTION,      /* T17: `function name { body }` */
+    EMIT_CLOSURE_KEYWORD,         /* T17: `closure(x){...}` */
+    EMIT_LAZY_ON_METHOD,          /* T16: lazy on method-bound function */
+    EMIT_LAZY_PARAM_ASSIGN        /* T16: assignment to lazy param */
 } UEmitError;
+
+/* Forward declaration for M2 FuncState lifecycle. */
+struct UFuncState;
 
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
@@ -42,6 +55,7 @@ typedef struct UEmitter {
     bool         any_stmt_emitted;/* gates OP_RET at finish */
     bool         finished;
     UEmitError    error;           /* sticky: first error latches */
+    struct UFuncState *current_fs; /* M2: current compilation function */
 } UEmitter;
 
 /* --- API --- */
@@ -62,6 +76,21 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first
    accumulated error, or EMIT_OK. */
 UEmitError uemit_finish(UEmitter *e);
+
+/* Open a new compilation function. At top-level, parent==NULL. Returns
+   NULL on OOM (sets EMIT_OOM). The opened FuncState becomes
+   e->current_fs. */
+struct UFuncState *uemit_open_function(UEmitter *e, struct UFuncState *parent);
+
+/* Close the current function. Pops parent into e->current_fs. Returns
+   the closed FuncState* (still arena-valid; caller may inspect). */
+struct UFuncState *uemit_close_function(UEmitter *e);
+
+/* Declare a local in the current function. name must be interned
+   (canonical pointer; pointer-eq for redeclare detection). Returns the
+   slot index, or -1 on EMIT_LOCAL_REDECLARE / EMIT_REG_EXHAUSTED (sets
+   e->error). */
+int uemit_declare_local(UEmitter *e, const char *name, int name_len);
 
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
