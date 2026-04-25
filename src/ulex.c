@@ -5,14 +5,14 @@
 
 #include <limits.h>
 
-static const char *TOKEN_NAMES[] = {
+static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
     "TOK_LPAREN", "TOK_RPAREN", "TOK_PIPE",
     "TOK_ERROR"
 };
 
-static const char *ERR_MSG[] = {
+static const char * const ERR_MSG[] = {
     "ok",
     "unknown character",
     "unterminated block comment",

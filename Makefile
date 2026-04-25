@@ -239,12 +239,15 @@ compile_commands.json:
 # Static analysis — clang-tidy gating via run-clang-tidy.
 # Fails on any clang-tidy warning (-warnings-as-errors='*').
 # Check list is configured in .clang-tidy; CLI flag promotes warnings to errors.
+# Scoped to src/*.c only — host-side code under tools/*.c (REPL binary) is not
+# subject to the no-globals invariant; signal handlers cannot accept userdata
+# pointers, and process-lifetime REPL state has no UVM scope.
 tidy: compile_commands.json
-	run-clang-tidy -p . -j $$(nproc) -warnings-as-errors='*' -quiet $(SRC) tools/urbi.c
+	run-clang-tidy -p . -j $$(nproc) -warnings-as-errors='*' -quiet $(SRC)
 
 # Local convenience: run clang-tidy with --fix.  Not invoked by CI.
 tidy-fix: compile_commands.json
-	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC) tools/urbi.c
+	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
 
 # Static analysis — cppcheck (advisory).
 # Different engine from clang-tidy; catches value-flow, UAF, null-deref
