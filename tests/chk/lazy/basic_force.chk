@@ -1,0 +1,12 @@
+# Milestone: M2
+# Covers: lazy parameter declaration; implicit force on read; lazy arg wraps
+#         expression in zero-arg closure at call site; result is the
+#         expression's value when forced; double-read forces expression twice.
+
+# --- single force: literal arg
+var f = function(lazy x) { x }; f(42)
+[00000001] 42
+
+# --- double force: x+x forces the thunk twice (7+7=14)
+var g = function(lazy x) { x + x }; g(7)
+[00000002] 14

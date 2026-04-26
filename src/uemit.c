@@ -368,6 +368,91 @@ static UOpcode binop_to_opcode(const UAstBinaryOp op) {
     return OP_ADD;
 }
 
+/* Forward declaration (emit_lazy_thunk calls emit_expr). */
+static uint8_t emit_expr(UEmitter *e, UAstNode *n);
+
+/* T16: Compile `expr` as a zero-arg closure (lazy thunk).
+ * Builds a synthetic AST_FUNCTION wrapping `expr` in a single-statement
+ * body, then recurses into the AST_FUNCTION emit arm.  The result register
+ * holds a UVAL_CLOSURE.  Upvalue capture falls out naturally from the
+ * recursive AST_FUNCTION emit (the upvalue cascade walks parent FuncStates
+ * to find any names `expr` references).
+ *
+ * Pass-through optimization: if `expr` is AST_IDENT that resolves to a
+ * lazy local in the current scope, skip re-wrapping and emit a plain
+ * OP_MOVE of that slot.  This keeps thunk identity stable across
+ * pass-through layers (avoiding thunk-of-a-thunk double-forcing). */
+static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
+    /* Pass-through shortcut: lazy local used as lazy arg — pass the closure
+     * register directly without re-wrapping.  Check BEFORE setting
+     * lazy_arg_context (which would suppress the is_lazy check in
+     * emit_expr/AST_IDENT). */
+    if (expr->kind == AST_IDENT && e->vm != NULL && e->current_fs != NULL) {
+        const char *canonical = ustr_intern(e->vm, expr->u.ident.start,
+                                            (size_t)expr->u.ident.len);
+        if (canonical != NULL) {
+            UFuncState *fs = e->current_fs;
+            for (int i = fs->nactvar - 1; i >= 0; i--) {
+                if (fs->actvars[i].name == canonical && fs->actvars[i].is_lazy) {
+                    /* Found a lazy local — emit OP_MOVE of its slot directly.
+                     * No force, no re-wrap. */
+                    uint8_t dst = e->next_reg;
+                    if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                        e->error = EMIT_REG_EXHAUSTED;
+                        return 0u;
+                    }
+                    emit_instr(e, uinstr_enc_abc(OP_MOVE, dst,
+                                                 fs->actvars[i].slot, 0u),
+                               (uint32_t)expr->line);
+                    e->next_reg++;
+                    if (e->next_reg > e->max_reg_seen)
+                        e->max_reg_seen = e->next_reg;
+                    if (e->next_reg > fs->max_reg_seen)
+                        fs->max_reg_seen = e->next_reg;
+                    return dst;
+                }
+                /* Stop if we found the name but it's not lazy (normal local). */
+                if (fs->actvars[i].name == canonical) break;
+            }
+        }
+    }
+
+    /* General case: build a synthetic AST_FUNCTION wrapping `expr`.
+     * Stack-allocate the synthetic nodes — they are used only within this
+     * call frame and must NOT be allocated from e->arena because the arena
+     * may have been reset between statements (the UFuncState and other
+     * persistent emitter state also live in the arena; overwriting them
+     * would corrupt the compiler state). */
+    UAstNode *stmts_arr[1];
+    stmts_arr[0] = expr;
+
+    UAstNode body_node;
+    emit_zero(&body_node, sizeof(body_node));
+    body_node.kind             = AST_BLOCK;
+    body_node.line             = expr->line;
+    body_node.col              = expr->col;
+    body_node.u.block.stmts   = stmts_arr;
+    body_node.u.block.count   = 1;
+
+    UAstNode fn_node;
+    emit_zero(&fn_node, sizeof(fn_node));
+    fn_node.kind              = AST_FUNCTION;
+    fn_node.line              = expr->line;
+    fn_node.col               = expr->col;
+    fn_node.u.func.params     = NULL;
+    fn_node.u.func.param_count = 0;
+    fn_node.u.func.body       = &body_node;
+
+    /* Recurse into AST_FUNCTION emit.  lazy_arg_context must be clear
+     * during this call so that any lazy-local reads *inside* the thunk
+     * body emit implicit force (they are reads, not arg passes). */
+    bool saved_ctx = e->lazy_arg_context;
+    e->lazy_arg_context = false;
+    uint8_t dst = emit_expr(e, &fn_node);
+    e->lazy_arg_context = saved_ctx;
+    return dst;
+}
+
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure. */
 static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
@@ -422,9 +507,11 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         /* Local lookup — scan active locals from innermost to outermost. */
         UFuncState *fs = e->current_fs;
         int slot = -1;
+        bool is_lazy_local = false;
         for (int i = fs->nactvar - 1; i >= 0; i--) {
             if (fs->actvars[i].name == canonical) {
                 slot = (int)fs->actvars[i].slot;
+                is_lazy_local = fs->actvars[i].is_lazy;
                 break;
             }
         }
@@ -439,6 +526,16 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->next_reg++;
             if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
             if (e->next_reg > fs->max_reg_seen) fs->max_reg_seen = e->next_reg;
+
+            /* T16: implicit force for lazy locals (spec §4.1).
+             * Skip when lazy_arg_context is set — caller is passing this
+             * value as a call argument (pass-through, spec §4.2). */
+            if (is_lazy_local && !e->lazy_arg_context) {
+                /* dst currently holds the thunk closure.  Force it:
+                 * OP_CALL dst, 1, 2 — zero args, 1 result, result in dst. */
+                emit_instr(e, uinstr_enc_abc(OP_CALL, dst, 1u, 2u),
+                           (uint32_t)n->line);
+            }
             return dst;
         }
 
@@ -506,12 +603,29 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Absorb the temp into the local zone: register at reg_before is
            now the local's permanent slot. Do NOT free the register. */
+        int local_idx = fs->nactvar;
         ULocalVar *lv = &fs->actvars[fs->nactvar++];
         lv->name       = canonical;
         lv->name_len   = n->u.var_decl.name_len;
         lv->slot       = reg_before;
         lv->is_captured = false;
         lv->is_lazy    = false;
+
+        /* T16: if init is a literal function, record its lazy-param signature
+         * so the call-site emit can wrap args correctly (spec §2.2). */
+        if (n->u.var_decl.init->kind == AST_FUNCTION) {
+            UAstNode *fn = n->u.var_decl.init;
+            UFuncSig *sig = &fs->actvar_sigs[local_idx];
+            sig->resolved = true;
+            sig->nparams = fn->u.func.param_count;
+            {
+                int pi;
+                for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
+                    sig->param_is_lazy[pi] =
+                        (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                }
+            }
+        }
 
         /* Sync freereg: it now equals e->next_reg (one past the local's slot).
            The local occupies [reg_before]; e->next_reg is already reg_before+1. */
@@ -538,6 +652,11 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         int local_slot = -1;
         for (int i = fs->nactvar - 1; i >= 0; i--) {
             if (fs->actvars[i].name == canonical) {
+                /* T16: reject assignment to lazy parameter (spec §4.5). */
+                if (fs->actvars[i].is_lazy) {
+                    e->error = EMIT_LAZY_PARAM_ASSIGN;
+                    return 0u;
+                }
                 local_slot = (int)fs->actvars[i].slot;
                 break;
             }
@@ -936,6 +1055,28 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0u;
         }
+
+        /* T16: Look up callee's function signature when the callee is a
+         * statically-visible local declared with a function literal.
+         * Used below to decide whether to wrap each arg as a lazy thunk. */
+        UFuncSig *call_sig = NULL;
+        if (n->u.call.callee->kind == AST_IDENT && e->vm != NULL) {
+            const char *cn = ustr_intern(e->vm,
+                                         n->u.call.callee->u.ident.start,
+                                         (size_t)n->u.call.callee->u.ident.len);
+            if (cn != NULL) {
+                UFuncState *fs = e->current_fs;
+                for (int i = fs->nactvar - 1; i >= 0; i--) {
+                    if (fs->actvars[i].name == cn) {
+                        if (fs->actvar_sigs[i].resolved) {
+                            call_sig = &fs->actvar_sigs[i];
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         uint8_t callee_reg = e->next_reg;
         uint8_t callee_r   = emit_expr(e, n->u.call.callee);
         if (e->error != EMIT_OK) return 0u;
@@ -945,11 +1086,43 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0u),
                        (uint32_t)n->line);
         }
-        /* Emit each argument into consecutive registers after callee_reg. */
+
+        /* Sync freereg up to next_reg before the arg loop.  When the callee
+         * was a local (OP_MOVE, using next_reg-based allocation), freereg
+         * still points at the local zone boundary and is behind next_reg.
+         * emit_lazy_thunk → AST_FUNCTION emit uses freereg (not next_reg) as
+         * the OP_CLOSURE destination, so without this sync it would clobber
+         * the callee's register. */
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+
+        /* Emit each argument.  For lazy positions, wrap in a thunk.
+         * For all args (lazy or eager), set lazy_arg_context so that
+         * any lazy-local reads inside the arg expression use pass-through
+         * semantics (spec §4.2). */
         {
             int ai;
+            bool saved_ctx = e->lazy_arg_context;
             for (ai = 0; ai < n->u.call.arg_count; ai++) {
-                uint8_t arg_r = emit_expr(e, n->u.call.args[ai]);
+                bool param_lazy = (call_sig != NULL &&
+                                   ai < call_sig->nparams &&
+                                   call_sig->param_is_lazy[ai]);
+                /* Pass-through context: suppress implicit force on lazy-local
+                 * reads appearing directly as call arguments. */
+                e->lazy_arg_context = true;
+                uint8_t arg_r;
+                if (param_lazy) {
+                    /* Sync freereg to next_reg before the thunk emit so
+                     * AST_FUNCTION's OP_CLOSURE destination (taken from
+                     * freereg) doesn't clobber an already-allocated arg. */
+                    if (e->current_fs->freereg < e->next_reg)
+                        e->current_fs->freereg = e->next_reg;
+                    /* Lazy position: compile arg as zero-arg thunk. */
+                    arg_r = emit_lazy_thunk(e, n->u.call.args[ai]);
+                } else {
+                    arg_r = emit_expr(e, n->u.call.args[ai]);
+                }
+                e->lazy_arg_context = saved_ctx;
                 if (e->error != EMIT_OK) return 0u;
                 uint8_t expected = callee_reg + 1u + (uint8_t)ai;
                 if (arg_r != expected) {
@@ -958,6 +1131,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                 }
             }
         }
+
         /* OP_CALL callee_reg, nargs+1, 2 (1 result expected). */
         uint8_t b = (uint8_t)(n->u.call.arg_count + 1);
         emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, 2u),
@@ -1030,6 +1204,14 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         }
         child_proto->nparams = (uint8_t)n->u.func.param_count;
 
+        /* Sync the flat register cursor to the child's freereg so temps
+         * inside the function body are allocated above all param slots.
+         * Without this, a lazy-param force that allocates a temp via
+         * next_reg could pick a register that overlaps a param (e.g.,
+         * MOVE R0, R0 → CALL R0 overwrites the thunk with its result,
+         * breaking subsequent reads of the same lazy param). */
+        e->next_reg = child_fs->freereg;
+
         /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto.
          *    Save the result register the block returns. */
         uint8_t body_reg = emit_expr(e, n->u.func.body);
@@ -1086,6 +1268,16 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             return dst;
         }
     }
+    case AST_LOCAL_REF:
+    case AST_PARAM:
+    case AST_LAZY_PARAM:
+        /* These nodes are produced by the parser/emitter internally; they
+         * are consumed before emit_expr is called (AST_PARAM/AST_LAZY_PARAM
+         * are visited in the AST_FUNCTION arm; AST_LOCAL_REF is handled as
+         * an optimised AST_IDENT).  Reaching this arm means a malformed
+         * AST — treat as unsupported. */
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0u;
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0u;

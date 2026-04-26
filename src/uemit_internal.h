@@ -59,6 +59,15 @@ typedef struct {
                                         continue (M2.5; reserved) */
 } UBlockCtx;
 
+/* Per-local function-signature metadata (T16: lazy parameter tracking).
+ * Populated when a var-decl init is a literal AST_FUNCTION; stays
+ * resolved=false for all other binding forms. */
+typedef struct {
+    int  nparams;
+    bool param_is_lazy[16];      /* per-param flag; cap 16 */
+    bool resolved;               /* false if local doesn't hold a known function */
+} UFuncSig;
+
 /* Per-function compiler state. Arena-allocated by uemit_open_function;
  * destroyed implicitly by arena reset. */
 typedef struct UFuncState {
@@ -71,6 +80,10 @@ typedef struct UFuncState {
 
     /* Lexical-local stack (LIFO; pushed by uemit_declare_local). */
     ULocalVar actvars[UFS_MAX_LOCALS];
+
+    /* Per-local function-signature metadata (T16). Parallel to actvars[].
+     * Populated when var-decl init is a literal AST_FUNCTION. */
+    UFuncSig actvar_sigs[UFS_MAX_LOCALS];
 
     /* Upvalue descriptors (T8 populates). */
     UUpvalDesc upvalues[UFS_MAX_UPVALUES];

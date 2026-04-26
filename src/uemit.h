@@ -54,6 +54,9 @@ typedef struct UEmitter {
     uint32_t     prev_line;       /* last emitted instruction's source line */
     bool         any_stmt_emitted;/* gates OP_RET at finish */
     bool         finished;
+    bool         lazy_arg_context; /* T16: set while emitting args in AST_CALL;
+                                      suppresses implicit force on lazy-local reads
+                                      (pass-through semantics, spec §4.2) */
     UEmitError    error;           /* sticky: first error latches */
     struct UFuncState *current_fs; /* M2: current compilation function */
 } UEmitter;
