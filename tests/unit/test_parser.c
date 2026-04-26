@@ -837,6 +837,38 @@ UTEST(parse_while_no_paren_is_error) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_bare_function_no_name_errors) {
+    ParseCtx c;
+    ctx_init(&c, "function { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_BARE_FUNCTION, (int)n->u.err.code);
+    UASSERT(strstr(n->u.err.message, "add empty parens") != NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_bare_function_with_name_errors) {
+    ParseCtx c;
+    ctx_init(&c, "function foo { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_BARE_FUNCTION, (int)n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_closure_keyword_errors) {
+    ParseCtx c;
+    ctx_init(&c, "closure(x) { x + 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_CLOSURE_KEYWORD, (int)n->u.err.code);
+    UASSERT(strstr(n->u.err.message, "MIGRATION TRAP") != NULL);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -907,4 +939,10 @@ void test_parser_suite(void) {
               parse_while_basic);
     utest_run("parse: while without '(' is PARSE_EXPECTED_LPAREN",
               parse_while_no_paren_is_error);
+    utest_run("parse: bare function 'function { 1 }' is PARSE_BARE_FUNCTION error",
+              parse_bare_function_no_name_errors);
+    utest_run("parse: bare function 'function foo { 1 }' is PARSE_BARE_FUNCTION error",
+              parse_bare_function_with_name_errors);
+    utest_run("parse: 'closure(x) { x + 1 }' is PARSE_CLOSURE_KEYWORD error",
+              parse_closure_keyword_errors);
 }

@@ -26,11 +26,11 @@ var f = function(x) { x * 2 }
 
 # --- bare function form rejected
 function foo { 1 }
-[00000006] !!! <stdin>:1:10: bare function form 'function name { body }' is retired at v1.0; use 'function name() { body }'
+[00000006] !!! <stdin>:1:10: bare 'function name { body }' is retired at v1.0; use 'function name() { body }' (add empty parens). Per REVIVAL §14 L13
 
 # --- closure keyword rejected
 closure(x) { x }
-[00000007] !!! <stdin>:1:1: the 'closure' keyword is retired at v1.0; use 'function' instead
+[00000007] !!! <stdin>:1:1: the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. See REVIVAL §14 L14 for 'lobby.receive' rebind pattern
 
 # --- REPL recovers after error
 42

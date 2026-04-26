@@ -20,8 +20,8 @@ static const char * const kErrorMessages[] = {
     "expected identifier",
     "expected '='",
     "expected ';', '|', or end of statement",
-    "bare function form 'function name { body }' is retired at v1.0; use 'function name() { body }'",
-    "the 'closure' keyword is retired at v1.0; use 'function' instead",
+    "bare 'function { body }' is retired at v1.0; use 'function() { body }' (add parens)",
+    "the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. See REVIVAL §14 L14",
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
     "lazy parameter cannot have a default value"
@@ -284,7 +284,9 @@ static UAstNode *parse_atom(UParser *p) {
     case TOK_KW_CLOSURE:
         consume(p);
         return make_error(p, PARSE_CLOSURE_KEYWORD,
-                          kErrorMessages[PARSE_CLOSURE_KEYWORD],
+                          "the 'closure' keyword is retired at v1.0; use 'function' instead. "
+                          "MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. "
+                          "See REVIVAL §14 L14 for 'lobby.receive' rebind pattern",
                           t.line, t.col);
     case TOK_EOF:
         return make_error(p, PARSE_UNEXPECTED_EOF,
@@ -750,7 +752,10 @@ static UAstNode *parse_function(UParser *p) {
         UToken next = peek(p);
         if (next.type == TOK_LBRACE) {
             return make_error(p, PARSE_BARE_FUNCTION,
-                              kErrorMessages[PARSE_BARE_FUNCTION],
+                              "bare 'function { body }' is retired at v1.0; "
+                              "use 'function() { body }' (add empty parens). "
+                              "Per REVIVAL §14 L13: legacy bare functions ambiguously meant "
+                              "either 0-arg or no-formals — v1.0 requires explicit parens",
                               next.line, next.col);
         }
         if (next.type == TOK_IDENT) {
@@ -762,7 +767,9 @@ static UAstNode *parse_function(UParser *p) {
             UToken name_tok = consume(p);
             if (peek(p).type == TOK_LBRACE) {
                 return make_error(p, PARSE_BARE_FUNCTION,
-                                  kErrorMessages[PARSE_BARE_FUNCTION],
+                                  "bare 'function name { body }' is retired at v1.0; "
+                                  "use 'function name() { body }' (add empty parens). "
+                                  "Per REVIVAL §14 L13",
                                   name_tok.line, name_tok.col);
             }
             /* IDENT followed by '(' — treat as named function (name stored but

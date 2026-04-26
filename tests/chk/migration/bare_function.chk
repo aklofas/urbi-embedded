@@ -1,0 +1,9 @@
+# Milestone: M2
+# Covers: migration error for bare function form (no parens)
+
+function foo { 1 }
+[00000001] !!! <stdin>:1:10: bare 'function name { body }' is retired at v1.0; use 'function name() { body }' (add empty parens). Per REVIVAL §14 L13
+
+# Recovery: REPL continues after error
+42
+[00000002] 42
