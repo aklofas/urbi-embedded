@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 #ifndef URBI_FLOAT_TYPE
-#define URBI_FLOAT_TYPE 8         /* 8 = f64, 4 = f32; overridden per target at M6 */
+#define URBI_FLOAT_TYPE 8         /* 8 = f64, 4 = f32; overridden per target at M7 */
 #endif
 
 #ifndef URBI_INSTR_WIDTH
@@ -184,7 +184,7 @@ typedef struct UUpvalCell {
 } UUpvalCell;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
- * Heap-allocated by OP_CLOSURE; lives until GC (M5).  The upvals[]
+ * Heap-allocated by OP_CLOSURE; lives until GC (M3).  The upvals[]
  * array is a trailing flexible member — allocate sizeof(UClosure) +
  * nupvals * sizeof(UUpvalCell*).
  * `next_alloc` threads all closures allocated in one uvm_run() into a

@@ -135,7 +135,7 @@ Number (abstract supertype prototype)
 
 ### 1.7 Consequence for the `.chk` corpus
 
-Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x conformance corpus that assert `.isA(Float)` on integer literals (`3`, `100`) will fail against v1.0. Expected porting work is 1–2 days at M5: type-assertion sites get updated to `.isA(Integer)` or `.isA(Number)` as appropriate. Value-level assertions (`assert(1 + 2 == 3)`) pass unchanged — the number system changes what things *are*, not what they *equal*.
+Legacy urbi 2.x was Lua-5.0-shaped — one Float type. Tests in the legacy 2.x conformance corpus that assert `.isA(Float)` on integer literals (`3`, `100`) will fail against v1.0. Expected porting work is 1–2 days at M6: type-assertion sites get updated to `.isA(Integer)` or `.isA(Number)` as appropriate. Value-level assertions (`assert(1 + 2 == 3)`) pass unchanged — the number system changes what things *are*, not what they *equal*.
 
 ---
 
@@ -443,7 +443,7 @@ The discipline is a long-term commitment. The v1 payoff is small (a slightly sma
 
 Don't write aux functions speculatively. Each aux function waits for a real call site in a real consumer (the REPL, the micro-ROS bridge, the stdlib) to motivate it. The target of "~40–60 by v1.x" is a projection of what the observed call-site pressure looks like; it is not a budget to fill.
 
-First aux functions land during M6 when the C API milestone forces them. Empty `urbi_aux.h` at M1 is correct.
+First aux functions land during M7 when the C API milestone forces them. Empty `urbi_aux.h` at M1 is correct.
 
 ---
 
