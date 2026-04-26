@@ -1,6 +1,58 @@
 # Changelog
 
-## Unreleased
+## v0.2.0-expressions — 2026-04-25
+
+The M2 expressions milestone. Adds the full expression language surface
+above the M1 arithmetic core: variables, closures, control flow, function
+definitions and calls, per-parameter lazy arguments, statement separators,
+and multi-VM hardening. Bytecode bumped to v1.1; earlier `.urb` files are
+rejected at load time.
+
+### Language
+
+- Bytecode v1.1: version byte incremented; loader rejects v1.0 modules
+  with a diagnostic. Reserved opcode slots assigned for all M2 additions.
+- Per-VM string interning table (`ustr_intern`): strings are canonical;
+  pointer equality implies content equality within a VM.
+- Lua-FuncState-adapted register allocator with named locals, lexical
+  block scopes, and cascading upvalue capture across arbitrarily nested
+  function definitions.
+- Statement separators: `;` (sequential with yield) and `|` (sequential
+  atomic) ship full runtime semantics. `,` (parallel fire-and-forget) and
+  `&` (parallel join) are parsed and represented in the AST; runtime is
+  deferred to M3.
+- Per-parameter `lazy` keyword: `function f(lazy x) { ... }` compiles
+  the argument to a sub-proto thunk; the callee's first read of `x`
+  forces evaluation implicitly.
+- Control flow: `if` / `else` with proper short-circuit jumps; `while`
+  with back-edge `OP_CLOSE` for closure-in-loop correctness.
+- Function definitions, calls, and `return`.
+- Comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`).
+- Boolean and nil literals (`true`, `false`, `nil`).
+
+### Multi-VM hardening
+
+- Per-VM `intern_table` and `topology_gen` fields on `UVM`; no
+  file-scope mutable state remains.
+- `UModule` gains `origin_vm` field; stamped at compile time, checked at
+  load time.
+- 8-case isolation test matrix in `tests/unit/test_multi_vm.c`
+  (3 cases deferred to M3+/M4+/M5+).
+- `tools/audit-globals.sh` + `cppcoreguidelines-avoid-non-const-global-variables`
+  clang-tidy check gated under `make lint`.
+
+### Migration notes
+
+- `bare function name { body }` → `function name() { body }`.
+  The bare-function form (no formal parameter list) now produces
+  `PARSE_BARE_FUNCTION` at parse time. The migration recipe is mechanical.
+- `closure(x) { ... }` → `function(x) { ... }`.
+  The `closure` keyword is retired; `function` captures lexical scope
+  universally. Note the `this`-binding migration trap: legacy `closure`
+  bound `this` to the definition site; v1.0 `function` binds `this` to
+  the call site. Affected pattern: `var obj.m = closure(t) { this.f(t) }`.
+  Migration recipe: capture the receiver explicitly before the closure:
+  `var self = this; var obj.m = function(t) { self.f(t) }`.
 
 ### Build (infra)
 
