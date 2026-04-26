@@ -1158,6 +1158,61 @@ UTEST(emit_while_with_assign) {
     emit_ctx_destroy(&c);
 }
 
+UTEST(disassemble_call_format) {
+    /* Hand-build a module with one OP_CALL R0, B=3, C=2 instruction.
+     * B=3 → 2 args (B-1); C=2 → 1 result (C-1).
+     * Assert disassembly contains "CALL R0, 2 args, 1 results". */
+    UModule m = {0};
+    m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    m.instr_cap   = 1;
+    m.instr_count = 1;
+    m.instructions[0] = uinstr_enc_abc(OP_CALL, 0u, 3u, 2u);
+
+    char buf[256];
+    size_t n = uemit_disassemble(&m, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "CALL R0, 2 args, 1 results") != NULL);
+    umodule_destroy(&m);
+}
+
+UTEST(disassemble_jmp_signed_offset) {
+    /* Hand-build a module with one OP_JMP, Bx=32760.
+     * Signed offset = 32760 - 32768 = -8.
+     * Assert disassembly contains "JMP -8". */
+    UModule m = {0};
+    m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    m.instr_cap   = 1;
+    m.instr_count = 1;
+    m.instructions[0] = uinstr_enc_abx(OP_JMP, 0u, (uint16_t)32760u);
+
+    char buf[256];
+    size_t n = uemit_disassemble(&m, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "JMP -8") != NULL);
+    umodule_destroy(&m);
+}
+
+UTEST(disassemble_closure_with_prelude) {
+    /* Compile "var x = 1; var y = 2; function() { x + y }" through the
+     * parse+emit pipeline.  The inner function captures x and y as two
+     * upvalues, so the root chunk gets OP_CLOSURE + 2 upvalue-prelude
+     * pseudo-instructions.  Assert both upval lines appear in the
+     * disassembly. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var x = 1; var y = 2; function() { x + y }");
+    UEmitError rc = emit_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, rc);
+    UASSERT(c.module.nested_count >= 1u);
+    UASSERT(c.module.nested[0]->nupvals == 2u);
+
+    char buf[1024];
+    size_t n = uemit_disassemble(&c.module, buf, sizeof buf);
+    UASSERT(n > 0);
+    UASSERT(strstr(buf, "upval[0]:") != NULL);
+    UASSERT(strstr(buf, "upval[1]:") != NULL);
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1247,4 +1302,10 @@ void test_emit_suite(void) {
               emit_while_basic);
     utest_run("emit: while (n < 3) { n = n + 1 } compiles with back-edge JMP",
               emit_while_with_assign);
+    utest_run("disassemble: CALL R0, 2 args, 1 results format",
+              disassemble_call_format);
+    utest_run("disassemble: JMP with Bx=32760 shows signed offset -8",
+              disassemble_jmp_signed_offset);
+    utest_run("disassemble: CLOSURE with 2 upvals prints both upval lines",
+              disassemble_closure_with_prelude);
 }
