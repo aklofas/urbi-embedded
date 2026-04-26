@@ -33,12 +33,14 @@ extern "C" {
 /* --- tagged value shape shared between pool and runtime registers --- */
 
 typedef enum {
-    UVAL_NIL   = 0,
-    UVAL_INT   = 1,
-    UVAL_FLOAT = 2,
-    UVAL_BOOL  = 3,
-    UVAL_STR   = 4
-    /* 5-15 reserved; loader rejects > UVAL_STR at v1.0 */
+    UVAL_NIL     = 0,
+    UVAL_INT     = 1,
+    UVAL_FLOAT   = 2,
+    UVAL_BOOL    = 3,
+    UVAL_STR     = 4,
+    UVAL_CLOSURE = 5,             /* M2: function closure (proto + upvalues); runtime-only */
+    UVAL_VOID    = 6              /* M2: result of `&` separator; runtime-only */
+    /* 7-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
 } UValKind;
 
 typedef struct {
@@ -51,20 +53,53 @@ typedef struct {
 #else
         float   f;
 #endif
+        void   *p;                /* UVAL_CLOSURE: pointer to UClosure (T14) */
     } v;
 } UValue;                         /* 16 bytes */
 
 /* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
 
 typedef enum {
-    OP_LOADK = 0,                 /* ABx:  R[A] := K[Bx]           */
-    OP_MOVE  = 1,                 /* ABC:  R[A] := R[B]            */
-    OP_ADD   = 2,                 /* ABC:  R[A] := R[B] + R[C]     */
-    OP_SUB   = 3,                 /* ABC:  R[A] := R[B] - R[C]     */
-    OP_MUL   = 4,                 /* ABC:  R[A] := R[B] * R[C]     */
-    OP_DIV   = 5,                 /* ABC:  R[A] := R[B] / R[C]     */
-    OP_NEG   = 6,                 /* ABC:  R[A] := -R[B]  (C=0)    */
-    OP_RET   = 7,                 /* ABC:  return R[A]    (B=C=0)  */
+    OP_LOADK = 0,                 /* ABx:  R[A] := K[Bx]                 */
+    OP_MOVE  = 1,                 /* ABC:  R[A] := R[B]                  */
+    OP_ADD   = 2,                 /* ABC:  R[A] := R[B] + R[C]           */
+    OP_SUB   = 3,                 /* ABC:  R[A] := R[B] - R[C]           */
+    OP_MUL   = 4,                 /* ABC:  R[A] := R[B] * R[C]           */
+    OP_DIV   = 5,                 /* ABC:  R[A] := R[B] / R[C]           */
+    OP_NEG   = 6,                 /* ABC:  R[A] := -R[B]    (C=0)        */
+    OP_RET   = 7,                 /* ABC:  return R[A]      (B=C=0)      */
+
+    /* --- M2 additions (v1.1 bytecode) --- */
+    OP_LOADNIL  = 8,              /* ABC:  R[A] := nil                       */
+    OP_LOADBOOL = 9,              /* ABC:  R[A] := (B != 0); if C, pc++      */
+    OP_LOADVOID = 10,             /* ABC:  R[A] := void   (& separator)      */
+    OP_GETUPVAL = 11,             /* ABC:  R[A] := upvalue[B]                */
+    OP_SETUPVAL = 12,             /* ABC:  upvalue[B] := R[A]                */
+    OP_CLOSURE  = 13,             /* ABx:  R[A] := closure(proto[Bx]) +
+                                     reads NUP "pseudo-instructions" of
+                                     upvalue descriptors immediately
+                                     following (Lua-5.5 prelude pattern) */
+    OP_CLOSE    = 14,             /* ABC:  close upvalues for R >= R[A]      */
+    OP_CALL     = 15,             /* ABC:  R[A], ..., R[A+C-2] :=
+                                     R[A](R[A+1], ..., R[A+B-1])
+                                     B = nargs+1, C = nresults+1            */
+    OP_JMP      = 16,             /* ABx:  pc += signed(Bx) - 32768          */
+    OP_TEST     = 17,             /* ABC:  if (truthy(R[A]) == C) pc++       */
+    OP_TESTSET  = 18,             /* ABC:  if (truthy(R[B]) == C) pc++
+                                     else R[A] := R[B]                       */
+    OP_EQ       = 19,             /* ABC:  if ((R[B]==R[C]) != A) pc++       */
+    OP_NEQ      = 20,             /* ABC:  if ((R[B]!=R[C]) != A) pc++       */
+    OP_LT       = 21,             /* ABC:  if ((R[B]<R[C])  != A) pc++       */
+    OP_LE       = 22,             /* ABC:  if ((R[B]<=R[C]) != A) pc++       */
+    OP_YIELD    = 23,             /* ABC:  yield to scheduler (no-op M2)     */
+
+    /* --- Reserved (emit-time error EMIT_UNSUPPORTED_AST at M2) --- */
+    OP_FORK_DETACH = 24,          /* M3 — `,` separator runtime              */
+    OP_FORK_JOIN   = 25,          /* M3 — `&` separator runtime              */
+    OP_JOIN_WAIT   = 26,          /* M3 — `&` join-point                     */
+    OP_GETSLOT     = 27,          /* M4 — slot read with IC                  */
+    OP_SETSLOT     = 28,          /* M4 — slot write with IC                 */
+
     OP_MAX
 } UOpcode;
 
@@ -105,6 +140,62 @@ typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr == NULL && nbytes == 0 : no-op; return NULL.
  * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
+/* --- UProto: nested function prototype (used for function definitions). ---
+ * A UProto holds the bytecode, constants, and line info for one nested
+ * function body.  The root chunk lives directly in UModule; nested
+ * functions each get a heap-allocated UProto stored in UModule.nested[]. */
+
+typedef struct UProto {
+    uint32_t  *instructions;
+    size_t     instr_count;
+    size_t     instr_cap;
+
+    UValue    *constants;
+    size_t     const_count;
+    size_t     const_cap;
+
+    int8_t    *line_deltas;
+
+    UAbsLine  *abs_lines;
+    size_t     abs_line_count;
+    size_t     abs_line_cap;
+
+    uint8_t    max_reg;
+    uint8_t    nupvals;          /* count of upvalues captured by this proto */
+    uint8_t    nparams;          /* count of formal parameters */
+
+    /* Allocator hook inherited from the owning module. */
+    UModuleAllocFn alloc_fn;
+    void          *alloc_ud;
+} UProto;
+
+/* --- UUpvalCell: runtime heap cell for captured locals.
+ * When a closure captures a local that is still live on a call frame
+ * stack, the cell points into the register window (on_heap=false).
+ * When the scope exits (OP_CLOSE), the value is copied into the cell
+ * itself and on_heap is set to true. */
+typedef struct UUpvalCell {
+    bool    on_heap;
+    union {
+        UValue  *stack_ptr;     /* on_heap=false: pointer into register window */
+        UValue   value;         /* on_heap=true:  owned copy                   */
+    } u;
+    struct UUpvalCell *next;    /* intrusive singly-linked list in UVM         */
+} UUpvalCell;
+
+/* --- UClosure: runtime function value (proto + captured upvalues).
+ * Heap-allocated by OP_CLOSURE; lives until GC (M5).  The upvals[]
+ * array is a trailing flexible member — allocate sizeof(UClosure) +
+ * nupvals * sizeof(UUpvalCell*).
+ * `next_alloc` threads all closures allocated in one uvm_run() into a
+ * free list so they can be reclaimed at halt (pre-GC bookkeeping). */
+typedef struct UClosure {
+    UProto           *proto;
+    struct UClosure  *next_alloc; /* VM free-list link (pre-GC) */
+    uint8_t           nupvals;
+    UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
+} UClosure;
+
 /* --- UModule struct --- */
 
 typedef struct UModule {
@@ -126,7 +217,21 @@ typedef struct UModule {
     size_t     abs_line_cap;
 
     uint8_t    max_reg;           /* VM allocates (max_reg + 1) register slots */
+    uint8_t    nupvals;           /* upvalue count for root chunk (always 0) */
+    uint8_t    nparams;           /* param count for root chunk (always 0) */
     char       *source_name;      /* owned (allocator-allocated, null-terminated); NULL if absent */
+
+    /* Nested function protos: function definitions compiled inside this module.
+     * Indexed by the Bx field of OP_CLOSURE instructions. */
+    UProto    **nested;
+    size_t      nested_count;
+    size_t      nested_cap;
+
+    /* M2 addition — per pre-m2-multi-vm-audit-design.md.
+     * Set by uemit_init at compile time; zero on freshly-deserialized
+     * modules. Used only for optional debug-assert paths in v1.0;
+     * cross-VM module use is UB but not dynamically checked. */
+    struct UVM *origin_vm;
 
     /* allocator hook; NULL -> use stdlib realloc (hosted builds only) */
     UModuleAllocFn alloc_fn;
@@ -146,6 +251,18 @@ typedef enum {
     ULOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
     ULOAD_OOM
 } UModuleLoadError;
+
+/* --- Proto helpers --- */
+
+/* Allocate a new UProto as module->nested[nested_count++].
+ * Returns pointer to the new proto on success, NULL on OOM.
+ * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module. */
+UProto *umodule_alloc_nested_proto(UModule *module);
+
+/* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
+ * (it is owned by the module's nested[] array). */
+void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
+                                   void *alloc_ud);
 
 /* --- API --- */
 

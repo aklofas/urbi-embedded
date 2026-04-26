@@ -1,0 +1,10 @@
+# Milestone: M2
+# Covers: ',' and '&' are parse-only at M2; emit rejects them.
+# ',' parses as AST_NARY(SEP_COMMA) but emit returns EMIT_UNSUPPORTED_AST.
+# '&' parses as AST_BIN_SEP(SEP_AMP) but emit returns EMIT_UNSUPPORTED_AST.
+
+1 , 2
+[00000001] !!! <stdin>: emit error: EMIT_UNSUPPORTED_AST
+
+1 & 2
+[00000002] !!! <stdin>: emit error: EMIT_UNSUPPORTED_AST

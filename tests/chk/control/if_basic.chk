@@ -1,0 +1,27 @@
+# Milestone: M2
+# Covers: if/else control flow; OP_TEST + OP_JMP fixup pattern;
+#         both arms produce the correct value; no-else arm yields nil.
+
+# --- if-then-else: true branch
+if (1 < 2) { 42 } else { 99 }
+[00000001] 42
+
+# --- if-then-else: false branch
+if (2 < 1) { 42 } else { 99 }
+[00000002] 99
+
+# --- if-then only: no else; yields nil when false
+if (false) { 42 }
+[00000003] nil
+
+# --- if-then only: truthy; value from block
+if (true) { 7 }
+[00000004] 7
+
+# --- nested: if inside an expression sequence
+var x = 3; if (x == 3) { 100 } else { 0 }
+[00000005] 100
+
+# --- multi-statement then-block: last value returned
+if (true) { var a = 10; a + 5 } else { 0 }
+[00000006] 15

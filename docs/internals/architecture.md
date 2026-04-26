@@ -517,3 +517,43 @@ tests/unit/
 tests/integration/
   repl_smoke.sh       POSIX sh harness covering every CLI mode and error path
 ```
+
+---
+
+## Multi-VM model
+
+Multiple `UVM` instances may coexist in the same process. Each is fully
+independent: no mutable state is shared across VMs.
+
+```text
+Process
+  ├── UVM (A)
+  │     ├── intern_table   (per-VM string interning pool, ustr_intern)
+  │     ├── topology_gen   (per-VM IC invalidation counter)
+  │     └── UModule.origin_vm → (A)   stamped at compile time
+  └── UVM (B)
+        ├── intern_table
+        ├── topology_gen
+        └── UModule.origin_vm → (B)
+```
+
+**Per-VM state catalog.** Every mutable datum lives on the `UVM` struct.
+At v0.2.0-expressions this includes `intern_table` (the string interning
+pool) and `topology_gen` (the inline-cache invalidation generation counter).
+As additional subsystems land (GC, scheduler, coroutine stacks, reactive
+registry) their state will extend `UVM`, not introduce new file-scope
+variables.
+
+**Allowed-immutable globals.** Only compile-time constant tables — opcode
+name arrays, version strings, static error messages — may live at file
+scope. No mutable file-scope variables are permitted; enforcement is via
+the `cppcoreguidelines-avoid-non-const-global-variables` clang-tidy check
+(gated under `make lint`) and the `tools/audit-globals.sh` script, which
+scans the source tree for non-const file-scope definitions.
+
+**Single-threaded per VM.** Each `UVM` is driven by one thread at a time.
+Multiple `UVM` instances may run in separate threads without
+synchronization; cross-VM value handoff is not supported in v1.0 and is
+undefined behavior. The multi-threaded-per-VM and shared-immutable-bytecode-pool
+paths are deferred to v1.x. See `docs/superpowers/specs/2026-04-24-urbi-pre-m2-multi-vm-audit-design.md`
+for the full isolation model and the 8-case test matrix.

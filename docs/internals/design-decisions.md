@@ -438,3 +438,45 @@ touching the bit-packing scheme.
   examples
 - `../LANG-CONVENTIONS.md` §1.1 — Integer = i64 decision
 - `src/umodule.h` — `UValue` struct definition
+
+---
+
+### No global mutable state
+
+**Locked:** 2026-04-24
+**Status:** active
+**Reference docs:**
+[`internals/architecture.md` — Multi-VM model](architecture.md#multi-vm-model),
+`tools/audit-globals.sh`,
+`docs/superpowers/specs/2026-04-24-urbi-pre-m2-multi-vm-audit-design.md`
+
+**Decision.** No mutable datum may live at file scope in any `src/*.c` translation
+unit. Every piece of state that changes at runtime must live on a `UVM` struct (or
+on a struct owned by a `UVM`). Only compile-time constant tables — opcode name
+arrays, version strings, static error-message literals — are permitted at file scope.
+
+**Alternatives considered.**
+
+- *Process-global singletons.* A single intern table or IC generation counter
+  shared by all VM instances. Rejected: breaks multi-VM isolation; two independent
+  VMs in the same process would corrupt each other's intern pools and IC state.
+
+- *Thread-local storage (`__thread` / `_Thread_local`).* One datum per thread rather
+  than one per process. Rejected: adds a threading-model assumption; freestanding
+  targets and embedded RTOSes may not support TLS; still violates the design goal
+  that a single thread can host multiple independent VMs.
+
+**Why this one.**
+
+The empirical baseline at v0.1.0-skeleton was zero non-const file-scope mutable
+variables. The rule codifies that baseline as a forward constraint enforced
+mechanically rather than by audit: the `cppcoreguidelines-avoid-non-const-global-variables`
+clang-tidy check (enabled in `.clang-tidy`, gated under `make lint`) rejects any
+new mutable file-scope definition at CI time. The `tools/audit-globals.sh` script
+provides a secondary human-readable report. Both run in the CI `lint` job.
+
+**Implications.** Every new mutable datum added in M2 and beyond must land on `UVM`
+or on a struct that `UVM` owns. Subsystem authors may not use `static` local
+variables for mutable state that differs per-VM. This is a structural analogue of
+Lua's `lua_State`-as-root design: Lua earns multi-VM embeddability precisely because
+every mutable Lua datum lives on a `lua_State`.

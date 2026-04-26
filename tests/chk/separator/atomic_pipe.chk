@@ -1,0 +1,13 @@
+# Milestone: M2
+# Covers: '|' inner-tier separator — atomic sequential, no yield.
+# Result is the rightmost value. Left-associative.
+# Trailing '|' before REPL boundary is silently dropped.
+
+3 | 4 | 5
+[00000001] 5
+
+1 | 2
+[00000002] 2
+
+10 |
+[00000003] 10

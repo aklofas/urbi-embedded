@@ -3,6 +3,88 @@
 
 #include "uvalue.h"
 
+/* --- Value semantic helpers (freestanding-safe). --- */
+
+bool uvalue_truthy(const UValue *v) {
+    if (v == NULL) return false;
+    switch ((UValKind)v->kind) {
+        case UVAL_NIL:   return false;
+        case UVAL_BOOL:  return v->v.i != 0;
+        case UVAL_VOID:  return false;
+        default:         return true;   /* int 0, float 0.0, etc. → truthy */
+    }
+}
+
+bool uvalue_equal(const UValue *a, const UValue *b) {
+    if (a == NULL || b == NULL) return false;
+
+    /* Same kind: direct compare. */
+    if (a->kind == b->kind) {
+        switch ((UValKind)a->kind) {
+            case UVAL_NIL:     return true;
+            case UVAL_INT:     return a->v.i == b->v.i;
+            case UVAL_FLOAT:   return a->v.f == b->v.f;
+            case UVAL_BOOL:    return a->v.i == b->v.i;
+            case UVAL_STR:     return a->v.p == b->v.p;     /* interned ptr eq */
+            case UVAL_CLOSURE: return a->v.p == b->v.p;     /* identity */
+            case UVAL_VOID:    return false;                 /* void != void per spec */
+        }
+    }
+
+    /* Cross-kind numeric promotion: INT vs FLOAT. */
+    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_FLOAT) {
+        return (double)a->v.i == b->v.f;
+    }
+    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_INT) {
+        return a->v.f == (double)b->v.i;
+    }
+
+    /* Different kinds, no promotion path → not equal. */
+    return false;
+}
+
+UValCmpResult uvalue_lt(const UValue *a, const UValue *b, bool *out) {
+    if (a == NULL || b == NULL) return UVAL_CMP_TYPE_ERROR;
+    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_INT) {
+        *out = a->v.i < b->v.i;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_FLOAT) {
+        *out = a->v.f < b->v.f;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_FLOAT) {
+        *out = (double)a->v.i < b->v.f;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_INT) {
+        *out = a->v.f < (double)b->v.i;
+        return UVAL_CMP_OK;
+    }
+    return UVAL_CMP_TYPE_ERROR;
+}
+
+UValCmpResult uvalue_le(const UValue *a, const UValue *b, bool *out) {
+    if (a == NULL || b == NULL) return UVAL_CMP_TYPE_ERROR;
+    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_INT) {
+        *out = a->v.i <= b->v.i;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_FLOAT) {
+        *out = a->v.f <= b->v.f;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_FLOAT) {
+        *out = (double)a->v.i <= b->v.f;
+        return UVAL_CMP_OK;
+    }
+    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_INT) {
+        *out = a->v.f <= (double)b->v.i;
+        return UVAL_CMP_OK;
+    }
+    return UVAL_CMP_TYPE_ERROR;
+}
+
 #if __STDC_HOSTED__
 
 #include <stdint.h>

@@ -1,0 +1,8 @@
+# Milestone: M2
+# Covers: pass-through semantics (spec §4.2): lazy param forwarded as lazy
+#         arg to another function is not forced at the intermediate call;
+#         the thunk is passed directly and forced by the innermost reader.
+
+# --- two-level pass-through: outer(99) → inner forces the thunk → 99
+var inner = function(lazy x) { x }; var outer = function(lazy y) { inner(y) }; outer(99)
+[00000001] 99

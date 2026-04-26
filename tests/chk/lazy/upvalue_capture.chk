@@ -1,0 +1,7 @@
+# Milestone: M2
+# Covers: lazy thunk captures outer local via upvalue cascade; the thunk
+#         closes over the caller's environment at the time of the call.
+
+# --- thunk captures n from enclosing scope
+var n = 5; var f = function(lazy x) { x }; f(n + 1)
+[00000001] 6

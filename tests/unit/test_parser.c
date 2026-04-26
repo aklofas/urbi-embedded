@@ -319,35 +319,33 @@ UTEST(parse_trailing_tokens_without_separator_rejected) {
     ctx_destroy(&c);
 }
 
-UTEST(parse_two_statements_with_pipe) {
-    char buf1[32], buf2[32];
+UTEST(parse_pipe_inner_tier_single_statement) {
+    /* '|' is now an inner-tier separator: "1 + 2 | 3 * 4 |" is one statement
+       (AST_BIN_SEP) followed by a trailing '|' that is consumed as the
+       REPL statement-boundary marker, leaving EOF. */
     ParseCtx c;
     ctx_init(&c, "1 + 2 | 3 * 4 |");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    ast_dump(a, buf1, sizeof buf1);
-    UASSERT_STR_EQ(buf1, "(+ 1 2)");
-    UAstNode *b = uparse_next_statement(&c.p);
-    UASSERT(b != NULL);
-    ast_dump(b, buf2, sizeof buf2);
-    UASSERT_STR_EQ(buf2, "(* 3 4)");
+    UASSERT_EQ(a->kind, AST_BIN_SEP);
+    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
+    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_BINARY);
+    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_BINARY);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
 }
 
-UTEST(parse_two_statements_no_final_pipe) {
-    char buf1[32], buf2[32];
+UTEST(parse_pipe_no_trailing_pipe_is_one_stmt) {
+    /* "1 | 2" — inner-tier '|'; one statement AST_BIN_SEP(1, 2). */
     ParseCtx c;
     ctx_init(&c, "1 | 2");
     UAstNode *a = uparse_next_statement(&c.p);
     UASSERT(a != NULL);
-    ast_dump(a, buf1, sizeof buf1);
-    UASSERT_STR_EQ(buf1, "1");
-    UAstNode *b = uparse_next_statement(&c.p);
-    UASSERT(b != NULL);
-    ast_dump(b, buf2, sizeof buf2);
-    UASSERT_STR_EQ(buf2, "2");
+    UASSERT_EQ(a->kind, AST_BIN_SEP);
+    UASSERT_EQ(a->u.bin_sep.separator, SEP_PIPE);
+    UASSERT_EQ(a->u.bin_sep.lhs->kind, AST_INT);
+    UASSERT_EQ(a->u.bin_sep.rhs->kind, AST_INT);
     UAstNode *eof = uparse_next_statement(&c.p);
     UASSERT(eof == NULL);
     ctx_destroy(&c);
@@ -589,6 +587,288 @@ UTEST(parse_syncline_error_at_detection_point) {
     ctx_destroy(&c);
 }
 
+/* --- var-decl and assign parse tests (T10) --- */
+
+UTEST(parse_var_decl_basic) {
+    /* "var x = 7" -> AST_VAR_DECL, name="x", init=AST_INT(7) */
+    ParseCtx c;
+    ctx_init(&c, "var x = 7");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_VAR_DECL, (int)n->kind);
+    UASSERT_EQ(1, n->u.var_decl.name_len);
+    UASSERT_EQ('x', n->u.var_decl.name_start[0]);
+    UASSERT(n->u.var_decl.init != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.var_decl.init->kind);
+    UASSERT_EQ((int64_t)7, n->u.var_decl.init->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_var_decl_requires_init) {
+    /* "var x" (no '=') -> AST_ERROR PARSE_EXPECTED_EQ */
+    ParseCtx c;
+    ctx_init(&c, "var x");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_EQ, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_var_decl_requires_ident) {
+    /* "var = 7" (no name) -> AST_ERROR PARSE_EXPECTED_IDENT */
+    ParseCtx c;
+    ctx_init(&c, "var = 7");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_IDENT, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_assign_basic) {
+    /* "x = 42" -> AST_ASSIGN, name="x", value=AST_INT(42) */
+    ParseCtx c;
+    ctx_init(&c, "x = 42");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ASSIGN, (int)n->kind);
+    UASSERT_EQ(1, n->u.assign.name_len);
+    UASSERT_EQ('x', n->u.assign.name_start[0]);
+    UASSERT(n->u.assign.value != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.assign.value->kind);
+    UASSERT_EQ((int64_t)42, n->u.assign.value->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_ident_not_followed_by_eq_is_expression) {
+    /* "x + 1" should NOT be parsed as an assign — remains AST_BINARY */
+    ParseCtx c;
+    ctx_init(&c, "x + 1");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BINARY, (int)n->kind);
+    UASSERT_EQ((int)BOP_ADD, (int)n->u.binary.op);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.binary.lhs->kind);
+    ctx_destroy(&c);
+}
+
+/* --- Comparison operators --- */
+
+UTEST(parse_eqeq) {
+    ParseCtx c;
+    ctx_init(&c, "1 == 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_EQ, (int)n->u.cmp.op);
+    UASSERT(n->u.cmp.lhs != NULL && n->u.cmp.lhs->kind == AST_INT);
+    UASSERT(n->u.cmp.rhs != NULL && n->u.cmp.rhs->kind == AST_INT);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_neq) {
+    ParseCtx c;
+    ctx_init(&c, "1 != 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_NEQ, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_lt) {
+    ParseCtx c;
+    ctx_init(&c, "1 < 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_le) {
+    ParseCtx c;
+    ctx_init(&c, "1 <= 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_LE, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_gt) {
+    ParseCtx c;
+    ctx_init(&c, "1 > 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_GT, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_ge) {
+    ParseCtx c;
+    ctx_init(&c, "1 >= 2");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_GE, (int)n->u.cmp.op);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_compare_binds_looser_than_add) {
+    /* "1 + 2 == 3" → COMPARE(BINARY(+, 1, 2), 3) not BINARY(+, 1, COMPARE(2, 3)) */
+    ParseCtx c;
+    ctx_init(&c, "1 + 2 == 3");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->kind);
+    UASSERT_EQ((int)CMP_EQ, (int)n->u.cmp.op);
+    UASSERT(n->u.cmp.lhs != NULL && n->u.cmp.lhs->kind == AST_BINARY);
+    UASSERT(n->u.cmp.rhs != NULL && n->u.cmp.rhs->kind == AST_INT);
+    ctx_destroy(&c);
+}
+
+/* --- Boolean and nil literals --- */
+
+UTEST(parse_true_literal) {
+    ParseCtx c;
+    ctx_init(&c, "true");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BOOL, (int)n->kind);
+    UASSERT(n->u.b == true);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_false_literal) {
+    ParseCtx c;
+    ctx_init(&c, "false");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_BOOL, (int)n->kind);
+    UASSERT(n->u.b == false);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_nil_literal) {
+    ParseCtx c;
+    ctx_init(&c, "nil");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_NIL, (int)n->kind);
+    ctx_destroy(&c);
+}
+
+/* --- if / else --- */
+
+UTEST(parse_if_then) {
+    /* "if (1 < 2) { 42 }" → AST_IF with cond=AST_COMPARE, then=AST_BLOCK,
+       else_block=NULL */
+    ParseCtx c;
+    ctx_init(&c, "if (1 < 2) { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_IF, (int)n->kind);
+    UASSERT(n->u.if_stmt.cond != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->u.if_stmt.cond->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.if_stmt.cond->u.cmp.op);
+    UASSERT(n->u.if_stmt.then_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.then_block->kind);
+    UASSERT_EQ(1, n->u.if_stmt.then_block->u.block.count);
+    UASSERT(n->u.if_stmt.else_block == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_if_then_else) {
+    /* "if (1 < 2) { 42 } else { 99 }" → AST_IF with else_block != NULL */
+    ParseCtx c;
+    ctx_init(&c, "if (1 < 2) { 42 } else { 99 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_IF, (int)n->kind);
+    UASSERT(n->u.if_stmt.cond != NULL);
+    UASSERT(n->u.if_stmt.then_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.then_block->kind);
+    UASSERT(n->u.if_stmt.else_block != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.if_stmt.else_block->kind);
+    UASSERT_EQ(1, n->u.if_stmt.else_block->u.block.count);
+    UASSERT_EQ((int)AST_INT, (int)n->u.if_stmt.else_block->u.block.stmts[0]->kind);
+    UASSERT_EQ((int64_t)99, n->u.if_stmt.else_block->u.block.stmts[0]->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_if_no_paren_is_error) {
+    /* "if 1 < 2 { 42 }" → AST_ERROR PARSE_EXPECTED_LPAREN */
+    ParseCtx c;
+    ctx_init(&c, "if 1 < 2 { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_LPAREN, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_while_basic) {
+    /* "while (1 < 10) { 42 }" → AST_WHILE with cond=AST_COMPARE, body=AST_BLOCK */
+    ParseCtx c;
+    ctx_init(&c, "while (1 < 10) { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_WHILE, (int)n->kind);
+    UASSERT(n->u.while_stmt.cond != NULL);
+    UASSERT_EQ((int)AST_COMPARE, (int)n->u.while_stmt.cond->kind);
+    UASSERT_EQ((int)CMP_LT, (int)n->u.while_stmt.cond->u.cmp.op);
+    UASSERT(n->u.while_stmt.body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.while_stmt.body->kind);
+    UASSERT_EQ(1, n->u.while_stmt.body->u.block.count);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_while_no_paren_is_error) {
+    /* "while 1 < 10 { 42 }" → AST_ERROR PARSE_EXPECTED_LPAREN */
+    ParseCtx c;
+    ctx_init(&c, "while 1 < 10 { 42 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_EXPECTED_LPAREN, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_bare_function_no_name_errors) {
+    ParseCtx c;
+    ctx_init(&c, "function { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_BARE_FUNCTION, (int)n->u.err.code);
+    UASSERT(strstr(n->u.err.message, "add empty parens") != NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_bare_function_with_name_errors) {
+    ParseCtx c;
+    ctx_init(&c, "function foo { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_BARE_FUNCTION, (int)n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_closure_keyword_errors) {
+    ParseCtx c;
+    ctx_init(&c, "closure(x) { x + 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_CLOSURE_KEYWORD, (int)n->u.err.code);
+    UASSERT(strstr(n->u.err.message, "MIGRATION TRAP") != NULL);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -613,8 +893,8 @@ void test_parser_suite(void) {
     utest_run("parse_trailing_pipe_optional",       parse_trailing_pipe_optional);
     utest_run("parse_trailing_tokens_without_separator_rejected",
                                                     parse_trailing_tokens_without_separator_rejected);
-    utest_run("parse_two_statements_with_pipe",     parse_two_statements_with_pipe);
-    utest_run("parse_two_statements_no_final_pipe", parse_two_statements_no_final_pipe);
+    utest_run("parse_pipe_inner_tier_single_statement", parse_pipe_inner_tier_single_statement);
+    utest_run("parse_pipe_no_trailing_pipe_is_one_stmt", parse_pipe_no_trailing_pipe_is_one_stmt);
     utest_run("parse_eof_is_idempotent",            parse_eof_is_idempotent);
     utest_run("parse_whitespace_only_is_eof",       parse_whitespace_only_is_eof);
     utest_run("parse_error_unexpected_eof_after_operator",     parse_error_unexpected_eof_after_operator);
@@ -634,4 +914,35 @@ void test_parser_suite(void) {
     utest_run("parse_syncline_binary_points_at_operator", parse_syncline_binary_points_at_operator);
     utest_run("parse_syncline_unary_points_at_sign",      parse_syncline_unary_points_at_sign);
     utest_run("parse_syncline_error_at_detection_point",  parse_syncline_error_at_detection_point);
+    utest_run("parse var decl: basic 'var x = 7'",        parse_var_decl_basic);
+    utest_run("parse var decl: requires initializer",      parse_var_decl_requires_init);
+    utest_run("parse var decl: requires identifier name",  parse_var_decl_requires_ident);
+    utest_run("parse assign: basic 'x = 42'",             parse_assign_basic);
+    utest_run("parse ident-not-assign: 'x + 1' is binary", parse_ident_not_followed_by_eq_is_expression);
+    utest_run("parse: == produces AST_COMPARE CMP_EQ",    parse_eqeq);
+    utest_run("parse: != produces AST_COMPARE CMP_NEQ",   parse_neq);
+    utest_run("parse: < produces AST_COMPARE CMP_LT",     parse_lt);
+    utest_run("parse: <= produces AST_COMPARE CMP_LE",    parse_le);
+    utest_run("parse: > produces AST_COMPARE CMP_GT",     parse_gt);
+    utest_run("parse: >= produces AST_COMPARE CMP_GE",    parse_ge);
+    utest_run("parse: compare binds looser than add",     parse_compare_binds_looser_than_add);
+    utest_run("parse: true literal",                      parse_true_literal);
+    utest_run("parse: false literal",                     parse_false_literal);
+    utest_run("parse: nil literal",                       parse_nil_literal);
+    utest_run("parse: if-then produces AST_IF with AST_BLOCK then, no else",
+              parse_if_then);
+    utest_run("parse: if-then-else produces AST_IF with both blocks",
+              parse_if_then_else);
+    utest_run("parse: if without '(' is PARSE_EXPECTED_LPAREN",
+              parse_if_no_paren_is_error);
+    utest_run("parse: while (1 < 10) { 42 } → AST_WHILE with cond=AST_COMPARE",
+              parse_while_basic);
+    utest_run("parse: while without '(' is PARSE_EXPECTED_LPAREN",
+              parse_while_no_paren_is_error);
+    utest_run("parse: bare function 'function { 1 }' is PARSE_BARE_FUNCTION error",
+              parse_bare_function_no_name_errors);
+    utest_run("parse: bare function 'function foo { 1 }' is PARSE_BARE_FUNCTION error",
+              parse_bare_function_with_name_errors);
+    utest_run("parse: 'closure(x) { x + 1 }' is PARSE_CLOSURE_KEYWORD error",
+              parse_closure_keyword_errors);
 }

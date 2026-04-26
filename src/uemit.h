@@ -26,28 +26,49 @@ typedef enum {
     EMIT_REG_EXHAUSTED,           /* > 255 registers needed — deep expression */
     EMIT_CONSTANT_POOL_FULL,      /* > 65535 constants — Bx overflow */
     EMIT_LINE_OVERFLOW,           /* source line > UINT32_MAX (effectively unreachable) */
-    EMIT_FINISHED                 /* uemit_statement called after uemit_finish */
+    EMIT_FINISHED,                /* uemit_statement called after uemit_finish */
+
+    /* M2 additions */
+    EMIT_UPVAL_EXHAUSTED,         /* > UFS_MAX_UPVALUES captures (T8) */
+    EMIT_LOCAL_REDECLARE,         /* duplicate `var x` in same block */
+    EMIT_UNRESOLVED_NAME,         /* identifier not local/upvalue/global */
+    EMIT_NESTING_TOO_DEEP,        /* > UFS_MAX_BLOCKS or function-nesting cap (T7) */
+    EMIT_BARE_LAZY_FUNCTION,      /* T17: `function name { body }` */
+    EMIT_CLOSURE_KEYWORD,         /* T17: `closure(x){...}` */
+    EMIT_LAZY_ON_METHOD,          /* T16: lazy on method-bound function */
+    EMIT_LAZY_PARAM_ASSIGN        /* T16: assignment to lazy param */
 } UEmitError;
+
+/* Forward declaration for M2 FuncState lifecycle. */
+struct UFuncState;
 
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
 typedef struct UEmitter {
     UModule       *module;           /* non-owning; caller supplies */
     UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
+    struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
     uint8_t      max_reg_seen;    /* highest slot ever used */
     uint8_t      last_result_reg; /* register of most recent statement's result */
     uint32_t     prev_line;       /* last emitted instruction's source line */
     bool         any_stmt_emitted;/* gates OP_RET at finish */
     bool         finished;
+    bool         lazy_arg_context; /* T16: set while emitting args in AST_CALL;
+                                      suppresses implicit force on lazy-local reads
+                                      (pass-through semantics, spec §4.2) */
     UEmitError    error;           /* sticky: first error latches */
+    struct UFuncState *current_fs; /* M2: current compilation function */
 } UEmitter;
 
 /* --- API --- */
 
-/* Initialize.  module and arena must both outlive the emitter.
-   source_name may be NULL. */
-void uemit_init(UEmitter *e, UModule *module, UArena *arena, const char *source_name);
+/* Initialize.  module, arena, and vm must all outlive the emitter.
+   source_name may be NULL.  vm parameter (added at M2) lets the
+   emitter intern identifier lexemes into the per-VM string table and
+   stamps module->origin_vm = vm. */
+void uemit_init(UEmitter *e, UModule *module, UArena *arena,
+                struct UVM *vm, const char *source_name);
 
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
    AST_ERROR nodes are rejected with EMIT_AST_ERROR.  On first error, the
@@ -58,6 +79,37 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt);
    Further uemit_statement calls return EMIT_FINISHED.  Returns the first
    accumulated error, or EMIT_OK. */
 UEmitError uemit_finish(UEmitter *e);
+
+/* Open a new compilation function. At top-level, parent==NULL. Returns
+   NULL on OOM (sets EMIT_OOM). The opened FuncState becomes
+   e->current_fs. */
+struct UFuncState *uemit_open_function(UEmitter *e, struct UFuncState *parent);
+
+/* Close the current function. Pops parent into e->current_fs. Returns
+   the closed FuncState* (still arena-valid; caller may inspect). */
+struct UFuncState *uemit_close_function(UEmitter *e);
+
+/* Declare a local in the current function. name must be interned
+   (canonical pointer; pointer-eq for redeclare detection). Returns the
+   slot index, or -1 on EMIT_LOCAL_REDECLARE / EMIT_REG_EXHAUSTED (sets
+   e->error). */
+int uemit_declare_local(UEmitter *e, const char *name, int name_len);
+
+/* Open a lexical block scope. Pushes a UBlockCtx with current
+   nactvar/freereg snapshot. is_loop=true marks while-bodies for
+   T8's OP_CLOSE-before-back-edge rule. Returns true on success;
+   false (with EMIT_NESTING_TOO_DEEP) if UFS_MAX_BLOCKS exceeded. */
+bool uemit_open_block(UEmitter *e, bool is_loop);
+
+/* Close the topmost block. Emits OP_CLOSE if any local in this block
+   was captured. Restores freereg to the pre-open value; pops actvars
+   back to nactvar_on_enter. Returns true on success. */
+bool uemit_close_block(UEmitter *e);
+
+/* For T13 while-loop emit: emit OP_CLOSE before the back-edge JMP when
+ * the topmost block is a loop AND has captured locals (Lua-style
+ * closure-in-loop correctness). No-op otherwise. */
+void uemit_emit_loop_back_close(UEmitter *e);
 
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);

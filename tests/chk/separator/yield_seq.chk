@@ -1,0 +1,13 @@
+# Milestone: M2
+# Covers: ';' outer-tier separator — sequential with yield.
+# Last child's value is the statement result.
+# Trailing ';' before REPL boundary is silently dropped.
+
+1 + 1; 2 + 2
+[00000001] 4
+
+1; 2; 3
+[00000002] 3
+
+42 ;
+[00000003] 42

@@ -1,0 +1,6 @@
+# Milestone: M2
+# Covers: multi-level upvalue cascade; intermediate-frame upvalue with in_stack=false;
+#         innermost closure captures x from outermost frame via middle proto (Task 8).
+
+var outer = function() { var x = 7; function() { function() { x } } }; outer()()()
+[00000001] 7
