@@ -15,21 +15,21 @@ For anyone learning the language or porting scripts from urbi 2.x.
 - [Getting started](language/getting-started.md) — prerequisites, build, first script
 - Language tour — planned for `v1.0.0`
 - Language reference — planned for `v0.2.0-expressions`
-- Standard library reference — planned for `v0.2.0-expressions` (initial), comprehensive at `v0.5.0-stdlib`
+- Standard library reference — planned for `v0.2.0-expressions` (initial), comprehensive at `v0.6.0-stdlib`
 - Cookbook — planned for `v1.0.0`
-- Using the REPL — planned for `v0.7.0-repl`
+- Using the REPL — planned for `v0.8.0-repl`
 - Migration from urbi 2.x — planned, grows incrementally each release
 
 ### Embedding the runtime
 
 For application developers linking urbi-embedded into firmware or a host process.
 
-- Embedding guide — planned for `v0.6.0-embedded`
-- C API reference — planned for `v0.6.0-embedded`
-- REPL protocol — planned for `v0.7.0-repl`
-- ROS2 bridge — planned for `v0.8.0-ros2`
-- Sandbox API — planned for `v0.6.0-embedded`
-- Footprint guide — planned for `v0.6.0-embedded`
+- Embedding guide — planned for `v0.7.0-C-API`
+- C API reference — planned for `v0.7.0-C-API`
+- REPL protocol — planned for `v0.8.0-repl`
+- ROS2 bridge — planned for `v0.9.0-ros2`
+- Sandbox API — planned for `v0.7.0-C-API`
+- Footprint guide — planned for `v0.7.0-C-API`
 
 ### Working on the runtime
 
@@ -97,21 +97,21 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Getting started](language/getting-started.md) | Install prerequisites, build the library, run the unit tests, write and run a first script | `v0.1.0-skeleton` |
 | Language tour | Narrative walkthrough: concurrency separators, reactive constructs (`at`, `whenever`, `every`), tags, prototype objects | `v1.0.0` |
 | Language reference | Complete formal reference: syntax grammar, expression semantics, statement forms, scoping rules | `v0.2.0-expressions` |
-| Standard library reference | Reference for `List`, `Dict`, `Float`, `String`, `Date`, `Duration`, `Tag`, `Event`, and bounded-container variants (`FixedList`, `RingBuffer`) | `v0.2.0-expressions` (initial), comprehensive at `v0.5.0-stdlib` |
+| Standard library reference | Reference for `List`, `Dict`, `Float`, `String`, `Date`, `Duration`, `Tag`, `Event`, and bounded-container variants (`FixedList`, `RingBuffer`) | `v0.2.0-expressions` (initial), comprehensive at `v0.6.0-stdlib` |
 | Cookbook | Task-oriented recipes: sensor polling loops, inter-coroutine communication, building sandboxed plugins | `v1.0.0` |
-| Using the REPL | NDJSON protocol, per-session lobbies, introspection commands (`:coros`, `:tags`, `:watchers`), hot-reload workflow | `v0.7.0-repl` |
+| Using the REPL | NDJSON protocol, per-session lobbies, introspection commands (`:coros`, `:tags`, `:watchers`), hot-reload workflow | `v0.8.0-repl` |
 | Migration from urbi 2.x | Semantic divergences from urbi 2.x documented with rationale; grows incrementally with each release | incremental |
 
 ### embedding/
 
 | Doc | Description | Since |
 | --- | ----------- | ----- |
-| Embedding guide | Step-by-step: link the library, plug in allocator and time source, push urbiscript, read results | `v0.6.0-embedded` |
-| C API reference | Every public function in `urbi.h` and `urbi_aux.h`: signature, preconditions, error codes, examples | `v0.6.0-embedded` |
-| REPL protocol | NDJSON wire format, connection lifecycle, lobby multiplexing, `urbi-send` CLI reference | `v0.7.0-repl` |
-| ROS2 bridge | micro-ROS integration: `ros.subscribe()`, `ros.publisher()`, `ros.client()`, reactive topic bindings | `v0.8.0-ros2` |
-| Sandbox API | Instruction and allocation budgets, host-call allow-lists, isolation contract | `v0.6.0-embedded` |
-| Footprint guide | Flash and RAM breakdown by subsystem; trim strategies for deeply constrained targets | `v0.6.0-embedded` (initial), refresh at `v1.0.0` |
+| Embedding guide | Step-by-step: link the library, plug in allocator and time source, push urbiscript, read results | `v0.7.0-C-API` |
+| C API reference | Every public function in `urbi.h` and `urbi_aux.h`: signature, preconditions, error codes, examples | `v0.7.0-C-API` |
+| REPL protocol | NDJSON wire format, connection lifecycle, lobby multiplexing, `urbi-send` CLI reference | `v0.8.0-repl` |
+| ROS2 bridge | micro-ROS integration: `ros.subscribe()`, `ros.publisher()`, `ros.client()`, reactive topic bindings | `v0.9.0-ros2` |
+| Sandbox API | Instruction and allocation budgets, host-call allow-lists, isolation contract | `v0.7.0-C-API` |
+| Footprint guide | Flash and RAM breakdown by subsystem; trim strategies for deeply constrained targets | `v0.7.0-C-API` (initial), refresh at `v1.0.0` |
 
 ### internals/
 
