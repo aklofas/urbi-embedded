@@ -35,9 +35,12 @@ UTEST(umodule_origin_vm_initially_null) {
 
 /* --- Helpers for T18 cases --- */
 
-/* Counting allocator for case 1: tracks allocation count via size_t pointer. */
+/* Counting allocator for case 1: tracks allocation count via size_t pointer.
+   Handles nbytes==0 as free (same convention as uvm_stdlib_realloc) to avoid
+   the realloc(ptr,0) undefined-behavior warning under valgrind memcheck. */
 static void *counting_alloc(void *ptr, size_t nbytes, void *ud) {
     size_t *counter = (size_t *)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
     void *result = realloc(ptr, nbytes);
     if (result != NULL) {
         (*counter)++;
