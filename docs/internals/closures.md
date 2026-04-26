@@ -22,7 +22,7 @@ function outer() {
 ### Compile `outer`
 
 1. `uemit_open_block` pushes a new scope on `outer`'s `UFuncState`.
-2. `var x = 7` allocates a local: `outer.actvars[0] = {name="x", reg=0}`.
+2. `var x = 7` allocates a local: `outer.actvars[0] = {name="x", slot=0}`.
 3. `function inner` triggers a nested `UFuncState` for `inner`.
 
 ### Compile `inner` — identifier resolution
