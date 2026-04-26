@@ -144,7 +144,7 @@ test runner at the cross targets — the cross-compile steps verify that the
 sources are free of host-specific assumptions and that the library links cleanly.
 Integrating the library into a real embedded project requires host code that
 instantiates the runtime and wires up the allocator and time-source hooks; that
-is covered in `embedding/guide.md`, which is planned for `v0.6.0-embedded`. For
+is covered in `embedding/guide.md`, which is planned for `v0.7.0-C-API`. For
 now, the cross targets confirm portability of `src/`.
 
 ---
