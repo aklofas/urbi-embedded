@@ -77,6 +77,89 @@ UTEST(pipeline_int_plus_int) {
     UASSERT_EQ(3, out.v.i);
 }
 
+/* var x = 7 followed by x: exercises var-decl + local read via OP_MOVE.
+   Uses ; (sequential) so the last statement value propagates to *out. */
+UTEST(pipeline_var_decl_and_read) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("var x = 7 ; x", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(7, out.v.i);
+}
+
+/* true literal: exercises OP_LOADBOOL through the pipeline. */
+UTEST(pipeline_bool_true) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("true", &out));
+    UASSERT_EQ(UVAL_BOOL, out.kind);
+    UASSERT(out.v.i != 0);
+}
+
+/* nil literal: exercises OP_LOADNIL through the pipeline. */
+UTEST(pipeline_nil_literal) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("nil", &out));
+    UASSERT_EQ(UVAL_NIL, out.kind);
+}
+
+/* if-then-else: exercises OP_EQ, OP_TEST, OP_JMP through the pipeline. */
+UTEST(pipeline_if_else_taken) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("if (1 == 1) { 42 } else { 99 }", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(42, out.v.i);
+}
+
+UTEST(pipeline_if_else_not_taken) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("if (1 == 2) { 42 } else { 99 }", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(99, out.v.i);
+}
+
+/* != comparison: exercises OP_NEQ path through the full pipeline. */
+UTEST(pipeline_neq_true) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("if (1 != 2) { 11 } else { 22 }", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(11, out.v.i);
+}
+
+/* while with counter: exercises OP_LT + loop back-edge through the pipeline. */
+UTEST(pipeline_while_count) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval(
+        "var n = 0 ; while (n < 3) { n = n + 1 } ; n", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(3, out.v.i);
+}
+
+/* Immediate-invoke zero-arg function: exercises OP_CLOSURE + OP_CALL. */
+UTEST(pipeline_immediate_invoke) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("(function() { 55 })()", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(55, out.v.i);
+}
+
+/* Single-arg function call: exercises OP_CALL arg passing + OP_GETUPVAL path
+   for the parameter register. */
+UTEST(pipeline_single_arg_call) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval("(function(x) { x + 1 })(10)", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(11, out.v.i);
+}
+
+/* Closure capturing outer local: exercises OP_GETUPVAL (upvalue read) and
+   OP_SETUPVAL (upvalue write) through the pipeline. */
+UTEST(pipeline_closure_upvalue_write) {
+    UValue out;
+    UASSERT_EQ(UVM_OK, pipeline_eval(
+        "var x = 1 ; (function() { x = 2 })() ; x", &out));
+    UASSERT_EQ(UVAL_INT, out.kind);
+    UASSERT_EQ(2, out.v.i);
+}
+
 /* 5 / 2: integer division always produces Float per LANG-CONVENTIONS §1.3. */
 UTEST(pipeline_int_div_int) {
     UValue out;
@@ -100,4 +183,22 @@ void test_pipeline_suite(void) {
               pipeline_int_div_int);
     utest_run("pipeline: 1 + 5 / 2 → Float 3.5 (Int+Float promotion)",
               pipeline_int_plus_div_result_promotes_to_float);
+    utest_run("pipeline: var x = 7 | x → 7 (var-decl + local read)",
+              pipeline_var_decl_and_read);
+    utest_run("pipeline: true → bool true (LOADBOOL)", pipeline_bool_true);
+    utest_run("pipeline: nil → nil (LOADNIL)", pipeline_nil_literal);
+    utest_run("pipeline: if (1==1) {42} else {99} → 42 (branch taken)",
+              pipeline_if_else_taken);
+    utest_run("pipeline: if (1==2) {42} else {99} → 99 (branch not taken)",
+              pipeline_if_else_not_taken);
+    utest_run("pipeline: if (1!=2) {11} else {22} → 11 (NEQ path)",
+              pipeline_neq_true);
+    utest_run("pipeline: while (n<3) { n=n+1 } → n=3 (LT + loop)",
+              pipeline_while_count);
+    utest_run("pipeline: (function(){55})() → 55 (CLOSURE + CALL)",
+              pipeline_immediate_invoke);
+    utest_run("pipeline: (function(x){x+1})(10) → 11 (arg pass)",
+              pipeline_single_arg_call);
+    utest_run("pipeline: closure upvalue write x=1; fn(){x=2}(); x → 2",
+              pipeline_closure_upvalue_write);
 }
