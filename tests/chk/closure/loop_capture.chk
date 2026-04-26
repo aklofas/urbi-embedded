@@ -1,0 +1,7 @@
+# Milestone: M2
+# Covers: loop-local variable closure capture; OP_CLOSE-on-loop-back-edge correctness;
+#         WITHOUT OP_CLOSE: f1 and f2 share same cell → f1()==1, f2()==1 → result==11 (WRONG);
+#         WITH OP_CLOSE: each iteration's closure gets its own cell → f1()==0, f2()==1 → result==10 (CORRECT).
+
+var fns = function() { var i = 0; var f1 = nil; var f2 = nil; while (i < 2) { var local = i; if (i == 0) { f1 = function() { local } }; if (i == 1) { f2 = function() { local } }; i = i + 1 }; f1() + f2() * 10 }; fns()
+[00000001] 10

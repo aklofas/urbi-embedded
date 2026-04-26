@@ -1,0 +1,6 @@
+# Milestone: M2
+# Covers: upvalue capture; write-through-upvalue semantics; persistence across calls;
+#         closure increments shared cell on each invocation (counter pattern).
+
+var make_counter = function() { var n = 0; function() { n = n + 1; n } }; var c = make_counter(); c(); c(); c()
+[00000001] 3
