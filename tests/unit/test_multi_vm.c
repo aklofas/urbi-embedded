@@ -253,10 +253,10 @@ UTEST(closing_vm_a_does_not_invalidate_vm_b_intern) {
     uvm_destroy(&vm_b);
 }
 
-/* --- Deferred test stubs (M3+, M4+, M5+) --- */
+/* --- Deferred test stubs (M3+, M5+, M6+) --- */
 /* Deferred to M3+: stdlib singletons per-VM (no stdlib at M2). */
-/* Deferred to M4+: cross-VM IC isolation (no IC bumps at M2). */
-/* Deferred to M5+: lazy-class-instance per-VM (no Lazy class at M2). */
+/* Deferred to M5+: cross-VM IC isolation (no IC bumps at M2). */
+/* Deferred to M6+: lazy-class-instance per-VM (no Lazy class at M2). */
 
 void test_multi_vm_suite(void) {
     utest_run("UVM init zeroes intern_table and topology_gen",

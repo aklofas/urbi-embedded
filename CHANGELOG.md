@@ -37,7 +37,7 @@ rejected at load time.
 - `UModule` gains `origin_vm` field; stamped at compile time, checked at
   load time.
 - 8-case isolation test matrix in `tests/unit/test_multi_vm.c`
-  (3 cases deferred to M3+/M4+/M5+).
+  (3 cases deferred to M3+/M5+/M6+).
 - `tools/audit-globals.sh` + `cppcoreguidelines-avoid-non-const-global-variables`
   clang-tidy check gated under `make lint`.
 
@@ -245,7 +245,7 @@ Cortex-M7 and RV32IMC.
 ### Portability
 
 - Compiler front-end compiles under `-ffreestanding` on toolchains without a C library (e.g. `gcc-riscv64-unknown-elf` on Ubuntu). `uarena_init` and the internal stdlib-backed allocator pair are guarded behind `__STDC_HOSTED__`; `uarena_alloc` uses a local byte-fill in place of `memset`. Freestanding callers must use `uarena_init_ex` or `uarena_init_static`.
-- `umodule.c` and `uemit.c` follow the same freestanding discipline: local `module_zero` / `module_memcpy` / `module_memcmp` helpers in place of `<string.h>`, `stdlib_alloc` and `vsnprintf`-based `set_errmsg` guarded behind `__STDC_HOSTED__`, pluggable allocator on `UModule` via `UModuleAllocFn`. UModules hot-loaded in embedded builds (future M6) use caller-supplied allocators.
+- `umodule.c` and `uemit.c` follow the same freestanding discipline: local `module_zero` / `module_memcpy` / `module_memcmp` helpers in place of `<string.h>`, `stdlib_alloc` and `vsnprintf`-based `set_errmsg` guarded behind `__STDC_HOSTED__`, pluggable allocator on `UModule` via `UModuleAllocFn`. UModules hot-loaded in embedded builds (future M7) use caller-supplied allocators.
 
 ### Tooling
 
