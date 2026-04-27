@@ -1651,7 +1651,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
-    buf[4] = 0x11u;              /* version v1.1 */
+    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* version v1.2 */
     buf[5] = 0x00u;              /* flags: none defined */
     buf[6]  = 0x19u; buf[7]  = 0x93u;   /* canary bytes 0-1 */
     buf[8]  = '\r';  buf[9]  = '\n';    /* canary bytes 2-3 */

@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: loader rejects v1.1 (M2) bytecode modules at v1.2 runtime
+#
+# defer-to: T44
+#
+# Reason: the chk runner (tests/integration/run_chk.sh) feeds .u source text
+# into the REPL.  There is no mechanism to inject a pre-baked binary blob and
+# call umodule_deserialize directly.  The runtime behaviour being tested here
+# (ULOAD_UNSUPPORTED_VERSION for version byte 0x11) is already covered by the
+# C unit tests:
+#   - "deserialize rejects v1.1 module (M2 hard break)"  in tests/unit/test_module.c
+#   - "deserialize rejects v1.0 module"                  in tests/unit/test_module.c
+#
+# When T44 (M3 legacy chk corpus port) adds binary-blob injection support to
+# the runner, implement this fixture by:
+#   1. Emitting a minimal module at v1.1 format using the M2 emitter (or hand-
+#      crafting a 30-byte blob with version byte 0x11 at offset 4).
+#   2. Loading it via the T44-era --load-bytecode flag (or equivalent) and
+#      asserting the output contains "unsupported version byte 0x11".

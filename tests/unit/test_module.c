@@ -64,7 +64,7 @@ static void build_good_header(uint8_t hdr[24]) {
     size_t i;
     for (i = 0; i < 24; i++) hdr[i] = 0;
     hdr[0] = 'U'; hdr[1] = 'R'; hdr[2] = 'B'; hdr[3] = 'I'; /* magic */
-    hdr[4] = 0x11;                         /* version v1.1 */
+    hdr[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* current version */
     hdr[5] = 0x00;                         /* flags */
     hdr[6]  = 0x19; hdr[7]  = 0x93;        /* canary bytes 0-1 */
     hdr[8]  = '\r'; hdr[9]  = '\n';        /* canary bytes 2-3 */
@@ -153,6 +153,54 @@ UTEST(deserialize_rejects_v1_0_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_rejects_v1_1_module) {
+    /* Version byte 0x11 (M2) must be rejected at v1.2 loader: OP_RETURN dispatch
+       semantics changed between M2 and M3; loading old modules silently would
+       produce wrong nested-unwind behaviour.  Hard break is the safe choice. */
+    uint8_t buf[30];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x11;  /* version byte (v1.1 — M2; should be rejected by v1.2 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    /* errmsg should name the rejected version so users know what they have */
+    UASSERT(strstr(errmsg, "0x11") != NULL || strstr(errmsg, "1.1") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_accepts_v12_module) {
+    /* A minimal well-formed v1.2 module must be accepted. */
+    uint8_t buf[30];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;  /* v1.2 */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
     umodule_destroy(&c);
 }
 
@@ -736,7 +784,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UASSERT_EQ((uint8_t)'R', buf[1]);
     UASSERT_EQ((uint8_t)'B', buf[2]);
     UASSERT_EQ((uint8_t)'I', buf[3]);
-    UASSERT_EQ((uint8_t)0x11, buf[4]);               /* version */
+    UASSERT_EQ((uint8_t)URBI_BYTECODE_VERSION_BYTE, buf[4]); /* version */
     UASSERT_EQ((uint8_t)0x00, buf[5]);               /* flags */
     UASSERT_EQ((uint8_t)0x19, buf[6]);               /* canary[0] */
     UASSERT_EQ((uint8_t)0x93, buf[7]);               /* canary[1] */
@@ -1236,6 +1284,10 @@ void test_module_suite(void) {
               deserialize_rejects_unsupported_version);
     utest_run("deserialize rejects v1.0 module",
               deserialize_rejects_v1_0_module);
+    utest_run("deserialize rejects v1.1 module (M2 hard break)",
+              deserialize_rejects_v1_1_module);
+    utest_run("deserialize accepts v1.2 module",
+              deserialize_accepts_v12_module);
     utest_run("deserialize rejects wrong int_width",
               deserialize_rejects_wrong_int_width);
     utest_run("deserialize rejects wrong float_type",

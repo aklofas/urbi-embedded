@@ -183,11 +183,16 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
         return ULOAD_BAD_MAGIC;
     }
 
-    /* version byte: 0x11 = v1.1 (16*major + minor) */
-    if (buf[4] != 0x11u) {
+    /* version byte: 0x12 = v1.2 (16*major + minor); v1.0 and v1.1 are hard-rejected
+       because M3 changed OP_RETURN dispatch semantics (pending_unwind path); loading
+       old modules silently would produce incorrect nested-unwind behaviour. */
+    if (buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(errmsg, errcap,
-                   "unsupported version byte 0x%02x; this build expects 0x11",
-                   (unsigned)buf[4]);
+                   "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
+                   (unsigned)buf[4],
+                   (unsigned)(buf[4] >> 4), (unsigned)(buf[4] & 0x0Fu),
+                   (unsigned)URBI_BYTECODE_VERSION_BYTE,
+                   (unsigned)URBI_BYTECODE_VERSION_MAJOR, (unsigned)URBI_BYTECODE_VERSION_MINOR);
         return ULOAD_UNSUPPORTED_VERSION;
     }
 

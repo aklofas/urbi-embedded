@@ -12,6 +12,14 @@
 extern "C" {
 #endif
 
+/* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
+   Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
+   v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — hard break for control transfer). */
+
+#define URBI_BYTECODE_VERSION_MAJOR  1u
+#define URBI_BYTECODE_VERSION_MINOR  2u
+#define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4u) | URBI_BYTECODE_VERSION_MINOR)
+
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
 
 #ifndef URBI_INT_WIDTH
