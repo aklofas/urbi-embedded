@@ -60,14 +60,16 @@ typedef enum {
     UEXEC_CANCEL
 } UExecStatus;
 
-/* === Forward declarations for types that land in later tasks. ===
-   T3 creates ucleanup.h — include it then; use opaque pointer for now.
-   T29 creates utag.h.  Reactive types land later. */
+/* === Cleanup-stack type (T3) ===
+   ucleanup.h defines UCleanupEntry and the stack init/destroy ops. */
 
-struct UCleanupEntry; /* T3 */
-struct UTag;          /* T29 */
-struct UEvent;        /* reactive runtime */
-struct UVM;           /* uvm.h — forward-decl to avoid circular include */
+#include "ucleanup.h"
+
+/* === Forward declarations for types that land in later tasks. === */
+
+struct UTag;   /* T29 */
+struct UEvent; /* reactive runtime */
+struct UVM;    /* uvm.h — forward-decl to avoid circular include */
 
 /* === UStrand struct (M3 baseline) ===
    T20 and T29 add lifecycle operations; T9 wires the unwind walker;
@@ -116,10 +118,18 @@ struct UStrand {
     } wait_payload;
 };
 
-/* === Lifecycle functions (stubs; full impl across T20 + T29) === */
+/* === Lifecycle functions (stubs; full impl across T20 + T29) ===
+
+   ustrand_init zeros the strand, sets DORMANT state, and pre-allocates the
+   cleanup stack using vm->alloc_fn.  On allocation failure the strand is
+   left in a detectable malformed-DORMANT state (cleanup_base == NULL);
+   callers must check.
+
+   ustrand_destroy frees the cleanup stack using vm->alloc_fn.  The same vm
+   pointer used for init must be passed to destroy. */
 
 void ustrand_init(UStrand *s, struct UVM *vm);
-void ustrand_destroy(UStrand *s);
+void ustrand_destroy(UStrand *s, struct UVM *vm);
 
 #ifdef __cplusplus
 }

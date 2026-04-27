@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UStrand lifecycle stubs.
    Full initialisation (frame stack, registers, lex env) lands at T20.
-   Tag fields land at T29.  Cleanup-stack wiring lands at T3. */
+   Tag fields land at T29.  Cleanup-stack wiring: T3 (this file). */
 
 #include "ustrand.h"
+#include "ucleanup.h"
+#include "uvm.h"
 
 /* Zero a UStrand without memset — keeps the translation unit freestanding.
    Uses a volatile byte loop (same pattern as arena_zero in uarena.c) so the
@@ -17,17 +19,25 @@ static void strand_zero(UStrand *s) {
 
 void
 ustrand_init(UStrand *s, struct UVM *vm) {
-    (void)vm; /* T20 will use vm to attach the strand to the scheduler */
     strand_zero(s);
     s->state = USTRAND_STATE_DORMANT;
-    /* cleanup_base / cleanup_cap set by T3's strand-init helper. */
-    /* M2 register-window / frame-stack / lex-env init stays in M2's existing
-       strand-init path and will be merged here at T20. */
+    /* Pre-allocate the cleanup stack using the VM's pluggable allocator.
+       On allocation failure cleanup_base stays NULL (detectable by caller).
+       T20 will add frame-stack / register-window / lex-env init here. */
+    if (vm != NULL) {
+        (void)strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX);
+        /* Failure leaves strand in malformed DORMANT (cleanup_base == NULL).
+           Caller checks via s->cleanup_base == NULL if needed. */
+    }
+    /* When vm is NULL the strand has no cleanup stack; callers that omit vm
+       must call strand_cleanup_stack_init explicitly before use. */
 }
 
 void
-ustrand_destroy(UStrand *s) {
-    /* T3 will free the cleanup-stack array here.
-       M2 register window teardown also lands at T20. */
-    (void)s;
+ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* Free the pre-allocated cleanup stack if vm is available. */
+    if (vm != NULL && s->cleanup_base != NULL) {
+        strand_cleanup_stack_destroy(s, vm);
+    }
+    /* M2 register-window / frame-stack teardown lands at T20. */
 }

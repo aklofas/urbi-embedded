@@ -3,21 +3,28 @@
 
 #include "utest.h"
 #include "ustrand.h"
+#include "uvm.h"
 
 #define UTEST(name) static void name(void)
 
 /* Case 1: after ustrand_init the state byte is DORMANT with reason NONE. */
 UTEST(strand_state_dormant_at_init) {
+    UVM vm;
     UStrand s;
-    ustrand_init(&s, NULL);
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
     UASSERT_EQ(USTRAND_GET_STATE(&s), USTRAND_DORMANT);
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_NONE);
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
 }
 
 /* Case 2: WAITING composite values round-trip through the helper macros. */
 UTEST(strand_state_waiting_macros_round_trip) {
+    UVM vm;
     UStrand s;
-    ustrand_init(&s, NULL);
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
 
     s.state = USTRAND_STATE_WAITING_SLEEP;
     UASSERT(USTRAND_IS_WAITING(&s));
@@ -30,16 +37,23 @@ UTEST(strand_state_waiting_macros_round_trip) {
     s.state = USTRAND_STATE_WAITING_JOIN;
     UASSERT(USTRAND_IS_WAITING(&s));
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_JOIN);
+
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
 }
 
 /* Case 3: RUNNING state is not flagged as WAITING; reason reads NONE. */
 UTEST(strand_state_running_not_waiting) {
+    UVM vm;
     UStrand s;
-    ustrand_init(&s, NULL);
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
     s.state = USTRAND_STATE_RUNNING;
     UASSERT(!USTRAND_IS_WAITING(&s));
     UASSERT_EQ(USTRAND_GET_STATE(&s), USTRAND_RUNNING);
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_NONE);
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
 }
 
 /* Case 4: the state field is exactly one byte wide. */

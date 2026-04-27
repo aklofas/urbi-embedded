@@ -41,6 +41,7 @@ extern void test_separators_suite(void);
 extern void test_function_suite(void);
 extern void test_lazy_suite(void);
 extern void test_strand_suite(void);
+extern void test_cleanup_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -64,6 +65,7 @@ int main(void) {
     test_function_suite();
     test_lazy_suite();
     test_strand_suite();
+    test_cleanup_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

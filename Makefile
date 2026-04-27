@@ -211,7 +211,7 @@ fuzz-tools:
 cross-arm:
 	$(MAKE) TARGET=arm-cortex-m7 \
 		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding -DURBI_CLEANUP_MAX=16" \
 		AR=arm-none-eabi-ar \
 		all
 
