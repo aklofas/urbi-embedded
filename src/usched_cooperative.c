@@ -215,6 +215,24 @@ sched_quiescent(UVM *vm)
         && vm->host_call_pending_count == 0;
 }
 
+/* === T16 step-driver helper === */
+
+void
+sched_dequeue_ready_head(UVM *vm)
+{
+    UStrand *s = vm->ready_head;
+    if (!s) return;  /* underflow guard */
+    vm->ready_head = s->ready_next;
+    if (vm->ready_head != NULL)
+        vm->ready_head->ready_prev = NULL;
+    else
+        vm->ready_tail = NULL;
+    s->ready_next = NULL;
+    s->ready_prev = NULL;
+    if (vm->strand_runnable_count > 0)
+        vm->strand_runnable_count--;
+}
+
 /* === GC root walker (stub — T26 fills) === */
 
 void

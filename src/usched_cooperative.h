@@ -59,6 +59,13 @@ sched_consume_budget(UStrand *s, uint16_t n) {
 /* GC root walker — stub at T5; T26 wires into root provider registry. */
 void sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
+/* Dequeue the ready-queue head and decrement strand_runnable_count.
+ * Must only be called when ready_head is non-NULL.  Sets the strand's
+ * ready_next/ready_prev to NULL.  Caller is responsible for setting the
+ * strand's state to USTRAND_STATE_RUNNING before dispatching.
+ * T16 urbi_step driver calls this before each dispatch_loop_until_yield. */
+void sched_dequeue_ready_head(UVM *vm);
+
 #ifdef __cplusplus
 }
 #endif

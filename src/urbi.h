@@ -5,6 +5,8 @@
 #define URBI_H
 
 #include <stdbool.h>
+#include <stddef.h>   /* size_t */
+#include <stdint.h>   /* uint64_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,6 +116,46 @@ bool           urbi_realm_has_live_work(struct URealm *realm,
                                         uint32_t *out_strands,
                                         uint32_t *out_watchers,
                                         uint32_t *out_wakes);
+
+/* === Row 8 step driver + chunk-execution C API (M3 / T16) ===
+ *
+ * urbi_step: drive the VM for up to budget_instructions opcodes, returning
+ * a 4-state result describing what the caller should do next.
+ *
+ * urbi_run_chunk: run a module's root chunk under the given Realm.  realm == NULL
+ * uses the VM's global Realm (auto-created on first call).
+ *
+ * urbi_repl_eval: compile a source line and run it; format the result into
+ * out_buf.  Suitable for a read-eval-print loop.
+ *
+ * urbi_run_script: thin wrapper around urbi_run_chunk that discards the result.
+ *
+ * urbi_load_module: register a module under module_name in the VM's import table.
+ * Returns URBI_ERR_INVALID_ARG at M3; real implementation lands at M6. */
+
+struct UModule;       /* forward decl — definition in umodule.h */
+
+typedef enum {
+    URBI_STEP_RUNNING   = 0,  /* budget exhausted or yield; call again */
+    URBI_STEP_QUIESCENT = 1,  /* no live work; host may sleep or exit */
+    URBI_STEP_FATAL     = 2,  /* a strand entered fatal state; inspect via urbi_strand_is_fatal */
+    URBI_STEP_WAKE_AT   = 3   /* no runnable strand now; *out_next_wake_us set */
+} UStepResult;
+
+UStepResult urbi_step(struct UVM *vm,
+                      uint64_t budget_instructions,
+                      uint64_t *out_next_wake_us);
+
+int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
+                   struct UModule *module, UValue *out_result);
+
+int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
+                   const char *line, size_t line_len,
+                   char *out_buf, size_t out_buf_size);
+
+int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module);
+
+int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
 #ifdef __cplusplus
 }

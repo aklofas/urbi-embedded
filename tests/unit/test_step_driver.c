@@ -218,6 +218,133 @@ UTEST(runnable_count_stable_across_yield_cycle)
     uvm_destroy(&vm);
 }
 
+/* ===== T16 urbi_step driver tests ===== */
+
+#include "urbi.h"   /* UStepResult, urbi_step */
+
+/* Case 7: urbi_step on a freshly initialised VM returns QUIESCENT.
+   All 5 liveness counters are zero; no strands, no watchers. */
+UTEST(step_quiescent_on_empty_vm)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    uint64_t wake_us = 0xdeadbeef;
+    UStepResult r = urbi_step(&vm, 1000, &wake_us);
+
+    UASSERT_EQ((int)r, (int)URBI_STEP_QUIESCENT);
+    /* out_next_wake_us should be untouched for QUIESCENT. */
+    UASSERT_EQ(wake_us, (uint64_t)0xdeadbeef);
+
+    uvm_destroy(&vm);
+}
+
+/* Case 8: urbi_step returns FATAL when vm->fatal_strand is non-NULL.
+   Uses a stack-allocated stub strand; no dispatch occurs. */
+UTEST(step_fatal_when_fatal_strand_set)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand stub;
+    ustrand_init(&stub, &vm);
+    stub.fatal_status = UEXEC_THROW;  /* simulate a prior fatal event */
+
+    /* Wire the fatal pointer directly — simulates what dispatch sets. */
+    vm.fatal_strand = &stub;
+
+    UStepResult r = urbi_step(&vm, 1000, NULL);
+    UASSERT_EQ((int)r, (int)URBI_STEP_FATAL);
+
+    /* Clear so destroy/cleanup doesn't see it. */
+    vm.fatal_strand = NULL;
+    ustrand_destroy(&stub, &vm);
+    uvm_destroy(&vm);
+}
+
+/* Case 9: urbi_step returns WAKE_AT (not QUIESCENT) when one strand is sleeping.
+   No runnable strands exist, but wakeup_pending_count > 0. */
+UTEST(step_wake_at_with_wakeup_pending)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand a;
+    ustrand_init(&a, &vm);
+
+    /* Block strand on a sleep wake in the future. */
+    a.state = USTRAND_STATE_RUNNING;
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 999999u);
+
+    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.wakeup_pending_count,  1u);
+
+    uint64_t wake_us = 0;
+    UStepResult r = urbi_step(&vm, 1000, &wake_us);
+
+    UASSERT_EQ((int)r, (int)URBI_STEP_WAKE_AT);
+    UASSERT_EQ(wake_us, (uint64_t)999999u);
+
+    /* Cleanup: unblock then destroy. */
+    sched_strand_unblock(&a);
+    /* Drain the runnable entry manually to not trip counters on destroy. */
+    sched_dequeue_ready_head(&vm);
+
+    ustrand_destroy(&a, &vm);
+    uvm_destroy(&vm);
+}
+
+/* Case 10: sched_dequeue_ready_head is idempotent on an empty queue (no crash). */
+UTEST(dequeue_ready_head_noop_on_empty_queue)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Should not crash / underflow. */
+    sched_dequeue_ready_head(&vm);
+    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT(vm.ready_head == NULL);
+
+    uvm_destroy(&vm);
+}
+
+/* Case 11: sched_dequeue_ready_head from a two-strand queue leaves the
+   second strand as the new head. */
+UTEST(dequeue_ready_head_advances_queue)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand a, b;
+    ustrand_init(&a, &vm);
+    ustrand_init(&b, &vm);
+
+    sched_strand_make_runnable(&a);
+    sched_strand_make_runnable(&b);
+    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT(vm.ready_head == &a);
+
+    sched_dequeue_ready_head(&vm);
+    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT(vm.ready_head == &b);
+    UASSERT(a.ready_next == NULL);
+    UASSERT(a.ready_prev == NULL);
+
+    sched_dequeue_ready_head(&vm);
+    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT(vm.ready_head == NULL);
+    UASSERT(vm.ready_tail == NULL);
+
+    ustrand_destroy(&a, &vm);
+    ustrand_destroy(&b, &vm);
+    uvm_destroy(&vm);
+}
+
 void test_step_driver_suite(void) {
     utest_run("counter_strand_runnable_increments_on_make_runnable",
               counter_strand_runnable_increments_on_make_runnable);
@@ -231,4 +358,17 @@ void test_step_driver_suite(void) {
               wakeup_pending_no_underflow_on_strand_not_on_queue);
     utest_run("runnable_count_stable_across_yield_cycle",
               runnable_count_stable_across_yield_cycle);
+    /* T16 step-driver tests */
+    utest_run("step_quiescent_on_empty_vm",
+              step_quiescent_on_empty_vm);
+    utest_run("step_fatal_when_fatal_strand_set",
+              step_fatal_when_fatal_strand_set);
+    utest_run("step_wake_at_with_wakeup_pending",
+              step_wake_at_with_wakeup_pending);
+    utest_run("dequeue_ready_head_noop_on_empty_queue",
+              dequeue_ready_head_noop_on_empty_queue);
+    utest_run("dequeue_ready_head_advances_queue",
+              dequeue_ready_head_advances_queue);
+    /* step_wake_at_with_sleeping_strand_only: deferred to T21.
+       Requires urbi_strand_spawn_sleeping which does not exist at T16. */
 }
