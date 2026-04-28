@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: compound assignment operators (+=, *=, /=, -=) are evaluated atomically;
+#         target expression is not evaluated twice even with side effects.
+# defer-to: M4 (requires method dispatch on prototype slots and cout/Channel)
+#
+# Reason:
+#   The fixture defines a Base class with a foo() method returning 'this' and a
+#   val slot, then exercises compound assignment via method chaining (Base.foo().val += 2).
+#   Class/prototype definition and slot-method dispatch are M4 object-model features.
+#   'cout' channel output is also not available at M3.
+#
+# Original urbiscript (activate at M4 with object model):
+# # cout.quote = false | class Base { function foo() { cout << "Hello world!"; return this }; var val = 0 };
+# # Base.foo().val += 2;
+# # [00000001:output] Hello world!
+# # [00000002] 2
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/inplace-atomic.chk)

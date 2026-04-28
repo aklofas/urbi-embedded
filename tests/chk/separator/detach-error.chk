@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: errors in detached code are displayed; parent block is stopped on
+#         error in sequential code; detach() call propagation semantics.
+# defer-to: M4 (requires detach() builtin function and ',' / '&' separator runtime)
+#
+# Reason:
+#   The fixture calls the detach() builtin function, which is a stdlib helper
+#   scheduled for M4.  It also uses ',' and '&' separators which require the
+#   urbi_step driver (M5 chk path).  Error propagation across concurrent
+#   strands depends on the full scheduler context.
+#
+# Original urbiscript (activate at M4+ with detach() builtin):
+# # f;
+# # [00000001:error] !!! input.u:@.1: lookup failed: f
+# # f,
+# # [00000002:error] !!! input.u:@.1: lookup failed: f
+# # detach(f)|;
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/detach-error.chk)

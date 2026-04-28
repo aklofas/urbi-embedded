@@ -1,0 +1,13 @@
+# Milestone: M3
+# Covers: nested '&' and '|' separator combinations; complex join-tree evaluation.
+# defer-to: M5 (chk runner needs urbi_step driver path for '&' separator)
+#
+# Reason:
+#   '&' (OP_FORK_JOIN) requires the realm-managed scheduler path.  The chk
+#   runner uses the uvm_run REPL path (realm == NULL); OP_FORK_JOIN produces
+#   a TypeError in that context.  This fixture exercises deeply nested '&'/'|'
+#   interleaving which depends on correct multi-strand scheduling.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # {1|5}&{2|6|9|10}&{3|7}&{4|8};
+# # 42&51;

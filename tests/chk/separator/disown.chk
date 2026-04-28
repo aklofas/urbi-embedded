@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: detach() vs disown() tag-inheritance semantics; detach() inherits tags,
+#         disown() strips all tags; Job.current.tags inspection.
+# defer-to: M4 (requires disown(), detach(), Job.current.tags, and Tag.new() method dispatch)
+#
+# Reason:
+#   This fixture uses disown() and detach() builtins, Job.current introspection
+#   (Job.current.tags.size), and Tag.new() method dispatch — all scheduled for M4.
+#   The tag-inheritance distinction between the two is a scheduler-level feature
+#   that depends on the strand's ambient tag list at fork time.
+#
+# Original urbiscript (activate at M4 with full tag + job introspection):
+# # Tag.new(): { var ntags = Job.current.tags.size | {};
+# #   assert(ntags >= 1);
+# #   detach(echo(Job.current.tags.size - ntags)); sleep(10ms);
+# # [00000001] *** 0
+# #   disown(echo(Job.current.tags.size)); sleep(10ms);
+# # [00000002] *** 0 };

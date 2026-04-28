@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: detached runners (','  separator) reading and writing shared environment;
+#         fire-and-forget strand sees outer variable at fork time and after write.
+# defer-to: M5 (chk runner needs urbi_step driver path for ',' separator)
+#
+# Reason:
+#   ',' (OP_FORK_DETACH) requires the realm-managed scheduler path; not available
+#   in the uvm_run REPL (realm == NULL).  See tests/chk/separator/comma_amp_unsupported.chk.
+#   Cross-strand shared-environment semantics (§7.1 shared-frame) are additionally
+#   deferred to M5 design-risks-7 resolution.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # { var x = 0; { x.print() }, x.print() };
+# # [00000001] 0
+# # [00000002] 0
+# # { var x = 0; { x = 42 }, sleep(100ms); x.print() };
+# # [00000003] 42

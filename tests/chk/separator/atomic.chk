@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: atomicity of single-cycle operations under the urbiscript scheduler;
+#         'atomic' pattern using call.evalArgAt(0) and System.cycle comparison.
+# defer-to: M5 (requires System.cycle, call.evalArgAt, Semaphore, and '&'/'|' runtime)
+#
+# Reason:
+#   This fixture uses call.evalArgAt(0) for lazy parameter evaluation (M4
+#   object/reflection model), System.cycle counter (M4 stdlib), Semaphore type
+#   (M6 stdlib), and nested '&' separator (M5 chk driver).  None of these are
+#   available in the M3 uvm_run REPL path.
+#
+# Original urbiscript (activate at M5+ with full stdlib):
+# # function atomic { var start = System.cycle | call.evalArgAt(0) | assert(System.cycle == start) }|;
+# # atomic(1+2);
+# # atomic({var n = 0});
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk)

@@ -1,0 +1,13 @@
+# Milestone: M3
+# Covers: '&' join of two empty blocks; result is the last expression value (2).
+# defer-to: M5 (chk runner needs urbi_step driver path for '&' separator)
+#
+# Reason:
+#   '&' (OP_FORK_JOIN / OP_JOIN_WAIT) requires the realm-managed scheduler path.
+#   The chk runner uses the uvm_run REPL path (realm == NULL); OP_FORK_JOIN
+#   produces TypeError in that context.  See comma_amp_unsupported.chk.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # {}&{};
+# # 2;
+# # [00000001] 2

@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: Barrier.new() synchronization primitive; multiple waiters unblocked
+#         by signalAll/signal; interaction with tag stop.
+# defer-to: M6 (requires Barrier stdlib type and ',' separator runtime)
+#
+# Reason:
+#   Barrier is a stdlib synchronization type scheduled for M6.  The fixture
+#   also uses ',' (OP_FORK_DETACH) for parallel waiters, which requires the
+#   urbi_step driver path (not available in the uvm_run REPL).  Tag.new() method
+#   dispatch (t.stop()) requires M4 object infrastructure.
+#
+# Original urbiscript (activate at M6 with full stdlib):
+# # var b = Barrier.new() | {};
+# # echo(b.wait()), echo(b.wait()), echo(b.wait()), sleep(0);
+# # b.signalAll("foobar");
+# # [00000001] 3
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/barrier.chk)

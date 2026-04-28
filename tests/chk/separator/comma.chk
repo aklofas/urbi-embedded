@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: ',' separator fire-and-forget; detached strand runs concurrently
+#         with main strand; timing interleaving via sleep.
+# defer-to: M5 (chk runner needs urbi_step driver path for ',' separator)
+#
+# Reason:
+#   ',' (OP_FORK_DETACH) fires a detached strand.  The chk runner uses the
+#   uvm_run REPL path (realm == NULL); OP_FORK_DETACH produces "TypeError:
+#   requires urbi_step driver" in that context (see comma_amp_unsupported.chk).
+#   Timing-based ordering (sleep interleave) additionally requires the step
+#   driver to advance time and schedule strands.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # 42,
+# # {sleep(200ms); echo("bar")}, sleep(100ms); echo("foo");
+# # [00000001] *** foo
+# # [00000002] *** bar
+# # sleep(200ms);

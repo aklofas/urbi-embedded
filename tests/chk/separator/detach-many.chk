@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: spawning 100 detached strands via detach(); each increments counter
+#         twice with a 1s sleep in between; final value is 200 after 2s wait.
+# defer-to: M4 (requires detach() builtin function and ',' separator runtime)
+#
+# Reason:
+#   The fixture uses detach(), a stdlib convenience function that spawns a strand
+#   with no tag inheritance.  detach() is a M4 stdlib function.  The fixture
+#   also relies on wall-clock timing (sleep 1s / sleep 2s) across 100 concurrent
+#   strands — requires urbi_step driver with proper time advancement.
+#
+# Original urbiscript (activate at M4+ with detach() builtin):
+# # var x = 0 | {};
+# # function add2() { x++; sleep(1s); x++ } | {};
+# # for (var i = 0; i < 100; i++) detach(add2());
+# # sleep(2s);
+# # x;
+# # [00000001] 200
