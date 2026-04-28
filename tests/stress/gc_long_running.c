@@ -11,7 +11,6 @@
  * invoked by `make test-stress` and `make releasetest`. */
 
 #include "ugc_capi.h"
-#include "ugc_incremental.h"
 #include "uvm.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,15 +46,15 @@ int main(void)
     size_t total = urbi_gc_bytes_allocated(&vm);
 
     /* After a full collection with no live references, live_bytes should be
-     * a tiny fraction of total_allocated (we accept < 1%). */
-    int pass = (total == 0 || live < total / 100);
+     * zero (all cells unreachable after force_full). */
+    int pass = (total == 0 || live == 0);
 
     printf("gc_long_running: total_allocated=%zu live_bytes=%zu %s\n",
            total, live, pass ? "PASS" : "FAIL");
 
     if (!pass) {
-        fprintf(stderr, "FAIL: live_bytes (%zu) >= total_allocated/100 (%zu)"
-                " — heap not reclaimed\n", live, total / 100);
+        fprintf(stderr, "FAIL: live_bytes (%zu) not zero after force_full"
+                " — heap not fully reclaimed\n", live);
     }
 
     uvm_destroy(&vm);

@@ -13,7 +13,6 @@
  * T28. */
 
 #include "ugc_capi.h"
-#include "ugc_incremental.h"
 #include "uvm.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +20,12 @@
 
 #define ALLOC_COUNT    5000
 #define SLICE_INTERVAL  100
+
+/* T46 will tighten this to 1000000 (1 ms) per row 10 §3.7 sub-ms target.
+ * At M3 the assertion is a no-op (GC_PAUSE_ASSERT_NS=0); flip the constant at T46. */
+#ifndef GC_PAUSE_ASSERT_NS
+#define GC_PAUSE_ASSERT_NS  0
+#endif
 
 static long
 elapsed_ns(struct timespec *start, struct timespec *end)
@@ -74,6 +79,15 @@ int main(void)
     printf("gc_pause_time: %d slices, max=%ld ns, avg=%ld ns PASS\n",
            slices, max_ns, avg_ns);
     printf("  (sub-ms verification: T46 / make test-gc-pause)\n");
+
+#if GC_PAUSE_ASSERT_NS > 0
+    if (max_ns > GC_PAUSE_ASSERT_NS) {
+        printf("FAIL — max slice %ld ns exceeds GC_PAUSE_ASSERT_NS=%d\n",
+               max_ns, GC_PAUSE_ASSERT_NS);
+        uvm_destroy(&vm);
+        return 1;
+    }
+#endif
 
     uvm_destroy(&vm);
     return 0;

@@ -3,7 +3,7 @@
 #         the GC reclaims dead cells and gc_live_bytes remains small relative
 #         to gc_total_allocated.
 #
-# defer-to: M4 (object literals) + T28+ stress test in tests/stress/
+# defer-to: M4 (object literals); see tests/stress/gc_long_running.c for the C-level equivalent
 #
 # Reason: the {} object literal syntax used by the alloc-and-drop loop body
 # does not exist until M4 (object model).  The equivalent C-level stress test

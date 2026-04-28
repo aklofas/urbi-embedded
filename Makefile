@@ -161,6 +161,8 @@ releasetest:
 	$(MAKE) docs-check
 	@echo "=== releasetest: coverage ==="
 	$(MAKE) coverage
+	@echo "=== releasetest: GC stress tests ==="
+	$(MAKE) test-stress
 	@echo "=== releasetest: cross-strategy compile smoke ==="
 	$(MAKE) test-gc-none-build
 	@echo "=== releasetest: all gates passed ==="
