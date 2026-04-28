@@ -862,16 +862,6 @@ urbi_unpin(UVM *vm, UValue v)
 }
 #endif
 
-/* === observer_dirty — watcher dirty-set hook ===
- *
- * T34 (row 11): replace with real impl in src/uwatcher.c; the prototype
- * stays in ugc_incremental.h. */
-void
-observer_dirty(UVM *vm, UCell *cell, uint32_t key)
-{
-    (void)vm; (void)cell; (void)key;
-}
-
 /* === uvalue_is_heap_white ===
  *
  * Defined here (not inline in the header) because ugc_incremental.h cannot

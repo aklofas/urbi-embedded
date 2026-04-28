@@ -114,8 +114,8 @@ struct UClosure;
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === observer_dirty — watcher dirty-set hook ===
- * T34 (row 11): no-op stub at T25; src/uwatcher.c will replace with real
- * impl that walks per-cell observer list and bumps vm->watcher_dirty_count. */
+ * Defined in src/uwatcher.c.  Increments vm->watcher_dirty_count; the
+ * scheduler calls watcher_eval_dirty (T34) on the next safepoint turn. */
 void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===

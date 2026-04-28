@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UWatcher pool lifecycle + minimal install/unregister stubs.
- * Row 11 / T32.
+/* UWatcher pool lifecycle + install/unregister + observer_dirty.
+ * Row 11 / T33.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation uses vm->alloc_fn (realloc semantics).
@@ -9,7 +9,8 @@
 #include "uwatcher.h"
 #include "uvm.h"
 #include "ugc.h"            /* UTYPE_WATCHER */
-#include "ugc_incremental.h" /* UGC_IS_FIXED, current_white access */
+#include "ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
+#include "utag.h"           /* UTag, member_watchers_head */
 #include "urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "urbi_internal.h"  /* URBI_INTERNAL_ASSERT */
 
@@ -140,14 +141,15 @@ uwatcher_pool_destroy(struct UVM *vm)
     vm->active_watchers_head  = NULL;
 }
 
-/* === Install / unregister stubs (T32 scope) ===
+/* === Install / unregister ===
  *
- * T32 minimal: allocate from pool + wire active_watchers_head.
+ * install: pool-alloc, wire read-set (cells[] + bit-6), tail-insert into
+ *          active_watchers_head (row 12 §2.2 determinism), head-insert into
+ *          owning_tag->member_watchers_head, bump watcher_active_count.
  *
- * TODO(T33): wire read_set entries into cells[] + set bit-6
- *            (UGC_HAS_WATCHER_OBSERVER) on each observed cell.
- * TODO(T33): insert w into owning_tag->member_watchers_head via next_in_tag.
- * TODO(T33): walk read_set[] argument and populate w->cells[]. */
+ * unregister: scan-on-unregister to clear bit-6 per spec §5.4, unlink from
+ *             tag member list, unlink from active list, pool_free, decrement
+ *             watcher_active_count. */
 
 UWatcher *
 urbi_watcher_install_internal(
@@ -161,11 +163,12 @@ urbi_watcher_install_internal(
     size_t            read_set_count)
 {
     UWatcher *w;
-
-    (void)read_set;          /* T33 will wire this */
-    (void)read_set_count;    /* T33 will wire this */
+    size_t    i;
 
     URBI_ASSERT_NOT_ISR(vm);
+
+    /* Guard: overflow check before pool_alloc to avoid wasting a slot. */
+    if (read_set_count > (size_t)URBI_WATCHER_READSET_MAX) return NULL;
 
     w = pool_alloc(vm);
     if (w == NULL) return NULL;
@@ -175,15 +178,39 @@ urbi_watcher_install_internal(
     w->condition  = condition;
     w->body       = body;
     w->onleave    = onleave;
-    /* read_set_count is stored but cells[] not populated here — T33's job. */
-    w->read_set_count = (read_set_count <= (size_t)URBI_WATCHER_READSET_MAX)
-                        ? (uint8_t)read_set_count
-                        : (uint8_t)URBI_WATCHER_READSET_MAX;
-    w->next_in_tag = NULL;  /* TODO(T33): insert into owning_tag->member_watchers_head */
+    w->read_set_count = (uint8_t)read_set_count;
 
-    /* Insert at head of active_watchers_head list. */
-    w->next_active           = vm->active_watchers_head;
-    vm->active_watchers_head = w;
+    /* Read-set capture: populate cells[] and set bit-6 on each observed cell
+     * per spec §5.3.  Caller may pass read_set == NULL when read_set_count == 0. */
+    for (i = 0; i < read_set_count; i++) {
+        read_set[i]->gc_byte |= UGC_HAS_WATCHER_OBSERVER;
+        w->cells[i] = read_set[i];
+    }
+
+    /* Tail-insert into active_watchers_head per row 12 §2.2 (install order =
+     * eval order; determinism gate relies on this invariant). */
+    w->next_active = NULL;
+    if (vm->active_watchers_head == NULL) {
+        vm->active_watchers_head = w;
+    } else {
+        UWatcher *tail = vm->active_watchers_head;
+        while (tail->next_active != NULL) tail = tail->next_active;
+        tail->next_active = w;
+    }
+
+    /* Head-insert into owning tag's member_watchers_head per spec §5.4.
+     * NULL-guard: tests may pass owning_tag == NULL. */
+    if (owning_tag != NULL) {
+        w->next_in_tag             = owning_tag->member_watchers_head;
+        owning_tag->member_watchers_head = w;
+    } else {
+        w->next_in_tag = NULL;
+    }
+
+    /* Track active count. */
+    vm->watcher_active_count++;
+
+    /* TODO(T34): seed last_value_cache via invoke_condition_closure(vm, w). */
 
     return w;
 }
@@ -192,12 +219,39 @@ void
 urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
 {
     struct UWatcher **pp;
+    size_t i;
 
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(w != NULL);
 
-    /* TODO(T33): unlink from owning_tag->member_watchers_head via next_in_tag. */
-    /* TODO(T33): clear bit-6 (UGC_HAS_WATCHER_OBSERVER) from each cell in cells[]. */
+    /* Scan-on-unregister: for each cell in this watcher's read-set, walk all
+     * OTHER active watchers.  If none of them still observe the cell, clear
+     * bit-6.  The scan happens before active-list unlink so the loop correctly
+     * skips w itself via the (o == w) guard.  Per spec §5.4. */
+    for (i = 0; i < (size_t)w->read_set_count; i++) {
+        UCell   *c             = w->cells[i];
+        bool     still_observed = false;
+        UWatcher *o;
+
+        for (o = vm->active_watchers_head; o != NULL && !still_observed;
+             o = o->next_active) {
+            uint8_t j;
+            if (o == w) continue;
+            for (j = 0; j < o->read_set_count; j++) {
+                if (o->cells[j] == c) { still_observed = true; break; }
+            }
+        }
+        if (!still_observed) {
+            c->gc_byte = (uint8_t)(c->gc_byte & ~(uint8_t)UGC_HAS_WATCHER_OBSERVER);
+        }
+    }
+
+    /* Unlink from owning tag's member list (pointer-to-pointer). */
+    if (w->owning_tag != NULL) {
+        UWatcher **prev = &w->owning_tag->member_watchers_head;
+        while (*prev != NULL && *prev != w) prev = &(*prev)->next_in_tag;
+        if (*prev != NULL) *prev = w->next_in_tag;
+    }
 
     /* Unlink from active_watchers_head via pointer-to-pointer walk. */
     pp = &vm->active_watchers_head;
@@ -209,5 +263,24 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         pp = &(*pp)->next_active;
     }
 
+    vm->watcher_active_count--;
     pool_free(vm, w);
+}
+
+/* === observer_dirty — watcher dirty-set hook ===
+ *
+ * Called by the write barriers in ugc_incremental.h whenever a cell with
+ * bit-6 set (UGC_HAS_WATCHER_OBSERVER) is written.  Increments the dirty
+ * counter so the scheduler knows to call watcher_eval_dirty on the next
+ * safepoint turn.
+ *
+ * Per spec §5.5: walk-all eval at safepoint; identifying the specific cell or
+ * slot key is unnecessary at M3 — watcher_eval_dirty (T34) will visit every
+ * active watcher whose read-set might be affected. */
+void
+observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
+{
+    (void)cell;
+    (void)key;
+    vm->watcher_dirty_count++;
 }
