@@ -155,6 +155,7 @@ static UAstNode *parse_function(UParser *p);
 static UAstNode *parse_return(UParser *p);
 static UAstNode *parse_try(UParser *p);
 static UAstNode *parse_throw(UParser *p);
+static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -402,12 +403,19 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
     }
 
     /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
-       If not TOK_EQ, put the ident back as the LHS and continue with
+       mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.
+       If neither, put the ident back as the LHS and continue with
        the normal inner-tier path (Pratt climb + pipe/amp loop). */
     if (t.type == TOK_IDENT) {
         UToken name = consume(p);
         if (peek(p).type == TOK_EQ) {
             return parse_assign_from_ident(p, name);
+        }
+        /* Tag-prefix: `mytag: { body }`.  At statement level, `:` has no
+         * other meaning (not an infix operator, not a separator), so seeing
+         * IDENT followed by COLON unambiguously introduces a tag scope. */
+        if (peek(p).type == TOK_COLON) {
+            return parse_tag_prefix(p, name);
         }
         /* Not assignment: build the ident node and finish the Pratt climb
            for the arithmetic expression (including postfix calls), then
@@ -912,6 +920,30 @@ static UAstNode *parse_throw(UParser *p) {
     UAstNode *node = make_node(p, AST_THROW, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.throw_expr.value = value;
+    return node;
+}
+
+/* --- parse_tag_prefix: `name : { body }`
+   Called from parse_statement_or_expr after consuming `name` and seeing `:`.
+   Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name), body = AST_BLOCK.
+   onleave is always NULL at M3 (M5 wires on-leave syntax). --- */
+
+static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
+    consume(p);  /* consume ':' */
+
+    UAstNode *body = parse_block(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    UAstNode *tag_expr = make_ident(p, name_tok.u.str.start, name_tok.u.str.len,
+                                    name_tok.line, name_tok.col);
+    if (!tag_expr) return (UAstNode *)&uparser_oom_sentinel;
+
+    UAstNode *node = make_node(p, AST_TAG_PREFIX, name_tok.line, name_tok.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.tag_prefix.tag_expr = tag_expr;
+    node->u.tag_prefix.body     = body;
+    node->u.tag_prefix.onleave  = NULL;  /* deferred to M5 */
     return node;
 }
 

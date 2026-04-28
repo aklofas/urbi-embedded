@@ -58,6 +58,9 @@ typedef enum {
     TOK_KW_FALSE,
     TOK_KW_NIL,
 
+    /* M3 tag-scope separator */
+    TOK_COLON,        /* : */
+
     /* keywords — M3 control-transfer */
     TOK_KW_TRY,
     TOK_KW_CATCH,

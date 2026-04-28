@@ -52,7 +52,10 @@ typedef enum {
 
     /* M3 — control transfer */
     AST_TRY        = 22,    /* try { body } [catch (e) { handler }] [finally { cleanup }] */
-    AST_THROW      = 23     /* throw expr */
+    AST_THROW      = 23,    /* throw expr */
+
+    /* M3 — tag scope */
+    AST_TAG_PREFIX = 24     /* mytag: { body } — tag-scope syntax; onleave deferred to M5 */
 } UAstKind;
 
 typedef enum {
@@ -140,6 +143,7 @@ typedef enum {
  *   u.assign      — AST_ASSIGN: assignment to existing local/upvalue
  *   u.try_stmt    — AST_TRY:    try body + optional catch/finally
  *   u.throw_expr  — AST_THROW:  value expression to throw
+ *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave=NULL at M3
  *
  * Position fields line/col are 1-based, matching the lexer.  For
  * AST_BINARY the position points at the operator token; for AST_ERROR
@@ -246,6 +250,11 @@ struct UAstNode {
         struct {                                            /* AST_THROW */
             UAstNode   *value;             /* expression to throw */
         } throw_expr;
+        struct {                                            /* AST_TAG_PREFIX */
+            UAstNode   *tag_expr;          /* the tag identifier (AST_IDENT) */
+            UAstNode   *body;              /* AST_BLOCK — the tag-scoped body */
+            UAstNode   *onleave;           /* onleave body — NULL at M3; M5 wires syntax */
+        } tag_prefix;
     } u;
 };
 

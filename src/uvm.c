@@ -668,14 +668,15 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_JOIN_WAIT]  = &&label_OP_JOIN_WAIT,
         [OP_GETSLOT]    = &&label_OP_GETSLOT,
         [OP_SETSLOT]    = &&label_OP_SETSLOT,
-        /* M3 row 7 control-transfer — T10 wires THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE */
+        /* M3 row 7 control-transfer — T10 wires THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE
+         * T11 wires PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD; TAG_STOP stays stub until T31. */
         [OP_THROW]            = &&label_OP_THROW,
         [OP_TAG_STOP]         = &&label_row7_stub,
         [OP_TRY_BEGIN]        = &&label_OP_TRY_BEGIN,
         [OP_TRY_END]          = &&label_OP_TRY_END,
-        [OP_PUSH_TAG]         = &&label_row7_stub,
-        [OP_POP_TAG]          = &&label_row7_stub,
-        [OP_PUSH_FRAME_GUARD] = &&label_row7_stub,
+        [OP_PUSH_TAG]         = &&label_OP_PUSH_TAG,
+        [OP_POP_TAG]          = &&label_OP_POP_TAG,
+        [OP_PUSH_FRAME_GUARD] = &&label_OP_PUSH_FRAME_GUARD,
         [OP_RESUME]           = &&label_OP_RESUME,
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
     };
@@ -1164,21 +1165,94 @@ dispatch:
             NEXT();
         }
 
-        /* M3 row 7 stubs — T11 will fill PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD;
-         * TAG_STOP is T31.  Dispatching these before their task lands is an
-         * internal error caught by CI. */
+        CASE(OP_PUSH_TAG) {
+            /* OP_PUSH_TAG ABx:
+             *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
+             *   A[3:0] = tag_reg nibble (register holding the tag value)
+             *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
+             *
+             * Push a UCLEANUP_TAG_SCOPE entry onto the cleanup stack.
+             * owning_tag = NULL at M3 (T29 wires real UTag pointer).
+             * strand_back = s for future tag.stop() walk (T31 uses). */
+            uint8_t  a          = uinstr_a(*s->pc);
+            uint8_t  flags      = (uint8_t)((a >> 4) & 0xFu);
+            uint16_t handler_pc = uinstr_bx(*s->pc);
+            UCleanupEntry *entry = strand_cleanup_push(s);
+            if (entry == NULL) {
+                s->fatal_status = UEXEC_THROW;
+                s->state        = USTRAND_STATE_DEAD;
+                goto exit_strand;
+            }
+            entry->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+            entry->flags          = flags;
+            entry->handler_pc     = handler_pc;
+            entry->register_base  = 0u;
+            entry->register_count = 0u;
+            entry->owning_tag     = NULL;  /* T29 wires real UTag */
+            entry->catch_pattern  = NULL;
+            entry->next_member    = NULL;
+            entry->strand_back    = s;
+            NEXT();
+        }
+
+        CASE(OP_POP_TAG) {
+            /* OP_POP_TAG ABC: A = tag_reg (unused at M3), B = C = 0.
+             * Pop the top UCLEANUP_TAG_SCOPE entry.
+             * If FLAG_HAS_ONLEAVE is set in the entry's flags, the onleave
+             * handler would run via run_cleanup_with_replace — but at M3
+             * flags is always 0 (no onleave body is emitted), so the handler
+             * branch is dead code.  Include the check for forward-compatibility. */
+            if (s->cleanup_depth > 0) {
+                UCleanupEntry *top = &s->cleanup_base[s->cleanup_depth - 1];
+                if ((top->flags & FLAG_HAS_ONLEAVE) != 0u) {
+                    /* onleave handler: deferred to T30 — not reachable at M3.
+                     * If somehow reached (bytecode corruption), halt safely. */
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired until T30");
+                    HALT();
+                }
+                strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+            }
+            NEXT();
+        }
+
+        CASE(OP_PUSH_FRAME_GUARD) {
+            /* OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0.
+             * Push a UCLEANUP_CALL_FRAME entry onto the cleanup stack.
+             * The T9 unwind walker absorbs UEXEC_RETURN at CALL_FRAME entries,
+             * delivering the return value and popping the frame.
+             * strand_back = s for compatibility with unwind walker. */
+            uint8_t register_base  = uinstr_a(*s->pc);
+            uint8_t register_count = uinstr_b(*s->pc);
+            UCleanupEntry *entry = strand_cleanup_push(s);
+            if (entry == NULL) {
+                s->fatal_status = UEXEC_THROW;
+                s->state        = USTRAND_STATE_DEAD;
+                goto exit_strand;
+            }
+            entry->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
+            entry->flags          = 0u;
+            entry->handler_pc     = 0u;
+            entry->register_base  = register_base;
+            entry->register_count = register_count;
+            entry->owning_tag     = NULL;
+            entry->catch_pattern  = NULL;
+            entry->next_member    = NULL;
+            entry->strand_back    = s;
+            NEXT();
+        }
+
+        /* OP_TAG_STOP stays as a stub — T31 (urbi_tag_stop) wires the runtime.
+         * No syntax emits this opcode yet at T11. */
 #if UVM_USE_COMPUTED_GOTO
         label_row7_stub:
 #else
         case OP_TAG_STOP:
-        case OP_PUSH_TAG:
-        case OP_POP_TAG:
-        case OP_PUSH_FRAME_GUARD:
 #endif
         {
-            URBI_DISPATCH_ASSERT(0 && "row 7 opcode runtime owned by T11/T31");
+            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP runtime owned by T31");
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "row 7 opcode: not yet implemented");
+            vm_format_type_error_msg(vm, "OP_TAG_STOP: not yet implemented (T31)");
             HALT();
         }
 

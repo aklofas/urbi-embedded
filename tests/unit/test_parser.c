@@ -927,6 +927,66 @@ UTEST(parse_throw_basic) {
     ctx_destroy(&c);
 }
 
+/* T11 — tag-prefix scope parser tests. */
+
+UTEST(parse_tag_prefix_basic) {
+    /* "mytag: { 1 }" → AST_TAG_PREFIX with tag_expr=AST_IDENT("mytag"),
+     * body=AST_BLOCK with one statement, onleave=NULL. */
+    ParseCtx c;
+    ctx_init(&c, "mytag: { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_TAG_PREFIX, (int)n->kind);
+    /* tag_expr: AST_IDENT "mytag" */
+    UASSERT(n->u.tag_prefix.tag_expr != NULL);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.tag_prefix.tag_expr->kind);
+    UASSERT_EQ(5, n->u.tag_prefix.tag_expr->u.ident.len);
+    UASSERT(n->u.tag_prefix.tag_expr->u.ident.start[0] == 'm');
+    /* body: AST_BLOCK with one statement */
+    UASSERT(n->u.tag_prefix.body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.tag_prefix.body->kind);
+    UASSERT_EQ(1, n->u.tag_prefix.body->u.block.count);
+    UASSERT_EQ((int)AST_INT, (int)n->u.tag_prefix.body->u.block.stmts[0]->kind);
+    UASSERT_EQ((int64_t)1, n->u.tag_prefix.body->u.block.stmts[0]->u.i);
+    /* onleave: NULL at M3 */
+    UASSERT(n->u.tag_prefix.onleave == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_tag_prefix_then_normal_stmt) {
+    /* "mytag: { 1 } | 42" — tag-prefix as first statement of outer-tier.
+     * After the tag-prefix the `|` separator is consumed; next statement is 42. */
+    ParseCtx c;
+    ctx_init(&c, "mytag: { 1 } | 42");
+    /* First statement: the tag-prefix. */
+    UAstNode *first = uparse_next_statement(&c.p);
+    UASSERT(first != NULL);
+    UASSERT_EQ((int)AST_TAG_PREFIX, (int)first->kind);
+    /* Second statement: the integer 42. */
+    UAstNode *second = uparse_next_statement(&c.p);
+    UASSERT(second != NULL);
+    UASSERT_EQ((int)AST_INT, (int)second->kind);
+    UASSERT_EQ((int64_t)42, second->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_tag_prefix_empty_body) {
+    /* "t: { }" — tag-prefix with an empty block body. */
+    ParseCtx c;
+    ctx_init(&c, "t: { }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_TAG_PREFIX, (int)n->kind);
+    UASSERT(n->u.tag_prefix.tag_expr != NULL);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.tag_prefix.tag_expr->kind);
+    UASSERT_EQ(1, n->u.tag_prefix.tag_expr->u.ident.len);
+    UASSERT(n->u.tag_prefix.body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.tag_prefix.body->kind);
+    UASSERT_EQ(0, n->u.tag_prefix.body->u.block.count);
+    UASSERT(n->u.tag_prefix.onleave == NULL);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -1012,4 +1072,11 @@ void test_parser_suite(void) {
               parse_try_no_catch_no_finally_is_error);
     utest_run("parse: 'throw 99' → AST_THROW with AST_INT value 99",
               parse_throw_basic);
+    /* T11 — tag-prefix scope */
+    utest_run("parse: 'mytag: { 1 }' → AST_TAG_PREFIX with ident tag_expr, AST_BLOCK body",
+              parse_tag_prefix_basic);
+    utest_run("parse: 'mytag: { 1 } | 42' — tag-prefix then normal statement",
+              parse_tag_prefix_then_normal_stmt);
+    utest_run("parse: 't: { }' — tag-prefix with empty block body",
+              parse_tag_prefix_empty_body);
 }

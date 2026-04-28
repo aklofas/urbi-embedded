@@ -15,6 +15,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_VAR", "TOK_KW_FUNCTION", "TOK_KW_RETURN", "TOK_KW_IF", "TOK_KW_ELSE",
     "TOK_KW_WHILE", "TOK_KW_LAZY", "TOK_KW_CLOSURE", "TOK_KW_TRUE", "TOK_KW_FALSE",
     "TOK_KW_NIL",
+    "TOK_COLON",
     "TOK_KW_TRY", "TOK_KW_CATCH", "TOK_KW_FINALLY", "TOK_KW_THROW",
     "TOK_ERROR"
 };
@@ -413,6 +414,7 @@ UToken ulex_next(ULexer *lex) {
     case '&': lex->cur++; return make_tok(lex, TOK_AMP,    start, 1);
     case '{': lex->cur++; return make_tok(lex, TOK_LBRACE, start, 1);
     case '}': lex->cur++; return make_tok(lex, TOK_RBRACE, start, 1);
+    case ':': lex->cur++; return make_tok(lex, TOK_COLON,  start, 1);
     case '=':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;

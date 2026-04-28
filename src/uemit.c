@@ -1602,6 +1602,109 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
         return rd;
     }
+    case AST_TAG_PREFIX: {
+        /* mytag: { body }
+         *
+         * Bytecode layout:
+         *   [push_tag_pc]:
+         *     OP_PUSH_TAG packed_A, onleave_pc_placeholder  ; onleave_pc=0 at M3 (no onleave)
+         *     <body opcodes>
+         *     OP_POP_TAG  tag_reg
+         *     OP_JMP      past_handler_placeholder
+         *   [onleave_pc]:                 ← OP_PUSH_TAG Bx points here (0 at M3)
+         *     (empty — onleave body deferred to M5)
+         *   [past_handler_pc]:
+         *     <continuation>
+         *
+         * At M3: onleave is always NULL, so:
+         *   - OP_PUSH_TAG emits flags=0 (no FLAG_HAS_ONLEAVE), handler_pc = PC-after-JMP.
+         *   - OP_POP_TAG: pop entry; since flags=0 the FLAG_HAS_ONLEAVE branch is dead.
+         *   - OP_JMP past-handler: jumps over the (empty) onleave block.
+         *   - Handler block: empty; no instructions emitted.
+         *
+         * tag_reg: evaluate tag_expr to a register.  At M3 UTag doesn't exist, so
+         * tag_expr (an identifier) resolves to nil.  The cleanup entry stores
+         * owning_tag=NULL (T29 wires the real UTag pointer). tag_reg is limited to
+         * [0,15] by the 4-bit nibble encoding of OP_PUSH_TAG.A[3:0].
+         *
+         * Result: the body's result value (tag-prefix is an expression at M3). */
+
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Evaluate tag_expr to get a register (will be nil at M3). */
+        uint8_t tag_reg = emit_expr(e, n->u.tag_prefix.tag_expr);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding. */
+        if (tag_reg > 15u) {
+            /* Spill into a lower register by moving (shouldn't happen in practice
+             * since tag-prefix appears near top of scope, but defensive). */
+            uint8_t spill = e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, spill, tag_reg, 0u),
+                       (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+            tag_reg = spill;
+        }
+
+        /* Emit OP_PUSH_TAG with placeholder onleave_pc (will be patched). */
+        uint8_t flags_m3 = 0u;  /* no FLAG_HAS_ONLEAVE at M3 */
+        int push_tag_pc = (int)emit_instr_count(e);
+        uemit_push_tag(e, tag_reg, flags_m3, 0u /* placeholder */, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Emit body. */
+        uint8_t rd = e->next_reg;
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+        if (!uemit_open_block(e, false)) return 0u;
+        uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
+        if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+        (void)body_result;
+        if (!uemit_close_block(e)) return 0u;
+
+        /* Emit OP_POP_TAG. */
+        uemit_pop_tag(e, tag_reg, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Emit OP_JMP past the (empty) onleave handler block. */
+        int jmp_past_handler_pc = (int)emit_instr_count(e);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Onleave handler block starts here.
+         * At M3, onleave is always NULL — emit nothing; just record the PC. */
+        int onleave_target = (int)emit_instr_count(e);
+
+        /* Patch OP_PUSH_TAG Bx to point to onleave handler PC. */
+        emit_patch_instr(e, push_tag_pc,
+            uinstr_enc_abx(OP_PUSH_TAG,
+                           (uint8_t)(((flags_m3 & 0xFu) << 4) | (tag_reg & 0xFu)),
+                           (uint16_t)onleave_target));
+
+        /* Past-handler: JMP lands here. */
+        {
+            int past_handler_target = (int)emit_instr_count(e);
+            int off = past_handler_target - (jmp_past_handler_pc + 1);
+            emit_patch_instr(e, jmp_past_handler_pc,
+                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+        }
+
+        /* Return a nil register as the tag-prefix's value. */
+        e->next_reg = rd;
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+        e->next_reg = rd + 1u;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
