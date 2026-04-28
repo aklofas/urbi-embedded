@@ -305,10 +305,6 @@ UTEST(realm_destroy_drain_ordering)
 
     uvm_init(&vm, NULL, NULL);
 
-    /* Sentinel: onleave hook records that drain ran. */
-    static int drain_ran;
-    drain_ran = 0;
-
     /* Use a custom test hook to capture onleave invocation. */
     vm.test_watcher_onleave_hook = NULL;  /* no hook needed; we observe state */
 
@@ -338,7 +334,6 @@ UTEST(realm_destroy_drain_ordering)
     UASSERT_EQ((unsigned)vm.watcher_dirty_count, 0u);
     UASSERT(!vm.in_watcher_eval);
 
-    (void)drain_ran;
     uvm_destroy(&vm);
 }
 

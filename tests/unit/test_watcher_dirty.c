@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty,
  * watcher_eval_dirty + edge/level firing, pending_onleave_queue drain.
- * Row 11 / T33 + T34 + T35. */
+ * Row 11. */
 
 #include "utest.h"
 #include "uvm.h"
