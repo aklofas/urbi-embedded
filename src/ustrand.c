@@ -28,7 +28,9 @@ ustrand_init(UStrand *s, struct UVM *vm) {
     s->state = USTRAND_STATE_DORMANT;
     /* Pre-allocate the cleanup stack using the VM's pluggable allocator.
        On allocation failure cleanup_base stays NULL (detectable by caller).
-       T20 will add frame-stack / register-window / lex-env init here. */
+       Frame-stack / register-window / lex-env init is deferred to urbi_step
+       or a future urbi_strand_arm helper; the strand is a valid DORMANT
+       without it. */
     if (vm != NULL) {
         (void)strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX);
         /* Failure leaves strand in malformed DORMANT (cleanup_base == NULL).
@@ -64,15 +66,6 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
     /* Allocate via VM pluggable allocator (no stdlib calloc — freestanding). */
     UStrand *s = (UStrand *)vm->alloc_fn(NULL, sizeof(UStrand), vm->alloc_ud);
     if (!s) return NULL;
-
-    /* Zero-initialize without memset (freestanding: no <string.h>).
-       Uses a volatile byte loop so the compiler cannot lower it to a memset libcall. */
-    {
-        volatile unsigned char *p = (volatile unsigned char *)s;
-        size_t n = sizeof(UStrand);
-        size_t i;
-        for (i = 0; i < n; i++) p[i] = 0;
-    }
 
     ustrand_init(s, vm);
     s->realm         = realm;

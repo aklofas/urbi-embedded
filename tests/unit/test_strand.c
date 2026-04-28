@@ -8,6 +8,7 @@
 #include "usched_cooperative.h"
 #include "uvm.h"
 #include "urbi.h"
+#include <stdlib.h>
 
 #define UTEST(name) static void name(void)
 
@@ -83,6 +84,24 @@ static void teardown_vm_realm(void) {
     urbi_realm_destroy(&g_vm, g_realm);
     g_realm = NULL;
     uvm_destroy(&g_vm);
+}
+
+/* Allocator spy: counts allocations and can fail at a specific call. */
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1 means never fail; 0+ triggers failure on that call */
+} AllocSpy;
+
+static void *spy_alloc(void *ptr, size_t n, void *ud) {
+    AllocSpy *spy = (AllocSpy *)ud;
+    if (n > 0 && ptr == NULL) {  /* allocation request (not a free) */
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+            return NULL;
+        }
+    }
+    /* Use stdlib for the actual allocation. */
+    return realloc(ptr, n);
 }
 
 /* Case 5: urbi_strand_create returns a non-NULL pointer and the strand is DORMANT.
@@ -187,6 +206,44 @@ UTEST(strand_spawn_two_fifo_order) {
     teardown_vm_realm();
 }
 
+/* Case 11: urbi_strand_create returns NULL when its struct alloc fails.
+   Verifies that the strand alloc OOM path is handled cleanly with no leaks. */
+UTEST(strand_create_returns_null_on_oom) {
+    UVM vm;
+    URealm *realm;
+    UStrand *s;
+    int allocs_after_realm;
+
+    /* First, count how many allocs are needed to set up a realm. */
+    AllocSpy spy1 = { 0, -1 };  /* never fail */
+    uvm_init(&vm, spy_alloc, &spy1);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    allocs_after_realm = spy1.alloc_calls;
+
+    /* Clean up for the real test. */
+    urbi_realm_destroy(&vm, realm);
+    uvm_destroy(&vm);
+
+    /* Now do the real test: allocate realm successfully, fail on strand alloc. */
+    AllocSpy spy2 = { 0, allocs_after_realm };  /* fail on the next alloc after realm */
+    uvm_init(&vm, spy_alloc, &spy2);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
+
+    /* Attempt strand creation — should fail on the next alloc. */
+    s = urbi_strand_create(realm, NULL);
+    UASSERT(s == NULL);  /* OOM: alloc failed */
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm + 1);  /* tried one more */
+    UASSERT_EQ(vm.strand_runnable_count, 0u);  /* counter must stay clean */
+
+    urbi_realm_destroy(&vm, realm);
+    uvm_destroy(&vm);
+}
+
 void test_strand_suite(void) {
     utest_run("strand_state_dormant_at_init",          strand_state_dormant_at_init);
     utest_run("strand_state_waiting_macros_round_trip", strand_state_waiting_macros_round_trip);
@@ -199,4 +256,5 @@ void test_strand_suite(void) {
     utest_run("strand_destroy_null_safe",               strand_destroy_null_safe);
     utest_run("strand_create_destroy_round_trip",       strand_create_destroy_round_trip);
     utest_run("strand_spawn_two_fifo_order",            strand_spawn_two_fifo_order);
+    utest_run("strand_create_returns_null_on_oom",      strand_create_returns_null_on_oom);
 }
