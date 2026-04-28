@@ -15,7 +15,8 @@
 #if URBI_GC == URBI_GC_INCREMENTAL
 #  include "ugc_incremental.h"
 #elif URBI_GC == URBI_GC_NONE
-#  include "ugc_none.h"        /* spec-only at M3; T28 adds a null stub */
+/* ugc_none.h: T28 ships this stub. Until then, URBI_GC_NONE is compile-error. */
+#  error "URBI_GC_NONE not yet implemented; set URBI_GC=URBI_GC_INCREMENTAL"
 #else
 #  error "URBI_GC set to unknown value"
 #endif
@@ -44,6 +45,11 @@
 #endif
 #ifndef URBI_GC_HEADER_BYTES
 #  define URBI_GC_HEADER_BYTES     2
+#endif
+
+#if URBI_GC_HAS_PINNING
+void urbi_pin(struct UVM *vm, UValue v);
+void urbi_unpin(struct UVM *vm, UValue v);
 #endif
 
 /* === Strategy interface — 8 non-inline ops + 3 barrier surfaces ===

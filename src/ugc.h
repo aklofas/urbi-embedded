@@ -58,9 +58,11 @@ typedef void (*UGcWalkPayloadFn)(struct UVM *vm, void *payload,
 /* === UCell common header (2 bytes shared across all strategies) === */
 
 typedef struct UCell {
-    uint8_t  type_tag;          /* offset 0 */
-    uint8_t  gc_byte;           /* offset 1: strategy-private (see ugc_incremental.h) */
-    /* offset 2..7: padding absorbed by first payload field's natural alignment */
+    uint8_t  type_tag;  /* offset 0 */
+    uint8_t  gc_byte;   /* offset 1: strategy-private (see ugc_incremental.h) */
+    /* offset 2..N-1: padding inserted by compiler; N = alignof(first payload field).
+     * Concrete cell types embed UCell as their FIRST struct member — the compiler
+     * handles alignment.  Do NOT use sizeof(UCell)+payload raw arithmetic. */
 } UCell;
 
 /* === UType — per-type-tag descriptor ===
@@ -121,10 +123,5 @@ size_t urbi_gc_bytes_allocated(struct UVM *vm);
 size_t urbi_gc_live_bytes(struct UVM *vm);
 size_t urbi_gc_threshold(struct UVM *vm);
 uint8_t urbi_gc_phase(struct UVM *vm);
-
-#if URBI_GC_HAS_PINNING
-void urbi_pin(struct UVM *vm, UValue v);
-void urbi_unpin(struct UVM *vm, UValue v);
-#endif
 
 #endif /* UGC_H */

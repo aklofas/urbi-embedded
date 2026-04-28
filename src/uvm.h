@@ -29,9 +29,8 @@ struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 
 /* --- M3 capacity macros --- */
-/* URBI_GC_INITIAL_THRESHOLD: canonical definition in ugc_incremental.h (T22).
-   Retained here with a #ifndef guard for any TU that includes uvm.h without
-   ugc_capi.h in scope, though that should not occur in practice. */
+/* Dead path — uvm.h always pulls ugc_capi.h.  Guard retained only to prevent
+ * double-definition warnings if ugc_incremental.h is included standalone. */
 #ifndef URBI_GC_INITIAL_THRESHOLD
 #  define URBI_GC_INITIAL_THRESHOLD (16 * 1024)
 #endif

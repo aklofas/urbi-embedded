@@ -120,11 +120,11 @@ struct UClosure;
 bool uvalue_is_heap_white(struct UVM *vm, UValue v);   /* T25: defined in ugc_incremental.c */
 
 /* === gc_shade_gray — mark a cell gray and push onto the worklist ===
- * Defined in ugc_incremental.c (T23/T24 ship the implementation). */
+ * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === observer_dirty — mark a cell's watcher observer dirty ===
- * Defined in ugc_incremental.c / uwatcher.c (row 11 — T33/T34). */
+ * T33/T34 (row 11): defined in uwatcher.c */
 void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === Three inline barrier surfaces ===
