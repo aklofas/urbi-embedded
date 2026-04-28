@@ -111,6 +111,56 @@ test-switch:
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_VM_FORCE_SWITCH=1" \
 		test
 
+# --- Determinism gate -------------------------------------------------------
+#
+# test-determinism builds and runs the full unit-test suite 100 times under
+# each of 3 tunable presets (footprint / default / linux), verifying that
+# urbi_get_determinism_checksum() returns a stable value across runs.
+#
+# The full runner is invoked each iteration (no per-suite filter exists in
+# runner.c); at ~15-25ms per run, 300 total invocations take ~5-7 seconds.
+# Any non-zero exit from the runner fails the gate with the iteration number.
+#
+# All three presets enable -DURBI_DEBUG=1 because the determinism checksum
+# function is guarded by #ifdef URBI_DEBUG.  Distinct TARGET= values give
+# each preset its own BUILDDIR so no clean step is needed between presets.
+
+test-determinism-footprint:
+	$(MAKE) TARGET=host-determinism-footprint \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_CLEANUP_MAX=16 -DURBI_STRAND_BUDGET_MAX=200 -DURBI_GC_SLICE_BUDGET=2048" \
+		test
+	@echo "=== Determinism gate: footprint preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-footprint/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (footprint preset)"; exit 1; }; \
+	done
+	@echo "=== Footprint preset: 100 runs PASS ==="
+
+test-determinism-default:
+	$(MAKE) TARGET=host-determinism-default \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1" \
+		test
+	@echo "=== Determinism gate: default preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-default/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (default preset)"; exit 1; }; \
+	done
+	@echo "=== Default preset: 100 runs PASS ==="
+
+test-determinism-linux:
+	$(MAKE) TARGET=host-determinism-linux \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_GC_SLICE_BUDGET=16384 -DURBI_EVENT_RING_DEPTH=256" \
+		test
+	@echo "=== Determinism gate: linux preset (100 runs) ==="
+	@for i in $$(seq 1 100); do \
+	    build/host-determinism-linux/tests/unit/runner > /dev/null \
+	    || { echo "FAIL on iteration $$i (linux preset)"; exit 1; }; \
+	done
+	@echo "=== Linux preset: 100 runs PASS ==="
+
+test-determinism: test-determinism-footprint test-determinism-default test-determinism-linux
+	@echo "=== Determinism gate: all 3 presets × 100 runs PASS ==="
+
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
