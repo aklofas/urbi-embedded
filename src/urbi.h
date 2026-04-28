@@ -86,6 +86,35 @@ void urbi_return_val(struct UStrand *strand, UValue value);
 /* Equivalent to executing OP_TAG_STOP for `tag` from within the same strand. */
 void urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value);
 
+/* === Row 8 chunk-lifecycle C API (M3 / T14) ===
+ *
+ * Realm lifecycle: create, destroy, global singleton, liveness query.
+ * Full struct definition is in urealm.h; include it for direct field access.
+ * Forward-declaration here is sufficient for host code using only these funcs.
+ *
+ * Thread safety: none at M3 — same single-threaded constraint as row 7 API. */
+struct URealm;
+
+/* Create a fresh, empty Realm bound to vm.  Returns NULL on OOM. */
+struct URealm *urbi_realm_create(struct UVM *vm);
+
+/* Destroy realm: stop its tag (no-op at M3), free namespace, unlink from VM.
+ * Safe to call with realm == NULL (no-op). */
+void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
+
+/* Return (auto-creating if needed) the VM-level global Realm singleton.
+ * The global Realm has REALM_GLOBAL set and persists until uvm_destroy().
+ * Returns NULL on OOM. */
+struct URealm *urbi_realm_global(struct UVM *vm);
+
+/* Liveness query: reads VM-global counters (per-realm partitioning at T15+).
+ * Populates out_strands / out_watchers / out_wakes (any may be NULL).
+ * Returns non-zero if any liveness counter is positive. */
+int            urbi_realm_has_live_work(struct URealm *realm,
+                                        uint32_t *out_strands,
+                                        uint32_t *out_watchers,
+                                        uint32_t *out_wakes);
+
 #ifdef __cplusplus
 }
 #endif

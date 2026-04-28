@@ -99,10 +99,11 @@ typedef struct UVM {
     uint32_t wakeup_pending_count;     /* row 8 §3; scheduler timer heap */
     uint32_t host_call_pending_count;  /* row 8 §3 + row 9; cross-strand stop injection */
 
-    /* --- Row 8 realm/fatal-strand pointers --- */
+    /* --- Row 8 realm/fatal-strand pointers and counters --- */
     struct URealm  *realms_head;       /* linked list of all realms; T14 maintains */
     struct URealm  *global_realm;      /* lazy-created on first urbi_realm_global() */
     struct UStrand *fatal_strand;      /* set by urbi_step on FATAL; NULL otherwise */
+    uint32_t        realm_id_seq;      /* per-VM monotonic Realm ID counter; starts at 0, incremented to 1 on first create */
 
     /* --- Row 9 scheduler queues --- */
     struct UStrand *ready_head;        /* run-queue head (FIFO); NULL = empty */

@@ -17,6 +17,7 @@
 #include "usched_cooperative.h"
 #include "uvm_internal.h"
 #include "uunwind.h"
+#include "urealm.h"
 #include "m3_forward_decls.h"
 
 #if __STDC_HOSTED__
@@ -153,7 +154,7 @@ void uvm_destroy(UVM *vm) {
 
     /* --- M3 teardown stubs (in reverse-init order) ---
      * Subsystem-owned teardowns are deferred to their landing tasks. */
-    /* T14: urealm_teardown_all(vm); */
+    urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     /* T32: uwatcher_pool_destroy(vm); */
     /* T22: ugc_destroy(vm); */
     /* T18: uevent_ring_destroy(vm->event_ring); */
