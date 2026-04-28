@@ -136,6 +136,27 @@ struct UWatcher *urbi_watcher_install_internal(
 
 void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 
+/* === Eval pass (T34) === */
+
+/* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
+ * At M3, uses vm->test_watcher_condition_hook if non-NULL; otherwise returns
+ * UVAL_NIL (graceful degradation — M5 wires real bytecode execution here).
+ * Per spec §6.4. */
+UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
+
+/* watcher_eval_dirty: walk active_watchers_head, evaluate each condition, and
+ * call spawn_body_coroutine on edge (AT/AT_SYNC) or level (WHENEVER) fire.
+ * Called from the safepoint when vm->watcher_dirty_count > 0. Per spec §6.2. */
+void   watcher_eval_dirty(struct UVM *vm);
+
+/* === Body spawn — T36 owns real impl; T34 ships minimal stub for linker === */
+
+/* spawn_body_coroutine: called by watcher_eval_dirty when a watcher fires.
+ * M3 stub: invokes vm->test_watcher_fire_hook if non-NULL; otherwise no-op.
+ * M5 implementation: pool-alloc body strand, inherit ambient tag chain,
+ * bind w->body as entry closure, call urbi_strand_start. Per spec §6.8. */
+void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+
 #ifdef __cplusplus
 }
 #endif

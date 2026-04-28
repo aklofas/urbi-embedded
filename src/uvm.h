@@ -58,6 +58,29 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 
 /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
+/* --- Scratch frame for watcher condition + onleave evaluation (T34) ---
+ *
+ * One per VM, allocated at uvm_init and freed at uvm_destroy.
+ * Used by watcher_eval_dirty (§6.2) and drain_pending_onleave_queue (§6.5):
+ * both run at safepoints which are serialized, so the single frame is safe.
+ *
+ * M5 owns the real urbi_run_closure_on_scratch that executes bytecode here.
+ * At M3, invoke_condition_closure uses the test_watcher_condition_hook instead.
+ * The struct is allocated now so M5 can wire real execution without a layout change.
+ *
+ * Override URBI_SCRATCH_FRAME_REGS for footprint-constrained builds:
+ *   default 16 registers → ~280 B per VM (16 × 16 B UValue + 8+2+16 header). */
+#ifndef URBI_SCRATCH_FRAME_REGS
+#  define URBI_SCRATCH_FRAME_REGS  16
+#endif
+
+typedef struct UScratchFrame {
+    struct UClosure *closure;                      /* current condition/body being evaluated */
+    UValue           registers[URBI_SCRATCH_FRAME_REGS];
+    uint16_t         register_top;
+    UValue           result;                       /* return value after M5 execution */
+} UScratchFrame;   /* ~280 B at default URBI_SCRATCH_FRAME_REGS=16 */
+
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -161,6 +184,19 @@ typedef struct UVM {
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     uint8_t  pad_in_eval[3];           /* padding; zeroed */
     void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
+
+    /* M3-only test hooks for watcher eval/fire (M5 replaces with real
+     * urbi_run_closure_on_scratch and spawn_body_coroutine).
+     *
+     * test_watcher_condition_hook: replaces invoke_condition_closure when non-NULL.
+     *   Tests install this to feed deterministic condition values for edge/level
+     *   firing tests.  NULL → invoke_condition_closure returns UVAL_NIL.
+     *   See spec §6.4 + §6.8 for the M3 stub rationale.
+     *
+     * test_watcher_fire_hook: invoked by spawn_body_coroutine when non-NULL.
+     *   Tests install this to observe watcher body fires.  NULL → no-op at M3. */
+    UValue (*test_watcher_condition_hook)(struct UVM *vm, struct UWatcher *w);
+    void   (*test_watcher_fire_hook)(struct UVM *vm, struct UWatcher *w);
 
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;

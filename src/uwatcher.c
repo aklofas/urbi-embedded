@@ -210,7 +210,12 @@ urbi_watcher_install_internal(
     /* Track active count. */
     vm->watcher_active_count++;
 
-    /* TODO(T34): seed last_value_cache via invoke_condition_closure(vm, w). */
+    /* Seed last_value_cache with the current condition result per spec §6.3
+     * ("at fires on transitions; not on initial truthy state").  The install-
+     * time eval seeds the cache but does NOT fire the body: a subsequent dirty
+     * pass that re-evaluates and finds new == old == truthy will not fire
+     * (no rising edge for AT/AT_SYNC; WHENEVER fires on next dirty pass). */
+    w->last_value_cache = invoke_condition_closure(vm, w);
 
     return w;
 }

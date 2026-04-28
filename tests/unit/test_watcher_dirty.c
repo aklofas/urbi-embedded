@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty.
- * Row 11 / T33. */
+/* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty,
+ * watcher_eval_dirty + edge/level firing.
+ * Row 11 / T33 + T34. */
 
 #include "utest.h"
 #include "uvm.h"
@@ -9,6 +10,7 @@
 #include "ugc_capi.h"       /* urbi_gc_alloc */
 #include "ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
 #include "utag.h"           /* utag_create / utag_destroy */
+#include "umodule.h"        /* UVAL_BOOL, UVAL_NIL */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */
 #include <stddef.h>
@@ -228,12 +230,250 @@ UTEST(watcher_install_readset_overflow_returns_null)
     uvm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T34 test cases: watcher_eval_dirty + edge/level firing
+ * =================================================================== */
+
+/* --- Helpers for condition hook --- */
+
+/* Static counter used by toggling condition hook below. */
+static int g_condition_toggle_step;
+static int g_condition_truthy;
+
+static UValue
+condition_hook_fixed_false(struct UVM *vm, struct UWatcher *w)
+{
+    UValue v = {0};  /* UVAL_NIL = falsy */
+    (void)vm; (void)w;
+    return v;
+}
+
+static UValue
+condition_hook_fixed_true(struct UVM *vm, struct UWatcher *w)
+{
+    UValue v;
+    (void)vm; (void)w;
+    v.kind   = UVAL_BOOL;
+    v.v.i    = 1;
+    return v;
+}
+
+static UValue
+condition_hook_toggle(struct UVM *vm, struct UWatcher *w)
+{
+    UValue v = {0};  /* default falsy */
+    (void)vm; (void)w;
+    if (g_condition_truthy) {
+        v.kind = UVAL_BOOL;
+        v.v.i  = 1;
+    }
+    return v;
+}
+
+/* Fire counter bumped by test_watcher_fire_hook. */
+static int g_fire_count;
+
+static void
+fire_hook_count(struct UVM *vm, struct UWatcher *w)
+{
+    (void)vm; (void)w;
+    g_fire_count++;
+}
+
+/* 8. watcher_eval_dirty_skips_when_count_zero:
+ *    Eval with no dirty count set — must not crash, must leave in_watcher_eval 0. */
+UTEST(watcher_eval_dirty_skips_when_count_zero)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UASSERT_EQ((int)vm.watcher_dirty_count, 0);
+    watcher_eval_dirty(&vm);
+    UASSERT(!vm.in_watcher_eval);
+
+    uvm_destroy(&vm);
+}
+
+/* 9. watcher_eval_dirty_resets_count_to_zero:
+ *    Set dirty count to 5; eval must clear it (and leave in_watcher_eval 0). */
+UTEST(watcher_eval_dirty_resets_count_to_zero)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    vm.watcher_dirty_count = 5u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ((int)vm.watcher_dirty_count, 0);
+    UASSERT(!vm.in_watcher_eval);
+
+    uvm_destroy(&vm);
+}
+
+/* 10. watcher_eval_at_edge_only_fires_on_false_to_true:
+ *     Install AT watcher.  Three dirty-eval passes with controlled condition.
+ *     Pass 1: condition false → no fire (last_cache seeded false at install).
+ *     Pass 2: condition true  → fire (false→true edge).
+ *     Pass 3: condition true  → no fire (true→true, no edge). */
+UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
+{
+    UVM vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count       = 0;
+    g_condition_truthy = 0;  /* start false */
+
+    vm.test_watcher_condition_hook = condition_hook_toggle;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    /* Install-time seed with false: condition_hook_toggle returns UVAL_NIL
+     * (kind=0) when g_condition_truthy=0.  Verify the cache is falsy. */
+    UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
+
+    /* Pass 1: still false → no fire. */
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 0);
+
+    /* Pass 2: flip to true → edge fires. */
+    g_condition_truthy = 1;
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 1);
+
+    /* Pass 3: still true → no fire (no rising edge). */
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 1);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
+/* 11. watcher_eval_whenever_level_fires_each_dirty_pass:
+ *     Install WHENEVER with always-true condition; three dirty-eval passes;
+ *     fire counter must be 3. */
+UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
+{
+    UVM vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count = 0;
+
+    vm.test_watcher_condition_hook = condition_hook_fixed_true;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_WHENEVER, NULL, /*condition=*/(UClosure *)1,
+        NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+
+    /* Three passes — WHENEVER fires every time condition is truthy. */
+    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
+    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
+    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 3);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
+/* 12. watcher_eval_skips_pending_unregister:
+ *     Set URBI_WATCHER_PENDING_UNREGISTER on watcher; verify no fire and
+ *     last_value_cache unchanged after eval. */
+UTEST(watcher_eval_skips_pending_unregister)
+{
+    UVM vm;
+    UWatcher *w;
+    UValue initial_cache;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count = 0;
+
+    vm.test_watcher_condition_hook = condition_hook_fixed_true;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+
+    initial_cache = w->last_value_cache;
+
+    /* Mark pending-unregister before eval. */
+    w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
+
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+
+    /* No fire, last_value_cache unchanged. */
+    UASSERT_EQ(g_fire_count, 0);
+    UASSERT_EQ((int)w->last_value_cache.kind, (int)initial_cache.kind);
+
+    /* Manual cleanup (watcher has PENDING_UNREGISTER; unregister normally). */
+    w->flags &= (uint8_t)~(uint8_t)URBI_WATCHER_PENDING_UNREGISTER;
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
+/* 13. watcher_install_seeds_last_value_cache:
+ *     Install AT watcher with always-true condition hook; verify that the
+ *     install-time seed captures the true value, and that a subsequent eval
+ *     pass with the same true condition does NOT fire (no rising edge since
+ *     old and new are both truthy). */
+UTEST(watcher_install_seeds_last_value_cache)
+{
+    UVM vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count = 0;
+
+    vm.test_watcher_condition_hook = condition_hook_fixed_true;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    /* Install-time seed must be truthy. */
+    UASSERT(w->last_value_cache.kind == UVAL_BOOL && w->last_value_cache.v.i == 1);
+
+    /* First dirty pass: old=true, new=true → no rising edge → no fire. */
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 0);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
+/* 14. watcher_scratch_frame_allocated_at_init:
+ *     Verify vm.watcher_scratch_frame is non-NULL after uvm_init. */
+UTEST(watcher_scratch_frame_allocated_at_init)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UASSERT(vm.watcher_scratch_frame != NULL);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
 test_watcher_dirty_suite(void)
 {
     printf("test_watcher_dirty\n");
+    /* T33 cases */
     utest_run("watcher_install_sets_bit6",
               watcher_install_sets_bit6);
     utest_run("watcher_overlap_keeps_bit6_until_last",
@@ -248,4 +488,19 @@ test_watcher_dirty_suite(void)
               active_list_is_tail_inserted);
     utest_run("watcher_install_readset_overflow_returns_null",
               watcher_install_readset_overflow_returns_null);
+    /* T34 cases */
+    utest_run("watcher_eval_dirty_skips_when_count_zero",
+              watcher_eval_dirty_skips_when_count_zero);
+    utest_run("watcher_eval_dirty_resets_count_to_zero",
+              watcher_eval_dirty_resets_count_to_zero);
+    utest_run("watcher_eval_at_edge_only_fires_on_false_to_true",
+              watcher_eval_at_edge_only_fires_on_false_to_true);
+    utest_run("watcher_eval_whenever_level_fires_each_dirty_pass",
+              watcher_eval_whenever_level_fires_each_dirty_pass);
+    utest_run("watcher_eval_skips_pending_unregister",
+              watcher_eval_skips_pending_unregister);
+    utest_run("watcher_install_seeds_last_value_cache",
+              watcher_install_seeds_last_value_cache);
+    utest_run("watcher_scratch_frame_allocated_at_init",
+              watcher_scratch_frame_allocated_at_init);
 }

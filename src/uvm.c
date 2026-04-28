@@ -174,6 +174,8 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->pad_in_eval[1]         = 0u;
     vm->pad_in_eval[2]         = 0u;
     vm->watcher_scratch_frame  = NULL;
+    vm->test_watcher_condition_hook = NULL;
+    vm->test_watcher_fire_hook      = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
@@ -186,6 +188,22 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * NULL; the install API returns NULL on first use, surfacing the failure at the
      * use site rather than at vm_init. The embedded caller should check
      * vm->watcher_pool_base != NULL post-init. */
+
+    /* Scratch frame: one per VM, used by watcher_eval_dirty and (T35)
+     * drain_pending_onleave_queue.  Allocated here so M5's real
+     * urbi_run_closure_on_scratch can use it without a layout change.
+     * Freed by uvm_destroy (already wired at T32; see comment there).
+     * OOM: leave NULL and continue — matches event_ring + pool pattern. */
+    if (vm->alloc_fn) {
+        void *sf = vm->alloc_fn(NULL, sizeof(UScratchFrame), vm->alloc_ud);
+        if (sf != NULL) {
+            /* Zero-fill via volatile byte loop (freestanding: no memset). */
+            volatile unsigned char *p = (volatile unsigned char *)sf;
+            size_t i;
+            for (i = 0; i < sizeof(UScratchFrame); i++) p[i] = 0;
+        }
+        vm->watcher_scratch_frame = sf;
+    }
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;

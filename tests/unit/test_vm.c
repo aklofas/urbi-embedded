@@ -697,11 +697,12 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
 
 /* T18 note: uvm_init now allocates the event ring (allocation #1).
    T32 note: uvm_init now also allocates the watcher pool slab (allocation #2).
-   The call-frame stack allocation inside uvm_run is allocation #3.
-   We fail allocation #3 to exercise the OOM path inside uvm_run. */
+   T34 note: uvm_init now also allocates the watcher scratch frame (allocation #3).
+   The call-frame stack allocation inside uvm_run is allocation #4.
+   We fail allocation #4 to exercise the OOM path inside uvm_run. */
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_nth_count  = 0;
-    uvm_alloc_fail_nth_target = 3;  /* fail the 3rd alloc (call-frame stack) */
+    uvm_alloc_fail_nth_target = 4;  /* fail the 4th alloc (call-frame stack) */
     UModule c; fab_module_ret_only(&c, 0);
     UVM vm; uvm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;
