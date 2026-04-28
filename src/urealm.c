@@ -166,7 +166,7 @@ urbi_realm_global(struct UVM *vm)
  * Returns true if there is any live work visible to this realm at M3.
  * out_strands, out_watchers, out_wakes may be NULL. */
 
-int
+bool
 urbi_realm_has_live_work(URealm *realm,
                          uint32_t *out_strands,
                          uint32_t *out_watchers,
@@ -178,7 +178,7 @@ urbi_realm_has_live_work(URealm *realm,
         if (out_strands)  *out_strands  = 0;
         if (out_watchers) *out_watchers = 0;
         if (out_wakes)    *out_wakes    = 0;
-        return 0;
+        return false;
     }
 
     /* TODO(T15+): real per-realm walk via tag.member_strands_head once T29-T31 land.
@@ -191,7 +191,7 @@ urbi_realm_has_live_work(URealm *realm,
     if (out_watchers) *out_watchers = watchers;
     if (out_wakes)    *out_wakes    = wakes;
 
-    return (strands > 0 || watchers > 0 || wakes > 0) ? 1 : 0;
+    return (strands > 0 || watchers > 0 || wakes > 0);
 }
 
 /* === urealm_teardown_all ===

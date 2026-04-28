@@ -110,7 +110,7 @@ struct URealm *urbi_realm_global(struct UVM *vm);
 /* Liveness query: reads VM-global counters (per-realm partitioning at T15+).
  * Populates out_strands / out_watchers / out_wakes (any may be NULL).
  * Returns non-zero if any liveness counter is positive. */
-int            urbi_realm_has_live_work(struct URealm *realm,
+bool           urbi_realm_has_live_work(struct URealm *realm,
                                         uint32_t *out_strands,
                                         uint32_t *out_watchers,
                                         uint32_t *out_wakes);

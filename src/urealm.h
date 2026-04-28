@@ -6,6 +6,7 @@
 #ifndef UREALM_H
 #define UREALM_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "uvalue.h"   /* UValue, UValKind */
@@ -111,7 +112,7 @@ URealm *urbi_realm_global(struct UVM *vm);
  * Reads VM-global counters at M3 (per-realm partitioning lands at T15+).
  * out_strands, out_watchers, out_wakes may be NULL.
  * Returns non-zero if any liveness counter is positive. */
-int     urbi_realm_has_live_work(URealm *realm,
+bool    urbi_realm_has_live_work(URealm *realm,
                                  uint32_t *out_strands,
                                  uint32_t *out_watchers,
                                  uint32_t *out_wakes);
