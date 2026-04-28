@@ -258,6 +258,24 @@ test-stress: $(STRESS_BUILDDIR)/gc_long_running \
 	$(STRESS_BUILDDIR)/gc_pause_time
 	$(STRESS_BUILDDIR)/gc_barrier_throughput
 
+# --- GC pause-time regression gate (<1 ms per slice) --------------------
+#
+# test-gc-pause recompiles gc_pause_time.c with -DGC_PAUSE_ASSERT_NS=1000000
+# so that the binary self-asserts max slice < 1 ms and exits non-zero on
+# violation.  The standard test-stress target builds WITHOUT that flag so
+# the baseline stress run is always threshold-free.
+#
+# The gated binary lands as gc_pause_time_gated to avoid a stale-rule
+# conflict with the unasserted $(STRESS_BUILDDIR)/gc_pause_time above.
+
+$(STRESS_BUILDDIR)/gc_pause_time_gated: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -DGC_PAUSE_ASSERT_NS=1000000 \
+	    $< -L$(BUILDDIR) -lurbi -o $@
+
+test-gc-pause: $(STRESS_BUILDDIR)/gc_pause_time_gated
+	$(STRESS_BUILDDIR)/gc_pause_time_gated
+	@echo "test-gc-pause: max slice < 1 ms PASS"
+
 # --- Cross-strategy compile smoke (URBI_GC_NONE) ------------------------
 #
 # test-gc-none-build verifies that ugc_none.h (the M3 no-op stub) compiles
@@ -448,4 +466,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build test-gc-pause
