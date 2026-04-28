@@ -71,6 +71,7 @@ typedef enum {
 struct UTag;     /* T29 */
 struct UEvent;   /* reactive runtime */
 struct UVM;      /* uvm.h — forward-decl to avoid circular include */
+struct URealm;   /* urealm.h — forward-decl for strand lifecycle context */
 struct UModule;  /* umodule.h — forward-decl for strand execution context */
 struct UClosure; /* umodule.h — forward-decl for closure list threading */
 
@@ -85,6 +86,12 @@ struct UStrand {
 
     /* --- VM back-pointer (T5; set by ustrand_init; required by scheduler ops) --- */
     struct UVM             *vm;
+
+    /* --- T20 lifecycle fields: owning Realm + entry closure --- */
+    struct URealm          *realm;           /* owning Realm; NULL for internal/stack strands */
+    struct UClosure        *entry_closure;   /* closure to invoke at strand activation;
+                                               zero-init; frame-0 setup deferred to urbi_step
+                                               or a future urbi_strand_arm helper */
 
     /* --- Row 7 unwind/cleanup fields (T9 wires walker; T3 lands cleanup-stack) --- */
     UExecStatus             pending_unwind;

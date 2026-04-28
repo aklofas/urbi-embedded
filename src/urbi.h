@@ -157,6 +157,37 @@ int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
+/* === Row 9 strand lifecycle C API (M3 / T20) ===
+ *
+ * Separate _create (DORMANT alloc) from _start (DORMANT → READY enqueue) so
+ * callers can pre-attach tags (T29), set scheduler attrs (v1.x), or pool/recycle
+ * strands before making them runnable.  _spawn is the convenience composite.
+ *
+ * urbi_strand_create: allocate a strand in DORMANT state and bind it to realm.
+ *   entry is the closure to invoke at first activation (frame-0 setup deferred
+ *   to urbi_step or a future urbi_strand_arm).  Returns NULL on OOM.
+ *
+ * urbi_strand_start: transition strand from DORMANT → READY (enqueue to run).
+ *   Precondition (debug): strand must be in DORMANT state.
+ *
+ * urbi_strand_spawn: convenience composite — create + start.  Returns NULL on OOM.
+ *
+ * urbi_strand_destroy: dequeue from scheduler, free cleanup stack, free strand.
+ *   Safe to call with s == NULL (no-op).
+ *
+ * Thread safety: none at M3 — not ISR-safe.  Must be called from the same
+ * thread that drives the VM.
+ *
+ * urbi_strand_cancel / urbi_strand_panic / urbi_strand_reset are declared
+ * in the row 7 control-transfer section above (T12). */
+
+struct UClosure;   /* forward decl — definition in umodule.h */
+
+struct UStrand *urbi_strand_create(struct URealm *realm, struct UClosure *entry);
+void            urbi_strand_start(struct UStrand *s);
+struct UStrand *urbi_strand_spawn(struct URealm *realm, struct UClosure *entry);
+void            urbi_strand_destroy(struct UStrand *s);
+
 /* === Row 9 ISR-safe event ring (M3 / T18) ===
  *
  * urbi_inject_event: single-producer ISR-safe primitive.
