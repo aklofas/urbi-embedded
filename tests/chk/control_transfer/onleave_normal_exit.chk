@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: onleave handler runs when the tagged block exits normally
+#         (no stop/throw); side-effect variable is set by the onleave body.
+#
+# defer-to: T29
+#
+# Reason: the `onleave` keyword and its parse + emit path are not yet wired at
+# M3.  The TAG_SCOPE cleanup-entry FLAG_HAS_ONLEAVE flag and
+# run_cleanup_with_replace() plumbing are already in place (T11), but the
+# lexer/parser does not yet recognise the `onleave` keyword and the emit path
+# does not generate FLAG_HAS_ONLEAVE entries.  The keyword is likely not
+# introduced until M5 reactive runtime.  Defer to T29 or the M5 reactive
+# milestone — whichever lands `onleave` parse/emit first.
+#
+# When onleave parse/emit is available, implement this fixture by uncommenting
+# the source below.  Expected behaviour: onleave body sets side=99 on normal
+# block exit.
+#
+# Urbiscript source (activate at T29 / M5):
+#   var t = Tag.new;
+#   var side = 0;
+#   t: { side = 1 } onleave { side = 99 };
+#   side
+#   --- expected output ---
+#   [00000001] 99

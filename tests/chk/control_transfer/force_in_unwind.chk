@@ -1,0 +1,34 @@
+# Milestone: M3
+# Covers: raising a new exception inside a finally/onleave body (C-1
+#         replace-on-raise): the new exception wins; the original unwind is
+#         silently suppressed.
+#
+# defer-to: T29
+#
+# Reason: the C-level replace-on-raise (C-1) mechanism is fully implemented
+# in run_cleanup_with_replace() at M3 and is covered by the integration test
+# tests/chk/control_transfer/throw_in_finally.chk.  However, the
+# corresponding tag-stop-inside-finally variant (where a tag.stop() inside a
+# finally body replaces an in-progress throw) requires UTag runtime (T29) and
+# is not testable in urbiscript until then.  Additionally, testing force-stop
+# from a host callback during finally requires T30 (OP_PUSH_TAG runtime
+# extension for cross-strand force).
+#
+# When T29/T30 land, implement this fixture by uncommenting the source below.
+# Expected behaviour: throw is suppressed by tag.stop() in finally body;
+# the tag stop wins.
+#
+# Urbiscript source (activate at T29/T30):
+#   var t = Tag.new;
+#   var side = 0;
+#   t: {
+#     try {
+#       throw 42
+#     } finally {
+#       side = 1;
+#       t.stop()
+#     }
+#   };
+#   side
+#   --- expected output ---
+#   [00000001] 1

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: row 7 C API surface (T12).
+/* Unit tests: row 7 C API surface (T12 + T13).
  *
  * Tests cover:
  *  1. urbi_strand_cancel deposits CANCEL and reports it via unwind_status.
@@ -10,9 +10,8 @@
  *  6. urbi_throw deposits THROW; urbi_return_val deposits RETURN.
  *  7. urbi_tag_stop_local deposits TAG_STOP with target pointer.
  *  8. urbi_tag_stop stub accepts valid args (URBI_OK) and rejects NULLs.
- *
- * T13 extends this file with cross-strand cancel timing and full .chk fixture
- * integration tests. */
+ *  9. urbi_strand_cancel on a WAITING strand transitions it to READY (T13).
+ * 10. strand_cleanup_stack_init returns -1 when allocator returns NULL (T13). */
 
 #include "utest.h"
 #include "urbi.h"
@@ -256,6 +255,66 @@ UTEST(capi_tag_stop_stub_validates_args)
     uvm_destroy(&vm);
 }
 
+/* 9. urbi_strand_cancel on a WAITING strand transitions state to READY.
+ *    Covers the USTRAND_IS_WAITING branch in urbi_strand_cancel (uunwind.c:336). */
+UTEST(capi_strand_cancel_unblocks_waiting_strand)
+{
+    UVM vm;
+    UStrand s;
+    uvm_init(&vm, NULL, NULL);
+
+    UValue *reg = strand_minimal(&s, &vm);
+
+    /* Place the strand in a WAITING state (e.g. sleeping). */
+    s.state = USTRAND_STATE_WAITING_SLEEP;
+
+    int rc = urbi_strand_cancel(&s, make_nil());
+    UASSERT_EQ(rc, URBI_OK);
+
+    /* Cancel must have deposited CANCEL. */
+    UASSERT_EQ(urbi_strand_unwind_status(&s), UEXEC_CANCEL);
+
+    /* A waiting strand must be transitioned to READY so the scheduler can
+     * dispatch it and run the unwind walker. */
+    UASSERT_EQ((int)USTRAND_GET_STATE(&s), (int)USTRAND_READY);
+
+    free(reg);
+    strand_cleanup_stack_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* 10. strand_cleanup_stack_init returns -1 when the allocator returns NULL.
+ *     Covers the allocation-failure path in ucleanup.c (lines 66-70). */
+static void *
+null_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    (void)ptr; (void)nbytes; (void)ud;
+    return NULL; /* always fail */
+}
+
+UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
+{
+    UVM vm;
+    UStrand s;
+
+    /* Wire up a failing allocator. */
+    uvm_init(&vm, null_alloc, NULL);
+
+    memset(&s, 0, sizeof(s));
+    s.vm = &vm;
+
+    int rc = strand_cleanup_stack_init(&s, &vm, 16);
+    UASSERT_EQ(rc, -1);
+
+    /* All cleanup fields must be zero on failure. */
+    UASSERT(s.cleanup_base  == NULL);
+    UASSERT_EQ((unsigned)s.cleanup_cap,   0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT(s.cleanup_top   == NULL);
+
+    uvm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -278,4 +337,8 @@ test_capi_unwind_suite(void)
               capi_tag_stop_local_deposits_tag_stop);
     utest_run("capi_tag_stop_stub_validates_args",
               capi_tag_stop_stub_validates_args);
+    utest_run("capi_strand_cancel_unblocks_waiting_strand",
+              capi_strand_cancel_unblocks_waiting_strand);
+    utest_run("capi_cleanup_stack_init_fails_on_null_alloc",
+              capi_cleanup_stack_init_fails_on_null_alloc);
 }

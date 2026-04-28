@@ -1,0 +1,22 @@
+# Milestone: M3
+# Covers: tag.stop() inside a try/finally block runs the finally clause
+#         before unwinding the tag scope; finally body executes exactly once.
+#
+# defer-to: T29
+#
+# Reason: requires UTag runtime + TAG_STOP absorption in the unwind walker
+# (T29).  Additionally, the interaction between TAG_STOP propagation and
+# TRY_FRAME finally execution is gated on T30 (OP_PUSH_TAG runtime extension)
+# since the walker must handle the combined CALL_FRAME / TRY_FRAME / TAG_SCOPE
+# stack ordering correctly.
+#
+# When T29/T30 land, implement this fixture by uncommenting the source below.
+# Expected behaviour: finally body runs ("cleanup") then tag scope exits.
+#
+# Urbiscript source (activate at T29/T30):
+#   var t = Tag.new;
+#   var cleaned = 0;
+#   t: { try { t.stop() } finally { cleaned = 1 } };
+#   cleaned
+#   --- expected output ---
+#   [00000001] 1

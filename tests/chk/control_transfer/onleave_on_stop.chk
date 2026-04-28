@@ -1,0 +1,22 @@
+# Milestone: M3
+# Covers: onleave handler runs when the tagged block is terminated by
+#         tag.stop(); the onleave body executes before the stop propagates.
+#
+# defer-to: T29
+#
+# Reason: same as onleave_normal_exit.chk — requires both UTag runtime (T29)
+# and `onleave` parse/emit (M5 or whichever milestone lands it first).  The
+# C-level plumbing (TAG_SCOPE + FLAG_HAS_ONLEAVE + run_cleanup_with_replace)
+# is in place at M3 (T11); only the parse/emit path and the UTag runtime are
+# missing.
+#
+# When both land, implement this fixture by uncommenting the source below.
+# Expected behaviour: onleave runs ("cleanup") when tag is stopped externally.
+#
+# Urbiscript source (activate at T29 / M5):
+#   var t = Tag.new;
+#   var cleaned = 0;
+#   t: { t.stop() } onleave { cleaned = 1 };
+#   cleaned
+#   --- expected output ---
+#   [00000001] 1

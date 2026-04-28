@@ -1,0 +1,23 @@
+# Milestone: M3
+# Covers: tag.stop() terminates execution within the tagged block;
+#         code after the tagged block does not run.
+#
+# defer-to: T29
+#
+# Reason: requires UTag as a real runtime type and OP_TAG_STOP absorption in
+# the unwind walker.  Both land at T29 (UTag + ambient-tag inheritance helpers).
+# At M3, OP_PUSH_TAG/OP_POP_TAG are emitted as stubs but OP_TAG_STOP has no
+# runtime absorption — UEXEC_TAG_STOP escalates to fatal rather than being
+# caught by a matching TAG_SCOPE entry.
+#
+# When T29 lands, implement this fixture by uncommenting the urbiscript source
+# below.  Expected behaviour: "before" is printed; "after" is NOT printed
+# because tag.stop() terminates the tagged block.
+#
+# Urbiscript source (activate at T29):
+#   var t = Tag.new;
+#   t: { echo("before"); t.stop(); echo("after") };
+#   echo("done")
+#   --- expected output ---
+#   [00000001] "before"
+#   [00000002] "done"

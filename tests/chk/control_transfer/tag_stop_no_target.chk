@@ -1,0 +1,21 @@
+# Milestone: M3
+# Covers: tag.stop() called with no active enclosing scope for that tag
+#         propagates to fatal (unhandled TAG_STOP).
+#
+# defer-to: T29
+#
+# Reason: requires UTag runtime (T29) to distinguish "stop with no active
+# scope" from a normal stop.  At M3, UEXEC_TAG_STOP with no matching
+# TAG_SCOPE entry in the cleanup stack already escalates to fatal — but
+# the tag type infrastructure to write a meaningful urbiscript test does not
+# exist yet.  The behaviour is covered at the C level by
+# test_capi_unwind.c::capi_tag_stop_local_deposits_tag_stop.
+#
+# When T29 lands, implement this fixture by uncommenting the source below.
+# Expected behaviour: stopping a tag from outside its scope is a runtime error.
+#
+# Urbiscript source (activate at T29):
+#   var t = Tag.new;
+#   t.stop();
+#   --- expected output ---
+#   [00000001] error: ...
