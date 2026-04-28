@@ -22,6 +22,16 @@ make_handle_cell_value(UCell *c)
     return v;
 }
 
+/* === Test helper: callback for handle_walk_roots_active_only ===
+ * Counts non-NIL slots visited by host_handle_walk_roots. */
+static void
+handle_walk_count_cb(struct UVM *vm, UValue *slot, void *ctx)
+{
+    (void)vm; (void)slot;
+    int *count = (int *)ctx;
+    (*count)++;
+}
+
 /* ===== Handle table tests ===== */
 
 /* Basic create → get → release round-trip. */
@@ -127,25 +137,11 @@ UTEST(handle_walk_roots_active_only)
     static int walk_count;
     walk_count = 0;
 
-    /* Use a local callback that increments walk_count. */
-    typedef void (*WalkFn)(struct UVM *, UValue *, void *);
-    WalkFn walker = (WalkFn)(void (*)(struct UVM *, UValue *, void *))
-        /* inline lambda via compound literal not available in C99;
-         * use a file-scope helper instead */
-        NULL;
+    /* Call host_handle_walk_roots with the file-scope callback. */
+    host_handle_walk_roots(&vm, handle_walk_count_cb, &walk_count);
 
-    /* We can't easily write a closure in C99 without a file-scope helper.
-     * Use a static function pointer approach. */
-    (void)walker;
-
-    /* Alternative: walk directly and count non-nil slots in handle_table. */
-    uint32_t non_nil = 0u;
-    uint32_t idx;
-    for (idx = 0u; idx < vm.handle_table_cap; idx++) {
-        if (vm.handle_table[idx].kind != UVAL_NIL) non_nil++;
-    }
-    /* After creating h1 (released) and h2 (active): 1 active slot. */
-    UASSERT_EQ(non_nil, 1u);
+    /* After creating h1 (released) and h2 (active): 1 active slot visited. */
+    UASSERT_EQ(walk_count, 1);
 
     uvm_destroy(&vm);
 }

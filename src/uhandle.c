@@ -13,7 +13,7 @@
 static void
 handle_zero_bytes(void *dst, size_t n)
 {
-    unsigned char *p = (unsigned char *)dst;
+    volatile unsigned char *p = (volatile unsigned char *)dst;
     size_t i;
     for (i = 0u; i < n; i++) p[i] = 0u;
 }
