@@ -7,7 +7,7 @@
  *   - GC phase constants (row 10 §6.1)
  *   - Compile-time tunables (row 10 §6.5)
  *   - UNLIKELY branch-prediction hint
- *   - No-op stub implementations of the three inline barrier surfaces (T25 fills these)
+ *   - Real Dijkstra forward-barrier implementations of the three inline barrier surfaces
  *   - Forward declarations for gc_shade_gray and observer_dirty
  *
  * Included by ugc_capi.h when URBI_GC == URBI_GC_INCREMENTAL.
@@ -114,19 +114,14 @@ struct UClosure;
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
 /* === observer_dirty — watcher dirty-set hook ===
- * T34 (row 11): replace this stub with `extern void observer_dirty(...);`
- * once src/uwatcher.c lands the real impl that walks the per-cell observer list.
- * For T25 this is a no-op so the watcher dirty-set path compiles cleanly. */
-static inline void
-observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
-{
-    (void)vm; (void)cell; (void)key;
-}
+ * T34 (row 11): no-op stub at T25; src/uwatcher.c will replace with real
+ * impl that walks per-cell observer list and bumps vm->watcher_dirty_count. */
+void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
  *
  * At M3 baseline the only heap-bearing UValKind is UVAL_CLOSURE, which carries
- * a UClosure pointer stored in v.p.  All other kinds (NIL, INT, FLOAT, BOOL,
+ * a UClosure pointer stored in v.v.p.  All other kinds (NIL, INT, FLOAT, BOOL,
  * STR, VOID) are either inline scalars or not GC-managed via UCell.
  *
  * TODO(M4+): extend uvalue_is_heap for UVAL_STRING (when strings move to heap),
@@ -274,7 +269,7 @@ urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure, uint8_t up_idx, 
 
     /* No watcher hook on upvalue writes: closures are not directly observable
      * by watchers in v1 (no first-class "watch this closure's upvalue" surface). */
-    (void)up_idx; (void)child;
+    (void)up_idx;
 }
 
 #endif /* UGC_INCREMENTAL_H */

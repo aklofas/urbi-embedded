@@ -872,6 +872,7 @@ dispatch:
                 uint8_t a = uinstr_a(*s->pc);
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
+                /* TODO(M4): wire urbi_gc_upvalue_write here once UClosure embeds UCell as first member. */
                 if (uvc->on_heap) {
                     uvc->u.value = s->R[a];
                 } else {

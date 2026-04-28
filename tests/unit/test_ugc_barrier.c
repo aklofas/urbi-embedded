@@ -19,11 +19,9 @@
 static UValue
 uvalue_from_test_cell(UCell *c)
 {
-    UValue v;
-    v.kind  = (uint8_t)UVAL_CLOSURE;
-    v._pad[0] = 0u; v._pad[1] = 0u; v._pad[2] = 0u; v._pad[3] = 0u;
-    v._pad[4] = 0u; v._pad[5] = 0u; v._pad[6] = 0u;
-    v.v.p   = (void *)c;
+    UValue v = {0};
+    v.kind = UVAL_CLOSURE;
+    v.v.p = (void *)c;
     return v;
 }
 

@@ -144,6 +144,7 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
 
     /* Append new entry. */
     ns->entries[ns->count].name  = name;
+    /* TODO(M4): wire urbi_gc_slot_write here once UNamespace embeds UCell as first member. */
     ns->entries[ns->count].value = value;
     ns->count++;
     return 0;
