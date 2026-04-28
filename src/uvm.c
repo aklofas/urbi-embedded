@@ -111,14 +111,14 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->current_white       = 0u;
     vm->gc_paused           = 0u;
     vm->in_destroy_callback = 0u;
-    vm->gc_threshold        = (size_t)URBI_GC_INITIAL_THRESHOLD;
-    vm->gc_debt             = -(int64_t)URBI_GC_INITIAL_THRESHOLD;
     vm->gc_live_bytes       = 0u;
     vm->gc_total_allocated  = 0u;
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;
     vm->sweep_cursor_prev   = NULL;
+    /* Delegate threshold + debt init to the GC strategy (T23). */
+    urbi_gc_init(vm);
 
     /* GC root provider registry. */
     {
@@ -175,7 +175,7 @@ void uvm_destroy(UVM *vm) {
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     /* T32: uwatcher_pool_destroy(vm); */
-    /* T22: ugc_destroy(vm); */
+    urbi_gc_destroy(vm);      /* T23: free all GC-managed cells (must run last) */
     if (vm->event_ring && vm->alloc_fn) {
         vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
         vm->event_ring = NULL;
