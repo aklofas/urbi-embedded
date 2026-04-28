@@ -6,25 +6,7 @@
 #include "uvm.h"
 #include "ustrand.h"
 #include "usched_cooperative.h"
-
-/* T18: stubs for event ring drain.  Real implementations land at T18 when
- * the ISR-safe SPSC event ring (uevent_ring.h) is introduced. */
-static inline bool
-ustep_event_ring_has_pending(const UVM *vm)
-{
-    (void)vm;
-    return false;
-    /* T18: replaced by uevent_ring_has_pending(vm->event_ring). */
-}
-
-static inline void
-ustep_event_ring_drain(UVM *vm)
-{
-    (void)vm;
-    /* T18: replaced by uevent_ring_drain(vm) which pulls injected events
-     * from the ISR ring and deposits them into the scheduler's event queue,
-     * incrementing vm->event_queue_count as it goes. */
-}
+#include "uevent_ring.h"
 
 UStepResult
 urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
@@ -33,10 +15,9 @@ urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
      * and reset (via urbi_strand_reset) or shut down before calling again. */
     if (vm->fatal_strand) return URBI_STEP_FATAL;
 
-    /* Drain any ISR-injected events before running bytecode.
-     * At M3 this is a no-op (stub above); T18 activates the drain path. */
-    if (ustep_event_ring_has_pending(vm))
-        ustep_event_ring_drain(vm);
+    /* Drain any ISR-injected events before running bytecode. */
+    if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
+        uevent_ring_drain(vm);
 
     vm->step_budget_remaining = budget;
 

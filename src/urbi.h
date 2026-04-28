@@ -157,6 +157,19 @@ int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
+/* === Row 9 ISR-safe event ring (M3 / T18) ===
+ *
+ * urbi_inject_event: single-producer ISR-safe primitive.
+ * May be called from interrupt context; no locks, no heap allocation.
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_EVENT_PAYLOAD_TOO_LARGE if len > URBI_EVENT_PAYLOAD_MAX.
+ * Returns URBI_ERR_EVENT_RING_FULL if the ring is full.
+ *
+ * The VM drains injected events at the start of each urbi_step() call.
+ * Single-producer / single-consumer: one ISR writer + one thread reader. */
+int urbi_inject_event(struct UVM *vm, uint32_t event_id,
+                      const void *payload, size_t len);
+
 #ifdef __cplusplus
 }
 #endif

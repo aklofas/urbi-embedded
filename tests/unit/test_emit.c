@@ -218,8 +218,8 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
         uarena_destroy(&arena);
         umodule_destroy(&module);
+        uvm_destroy(&vm);
     }
-uvm_destroy(&vm);
 }
 
 UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {

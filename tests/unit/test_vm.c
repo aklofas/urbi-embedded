@@ -663,16 +663,18 @@ static void *uvm_alloc_always_null(void *ptr, size_t nbytes, void *ud) {
     return NULL;
 }
 
-/* Allocator that returns NULL on first call (frame alloc), then
-   forwards to stdlib (for the destroy path, which is a free = nbytes=0
-   and safe to no-op too). Only used to exercise the first-alloc-fails
-   path. */
-static int uvm_alloc_fail_first_count = 0;
-static void *uvm_alloc_fail_first(void *ptr, size_t nbytes, void *ud) {
+/* Allocator that returns NULL on Nth allocation (1-indexed), then
+   forwards to stdlib.  Used to exercise targeted OOM paths.
+   uvm_alloc_fail_nth_target: which alloc number to fail (1 = first). */
+static int uvm_alloc_fail_nth_count  = 0;
+static int uvm_alloc_fail_nth_target = 1;
+static void *uvm_alloc_fail_nth(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
-    if (nbytes > 0 && uvm_alloc_fail_first_count == 0) {
-        uvm_alloc_fail_first_count++;
-        return NULL;  /* fail the frame allocation */
+    if (nbytes > 0) {
+        uvm_alloc_fail_nth_count++;
+        if (uvm_alloc_fail_nth_count == uvm_alloc_fail_nth_target) {
+            return NULL;  /* fail the Nth allocation */
+        }
     }
     if (nbytes == 0) { free(ptr); return NULL; }
     return realloc(ptr, nbytes);
@@ -693,10 +695,14 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
     uvm_destroy(&vm);
 }
 
+/* T18 note: uvm_init now allocates the event ring (allocation #1).
+   The call-frame stack allocation inside uvm_run is allocation #2.
+   We fail allocation #2 to exercise the OOM path inside uvm_run. */
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
-    uvm_alloc_fail_first_count = 0;  /* reset */
+    uvm_alloc_fail_nth_count  = 0;
+    uvm_alloc_fail_nth_target = 2;  /* fail the 2nd alloc (call-frame stack) */
     UModule c; fab_module_ret_only(&c, 0);
-    UVM vm; uvm_init(&vm, uvm_alloc_fail_first, NULL);
+    UVM vm; uvm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;
     UASSERT_EQ(UVM_OOM, uvm_run(&vm, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
@@ -969,8 +975,8 @@ UTEST(vm_create_zero_init_m3_fields) {
     UASSERT_EQ(0u, vm.gc_pending);
     UASSERT_EQ(0u, vm.watcher_dirty_count);
     UASSERT_EQ(0u, vm.flag_preemption);
-    /* ISR ring (allocated at T18). */
-    UASSERT(vm.event_ring == NULL);
+    /* ISR ring: T18 allocates it at uvm_init time. */
+    UASSERT(vm.event_ring != NULL);
     /* GC root provider registry. */
     UASSERT_EQ(0u, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */

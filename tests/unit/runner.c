@@ -49,6 +49,7 @@ extern void test_capi_unwind_suite(void);
 extern void test_realm_suite(void);
 extern void test_step_driver_suite(void);
 extern void test_chunk_apis_suite(void);
+extern void test_event_ring_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -80,6 +81,7 @@ int main(void) {
     test_realm_suite();
     test_step_driver_suite();
     test_chunk_apis_suite();
+    test_event_ring_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

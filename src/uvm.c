@@ -18,6 +18,7 @@
 #include "uvm_internal.h"
 #include "uunwind.h"
 #include "urealm.h"
+#include "uevent_ring.h"
 #include "m3_forward_decls.h"
 
 #if __STDC_HOSTED__
@@ -92,8 +93,16 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->flag_reserved[1]       = 0u;
     vm->flag_reserved[2]       = 0u;
 
-    /* ISR ring (pointer; allocated at T18). */
+    /* ISR ring: allocate and initialise the SPSC event ring. */
     vm->event_ring = NULL;
+    if (vm->alloc_fn) {
+        vm->event_ring = (struct UEventRing *)vm->alloc_fn(
+                NULL, sizeof(UEventRing), vm->alloc_ud);
+        if (vm->event_ring) {
+            uevent_ring_init(vm->event_ring);
+        }
+        /* OOM: leave event_ring NULL; inject/drain guard against it. */
+    }
 
     /* GC state machine.
      * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22. */
@@ -157,7 +166,10 @@ void uvm_destroy(UVM *vm) {
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     /* T32: uwatcher_pool_destroy(vm); */
     /* T22: ugc_destroy(vm); */
-    /* T18: uevent_ring_destroy(vm->event_ring); */
+    if (vm->event_ring && vm->alloc_fn) {
+        vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
+        vm->event_ring = NULL;
+    }
 
     /* Free any M3 heap fields that T4 itself allocated (none at T4, but
      * handle_table and watcher_scratch_frame may be set by callers; free
