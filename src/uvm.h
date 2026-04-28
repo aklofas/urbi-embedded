@@ -11,6 +11,7 @@
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
 #include "uvalue.h"   /* UValue — needed for handle_table field */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
+#include "ugc_capi.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,23 +19,21 @@ extern "C" {
 
 /* --- M3 forward declarations (rows 8, 9, 10, 11) ---
    Types referenced in the UVM struct but defined in later tasks.
-   Forward-decl only: all uses are pointer-typed. */
+   Forward-decl only: all uses are pointer-typed.
+   Note: UCell, UType, UGcRootCallback, UGcRootProviderFn are now defined in ugc.h
+   (pulled in via ugc_capi.h above). */
 struct UStrand;
-struct UCell;
 struct UEvent;
 struct URealm;
 struct UWatcher;
-struct UType;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 
-/* --- M3 GC root provider types ---
-   Placed before struct UVM so the root_providers[] array can reference them. */
-typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
-typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
-
-/* --- M3 capacity macros (with #ifndef guards so later tasks can redefine) --- */
+/* --- M3 capacity macros --- */
+/* URBI_GC_INITIAL_THRESHOLD: canonical definition in ugc_incremental.h (T22).
+   Retained here with a #ifndef guard for any TU that includes uvm.h without
+   ugc_capi.h in scope, though that should not occur in practice. */
 #ifndef URBI_GC_INITIAL_THRESHOLD
-#  define URBI_GC_INITIAL_THRESHOLD 16384u  /* row 10 §6.5; T24 may move to ugc.h */
+#  define URBI_GC_INITIAL_THRESHOLD (16 * 1024)
 #endif
 
 #ifndef URBI_MAX_ROOT_PROVIDERS
