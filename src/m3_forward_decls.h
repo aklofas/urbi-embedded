@@ -4,8 +4,8 @@
    can reference them now without link errors.
    DELETE each stub in its owning task:
      gc_slice                — T22/T24
-     drain_pending_onleave_queue — T35
    (watcher_eval_dirty removed at T34: real impl lives in src/uwatcher_eval.c)
+   (drain_pending_onleave_queue removed at T35: real impl lives in src/uwatcher_drain.c)
    (unwind_walk removed at T8: real urbi_unwind() lives in src/uunwind.c) */
 
 #ifndef M3_FORWARD_DECLS_H
@@ -20,7 +20,7 @@
 
 /* M3 stubs — replaced by their owning tasks. */
 static inline void gc_slice(UVM *vm, size_t budget) { (void)vm; (void)budget; }
-static inline void drain_pending_onleave_queue(UVM *vm) { (void)vm; }
-/* unwind_walk removed at T8: replaced by urbi_unwind() in src/uunwind.c */
+/* unwind_walk removed at T8: replaced by urbi_unwind() in src/uunwind.c
+ * drain_pending_onleave_queue removed at T35: real impl in src/uwatcher_drain.c */
 
 #endif /* M3_FORWARD_DECLS_H */

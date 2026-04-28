@@ -149,6 +149,19 @@ UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
  * Called from the safepoint when vm->watcher_dirty_count > 0. Per spec §6.2. */
 void   watcher_eval_dirty(struct UVM *vm);
 
+/* === Pending-onleave queue (T35) ===
+ *
+ * pending_onleave_queue_push: transfer watcher from active lists to the FIFO.
+ *   Sets URBI_WATCHER_PENDING_UNREGISTER, unlinks from active_watchers_head and
+ *   owning_tag->member_watchers_head, appends to pending_onleave_queue tail.
+ *   Called from OP_POP_TAG (uvm.c) and urbi_tag_stop (uunwind.c) cascade sites.
+ *
+ * drain_pending_onleave_queue: drain the FIFO in FIFO order, running onleave
+ *   handlers and calling urbi_watcher_unregister_internal for each entry.
+ *   Called from the dispatcher safepoint BEFORE watcher_eval_dirty. */
+void pending_onleave_queue_push(struct UVM *vm, struct UWatcher *w);
+void drain_pending_onleave_queue(struct UVM *vm);
+
 /* === Body spawn — T36 owns real impl; T34 ships minimal stub for linker === */
 
 /* spawn_body_coroutine: called by watcher_eval_dirty when a watcher fires.

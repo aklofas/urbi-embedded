@@ -1,0 +1,161 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Watcher pending-onleave queue: push helper, run_watcher_onleave stub,
+ * drain_pending_onleave_queue.
+ * Row 11.
+ *
+ * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
+ * All allocation goes through vm->alloc_fn.
+ *
+ * Queue semantics
+ * ---------------
+ * pending_onleave_queue is a singly-linked FIFO threaded via next_active.
+ * A watcher cannot be on both active_watchers_head and pending_onleave_queue
+ * simultaneously — push TRANSFERS the entry: unlinks from active_watchers_head
+ * and from owning_tag->member_watchers_head, then appends to the tail of the
+ * pending queue.  The URBI_WATCHER_PENDING_UNREGISTER flag is set at push time
+ * so any concurrent watcher_eval_dirty pass skips the watcher.
+ *
+ * watcher_active_count is NOT decremented at push time; it is decremented by
+ * urbi_watcher_unregister_internal (called by drain) when the watcher is truly
+ * gone from the system.  This keeps quiescence accounting simple: a watcher on
+ * the pending queue still counts as "active" until drained.
+ *
+ * run_watcher_onleave M3 stub
+ * ---------------------------
+ * At M3 there is no real bytecode execution path for watcher onleave closures.
+ * The stub mirrors invoke_condition_closure (T34): if vm->test_watcher_onleave_hook
+ * is non-NULL it delegates to the hook; otherwise it is a graceful no-op.
+ * M5 will replace the no-op branch with a real urbi_run_closure_on_scratch call
+ * that borrows vm->watcher_scratch_frame per spec §6.5.
+ *
+ * Drain ordering contract
+ * -----------------------
+ * drain_pending_onleave_queue is called by the dispatcher safepoint BEFORE
+ * watcher_eval_dirty.  If an onleave handler mutates a cell that is in another
+ * watcher's read-set, the resulting dirty-count increment will be picked up by
+ * watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
+
+#include "uwatcher.h"
+#include "uvm.h"
+#include "utag.h"           /* UTag, member_watchers_head */
+#include "urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
+#include "urbi_internal.h"  /* URBI_INTERNAL_ASSERT */
+
+/* === run_watcher_onleave — file-scope static ===
+ *
+ * Execute w->onleave (M3 stub via test hook; real impl deferred to M5).
+ * Precondition: w->onleave != NULL (caller must check).
+ * run_watcher_onleave inherits the ISR-safety guarantee from drain's guard —
+ * no separate URBI_ASSERT_NOT_ISR needed here. */
+static void
+run_watcher_onleave(UVM *vm, UWatcher *w)
+{
+    URBI_INTERNAL_ASSERT(w != NULL);
+    URBI_INTERNAL_ASSERT(w->onleave != NULL);
+
+    if (vm->test_watcher_onleave_hook != NULL) {
+        vm->test_watcher_onleave_hook(vm, w);
+        return;
+    }
+    /* M5: real urbi_run_closure_on_scratch call borrows vm->watcher_scratch_frame.
+     * At M3 no bytecode path exists for watcher onleave — graceful no-op. */
+    (void)vm;
+    (void)w;
+}
+
+/* === pending_onleave_queue_push ===
+ *
+ * Transfer watcher w from the active lists into the pending-onleave FIFO.
+ *
+ * Steps (see module header for rationale):
+ *   1. Set URBI_WATCHER_PENDING_UNREGISTER so eval pass skips.
+ *   2. Unlink from vm->active_watchers_head (pointer-to-pointer walk).
+ *   3. Unlink from w->owning_tag->member_watchers_head (NULL-guarded).
+ *   4. Append to pending_onleave_queue tail (set next_active = NULL). */
+void
+pending_onleave_queue_push(UVM *vm, UWatcher *w)
+{
+    UWatcher **pp;
+
+    URBI_ASSERT_NOT_ISR(vm);
+    URBI_INTERNAL_ASSERT(w != NULL);
+
+    /* Step 1: mark pending so eval pass skips during drain. */
+    w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
+
+    /* Step 2: unlink from active_watchers_head. */
+    pp = &vm->active_watchers_head;
+    while (*pp != NULL) {
+        if (*pp == w) {
+            *pp = w->next_active;
+            break;
+        }
+        pp = &(*pp)->next_active;
+    }
+
+    /* Step 3: unlink from owning_tag->member_watchers_head.
+     * This satisfies utag_destroy's precondition that member_watchers_head
+     * is empty — the push removes the watcher before the tag is destroyed. */
+    if (w->owning_tag != NULL) {
+        UWatcher **prev = &w->owning_tag->member_watchers_head;
+        while (*prev != NULL && *prev != w) prev = &(*prev)->next_in_tag;
+        if (*prev == w) *prev = w->next_in_tag;
+    }
+
+    /* Step 4: append to FIFO tail (next_active becomes the queue threading
+     * field while the watcher is in the pending queue). */
+    w->next_active = NULL;
+    if (vm->pending_onleave_tail != NULL) {
+        vm->pending_onleave_tail->next_active = w;
+        vm->pending_onleave_tail = w;
+    } else {
+        vm->pending_onleave_head = w;
+        vm->pending_onleave_tail = w;
+    }
+    /* watcher_active_count is NOT decremented here; urbi_watcher_unregister_internal
+     * (called by drain) performs the single decrement when the watcher is truly gone.
+     * This keeps quiescence semantics simple: pending entries still count as active. */
+}
+
+/* === drain_pending_onleave_queue ===
+ *
+ * Drain the entire pending-onleave FIFO in FIFO order.  For each watcher:
+ *   1. Pop from queue head.
+ *   2. If w->onleave != NULL: run_watcher_onleave.
+ *   3. urbi_watcher_unregister_internal: clears bit-6 on read-set cells
+ *      (scan-on-unregister skips w because it was already removed from
+ *      active_watchers_head by pending_onleave_queue_push — the (o == w)
+ *      guard in unregister is a no-op), then pool_frees the slot and
+ *      decrements watcher_active_count.
+ *
+ * Called from the dispatcher safepoint BEFORE watcher_eval_dirty per spec §6.5.
+ * Reuses vm->in_watcher_eval as a reentrancy guard (same scratch-frame contract
+ * as watcher_eval_dirty — drain and eval are always sequential, never nested). */
+void
+drain_pending_onleave_queue(UVM *vm)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    URBI_INTERNAL_ASSERT(!vm->in_watcher_eval);
+
+    vm->in_watcher_eval = 1;
+
+    while (vm->pending_onleave_head != NULL) {
+        UWatcher *w = vm->pending_onleave_head;
+        vm->pending_onleave_head = w->next_active;
+        if (vm->pending_onleave_tail == w) {
+            vm->pending_onleave_tail = NULL;
+        }
+
+        /* Run onleave handler if present. */
+        if (w->onleave != NULL) {
+            run_watcher_onleave(vm, w);
+        }
+
+        /* Unregister: bit-6 scan, member_watchers_head unlink (no-op — PUSH
+         * already removed from tag list), active_watchers_head unlink (no-op —
+         * PUSH already removed from active list), pool_free, decrement counter. */
+        urbi_watcher_unregister_internal(vm, w);
+    }
+
+    vm->in_watcher_eval = 0;
+}

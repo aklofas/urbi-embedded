@@ -198,6 +198,10 @@ typedef struct UVM {
     UValue (*test_watcher_condition_hook)(struct UVM *vm, struct UWatcher *w);
     void   (*test_watcher_fire_hook)(struct UVM *vm, struct UWatcher *w);
 
+    /* M3-only test hook for run_watcher_onleave (M5 replaces with real
+     * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
+    void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
+
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;
     struct UWatcher *pending_onleave_tail;

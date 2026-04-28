@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: watcher read-set capture, bit-6 lifecycle, observer_dirty,
- * watcher_eval_dirty + edge/level firing.
- * Row 11 / T33 + T34. */
+ * watcher_eval_dirty + edge/level firing, pending_onleave_queue drain.
+ * Row 11 / T33 + T34 + T35. */
 
 #include "utest.h"
 #include "uvm.h"
@@ -11,6 +11,7 @@
 #include "ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
 #include "utag.h"           /* utag_create / utag_destroy */
 #include "umodule.h"        /* UVAL_BOOL, UVAL_NIL */
+#include "urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */
 #include <stddef.h>
@@ -467,6 +468,243 @@ UTEST(watcher_scratch_frame_allocated_at_init)
     uvm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T35 test cases: pending_onleave_queue drain + run_watcher_onleave
+ * =================================================================== */
+
+/* --- Helpers for onleave hook --- */
+
+static int g_onleave_count;
+
+/* Records the order in which onleave is called for FIFO ordering test. */
+static UWatcher *g_onleave_order[8];
+static int       g_onleave_order_idx;
+
+static void
+onleave_hook_count(struct UVM *vm, struct UWatcher *w)
+{
+    (void)vm;
+    if (g_onleave_order_idx < 8) {
+        g_onleave_order[g_onleave_order_idx++] = w;
+    }
+    g_onleave_count++;
+}
+
+/* 15. pending_onleave_push_sets_flag_and_unlinks_from_active:
+ *     Install one watcher; push to pending_onleave_queue; verify
+ *     URBI_WATCHER_PENDING_UNREGISTER is set, watcher is off active_watchers_head,
+ *     and pending_onleave_head == the watcher. */
+UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
+{
+    UVM      vm;
+    UWatcher *w;
+    UTag     *tag;
+
+    uvm_init(&vm, NULL, NULL);
+
+    tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    UASSERT(vm.active_watchers_head == w);
+    UASSERT(tag->member_watchers_head == w);
+
+    pending_onleave_queue_push(&vm, w);
+
+    /* Flag set. */
+    UASSERT(w->flags & URBI_WATCHER_PENDING_UNREGISTER);
+    /* Unlinked from active list. */
+    UASSERT(vm.active_watchers_head == NULL);
+    /* Unlinked from tag member list. */
+    UASSERT(tag->member_watchers_head == NULL);
+    /* Head and tail of pending queue point to w. */
+    UASSERT(vm.pending_onleave_head == w);
+    UASSERT(vm.pending_onleave_tail == w);
+    UASSERT(w->next_active == NULL);
+    /* watcher_active_count NOT decremented at push — still 1. */
+    UASSERT_EQ((long long)vm.watcher_active_count, 1LL);
+
+    /* Drain to clean up (unregisters the watcher). */
+    drain_pending_onleave_queue(&vm);
+    UASSERT(vm.pending_onleave_head == NULL);
+    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+
+    utag_destroy(&vm, tag);
+    uvm_destroy(&vm);
+}
+
+/* 16. pending_onleave_drain_walks_until_empty:
+ *     Install 5 watchers; push all to pending_onleave_queue; drain;
+ *     assert head/tail NULL and pool_in_use == 0. */
+UTEST(pending_onleave_drain_walks_until_empty)
+{
+    UVM      vm;
+    UWatcher *w[5];
+    int       i;
+
+    uvm_init(&vm, NULL, NULL);
+
+    for (i = 0; i < 5; i++) {
+        w[i] = urbi_watcher_install_internal(
+            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+        UASSERT(w[i] != NULL);
+    }
+    UASSERT_EQ((long long)vm.watcher_active_count, 5LL);
+    UASSERT_EQ((int)vm.watcher_pool_in_use, 5);
+
+    for (i = 0; i < 5; i++) {
+        pending_onleave_queue_push(&vm, w[i]);
+    }
+
+    drain_pending_onleave_queue(&vm);
+
+    UASSERT(vm.pending_onleave_head == NULL);
+    UASSERT(vm.pending_onleave_tail == NULL);
+    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+    UASSERT(!vm.in_watcher_eval);
+
+    uvm_destroy(&vm);
+}
+
+/* 17. pending_onleave_drain_invokes_hook_when_onleave_set:
+ *     Install watcher with non-NULL onleave field; push; drain;
+ *     verify onleave hook called exactly once. */
+UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
+{
+    UVM      vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_onleave_count     = 0;
+    g_onleave_order_idx = 0;
+    vm.test_watcher_onleave_hook = onleave_hook_count;
+
+    /* Pass a non-NULL onleave pointer so run_watcher_onleave is entered.
+     * The pointer value doesn't matter at M3 — only non-NULL triggers the hook path. */
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL,
+        /*onleave=*/(UClosure *)1, NULL, 0u);
+    UASSERT(w != NULL);
+
+    pending_onleave_queue_push(&vm, w);
+    drain_pending_onleave_queue(&vm);
+
+    UASSERT_EQ(g_onleave_count, 1);
+    UASSERT(vm.pending_onleave_head == NULL);
+
+    uvm_destroy(&vm);
+}
+
+/* 18. pending_onleave_drain_skips_null_onleave:
+ *     Install watcher with onleave=NULL; push; drain; verify hook NOT called
+ *     and watcher is properly unregistered. */
+UTEST(pending_onleave_drain_skips_null_onleave)
+{
+    UVM      vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_onleave_count = 0;
+    vm.test_watcher_onleave_hook = onleave_hook_count;
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL,
+        /*onleave=*/NULL, NULL, 0u);
+    UASSERT(w != NULL);
+
+    pending_onleave_queue_push(&vm, w);
+    drain_pending_onleave_queue(&vm);
+
+    /* Hook must NOT be called when onleave is NULL. */
+    UASSERT_EQ(g_onleave_count, 0);
+    UASSERT(vm.pending_onleave_head == NULL);
+    UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
+
+    uvm_destroy(&vm);
+}
+
+/* 19. pending_onleave_drain_ordering_FIFO:
+ *     Push watchers A, B, C in order; drain; verify onleave hook saw A then B then C. */
+UTEST(pending_onleave_drain_ordering_FIFO)
+{
+    UVM      vm;
+    UWatcher *wa, *wb, *wc;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_onleave_count     = 0;
+    g_onleave_order_idx = 0;
+    vm.test_watcher_onleave_hook = onleave_hook_count;
+
+    wa = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+    wb = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+    wc = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+    UASSERT(wa != NULL && wb != NULL && wc != NULL);
+
+    pending_onleave_queue_push(&vm, wa);
+    pending_onleave_queue_push(&vm, wb);
+    pending_onleave_queue_push(&vm, wc);
+
+    drain_pending_onleave_queue(&vm);
+
+    UASSERT_EQ(g_onleave_order_idx, 3);
+    UASSERT(g_onleave_order[0] == wa);
+    UASSERT(g_onleave_order[1] == wb);
+    UASSERT(g_onleave_order[2] == wc);
+
+    uvm_destroy(&vm);
+}
+
+/* 20. tag_stop_pushes_watchers_to_onleave_queue:
+ *     Install a watcher on a tag; call urbi_tag_stop on that tag;
+ *     verify the watcher ends up on the pending_onleave_queue.
+ *     (Tests the urbi_tag_stop cascade path in uunwind.c.) */
+UTEST(tag_stop_pushes_watchers_to_onleave_queue)
+{
+    UVM      vm;
+    UTag    *tag;
+    UWatcher *w;
+    UValue    nil;
+
+    uvm_init(&vm, NULL, NULL);
+
+    nil.kind = UVAL_NIL;
+    nil.v.i  = 0;
+
+    tag = utag_create(&vm);
+    UASSERT(tag != NULL);
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    UASSERT(tag->member_watchers_head == w);
+
+    /* urbi_tag_stop(vm, tag, value): iterates member_strands_head (empty here
+     * — no strands to deposit on), then walks member_watchers_head (the cascade
+     * we are testing).  No strands needed; cascade fires unconditionally. */
+    urbi_tag_stop(&vm, tag, nil);
+
+    /* After tag_stop, the watcher should be on the pending_onleave_queue. */
+    UASSERT(vm.pending_onleave_head == w);
+    /* tag's member_watchers_head cleared by push. */
+    UASSERT(tag->member_watchers_head == NULL);
+
+    /* Drain to clean up. */
+    drain_pending_onleave_queue(&vm);
+    UASSERT(vm.pending_onleave_head == NULL);
+
+    utag_destroy(&vm, tag);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -503,4 +741,17 @@ test_watcher_dirty_suite(void)
               watcher_install_seeds_last_value_cache);
     utest_run("watcher_scratch_frame_allocated_at_init",
               watcher_scratch_frame_allocated_at_init);
+    /* T35 cases */
+    utest_run("pending_onleave_push_sets_flag_and_unlinks_from_active",
+              pending_onleave_push_sets_flag_and_unlinks_from_active);
+    utest_run("pending_onleave_drain_walks_until_empty",
+              pending_onleave_drain_walks_until_empty);
+    utest_run("pending_onleave_drain_invokes_hook_when_onleave_set",
+              pending_onleave_drain_invokes_hook_when_onleave_set);
+    utest_run("pending_onleave_drain_skips_null_onleave",
+              pending_onleave_drain_skips_null_onleave);
+    utest_run("pending_onleave_drain_ordering_FIFO",
+              pending_onleave_drain_ordering_FIFO);
+    utest_run("tag_stop_pushes_watchers_to_onleave_queue",
+              tag_stop_pushes_watchers_to_onleave_queue);
 }

@@ -33,6 +33,7 @@
 #include "usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
 #include "urbi_internal.h"      /* URBI_INTERNAL_ASSERT */
 #include "utag.h"               /* UTag, member_strands_head */
+#include "uwatcher.h"           /* pending_onleave_queue_push */
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
@@ -145,9 +146,14 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
         s->unwind_value   = saved_value;
     } else {
         /* C-1: cleanup body raised a new unwind; new state wins.
-         * Original saved values are silently dropped.
-         * TODO: emit URBI_WARN_SUPPRESSED_UNWIND once diagnostic infra
-         *       lands at T16/T19. */
+         * Original saved values are silently dropped.  Emit a diagnostic so
+         * embedders can detect inadvertent unwind-loss in their tag-leave
+         * handlers.  host_log_fn is NULL-guarded per T19 pattern. */
+        if (s->vm != NULL && s->vm->host_log_fn != NULL) {
+            s->vm->host_log_fn(s->vm, URBI_LOG_WARN,
+                               "URBI_WARN_SUPPRESSED_UNWIND: cleanup body raised; "
+                               "original unwind dropped");
+        }
     }
 }
 
@@ -387,8 +393,18 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         }
     }
 
-    /* (2) Watcher cascade deferred to T34/T35 when UWatcher type lands.
-     * At M3 tag->member_watchers_head is always NULL — no action needed. */
+    /* (2) Watcher cascade: push each watcher registered on this tag to the
+     * pending-onleave queue.  Snapshot-next iteration since push unlinks each
+     * watcher from tag->member_watchers_head as it goes. */
+    {
+        UWatcher *ww      = tag->member_watchers_head;
+        UWatcher *ww_next;
+        while (ww != NULL) {
+            ww_next = ww->next_in_tag;
+            pending_onleave_queue_push(vm, ww);
+            ww = ww_next;
+        }
+    }
 
     /* (3) Return synchronously — all deposits are complete. */
     return URBI_OK;

@@ -176,6 +176,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->watcher_scratch_frame  = NULL;
     vm->test_watcher_condition_hook = NULL;
     vm->test_watcher_fire_hook      = NULL;
+    vm->test_watcher_onleave_hook   = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
@@ -1306,9 +1307,21 @@ dispatch:
                         *pp = top->next_member;
                     }
                 }
-                /* T34/T35: watcher cascade (notify watchers registered on this tag
-                 * that the scope is leaving) — deferred; UWatcher type not yet
-                 * defined at M3. */
+                /* Watcher cascade: push each watcher registered on this tag to
+                 * the pending-onleave queue before cleanup_pop + utag_destroy.
+                 * Snapshot-next iteration since push mutates member_watchers_head
+                 * (unlinks the watcher from the tag's member list).
+                 * Ordering: cascade BEFORE utag_destroy, which asserts the member
+                 * list is empty — push empties it. */
+                if (tag != NULL) {
+                    UWatcher *ww = tag->member_watchers_head;
+                    UWatcher *ww_next;
+                    while (ww != NULL) {
+                        ww_next = ww->next_in_tag;
+                        pending_onleave_queue_push(s->vm, ww);
+                        ww = ww_next;
+                    }
+                }
                 strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
                 /* Destroy the per-scope UTag allocated in OP_PUSH_TAG.
                  * Precondition (checked by utag_destroy assertion): member lists
