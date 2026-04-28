@@ -89,16 +89,18 @@ urbi_realm_create(struct UVM *vm)
 /* === urbi_realm_destroy ===
  *
  * Destruction order per spec §4.4:
- *   1. Stop the realm's tag (no-op at M3; wires when T29-T31 land).
+ *   1. Stop the realm's tag.
  *   2. Free namespace.
  *   3. Drop reflective (becomes unreachable; GC reclaims at M4+).
  *   4. Unlink from VM's realm list.
  *   5. Free the URealm struct itself.
  *
- * Precondition at M3: All strands attached to this realm's tag must be dead
- * before calling this function. This is the caller's responsibility at M3
- * because urbi_tag_stop is still a no-op stub. Future T31 will wire the
- * synchronous strand drain that enforces this automatically.
+ * Precondition: All strands attached to this realm's tag must be dead
+ * before calling this function. The urbi_tag_stop call deposits TAG_STOP
+ * on all member strands (row 11 §3.5), but strands eventually fatal-escalate
+ * rather than gracefully unwind at M3 (walker-side TAG_STOP absorption is
+ * currently a pop-and-continue stub). Proper strand unwinding deferred to
+ * when tag-scope absorption lands (row 11 §6).
  *
  * Safe to call with realm == NULL. */
 
@@ -111,8 +113,8 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     if (vm == NULL) return;
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Step 1: Stop the realm's tag (T31 wires the real cross-strand walk;
-     * currently a stub that validates args and returns without side effects). */
+    /* Step 1: Stop the realm's tag (row 11 §3.5: deposits TAG_STOP on all
+     * member strands; they eventually fatal-escalate at M3). */
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
     if (realm->tag != NULL) {
@@ -175,7 +177,8 @@ urbi_realm_global(struct UVM *vm)
 /* === urbi_realm_has_live_work ===
  *
  * Reads VM-global liveness counters.
- * TODO(T15+): real per-realm walk via tag.member_strands_head once T29-T31 land.
+ * TODO(M5+): per-realm walk via realm->tag.member_strands_head — strands now linked
+ * but counter partition still VM-wide at M3; partitioning deferred for M5+ work.
  *
  * Returns true if there is any live work visible to this realm at M3.
  * out_strands, out_watchers, out_wakes may be NULL. */
@@ -195,7 +198,7 @@ urbi_realm_has_live_work(URealm *realm,
         return false;
     }
 
-    /* TODO(T15+): real per-realm walk via tag.member_strands_head once T29-T31 land.
+    /* TODO(M5+): real per-realm walk via realm->tag.member_strands_head.
      * At M3, counters are VM-global; all are attributed to every realm query. */
     strands  = realm->vm->strand_runnable_count;
     watchers = realm->vm->watcher_active_count;

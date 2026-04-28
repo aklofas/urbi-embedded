@@ -16,11 +16,7 @@
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "ugc.h"    /* UTYPE_TAG */
 #include "urbi.h"
-#include "umodule.h"
-
-#include <stdlib.h>
 
 #define UTEST(name) static void name(void)
 

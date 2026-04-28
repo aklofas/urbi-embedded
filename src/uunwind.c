@@ -353,7 +353,10 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         URBI_INTERNAL_ASSERT(s != NULL);
 
         /* Row 7 C-1 priority: TAG_STOP wins over OK / RETURN / THROW;
-         * TAG_STOP loses to CANCEL (don't overwrite). */
+         * TAG_STOP loses to CANCEL (don't overwrite).
+         * A cross-strand TAG_STOP is a new event regardless of what the strand's
+         * local pending unwind was — RETURN/THROW would have been replaced anyway,
+         * so we count this as a fresh deposit for quiescence-counter purposes. */
         fresh_deposit = (s->pending_unwind == UEXEC_OK
                          || s->pending_unwind == UEXEC_RETURN
                          || s->pending_unwind == UEXEC_THROW);
@@ -366,8 +369,10 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
         /* host_call_pending_count: increment once per strand that receives
          * a fresh cross-strand deposit.  The cross_strand_stop_pending flag
-         * guards idempotency on repeated calls; the counter is decremented
-         * at ustrand_destroy. */
+         * is once-per-lifetime: set on first deposit, cleared only at ustrand_destroy.
+         * Repeated deposits on a strand that already processed its TAG_STOP do not
+         * re-increment (counter tracks lifetime cross-strand-affected strands, not
+         * pending deposits). Counter is decremented at ustrand_destroy. */
         if (fresh_deposit && !s->cross_strand_stop_pending) {
             s->cross_strand_stop_pending = 1u;
             vm->host_call_pending_count++;

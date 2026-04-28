@@ -9,7 +9,7 @@
  *  5. urbi_strand_unwind_status returns UEXEC_OK for clean strand.
  *  6. urbi_throw deposits THROW; urbi_return_val deposits RETURN.
  *  7. urbi_tag_stop_local deposits TAG_STOP with target pointer.
- *  8. urbi_tag_stop stub accepts valid args (URBI_OK) and rejects NULLs.
+ *  8. urbi_tag_stop accepts valid args (URBI_OK) and rejects NULLs.
  *  9. urbi_strand_cancel on a WAITING strand transitions it to READY (T13).
  * 10. strand_cleanup_stack_init returns -1 when allocator returns NULL (T13). */
 
@@ -236,7 +236,7 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
 
 /* 8. urbi_tag_stop: valid args return URBI_OK; NULL args return error.
  *    Uses a real (empty) UTag so the member_strands walk is safe. */
-UTEST(capi_tag_stop_stub_validates_args)
+UTEST(capi_tag_stop_validates_args)
 {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
@@ -350,8 +350,8 @@ test_capi_unwind_suite(void)
               capi_host_callback_helpers_throw_and_return);
     utest_run("capi_tag_stop_local_deposits_tag_stop",
               capi_tag_stop_local_deposits_tag_stop);
-    utest_run("capi_tag_stop_stub_validates_args",
-              capi_tag_stop_stub_validates_args);
+    utest_run("capi_tag_stop_validates_args",
+              capi_tag_stop_validates_args);
     utest_run("capi_strand_cancel_unblocks_waiting_strand",
               capi_strand_cancel_unblocks_waiting_strand);
     utest_run("capi_cleanup_stack_init_fails_on_null_alloc",
