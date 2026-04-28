@@ -63,6 +63,7 @@ extern void test_tag_stop_realm_suite(void);
 extern void test_watcher_pool_suite(void);
 extern void test_watcher_dirty_suite(void);
 extern void test_fork_suite(void);
+extern void test_determinism_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -108,6 +109,7 @@ int main(void) {
     test_watcher_pool_suite();
     test_watcher_dirty_suite();
     test_fork_suite();
+    test_determinism_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

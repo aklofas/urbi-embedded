@@ -288,6 +288,26 @@ void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void));
  *       URBI_WATCHDOG_ASSERT (1) — call urbi_panic on threshold exceeded. */
 void urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode);
 
+#ifdef URBI_DEBUG
+/* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.
+ *
+ * Call only at a QUIESCENT point (no strands runnable, no pending events).
+ * Returns a stable hash of:
+ *   - all UValue bindings across every live Realm's namespace
+ *   - watcher pool high-water mark
+ *   - gc_total_allocated counter
+ *   - intern table entry count
+ *
+ * String values (UVAL_STR) are hashed by their interned pointer, which is
+ * stable within a single VM lifetime but NOT guaranteed cross-run-stable
+ * (intern pointer addresses depend on allocation order).  The checksum is
+ * deterministic for two VMs that process identical input within one process
+ * (as used by test_determinism_two_runs).
+ *
+ * URBI_DEBUG only: zero overhead in non-debug builds (function absent). */
+uint64_t urbi_get_determinism_checksum(struct UVM *vm);
+#endif /* URBI_DEBUG */
+
 #ifdef __cplusplus
 }
 #endif

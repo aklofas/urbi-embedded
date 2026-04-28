@@ -2,6 +2,10 @@
 
 #include "urbi.h"
 #include "uvm.h"
+#include "urealm.h"
+#include "umodule.h"
+#include "uintern.h"
+#include "urbi_internal.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -69,4 +73,94 @@ urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
     }
     return r;
 }
+#endif /* URBI_DEBUG */
+
+#ifdef URBI_DEBUG
+
+/* --- urbi_get_determinism_checksum implementation --- */
+
+/* FNV-1a 64-bit constants. */
+#define FNV1A_SEED   UINT64_C(14695981039346656037)
+#define FNV1A_PRIME  UINT64_C(1099511628211)
+
+#define FNV1A_MIX(h, x) \
+    do { (h) ^= (uint64_t)(x); (h) *= FNV1A_PRIME; } while (0)
+
+/* Context struct for the namespace walk callback. */
+typedef struct {
+    uint64_t h;
+} ChecksumCtx;
+
+/* unamespace_walk_roots callback: fold each UValue into the running hash.
+ * UVAL_INT: hashes the integer value directly.
+ * UVAL_BOOL: hashes the integer value (0/1 stored as int64_t).
+ * UVAL_STR: hashes the interned pointer address.  Stable within one VM
+ *   lifetime (intern table never moves pointers); NOT cross-run-stable
+ *   because allocator placement varies between process invocations.
+ * UVAL_CLOSURE / UVAL_STRAND / UVAL_VOID / UVAL_NIL: hash only the kind
+ *   (heap pointers are not deterministic across runs). */
+static void
+checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
+{
+    ChecksumCtx *c = (ChecksumCtx *)ctx;
+    (void)vm;
+
+    FNV1A_MIX(c->h, root->kind);
+    switch (root->kind) {
+        case UVAL_INT:
+        case UVAL_BOOL:
+            FNV1A_MIX(c->h, (uint64_t)root->v.i);
+            break;
+        case UVAL_FLOAT:
+            /* Union type-pun: read float as int64_t bit pattern via the shared
+             * union storage.  Valid in C99 §6.5.2.3 (union member access).
+             * The upper bytes are zero-initialized for f32 (URBI_FLOAT_TYPE==4)
+             * because UValue is zero-initialized on construction. */
+            FNV1A_MIX(c->h, (uint64_t)root->v.i);
+            break;
+        case UVAL_STR:
+            /* Interned pointer: stable within-run identity (see comment above). */
+            FNV1A_MIX(c->h, (uintptr_t)root->v.p);
+            break;
+        default:
+            /* NIL, CLOSURE, VOID, STRAND: kind already mixed above. */
+            break;
+    }
+}
+
+/* urbi_get_determinism_checksum: return a stable FNV-1a hash of observable
+ * VM state.  Must be called at a QUIESCENT point (no runnable strands).
+ * See declaration in urbi.h for full contract. */
+uint64_t
+urbi_get_determinism_checksum(struct UVM *vm)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    URBI_INTERNAL_ASSERT(vm != NULL);
+
+    ChecksumCtx ctx;
+    struct URealm *r;
+
+    ctx.h = FNV1A_SEED;
+
+    /* 1. All UValue bindings in every live Realm's namespace. */
+    for (r = vm->realms_head; r != NULL; r = r->next_in_vm) {
+        unamespace_walk_roots(r->bindings, checksum_walk_cb, vm, &ctx);
+    }
+
+    /* 2. Watcher pool high-water mark (watcher lifecycle observable state). */
+    FNV1A_MIX(ctx.h, (uint64_t)vm->watcher_pool_high_water);
+
+    /* 3. GC total allocated bytes (monotonic allocation counter). */
+    FNV1A_MIX(ctx.h, (uint64_t)vm->gc_total_allocated);
+
+    /* 4. Intern table entry count (number of unique strings seen). */
+    FNV1A_MIX(ctx.h, (uint64_t)uintern_count(vm));
+
+    return ctx.h;
+}
+
+#undef FNV1A_MIX
+#undef FNV1A_PRIME
+#undef FNV1A_SEED
+
 #endif /* URBI_DEBUG */
