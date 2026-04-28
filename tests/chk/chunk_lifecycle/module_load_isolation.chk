@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: modules loaded into a Realm do not pollute other Realms; bindings
+#         from module are visible only in the Realm where it was loaded.
+#
+# defer-to: M6
+#
+# Reason: import-table registration and module-loading surface via
+# urbi_vm_import_register land at M6 (stdlib). At M3, urbi_load_module
+# is a stub that returns URBI_ERR_NOTIMP.
+#
+# When M6 lands, implement this fixture by setting up two Realms, loading a
+# module into one, and verifying bindings from that module are not visible
+# in the other Realm.
+#
+# Urbiscript source (activate at M6, requires host-driver setup):
+#   [Create r1 and r2]
+#   import "foo" as F;  [in r1]
+#   [Verify F is bound in r1 but not in r2]

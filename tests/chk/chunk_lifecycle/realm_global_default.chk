@@ -1,0 +1,24 @@
+# Milestone: M3
+# Covers: passing NULL Realm to urbi_run_chunk reuses the global default Realm;
+#         consecutive chunks in the same slot see shared bindings.
+#
+# defer-to: T39 (chk runner host-driver extension) + T20 (Strand C API)
+#
+# Reason: chk runner uses the standalone urbi binary which manages a single
+# global Realm internally. There is no host hook to call urbi_run_chunk(vm, NULL, ...)
+# to demonstrate the NULL→global-Realm coercion.
+# Realm-side semantics are already verified by tests/unit/test_realm.c (T14)
+# and tests/unit/test_chunk_apis.c::run_chunk_null_realm_uses_global (T16).
+#
+# When T39 lands, implement this fixture by adding a host-driver section that:
+# 1. Calls urbi_run_chunk(vm, NULL, chunk1, ...) to bind x=42 in global Realm.
+# 2. Calls urbi_run_chunk(vm, NULL, chunk2, ...) to read x.
+# 3. Verifies chunk2 sees x=42.
+#
+# Pseudo-host-driver (activate at T39):
+#   UChunk *c1 = urbi_parse(vm, "var x = 42");
+#   UChunk *c2 = urbi_parse(vm, "x");
+#   urbi_run_chunk(vm, NULL, c1, URBI_CHUNK_NORMAL);
+#   urbi_run_chunk(vm, NULL, c2, URBI_CHUNK_NORMAL);
+#   --- expected output (from chunk2) ---
+#   [00000001] 42

@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: chunk with no watchers reaches quiescence immediately after RET;
+#         REPL frame is printed and frame counter increments.
+
+1 + 2
+[00000001] 3

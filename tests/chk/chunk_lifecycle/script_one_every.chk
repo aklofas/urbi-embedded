@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: chunk that registers a watcher via every() reaches quiescence only after
+#         the watcher fires and settles.
+#
+# defer-to: M5
+#
+# Reason: every() syntax and watcher pool land at M5 (reactive-runtime).
+# At M3, OP_EVERY is emitted as a stub that returns URBI_ERR_NOTIMP.
+#
+# When M5 lands, implement this fixture by uncommenting the urbiscript source
+# below. Expected behaviour: the chunk executes every(500ms) { echo("tick") }
+# which registers a watcher. The chunk does not reach quiescence until the
+# watcher fires and settles.
+#
+# Urbiscript source (activate at M5):
+#   every(100ms) { echo("tick") }
+#   --- expected output (with timing guarantees from deterministic clock) ---
+#   [00000001] "tick"

@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: destroying a Realm cancels all watchers registered in that Realm;
+#         pending watcher callbacks do not fire after destruction.
+#
+# defer-to: M5
+#
+# Reason: watcher subsystem lands at M5 (reactive-runtime). At M3, Realm
+# destroy hook is in place (URealm record created at T14) but there are no
+# watchers to cancel yet. Realm-side cancel-on-destroy semantics are already
+# verified by tests/unit/test_realm.c (T14).
+#
+# When M5 lands, implement this fixture by setting up a Realm with an every()
+# watcher, destroying the Realm, and verifying the watcher does not fire.
+#
+# Urbyscript source (activate at M5):
+#   [Would require host-driver to instantiate Realm, see realm_isolation.chk.]
+#   var called = 0;
+#   every(100ms) { called = called + 1 };
+#   [Destroy realm here]
+#   [Advance time; verify called == 0]

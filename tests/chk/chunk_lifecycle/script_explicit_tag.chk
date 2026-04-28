@@ -1,0 +1,23 @@
+# Milestone: M3
+# Covers: chunk that registers a watcher under an explicit tag can be cancelled
+#         by calling tag.stop(); cancellation causes quiescence.
+#
+# defer-to: T29-T31
+#
+# Reason: tag.stop() method-call syntax and cross-strand TAG_STOP propagation
+# land at T29 (UTag + ambient-tag inheritance), T30 (OP_PUSH_TAG/OP_POP_TAG
+# runtime), and T31 (urbi_tag_stop synchronous deposit + cross-strand path).
+# At M3, tag scope syntax is emitted (mytag: { ... }) but UTag is not yet a
+# runtime type and TAG_STOP escalates to fatal.
+#
+# When T31 lands, implement this fixture by uncommenting the urbiscript source
+# below. Expected behaviour: the chunk registers a watcher under tag t, then
+# immediately calls t.stop() to cancel it. The watcher never fires.
+#
+# Urbiscript source (activate at T31):
+#   var t = Tag.new;
+#   t: every(100ms) { echo("never fires") };
+#   t.stop();
+#   echo("done")
+#   --- expected output ---
+#   [00000001] "done"

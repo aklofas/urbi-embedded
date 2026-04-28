@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: Lobby is an alias for the global Realm; bindings in Lobby are visible
+#         globally and vice versa.
+#
+# defer-to: M6
+#
+# Reason: Lobby is a stdlib concept — a reflective surface that exposes the
+# global Realm as an object. The Lobby binding lands at M6 (stdlib) when the
+# standard library is bootstrapped. At M3, Realm is a C-level type only,
+# not exposed as an urbiscript binding.
+#
+# When M6 lands, implement this fixture by uncommenting the urbiscript source.
+# Expected behaviour: Lobby is the global Realm; setting Lobby.x sets a global
+# binding visible to all subsequent code.
+#
+# Urbiscript source (activate at M6):
+#   Lobby.x = 123;
+#   x
+#   --- expected output ---
+#   [00000001] 123
