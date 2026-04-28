@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: Mutex.new() mutual exclusion; m.lock()/m.unlock() serializes concurrent
+#         function calls; queued waiters run in order after unlock.
+# defer-to: M6 (requires Mutex stdlib type and ',' separator runtime)
+#
+# Reason:
+#   Mutex is a stdlib synchronization primitive scheduled for M6.  It depends on
+#   ',' (OP_FORK_DETACH) for concurrent callers (M5 chk driver), the Lock
+#   scheduler primitive for blocking acquire, and prototype-OOP method dispatch
+#   for m.lock()/m.unlock() (M4).  All dependencies exceed M3 capability.
+#
+# Original urbiscript (activate at M6 with Mutex type and M5 chk driver):
+# # var m = Mutex.new() | {};
+# # function f(name) { ... m.lock(); sleep(1s); m.unlock() } | {};
+# # m.lock(); f("func1"), sleep(1s); ... m.unlock();
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/mutex/basic.chk)

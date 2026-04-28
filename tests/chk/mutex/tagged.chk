@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: Mutex used as Tag via 'm:{ ... }' colon-scope notation; stop exception
+#         during mutex critical section releases the mutex; nested detach inside mutex.
+# defer-to: M6 (requires Mutex stdlib type, tag-scope colon notation on Mutex, and '&' runtime)
+#
+# Reason:
+#   The 'm:{ ... }' tag-scope notation on a Mutex requires Mutex to be usable as
+#   a Tag (prototype inheritance chain — M4 object model) and the Lock/Mutex
+#   acquire-on-entry / release-on-exit semantics (M6 stdlib).  Stop-exception
+#   inside a critical section exercising the finally/cleanup path (mutex release
+#   on stop) additionally depends on M5 scheduler integration.  'for&(var i: 4)'
+#   parallel for (M5 chk driver).
+#
+# Original urbiscript (activate at M6 with Mutex as Tag and M5 chk driver):
+# # var m = Mutex.new() | {};
+# # function f(name) { ... m: { sleep(1s) } } | {};
+# # m.lock(); f("func1"), ... m.unlock(); ...
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/mutex/tagged.chk)
