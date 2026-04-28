@@ -235,8 +235,6 @@ static UToken scan_decimal(ULexer *lex) {
     t.type = TOK_INT;
     t.line = start_line;
     t.col = start_col;
-    t.len = (int)(lex->cur - start);
-    t.u.i = value;
 
     /* Check for duration suffix and convert to microseconds. */
     if (lex->cur + 1 < lex->end && lex->cur[0] == 'm' && lex->cur[1] == 's' &&
@@ -278,7 +276,7 @@ static UToken scan_decimal(ULexer *lex) {
              (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
         /* "d" → multiply by 86,400,000,000 to get microseconds */
         lex->cur += 1;
-        value *= 86400ULL * 1000000;
+        value *= 86400LL * 1000000;
     }
 
     /* Update token length if a suffix was consumed. */
