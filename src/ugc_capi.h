@@ -15,8 +15,7 @@
 #if URBI_GC == URBI_GC_INCREMENTAL
 #  include "ugc_incremental.h"
 #elif URBI_GC == URBI_GC_NONE
-/* ugc_none.h: T28 ships this stub. Until then, URBI_GC_NONE is compile-error. */
-#  error "URBI_GC_NONE not yet implemented; set URBI_GC=URBI_GC_INCREMENTAL"
+#  include "ugc_none.h"
 #else
 #  error "URBI_GC set to unknown value"
 #endif

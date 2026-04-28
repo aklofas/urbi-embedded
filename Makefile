@@ -161,6 +161,8 @@ releasetest:
 	$(MAKE) docs-check
 	@echo "=== releasetest: coverage ==="
 	$(MAKE) coverage
+	@echo "=== releasetest: cross-strategy compile smoke ==="
+	$(MAKE) test-gc-none-build
 	@echo "=== releasetest: all gates passed ==="
 
 # libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's
@@ -168,6 +170,59 @@ releasetest:
 # full src/ tree; no .a dependency because libFuzzer needs the sanitizer
 # runtimes linked in.  Local-only (no CI); see docs/internals/test-harness.md
 # for time-budget guidance.
+# --- Stress tests -------------------------------------------------------
+#
+# test-stress builds and runs 4 GC stress programs against the default
+# (URBI_GC_INCREMENTAL) library.  Each program self-asserts and exits 0
+# on success.  NOT wired into `make test` (slower path); invoked by
+# `make test-stress` or `make releasetest`.
+
+STRESS_BUILDDIR := $(BUILDDIR)/tests/stress
+
+$(STRESS_BUILDDIR):
+	@mkdir -p $@
+
+# Stress tests are hosted programs; clock_gettime needs _POSIX_C_SOURCE.
+STRESS_CPPFLAGS := $(CPPFLAGS) -D_POSIX_C_SOURCE=200809L
+
+$(STRESS_BUILDDIR)/gc_long_running: tests/stress/gc_long_running.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+
+$(STRESS_BUILDDIR)/gc_many_cycles: tests/stress/gc_many_cycles.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+
+$(STRESS_BUILDDIR)/gc_pause_time: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+
+$(STRESS_BUILDDIR)/gc_barrier_throughput: tests/stress/gc_barrier_throughput.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+
+test-stress: $(STRESS_BUILDDIR)/gc_long_running \
+             $(STRESS_BUILDDIR)/gc_many_cycles \
+             $(STRESS_BUILDDIR)/gc_pause_time \
+             $(STRESS_BUILDDIR)/gc_barrier_throughput
+	$(STRESS_BUILDDIR)/gc_long_running
+	$(STRESS_BUILDDIR)/gc_many_cycles
+	$(STRESS_BUILDDIR)/gc_pause_time
+	$(STRESS_BUILDDIR)/gc_barrier_throughput
+
+# --- Cross-strategy compile smoke (URBI_GC_NONE) ------------------------
+#
+# test-gc-none-build verifies that ugc_none.h (the M3 no-op stub) compiles
+# cleanly when URBI_GC=URBI_GC_NONE (==2) is set.  Compilation only; no
+# link against liburbi.a (real URBI_GC_NONE impl deferred to v2 per
+# REVIVAL §2.2 / Row 10 §2.1).
+#
+# Uses -fsyntax-only (parse + type-check; no object output) so no separate
+# build directory is needed.  Both build-smoke files are checked.
+
+test-gc-none-build:
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DURBI_GC=2 -fsyntax-only \
+	    tests/build/test_gc_none_compile.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -DURBI_GC=2 -fsyntax-only \
+	    tests/build/test_gc_none_no_barrier.c
+	@echo "test-gc-none-build: URBI_GC_NONE header smoke PASS"
+
 FUZZ_BUILDDIR := build/host-fuzz
 FUZZ_CC       ?= clang
 FUZZ_CFLAGS   := -std=c99 -Wall -Wextra -Wpedantic -O1 -g \
@@ -341,4 +396,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest
+.PHONY: all test test-asan test-ubsan test-debug test-switch cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build

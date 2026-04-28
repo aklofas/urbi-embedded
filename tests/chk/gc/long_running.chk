@@ -1,0 +1,28 @@
+# Milestone: M3
+# Covers: 100k allocate-and-drop cycles complete within a bounded heap;
+#         the GC reclaims dead cells and gc_live_bytes remains small relative
+#         to gc_total_allocated.
+#
+# defer-to: M4 (object literals) + T28+ stress test in tests/stress/
+#
+# Reason: the {} object literal syntax used by the alloc-and-drop loop body
+# does not exist until M4 (object model).  The equivalent C-level stress test
+# (tests/stress/gc_long_running.c) exercises the same GC path at M3 via the
+# urbi_gc_alloc / urbi_gc_slice / urbi_gc_force_full C API directly.
+#
+# When M4 lands and object literals are parseable, activate this fixture by
+# uncommenting the urbiscript source below and removing this defer-to block.
+# Expected behaviour: alloc_drop() completes without OOM; the runtime heap
+# is bounded (live_bytes ≪ total_allocated at end of run).
+#
+# Urbiscript source (activate at M4):
+#   function alloc_drop() {
+#     var i = 0;
+#     while (i < 100000) {
+#       var x = {}|  x = nil;
+#       i = i + 1
+#     }
+#   };
+#   alloc_drop();
+#   --- expected output ---
+#   (no output — side-effect-free computation)

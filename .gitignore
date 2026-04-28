@@ -37,10 +37,10 @@ leak-*
 timeout-*
 oom-*
 
-# Build directories
-build/
-dist/
-out/
+# Build directories (root only — tests/build/ is source, not output)
+/build/
+/dist/
+/out/
 
 # Editor
 .vscode/
