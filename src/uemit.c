@@ -1402,6 +1402,14 @@ static const char *opname(const UOpcode op) {
     case OP_JOIN_WAIT:    return "JOIN_WAIT";
     case OP_GETSLOT:      return "GETSLOT";
     case OP_SETSLOT:      return "SETSLOT";
+    case OP_THROW:        return "THROW";
+    case OP_TAG_STOP:     return "TAG_STOP";
+    case OP_TRY_BEGIN:    return "TRY_BEGIN";
+    case OP_TRY_END:      return "TRY_END";
+    case OP_PUSH_TAG:     return "PUSH_TAG";
+    case OP_POP_TAG:      return "POP_TAG";
+    case OP_PUSH_FRAME_GUARD: return "PUSH_FRAME_GUARD";
+    case OP_RESUME:       return "RESUME";
     case OP_MAX:          break;
     }
     return "OP?";
