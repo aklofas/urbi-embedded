@@ -949,6 +949,53 @@ UTEST(vm_nil_literal) {
     UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
 }
 
+/* --- M3 field zero-init verification --- */
+
+UTEST(vm_create_zero_init_m3_fields) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    /* 5-flag liveness counters (Rule X). */
+    UASSERT_EQ(0u, vm.strand_runnable_count);
+    UASSERT_EQ(0u, vm.strand_suspended_count);
+    UASSERT_EQ(0u, vm.watcher_active_count);
+    UASSERT_EQ(0u, vm.event_queue_count);
+    UASSERT_EQ(0u, vm.wakeup_pending_count);
+    UASSERT_EQ(0u, vm.host_call_pending_count);
+    /* Scheduler queues. */
+    UASSERT(vm.ready_head    == NULL);
+    UASSERT(vm.ready_tail    == NULL);
+    UASSERT(vm.sleep_q_head  == NULL);
+    /* Dispatcher hooks. */
+    UASSERT_EQ(0u, vm.gc_pending);
+    UASSERT_EQ(0u, vm.watcher_dirty_count);
+    UASSERT_EQ(0u, vm.flag_preemption);
+    /* ISR ring (allocated at T18). */
+    UASSERT(vm.event_ring == NULL);
+    /* GC root provider registry. */
+    UASSERT_EQ(0u, vm.root_provider_count);
+    /* Realm / fatal-strand pointers. */
+    UASSERT(vm.realms_head  == NULL);
+    UASSERT(vm.global_realm == NULL);
+    UASSERT(vm.fatal_strand == NULL);
+    /* Handle table (allocated at T27). */
+    UASSERT(vm.handle_table == NULL);
+    UASSERT_EQ(0u, vm.handle_table_cap);
+    /* Watcher pool (allocated at T32). */
+    UASSERT(vm.watcher_pool_base == NULL);
+    UASSERT_EQ(0u, vm.watcher_pool_in_use);
+    /* Host time hook must be non-NULL (default stub). */
+    UASSERT(vm.host_time_us != NULL);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_gc_initial_threshold_set) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UASSERT_EQ((size_t)URBI_GC_INITIAL_THRESHOLD, vm.gc_threshold);
+    UASSERT(vm.gc_debt < 0);  /* starts negative; goes positive at debt threshold */
+    uvm_destroy(&vm);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -1049,4 +1096,8 @@ void test_vm_suite(void) {
     utest_run("vm: true literal → bool true",     vm_true_literal);
     utest_run("vm: false literal → bool false",   vm_false_literal);
     utest_run("vm: nil literal → nil",            vm_nil_literal);
+    utest_run("uvm_init zeros all M3 scheduler/GC/watcher fields",
+              vm_create_zero_init_m3_fields);
+    utest_run("uvm_init sets gc_threshold + negative gc_debt",
+              vm_gc_initial_threshold_set);
 }

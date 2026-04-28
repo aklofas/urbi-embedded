@@ -9,9 +9,35 @@
 #include <stdint.h>
 
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
+#include "uvalue.h"   /* UValue — needed for handle_table field */
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/* --- M3 forward declarations (rows 8, 9, 10, 11) ---
+   Types referenced in the UVM struct but defined in later tasks.
+   Forward-decl only: all uses are pointer-typed. */
+struct UStrand;
+struct UCell;
+struct UEvent;
+struct URealm;
+struct UWatcher;
+struct UType;
+struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
+
+/* --- M3 GC root provider types ---
+   Placed before struct UVM so the root_providers[] array can reference them. */
+typedef void (*UGcRootCallback)(struct UVM *vm, UValue *root, void *ctx);
+typedef void (*UGcRootProviderFn)(struct UVM *vm, UGcRootCallback cb, void *ctx);
+
+/* --- M3 capacity macros (with #ifndef guards so later tasks can redefine) --- */
+#ifndef URBI_GC_INITIAL_THRESHOLD
+#  define URBI_GC_INITIAL_THRESHOLD 16384u  /* row 10 §6.5; T24 may move to ugc.h */
+#endif
+
+#ifndef URBI_MAX_ROOT_PROVIDERS
+#  define URBI_MAX_ROOT_PROVIDERS 8u        /* row 10 §5.1; T26 may move to ugc.h */
 #endif
 
 /* --- errors --- */
@@ -72,6 +98,94 @@ typedef struct UVM {
      * on uvm_destroy().  Allows callers to inspect *out without immediately
      * freeing it, while preventing leaks across multi-run sessions (REPL). */
     UClosure   *last_return_closure;
+
+    /* ================================================================
+     * M3 additions (rows 8, 9, 10, 11 of the pre-M3 design bundle)
+     * All pointer fields zero-init to NULL; uint fields zero-init to 0.
+     * Non-zero defaults set explicitly in uvm_init().
+     * ================================================================ */
+
+    /* --- Row 8 + Rule X: 5-flag liveness counters ---
+     * Quiescence is defined as all five counters being zero simultaneously.
+     * strand_suspended_count is excluded from the quiescence check at M3
+     * (always 0; included here for completeness per row 9 §2.6). */
+    uint32_t strand_runnable_count;    /* row 8 §3 + row 9 §2.6 */
+    uint32_t strand_suspended_count;   /* row 9 §2.6; always 0 at M3 */
+    uint32_t watcher_active_count;     /* row 8 §3; M5 maintains */
+    uint32_t event_queue_count;        /* row 8 §3; M5+ shape */
+    uint32_t wakeup_pending_count;     /* row 8 §3; scheduler timer heap */
+    uint32_t host_call_pending_count;  /* row 8 §3 + row 9; cross-strand stop injection */
+
+    /* --- Row 8 realm/fatal-strand pointers --- */
+    struct URealm  *realms_head;       /* linked list of all realms; T14 maintains */
+    struct URealm  *global_realm;      /* lazy-created on first urbi_realm_global() */
+    struct UStrand *fatal_strand;      /* set by urbi_step on FATAL; NULL otherwise */
+
+    /* --- Row 9 scheduler queues --- */
+    struct UStrand *ready_head;        /* run-queue head (FIFO); NULL = empty */
+    struct UStrand *ready_tail;        /* run-queue tail for O(1) enqueue */
+    struct UStrand *sleep_q_head;      /* sleep queue head, sorted by wake_us */
+
+    /* --- Row 9 step driver state --- */
+    uint64_t step_budget_remaining;    /* opcode budget for current urbi_step() call */
+
+    /* --- Row 9 dispatcher hooks --- */
+    uint16_t gc_pending;               /* non-zero → gc_slice() at next safepoint */
+    uint32_t watcher_dirty_count;      /* non-zero → watcher_eval_dirty() at scheduler turn */
+
+    /* --- Row 9 v2 reservation --- */
+    uint8_t  flag_preemption;          /* RESERVED — always 0 at M3 */
+    uint8_t  flag_reserved[3];         /* padding; zeroed */
+
+    /* --- Row 9 ISR-safe event ring ---
+     * Stored as a pointer (definition lands at T18).  Zero-init = NULL. */
+    struct UEventRing *event_ring;     /* T18: uevent_ring_init(vm) allocates */
+
+    /* --- Row 10 GC state machine --- */
+    uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2; named constant lands at T22 */
+    uint8_t  current_white;            /* current white color for tri-color marking */
+    uint8_t  gc_paused;                /* non-zero → GC slices suppressed */
+    uint8_t  in_destroy_callback;      /* debug-build assertion guard (T22/T27 use) */
+    int64_t  gc_debt;                  /* negative = credit; positive = GC work owed */
+    size_t   gc_threshold;             /* debt threshold; default URBI_GC_INITIAL_THRESHOLD */
+    size_t   gc_live_bytes;            /* live bytes after last sweep cycle */
+    size_t   gc_total_allocated;       /* monotonically increasing allocation counter */
+    struct UCell *all_cells_head;      /* intrusive list of all GC-managed cells */
+    struct UCell *gray_work_head;      /* mark-phase gray worklist */
+    struct UCell *sweep_cursor;        /* incremental sweep position */
+    struct UCell *sweep_cursor_prev;   /* previous cell (for list surgery) */
+
+    /* --- Row 10 GC root provider registry --- */
+    UGcRootProviderFn root_providers[URBI_MAX_ROOT_PROVIDERS];
+    uint8_t           root_provider_count;
+
+    /* --- Row 10 type table --- */
+    struct UType *type_table[256];     /* indexed by type_tag byte; T22/T27 populate */
+    uint8_t       host_type_count;     /* host-registered types since UTYPE_HOST_BASE */
+
+    /* --- Row 10 host-handle table (T27 allocates) --- */
+    UValue   *handle_table;            /* flat array of pinned host handles */
+    uint32_t  handle_table_cap;
+    uint32_t  handle_table_next_id;
+
+    /* --- Row 11 watcher pool (T32 allocates) --- */
+    struct UWatcher *watcher_pool_base;      /* base of pre-allocated pool */
+    struct UWatcher *watcher_pool_freelist;  /* freelist head */
+    struct UWatcher *active_watchers_head;   /* linked list of live watchers */
+    uint16_t         watcher_pool_in_use;
+    uint16_t         watcher_pool_high_water;
+
+    /* --- Row 11 watcher dirty-set + scratch frame --- */
+    uint8_t  in_watcher_eval;          /* reentrancy guard */
+    uint8_t  pad_in_eval[3];           /* padding; zeroed */
+    void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
+
+    /* --- Row 11 pending on-leave queue --- */
+    struct UWatcher *pending_onleave_head;
+    struct UWatcher *pending_onleave_tail;
+
+    /* --- Row 9 host time hook --- */
+    uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
 } UVM;
 
 /* --- API --- */

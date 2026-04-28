@@ -1,20 +1,49 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode interpreter. */
 
+/* _POSIX_C_SOURCE must be defined before any system header; guard against
+   re-definition in case the build system already defines it. */
+#if __STDC_HOSTED__ && (defined(__linux__) || defined(__APPLE__) || defined(__unix__))
+#  ifndef _POSIX_C_SOURCE
+#    define _POSIX_C_SOURCE 200809L
+#  endif
+#  define UVM_HAVE_CLOCK_GETTIME 1
+#endif
+
 #include "uvm.h"
 #include "uintern.h"
 #include "uvalue.h"
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
+#  if defined(UVM_HAVE_CLOCK_GETTIME)
+#    include <time.h>
+#  endif
+#endif  /* __STDC_HOSTED__ */
 
 /* Default allocator: realloc semantics. Only compiled in hosted builds. */
+#if __STDC_HOSTED__
 static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
     if (nbytes == 0) { free(ptr); return NULL; }
     return realloc(ptr, nbytes);
 }
-#endif  /* __STDC_HOSTED__ */
+#endif
+
+/* --- Default host time source ---
+   Returns monotonic microseconds on POSIX hosts (Linux/macOS/BSD); returns 0
+   on freestanding targets and non-POSIX hosted targets.
+   Embedded callers MUST override via the host_time_us field after uvm_init(). */
+static uint64_t default_host_time_us_stub(void) {
+#if defined(UVM_HAVE_CLOCK_GETTIME)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+#else
+    /* Freestanding or non-POSIX hosted: no clock without platform BSP. */
+    return 0u;
+#endif
+}
 
 /* Forward declaration: defined after helper functions below. */
 static void vm_free_open_upvalues(UVM *vm);
@@ -35,10 +64,113 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->frame_count          = 0;
     vm->open_upvals          = NULL;
     vm->last_return_closure  = NULL;
+
+    /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
+    /* 5-flag liveness counters (Rule X). */
+    vm->strand_runnable_count   = 0u;
+    vm->strand_suspended_count  = 0u;
+    vm->watcher_active_count    = 0u;
+    vm->event_queue_count       = 0u;
+    vm->wakeup_pending_count    = 0u;
+    vm->host_call_pending_count = 0u;
+
+    /* Realm / fatal-strand pointers. */
+    vm->realms_head  = NULL;
+    vm->global_realm = NULL;
+    vm->fatal_strand = NULL;
+
+    /* Scheduler queues and step-driver state. */
+    vm->ready_head             = NULL;
+    vm->ready_tail             = NULL;
+    vm->sleep_q_head           = NULL;
+    vm->step_budget_remaining  = 0u;
+    vm->gc_pending             = 0u;
+    vm->watcher_dirty_count    = 0u;
+    vm->flag_preemption        = 0u;
+    vm->flag_reserved[0]       = 0u;
+    vm->flag_reserved[1]       = 0u;
+    vm->flag_reserved[2]       = 0u;
+
+    /* ISR ring (pointer; allocated at T18). */
+    vm->event_ring = NULL;
+
+    /* GC state machine.
+     * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22. */
+    vm->gc_phase            = 0u;
+    vm->current_white       = 0u;
+    vm->gc_paused           = 0u;
+    vm->in_destroy_callback = 0u;
+    vm->gc_threshold        = (size_t)URBI_GC_INITIAL_THRESHOLD;
+    vm->gc_debt             = -(int64_t)URBI_GC_INITIAL_THRESHOLD;
+    vm->gc_live_bytes       = 0u;
+    vm->gc_total_allocated  = 0u;
+    vm->all_cells_head      = NULL;
+    vm->gray_work_head      = NULL;
+    vm->sweep_cursor        = NULL;
+    vm->sweep_cursor_prev   = NULL;
+
+    /* GC root provider registry. */
+    {
+        uint8_t i;
+        for (i = 0u; i < (uint8_t)URBI_MAX_ROOT_PROVIDERS; i++) {
+            vm->root_providers[i] = NULL;
+        }
+    }
+    vm->root_provider_count = 0u;
+
+    /* Type table + host-handle table. */
+    {
+        int i;
+        for (i = 0; i < 256; i++) {
+            vm->type_table[i] = NULL;
+        }
+    }
+    vm->host_type_count      = 0u;
+    vm->handle_table         = NULL;
+    vm->handle_table_cap     = 0u;
+    vm->handle_table_next_id = 0u;
+
+    /* Watcher pool. */
+    vm->watcher_pool_base      = NULL;
+    vm->watcher_pool_freelist  = NULL;
+    vm->active_watchers_head   = NULL;
+    vm->watcher_pool_in_use    = 0u;
+    vm->watcher_pool_high_water = 0u;
+    vm->in_watcher_eval        = 0u;
+    vm->pad_in_eval[0]         = 0u;
+    vm->pad_in_eval[1]         = 0u;
+    vm->pad_in_eval[2]         = 0u;
+    vm->watcher_scratch_frame  = NULL;
+    vm->pending_onleave_head   = NULL;
+    vm->pending_onleave_tail   = NULL;
+
+    /* Host time hook: default stub; embedded callers override post-init. */
+    vm->host_time_us = default_host_time_us_stub;
 }
 
 void uvm_destroy(UVM *vm) {
     if (vm == NULL) return;
+
+    /* --- M3 teardown stubs (in reverse-init order) ---
+     * Subsystem-owned teardowns are deferred to their landing tasks. */
+    /* T14: urealm_teardown_all(vm); */
+    /* T32: uwatcher_pool_destroy(vm); */
+    /* T22: ugc_destroy(vm); */
+    /* T18: uevent_ring_destroy(vm->event_ring); */
+
+    /* Free any M3 heap fields that T4 itself allocated (none at T4, but
+     * handle_table and watcher_scratch_frame may be set by callers; free
+     * them via the VM allocator so freestanding builds use the right hook). */
+    if (vm->handle_table != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->handle_table, 0, vm->alloc_ud);
+        vm->handle_table = NULL;
+    }
+    if (vm->watcher_scratch_frame != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->watcher_scratch_frame, 0, vm->alloc_ud);
+        vm->watcher_scratch_frame = NULL;
+    }
+
+    /* M2 baseline teardown. */
     uintern_destroy(vm);
     /* Pre-GC: free any closure surviving from the last uvm_run(). */
     if (vm->last_return_closure != NULL && vm->alloc_fn != NULL) {
