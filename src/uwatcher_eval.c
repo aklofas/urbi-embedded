@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher eval pass: watcher_eval_dirty, invoke_condition_closure,
  * spawn_body_coroutine M3 stub.
- * Row 11 / T34.
+ * Row 11.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -119,6 +119,8 @@ watcher_eval_dirty(struct UVM *vm)
 void
 spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     if (vm->test_watcher_fire_hook != NULL) {
         vm->test_watcher_fire_hook(vm, w);
         return;

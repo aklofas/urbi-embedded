@@ -193,8 +193,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * drain_pending_onleave_queue.  Allocated here so M5's real
      * urbi_run_closure_on_scratch can use it without a layout change.
      * Freed by uvm_destroy (already wired at T32; see comment there).
-     * OOM: leave NULL and continue — matches event_ring + pool pattern. */
-    if (vm->alloc_fn) {
+     * OOM: leave NULL and continue — matches event_ring + pool pattern.
+     * Note: vm->alloc_fn is always non-NULL here due to lines 62-66 substitution. */
+    {
         void *sf = vm->alloc_fn(NULL, sizeof(UScratchFrame), vm->alloc_ud);
         if (sf != NULL) {
             /* Zero-fill via volatile byte loop (freestanding: no memset). */
