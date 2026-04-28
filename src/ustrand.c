@@ -106,6 +106,9 @@ urbi_strand_start(UStrand *s)
 UStrand *
 urbi_strand_spawn(struct URealm *realm, struct UClosure *entry)
 {
+    struct UVM *vm = realm->vm;
+    URBI_ASSERT_NOT_ISR(vm);
+    (void)vm;  /* suppress -Wunused-variable in non-debug builds */
     UStrand *s = urbi_strand_create(realm, entry);
     if (s) urbi_strand_start(s);
     return s;
