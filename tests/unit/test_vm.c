@@ -996,6 +996,31 @@ UTEST(vm_gc_initial_threshold_set) {
     uvm_destroy(&vm);
 }
 
+/* --- T8: OP_RET routing through pending_unwind / urbi_unwind --- */
+
+/* Top-frame return: OP_RET at frame_count==0 writes out_slot and marks strand
+ * DEAD.  Exercises the shortcut path in the new OP_RET handler. */
+UTEST(vm_op_ret_top_frame_marks_strand_dead) {
+    UValue out;
+    /* "42" compiles to OP_LOADK + OP_RET at the top level.
+     * The OP_RET handler must write 42 to out_slot and halt the strand. */
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("42", &out));
+    UASSERT_EQ(UVAL_INT, (int)out.kind);
+    UASSERT_EQ(42, out.v.i);
+}
+
+/* Nested-call return: OP_RET inside a function body routes through
+ * pending_unwind = UEXEC_RETURN → urbi_unwind() → pop+deliver.
+ * Verifies the bridging-stub walker restores caller state correctly.
+ * Uses var-binding syntax (named-function binding lands at T15). */
+UTEST(vm_op_ret_nested_call_routes_through_walker) {
+    UValue out;
+    /* "var f = function() { 7 }; f()" — f() returns 7 through the walker. */
+    UASSERT_EQ(UVM_OK, vm_pipeline_eval("var f = function() { 7 }; f()", &out));
+    UASSERT_EQ(UVAL_INT, (int)out.kind);
+    UASSERT_EQ(7, out.v.i);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -1100,4 +1125,8 @@ void test_vm_suite(void) {
               vm_create_zero_init_m3_fields);
     utest_run("uvm_init sets gc_threshold + negative gc_debt",
               vm_gc_initial_threshold_set);
+    utest_run("vm: OP_RET at top frame marks strand dead, delivers value",
+              vm_op_ret_top_frame_marks_strand_dead);
+    utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
+              vm_op_ret_nested_call_routes_through_walker);
 }

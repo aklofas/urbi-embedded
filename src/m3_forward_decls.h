@@ -3,10 +3,10 @@
    later tasks.  Each stub is a static inline no-op so that dispatch_loop_until_yield
    can reference them now without link errors.
    DELETE each stub in its owning task:
-     unwind_walk             — T9
      gc_slice                — T22/T24
      drain_pending_onleave_queue — T35
-     watcher_eval_dirty      — T34 */
+     watcher_eval_dirty      — T34
+   (unwind_walk removed at T8: real urbi_unwind() lives in src/uunwind.c) */
 
 #ifndef M3_FORWARD_DECLS_H
 #define M3_FORWARD_DECLS_H
@@ -22,6 +22,6 @@
 static inline void gc_slice(UVM *vm, size_t budget) { (void)vm; (void)budget; }
 static inline void drain_pending_onleave_queue(UVM *vm) { (void)vm; }
 static inline void watcher_eval_dirty(UVM *vm) { (void)vm; }
-static inline void unwind_walk(UStrand *s) { (void)s; }
+/* unwind_walk removed at T8: replaced by urbi_unwind() in src/uunwind.c */
 
 #endif /* M3_FORWARD_DECLS_H */

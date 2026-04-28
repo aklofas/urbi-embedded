@@ -15,6 +15,8 @@
 #include "uintern.h"
 #include "uvalue.h"
 #include "usched_cooperative.h"
+#include "uvm_internal.h"
+#include "uunwind.h"
 #include "m3_forward_decls.h"
 
 #if __STDC_HOSTED__
@@ -536,9 +538,10 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
 
 /* Heapify all open cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
- * Called by OP_CLOSE and OP_RET. */
-static void vm_close_upvalues(UStrand *s, UValue *threshold,
-                              UUpvalCell **closed_list) {
+ * Called by OP_CLOSE, OP_RET, and urbi_unwind.
+ * Declared non-static (exported via uvm_internal.h) for uunwind.c access. */
+void vm_close_upvalues(UStrand *s, UValue *threshold,
+                       UUpvalCell **closed_list) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;
@@ -769,7 +772,8 @@ dispatch:
             UValue retval = s->R[uinstr_a(*s->pc)];
 
             if (s->frame_count == 0) {
-                /* Top-level OP_RET — strand is done. */
+                /* Top-frame return — strand becomes DEAD.
+                 * Adapter (uvm_run) extracts result via out_slot. */
                 if (s->out_slot != NULL) {
                     *s->out_slot = retval;
                 }
@@ -778,28 +782,11 @@ dispatch:
                 goto exit_strand;
             }
 
-            /* Pop the call frame. */
-            UCallFrame *done = &s->frames[--s->frame_count];
-
-            /* Close any open upvalues that point into this frame's registers.
-             * Threshold = done->base + 1 (first slot of callee's frame was
-             * done->base[result_dest_reg + 1], i.e. R_caller[a+1]). */
-            vm_close_upvalues(s, done->base + done->result_dest_reg + 1,
-                              &s->closed_cells);
-
-            /* Restore caller's register window and instruction pointer. */
-            s->R       = done->base;
-            s->pc      = done->pc + 1;  /* advance past the OP_CALL */
-            s->pc_base = s->module->instructions;  /* diagnostic; approximate */
-            s->cur_consts = (s->frame_count > 0 &&
-                             s->frames[s->frame_count - 1].closure != NULL)
-                            ? s->frames[s->frame_count - 1].closure->proto->constants
-                            : s->module->constants;
-
-            /* Write return value into caller's result slot R[a]. */
-            s->R[done->result_dest_reg] = retval;
-
-            /* Safepoint at frame-pop (non-top-frame OP_RET). */
+            /* Non-top-frame: hand off to walker.
+             * M2's inline pop+deliver is now urbi_unwind()'s job (T8 bridging
+             * stub; T9 replaces with the real 5-kind walker). */
+            s->unwind_value   = retval;
+            s->pending_unwind = UEXEC_RETURN;
             steps_consumed++;
             goto safepoint;
         }
@@ -1157,7 +1144,7 @@ safepoint:
     /* Safepoint actions (run at backward-branch, call, and non-top OP_RET).
        Order: unwind check → per-strand budget → VM-wide budget → GC → hooks. */
     if (s->pending_unwind != UEXEC_OK) {
-        unwind_walk(s);                   /* T9 wires; stub at T6 */
+        urbi_unwind(s);
         if (s->state == USTRAND_STATE_DEAD) goto exit_strand;
     }
     if (s->instruction_budget_remaining == 0) {
