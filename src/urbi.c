@@ -10,6 +10,7 @@
 #if __STDC_HOSTED__
 #  include <stdio.h>
 #  include <stdlib.h>
+#  include <string.h>
 #endif
 
 #define URBI_VERSION "0.1.0-skeleton"
@@ -111,13 +112,21 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
         case UVAL_BOOL:
             FNV1A_MIX(c->h, (uint64_t)root->v.i);
             break;
-        case UVAL_FLOAT:
-            /* Union type-pun: read float as int64_t bit pattern via the shared
-             * union storage.  Valid in C99 §6.5.2.3 (union member access).
-             * The upper bytes are zero-initialized for f32 (URBI_FLOAT_TYPE==4)
-             * because UValue is zero-initialized on construction. */
-            FNV1A_MIX(c->h, (uint64_t)root->v.i);
+        case UVAL_FLOAT: {
+            /* Mix the float's bit pattern at its actual width.  Reading v.i would
+             * include stale upper bytes for f32 (URBI_FLOAT_TYPE==4) when a slot
+             * was previously assigned UVAL_INT — non-deterministic. */
+#if URBI_FLOAT_TYPE == 8
+            uint64_t bits;
+            memcpy(&bits, &root->v.f, sizeof(bits));
+            FNV1A_MIX(c->h, bits);
+#else
+            uint32_t bits;
+            memcpy(&bits, &root->v.f, sizeof(bits));
+            FNV1A_MIX(c->h, (uint64_t)bits);
+#endif
             break;
+        }
         case UVAL_STR:
             /* Interned pointer: stable within-run identity (see comment above). */
             FNV1A_MIX(c->h, (uintptr_t)root->v.p);

@@ -10,7 +10,6 @@
 #include "utest.h"
 #include "urbi.h"
 #include "uvm.h"
-#include <stddef.h>
 
 #define UTEST(name) static void name(void)
 
@@ -78,7 +77,12 @@ UTEST(determinism_checksum_differs_after_namespace_binding)
 UTEST(determinism_checksum_two_identical_vms_match)
 {
     /* Two VMs that receive the same single integer binding produce the same
-     * checksum (integer values are mixed directly; no pointer dependence). */
+     * checksum (integer values are mixed directly; no pointer dependence).
+     * This test uses UVAL_INT (not UVAL_STR) because UVAL_STR mixes the
+     * interned-pointer address, which is per-VM-stable but NOT cross-VM-stable —
+     * two separate VMs binding identical strings would produce different
+     * checksums.  T42's cross-process determinism test exercises the
+     * cross-run-stable subset of state only. */
     UVM vm1, vm2;
     uvm_init(&vm1, NULL, NULL);
     uvm_init(&vm2, NULL, NULL);
