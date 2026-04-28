@@ -336,14 +336,23 @@ fuzz-tools:
 cross-arm:
 	$(MAKE) TARGET=arm-cortex-m7 \
 		CC=arm-none-eabi-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding -DURBI_CLEANUP_MAX=16" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
 		all
 
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
 		CC=riscv64-unknown-elf-gcc \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding -DURBI_FLOAT_TYPE=4" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
 		all
 
