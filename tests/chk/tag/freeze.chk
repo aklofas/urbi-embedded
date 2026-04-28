@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: tag.freeze() suspends all strands under that tag; the strand stays
+#         frozen until t2.stop() terminates the outer scope.
+# defer-to: M5 (requires tag.freeze() / tag.unfreeze() method dispatch and SUSPENDED strand state)
+#
+# Reason:
+#   tag.freeze() requires two M4/M5 features: (1) method dispatch on a UTag
+#   value (M4), and (2) the SUSPENDED strand-state machinery that actually
+#   halts instruction dispatch for tagged strands (M5).  The ',' separator for
+#   concurrent "freeze vs echo" observation also requires the M5 chk driver.
+#
+# Original urbiscript (activate at M5 with freeze/unfreeze machinery):
+# # var t1 = Tag.new() | {};
+# # var t2 = Tag.new() | {};
+# # t2: { t1: t1.freeze(); echo("You don't see me") }, sleep(1s);
+# # echo("I am the only one");
+# # [00000001] *** I am the only one
+# # t2.stop();

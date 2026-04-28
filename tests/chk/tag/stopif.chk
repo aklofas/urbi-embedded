@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: stopif(cond) body — terminates body no later than its end when
+#         condition becomes true; Event-based and variable-change variants.
+# defer-to: M5 (requires stopif keyword, reactive runtime, Event type, every keyword)
+#
+# Reason:
+#   'stopif' is a reactive construct requiring the full reactive runtime (watcher
+#   active polling, condition re-evaluation) — scheduled for M5.  The fixture
+#   also uses the Event type with emission lifetime (~1s), 'every|(1s)' reactive
+#   loop (M5), and ',' separator for concurrent observation (M5 chk driver).
+#
+# Original urbiscript (activate at M5+ with reactive runtime and Event type):
+# # stopif(false) { echo("foo"); sleep(1s); echo("bar") }; echo("baz");
+# # [00000001] *** foo
+# # [00000002] *** bar
+# # [00000003] *** baz
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/stopif.chk)

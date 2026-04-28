@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: scopeTag builtin returns the implicit scope tag for the current function
+#         call; used with every() to auto-cancel a loop when function exits.
+# defer-to: M5 (requires scopeTag builtin, every keyword, and ',' separator runtime)
+#
+# Reason:
+#   'scopeTag' is a builtin that returns the implicit scope tag for the current
+#   activation record — not implemented at M3.  The fixture also uses 'every(1s)'
+#   reactive looping (M5 reactive runtime) and ',' for concurrent observation
+#   (M5 chk driver).
+#
+# Original urbiscript (activate at M5 with scopeTag + reactive runtime):
+# # function f() { var t = scopeTag; t: every(1s) echo("foobar"), sleep(3.5s) }|;
+# # f();
+# # [00000001] *** foobar
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/scope-tag.chk)

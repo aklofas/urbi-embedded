@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: freezeif(cond) body — freezes body execution while condition holds;
+#         reactive re-evaluation when condition changes; Event-based variant.
+# defer-to: M5 (requires freezeif keyword, reactive watcher activation, Event type, and ',' runtime)
+#
+# Reason:
+#   'freezeif' is a reactive construct that requires the full reactive runtime
+#   (watcher active polling, SUSPENDED state, condition re-evaluation loop) —
+#   scheduled for M5.  The fixture also uses the Event type (M6), ',' separator
+#   (M5 chk driver), 'every' keyword (M5 reactive), and variable-change watchers.
+#
+# Original urbiscript (activate at M5+ with reactive runtime and Event type):
+# # var x = 1; [00000001] 1
+# # freezeif(x == 2) { loop { echo("foo"); sleep(1s) } },
+# # sleep(2.5s); x = 2;
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/freezeif.chk)

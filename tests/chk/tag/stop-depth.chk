@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: stopping an outer tag terminates nested tag scopes; stopping an inner
+#         tag leaves the outer scope running; echo traces enter/leave ordering.
+# defer-to: M4 (requires tag.stop() method dispatch and ',' separator runtime)
+#
+# Reason:
+#   The fixture calls t.stop() and u.stop() as urbiscript method calls on UTag
+#   values — M4 object-method dispatch.  It also uses ',' (OP_FORK_DETACH) to
+#   run f() concurrently while observing its output — M5 chk driver.  Nested
+#   scope termination semantics with echo tracing require multi-strand scheduling.
+#
+# Original urbiscript (activate at M4 with tag method dispatch and M5 chk driver):
+# # var t = Tag.new() | var u = Tag.new() | function f() { ... } | {};
+# # f(), sleep(100ms); ... t.stop() | u.stop(); ...
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/stop-depth.chk)

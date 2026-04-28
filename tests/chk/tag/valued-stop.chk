@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: tag.stop(42) injects a return value into all sleeping strands under
+#         that tag; echo of the stopped block shows the injected value.
+# defer-to: M4 (requires tag.stop(val) method dispatch and ',' separator runtime)
+#
+# Reason:
+#   tag.stop(42) is called as an urbiscript method on a UTag value — M4 object-
+#   method dispatch.  urbi_tag_stop in the C API does not accept a return value
+#   at M3 (the valued-stop semantic is scheduled with the full tag API in M4).
+#   The fixture also uses ',' to run three sleeping blocks concurrently (M5 chk
+#   driver).
+#
+# Original urbiscript (activate at M4 with valued tag.stop and M5 chk driver):
+# # var t = Tag.new() | {};
+# # echo({t: sleep(3600s)}), echo({t: sleep(3600s)}), echo({t: sleep(3600s)}),
+# # sleep(100ms); t.stop(42); sleep(100ms);
+# # [00000001] *** 42
+# # [00000002] *** 42
+# # [00000003] *** 42

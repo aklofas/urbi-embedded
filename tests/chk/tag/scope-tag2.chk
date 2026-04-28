@@ -1,0 +1,14 @@
+# Milestone: M3
+# Covers: scopeTag with explicit tag label kills ',' strands when function
+#         exits; without scopeTag the comma strand outlives the function call.
+# defer-to: M5 (requires scopeTag builtin, every keyword, and ',' separator runtime)
+#
+# Reason:
+#   Same as scope-tag.chk: requires scopeTag builtin (M5) and ',' separator
+#   (M5 chk driver).  This variant additionally verifies the absence-of-scopeTag
+#   case where the detached strand continues past function exit.
+#
+# Original urbiscript (activate at M5 with scopeTag + M5 chk driver):
+# # function f() { { var t = scopeTag; t: { sleep(2s); echo("foo") }, echo("bar"); sleep(1s); echo("baz") }; sleep(2s); echo("xyzzy") } | f();
+# # [00000001] *** bar
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/scope-tag2.chk)

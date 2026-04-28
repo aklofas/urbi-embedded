@@ -1,0 +1,12 @@
+# Milestone: M3
+# Covers: stopif(1) 0 — trivially-true condition stops immediately; no crash.
+# defer-to: M5 (requires stopif keyword)
+#
+# Reason:
+#   'stopif' is a reactive construct not available at M3.  Even this minimal
+#   two-line variant requires the stopif keyword parser support and the
+#   conditional-stop watcher infrastructure scheduled for M5.
+#
+# Original urbiscript (activate at M5):
+# # stopif(1) 0;
+# # sleep(100ms);

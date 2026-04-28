@@ -1,0 +1,14 @@
+# Milestone: M3
+# Covers: tag.stop() on a ready-to-start join branch does not incorrectly
+#         cancel it; f & 1 completes normally; result is 42.
+# defer-to: M4 (requires '&' separator runtime and tag.stop() method dispatch)
+#
+# Reason:
+#   The fixture uses '&' (OP_FORK_JOIN) which requires the M5 chk driver.
+#   tag.stop() is also used implicitly via the |{}| pipe pattern.  At M3 the
+#   join opcode produces TypeError in the uvm_run REPL path.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # function f() { return 1 } | {};
+# # f & 1; 42;
+# # [00000001] 42

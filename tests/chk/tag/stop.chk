@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: tag.stop() stops a sleeping strand tagged with that tag;
+#         concurrent variants: stop before vs after strand starts sleeping.
+# defer-to: M4 (requires tag.stop() method dispatch and '&' separator runtime)
+#
+# Reason:
+#   tag.stop() is called as an object method on a UTag value (e.g., tag.stop()).
+#   Method dispatch on prototype values is a M4 object-model feature.  At M3
+#   we have urbi_tag_stop() as a C API but no urbiscript-level dispatch.  The
+#   fixture also uses '&' for concurrent stop vs sleep — requires M5 chk driver.
+#
+# Original urbiscript (activate at M4 with tag method dispatch):
+# # var tag = Tag.new() | {};
+# # tag: { {sleep(100ms); echo("No")} & tag.stop() };
+# # tag: { tag.stop() & {sleep(100ms); echo("No")} };

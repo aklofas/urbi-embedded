@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: variables declared in '&' and ',' branches are unscoped into the
+#         parent environment (not local to the branch block).
+# defer-to: M5 (requires '&' and ',' separator runtime and unscoping semantics)
+#
+# Reason:
+#   The fixture exercises that 'var a & var b' and 'var a,' declared inside a
+#   compound separator expression escape their branch and are visible in the
+#   parent block.  This unscoping semantic requires the '&' and ',' separator
+#   runtime in the chk driver (M5).  The semantics themselves are part of the
+#   §7.1 shared-frame design (design-risks-7, M5+).
+#
+# Original urbiscript (activate at M5 with unscoping semantics):
+# # { var a & var b; a; b; void };
+# # { var a, a; void };

@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: tags[n].block(result) — blocks the strand under that tag with a
+#         return value injected on unblock; used to implement parallel memoized Fibonacci.
+# defer-to: M4 (requires tag.block(val) method dispatch, detach() builtin, List/index access)
+#
+# Reason:
+#   The fixture uses tags[n].block(v) — calling block() with a return value on
+#   a UTag held in a List (array indexing).  This requires M4 prototype-OOP
+#   dispatch, the List type, detach() builtin, and complex cross-strand
+#   synchronization via tagged sleep.
+#
+# Original urbiscript (activate at M4 with tag method dispatch and List type):
+# # var tags = [] | for(var i = 0; i <= 20; i++) tags.insertBack(Tag.new()) | ...
+# # detach(fibo(10))|; tags[10]: sleep();
+# # [00000001] 89

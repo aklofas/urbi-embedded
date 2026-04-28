@@ -1,0 +1,13 @@
+# Milestone: M3
+# Covers: tag.block() called inside a tagged scope; block propagates from
+#         the scope tag to the outer join ('&'); no deadlock.
+# defer-to: M4 (requires tag.block() method dispatch)
+#
+# Reason:
+#   The fixture calls a.block on a tag — tag.block() is an object method that
+#   requires M4 prototype-OOP dispatch.  At M3 we have the UTag data structure
+#   and urbi_tag_stop (C API) but no urbiscript method dispatch infrastructure.
+#   Also uses '&' separator (M5 chk driver).
+#
+# Original urbiscript (activate at M4 with tag method dispatch):
+# # a: { 1 & a.block };
