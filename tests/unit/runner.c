@@ -44,6 +44,7 @@ extern void test_strand_suite(void);
 extern void test_cleanup_suite(void);
 extern void test_scheduler_cooperative_suite(void);
 extern void test_dispatch_loop_suite(void);
+extern void test_unwind_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -70,6 +71,7 @@ int main(void) {
     test_cleanup_suite();
     test_scheduler_cooperative_suite();
     test_dispatch_loop_suite();
+    test_unwind_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
