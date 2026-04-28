@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: Semaphore.new(0) counting semaphore; s.acquire() blocks until s.release()
+#         is called; ordered wakeup of queued waiters.
+# defer-to: M6 (requires Semaphore stdlib type and ',' separator runtime)
+#
+# Reason:
+#   Semaphore is a stdlib synchronization primitive scheduled for M6.  It requires
+#   the blocking-acquire scheduler primitive, prototype-OOP method dispatch for
+#   s.acquire()/s.release() (M4), and ',' (OP_FORK_DETACH) for concurrent callers
+#   (M5 chk driver).  All dependencies exceed M3 capability.
+#
+# Original urbiscript (activate at M6 with Semaphore type and M5 chk driver):
+# # var s = Semaphore.new(0) | {};
+# # function f(name) { ... s.acquire(); sleep(1s); s.release() } | {};
+# # f("func1"), sleep(1s); ... s.release(); ...
+# # (see legacy/repos/aldebaran-urbi/tests/2.x/semaphore/basic.chk)

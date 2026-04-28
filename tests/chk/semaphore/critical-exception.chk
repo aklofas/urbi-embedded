@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: s.criticalSection() releases semaphore on exception; and on tag.stop(val)
+#         with value injection; subsequent acquire succeeds after exception release.
+# defer-to: M6 (requires Semaphore stdlib type and criticalSection method)
+#
+# Reason:
+#   Semaphore.criticalSection() is a high-level helper method on the Semaphore
+#   stdlib type — M6 scope.  The fixture exercises exception handling and tag.stop(val)
+#   with return-value injection inside a critical section, all of which require
+#   Semaphore (M6) and tag method dispatch (M4).  try/catch at M3 works but there
+#   is no criticalSection() helper available.
+#
+# Original urbiscript (activate at M6 with Semaphore type):
+# # var s = Semaphore.new(1) | {};
+# # s.criticalSection(function() { echo("Regular") });
+# # [00000001] *** Regular
+# # s.criticalSection(function() { throw "foobar" });
+# # [00000002:error] !!! foobar
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/semaphore/critical-exception.chk)
