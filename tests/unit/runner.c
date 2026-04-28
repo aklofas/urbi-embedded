@@ -54,6 +54,7 @@ extern void test_callback_watchdog_suite(void);
 extern void test_ugc_color_invariants_suite(void);
 extern void test_ugc_state_machine_suite(void);
 extern void test_ugc_barrier_suite(void);
+extern void test_ugc_walk_roots_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -90,6 +91,7 @@ int main(void) {
     test_ugc_color_invariants_suite();
     test_ugc_state_machine_suite();
     test_ugc_barrier_suite();
+    test_ugc_walk_roots_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

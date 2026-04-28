@@ -739,30 +739,52 @@ urbi_gc_force_full(UVM *vm)
     }
 }
 
-/* === urbi_gc_walk_roots ===
+/* === host_handle_walk_roots ===
  *
- * Iterates registered root providers.  T26 fills in the real implementation.
- * At T24 this is called internally from gc_mark_roots_step which already
- * iterates root_providers[] directly; this public function is provided for
- * host/test use. */
+ * GC root provider for the host-handle table (row 10 §5.6).
+ * T27 wires the real implementation when handle_table is populated.
+ * At T26, handle_table_cap is 0 at M3 baseline; walker is a no-op stub.
+ *
+ * TODO(T27): walk vm->handle_table[0..handle_table_cap) calling cb for
+ * every non-released (non-nil) slot once T27 wires the handle table. */
 void
-urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+host_handle_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
-    /* T26: iterate registered root providers. */
+    URBI_ASSERT_NOT_ISR(vm);
+    /* M3 baseline: handle_table_cap is 0; nothing to walk. */
     (void)vm;
     (void)cb;
     (void)ctx;
 }
 
+/* === urbi_gc_walk_roots ===
+ *
+ * Walks VM globals (stub at M3) then iterates all registered root providers.
+ * Provided for host/test use and called indirectly via gc_mark_roots_step. */
+void
+urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    /* Walk VM-internal globals (no-op stub at M3). */
+    walk_vm_globals(vm, cb, ctx);
+    /* Iterate registered root providers. */
+    uint8_t i;
+    for (i = 0u; i < vm->root_provider_count; i++) {
+        vm->root_providers[i](vm, cb, ctx);
+    }
+}
+
 /* === urbi_gc_register_root_provider ===
  *
- * T26: append to vm->root_providers[]. */
+ * Appends provider to the VM's fixed root-provider array.
+ * URBI_MAX_ROOT_PROVIDERS is 8 (row 10 §5.1); capacity assertion fires on
+ * overflow so the programmer knows to raise the constant. */
 void
 urbi_gc_register_root_provider(UVM *vm, UGcRootProviderFn provider)
 {
-    /* T26: append to vm->root_providers[]. */
-    (void)vm;
-    (void)provider;
+    URBI_ASSERT_NOT_ISR(vm);
+    URBI_INTERNAL_ASSERT(vm->root_provider_count < (uint8_t)URBI_MAX_ROOT_PROVIDERS);
+    vm->root_providers[vm->root_provider_count++] = provider;
 }
 
 size_t

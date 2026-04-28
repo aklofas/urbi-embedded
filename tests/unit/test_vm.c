@@ -977,8 +977,10 @@ UTEST(vm_create_zero_init_m3_fields) {
     UASSERT_EQ(0u, vm.flag_preemption);
     /* ISR ring: T18 allocates it at uvm_init time. */
     UASSERT(vm.event_ring != NULL);
-    /* GC root provider registry. */
-    UASSERT_EQ(0u, vm.root_provider_count);
+    /* GC root provider registry — T26 registers 4 providers at uvm_init:
+     * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
+     * host_handle_walk_roots. */
+    UASSERT_EQ(4u, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */
     UASSERT(vm.realms_head  == NULL);
     UASSERT(vm.global_realm == NULL);

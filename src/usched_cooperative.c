@@ -233,14 +233,79 @@ sched_dequeue_ready_head(UVM *vm)
         vm->strand_runnable_count--;
 }
 
-/* === GC root walker (stub — T26 fills) === */
+/* === strand_walk_roots (internal helper) ===
+ *
+ * Walk all GC roots for a single live strand.  Called by sched_walk_roots
+ * for every non-DEAD strand in the ready and sleep queues.
+ *
+ * Root sources at M3 baseline:
+ *   (1) Register window — conservative full-stack scan (see below).
+ *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
+ *   (3) Cleanup stack — owning_tag (UTag*) and catch_pattern (UPattern*)
+ *       are not yet UValues at M3 (they land at T29+); skipped with TODO.
+ *   (4) Wait payload — event / join_parent involve M5 types; skipped with TODO.
+ *
+ * Register window strategy (row 10 §5.2 guidance):
+ *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
+ *   register window spans frames[0..frame_count-1]; the topmost frame's
+ *   extent requires bytecode metadata not available at M3.  We walk the
+ *   entire allocated array (conservative over-mark; never under-marks).
+ *   TODO(T26+ opt): tighten to active-frame register window when bytecode
+ *   emits frame-extent metadata (proposed for M4/M5). */
+static void
+strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
+{
+    int i;
 
+    /* Guard: DEAD strands have no live roots (spec §5.2). */
+    if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
+
+    /* (1) Register window — conservative full-stack scan.
+     *     s->stack may be NULL for a DORMANT strand not yet armed. */
+    if (s->stack != NULL) {
+        for (i = 0; i < UVM_STACK_CAP; i++) {
+            cb(vm, &s->stack[i], ctx);
+        }
+    }
+
+    /* (2) Unwind state (row 7 §4.4).
+     *     unwind_value and fatal_value are UValue fields on the strand. */
+    cb(vm, &s->unwind_value, ctx);
+    cb(vm, &s->fatal_value,  ctx);
+
+    /* (3) Cleanup-stack entries (row 7 §4.4).
+     *     owning_tag (UTag*) and catch_pattern (UPattern*) are not UValues
+     *     at M3 baseline — T29 will enroll UTags as GC roots.
+     *     TODO(T29): walk cleanup_base[0..cleanup_depth-1].owning_tag +
+     *     catch_pattern once those become GC-managed UValues. */
+
+    /* (4) Wait payload (row 9 §4.3).
+     *     UEvent and UStrand join_parent are not GC-managed UValues at M3.
+     *     TODO(M5): walk s->wait_payload.event when UEvent becomes a GC cell. */
+}
+
+/* === GC root walker for the scheduler ===
+ *
+ * Called by the GC as a registered root provider (row 10 §5.2).
+ * Walks all non-DEAD strands on the ready queue and the sleep queue.
+ *
+ * vm->cur_strand does not exist on UVM at M3 baseline (intentional per T19
+ * design choice — see T19 notes).  The ready + sleep queues cover all strands
+ * eligible for or blocked from scheduling.
+ * TODO(T26+): if a "currently dispatching" strand field is added to UVM,
+ * walk it here too to cover RUNNING strands not yet back on the ready queue. */
 void
 sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
-    /* T26 wires this to walk register windows, cleanup-stack entries,
-       and wait_payload pointers for all live strands.  Stub for now. */
-    (void)vm;
-    (void)cb;
-    (void)ctx;
+    UStrand *s;
+
+    /* Walk ready queue (READY state strands). */
+    for (s = vm->ready_head; s != NULL; s = s->ready_next) {
+        strand_walk_roots(vm, s, cb, ctx);
+    }
+
+    /* Walk sleep queue (WAITING_SLEEP state strands). */
+    for (s = vm->sleep_q_head; s != NULL; s = s->wait_next) {
+        strand_walk_roots(vm, s, cb, ctx);
+    }
 }

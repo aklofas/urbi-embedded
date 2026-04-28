@@ -190,3 +190,29 @@ size_t uintern_count(UVM *vm) {
     if (vm == NULL || vm->intern_table == NULL) return 0;
     return ((UInternTable *)vm->intern_table)->count;
 }
+
+/* === intern_table_walk_roots ===
+ *
+ * GC root provider for the intern table (row 10 §5.5).
+ *
+ * At M3 baseline, interned strings are stored as raw `const char *` pointers
+ * inside UInternStr heap allocations — they are NOT GC-managed UValues.  The
+ * intern table itself owns the UInternStr blocks (freed at uintern_destroy),
+ * so there are no GC roots to report here.
+ *
+ * This function is registered as a root provider so the provider slot exists
+ * and the dispatch path is exercised.  The body stays empty until M4 migrates
+ * strings to UString GC cells, at which point each live UInternStr entry becomes
+ * a UValue root that must be reported to the callback.
+ *
+ * TODO(M4): for each occupied, non-tombstone entry in the intern table, wrap
+ * e->bytes as a UString UValue and call cb(vm, &v, ctx).  This keeps interned
+ * strings alive across collection cycles once strings are GC-managed. */
+void
+intern_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    /* M3 baseline: no GC-managed strings; nothing to walk. */
+    (void)vm;
+    (void)cb;
+    (void)ctx;
+}

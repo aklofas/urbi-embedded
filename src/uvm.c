@@ -131,7 +131,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Delegate threshold + debt init to the GC strategy (T23). */
     urbi_gc_init(vm);
 
-    /* GC root provider registry. */
+    /* GC root provider registry: zero before registering providers. */
     {
         uint8_t i;
         for (i = 0u; i < (uint8_t)URBI_MAX_ROOT_PROVIDERS; i++) {
@@ -139,6 +139,14 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
     }
     vm->root_provider_count = 0u;
+
+    /* Register default root providers (T26).
+     * Order: scheduler first, then realm, intern, host-handle.
+     * T36 adds: urbi_gc_register_root_provider(vm, watcher_table_walk_roots). */
+    urbi_gc_register_root_provider(vm, sched_walk_roots);
+    urbi_gc_register_root_provider(vm, realm_list_walk_roots);
+    urbi_gc_register_root_provider(vm, intern_table_walk_roots);
+    urbi_gc_register_root_provider(vm, host_handle_walk_roots);
 
     /* Type table + host-handle table. */
     {

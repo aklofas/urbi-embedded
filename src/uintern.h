@@ -6,6 +6,9 @@
 
 #include <stddef.h>
 
+/* Pull in UGcRootCallback typedef (via ugc.h → umodule.h for UValue). */
+#include "ugc.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +39,18 @@ void uintern_destroy(struct UVM *vm);
 /* Debug helper. Returns the count of unique strings interned in vm.
  * Returns 0 if intern_table is NULL. */
 size_t uintern_count(struct UVM *vm);
+
+/* GC root provider for the intern table (row 10 §5.5).
+ *
+ * At M3 baseline, interned strings are stored as raw `const char *` inside
+ * UInternStr allocations — they are NOT GC-managed UValues.  This walker is
+ * a no-op stub until M4 migrates strings to UString GC cells.
+ *
+ * TODO(M4): when UString becomes a GC cell type, walk each live UInternStr as
+ * a UValue root so the GC keeps interned strings alive across collection cycles.
+ * Until then, intern strings live until uintern_destroy (strong ownership via
+ * the UInternTable allocation — no GC involvement needed). */
+void intern_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #ifdef __cplusplus
 }
