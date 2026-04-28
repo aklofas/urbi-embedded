@@ -694,10 +694,38 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         return (local_slot >= 0) ? (uint8_t)local_slot : reg_before;
     }
     case AST_NARY: {
-        /* `,` parallel semantics land at M3; emit-time error at M2. */
         if (n->u.nary.separator == SEP_COMMA) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
+            /* `,` parallel semantics (M3 closure-spawn).
+             *
+             * Spec §3 row 3: each child runs in parallel — last child's value
+             * is the expression's value.  M3 closure-spawn: children 0..count-2
+             * are compiled to closures (capturing surrounding locals via upvalue
+             * cascade) and spawned as detached strands via OP_FORK_DETACH.
+             * The last child runs inline as the parent's continuation.
+             *
+             * TODO(M5+/design-risks-7): replace closure-spawn with shared-frame
+             * spawn to satisfy spec §7.1 (comma-environment.chk semantics). */
+            if (e->current_fs == NULL) {
+                e->error = EMIT_UNSUPPORTED_AST;
+                return 0u;
+            }
+            int i;
+            for (i = 0; i < n->u.nary.count - 1; i++) {
+                /* Compile child[i] as a zero-arg closure (thunk). */
+                uint8_t closure_reg = emit_lazy_thunk(e, n->u.nary.children[i]);
+                if (e->error != EMIT_OK) return 0u;
+                /* OP_FORK_DETACH A=closure_reg: spawn detached strand. */
+                emit_instr(e, uinstr_enc_abc(OP_FORK_DETACH, closure_reg, 0u, 0u),
+                           (uint32_t)n->u.nary.children[i]->line);
+                if (e->error != EMIT_OK) return 0u;
+                /* Release the closure register (temp). */
+                if (e->next_reg > e->current_fs->freereg)
+                    e->next_reg = e->current_fs->freereg;
+            }
+            /* Last child runs inline; its result is the NARY's value. */
+            uint8_t r = emit_expr(e, n->u.nary.children[n->u.nary.count - 1]);
+            if (e->error != EMIT_OK) return 0u;
+            return r;
         }
         /* SEP_SEMI: compile each child; OP_YIELD between children (not
            before first, not after last); release temp regs between.
@@ -725,10 +753,72 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         return r;
     }
     case AST_BIN_SEP: {
-        /* `&` fork/join lands at M3; emit-time error at M2. */
         if (n->u.bin_sep.separator == SEP_AMP) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
+            /* `&` fork-join (M3 closure-spawn).
+             *
+             * Spec §3 row 4 + §3.2 + §7.2: spawn RHS as a child strand,
+             * wait for it to complete, then produce void as the result.
+             *
+             * Emit sequence:
+             *   1. Compile RHS to a closure (thunk) → closure_reg.
+             *   2. Compile LHS inline (parent strand continues).
+             *   3. OP_FORK_JOIN  A=closure_reg  B=child_reg  → spawns + stores handle.
+             *   4. OP_JOIN_WAIT  A=child_reg                 → block until child DEAD.
+             *   5. OP_LOADVOID   A=result_reg                → result is void (spec §7.2).
+             *
+             * TODO(M5+/design-risks-7): shared-frame spawn for spec §7.1 compliance. */
+            if (e->current_fs == NULL) {
+                e->error = EMIT_UNSUPPORTED_AST;
+                return 0u;
+            }
+            /* Step 1: compile RHS to a closure. */
+            uint8_t closure_reg = emit_lazy_thunk(e, n->u.bin_sep.rhs);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Step 2: compile LHS inline; release its register after. */
+            uint8_t lhs_save = e->next_reg;
+            uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
+            if (e->error != EMIT_OK) return 0u;
+            (void)lhs_r;
+            /* Restore next_reg to above freereg after LHS (keep closure_reg alive). */
+            if (e->next_reg > e->current_fs->freereg &&
+                e->next_reg > lhs_save)
+                e->next_reg = lhs_save;
+            (void)lhs_save;
+
+            /* Step 3: OP_FORK_JOIN A=closure_reg B=child_reg. */
+            uint8_t child_reg = e->next_reg;
+            if (child_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->next_reg > e->current_fs->max_reg_seen)
+                e->current_fs->max_reg_seen = e->next_reg;
+            emit_instr(e, uinstr_enc_abc(OP_FORK_JOIN, closure_reg, child_reg, 0u),
+                       (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Step 4: OP_JOIN_WAIT A=child_reg. */
+            emit_instr(e, uinstr_enc_abc(OP_JOIN_WAIT, child_reg, 0u, 0u),
+                       (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Step 5: OP_LOADVOID into result_reg (spec §7.2: `&` result is void). */
+            uint8_t result_reg = e->current_fs->freereg;
+            if (result_reg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            e->current_fs->freereg++;
+            if (e->current_fs->freereg > e->current_fs->max_reg_seen)
+                e->current_fs->max_reg_seen = e->current_fs->freereg;
+            e->next_reg = e->current_fs->freereg;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            emit_instr(e, uinstr_enc_abc(OP_LOADVOID, result_reg, 0u, 0u),
+                       (uint32_t)n->line);
+            return result_reg;
         }
         /* SEP_PIPE: lhs then rhs in sequence, no yield.
            LHS value is discarded; result is rhs. */

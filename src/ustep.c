@@ -54,7 +54,17 @@ urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
          * dispatch_loop_until_yield (per T15 Option B contract — the exit_strand:
          * label does not decrement on DEAD).  We decremented it above via
          * sched_dequeue_ready_head before dispatch; no further adjustment needed.
-         * DEAD strands are left for T20's strand-lifecycle cleanup. */
+         * DEAD strands are left for T20's strand-lifecycle cleanup.
+         *
+         * If the strand BLOCKED (WAITING state) via sched_strand_block from within
+         * the dispatch loop (e.g. OP_JOIN_WAIT), sched_strand_block decrements
+         * strand_runnable_count because it sees state=RUNNING.  But that count was
+         * already decremented by sched_dequeue_ready_head above, so the block path
+         * would double-decrement and erase a child strand's runnable slot.
+         * Re-increment once to restore the child's count entry. */
+        if (USTRAND_IS_WAITING(s)) {
+            vm->strand_runnable_count++;
+        }
 
         /* Wake any sleep-queue strands whose wake_us has passed. */
         {

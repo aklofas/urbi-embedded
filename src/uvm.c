@@ -24,6 +24,7 @@
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
+#include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -881,10 +882,13 @@ dispatch:
         }
 
         CASE(OP_GETUPVAL) {
-            /* ABC: R[A] := upvalue[B] from the current frame's closure. */
+            /* ABC: R[A] := upvalue[B] from the current frame's closure.
+             * At frame_count == 0 (top-level strand including fork-spawned
+             * children) fall back to s->entry_closure so that closures
+             * created by emit_lazy_thunk can read their captured upvalues. */
             UClosure *cur_cl = (s->frame_count > 0)
                              ? s->frames[s->frame_count - 1].closure
-                             : NULL;
+                             : s->entry_closure;
             if (cur_cl == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETUPVAL: no closure in current frame");
@@ -900,10 +904,12 @@ dispatch:
         }
 
         CASE(OP_SETUPVAL) {
-            /* ABC: upvalue[B] := R[A] for the current frame's closure. */
+            /* ABC: upvalue[B] := R[A] for the current frame's closure.
+             * At frame_count == 0 fall back to s->entry_closure (same
+             * rationale as OP_GETUPVAL). */
             UClosure *cur_cl = (s->frame_count > 0)
                              ? s->frames[s->frame_count - 1].closure
-                             : NULL;
+                             : s->entry_closure;
             if (cur_cl == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETUPVAL: no closure in current frame");
@@ -958,10 +964,12 @@ dispatch:
                         }
                         cl->upvals[i] = uvc;
                     } else {
-                        /* Re-capture: copy parent closure's upvalue pointer. */
+                        /* Re-capture: copy parent closure's upvalue pointer.
+                         * Fall back to entry_closure at frame_count == 0 for
+                         * fork-spawned child strands (same as GETUPVAL). */
                         UClosure *par_cl = (s->frame_count > 0)
                                          ? s->frames[s->frame_count - 1].closure
-                                         : NULL;
+                                         : s->entry_closure;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
                             vm->last_error = UVM_TYPE_ERROR;
@@ -1137,24 +1145,46 @@ dispatch:
         }
 
         CASE(OP_FORK_DETACH) {
-            /* M3 `,` separator runtime. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "FORK_DETACH: not implemented until M3");
-            HALT();
+            /* `,` separator: spawn child closure as detached strand.
+             * A = closure_reg.  Parent continues; child runs concurrently.
+             * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
+             * Requires a realm-managed strand; uvm_run transient strands have no realm. */
+            if (s->realm == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (realm == NULL)");
+                HALT();
+            }
+            int rc = op_fork_detach(s, vm, *s->pc);
+            if (rc != 0) goto exit_strand;
+            NEXT();
         }
 
         CASE(OP_FORK_JOIN) {
-            /* M3 `&` separator runtime. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "FORK_JOIN: not implemented until M3");
-            HALT();
+            /* `&` separator LHS: spawn child closure, store handle in R[B].
+             * A = closure_reg, B = child_handle_reg.
+             * Requires a realm-managed strand. */
+            if (s->realm == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (realm == NULL)");
+                HALT();
+            }
+            int rc = op_fork_join(s, vm, *s->pc);
+            if (rc != 0) goto exit_strand;
+            NEXT();
         }
 
         CASE(OP_JOIN_WAIT) {
-            /* M3 `&` join-point. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "JOIN_WAIT: not implemented until M3");
-            HALT();
+            /* `&` separator join-point: block until child handle in R[A] is DEAD.
+             * A = child_handle_reg. */
+            int rc = op_join_wait(s, vm, *s->pc);
+            if (rc < 0) goto exit_strand;   /* OOM or error */
+            if (rc > 0) {
+                /* Blocked — parent threaded onto child->joiners_head. */
+                steps_consumed++;
+                goto exit_strand;
+            }
+            /* rc == 0: child already DEAD, continue. */
+            NEXT();
         }
 
         CASE(OP_GETSLOT) {
@@ -1423,6 +1453,11 @@ safepoint:
 #endif
 
 exit_strand:
+    /* Wake any JOIN-blocked parents if this strand just reached DEAD. */
+    if (s->state == USTRAND_STATE_DEAD && s->joiners_head != NULL) {
+        fork_wake_joiners(s, vm);
+    }
+
     /* strand_runnable_count ownership at exit:
      *   - uvm_run transient strands are not tracked in strand_runnable_count
      *     (they bypass sched_strand_make_runnable). The READY-cycle increment
@@ -1562,6 +1597,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         vm->last_return_closure = out_cl;
 
         UClosure *cl = strand.closure_list;
+        strand.closure_list = NULL;  /* null before ustrand_destroy to avoid double-free */
         while (cl != NULL) {
             UClosure *next = cl->next_alloc;
             if (cl != out_cl) {
@@ -1574,6 +1610,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* Pre-GC: free every heapified upvalue cell allocated this run. */
     {
         UUpvalCell *cell = strand.closed_cells;
+        strand.closed_cells = NULL;  /* null before ustrand_destroy to avoid double-free */
         while (cell != NULL) {
             UUpvalCell *next = cell->next;
             vm->alloc_fn(cell, 0, vm->alloc_ud);
@@ -1583,6 +1620,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
 
     /* Free any open upvalue cells still on the strand. */
     vm_free_open_upvalues(vm, &strand);
+    strand.open_upvals = NULL;  /* null before ustrand_destroy to avoid double-free */
 
     /* Free the register stack. */
     vm->alloc_fn(strand.stack, 0, vm->alloc_ud);

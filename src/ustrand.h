@@ -138,8 +138,21 @@ struct UStrand {
     union {
         uint64_t            wake_us;
         struct UEvent      *event;
-        UStrand            *join_parent;
+        UStrand            *join_parent;   /* set by OP_JOIN_WAIT: child we are waiting on */
     } wait_payload;
+
+    /* --- Join-blocker list (OP_FORK_JOIN / OP_JOIN_WAIT) ---
+     * Singly-linked list of strands that are JOIN-blocked on THIS strand.
+     * Threaded via each joiner's wait_next field.
+     * fork_wake_joiners() walks this list when the strand reaches DEAD. */
+    UStrand                *joiners_head;
+
+    /* --- Realm ownership list (T38) ---
+     * Singly-linked list of all strands created under the same URealm.
+     * Populated by urbi_strand_create; walked by urbi_realm_destroy to free
+     * all realm-managed strands when the realm is torn down.
+     * NULL for strands not created via urbi_strand_create (e.g. uvm_run transient). */
+    UStrand                *next_in_realm;
 
     /* --- M2-baseline execution state migrated from uvm_run-locals + UVM at T6 ---
        These fields are valid only while the strand is RUNNING or READY (paused mid-run).

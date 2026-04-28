@@ -170,7 +170,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
         if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
     }
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -202,7 +202,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT(consumed >= 1);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -252,7 +252,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
     UASSERT_EQ((int)USTRAND_STATE_RUNNING, (int)s.state);
     UASSERT(consumed >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -296,7 +296,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
         if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
     }
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -336,7 +336,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT(consumed >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -400,7 +400,7 @@ UTEST(dispatch_loop_multiple_yields) {
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT(c3 >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -442,8 +442,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     /* cleanup_depth should be back to 0 after TRY_END. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -513,8 +512,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)retval.v.i, 42LL);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -554,7 +552,7 @@ UTEST(dispatch_loop_loadk_and_ret) {
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)retval.v.i, 77LL);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -594,7 +592,7 @@ UTEST(dispatch_loop_move_and_add) {
     UASSERT_EQ((long long)retval.v.i, 10LL);
     (void)consumed;
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -636,8 +634,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
     /* cleanup_depth must be 0 after POP_TAG. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -720,8 +717,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     UASSERT_EQ((long long)retval.v.i, 99LL);
     UASSERT(consumed >= 3u);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -763,7 +759,7 @@ UTEST(dispatch_loop_loadnil_then_move) {
     /* LOADNIL and MOVE fire no safepoints; only the top-level RET counts. */
     UASSERT(consumed >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -805,7 +801,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
        depending on budget exhaustion; we verify the dispatch path was exercised. */
     UASSERT(consumed >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -847,7 +843,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
        depending on budget exhaustion; we verify the dispatch path was exercised. */
     UASSERT(consumed >= 1u);
 
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 

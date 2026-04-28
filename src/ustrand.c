@@ -99,8 +99,62 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
     if (vm != NULL && s->cleanup_base != NULL) {
         strand_cleanup_stack_destroy(s, vm);
     }
-    /* register-window / frame-stack teardown: not yet needed (execution state
-       is zero-init at T20; frame-0 setup via urbi_step or a future urbi_strand_arm). */
+
+    /* T38: free the register stack if it was allocated (e.g. for fork-spawned
+     * child strands armed by fork_spawn_child, or for test-arm paths in
+     * fork_run_to_quiescent).  uvm_run frees its own transient strand's stack
+     * before calling ustrand_destroy, so double-free is not a risk there. */
+    if (vm != NULL && s->stack != NULL) {
+        vm->alloc_fn(s->stack, 0, vm->alloc_ud);
+        s->stack = NULL;
+    }
+
+    /* T38: free all closures allocated in this strand's lifetime
+     * (pre-GC bookkeeping via closure_list → next_alloc chain).
+     * uvm_run handles its own closure cleanup before calling ustrand_destroy,
+     * so by the time we arrive here the list is either NULL (uvm_run path)
+     * or populated (realm-managed strand path).  Skip any closure that
+     * equals vm->last_return_closure (the caller-owned return value kept
+     * alive between uvm_run calls) — not applicable to realm strands (which
+     * never set last_return_closure), but the check is cheap and safe. */
+    if (vm != NULL && s->closure_list != NULL) {
+        UClosure *cl = s->closure_list;
+        s->closure_list = NULL;
+        while (cl != NULL) {
+            UClosure *next = cl->next_alloc;
+            if (cl != vm->last_return_closure) {
+                vm->alloc_fn(cl, 0, vm->alloc_ud);
+            }
+            cl = next;
+        }
+    }
+
+    /* T38: free all heapified upvalue cells allocated in this strand's
+     * lifetime (closed_cells → next chain).  uvm_run handles its own
+     * cell cleanup before calling ustrand_destroy; realm-managed strands
+     * need this path. */
+    if (vm != NULL && s->closed_cells != NULL) {
+        UUpvalCell *cell = s->closed_cells;
+        s->closed_cells = NULL;
+        while (cell != NULL) {
+            UUpvalCell *next = cell->next;
+            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell = next;
+        }
+    }
+
+    /* T38: free any open upvalue cells still on this strand (cells whose
+     * stack address is still live on our stack).  These are cells that were
+     * not heapified by OP_CLOSE before strand death. */
+    if (vm != NULL && s->open_upvals != NULL) {
+        UUpvalCell *cell = s->open_upvals;
+        s->open_upvals = NULL;
+        while (cell != NULL) {
+            UUpvalCell *next = cell->next;
+            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell = next;
+        }
+    }
 }
 
 /* === T20: Strand C API (create / start / spawn / destroy) ===
@@ -123,6 +177,11 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
     ustrand_init(s, vm);
     s->realm         = realm;
     s->entry_closure = entry;
+
+    /* T38: head-insert into realm's strand ownership list so that
+     * urbi_realm_destroy can free all heap-allocated child strands. */
+    s->next_in_realm   = realm->strands_head;
+    realm->strands_head = s;
 
     /* Row 11 §4.1: chunk-start ambient = [realm->tag].
        Attach synthetic TAG_SCOPE entries so this strand appears in the
@@ -172,6 +231,23 @@ urbi_strand_destroy(UStrand *s)
     if (!s) return;
     vm = s->vm;
     if (vm) URBI_ASSERT_NOT_ISR(vm);
+
+    /* T38: unlink from realm->strands_head singly-linked list so that
+     * urbi_realm_destroy (which walks strands_head) does not encounter a
+     * freed strand if the caller already called urbi_strand_destroy directly.
+     * Walk from head; O(n) but only called at strand teardown. */
+    if (s->realm != NULL && s->realm->strands_head != NULL) {
+        UStrand **pp = &s->realm->strands_head;
+        while (*pp != NULL) {
+            if (*pp == s) {
+                *pp = s->next_in_realm;
+                s->next_in_realm = NULL;
+                break;
+            }
+            pp = &(*pp)->next_in_realm;
+        }
+    }
+
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);

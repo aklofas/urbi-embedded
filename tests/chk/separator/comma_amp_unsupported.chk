@@ -1,10 +1,12 @@
-# Milestone: M2
-# Covers: ',' and '&' are parse-only at M2; emit rejects them.
-# ',' parses as AST_NARY(SEP_COMMA) but emit returns EMIT_UNSUPPORTED_AST.
-# '&' parses as AST_BIN_SEP(SEP_AMP) but emit returns EMIT_UNSUPPORTED_AST.
+# Milestone: M3
+# Covers: ',' and '&' compile successfully at M3 but require urbi_step driver
+# (realm-managed strand) to run. The uvm_run REPL path has no realm; these
+# opcodes produce a runtime TypeError in that context. The chk runner uses
+# the REPL (uvm_run path), so we expect TypeError at runtime, not emit error.
+# Real concurrent execution is tested via unit tests (test_fork.c).
 
 1 , 2
-[00000001] !!! <stdin>: emit error: EMIT_UNSUPPORTED_AST
+[00000001] !!! TypeError: OP_FORK_DETACH: `,` requires urbi_step driver (realm == NULL)
 
 1 & 2
-[00000002] !!! <stdin>: emit error: EMIT_UNSUPPORTED_AST
+[00000002] !!! TypeError: OP_FORK_JOIN: `&` requires urbi_step driver (realm == NULL)

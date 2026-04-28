@@ -62,6 +62,12 @@ typedef struct URealm {
     /* Doubly-linked-list bookkeeping */
     struct URealm *prev_in_vm;
     struct URealm *next_in_vm;
+
+    /* Strand ownership (T38): singly-linked list of all UStrand objects
+     * created under this realm via urbi_strand_create.  Threaded via
+     * UStrand.next_in_realm.  Walked by urbi_realm_destroy to free
+     * all heap-allocated strands when the realm is torn down. */
+    struct UStrand *strands_head;
 } URealm;
 
 /* UGcRootCallback is defined in uvm.h (the canonical location).

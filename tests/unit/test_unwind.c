@@ -145,7 +145,6 @@ UTEST(unwind_return_at_call_frame_absorbs)
     /* frame_count decremented. */
     UASSERT_EQ((int)s.frame_count, 0);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -191,7 +190,6 @@ UTEST(unwind_throw_caught_at_try_frame)
     /* Cleanup stack empty. */
     UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -222,7 +220,6 @@ UTEST(unwind_throw_uncaught_marks_fatal)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
     UASSERT_EQ((int)s.fatal_value.v.i, 7);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -287,7 +284,6 @@ UTEST(unwind_frame_teardown_zeros_registers)
         UASSERT_EQ((int)s.stack[i].v.i,  0);
     }
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -341,7 +337,6 @@ UTEST(unwind_noop_on_ok_state)
     UASSERT_EQ((int)s.state, (int)old_state);
     UASSERT_EQ((int)s.cleanup_depth, old_depth);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -387,7 +382,6 @@ UTEST(unwind_return_direct_pop_no_cleanup_entry)
     UASSERT_EQ((int)s.stack[3].v.i, 77);
     UASSERT_EQ((int)s.stack[3].kind, (int)UVAL_INT);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -474,7 +468,6 @@ UTEST(unwind_innermost_first_ordering)
     /* TRY_FRAME and outer CALL_FRAME are still on the cleanup stack (depth=2). */
     UASSERT_EQ((unsigned)s.cleanup_depth, 2u);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -526,7 +519,6 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -572,7 +564,6 @@ UTEST(unwind_suppressed_head_invariant)
     /* suppressed_head must remain NULL throughout — no chain built at M3. */
     UASSERT(s.suppressed_head == NULL);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -625,7 +616,6 @@ UTEST(unwind_cancel_propagates_through_call_frame)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_CANCEL);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -673,7 +663,6 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -729,7 +718,6 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     /* Inner frame popped; outer frame remains (depth=1). */
     UASSERT_EQ((unsigned)s.cleanup_depth, 1u);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -772,7 +760,6 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
     UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
 
-    free(reg_stack);
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }

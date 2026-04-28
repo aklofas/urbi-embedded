@@ -8,10 +8,11 @@
 bool uvalue_truthy(const UValue *v) {
     if (v == NULL) return false;
     switch ((UValKind)v->kind) {
-        case UVAL_NIL:   return false;
-        case UVAL_BOOL:  return v->v.i != 0;
-        case UVAL_VOID:  return false;
-        default:         return true;   /* int 0, float 0.0, etc. → truthy */
+        case UVAL_NIL:    return false;
+        case UVAL_BOOL:   return v->v.i != 0;
+        case UVAL_VOID:   return false;
+        case UVAL_STRAND: return true;   /* strand handle is truthy (matches closure pattern) */
+        default:          return true;   /* int 0, float 0.0, etc. → truthy */
     }
 }
 
@@ -28,6 +29,7 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_STR:     return a->v.p == b->v.p;     /* interned ptr eq */
             case UVAL_CLOSURE: return a->v.p == b->v.p;     /* identity */
             case UVAL_VOID:    return false;                 /* void != void per spec */
+            case UVAL_STRAND:  return a->v.p == b->v.p;     /* strand identity */
         }
     }
 
@@ -178,6 +180,9 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         buf[w] = '\0';
         return w;
     }
+    case UVAL_STRAND:
+        n = snprintf(buf, cap, "<strand>");
+        break;
     default:
         n = snprintf(buf, cap, "<?>");
         break;

@@ -20,6 +20,7 @@
 #include "utag.h"
 #include "uvm.h"
 #include "urbi.h"  /* urbi_tag_stop */
+#include "ustrand.h"  /* urbi_strand_destroy, UStrand.next_in_realm */
 
 /* === Zero-fill helper === */
 
@@ -113,25 +114,49 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     if (vm == NULL) return;
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Step 1: Stop the realm's tag (row 11 §3.5: deposits TAG_STOP on all
-     * member strands; they eventually fatal-escalate at M3). */
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
+
+    /* Step 1 (T38): Free all heap-allocated strands registered in this realm.
+     * Must happen BEFORE utag_destroy because each strand's cleanup stack
+     * holds TAG_SCOPE entries that link back to realm->tag.  Destroying
+     * strands first calls strand_unlink_from_tags which empties
+     * tag->member_strands_head so that utag_destroy's invariant assertion
+     * (member_strands_head == NULL) can pass.
+     * Strands are threaded via UStrand.next_in_realm (head-inserted by
+     * urbi_strand_create at the bottom of the list, so realm->tag's own
+     * registration-strand is freed last). */
+    {
+        UStrand *strand = realm->strands_head;
+        realm->strands_head = NULL;
+        while (strand != NULL) {
+            UStrand *next = strand->next_in_realm;
+            strand->next_in_realm = NULL;
+            urbi_strand_destroy(strand);
+            strand = next;
+        }
+    }
+
+    /* Step 2: Stop the realm's tag (row 11 §3.5: deposits TAG_STOP on all
+     * member strands; they eventually fatal-escalate at M3).
+     * After step 1, all realm strands are destroyed and unlinked, so the
+     * tag's member list is empty and urbi_tag_stop is a no-op here at M3.
+     * utag_destroy can then assert member_strands_head == NULL safely. */
     if (realm->tag != NULL) {
         urbi_tag_stop(vm, realm->tag, nil);
         utag_destroy(vm, realm->tag);
         realm->tag = NULL;
     }
 
-    /* Step 2: Free namespace. */
+    /* Step 3: Free namespace. */
     unamespace_destroy(vm, realm->bindings);
     realm->bindings = NULL;
 
-    /* Step 3: reflective — zero it (GC owns the object if non-nil at M4+). */
+    /* Step 4: reflective — zero it (GC owns the object if non-nil at M4+). */
     realm->reflective.kind = UVAL_NIL;
     realm->reflective.v.i  = 0;
 
-    /* Step 4: Unlink from VM realm list. */
+    /* Step 5: Unlink from VM realm list. */
     if (realm->prev_in_vm != NULL) {
         realm->prev_in_vm->next_in_vm = realm->next_in_vm;
     } else {
@@ -147,7 +172,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         vm->global_realm = NULL;
     }
 
-    /* Step 5: Free struct. */
+    /* Step 6: Free struct. */
     realm->vm   = NULL;
     vm->alloc_fn(realm, 0, vm->alloc_ud);
 }

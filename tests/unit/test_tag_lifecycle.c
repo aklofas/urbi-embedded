@@ -289,8 +289,7 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
     /* Cleanup stack must be empty after POP_TAG. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -358,8 +357,7 @@ UTEST(op_push_tag_member_strands_head_wired)
     utag_destroy(&vm, tag);
     top->owning_tag = NULL;
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -399,8 +397,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
     /* cleanup_depth must be 0 — entry was never pushed. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
@@ -437,8 +434,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     /* Reset cleanup_depth to 0 before freeing (was artificially set to cap). */
     s.cleanup_depth = 0;
 
-    free(s.cleanup_base);
-    free(reg_stack);
+    ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
 
