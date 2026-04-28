@@ -22,6 +22,7 @@
 #include "uevent_ring.h"
 #include "m3_forward_decls.h"
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
+#include "utag.h"    /* UTag, utag_create/destroy (T30) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -1209,14 +1210,24 @@ dispatch:
              *   A[3:0] = tag_reg nibble (register holding the tag value)
              *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
              *
-             * Push a UCLEANUP_TAG_SCOPE entry onto the cleanup stack.
-             * owning_tag = NULL at M3 (T29 wires real UTag pointer).
+             * T30: allocate a per-scope UTag (no UVAL_TAG / register binding at M3).
+             * Each tag-scope gets its own anonymous UTag; the tag's lifetime is
+             * bounded by the corresponding OP_POP_TAG.
+             * Walker-pop (urbi_unwind via OP_THROW etc.) will leak the UTag at M3 —
+             * deferred for T31/walker integration when full tag lifecycle wires through.
              * strand_back = s for future tag.stop() walk (T31 uses). */
             uint8_t  a          = uinstr_a(*s->pc);
             uint8_t  flags      = (uint8_t)((a >> 4) & 0xFu);
             uint16_t handler_pc = uinstr_bx(*s->pc);
+            UTag *tag = utag_create(s->vm);
+            if (tag == NULL) {
+                s->fatal_status = UEXEC_THROW;
+                s->state        = USTRAND_STATE_DEAD;
+                goto exit_strand;
+            }
             UCleanupEntry *entry = strand_cleanup_push(s);
             if (entry == NULL) {
+                utag_destroy(s->vm, tag);  /* roll back the tag alloc on overflow */
                 s->fatal_status = UEXEC_THROW;
                 s->state        = USTRAND_STATE_DEAD;
                 goto exit_strand;
@@ -1226,10 +1237,11 @@ dispatch:
             entry->handler_pc     = handler_pc;
             entry->register_base  = 0u;
             entry->register_count = 0u;
-            entry->owning_tag     = NULL;  /* T29 wires real UTag */
+            entry->owning_tag     = tag;
             entry->catch_pattern  = NULL;
-            entry->next_member    = NULL;
+            entry->next_member    = tag->member_strands_head;  /* head-insert */
             entry->strand_back    = s;
+            tag->member_strands_head = entry;
             NEXT();
         }
 
@@ -1243,13 +1255,36 @@ dispatch:
             if (s->cleanup_depth > 0) {
                 UCleanupEntry *top = &s->cleanup_base[s->cleanup_depth - 1];
                 if ((top->flags & FLAG_HAS_ONLEAVE) != 0u) {
-                    /* onleave handler: deferred to T30 — not reachable at M3.
+                    /* onleave handler: not reachable at M3 (emit always sets flags=0).
                      * If somehow reached (bytecode corruption), halt safely. */
                     vm->last_error = UVM_TYPE_ERROR;
-                    vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired until T30");
+                    vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
                     HALT();
                 }
+                /* T30: retrieve owning_tag before pop (pop clears the entry slot). */
+                UTag *tag = top->owning_tag;
+                /* Unlink this entry from tag->member_strands_head (singly-linked
+                 * list removal via next_member). Only unlink when tag is non-NULL
+                 * — older bytecode emitted before T30 may have owning_tag == NULL. */
+                if (tag != NULL) {
+                    UCleanupEntry **pp = &tag->member_strands_head;
+                    while (*pp != NULL && *pp != top) {
+                        pp = &(*pp)->next_member;
+                    }
+                    if (*pp == top) {
+                        *pp = top->next_member;
+                    }
+                }
+                /* T34/T35: watcher cascade (notify watchers registered on this tag
+                 * that the scope is leaving) — deferred; UWatcher type not yet
+                 * defined at M3. */
                 strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
+                /* Destroy the per-scope UTag allocated in OP_PUSH_TAG.
+                 * Precondition (checked by utag_destroy assertion): member lists
+                 * must be empty — we just unlinked the only member above. */
+                if (tag != NULL) {
+                    utag_destroy(s->vm, tag);
+                }
             }
             NEXT();
         }

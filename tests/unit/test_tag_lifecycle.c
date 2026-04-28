@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: UTag create/destroy + urbi_strand_scope_tag (T29, row 11). */
+/* Unit tests: UTag create/destroy + urbi_strand_scope_tag (T29, row 11).
+ * Extended at T30: OP_PUSH_TAG/POP_TAG member-list bookkeeping. */
 
 #include "utest.h"
 #include "uvm.h"
@@ -9,8 +10,11 @@
 #include "utag.h"
 #include "ugc.h"    /* UTYPE_TAG */
 #include "urbi.h"
+#include "umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
+#include "usched_cooperative.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #define UTEST(name) static void name(void)
 
@@ -191,6 +195,252 @@ UTEST(utag_type_tag_constant)
     UASSERT_EQ((unsigned)UTYPE_TAG, 5u);
 }
 
+/* ============================================================
+ * T30: OP_PUSH_TAG / OP_POP_TAG member-list bookkeeping tests.
+ *
+ * These tests use the same dispatch_loop pattern as test_dispatch_loop.c:
+ * a synthetic UStrand with a manually allocated cleanup stack is driven
+ * through dispatch_loop_until_yield to exercise the opcode handlers.
+ * ============================================================ */
+
+/* Bytecode encoding helpers (mirrors test_dispatch_loop.c local helpers). */
+static uint32_t t30_enc_push_tag(uint8_t flags_nibble, uint8_t tag_reg, uint16_t onleave_pc) {
+    uint8_t a = (uint8_t)((flags_nibble << 4) | (tag_reg & 0x0Fu));
+    return uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc);
+}
+static uint32_t t30_enc_pop_tag(uint8_t tag_reg) {
+    return uinstr_enc_abc(OP_POP_TAG, tag_reg, 0, 0);
+}
+static uint32_t t30_enc_loadnil(uint8_t dst) {
+    return uinstr_enc_abc(OP_LOADNIL, dst, 0, 0);
+}
+static uint32_t t30_enc_ret(void) {
+    return uinstr_enc_abc(OP_RET, 0, 0, 0);
+}
+
+/* strand_setup_t30: zero-initialize a UStrand and wire up the minimum fields
+ * required by dispatch_loop_until_yield.  Mirrors the helper in
+ * test_dispatch_loop.c; duplicated here to keep the test self-contained. */
+static void
+strand_setup_t30(UStrand *s, UVM *vm,
+                 const uint32_t *instructions,
+                 UValue *reg_stack)
+{
+    volatile unsigned char *p = (volatile unsigned char *)s;
+    size_t n = sizeof(*s);
+    size_t i;
+    for (i = 0; i < n; i++) p[i] = 0;
+
+    s->vm         = vm;
+    s->state      = USTRAND_STATE_RUNNING;
+    s->stack      = reg_stack;
+    s->R          = reg_stack;
+    s->pc         = instructions;
+    s->pc_base    = instructions;
+    s->cur_consts = NULL;
+    s->module     = NULL;
+    s->frame_count  = 0;
+    s->open_upvals  = NULL;
+    s->closure_list = NULL;
+    s->closed_cells = NULL;
+    s->out_slot     = NULL;
+}
+
+/* strand_setup_cleanup_t30: allocate a fresh cleanup stack for the strand. */
+static void
+strand_setup_cleanup_t30(UStrand *s)
+{
+    s->cleanup_base  = (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    s->cleanup_cap   = 64;
+    s->cleanup_depth = 0;
+    s->cleanup_top   = NULL;
+}
+
+/* 8. op_push_tag_inserts_member_strands_and_pop_clears:
+ *    Run PUSH_TAG; LOADNIL; POP_TAG; RET through dispatch_loop.
+ *    After POP_TAG the cleanup_depth must be 0.
+ *    ASan/UBSan will catch any UTag leak or double-free in POP_TAG. */
+UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
+{
+    static uint32_t instrs[4];
+    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[1] = t30_enc_loadnil(1);
+    instrs[2] = t30_enc_pop_tag(0);
+    instrs[3] = t30_enc_ret();
+
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    UStrand s;
+    strand_setup_t30(&s, &vm, instrs, reg_stack);
+    strand_setup_cleanup_t30(&s);
+
+    UValue retval = {0};
+    s.out_slot = &retval;
+
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+
+    /* Strand must reach DEAD (top-level RET). */
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT(consumed >= 1u);
+    /* Cleanup stack must be empty after POP_TAG. */
+    UASSERT_EQ((int)s.cleanup_depth, 0);
+
+    free(s.cleanup_base);
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
+/* 9. op_push_tag_member_strands_head_wired:
+ *    Inspect the cleanup entry after PUSH_TAG but before POP_TAG.
+ *    We dispatch only the PUSH_TAG instruction (step_budget=1 or force
+ *    a stop via a short instruction sequence), then check the entry.
+ *    Strategy: PUSH_TAG; RET — dispatch to DEAD in one pass; then verify
+ *    the owning_tag of the cleanup entry that was pushed (it gets popped
+ *    by OP_RET unwinding? — no: RET at top-level goes DEAD without cleanup pop).
+ *    A cleaner approach: push manually via the strand API, then verify. */
+UTEST(op_push_tag_member_strands_head_wired)
+{
+    /* Dispatch PUSH_TAG then stop just after by placing PUSH_TAG at pc=0
+     * and a deliberate YIELD at pc=1 so the strand pauses with the tag scope open.
+     * After the pause, inspect the cleanup entry. */
+    static uint32_t instrs[3];
+    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[1] = uinstr_enc_abc(OP_YIELD, 0, 0, 0);  /* pause here */
+    instrs[2] = t30_enc_ret();
+
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    UStrand s;
+    strand_setup_t30(&s, &vm, instrs, reg_stack);
+    strand_setup_cleanup_t30(&s);
+
+    /* Dispatch: PUSH_TAG (executes) + YIELD (pauses). */
+    dispatch_loop_until_yield(&s, 10000u);
+
+    /* Strand should be READY (yielded at OP_YIELD). */
+    UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
+    /* cleanup_depth must be 1 (the PUSH_TAG entry). */
+    UASSERT_EQ((int)s.cleanup_depth, 1);
+
+    /* Inspect the top entry. */
+    UCleanupEntry *top = &s.cleanup_base[0];
+    UASSERT_EQ((unsigned)top->kind, (unsigned)UCLEANUP_TAG_SCOPE);
+    /* owning_tag must be non-NULL (T30 allocates per-scope UTag). */
+    UASSERT(top->owning_tag != NULL);
+    /* member_strands_head on the tag must point back to this entry. */
+    UASSERT(top->owning_tag->member_strands_head == top);
+    /* strand_back must be wired. */
+    UASSERT(top->strand_back == &s);
+    /* next_member must be NULL (only member of this fresh tag). */
+    UASSERT(top->next_member == NULL);
+
+    /* Drain ready queue manually before destroying. */
+    if (vm.ready_head == &s) {
+        vm.ready_head = s.ready_next;
+        if (vm.ready_head == NULL) vm.ready_tail = NULL;
+        if (vm.strand_runnable_count > 0) vm.strand_runnable_count--;
+    }
+
+    /* Manually destroy the owning_tag (since we won't execute POP_TAG —
+     * the strand will be abandoned). Unlink from member list first to
+     * satisfy utag_destroy's §3.5 assertion. */
+    UTag *tag = top->owning_tag;
+    tag->member_strands_head = NULL;  /* manual unlink */
+    utag_destroy(&vm, tag);
+    top->owning_tag = NULL;
+
+    free(s.cleanup_base);
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
+/* 10. op_push_tag_oom_marks_strand_fatal:
+ *     Install a spy allocator that fails on the first (utag_create) alloc
+ *     inside OP_PUSH_TAG.  Verify the strand goes fatal with UEXEC_THROW
+ *     and state DEAD. */
+UTEST(op_push_tag_oom_marks_strand_fatal)
+{
+    static uint32_t instrs[2];
+    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[1] = t30_enc_ret();
+
+    UVM vm;
+    /* fail_at == 0: spy_alloc fails on alloc_calls > 0, i.e. the very first
+     * allocation (alloc_calls becomes 1 on call #1, which is > 0 → NULL). */
+    AllocSpy spy = { 0, 0 };
+    uvm_init(&vm, spy_alloc, &spy);
+    sched_init(&vm, NULL);
+
+    /* The cleanup stack is allocated via calloc() directly (not vm->alloc_fn),
+     * so spy_alloc won't intercept it. */
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    UStrand s;
+    strand_setup_t30(&s, &vm, instrs, reg_stack);
+    strand_setup_cleanup_t30(&s);
+
+    dispatch_loop_until_yield(&s, 10000u);
+
+    /* OOM during utag_create → fatal_status=UEXEC_THROW, state=DEAD. */
+    UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);
+    UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
+    /* cleanup_depth must be 0 — entry was never pushed. */
+    UASSERT_EQ((int)s.cleanup_depth, 0);
+
+    free(s.cleanup_base);
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
+/* 11. op_push_tag_cleanup_overflow_releases_tag:
+ *     Fill the cleanup stack to URBI_CLEANUP_MAX, then dispatch PUSH_TAG.
+ *     The strand_cleanup_push call fails; the rollback utag_destroy must
+ *     free the tag — otherwise ASan reports a leak. */
+UTEST(op_push_tag_cleanup_overflow_releases_tag)
+{
+    static uint32_t instrs[2];
+    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[1] = t30_enc_ret();
+
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    UStrand s;
+    strand_setup_t30(&s, &vm, instrs, reg_stack);
+    strand_setup_cleanup_t30(&s);
+
+    /* Fill the cleanup stack to capacity so strand_cleanup_push returns NULL. */
+    s.cleanup_depth = s.cleanup_cap;
+
+    dispatch_loop_until_yield(&s, 10000u);
+
+    /* cleanup_push failure → utag_destroy rollback → fatal, DEAD. */
+    UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);
+    UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
+
+    /* Reset cleanup_depth to 0 before freeing (was artificially set to cap). */
+    s.cleanup_depth = 0;
+
+    free(s.cleanup_base);
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -204,4 +454,13 @@ test_tag_lifecycle_suite(void)
     utest_run("strand_scope_tag_empty_returns_null",strand_scope_tag_empty_returns_null);
     utest_run("strand_scope_tag_null_safe",        strand_scope_tag_null_safe);
     utest_run("utag_type_tag_constant",            utag_type_tag_constant);
+    /* T30: OP_PUSH_TAG / OP_POP_TAG member-list bookkeeping */
+    utest_run("op_push_tag inserts member_strands and pop clears",
+              op_push_tag_inserts_member_strands_and_pop_clears);
+    utest_run("op_push_tag member_strands_head wired after push",
+              op_push_tag_member_strands_head_wired);
+    utest_run("op_push_tag OOM marks strand fatal",
+              op_push_tag_oom_marks_strand_fatal);
+    utest_run("op_push_tag cleanup overflow releases tag",
+              op_push_tag_cleanup_overflow_releases_tag);
 }
