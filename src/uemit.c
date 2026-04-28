@@ -1385,7 +1385,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             /* Catch handler: declare catch var as a local, emit body */
             {
                 const char *cv_name = NULL;
-                int catch_reg = (int)e->next_reg;
+                int catch_reg;
                 e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
                 e->next_reg = e->current_fs->freereg;
 
