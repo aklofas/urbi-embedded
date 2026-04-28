@@ -113,6 +113,31 @@ typedef enum {
     OP_GETSLOT     = 27,          /* M4 — slot read with IC                  */
     OP_SETSLOT     = 28,          /* M4 — slot write with IC                 */
 
+    /* === M3 row 7 control-transfer opcodes (v1.2 hard break per T1) ===
+     *
+     * Encoding layout:
+     *   OP_THROW          ABx:  A = reg_value  (Bx unused / 0)
+     *   OP_TAG_STOP       ABC:  A = reg_tag, B = reg_value, C = 0
+     *   OP_TRY_BEGIN      ABx:  A = flags byte, Bx = handler PC (0-65535)
+     *   OP_TRY_END        ABC:  A = B = C = 0 (no operands)
+     *   OP_PUSH_TAG       ABx:  A[7:4]=flags nibble, A[3:0]=tag_reg nibble,
+     *                           Bx = onleave PC (0-65535).
+     *                           tag_reg is limited to [0,15]; flags to [0,15].
+     *                           T30 revisits if wider range needed.
+     *   OP_POP_TAG        ABC:  A = reg_tag, B = C = 0
+     *   OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0
+     *   OP_RESUME         ABC:  A = reg_state, B = C = 0
+     */
+    OP_THROW            = 29,   /* A:    R[A] is the throw value             */
+    OP_TAG_STOP         = 30,   /* A B:  R[A] tag, R[B] value               */
+    OP_TRY_BEGIN        = 31,   /* A Bx: A=flags, Bx=handler PC             */
+    OP_TRY_END          = 32,   /* —:    pop top cleanup entry               */
+    OP_PUSH_TAG         = 33,   /* A Bx: A[7:4]=flags, A[3:0]=tag_reg;
+                                          Bx=onleave PC                      */
+    OP_POP_TAG          = 34,   /* A:    A=tag_reg                           */
+    OP_PUSH_FRAME_GUARD = 35,   /* A B:  register_base, register_count       */
+    OP_RESUME           = 36,   /* A:    restore unwind state from R[A]      */
+
     OP_MAX
 } UOpcode;
 

@@ -285,14 +285,44 @@ static const char *kind_name(uint8_t kind) {
 /* Map UOpcode to its mnemonic name for diagnostic messages. */
 static const char *op_name(uint8_t op) {
     switch (op) {
-        case OP_LOADK: return "OP_LOADK";
-        case OP_MOVE:  return "OP_MOVE";
-        case OP_ADD:   return "OP_ADD";
-        case OP_SUB:   return "OP_SUB";
-        case OP_MUL:   return "OP_MUL";
-        case OP_DIV:   return "OP_DIV";
-        case OP_NEG:   return "OP_NEG";
-        case OP_RET:   return "OP_RET";
+        case OP_LOADK:          return "OP_LOADK";
+        case OP_MOVE:           return "OP_MOVE";
+        case OP_ADD:            return "OP_ADD";
+        case OP_SUB:            return "OP_SUB";
+        case OP_MUL:            return "OP_MUL";
+        case OP_DIV:            return "OP_DIV";
+        case OP_NEG:            return "OP_NEG";
+        case OP_RET:            return "OP_RET";
+        case OP_LOADNIL:        return "OP_LOADNIL";
+        case OP_LOADBOOL:       return "OP_LOADBOOL";
+        case OP_LOADVOID:       return "OP_LOADVOID";
+        case OP_GETUPVAL:       return "OP_GETUPVAL";
+        case OP_SETUPVAL:       return "OP_SETUPVAL";
+        case OP_CLOSURE:        return "OP_CLOSURE";
+        case OP_CLOSE:          return "OP_CLOSE";
+        case OP_CALL:           return "OP_CALL";
+        case OP_JMP:            return "OP_JMP";
+        case OP_TEST:           return "OP_TEST";
+        case OP_TESTSET:        return "OP_TESTSET";
+        case OP_EQ:             return "OP_EQ";
+        case OP_NEQ:            return "OP_NEQ";
+        case OP_LT:             return "OP_LT";
+        case OP_LE:             return "OP_LE";
+        case OP_YIELD:          return "OP_YIELD";
+        case OP_FORK_DETACH:    return "OP_FORK_DETACH";
+        case OP_FORK_JOIN:      return "OP_FORK_JOIN";
+        case OP_JOIN_WAIT:      return "OP_JOIN_WAIT";
+        case OP_GETSLOT:        return "OP_GETSLOT";
+        case OP_SETSLOT:        return "OP_SETSLOT";
+        /* M3 row 7 control-transfer opcodes */
+        case OP_THROW:          return "OP_THROW";
+        case OP_TAG_STOP:       return "OP_TAG_STOP";
+        case OP_TRY_BEGIN:      return "OP_TRY_BEGIN";
+        case OP_TRY_END:        return "OP_TRY_END";
+        case OP_PUSH_TAG:       return "OP_PUSH_TAG";
+        case OP_POP_TAG:        return "OP_POP_TAG";
+        case OP_PUSH_FRAME_GUARD: return "OP_PUSH_FRAME_GUARD";
+        case OP_RESUME:         return "OP_RESUME";
     }
     return "unknown";
 }
@@ -560,6 +590,18 @@ static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
 #  define HALT()      goto halt_error
 #endif
 
+/* Dispatch-time assertion for placeholder opcode stubs.
+ * In hosted builds (tests, REPL) this triggers assert() so CI catches
+ * stray row-7 opcodes emitted without an emit path.  In freestanding
+ * builds it is a no-op — the stub immediately sets strand DEAD, which
+ * is safe and produces a VM_TYPE_ERROR diagnostic. */
+#if __STDC_HOSTED__
+#  include <assert.h>
+#  define URBI_DISPATCH_ASSERT(cond) assert(cond)
+#else
+#  define URBI_DISPATCH_ASSERT(cond) ((void)0)
+#endif
+
 /* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
 static void vm_format_type_error_msg(UVM *vm, const char *msg) {
@@ -622,6 +664,15 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_JOIN_WAIT]  = &&label_OP_JOIN_WAIT,
         [OP_GETSLOT]    = &&label_OP_GETSLOT,
         [OP_SETSLOT]    = &&label_OP_SETSLOT,
+        /* M3 row 7 control-transfer stubs (T9/T10/T11 fill the real logic) */
+        [OP_THROW]            = &&label_row7_stub,
+        [OP_TAG_STOP]         = &&label_row7_stub,
+        [OP_TRY_BEGIN]        = &&label_row7_stub,
+        [OP_TRY_END]          = &&label_row7_stub,
+        [OP_PUSH_TAG]         = &&label_row7_stub,
+        [OP_POP_TAG]          = &&label_row7_stub,
+        [OP_PUSH_FRAME_GUARD] = &&label_row7_stub,
+        [OP_RESUME]           = &&label_row7_stub,
     };
 
     DISPATCH();
@@ -1057,6 +1108,29 @@ dispatch:
             /* M4 slot write. Structural placeholder. */
             vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "SETSLOT: not implemented until M4");
+            HALT();
+        }
+
+        /* M3 row 7 control-transfer stubs.
+         * Real logic lands at T9 (THROW/TAG_STOP/RESUME), T10 (TRY_BEGIN/TRY_END),
+         * T11 (PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD).
+         * Until then, dispatching any of these is an internal error. */
+#if UVM_USE_COMPUTED_GOTO
+        label_row7_stub:
+#else
+        case OP_THROW:
+        case OP_TAG_STOP:
+        case OP_TRY_BEGIN:
+        case OP_TRY_END:
+        case OP_PUSH_TAG:
+        case OP_POP_TAG:
+        case OP_PUSH_FRAME_GUARD:
+        case OP_RESUME:
+#endif
+        {
+            URBI_DISPATCH_ASSERT(0 && "row 7 opcode runtime owned by T9/T10/T11");
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "row 7 opcode: not yet implemented");
             HALT();
         }
 

@@ -1213,6 +1213,166 @@ UTEST(disassemble_closure_with_prelude) {
     emit_ctx_destroy(&c);
 }
 
+/* =========================================================================
+ * M3 row 7 opcode encoder round-trip tests.
+ * Each test encodes one instruction via the public helper, then decodes the
+ * word from module.instructions[0] and verifies all fields.
+ * ========================================================================= */
+
+UTEST(emit_row7_throw_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_throw(&e, /*reg_value=*/5, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)5,    uinstr_a(w));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_tag_stop_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_tag_stop(&e, /*reg_tag=*/3, /*reg_value=*/7, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_TAG_STOP, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)3, uinstr_a(w));
+    UASSERT_EQ((uint8_t)7, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_try_begin_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    /* flags=3 (has_catch|has_finally), handler_pc=1000 */
+    uemit_try_begin(&e, /*flags=*/3, /*handler_pc=*/1000, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_TRY_BEGIN,   (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)3,          uinstr_a(w));
+    UASSERT_EQ((uint16_t)1000,      uinstr_bx(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_try_end_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_try_end(&e, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_TRY_END, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)0, uinstr_a(w));
+    UASSERT_EQ((uint8_t)0, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_push_tag_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    /* reg_tag=2, flags=5, onleave_pc=300 */
+    uemit_push_tag(&e, /*reg_tag=*/2, /*flags=*/5, /*onleave_pc=*/300, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_PUSH_TAG, (int)uinstr_op(w));
+    /* A = (flags<<4)|(reg_tag&0xF) = (5<<4)|2 = 0x52 = 82 */
+    uint8_t a = uinstr_a(w);
+    UASSERT_EQ((uint8_t)2,  (uint8_t)(a & 0x0Fu));          /* tag_reg */
+    UASSERT_EQ((uint8_t)5,  (uint8_t)((a >> 4) & 0x0Fu));   /* flags */
+    UASSERT_EQ((uint16_t)300, uinstr_bx(w));                 /* onleave_pc */
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_pop_tag_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_pop_tag(&e, /*reg_tag=*/4, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_POP_TAG, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)4, uinstr_a(w));
+    UASSERT_EQ((uint8_t)0, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_push_frame_guard_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_push_frame_guard(&e, /*register_base=*/8, /*register_count=*/6, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_PUSH_FRAME_GUARD, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)8, uinstr_a(w));
+    UASSERT_EQ((uint8_t)6, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+UTEST(emit_row7_resume_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_resume(&e, /*reg_state=*/9, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_RESUME, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)9, uinstr_a(w));
+    UASSERT_EQ((uint8_t)0, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1308,4 +1468,21 @@ void test_emit_suite(void) {
               disassemble_jmp_signed_offset);
     utest_run("disassemble: CLOSURE with 2 upvals prints both upval lines",
               disassemble_closure_with_prelude);
+    /* M3 row 7 opcode encoder round-trip tests */
+    utest_run("emit row7: OP_THROW encodes reg_value in A, Bx=0",
+              emit_row7_throw_round_trip);
+    utest_run("emit row7: OP_TAG_STOP encodes reg_tag in A, reg_value in B",
+              emit_row7_tag_stop_round_trip);
+    utest_run("emit row7: OP_TRY_BEGIN encodes flags in A, handler_pc in Bx",
+              emit_row7_try_begin_round_trip);
+    utest_run("emit row7: OP_TRY_END encodes all-zero operands",
+              emit_row7_try_end_round_trip);
+    utest_run("emit row7: OP_PUSH_TAG packs flags<<4|tag_reg in A, onleave_pc in Bx",
+              emit_row7_push_tag_round_trip);
+    utest_run("emit row7: OP_POP_TAG encodes reg_tag in A",
+              emit_row7_pop_tag_round_trip);
+    utest_run("emit row7: OP_PUSH_FRAME_GUARD encodes register_base in A, count in B",
+              emit_row7_push_frame_guard_round_trip);
+    utest_run("emit row7: OP_RESUME encodes reg_state in A",
+              emit_row7_resume_round_trip);
 }
