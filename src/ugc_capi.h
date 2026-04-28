@@ -94,7 +94,10 @@ size_t urbi_gc_bytes_allocated_inline(struct UVM *vm);
 /* === Root provider forward declarations (T26) ===
  * Each subsystem's root-walker function is declared here so that uvm_init
  * can register them without pulling in each subsystem's full header.
- * Definitions live in their respective source files. */
-void host_handle_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+ * Definitions live in their respective source files.
+ *
+ * Note: host_handle_walk_roots is declared in uhandle.h (T27 moved it there
+ * to give the host-handle subsystem a proper home).  uvm.c includes uhandle.h
+ * directly when registering the provider. */
 
 #endif /* UGC_CAPI_H */

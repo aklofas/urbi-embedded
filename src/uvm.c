@@ -21,6 +21,7 @@
 #include "urealm.h"
 #include "uevent_ring.h"
 #include "m3_forward_decls.h"
+#include "uhandle.h" /* host_handle_walk_roots (T27) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>

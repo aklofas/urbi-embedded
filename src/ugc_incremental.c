@@ -739,24 +739,6 @@ urbi_gc_force_full(UVM *vm)
     }
 }
 
-/* === host_handle_walk_roots ===
- *
- * GC root provider for the host-handle table (row 10 §5.6).
- * T27 wires the real implementation when handle_table is populated.
- * At T26, handle_table_cap is 0 at M3 baseline; walker is a no-op stub.
- *
- * TODO(T27): walk vm->handle_table[0..handle_table_cap) calling cb for
- * every non-released (non-nil) slot once T27 wires the handle table. */
-void
-host_handle_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
-{
-    URBI_ASSERT_NOT_ISR(vm);
-    /* M3 baseline: handle_table_cap is 0; nothing to walk. */
-    (void)vm;
-    (void)cb;
-    (void)ctx;
-}
-
 /* === urbi_gc_walk_roots ===
  *
  * Walks VM globals (stub at M3) then iterates all registered root providers.
@@ -791,17 +773,6 @@ size_t
 urbi_gc_bytes_allocated_inline(UVM *vm)
 {
     return vm->gc_total_allocated;
-}
-
-/* === ugc.h non-inline API stubs (landing in T26/T27) === */
-
-uint8_t
-urbi_register_type(UVM *vm, const UType *type)
-{
-    /* T27: populate vm->type_table[type->type_tag]. */
-    (void)vm;
-    (void)type;
-    return 0u;
 }
 
 /* === urbi_gc_collect ===
@@ -858,23 +829,36 @@ urbi_gc_phase(UVM *vm)
     return vm->gc_phase;
 }
 
-/* === ugc_capi.h pinning stubs (landing in T27) === */
+/* === urbi_pin / urbi_unpin ===
+ *
+ * Pin: set UGC_IS_PINNED so the cell is exempt from GC sweep.
+ * Unpin: clear UGC_IS_PINNED, making the cell eligible for collection again.
+ * Both are no-ops for non-heap UValues (NIL, INT, FLOAT, BOOL, STR, VOID).
+ *
+ * M3 ships single-bit pin (idempotent set/clear).  v1.x adds a refcount
+ * table for nested pin/unpin pairs. */
 
 #if URBI_GC_HAS_PINNING
 void
 urbi_pin(UVM *vm, UValue v)
 {
-    /* T27: set UGC_IS_PINNED on the cell referenced by v. */
+    URBI_ASSERT_NOT_ISR(vm);
+    if (!uvalue_is_heap(v)) return;
+    UCell *c = uvalue_as_cell(v);
+    if (c == NULL) return;
+    c->gc_byte |= UGC_IS_PINNED;
     (void)vm;
-    (void)v;
 }
 
 void
 urbi_unpin(UVM *vm, UValue v)
 {
-    /* T27: clear UGC_IS_PINNED on the cell referenced by v. */
+    URBI_ASSERT_NOT_ISR(vm);
+    if (!uvalue_is_heap(v)) return;
+    UCell *c = uvalue_as_cell(v);
+    if (c == NULL) return;
+    c->gc_byte = (uint8_t)(c->gc_byte & ~(uint8_t)UGC_IS_PINNED);
     (void)vm;
-    (void)v;
 }
 #endif
 
