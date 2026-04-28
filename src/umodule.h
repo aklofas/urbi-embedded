@@ -65,6 +65,11 @@ typedef struct {
     } v;
 } UValue;                         /* 16 bytes */
 
+/* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
+   UValue is in scope when uframe.h is processed (uframe.h uses UValue but
+   cannot include umodule.h/uvalue.h to avoid a circular dependency). */
+#include "uframe.h"
+
 /* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
 
 typedef enum {
@@ -176,20 +181,6 @@ typedef struct UProto {
     UModuleAllocFn alloc_fn;
     void          *alloc_ud;
 } UProto;
-
-/* --- UUpvalCell: runtime heap cell for captured locals.
- * When a closure captures a local that is still live on a call frame
- * stack, the cell points into the register window (on_heap=false).
- * When the scope exits (OP_CLOSE), the value is copied into the cell
- * itself and on_heap is set to true. */
-typedef struct UUpvalCell {
-    bool    on_heap;
-    union {
-        UValue  *stack_ptr;     /* on_heap=false: pointer into register window */
-        UValue   value;         /* on_heap=true:  owned copy                   */
-    } u;
-    struct UUpvalCell *next;    /* intrusive singly-linked list in UVM         */
-} UUpvalCell;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Heap-allocated by OP_CLOSURE; lives until GC (M3).  The upvals[]

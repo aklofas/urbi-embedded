@@ -11,8 +11,11 @@
 #endif
 
 #include "uvm.h"
+#include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
+#include "usched_cooperative.h"
+#include "m3_forward_decls.h"
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -45,9 +48,6 @@ static uint64_t default_host_time_us_stub(void) {
 #endif
 }
 
-/* Forward declaration: defined after helper functions below. */
-static void vm_free_open_upvalues(UVM *vm);
-
 void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
@@ -61,8 +61,6 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->last_errmsg[0] = '\0';
     vm->intern_table = NULL;
     vm->topology_gen = 0u;
-    vm->frame_count          = 0;
-    vm->open_upvals          = NULL;
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
@@ -177,8 +175,8 @@ void uvm_destroy(UVM *vm) {
         vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
     }
-    /* Free any open upvalue cells left from the last uvm_run(). */
-    vm_free_open_upvalues(vm);
+    /* Note: open_upvals is now on the strand, not the VM.
+       The uvm_run adapter cleans up strand.open_upvals before destroy. */
 }
 
 const char *uvm_error_name(UVMError code) {
@@ -284,11 +282,7 @@ static const char *kind_name(uint8_t kind) {
     return "unknown";
 }
 
-/* Map UOpcode to its mnemonic name for diagnostic messages.
-   Called only from TypeError/OOM formatting paths, so at M1 the
-   OP_LOADK, OP_MOVE, and OP_RET branches are dead (those opcodes
-   cannot raise TypeError). Kept as defensive coverage for M2+ when
-   new opcodes raise errors and the same formatter is reused. */
+/* Map UOpcode to its mnemonic name for diagnostic messages. */
 static const char *op_name(uint8_t op) {
     switch (op) {
         case OP_LOADK: return "OP_LOADK";
@@ -490,11 +484,11 @@ static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
 }
 
 /* Find or create an open UUpvalCell for &R[slot].
- * Cells are kept in the VM's open_upvals list, sorted by stack address
+ * Cells are kept in the strand's open_upvals list, sorted by stack address
  * (descending: newest captures at the front). */
-static UUpvalCell *vm_open_upvalue(UVM *vm, UValue *slot) {
+static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
     /* Scan existing open cells. */
-    UUpvalCell *cell = vm->open_upvals;
+    UUpvalCell *cell = s->open_upvals;
     while (cell != NULL) {
         if (cell->u.stack_ptr == slot) return cell;
         cell = cell->next;
@@ -505,17 +499,17 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UValue *slot) {
     vm_zero(cell, sizeof(UUpvalCell));
     cell->on_heap    = false;
     cell->u.stack_ptr = slot;
-    cell->next       = vm->open_upvals;
-    vm->open_upvals  = cell;
+    cell->next       = s->open_upvals;
+    s->open_upvals   = cell;
     return cell;
 }
 
 /* Heapify all open cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
  * Called by OP_CLOSE and OP_RET. */
-static void vm_close_upvalues(UVM *vm, UValue *threshold,
+static void vm_close_upvalues(UStrand *s, UValue *threshold,
                               UUpvalCell **closed_list) {
-    UUpvalCell **link = &vm->open_upvals;
+    UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;
         if (cell->u.stack_ptr >= threshold) {
@@ -531,16 +525,15 @@ static void vm_close_upvalues(UVM *vm, UValue *threshold,
     }
 }
 
-/* Free all open upvalue cells (called when VM is destroyed or rerun).
- * Closed cells are owned by UClosure objects; open cells are VM-owned. */
-static void vm_free_open_upvalues(UVM *vm) {
-    UUpvalCell *cell = vm->open_upvals;
+/* Free all open upvalue cells remaining on a strand. */
+static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
+    UUpvalCell *cell = s->open_upvals;
     while (cell != NULL) {
         UUpvalCell *next = cell->next;
         vm->alloc_fn(cell, 0, vm->alloc_ud);
         cell = next;
     }
-    vm->open_upvals = NULL;
+    s->open_upvals = NULL;
 }
 
 /* --- Dispatch macros.
@@ -556,18 +549,18 @@ static void vm_free_open_upvalues(UVM *vm) {
 #endif
 
 #if UVM_USE_COMPUTED_GOTO
-#  define DISPATCH()  goto *dispatch_table[uinstr_op(*pc)]
+#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]
 #  define CASE(op)    label_##op:
-#  define NEXT()      do { pc++; DISPATCH(); } while (0)
-#  define HALT()      goto halt
+#  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
+#  define HALT()      goto halt_error
 #else
-#  define DISPATCH()  switch (uinstr_op(*pc))
+#  define DISPATCH()  switch (uinstr_op(*s->pc))
 #  define CASE(op)    case (op):
-#  define NEXT()      do { pc++; goto dispatch; } while (0)
-#  define HALT()      goto halt
+#  define NEXT()      do { s->pc++; goto dispatch; } while (0)
+#  define HALT()      goto halt_error
 #endif
 
-/* Generic unsupported-opcode error message.  Used by M2 placeholder arms
+/* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
 static void vm_format_type_error_msg(UVM *vm, const char *msg) {
     DiagWriter w;
@@ -576,69 +569,29 @@ static void vm_format_type_error_msg(UVM *vm, const char *msg) {
     diag_write_cstr(&w, msg);
 }
 
-/* --- uvm_run --- */
+/* --- dispatch_loop_until_yield ---
+   The core execution engine (T6).  Runs s's bytecode until one of:
+   - strand reaches DEAD (top-level OP_RET or halt_error)
+   - strand yields via OP_YIELD (state → READY)
+   - step_budget_in opcodes are consumed (state remains RUNNING)
+   Returns the number of opcodes consumed.
 
-UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
-    /* Reset error state at entry so callers who run multiple modules
-       don't see stale last_error from a prior failure. */
-    vm->last_error = UVM_OK;
-    vm->last_errmsg[0] = '\0';
-    vm->frame_count = 0;
-    vm_free_open_upvalues(vm);
+   The uvm_run() function below is a thin adapter that creates a transient
+   UStrand, loops calling this function until DEAD, then tears down.
+   All dispatch state lives on the strand; vm holds only VM-wide state. */
 
-    /* Pre-GC: free the closure returned by the previous uvm_run (if any).
-     * The caller had one run's lifetime to inspect it. */
-    if (vm->last_return_closure != NULL) {
-        UClosure *prev = vm->last_return_closure;
-        uint8_t nup = prev->nupvals;
-        size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
-        (void)extra;
-        vm->alloc_fn(prev, 0, vm->alloc_ud);
-        vm->last_return_closure = NULL;
-    }
+uint64_t
+dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
+{
+    UVM *vm = s->vm;
+    uint64_t steps_consumed = 0;
 
-    /* Initialize out to Nil; overwritten on OP_RET success. */
-    UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
-    *out = nil;
-
-    /* Empty module: no instructions to dispatch; return Nil. */
-    if (module->instr_count == 0) {
-        return UVM_OK;
-    }
-
-    /* Allocate a unified register stack for all frames.
-       UVM_STACK_CAP slots; zero-initialized so every register starts Nil. */
-    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
-    UValue *stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
-    if (stack == NULL) {
-        vm->last_error = UVM_OOM;
-        vm_format_oom(vm, stack_bytes);
-        return UVM_OOM;
-    }
-    vm_zero(stack, stack_bytes);
-
-    /* Current-frame state: register base, instruction pointer, proto. */
-    UValue *R  = stack;         /* current frame's register base */
-    const uint32_t *pc = module->instructions;
-    const UValue   *cur_consts = module->constants;
-    UVMError rc = UVM_OK;
-
-    /* Pre-GC closure list: every UClosure allocated this run is threaded
-     * here via next_alloc; freed at halt (after *out is copied out). */
-    UClosure *closure_list = NULL;
-
-    /* Pre-GC closed upvalue list: every UUpvalCell heapified this run is
-     * threaded here via vm_close_upvalues; freed at halt before closures. */
-    UUpvalCell *closed_cells = NULL;
-
-    /* Saved PC base for the current frame — used to compute pc offsets
-     * for diagnostic messages.  Updated on every frame push/pop. */
-    const uint32_t *pc_base = module->instructions;
+    s->state = USTRAND_STATE_RUNNING;
+    vm->step_budget_remaining = step_budget_in;
 
 #if UVM_USE_COMPUTED_GOTO
-    /* Dispatch table keyed by opcode. All 8 M1 opcodes populated;
-       loader validates opcode is in [0, OP_MAX) so no unknown-opcode
-       guard is needed at this point. */
+    /* Dispatch table keyed by opcode.  All opcodes populated; loader
+       validates opcode is in [0, OP_MAX) before uvm_run is called. */
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK]      = &&label_OP_LOADK,
         [OP_MOVE]       = &&label_OP_MOVE,
@@ -678,24 +631,24 @@ dispatch:
 #endif
 
         CASE(OP_LOADK) {
-            R[uinstr_a(*pc)] = cur_consts[uinstr_bx(*pc)];
+            s->R[uinstr_a(*s->pc)] = s->cur_consts[uinstr_bx(*s->pc)];
             NEXT();
         }
 
         CASE(OP_MOVE) {
-            R[uinstr_a(*pc)] = R[uinstr_b(*pc)];
+            s->R[uinstr_a(*s->pc)] = s->R[uinstr_b(*s->pc)];
             NEXT();
         }
 
         CASE(OP_ADD) {
-            UValue *a = &R[uinstr_a(*pc)];
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *cc = &R[uinstr_c(*pc)];
-            rc = arith_add(a, b, cc);
+            UValue *a = &s->R[uinstr_a(*s->pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *cc = &s->R[uinstr_c(*s->pc)];
+            UVMError rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base),
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base),
                     OP_ADD, b->kind, cc->kind);
                 HALT();
             }
@@ -703,14 +656,14 @@ dispatch:
         }
 
         CASE(OP_SUB) {
-            UValue *a = &R[uinstr_a(*pc)];
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *cc = &R[uinstr_c(*pc)];
-            rc = arith_sub(a, b, cc);
+            UValue *a = &s->R[uinstr_a(*s->pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *cc = &s->R[uinstr_c(*s->pc)];
+            UVMError rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base),
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base),
                     OP_SUB, b->kind, cc->kind);
                 HALT();
             }
@@ -718,14 +671,14 @@ dispatch:
         }
 
         CASE(OP_MUL) {
-            UValue *a = &R[uinstr_a(*pc)];
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *cc = &R[uinstr_c(*pc)];
-            rc = arith_mul(a, b, cc);
+            UValue *a = &s->R[uinstr_a(*s->pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *cc = &s->R[uinstr_c(*s->pc)];
+            UVMError rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base),
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base),
                     OP_MUL, b->kind, cc->kind);
                 HALT();
             }
@@ -733,14 +686,14 @@ dispatch:
         }
 
         CASE(OP_DIV) {
-            UValue *a = &R[uinstr_a(*pc)];
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *cc = &R[uinstr_c(*pc)];
-            rc = arith_div(a, b, cc);
+            UValue *a = &s->R[uinstr_a(*s->pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *cc = &s->R[uinstr_c(*s->pc)];
+            UVMError rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base),
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base),
                     OP_DIV, b->kind, cc->kind);
                 HALT();
             }
@@ -748,13 +701,13 @@ dispatch:
         }
 
         CASE(OP_NEG) {
-            UValue *a = &R[uinstr_a(*pc)];
-            const UValue *b = &R[uinstr_b(*pc)];
-            rc = arith_neg(a, b);
+            UValue *a = &s->R[uinstr_a(*s->pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            UVMError rc = arith_neg(a, b);
             if (rc != UVM_OK) {
                 vm->last_error = rc;
-                vm_format_type_error_unary(vm, module,
-                    (size_t)(pc - pc_base),
+                vm_format_type_error_unary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base),
                     OP_NEG, b->kind);
                 HALT();
             }
@@ -762,100 +715,98 @@ dispatch:
         }
 
         CASE(OP_RET) {
-            UValue retval = R[uinstr_a(*pc)];
+            UValue retval = s->R[uinstr_a(*s->pc)];
 
-            if (vm->frame_count == 0) {
-                /* Top-level — exit uvm_run. */
-                *out = retval;
-                HALT();
+            if (s->frame_count == 0) {
+                /* Top-level OP_RET — strand is done. */
+                if (s->out_slot != NULL) {
+                    *s->out_slot = retval;
+                }
+                s->state = USTRAND_STATE_DEAD;
+                steps_consumed++;
+                goto exit_strand;
             }
 
             /* Pop the call frame. */
-            UCallFrame *done = &vm->frames[--vm->frame_count];
+            UCallFrame *done = &s->frames[--s->frame_count];
 
             /* Close any open upvalues that point into this frame's registers.
              * Threshold = done->base + 1 (first slot of callee's frame was
              * done->base[result_dest_reg + 1], i.e. R_caller[a+1]). */
-            vm_close_upvalues(vm, done->base + done->result_dest_reg + 1,
-                              &closed_cells);
+            vm_close_upvalues(s, done->base + done->result_dest_reg + 1,
+                              &s->closed_cells);
 
             /* Restore caller's register window and instruction pointer. */
-            R     = done->base;
-            pc    = done->pc + 1;  /* advance past the OP_CALL */
-            pc_base    = module->instructions;  /* diagnostic; approximate */
-            cur_consts = (vm->frame_count > 0 &&
-                          vm->frames[vm->frame_count - 1].closure != NULL)
-                         ? vm->frames[vm->frame_count - 1].closure->proto->constants
-                         : module->constants;
+            s->R       = done->base;
+            s->pc      = done->pc + 1;  /* advance past the OP_CALL */
+            s->pc_base = s->module->instructions;  /* diagnostic; approximate */
+            s->cur_consts = (s->frame_count > 0 &&
+                             s->frames[s->frame_count - 1].closure != NULL)
+                            ? s->frames[s->frame_count - 1].closure->proto->constants
+                            : s->module->constants;
 
             /* Write return value into caller's result slot R[a]. */
-            R[done->result_dest_reg] = retval;
+            s->R[done->result_dest_reg] = retval;
 
-            /* In computed-goto mode, jump directly to the next opcode handler.
-             * In switch mode, re-enter the outer dispatch loop via goto. */
-#if UVM_USE_COMPUTED_GOTO
-            DISPATCH();
-#else
-            goto dispatch;
-#endif
+            /* Safepoint at frame-pop (non-top-frame OP_RET). */
+            steps_consumed++;
+            goto safepoint;
         }
 
         CASE(OP_LOADNIL) {
-            R[uinstr_a(*pc)].kind = (uint8_t)UVAL_NIL;
+            s->R[uinstr_a(*s->pc)].kind = (uint8_t)UVAL_NIL;
             NEXT();
         }
 
         CASE(OP_LOADBOOL) {
-            R[uinstr_a(*pc)].kind  = (uint8_t)UVAL_BOOL;
-            R[uinstr_a(*pc)].v.i   = uinstr_b(*pc) != 0 ? 1 : 0;
-            if (uinstr_c(*pc)) { pc++; }
+            s->R[uinstr_a(*s->pc)].kind  = (uint8_t)UVAL_BOOL;
+            s->R[uinstr_a(*s->pc)].v.i   = uinstr_b(*s->pc) != 0 ? 1 : 0;
+            if (uinstr_c(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_LOADVOID) {
-            R[uinstr_a(*pc)].kind = (uint8_t)UVAL_VOID;
+            s->R[uinstr_a(*s->pc)].kind = (uint8_t)UVAL_VOID;
             NEXT();
         }
 
         CASE(OP_GETUPVAL) {
             /* ABC: R[A] := upvalue[B] from the current frame's closure. */
-            UClosure *cur_cl = (vm->frame_count > 0)
-                             ? vm->frames[vm->frame_count - 1].closure
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
                              : NULL;
             if (cur_cl == NULL) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETUPVAL: no closure in current frame");
                 HALT();
             }
             {
-                uint8_t b = uinstr_b(*pc);
+                uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
-                R[uinstr_a(*pc)] = uvc->on_heap ? uvc->u.value
-                                                    : *uvc->u.stack_ptr;
+                s->R[uinstr_a(*s->pc)] = uvc->on_heap ? uvc->u.value
+                                                      : *uvc->u.stack_ptr;
             }
             NEXT();
         }
 
         CASE(OP_SETUPVAL) {
             /* ABC: upvalue[B] := R[A] for the current frame's closure. */
-            UClosure *cur_cl = (vm->frame_count > 0)
-                             ? vm->frames[vm->frame_count - 1].closure
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
                              : NULL;
             if (cur_cl == NULL) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETUPVAL: no closure in current frame");
                 HALT();
             }
             {
-                uint8_t a = uinstr_a(*pc);
-                uint8_t b = uinstr_b(*pc);
+                uint8_t a = uinstr_a(*s->pc);
+                uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
                 if (uvc->on_heap) {
-                    uvc->u.value = R[a];
+                    uvc->u.value = s->R[a];
                 } else {
-                    *uvc->u.stack_ptr = R[a];
+                    *uvc->u.stack_ptr = s->R[a];
                 }
             }
             NEXT();
@@ -865,19 +816,17 @@ dispatch:
             /* ABx: R[A] := new closure from module->nested[Bx].
              * Reads nupvals pseudo-instructions (OP_MOVE-encoded) immediately
              * after, each specifying (B=in_stack, C=src_idx). */
-            uint8_t  a  = uinstr_a(*pc);
-            uint16_t bx = uinstr_bx(*pc);
-            if ((size_t)bx >= module->nested_count) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+            uint8_t  a  = uinstr_a(*s->pc);
+            uint16_t bx = uinstr_bx(*s->pc);
+            if ((size_t)bx >= s->module->nested_count) {
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CLOSURE: proto index out of range");
                 HALT();
             }
-            UProto *child_proto = module->nested[bx];
-            UClosure *cl = vm_alloc_closure(vm, child_proto, &closure_list);
+            UProto *child_proto = s->module->nested[bx];
+            UClosure *cl = vm_alloc_closure(vm, child_proto, &s->closure_list);
             if (cl == NULL) {
-                rc = UVM_OOM;
-                vm->last_error = rc;
+                vm->last_error = UVM_OOM;
                 vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
@@ -885,28 +834,26 @@ dispatch:
             {
                 int i;
                 for (i = 0; i < (int)child_proto->nupvals; i++) {
-                    pc++;
-                    uint8_t in_stack = uinstr_b(*pc);
-                    uint8_t src_idx  = uinstr_c(*pc);
+                    s->pc++;
+                    uint8_t in_stack = uinstr_b(*s->pc);
+                    uint8_t src_idx  = uinstr_c(*s->pc);
                     if (in_stack) {
-                        UUpvalCell *uvc = vm_open_upvalue(vm, &R[src_idx]);
+                        UUpvalCell *uvc = vm_open_upvalue(vm, s, &s->R[src_idx]);
                         if (uvc == NULL) {
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
-                            rc = UVM_OOM;
-                            vm->last_error = rc;
+                            vm->last_error = UVM_OOM;
                             vm_format_oom(vm, sizeof(UUpvalCell));
                             HALT();
                         }
                         cl->upvals[i] = uvc;
                     } else {
                         /* Re-capture: copy parent closure's upvalue pointer. */
-                        UClosure *par_cl = (vm->frame_count > 0)
-                                         ? vm->frames[vm->frame_count - 1].closure
+                        UClosure *par_cl = (s->frame_count > 0)
+                                         ? s->frames[s->frame_count - 1].closure
                                          : NULL;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
-                            rc = UVM_TYPE_ERROR;
-                            vm->last_error = rc;
+                            vm->last_error = UVM_TYPE_ERROR;
                             vm_format_type_error_msg(vm, "CLOSURE: upvalue re-capture out of range");
                             HALT();
                         }
@@ -914,206 +861,201 @@ dispatch:
                     }
                 }
             }
-            R[a].kind  = (uint8_t)UVAL_CLOSURE;
-            R[a].v.p   = cl;
+            s->R[a].kind  = (uint8_t)UVAL_CLOSURE;
+            s->R[a].v.p   = cl;
             NEXT();
         }
 
         CASE(OP_CLOSE) {
             /* ABC: heapify all open upvalue cells at R >= R[A]. */
-            vm_close_upvalues(vm, &R[uinstr_a(*pc)], &closed_cells);
+            vm_close_upvalues(s, &s->R[uinstr_a(*s->pc)], &s->closed_cells);
             NEXT();
         }
 
         CASE(OP_CALL) {
             /* ABC: R[A](R[A+1]..R[A+B-1]); B-1 = nargs, C unused at T14.
              * After the call, the result overwrites R[A]. */
-            uint8_t a = uinstr_a(*pc);
-            uint8_t b = uinstr_b(*pc);
+            uint8_t a = uinstr_a(*s->pc);
+            uint8_t b = uinstr_b(*s->pc);
             int nargs = (int)b - 1;
 
-            if (R[a].kind != (uint8_t)UVAL_CLOSURE) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+            if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: callee is not a closure");
                 HALT();
             }
-            UClosure *callee = (UClosure *)R[a].v.p;
+            UClosure *callee = (UClosure *)s->R[a].v.p;
             if (nargs != (int)callee->proto->nparams) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: wrong argument count");
                 HALT();
             }
-            if (vm->frame_count >= UVM_MAX_FRAMES) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
+            if (s->frame_count >= UVM_MAX_FRAMES) {
+                vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: call stack overflow");
                 HALT();
             }
 
             /* Check stack space: callee's frame starts at R[a+1]. */
-            if ((R + a + 1 + callee->proto->max_reg + 1) > (stack + UVM_STACK_CAP)) {
-                rc = UVM_OOM;
-                vm->last_error = rc;
+            if ((s->R + a + 1 + callee->proto->max_reg + 1) > (s->stack + UVM_STACK_CAP)) {
+                vm->last_error = UVM_OOM;
                 vm_format_oom(vm, (size_t)(callee->proto->max_reg + 1) * sizeof(UValue));
                 HALT();
             }
 
             /* Push a new frame record.  This frame record stores what to restore
              * on OP_RET, plus the callee's closure (for GETUPVAL during the call). */
-            UCallFrame *new_frame = &vm->frames[vm->frame_count++];
-            new_frame->closure         = callee;   /* executing closure */
+            UCallFrame *new_frame = &s->frames[s->frame_count++];
+            new_frame->closure         = callee;
             new_frame->proto           = callee->proto;
-            new_frame->pc              = pc;       /* points AT OP_CALL in caller */
-            new_frame->base            = R;        /* caller's register base */
+            new_frame->pc              = s->pc;    /* points AT OP_CALL in caller */
+            new_frame->base            = s->R;     /* caller's register base */
             new_frame->result_dest_reg = (int)a;  /* where to write result */
 
             /* Switch to callee frame. Args R[a+1..a+nargs] become R[0..nargs-1]. */
-            R     = &R[a + 1];
-            pc    = callee->proto->instructions;
-            pc_base    = pc;
-            cur_consts = callee->proto->constants ? callee->proto->constants
-                                                  : module->constants;
+            s->R        = &s->R[a + 1];
+            s->pc       = callee->proto->instructions;
+            s->pc_base  = s->pc;
+            s->cur_consts = callee->proto->constants ? callee->proto->constants
+                                                     : s->module->constants;
 
             /* Zero registers beyond nparams up to max_reg. */
             {
                 int si;
                 for (si = nargs; si <= (int)callee->proto->max_reg; si++) {
                     UValue z = {0};
-                    R[si] = z;
+                    s->R[si] = z;
                 }
             }
 
-            /* In computed-goto mode, jump directly to the callee's first opcode.
-             * In switch mode, re-enter the outer dispatch loop via goto. */
-#if UVM_USE_COMPUTED_GOTO
-            DISPATCH();
-#else
-            goto dispatch;
-#endif
+            /* Safepoint at call-frame-push. */
+            steps_consumed++;
+            goto safepoint;
         }
 
         CASE(OP_JMP) {
             /* ABx: pc += signed(Bx) - 32768.  Offset is applied after the
              * normal pc++ in NEXT, so we pre-adjust by (offset - 1). */
-            int offset = (int)uinstr_bx(*pc) - 32768;
-            pc += offset;
+            int offset = (int)uinstr_bx(*s->pc) - 32768;
+            s->pc += offset;
+            /* Safepoint at backward branch (prevents infinite loop starvation). */
+            if (offset < 0) {
+                steps_consumed++;
+                goto safepoint;
+            }
             NEXT();
         }
 
         CASE(OP_TEST) {
             /* ABC: if (truthy(R[A]) == C) pc++ (skip next instr) */
-            const UValue *a = &R[uinstr_a(*pc)];
+            const UValue *a = &s->R[uinstr_a(*s->pc)];
             bool truthy = uvalue_truthy(a);
-            if ((int)truthy == (int)uinstr_c(*pc)) { pc++; }
+            if ((int)truthy == (int)uinstr_c(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_TESTSET) {
             /* ABC: if (truthy(R[B]) == C) pc++ else R[A] := R[B] */
-            const UValue *b = &R[uinstr_b(*pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
             bool truthy = uvalue_truthy(b);
-            if ((int)truthy == (int)uinstr_c(*pc)) {
-                pc++;
+            if ((int)truthy == (int)uinstr_c(*s->pc)) {
+                s->pc++;
             } else {
-                R[uinstr_a(*pc)] = *b;
+                s->R[uinstr_a(*s->pc)] = *b;
             }
             NEXT();
         }
 
         CASE(OP_EQ) {
             /* ABC: if ((R[B]==R[C]) != A) pc++ */
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *c = &R[uinstr_c(*pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool eq = uvalue_equal(b, c);
-            if ((int)eq != (int)uinstr_a(*pc)) { pc++; }
+            if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_NEQ) {
-            /* ABC: if ((R[B]!=R[C]) != A) pc++ — emitter normalises NEQ to
-               OP_EQ with a_bit=0; this arm handles any residual direct use. */
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *c = &R[uinstr_c(*pc)];
+            /* ABC: if ((R[B]!=R[C]) != A) pc++ */
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool neq = !uvalue_equal(b, c);
-            if ((int)neq != (int)uinstr_a(*pc)) { pc++; }
+            if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_LT) {
             /* ABC: if ((R[B]<R[C]) != A) pc++ — numeric only at M2 */
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *c = &R[uinstr_c(*pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool lt = false;
             if (uvalue_lt(b, c, &lt) != UVAL_CMP_OK) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base), OP_LT, b->kind, c->kind);
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
                 HALT();
             }
-            if ((int)lt != (int)uinstr_a(*pc)) { pc++; }
+            if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_LE) {
             /* ABC: if ((R[B]<=R[C]) != A) pc++ — numeric only at M2 */
-            const UValue *b = &R[uinstr_b(*pc)];
-            const UValue *c = &R[uinstr_c(*pc)];
+            const UValue *b = &s->R[uinstr_b(*s->pc)];
+            const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool le = false;
             if (uvalue_le(b, c, &le) != UVAL_CMP_OK) {
-                rc = UVM_TYPE_ERROR;
-                vm->last_error = rc;
-                vm_format_type_error_binary(vm, module,
-                    (size_t)(pc - pc_base), OP_LE, b->kind, c->kind);
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_binary(vm, s->module,
+                    (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);
                 HALT();
             }
-            if ((int)le != (int)uinstr_a(*pc)) { pc++; }
+            if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_YIELD) {
-            /* M3 scheduler yield; no-op at M2. */
-            NEXT();
+            /* Cooperative yield: advance past this opcode, transition to READY,
+               and return to the scheduler.  The uvm_run adapter re-enters
+               dispatch_loop_until_yield until strand is DEAD. */
+            s->pc++;
+            s->state = USTRAND_STATE_READY;
+            sched_strand_yield(s);
+            steps_consumed++;
+            goto exit_strand;
         }
 
         CASE(OP_FORK_DETACH) {
             /* M3 `,` separator runtime. Structural placeholder. */
-            rc = UVM_TYPE_ERROR;
-            vm->last_error = rc;
+            vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "FORK_DETACH: not implemented until M3");
             HALT();
         }
 
         CASE(OP_FORK_JOIN) {
             /* M3 `&` separator runtime. Structural placeholder. */
-            rc = UVM_TYPE_ERROR;
-            vm->last_error = rc;
+            vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "FORK_JOIN: not implemented until M3");
             HALT();
         }
 
         CASE(OP_JOIN_WAIT) {
             /* M3 `&` join-point. Structural placeholder. */
-            rc = UVM_TYPE_ERROR;
-            vm->last_error = rc;
+            vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "JOIN_WAIT: not implemented until M3");
             HALT();
         }
 
         CASE(OP_GETSLOT) {
             /* M4 slot read. Structural placeholder. */
-            rc = UVM_TYPE_ERROR;
-            vm->last_error = rc;
+            vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "GETSLOT: not implemented until M4");
             HALT();
         }
 
         CASE(OP_SETSLOT) {
             /* M4 slot write. Structural placeholder. */
-            rc = UVM_TYPE_ERROR;
-            vm->last_error = rc;
+            vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "SETSLOT: not implemented until M4");
             HALT();
         }
@@ -1122,25 +1064,176 @@ dispatch:
         default: {
             /* Unreachable — loader rejects unknown opcodes before uvm_run
                is called. The default: branch satisfies -Wswitch-enum. */
-            rc = UVM_TYPE_ERROR;
+            vm->last_error = UVM_TYPE_ERROR;
             HALT();
         }
     }
 #endif
 
-halt:
-    vm->alloc_fn(stack, 0, vm->alloc_ud);
-    vm->frame_count = 0;
+    /* Unreachable for computed-goto path; switch path falls through from
+       every NEXT() which ends with goto dispatch above. */
 
-    /* Pre-GC: free every closure allocated this run, except the one
-     * returned to the caller via *out.  That closure is kept alive in
+halt_error:
+    /* Error path: strand is now dead. */
+    s->state = USTRAND_STATE_DEAD;
+    steps_consumed++;
+    goto exit_strand;
+
+safepoint:
+    /* Safepoint actions (run at backward-branch, call, and non-top OP_RET).
+       Order: unwind check → per-strand budget → VM-wide budget → GC → hooks. */
+    if (s->pending_unwind != UEXEC_OK) {
+        unwind_walk(s);                   /* T9 wires; stub at T6 */
+        if (s->state == USTRAND_STATE_DEAD) goto exit_strand;
+    }
+    if (s->instruction_budget_remaining == 0) {
+        s->state = USTRAND_STATE_READY;
+        sched_strand_yield(s);
+        goto exit_strand;
+    }
+    s->instruction_budget_remaining--;
+    if (vm->step_budget_remaining == 0) {
+        /* Budget exhausted from caller's perspective; state stays RUNNING.
+           The uvm_run adapter treats RUNNING-but-exit as "continue". */
+        goto exit_strand;
+    }
+    vm->step_budget_remaining--;
+    if (vm->gc_pending)           gc_slice(vm, URBI_GC_SLICE_BUDGET);
+    if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
+    if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
+    /* Preemption flag reserved for v2; not checked at M3. */
+    /* Resume dispatch. */
+#if UVM_USE_COMPUTED_GOTO
+    DISPATCH();
+#else
+    goto dispatch;
+#endif
+
+exit_strand:
+    return steps_consumed;
+}
+
+/* --- uvm_run: thin adapter that wraps dispatch_loop_until_yield.
+   Preserves the M2 public API contract:
+   - Resets error state at entry.
+   - Frees the previous run's return closure.
+   - Returns UVM_OK with *out set on success, or the error code on failure.
+   - Keeps vm->last_return_closure alive for the caller to inspect.
+
+   Implementation note: uvm_run kept in uvm.c (not split to udispatch.c)
+   at T6 per plan recommendation; T20 may revisit when strand C API matures. */
+
+UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
+    /* Reset error state at entry so callers who run multiple modules
+       don't see stale last_error from a prior failure. */
+    vm->last_error = UVM_OK;
+    vm->last_errmsg[0] = '\0';
+
+    /* Pre-GC: free the closure returned by the previous uvm_run (if any).
+     * The caller had one run's lifetime to inspect it. */
+    if (vm->last_return_closure != NULL) {
+        UClosure *prev = vm->last_return_closure;
+        uint8_t nup = prev->nupvals;
+        size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
+        (void)extra;
+        vm->alloc_fn(prev, 0, vm->alloc_ud);
+        vm->last_return_closure = NULL;
+    }
+
+    /* Initialize out to Nil; overwritten on OP_RET success. */
+    UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
+    *out = nil;
+
+    /* Empty module: no instructions to dispatch; return Nil. */
+    if (module->instr_count == 0) {
+        return UVM_OK;
+    }
+
+    /* Create a transient strand for this run.
+       We zero-init manually rather than calling ustrand_init to avoid
+       pre-allocating the cleanup stack (which unwind_walk wires at T9;
+       the M2 baseline dispatcher never uses it).  This preserves the
+       M2 contract that the first allocation failure returns OOM for the
+       register stack, not the cleanup stack. */
+    UStrand strand;
+    {
+        volatile unsigned char *p = (volatile unsigned char *)&strand;
+        size_t n = sizeof(strand);
+        size_t i;
+        for (i = 0; i < n; i++) p[i] = 0;
+    }
+    strand.vm    = vm;
+    strand.state = USTRAND_STATE_DORMANT;
+    /* cleanup_base stays NULL — transient strands don't use unwind at T6. */
+
+    /* Allocate the per-strand register stack. */
+    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
+    strand.stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
+    if (strand.stack == NULL) {
+        vm->last_error = UVM_OOM;
+        vm_format_oom(vm, stack_bytes);
+        ustrand_destroy(&strand, vm);
+        return UVM_OOM;
+    }
+    vm_zero(strand.stack, stack_bytes);
+
+    /* Wire frame-0 from module. */
+    strand.R          = strand.stack;
+    strand.pc         = module->instructions;
+    strand.pc_base    = module->instructions;
+    strand.cur_consts = module->constants;
+    strand.module     = module;
+    strand.frame_count = 0;
+    strand.open_upvals = NULL;
+    strand.closure_list = NULL;
+    strand.closed_cells = NULL;
+    strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */
+    strand.state      = USTRAND_STATE_RUNNING;
+
+    /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
+       OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
+       "continue" for the M2 API contract (uvm_run must block until completion). */
+    for (;;) {
+        (void)dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
+        if (strand.state == USTRAND_STATE_DEAD) break;
+        if (vm->last_error != UVM_OK) break;
+        if (strand.state == USTRAND_STATE_READY) {
+            /* OP_YIELD (between separator children) or per-strand budget.
+               Remove from ready queue (sched_strand_yield enqueued it),
+               reset to RUNNING, and re-enter dispatch. */
+            if (vm->ready_head == &strand) {
+                vm->ready_head = strand.ready_next;
+                if (vm->ready_head != NULL)
+                    vm->ready_head->ready_prev = NULL;
+                else
+                    vm->ready_tail = NULL;
+                if (vm->strand_runnable_count > 0)
+                    vm->strand_runnable_count--;
+                strand.ready_next = NULL;
+                strand.ready_prev = NULL;
+            }
+            strand.state = USTRAND_STATE_RUNNING;
+            continue;
+        }
+        if (USTRAND_IS_WAITING(&strand)) {
+            /* M2 baseline has no blocking opcodes; WAITING here is a bug. */
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "strand blocked unexpectedly in uvm_run");
+            break;
+        }
+        /* RUNNING with step_budget exhausted (UINT64_MAX → shouldn't happen). */
+        break;
+    }
+
+    /* Pre-GC: free every closure allocated this run, except the one returned
+     * to the caller via *out.  That closure is kept alive in
      * vm->last_return_closure until the next uvm_run() or uvm_destroy(). */
     {
         UClosure *out_cl = (out->kind == (uint8_t)UVAL_CLOSURE)
                            ? (UClosure *)out->v.p : NULL;
         vm->last_return_closure = out_cl;
 
-        UClosure *cl = closure_list;
+        UClosure *cl = strand.closure_list;
         while (cl != NULL) {
             UClosure *next = cl->next_alloc;
             if (cl != out_cl) {
@@ -1150,12 +1243,9 @@ halt:
         }
     }
 
-    /* Pre-GC: free every heapified upvalue cell allocated this run.
-     * Closed cells were removed from vm->open_upvals by vm_close_upvalues
-     * and threaded into closed_cells for bulk free here.  Each cell appears
-     * at most once; no reference-counting needed at this pre-GC stage. */
+    /* Pre-GC: free every heapified upvalue cell allocated this run. */
     {
-        UUpvalCell *cell = closed_cells;
+        UUpvalCell *cell = strand.closed_cells;
         while (cell != NULL) {
             UUpvalCell *next = cell->next;
             vm->alloc_fn(cell, 0, vm->alloc_ud);
@@ -1163,5 +1253,14 @@ halt:
         }
     }
 
+    /* Free any open upvalue cells still on the strand. */
+    vm_free_open_upvalues(vm, &strand);
+
+    /* Free the register stack. */
+    vm->alloc_fn(strand.stack, 0, vm->alloc_ud);
+    strand.stack = NULL;
+
+    UVMError rc = vm->last_error;
+    ustrand_destroy(&strand, vm);
     return rc;
 }

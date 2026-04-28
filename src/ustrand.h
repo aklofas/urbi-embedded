@@ -6,7 +6,8 @@
 #define USTRAND_H
 
 #include <stdint.h>
-#include "uvalue.h"
+#include "uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
+#include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,9 +68,11 @@ typedef enum {
 
 /* === Forward declarations for types that land in later tasks. === */
 
-struct UTag;   /* T29 */
-struct UEvent; /* reactive runtime */
-struct UVM;    /* uvm.h — forward-decl to avoid circular include */
+struct UTag;     /* T29 */
+struct UEvent;   /* reactive runtime */
+struct UVM;      /* uvm.h — forward-decl to avoid circular include */
+struct UModule;  /* umodule.h — forward-decl for strand execution context */
+struct UClosure; /* umodule.h — forward-decl for closure list threading */
 
 /* === UStrand struct (M3 baseline) ===
    T20 and T29 add lifecycle operations; T9 wires the unwind walker;
@@ -119,6 +122,24 @@ struct UStrand {
         struct UEvent      *event;
         UStrand            *join_parent;
     } wait_payload;
+
+    /* --- M2-baseline execution state migrated from uvm_run-locals + UVM at T6 ---
+       These fields are valid only while the strand is RUNNING or READY (paused mid-run).
+       uvm_run's thin adapter initialises them before calling dispatch_loop_until_yield
+       and tears them down after the strand transitions to DEAD.
+       T20 will move strand creation here when the full Strand C API lands. */
+    UValue                 *stack;          /* heap-alloc'd register array; UVM_STACK_CAP slots */
+    UValue                 *R;              /* current frame register base (derived from stack) */
+    const uint32_t         *pc;             /* current instruction pointer */
+    const uint32_t         *pc_base;        /* base of current frame's instruction array */
+    const UValue           *cur_consts;     /* current frame's constant pool */
+    const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
+    UCallFrame              frames[UVM_MAX_FRAMES];
+    int                     frame_count;
+    UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */
+    struct UClosure        *closure_list;   /* pre-GC: all closures allocated this run */
+    UUpvalCell             *closed_cells;   /* pre-GC: all heapified upvalue cells this run */
+    UValue                 *out_slot;       /* adapter-set: OP_RET at top-frame writes here */
 };
 
 /* === Lifecycle functions (stubs; full impl across T20 + T29) ===

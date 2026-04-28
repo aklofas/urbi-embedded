@@ -10,6 +10,7 @@
 
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
 #include "uvalue.h"   /* UValue — needed for handle_table field */
+#include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,22 +58,11 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr != NULL && nbytes > 0  : reallocate ptr to nbytes (may move); return non-NULL or NULL on OOM.
  *   ptr == NULL && nbytes == 0 : no-op; return NULL. */
 
-/* --- Call frame for function dispatch. --- */
-
-#define UVM_MAX_FRAMES 64
-
-typedef struct UCallFrame {
-    UClosure       *closure;         /* NULL for top-level frame */
-    UProto         *proto;           /* bytecode source for this frame */
-    const uint32_t *pc;              /* current instruction pointer */
-    UValue         *base;            /* base of register window in shared stack */
-    int             result_dest_reg; /* where caller wants the return value */
-} UCallFrame;
+/* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
-#define UVM_STACK_CAP  2048        /* total register slots across all frames */
 
 typedef struct UVM {
     UVMAllocFn alloc_fn;
@@ -85,13 +75,6 @@ typedef struct UVM {
     uint32_t   topology_gen;     /* shape-tree generation; bumped at M4
                                     on any slot-topology mutation. Zero-
                                     init; never bumped at M2. */
-
-    /* Function-call stack. */
-    UCallFrame frames[UVM_MAX_FRAMES];
-    int        frame_count;
-
-    /* Open-upvalue list: cells that still point into the stack. */
-    UUpvalCell *open_upvals;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or
@@ -197,6 +180,15 @@ typedef struct UVM {
    allocation path — caller's bug. Zero-initializes last_error and
    last_errmsg. */
 void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+
+/* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
+   - strand reaches DEAD (top-level OP_RET or halt_error)
+   - strand voluntarily yields via OP_YIELD (state → READY)
+   - step_budget_in opcodes have been consumed (state remains RUNNING)
+   Returns the number of opcodes consumed.  s->vm must be non-NULL.
+   Caller must have initialised s->stack, s->R, s->pc, s->pc_base,
+   s->cur_consts, s->module, and s->state = USTRAND_STATE_RUNNING. */
+uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
 
 /* Run module to completion. On UVM_OK, *out receives the RET value. On
    error, vm->last_error and vm->last_errmsg are populated and *out is
