@@ -19,6 +19,7 @@
 #include "ucleanup.h"
 #include "uvm.h"
 #include "umodule.h"
+#include "utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -233,23 +234,37 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
     uvm_destroy(&vm);
 }
 
-/* 8. urbi_tag_stop stub: valid args return URBI_OK; NULL args return error. */
+/* 8. urbi_tag_stop: valid args return URBI_OK; NULL args return error.
+ *    Uses a real (empty) UTag so the member_strands walk is safe. */
 UTEST(capi_tag_stop_stub_validates_args)
 {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
     /* NULL vm: must return URBI_ERR_INVALID_ARG. */
-    struct UTag *fake_tag = (struct UTag *)(void *)0x1;
-    int rc = urbi_tag_stop(NULL, fake_tag, make_nil());
+    /* Use a stack-allocated real UTag so dereferencing is safe. */
+    struct UTag real_tag;
+    real_tag.type_tag             = 5u; /* UTYPE_TAG */
+    real_tag.gc_byte              = 0;
+    real_tag.pad0                 = 0;
+    real_tag.flags                = 0;
+    real_tag.pad1[0]              = 0;
+    real_tag.pad1[1]              = 0;
+    real_tag.pad1[2]              = 0;
+    real_tag.member_strands_head  = NULL;
+    real_tag.member_watchers_head = NULL;
+    real_tag.name.kind            = UVAL_NIL;
+    real_tag.name.v.i             = 0;
+
+    int rc = urbi_tag_stop(NULL, &real_tag, make_nil());
     UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
 
     /* NULL tag: must return URBI_ERR_INVALID_ARG. */
     rc = urbi_tag_stop(&vm, NULL, make_nil());
     UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
 
-    /* Both valid: stub returns URBI_OK. */
-    rc = urbi_tag_stop(&vm, fake_tag, make_nil());
+    /* Both valid, empty member list: returns URBI_OK (no strands to deposit). */
+    rc = urbi_tag_stop(&vm, &real_tag, make_nil());
     UASSERT_EQ(rc, URBI_OK);
 
     uvm_destroy(&vm);

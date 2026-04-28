@@ -1,0 +1,273 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Unit tests: urbi_tag_stop synchronous deposit + host_call_pending_count wiring
+ * (row 11 §3.5).
+ *
+ * Tests cover:
+ *  1. tag_stop_deposits_on_member_strands: both strands get TAG_STOP + target.
+ *  2. tag_stop_increments_host_call_pending_count_per_fresh_strand: N=3 strands.
+ *  3. tag_stop_idempotent_on_repeat_call: second call does not double-increment.
+ *  4. tag_stop_does_not_overwrite_cancel: CANCEL is higher priority than TAG_STOP.
+ *  5. tag_stop_overwrites_throw: TAG_STOP overwrites THROW (row 7 C-1).
+ *  6. tag_stop_decrement_on_strand_destroy: counter falls as strands are destroyed. */
+
+#include "utest.h"
+#include "uvm.h"
+#include "urealm.h"
+#include "ustrand.h"
+#include "ucleanup.h"
+#include "utag.h"
+#include "ugc.h"    /* UTYPE_TAG */
+#include "urbi.h"
+#include "umodule.h"
+
+#include <stdlib.h>
+
+#define UTEST(name) static void name(void)
+
+/* === Helpers === */
+
+static UValue
+make_nil(void)
+{
+    UValue v;
+    v.kind = UVAL_NIL;
+    v.v.i  = 0;
+    return v;
+}
+
+/* Create a strand via urbi_strand_create (attaches realm->tag ambient). */
+static UStrand *
+create_member_strand(URealm *r)
+{
+    return urbi_strand_create(r, NULL);
+}
+
+/* === Test cases === */
+
+/* 1. tag_stop_deposits_on_member_strands
+ *
+ * Create 2 strands under a realm; both inherit realm->tag.
+ * Call urbi_tag_stop on realm->tag; both strands must receive UEXEC_TAG_STOP
+ * with unwind_target == realm->tag. */
+UTEST(tag_stop_deposits_on_member_strands)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+    UASSERT(r->tag != NULL);
+
+    UStrand *s1 = create_member_strand(r);
+    UStrand *s2 = create_member_strand(r);
+    UASSERT(s1 != NULL);
+    UASSERT(s2 != NULL);
+
+    /* Both strands must appear in realm->tag member list. */
+    UASSERT(r->tag->member_strands_head != NULL);
+
+    int rc = urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ(rc, URBI_OK);
+
+    /* Both strands get TAG_STOP with the correct target. */
+    UASSERT_EQ((int)s1->pending_unwind, (int)UEXEC_TAG_STOP);
+    UASSERT(s1->unwind_target == r->tag);
+    UASSERT_EQ((int)s2->pending_unwind, (int)UEXEC_TAG_STOP);
+    UASSERT(s2->unwind_target == r->tag);
+
+    urbi_strand_destroy(s1);
+    urbi_strand_destroy(s2);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 2. tag_stop_increments_host_call_pending_count_per_fresh_strand
+ *
+ * 3 strands — all DORMANT (fresh_deposit=true for each).
+ * After urbi_tag_stop, host_call_pending_count must be 3. */
+UTEST(tag_stop_increments_host_call_pending_count_per_fresh_strand)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s1 = create_member_strand(r);
+    UStrand *s2 = create_member_strand(r);
+    UStrand *s3 = create_member_strand(r);
+    UASSERT(s1 != NULL && s2 != NULL && s3 != NULL);
+
+    UASSERT_EQ((int)vm.host_call_pending_count, 0);
+
+    urbi_tag_stop(&vm, r->tag, nil);
+
+    UASSERT_EQ((int)vm.host_call_pending_count, 3);
+
+    urbi_strand_destroy(s1);
+    urbi_strand_destroy(s2);
+    urbi_strand_destroy(s3);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 3. tag_stop_idempotent_on_repeat_call
+ *
+ * Call urbi_tag_stop twice on the same tag.  The cross_strand_stop_pending
+ * flag must prevent double-incrementing the counter. */
+UTEST(tag_stop_idempotent_on_repeat_call)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = create_member_strand(r);
+    UASSERT(s != NULL);
+
+    urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ((int)vm.host_call_pending_count, 1);
+
+    /* Second call: flag is sticky, counter must not change. */
+    urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ((int)vm.host_call_pending_count, 1);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 4. tag_stop_does_not_overwrite_cancel
+ *
+ * A strand with UEXEC_CANCEL must not have its pending_unwind overwritten
+ * by urbi_tag_stop; the counter must also not be incremented for that strand
+ * (CANCEL > TAG_STOP per row 7 C-1). */
+UTEST(tag_stop_does_not_overwrite_cancel)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    /* Two strands: s_cancel pre-set to CANCEL; s_ok stays OK. */
+    UStrand *s_cancel = create_member_strand(r);
+    UStrand *s_ok     = create_member_strand(r);
+    UASSERT(s_cancel != NULL && s_ok != NULL);
+
+    s_cancel->pending_unwind = UEXEC_CANCEL;
+
+    urbi_tag_stop(&vm, r->tag, nil);
+
+    /* s_cancel must retain CANCEL. */
+    UASSERT_EQ((int)s_cancel->pending_unwind, (int)UEXEC_CANCEL);
+    /* s_ok must get TAG_STOP. */
+    UASSERT_EQ((int)s_ok->pending_unwind, (int)UEXEC_TAG_STOP);
+
+    /* Counter must only reflect the fresh deposit on s_ok (= 1), not s_cancel. */
+    UASSERT_EQ((int)vm.host_call_pending_count, 1);
+
+    urbi_strand_destroy(s_cancel);
+    urbi_strand_destroy(s_ok);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 5. tag_stop_overwrites_throw
+ *
+ * A strand with UEXEC_THROW must be overwritten by TAG_STOP (TAG_STOP > THROW). */
+UTEST(tag_stop_overwrites_throw)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = create_member_strand(r);
+    UASSERT(s != NULL);
+
+    s->pending_unwind = UEXEC_THROW;
+
+    urbi_tag_stop(&vm, r->tag, nil);
+
+    /* TAG_STOP must overwrite THROW. */
+    UASSERT_EQ((int)s->pending_unwind, (int)UEXEC_TAG_STOP);
+    UASSERT(s->unwind_target == r->tag);
+
+    /* fresh_deposit was true (THROW maps to fresh), so counter incremented. */
+    UASSERT_EQ((int)vm.host_call_pending_count, 1);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 6. tag_stop_decrement_on_strand_destroy
+ *
+ * Deposit on N strands; verify counter == N.
+ * Destroy strands one by one; counter must track. */
+UTEST(tag_stop_decrement_on_strand_destroy)
+{
+    UVM vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s1 = create_member_strand(r);
+    UStrand *s2 = create_member_strand(r);
+    UStrand *s3 = create_member_strand(r);
+    UASSERT(s1 != NULL && s2 != NULL && s3 != NULL);
+
+    urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ((int)vm.host_call_pending_count, 3);
+
+    /* Destroy s1 — counter must drop to 2. */
+    urbi_strand_destroy(s1);
+    UASSERT_EQ((int)vm.host_call_pending_count, 2);
+
+    /* Destroy s2 — counter must drop to 1. */
+    urbi_strand_destroy(s2);
+    UASSERT_EQ((int)vm.host_call_pending_count, 1);
+
+    /* Destroy s3 — counter must reach 0. */
+    urbi_strand_destroy(s3);
+    UASSERT_EQ((int)vm.host_call_pending_count, 0);
+
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* === Suite entry point === */
+
+void
+test_tag_stop_realm_suite(void)
+{
+    printf("test_tag_stop_realm\n");
+    utest_run("tag_stop deposits on member strands",
+              tag_stop_deposits_on_member_strands);
+    utest_run("tag_stop increments host_call_pending_count per fresh strand",
+              tag_stop_increments_host_call_pending_count_per_fresh_strand);
+    utest_run("tag_stop idempotent on repeat call",
+              tag_stop_idempotent_on_repeat_call);
+    utest_run("tag_stop does not overwrite CANCEL",
+              tag_stop_does_not_overwrite_cancel);
+    utest_run("tag_stop overwrites THROW",
+              tag_stop_overwrites_throw);
+    utest_run("tag_stop counter decrements on strand destroy",
+              tag_stop_decrement_on_strand_destroy);
+}

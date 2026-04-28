@@ -82,6 +82,14 @@ strand_unlink_from_tags(UStrand *s)
 
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
+       decrement the host_call_pending_count before cleanup so sched_quiescent
+       converges once all tagged strands have been destroyed. */
+    if (s->cross_strand_stop_pending != 0 && vm != NULL) {
+        vm->host_call_pending_count--;
+        s->cross_strand_stop_pending = 0u;
+    }
+
     /* Unlink all TAG_SCOPE entries from their owning tags before freeing
        the cleanup stack.  This maintains the §3.4 membership invariant
        and allows utag_destroy to assert an empty member list. */

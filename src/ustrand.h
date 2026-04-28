@@ -113,7 +113,10 @@ struct UStrand {
 
     /* --- Row 9 state machine + budget --- */
     uint8_t                 state;
-    uint8_t                 state_pad[3];
+    uint8_t                 cross_strand_stop_pending;  /* T31: set when urbi_tag_stop deposits
+                                                           cross-strand; cleared + counter-
+                                                           decremented at ustrand_destroy. */
+    uint8_t                 state_pad[2];               /* was [3] — shrunk by 1 for above flag */
     uint16_t                instruction_budget_remaining;
     uint16_t                budget_pad;
 

@@ -30,6 +30,9 @@
 #include "uvm_internal.h" /* vm_close_upvalues */
 #include "uvm.h"          /* dispatch_loop_until_yield */
 #include "urbi.h"         /* UErrCode, public API declarations */
+#include "usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
+#include "urbi_internal.h"      /* URBI_INTERNAL_ASSERT */
+#include "utag.h"               /* UTag, member_strands_head */
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
@@ -310,16 +313,79 @@ fatal:
  * Functions that accept NULL for mandatory pointer args return URBI_ERR_INVALID_ARG.
  */
 
-/* urbi_tag_stop — cross-strand TAG_STOP deposit.
- * T31 wires the real member-strand walk; T12 stub checks validity only. */
+/* urbi_tag_stop — cross-strand TAG_STOP deposit (row 11 §3.5).
+ *
+ * Walks tag->member_strands_head and deposits UEXEC_TAG_STOP on every
+ * member strand, honouring the row 7 C-1 priority rule:
+ *   TAG_STOP overwrites OK / RETURN / THROW; does NOT overwrite CANCEL.
+ *
+ * For each fresh deposit, increments vm->host_call_pending_count once and
+ * sets s->cross_strand_stop_pending = 1 (idempotent flag; decremented at
+ * ustrand_destroy so sched_quiescent eventually converges).
+ *
+ * WAITING strands are woken via sched_strand_unblock (SLEEP) or
+ * sched_strand_make_runnable (other reasons) so they run and process the
+ * unwind before the scheduler reaches quiescence.
+ *
+ * Watcher cascade deferred to T34/T35 (UWatcher type not yet defined).
+ * At M3 tag->member_watchers_head is always NULL.
+ *
+ * NOT ISR-safe.  Returns URBI_ERR_INVALID_ARG for NULL vm or tag. */
 int
 urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 {
+    UCleanupEntry *e;
+    UCleanupEntry *next;
+
     if (!vm || !tag) return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
-    /* Cross-strand deposit deferred to T31 (row 11 §3.5 — needs member_strands walk).
-     * T12 stub: arg validity verified, semantics are a no-op.  T31 replaces body. */
-    (void)value;
+
+    /* (1) Deposit pending TAG_STOP unwind on every member strand.
+     * Snapshot next via UCleanupEntry.next_member — entries do not unlink
+     * themselves during this walk; they unlink when the owning OP_POP_TAG /
+     * row 7 walker pop fires. */
+    for (e = tag->member_strands_head; e != NULL; e = next) {
+        UStrand *s;
+        bool fresh_deposit;
+
+        next = e->next_member;
+        s    = e->strand_back;
+        URBI_INTERNAL_ASSERT(s != NULL);
+
+        /* Row 7 C-1 priority: TAG_STOP wins over OK / RETURN / THROW;
+         * TAG_STOP loses to CANCEL (don't overwrite). */
+        fresh_deposit = (s->pending_unwind == UEXEC_OK
+                         || s->pending_unwind == UEXEC_RETURN
+                         || s->pending_unwind == UEXEC_THROW);
+        if (fresh_deposit) {
+            s->pending_unwind = UEXEC_TAG_STOP;
+            s->unwind_target  = tag;
+            s->unwind_value   = value;
+        }
+        /* If already CANCEL or TAG_STOP, leave intact (idempotent). */
+
+        /* host_call_pending_count: increment once per strand that receives
+         * a fresh cross-strand deposit.  The cross_strand_stop_pending flag
+         * guards idempotency on repeated calls; the counter is decremented
+         * at ustrand_destroy. */
+        if (fresh_deposit && !s->cross_strand_stop_pending) {
+            s->cross_strand_stop_pending = 1u;
+            vm->host_call_pending_count++;
+        }
+
+        /* Wake any blocked strand so it can consume the unwind. */
+        if (USTRAND_IS_WAITING(s)) {
+            if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP)
+                sched_strand_unblock(s);   /* removes from sleep_q + makes runnable */
+            else
+                sched_strand_make_runnable(s);  /* EVENT / JOIN / other reason */
+        }
+    }
+
+    /* (2) Watcher cascade deferred to T34/T35 when UWatcher type lands.
+     * At M3 tag->member_watchers_head is always NULL — no action needed. */
+
+    /* (3) Return synchronously — all deposits are complete. */
     return URBI_OK;
 }
 
