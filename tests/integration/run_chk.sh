@@ -28,6 +28,20 @@ if [ ! -r "$CHK" ]; then
     exit 2
 fi
 
+# Parse tunables header. If present and doesn't match current build preset,
+# skip (success). Pattern: '# tunables: <preset>' on its own line.
+required_preset=$(grep -E '^[[:space:]]*#[[:space:]]*tunables:[[:space:]]*' "$CHK" | \
+                   head -1 | \
+                   sed -E 's/^[[:space:]]*#[[:space:]]*tunables:[[:space:]]*//; s/[[:space:]]*$//')
+if [ -n "$required_preset" ]; then
+    current_preset="${URBI_BUILD_PRESET:-default}"
+    if [ "$required_preset" != "$current_preset" ]; then
+        printf 'SKIP %s (requires tunables: %s; current: %s)\n' \
+               "$CHK" "$required_preset" "$current_preset"
+        exit 0
+    fi
+fi
+
 TMPDIR_LOCAL=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
 

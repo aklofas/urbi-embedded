@@ -79,7 +79,7 @@ test-chk: $(BUILDDIR)/urbi
 	count=0; \
 	for f in $$(find tests/chk -name '*.chk' 2>/dev/null | sort); do \
 	    count=$$((count + 1)); \
-	    tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
+	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
 	done; \
 	echo "$$count chk fixture(s) passed"
 
