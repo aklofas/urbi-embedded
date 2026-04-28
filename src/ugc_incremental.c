@@ -54,6 +54,7 @@
 #include "ugc_capi.h"
 #include "uvm.h"
 #include "urbi.h"
+#include "urbi_internal.h"
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */
@@ -167,8 +168,9 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
 
     UCell *cell = (UCell *)(slot->v.p);
 
-    /* Only shade if cell is current_white (neither gray nor black). */
-    if ((cell->gc_byte & UGC_COLOR_MASK) != vm->current_white) return;
+    /* Only shade if cell is white (not yet gray or black).
+     * Skip already-grayed/blackened cells for idempotency. */
+    if (IS_GRAY(cell) || IS_BLACK(cell)) return;
 
     /* Paint gray and push onto work-list via sidecar. */
     gc_shade_gray(vm, cell);
@@ -275,7 +277,7 @@ gc_mark_incremental_step(UVM *vm, size_t budget)
  * re-scan its registers here.  M3 baseline has no cur_strand pointer per
  * T19 design choice.
  *
- * Returns approximate work units consumed (256 = one atomic-finish slice). */
+ * Returns bytes of work consumed (accumulated from gray-list drain). */
 static size_t
 gc_atomic_finish_step(UVM *vm)
 {
@@ -286,6 +288,7 @@ gc_atomic_finish_step(UVM *vm)
     /* Drain residual gray work-list (fully in-slice — bounded by remaining
      * gray set after MARK_INCREMENTAL, which converges because no mutator
      * runs during ATOMIC_FINISH). */
+    size_t consumed = 0u;
     while (gc_gray_head(vm) != NULL) {
         /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
         UAllCellsNode *node = gc_gray_head(vm);
@@ -300,14 +303,20 @@ gc_atomic_finish_step(UVM *vm)
         }
 
         cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_BLACK);
+        consumed += node->size;
     }
+
+    /* Gray work-list should be fully drained before SWEEP. */
+    URBI_INTERNAL_ASSERT(gc_gray_head(vm) == NULL);
 
     /* Transition to SWEEP; initialise sweep cursor to start of all-cells list. */
     vm->gc_phase = GC_PHASE_SWEEP;
     gc_set_sweep_cursor(vm, gc_node_head(vm));
     gc_set_sweep_cursor_prev(vm, NULL);
 
-    return 256u;
+    /* Return accumulated consumed bytes; if gray list was empty, return
+     * a small constant so slice loop progresses. */
+    return consumed > 0u ? consumed : 64u;
 }
 
 /* === end_of_cycle_threshold_update ===
@@ -611,6 +620,8 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 void
 gc_shade_gray(UVM *vm, UCell *cell)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Idempotency: only shade white cells. */
     uint8_t color = (uint8_t)(cell->gc_byte & UGC_COLOR_MASK);
     if (color == UGC_COLOR_GRAY || color == UGC_COLOR_BLACK) return;
