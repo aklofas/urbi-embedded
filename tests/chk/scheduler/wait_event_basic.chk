@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: a strand calls waituntil(event); it blocks with
+#         USTRAND_REASON_EVENT; when the event fires the strand resumes
+#         and prints its result.
+#
+# defer-to: M5
+#
+# Reason: the reactive runtime (at(), whenever(), waituntil(), Event.new)
+# is owned entirely by M5.  There is no event-wait primitive at M3.
+# The USTRAND_REASON_EVENT sub-code is reserved in the state machine but
+# the wiring (UEvent, watcher pool, event-queue drain → strand unblock)
+# is not present.
+#
+# When M5 lands, implement this fixture by:
+#   var e = Event.new;
+#   var t = Tag.new;
+#   t: { waituntil(e?); echo("fired") };
+#   e!;
+#   --- expected output ---
+#   [00000001] "fired"

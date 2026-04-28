@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: tag.stop() issued from one strand cancels a different strand that
+#         is currently in WAITING state or mid-execution; the cancelled strand
+#         does not produce further output.
+#
+# defer-to: T31 + T39
+#
+# Reason: cross-strand tag cancellation requires urbi_tag_stop's cross-strand
+# deposit path (T31) which is not wired at M3.  At M3, tag.stop() only works
+# synchronously within the same strand (when the unwind walker absorbs
+# UEXEC_TAG_STOP in the cleanup stack, which itself lands at T29/T30).
+# T39 is additionally needed for the ## host: mechanism to drive two strands
+# in a chk fixture.
+#
+# When T31 + T39 land, implement this fixture by:
+#   ## host: create strand A (blocking body); create strand B (calls tag.stop on A's tag)
+#   ## host: start A and B; step until quiescent
+#   ## host: assert A produced no output after the stop point

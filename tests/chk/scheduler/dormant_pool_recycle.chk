@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: a strand that reaches DEAD state is returned to the strand pool;
+#         a subsequent allocation reuses the same slot without new allocation.
+#
+# defer-to: M5 or v1.x
+#
+# Reason: strand pooling (recycle-after-DEAD) is not implemented at M3.
+# The M3 strand C API (T20) allocates strands fresh from the VM allocator
+# and frees them on destroy; no free-list or pool exists yet.  Pool recycling
+# is a memory-optimisation deferred to M5 (stdlib) or v1.x (performance pass).
+# This fixture also requires host-driver infrastructure (T39) to observe
+# pool internals from a chk fixture.
+#
+# When the strand pool lands, implement this fixture by:
+#   ## host: run strand A to completion; record its allocation address
+#   ## host: allocate strand B; assert it reuses strand A's slot

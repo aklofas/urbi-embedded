@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: a strand created in DORMANT state has a tag attached before start;
+#         when tag.stop() is called before start, the strand never runs.
+#
+# defer-to: T39 + T29
+#
+# Reason: requires both Strand.new binding (T20-promotion) and UTag runtime
+# (T29 — UTag + ambient-tag inheritance helpers).  The tag-attach-before-start
+# path cannot be expressed in pure urbiscript at M3.  T39 adds host-driver
+# capability; T29 wires tag runtime into strand lifecycle.
+#
+# When T39 + T29 land, implement this fixture by:
+#   ## host: create strand S in DORMANT state, attach tag T
+#   ## host: call urbi_tag_stop(T) — strand should stay DORMANT → DEAD, never run
+#   ## host: start VM, step until quiescent
+#   --- expected output (no output from strand body) ---
+#   (empty)

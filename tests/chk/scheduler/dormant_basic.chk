@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: a strand created in DORMANT state is not dispatched until
+#         urbi_strand_start transitions it to READY; after start it runs.
+#
+# defer-to: T39 + T20-promotion
+#
+# Reason: requires Strand.new urbiscript binding to create a strand in
+# DORMANT state and then start it.  The chk runner is REPL-driven and has
+# no way to express the create-then-start sequence from urbiscript alone
+# at M3.  T39 introduces the ## host: driver; T20-promotion exposes
+# Strand.new at the urbiscript level.
+#
+# When T39 + T20-promotion land, implement this fixture by:
+#   ## host: s = urbi_strand_create(vm, realm, body_chunk)
+#   ## host: assert s->state == USTRAND_STATE_DORMANT
+#   ## host: urbi_strand_start(s)
+#   ## host: step until quiescent
+#   --- expected output (body_chunk prints "ran") ---
+#   [00000001] "ran"

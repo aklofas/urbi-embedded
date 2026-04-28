@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: two strands enqueued in FIFO order; scheduler dispatches them
+#         in order A-then-B; both run to completion.
+#
+# defer-to: T39 + T20-promotion
+#
+# Reason: requires Strand.new urbiscript syntax to create multiple strands
+# from within a chk fixture.  The chk runner is REPL-driven only — it has
+# no host hook to call urbi_strand_create / urbi_strand_start for separate
+# strands.  T20 ships the C API but not the urbiscript-level Strand.new
+# binding; that promotion is tracked in T20-promotion (M4/M5 scope).
+# T39 (chk runner extension) adds the ## host: driver mechanism needed to
+# drive two strands from C and observe their scheduling order.
+#
+# When T39 + T20-promotion land, implement this fixture by:
+#   1. Creating two strands via urbi_strand_create (host driver).
+#   2. Starting both with urbi_strand_start (they enter READY state).
+#   3. Stepping the VM: assert first strand runs before second (FIFO).
+#
+# Urbiscript source (activate at T39 + T20-promotion):
+#   ## host: create strand A (body: echo("A")); create strand B (body: echo("B"))
+#   ## host: step until quiescent
+#   --- expected output ---
+#   [00000001] "A"
+#   [00000002] "B"

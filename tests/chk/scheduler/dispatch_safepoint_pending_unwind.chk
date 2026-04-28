@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: a throw inside a backward-branch loop hits a safepoint; the
+#         pending_unwind check at safepoint runs urbi_unwind(); the catch
+#         block absorbs the exception; execution continues after the try/catch.
+#
+# defer-to: T39
+#
+# Reason: while try/catch/throw are fully wired at M3 (T10) and the safepoint
+# pending_unwind path is implemented, observing that the *safepoint* (not a
+# direct throw at a non-loop site) triggers the unwind requires a construct
+# where OP_THROW fires inside a loop body so that the backward-branch
+# safepoint fires first.  This cannot be expressed cleanly in pure urbiscript
+# at M3 without the tunables-header to set a tiny budget (otherwise the loop
+# might not reach the safepoint before the throw).  T39 provides the tunables
+# hook.
+#
+# Note: basic try/catch correctness (throw outside loops) is already tested
+# in tests/chk/control_transfer/ (T13 fixtures) and unit tests (T9/T10).
+# This fixture specifically targets the safepoint-then-unwind path.
+#
+# When T39 lands, implement this fixture by:
+#   ## tunables: URBI_STRAND_BUDGET_MAX=2
+#   try { var i = 0; while (i < 1) { i = i + 1; throw 99 } } catch (e) { echo(e) }
+#   --- expected output ---
+#   [00000001] 99

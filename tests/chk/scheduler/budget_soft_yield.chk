@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: a strand whose per-strand instruction_budget_remaining reaches 0
+#         yields back to the scheduler (soft yield) and is re-enqueued READY
+#         rather than killed; it resumes on the next scheduler turn.
+#
+# defer-to: T39
+#
+# Reason: observing soft-yield behaviour from a chk fixture requires the
+# ## host: tunables header to override URBI_STRAND_BUDGET_MAX to a small value
+# (e.g. 2 opcodes) so that a short urbiscript snippet triggers a budget
+# exhaustion mid-run.  The chk runner does not support tunables headers until
+# T39.  The soft-yield path itself is fully wired in dispatch_loop_until_yield
+# (safepoint block; instruction_budget_remaining == 0 → sched_strand_yield).
+#
+# When T39 lands, implement this fixture by:
+#   ## tunables: URBI_STRAND_BUDGET_MAX=2
+#   ## host: step VM over multiple turns; assert strand resumes after yield
+#   --- expected output ---
+#   [00000001] 1
+#   [00000002] 2

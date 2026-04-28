@@ -1,0 +1,24 @@
+# Milestone: M3
+# Covers: a function call (OP_CALL) hits a safepoint at call-frame-push;
+#         a non-top-level OP_RET hits a safepoint at frame-pop; both
+#         decrement instruction_budget_remaining correctly.
+#
+# defer-to: T39
+#
+# Reason: verifying safepoint fires at OP_CALL requires host hooks to observe
+# instruction_budget_remaining before and after a call within a single
+# dispatch quantum.  A pure urbiscript test (function call that returns a
+# value) would exercise the path but cannot assert the budget decrement.
+# The chk runner is REPL-only; T39 adds ## host: hooks for this.
+#
+# Note: function call correctness (return value, frame push/pop) is already
+# verified in tests/unit/test_dispatch_loop.c::dispatch_nested_call_and_ret
+# which directly tests the C dispatch_loop_until_yield interface.  This
+# fixture targets the safepoint budget-accounting aspect specifically.
+#
+# When T39 lands, implement this fixture by:
+#   ## host: set URBI_STRAND_BUDGET_MAX=10; record budget_before_call
+#   function f() { 42 }; f()
+#   ## host: record budget_after_call; assert budget decreased by >= 2
+#   --- expected output ---
+#   [00000001] 42

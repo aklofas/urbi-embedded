@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: when the VM-wide step_budget_remaining reaches 0, dispatch_loop
+#         exits with the strand still in RUNNING state; urbi_step returns
+#         URBI_STEP_RUNNING and the host is expected to call urbi_step again.
+#
+# defer-to: T39
+#
+# Reason: observing VM-wide step-budget exhaustion from a chk fixture requires
+# the ## host: mechanism to call urbi_step with a tiny step budget (e.g. 1)
+# and assert the return code is URBI_STEP_RUNNING rather than QUIESCENT.
+# The chk runner does not support calling urbi_step with custom budgets until
+# T39.  The step-budget path is wired in dispatch_loop_until_yield
+# (vm->step_budget_remaining == 0 → exit with RUNNING state).
+#
+# When T39 lands, implement this fixture by:
+#   ## host: rc = urbi_step(vm, 1)  -- budget = 1 opcode
+#   ## host: assert rc == URBI_STEP_RUNNING
+#   ## host: rc = urbi_step(vm, UINT64_MAX)  -- run to quiescent
+#   ## host: assert rc == URBI_STEP_QUIESCENT
