@@ -1261,7 +1261,8 @@ dispatch:
                     vm_format_type_error_msg(vm, "POP_TAG: FLAG_HAS_ONLEAVE not wired at M3");
                     HALT();
                 }
-                /* T30: retrieve owning_tag before pop (pop clears the entry slot). */
+                /* T30: capture owning_tag before pop — the slot remains valid memory but
+                 * is below cleanup_depth after pop and may be reused by a later push. */
                 UTag *tag = top->owning_tag;
                 /* Unlink this entry from tag->member_strands_head (singly-linked
                  * list removal via next_member). Only unlink when tag is non-NULL

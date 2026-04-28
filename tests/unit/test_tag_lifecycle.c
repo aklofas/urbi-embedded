@@ -14,7 +14,6 @@
 #include "usched_cooperative.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #define UTEST(name) static void name(void)
 
@@ -365,8 +364,10 @@ UTEST(op_push_tag_member_strands_head_wired)
 }
 
 /* 10. op_push_tag_oom_marks_strand_fatal:
- *     Install a spy allocator that fails on the first (utag_create) alloc
- *     inside OP_PUSH_TAG.  Verify the strand goes fatal with UEXEC_THROW
+ *     Install a spy allocator that fails on all allocations (fail_at = 0).
+ *     uvm_init's event_ring alloc fails first and tolerates NULL gracefully;
+ *     utag_create's subsequent allocation failure triggers the OP_PUSH_TAG
+ *     fatal path under test.  Verify the strand goes fatal with UEXEC_THROW
  *     and state DEAD. */
 UTEST(op_push_tag_oom_marks_strand_fatal)
 {
