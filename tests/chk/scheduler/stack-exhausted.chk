@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: stack-exhausted exception is catchable; caught exception matches
+#         Exception.Scheduling type via isA(); message includes location.
+# defer-to: M4 (requires Exception.Scheduling type hierarchy and isA() method dispatch)
+#
+# Reason:
+#   The fixture catches a stack-overflow via 'catch(var s if s.isA(Exception.Scheduling))'.
+#   This requires: (1) a named exception type hierarchy (Exception.Scheduling) —
+#   M4 stdlib object model; (2) isA() method dispatch on the exception value —
+#   M4 prototype-OOP.  At M3 try/catch works but only with unguarded catch clauses
+#   (no 'if cond' guard with method calls).  Stack-exhaustion detection is present
+#   in the C runtime but the typed exception hierarchy is M4.
+#
+# Original urbiscript (activate at M4 with exception type hierarchy):
+# # function f() { f() } |;
+# # try { f() } catch(var s if s.isA(Exception.Scheduling)) { echo(s) };
+# # [00000001] *** input.u:5.16-18: stack space exhausted

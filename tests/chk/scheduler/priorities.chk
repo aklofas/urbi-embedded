@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: real-time priority (tag.setPriority(5)) causes high-priority strand to
+#         run without interruption; loop counter stays at 0 relative to origin.
+# defer-to: never (requires URBI_SCHED_RT real-time scheduler — v1.x only)
+#
+# Reason:
+#   This fixture tests real-time scheduling priorities via tag.setPriority(n),
+#   which requires URBI_SCHED_RT — the real-time scheduler variant that is v1.x
+#   scope (post-v1.0 freestanding milestone).  The cooperative scheduler used
+#   through v1.0 does not implement priority preemption.  REVIVAL.md §12 marks
+#   URBI_SCHED_RT as v1.x scope.  Also uses tag.setPriority() and tag.stop()
+#   method dispatch (M4), and ',' separator (M5 chk driver).
+#
+# Original urbiscript (activate at v1.x with URBI_SCHED_RT):
+# # var x = 0 | {};
+# # t: { while(true) x++ },
+# # var hp = Tag.new() | hp.setPriority(5) | {};
+# # hp: { var xorig = x; for(var i: 100) nil; x - xorig };
+# # [00000001] 0
+# # t.stop();

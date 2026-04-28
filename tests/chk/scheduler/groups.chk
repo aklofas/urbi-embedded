@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: Group type — broadcast method calls to all members in parallel;
+#         Group.new() << member chaining; assignment broadcasts to all members.
+# defer-to: M6 (requires Group stdlib type and class/method dispatch)
+#
+# Reason:
+#   The Group type is a stdlib concurrency helper scheduled for M6.  It depends
+#   on prototype-OOP method dispatch (M4) for member method invocation and on
+#   ',' parallel invocation semantics (M5) to broadcast calls concurrently.
+#   Class definition with 'class C { var val = 0 }' also requires M4.
+#
+# Original urbiscript (activate at M6 with Group type and full stdlib):
+# # class C { var val = 0 }|; var a = C.new()|; var b = C.new()|;
+# # var g2 = Group.new() << a << b|;
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/groups.chk)

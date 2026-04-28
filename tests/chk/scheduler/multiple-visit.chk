@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: loop body with break/continue is desugared only once; '&' inside a
+#         while loop fires both echo calls before breaking.
+# defer-to: M5 (requires '&' separator runtime in chk driver)
+#
+# Reason:
+#   The fixture uses '&' inside while/for loop bodies to verify that the AST is
+#   not incorrectly re-desugared on each iteration.  '&' requires the M5 chk
+#   driver (realm-managed scheduler path).  The cooperative scheduler's loop
+#   body handling with break/continue is separately verified at the unit-test
+#   level in M3.
+#
+# Original urbiscript (activate at M5 with urbi_step chk driver):
+# # while(true) { echo(1) & echo(1); break };
+# # [00000001] *** 1
+# # [00000002] *** 1
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/multiple-visit.chk)

@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: System.cycle monotonically increases across sequential statements (';');
+#         '|' separator executes within the same cycle; compound expressions.
+# defer-to: M4 (requires System.cycle counter via 'import System.*' stdlib)
+#
+# Reason:
+#   The fixture uses 'System.cycle' — a scheduler cycle counter exposed via
+#   'import System.*'.  The System namespace and cycle counter are M4 stdlib
+#   features (part of the stats/introspection surface).  At M3 there is no
+#   System namespace available in urbiscript.  The underlying determinism counter
+#   (urbi_get_determinism_checksum) is a C API diagnostic, not exposed to the
+#   script layer at M3.
+#
+# Original urbiscript (activate at M4 with System stdlib):
+# # import System.*|;
+# # { var ref = cycle | { {} | {} } | cycle - ref };
+# # [00000001] 0
+# # { var ref = cycle; {}; {}; cycle - ref };
+# # [00000003] 3
