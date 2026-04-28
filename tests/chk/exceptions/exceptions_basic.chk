@@ -1,0 +1,10 @@
+# Milestone: M3
+# Covers: basic try/catch without type guards; unguarded catch receives exception value;
+#         control flow and side effects work within catch block
+# Source: legacy/repos/aldebaran-urbi/tests/2.x/exceptions/exceptions.chk (subset)
+
+var caught = 0; try { throw(1) } catch (e) { caught = 1 }; caught
+[00000001] 1
+
+var val = 0; try { throw(42) } catch (e) { val = 4 }; val
+[00000002] 4

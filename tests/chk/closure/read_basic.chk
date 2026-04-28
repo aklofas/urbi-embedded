@@ -1,0 +1,13 @@
+# Milestone: M3
+# Covers: read closure (adder pattern): inner function captures inc from outer scope;
+#         write closure (counter pattern): inner function mutates captured count
+# Source: legacy/repos/aldebaran-urbi/tests/2.x/closure/read.chk (subset)
+
+var adder = function (inc) { function (x) { x + inc } }; var a5 = adder (5); a5 (10)
+[00000001] 15
+
+var adder = function (inc) { function (x) { x + inc } }; var a7 = adder (7); a7 (10)
+[00000002] 17
+
+var makeCounter = function () { var count = 0; function () { count = count + 1; count } }; var c1 = makeCounter(); c1(); c1(); c1()
+[00000003] 3

@@ -1,0 +1,10 @@
+# Milestone: M3
+# Covers: uninitialized var with try/catch fallback; catch executes on throw;
+#         unguarded catch clauses work at M3 (no type guards)
+# Source: legacy/repos/aldebaran-urbi/tests/2.x/exceptions/regressions.chk (subset)
+
+var test = nil; try { throw(42) } catch (e) { test = 4 }; test
+[00000001] 4
+
+var test = nil; try { throw(42) } catch (e) { test = 1; test = test + 3 }; test
+[00000002] 4
