@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: exception regressions: uninitialized var += in catch; asString exception
+#         in asTopLevelPrintable; 1:1 non-tag colon error; scheduler stuck on
+#         concurrent throw + freeze scenario.
+# defer-to: M4 (requires e.isA(Float) method guard, 'at (e?)' reactive watcher, freeze)
+#
+# Reason:
+#   Several cases in this fixture require M4+: 'catch(var e if e.isA(Float))' uses
+#   isA() method dispatch (M4); 'class X { function asString() { 0/0 } }' uses
+#   class definition (M4); the scheduler-stuck regression case uses ',' and 't.freeze'
+#   method (M5).  The uninitialized-var-in-catch pattern (var test; test += 3) and
+#   bare-throw from inside a catch block could partially work at M3 but the fixture
+#   as a whole cannot pass until M4+ is available.
+#
+# Original urbiscript (activate at M4 with exception type hierarchy and class definition):
+# # var test; try { test += 3 } catch { test = 1; test += 3 };
+# # [00000001] 4
+# # echo(test); [00000002] *** 4
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/exceptions/regressions.chk)

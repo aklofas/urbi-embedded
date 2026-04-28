@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: Exception.new("exc") constructor; throw/catch with isA() guard; re-throw;
+#         bare throw; nested try; finally-before-throw; Exception display.
+# defer-to: M4 (requires Exception type hierarchy, e.isA() method dispatch, Exception.Constness)
+#
+# Reason:
+#   The fixture uses 'Exception.new("exc")' — a constructor call on the Exception
+#   prototype (M4 object model), 'e.isA(exc)' method dispatch (M4), exception type
+#   hierarchy (Exception.Constness, Exception.BadInteger etc. — M4 stdlib), and
+#   'e.isA(Float)' typed guards.  At M3, try/catch works with unguarded catch
+#   clauses and throw of arbitrary values, but the typed exception hierarchy and
+#   isA() dispatch are not available.
+#
+# Original urbiscript (activate at M4 with exception type hierarchy):
+# # var exc = Exception.new("exc"); [00000001] Exception `exc'
+# # throw exc; [00000002:error] !!! input.u:@.1-9: exc
+# # try { echo("before"); throw exc; echo("after") } catch(var e if e.isA(exc)) { echo("caught") };
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/exceptions/exceptions.chk)
