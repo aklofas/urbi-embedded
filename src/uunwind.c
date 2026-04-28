@@ -49,9 +49,9 @@ zero_registers(UStrand *s, uint16_t base, uint16_t count)
    pattern_matches: M3 catch-everything stub.  T10/M5 refine to actual
                     pattern dispatch (exception class matching, etc.).
    bind_catch_value: no-op stub.  T10 will emit a MOVE to bind the caught
-                     value into the catch-clause's named register. */
+                     value into the catch-clause's named register.
 
-struct UPattern;  /* forward-decl; struct definition lands at T10 */
+   struct UPattern is forward-declared in ucleanup.h (included above). */
 
 static int
 pattern_matches(struct UPattern *pat, UValue val)
