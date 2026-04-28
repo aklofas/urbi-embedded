@@ -122,11 +122,9 @@ UTEST(vm_step_budget_exhausts_mid_program)
     /* Call urbi_step with budget=1 opcode.  With a non-trivial program, this
      * should not be QUIESCENT after the very first call. */
     UStepResult first = urbi_step(&vm, 1, NULL);
-    /* Either RUNNING (typical) or QUIESCENT (if the 1 opcode happened to
-     * complete the program — very unlikely with a while loop).
-     * We assert that we eventually reach QUIESCENT within a generous limit. */
-    (void)first;  /* result may vary; just must not be FATAL */
-    UASSERT((int)first != (int)URBI_STEP_FATAL);
+    /* The first call with budget=1 opcode on a while loop must return
+     * URBI_STEP_RUNNING (not enough budget to complete). */
+    UASSERT(first == URBI_STEP_RUNNING);
 
     /* Drive to quiescent with a large budget. */
     int reached_quiescent = 0;
@@ -178,10 +176,14 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     /* Run one step with a minimal budget; the strand should soft-yield at the
      * first safepoint because instruction_budget_remaining == 0. */
     UStepResult r1 = urbi_step(&vm, 10, NULL);
-    /* The strand must not have crashed. */
-    UASSERT((int)r1 != (int)URBI_STEP_FATAL);
+    /* With zero per-strand budget, the first step must return URBI_STEP_RUNNING
+     * (soft yield at the first safepoint). */
+    UASSERT(r1 == URBI_STEP_RUNNING);
 
-    /* Run to completion. */
+    /* Run to completion.  The loop limit of 100,000 is generous; the strand's
+     * per-strand budget is reset to URBI_STRAND_BUDGET_MAX (≈1000) each time
+     * it is re-enqueued after a soft yield, so completion is guaranteed to
+     * happen much faster than the limit unless there is a logic error. */
     int reached = 0;
     int iters = 100000;
     while (iters-- > 0) {

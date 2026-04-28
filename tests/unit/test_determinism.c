@@ -11,6 +11,8 @@
 #include "urbi.h"
 #include "uvm.h"
 
+#include <string.h>
+
 #define UTEST(name) static void name(void)
 
 /* ---- Smoke test: verify the file compiles in both debug and release modes --- */
@@ -65,7 +67,10 @@ UTEST(determinism_checksum_differs_after_namespace_binding)
     UValue v;
     v.kind  = UVAL_INT;
     v.v.i   = 42;
-    int rc = unamespace_set(&vm, r->bindings, "x", v);
+    /* Intern the key before passing to unamespace_set. */
+    const char *ikey = ustr_intern(&vm, "x", 1);
+    UASSERT(ikey != NULL);
+    int rc = unamespace_set(&vm, r->bindings, ikey, v);
     UASSERT(rc == 0);  /* 0 = success from unamespace_set */
 
     uint64_t h_after = urbi_get_determinism_checksum(&vm);
@@ -96,8 +101,16 @@ UTEST(determinism_checksum_two_identical_vms_match)
     UASSERT(r1 != NULL);
     UASSERT(r2 != NULL);
 
-    UASSERT(unamespace_set(&vm1, r1->bindings, "answer", v) == 0);
-    UASSERT(unamespace_set(&vm2, r2->bindings, "answer", v) == 0);
+    /* Intern the key in each VM (intern table is per-VM; keys are stable within
+     * their VM but may have different pointer addresses across VMs).  The
+     * checksum walker visits only values, not keys, so cross-VM comparison is
+     * valid for UVAL_INT payloads. */
+    const char *ikey1 = ustr_intern(&vm1, "answer", 6);
+    const char *ikey2 = ustr_intern(&vm2, "answer", 6);
+    UASSERT(ikey1 != NULL);
+    UASSERT(ikey2 != NULL);
+    UASSERT(unamespace_set(&vm1, r1->bindings, ikey1, v) == 0);
+    UASSERT(unamespace_set(&vm2, r2->bindings, ikey2, v) == 0);
 
     uint64_t h1 = urbi_get_determinism_checksum(&vm1);
     uint64_t h2 = urbi_get_determinism_checksum(&vm2);

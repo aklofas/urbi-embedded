@@ -20,6 +20,8 @@
 #include "urbi.h"
 #include "uvm.h"
 
+#include <string.h>
+
 #define UTEST(name) static void name(void)
 
 /* ---- Smoke test: compiles in both debug and release modes ---- */
@@ -47,7 +49,11 @@ checksum_with_int_binding(const char *name, int64_t value)
     UValue v;
     v.kind = UVAL_INT;
     v.v.i  = value;
-    (void)unamespace_set(&vm, r->bindings, name, v);
+    /* Intern the key before passing to unamespace_set, which expects an
+     * interned pointer for == comparison during lookup. */
+    const char *iname = ustr_intern(&vm, name, strlen(name));
+    UASSERT(iname != NULL);
+    (void)unamespace_set(&vm, r->bindings, iname, v);
 
     uint64_t h = urbi_get_determinism_checksum(&vm);
     uvm_destroy(&vm);
