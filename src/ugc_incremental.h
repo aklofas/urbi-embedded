@@ -225,13 +225,13 @@ urbi_gc_slot_write(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
         gc_shade_gray(vm, uvalue_as_cell(child));
     }
 
-    /* (2) Watcher dirty-set hook (row 10/11 boundary).
-     * observer_dirty is a no-op stub at T25; T34 replaces it with the real
-     * impl that walks the per-cell observer list and bumps watcher_dirty_count.
+    /* (2) Watcher dirty-set hook.
+     * observer_dirty (src/uwatcher.c) bumps vm->watcher_dirty_count;
+     * the scheduler calls watcher_eval_dirty on the next safepoint turn.
      * This strategy header is always compiled with URBI_GC_INCREMENTAL, so
      * the watcher hook is always present (no #if guard needed here). */
     if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
-        observer_dirty(vm, parent, key);   /* row 11 — T34 */
+        observer_dirty(vm, parent, key);
     }
 
     /* (3) Actual store — caller's responsibility.
