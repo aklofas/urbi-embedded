@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: variables declared inside a tag scope ({t: var foo = 42; foo}) are
+#         not visible outside the scope — scoping error on out-of-scope lookup.
+# defer-to: M4 (requires Tag.new() method dispatch for var t = Tag.new())
+#
+# Reason:
+#   The fixture exercises tag scope variable isolation using 'var t = Tag.new()'.
+#   Tag.new() is an object method call on the Tag prototype — M4 object-method
+#   dispatch.  At M3 we can declare tags with 'var t = 0; t: {...}' (treating
+#   the integer as an opaque tag key) but Tag.new() as a constructor call is not
+#   available.  The scoping semantic itself (variable isolation inside tag scope)
+#   is expected to work at M3 with the existing OP_PUSH_TAG/OP_POP_TAG.
+#
+# Original urbiscript (activate at M4 with Tag.new() method dispatch):
+# # var t = Tag.new() | {t: var foo = 42; foo};
+# # [00000001:error] !!! input.u:@.19-21: lookup failed: foo

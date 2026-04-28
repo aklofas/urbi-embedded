@@ -1,0 +1,18 @@
+# Milestone: M3
+# Covers: implicit tag creation at Lobby scope (t:) auto-creates a UTag; invalid
+#         implicit tags (with arguments, in non-Lobby scope, composite) raise errors.
+# defer-to: M4 (requires implicit tag creation via Lobby scope lookup, t.block() method,
+#             and Tag.new() method dispatch)
+#
+# Reason:
+#   Implicit tag auto-creation ('t:') requires the Lobby-level lookup fallback that
+#   auto-instantiates a UTag — part of the M4 Lobby/connection infrastructure.
+#   t.block() and t1.t2.block() method calls are M4.  Tag.new("t1") and related
+#   named-tag construction are M4.  At M3, tag scopes require the tag to already
+#   be bound in a var (e.g., var t = ...; t: {...}).
+#
+# Original urbiscript (activate at M4 with implicit tag and Lobby infrastructure):
+# # t: detach({loop {echo("foo"); sleep(1s)}})|; [00000001] *** foo
+# # sleep(2.5s); [00000002] *** foo [00000003] *** foo
+# # t.block(); sleep(10ms); echo("bar"); [00000004] *** bar
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/implicit.chk)

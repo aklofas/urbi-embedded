@@ -1,0 +1,22 @@
+# Milestone: M3
+# Covers: mytag.begin: / mytag.end: scoped hooks — body executes with begin and
+#         end callbacks firing on entry and exit; tag.stop() interrupts end-tagged strand.
+# defer-to: M4 (requires mytag.begin: / mytag.end: notation and tag.stop() method dispatch)
+#
+# Reason:
+#   mytag.begin: and mytag.end: are method-chained tag scope variants that require
+#   tag-slot access (mytag.begin, mytag.end as properties) — M4 object-model slot
+#   dispatch.  Tag.new("mytag") named-tag construction is also M4 (Tag.new() method).
+#   tag.stop() method call is M4.  The fixture produces complex ordered output
+#   that depends on correct begin/end hook firing.
+#
+# Original urbiscript (activate at M4 with tag slot dispatch):
+# # var mytag = Tag.new("mytag"); [00000001] Tag<mytag>
+# # mytag.begin: mytag.end: {echo(42); 42};
+# # [00000002] *** mytag: begin
+# # [00000003] *** 42
+# # [00000004] *** mytag: end
+# # [00000005] 42
+# # mytag.end: { sleep(1s); echo("OH NOZ!") }, mytag.stop();
+# # [00000006] *** mytag: end
+# # sleep(100ms);

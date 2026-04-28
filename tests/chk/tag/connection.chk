@@ -1,0 +1,15 @@
+# Milestone: M3
+# Covers: connection tag is always present in Job.current.tags; tagged blocks
+#         add their tag to the ambient tag list visible via Job.current.tags.
+# defer-to: M4 (requires Job.current introspection, connectionTag builtin, and '&' runtime)
+#
+# Reason:
+#   The fixture uses Job.current.tags — job introspection that requires M4
+#   stdlib (Job type with current/tags accessors).  connectionTag is a lobby-
+#   level builtin also tied to M4 connection infrastructure.  '&' separator
+#   is M5 chk driver.  assert() with expression blocks requires M4 stdlib.
+#
+# Original urbiscript (activate at M4 with Job introspection):
+# # assert(Job.current.tags == [connectionTag]);
+# # var t = Tag.new() & assert({t: Job.current.tags} == [connectionTag, t]);
+# # ...

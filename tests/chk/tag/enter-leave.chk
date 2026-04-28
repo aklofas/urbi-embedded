@@ -1,0 +1,21 @@
+# Milestone: M3
+# Covers: 'at (trace.enter?)' and 'at (trace.leave?)' reactive watchers fire
+#         on tag entry and exit; works on normal exit, stop, and exception.
+# defer-to: M5 (requires 'at (tag.enter?)' reactive watcher and tag.stop() method dispatch)
+#
+# Reason:
+#   'at (trace.enter?)' and 'at (trace.leave?)' are reactive watchers on tag-
+#   event pseudo-events — they require the full M5 reactive runtime (watcher
+#   eval loop, event-based firing).  tag.stop() method dispatch is M4.  The
+#   fixture also uses ',' for parallel observation (M5 chk driver).  Tag enter/
+#   leave event emission is part of the watcher subsystem activation in M5.
+#
+# Original urbiscript (activate at M5 with reactive runtime and tag events):
+# # var trace = Tag.new() | {};
+# # at(trace.enter?) echo("enter");
+# # at(trace.leave?) echo("leave");
+# # trace: echo("Say hi");
+# # [00000001] *** enter
+# # [00000002] *** Say hi
+# # [00000003] *** leave
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/enter-leave.chk)

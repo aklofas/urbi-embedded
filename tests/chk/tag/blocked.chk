@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: hierarchical tag stopping — stopping a parent tag t terminates strands
+#         under child t.u; 'at (x == 2)' watcher is silenced after t.stop().
+# defer-to: M4 (requires t.u child-tag slot, t.stop() method dispatch, and 'at' watcher)
+#
+# Reason:
+#   The fixture uses 't.u' as a child tag accessed as a slot on t (prototype-OOP
+#   slot lookup, M4), t.stop() method dispatch (M4), and 'at (x == 2) echo(...)'
+#   reactive watcher (M5 reactive runtime).  ',' for concurrent sleep/stop
+#   observation also requires M5 chk driver.  Hierarchical tag stop propagation
+#   is implemented in the C runtime (T31) but the urbiscript surface is M4+.
+#
+# Original urbiscript (activate at M4 with tag hierarchy and M5 reactive runtime):
+# # var t = Tag.new("t")|; var t.u = t.new("t.u")|;
+# # t.u: { sleep(100ms); echo("foo") }, sleep(10ms); t.stop(); sleep(1s); echo("bar");
+# # [00000001] *** bar

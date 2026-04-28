@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: t.block() pauses all strands tagged with t; t.unblock() resumes them;
+#         new strand started while tag is blocked also stays paused.
+# defer-to: M4 (requires t.block() / t.unblock() method dispatch, detach(), and ',' runtime)
+#
+# Reason:
+#   t.block() and t.unblock() are object methods on a UTag value — M4 prototype-
+#   OOP dispatch.  The fixture also uses detach() builtin (M4) and ',' separator
+#   for concurrent loop + block observation (M5 chk driver).  At M3 we have
+#   urbi_tag_stop() C API but no block()/unblock() urbiscript surface.
+#
+# Original urbiscript (activate at M4 with tag block/unblock and detach()):
+# # var t = Tag.new()|;
+# # t: detach({loop {echo("1"); sleep(1s)}})|; sleep(2.5s);
+# # ... t.block(); ... t.unblock(); ...
+# # (see legacy/repos/aldebaran-urbi/tests/2.x/tag/block.chk)

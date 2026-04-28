@@ -1,0 +1,23 @@
+# Milestone: M3
+# Covers: tag.frozen and tag.blocked property access; freeze/unfreeze toggle;
+#         block/unblock toggle; independent flag tracking.
+# defer-to: M4 (requires tag.freeze(), tag.unfreeze(), tag.block(), tag.unblock(),
+#             tag.frozen, tag.blocked — all require M4 method/slot dispatch)
+#
+# Reason:
+#   Every statement in this fixture uses a method or slot on a UTag value (frozen,
+#   blocked, freeze(), unfreeze(), block(), unblock()).  These are prototype-OOP
+#   dispatch operations scheduled for M4.  At M3 the UTag struct exists and
+#   freeze/block flags are defined in the C struct but there is no urbiscript-level
+#   method/slot dispatch surface.
+#
+# Original urbiscript (activate at M4 with full tag method dispatch):
+# # var t = Tag.new() | t.frozen;
+# # [00000001] false
+# # t.blocked;
+# # [00000002] false
+# # t.freeze(); t.frozen;
+# # [00000003] true
+# # t.blocked;
+# # [00000004] false
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/state.chk)

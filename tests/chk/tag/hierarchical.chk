@@ -1,0 +1,16 @@
+# Milestone: M3
+# Covers: deep tag hierarchy (a.b.c.k); stopping any ancestor cascades to all
+#         descendants; 'at sync (a.enter?)' reactive enter/leave tracing; freeze.
+# defer-to: M5 (requires deep tag hierarchy, 'at sync' watcher, freeze, tag.stop() method)
+#
+# Reason:
+#   The fixture uses a deep tag hierarchy (a.b.c.k) with child-tag slot access
+#   (a.b, a.b.c, a.b.c.k as prototype slots — M4).  tag.stop() method dispatch
+#   is M4.  'at sync (a.enter?)' reactive watcher with synchronous firing is M5.
+#   a.b.freeze() method is M5 (SUSPENDED state machinery).  The ',' separator for
+#   concurrent observation is M5 chk driver.  All together this fixture requires M5+.
+#
+# Original urbiscript (activate at M5 with deep hierarchy, reactive watchers, and freeze):
+# # var a = Tag.new("a")|; var a.b = a.new("a.b")|;
+# # a.b:waituntil(false)|echo("boom"), sleep(0); a.b.stop(); [00000001] *** boom
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/tag/hierarchical.chk)
