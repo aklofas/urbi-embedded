@@ -80,6 +80,9 @@ struct UStrand {
     /* M2 fields for frame stack, registers, lex env, etc. are added by T20
        when the strand becomes a full execution context. */
 
+    /* --- VM back-pointer (T5; set by ustrand_init; required by scheduler ops) --- */
+    struct UVM             *vm;
+
     /* --- Row 7 unwind/cleanup fields (T9 wires walker; T3 lands cleanup-stack) --- */
     UExecStatus             pending_unwind;
     uint8_t                 unwind_pad[3];

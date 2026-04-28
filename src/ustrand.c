@@ -20,6 +20,7 @@ static void strand_zero(UStrand *s) {
 void
 ustrand_init(UStrand *s, struct UVM *vm) {
     strand_zero(s);
+    s->vm    = vm;
     s->state = USTRAND_STATE_DORMANT;
     /* Pre-allocate the cleanup stack using the VM's pluggable allocator.
        On allocation failure cleanup_base stays NULL (detectable by caller).
