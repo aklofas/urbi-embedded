@@ -767,6 +767,98 @@ static void lex_all_eleven_keywords(void) {
     UASSERT_EQ(t12.type, TOK_EOF);
 }
 
+/* Time-literal duration suffix tests. */
+static void lex_100ms_yields_100000_int(void) {
+    ULexer l;
+    ulex_init(&l, "100ms", 5);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 100000);
+    UASSERT_EQ(t.len, 5);
+}
+
+static void lex_2s_yields_2000000(void) {
+    ULexer l;
+    ulex_init(&l, "2s", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 2000000);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void lex_500us_yields_500(void) {
+    ULexer l;
+    ulex_init(&l, "500us", 5);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 500);
+    UASSERT_EQ(t.len, 5);
+}
+
+static void lex_1ns_yields_0_via_truncation(void) {
+    ULexer l;
+    ulex_init(&l, "1ns", 3);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    /* 1 / 1000 truncates to 0 in integer division. */
+    UASSERT_EQ(t.u.i, 0);
+    UASSERT_EQ(t.len, 3);
+}
+
+static void lex_1m_yields_60000000(void) {
+    ULexer l;
+    ulex_init(&l, "1m", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    /* 1 minute = 60 seconds = 60,000,000 microseconds. */
+    UASSERT_EQ(t.u.i, 60000000);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void lex_1h_yields_3600000000(void) {
+    ULexer l;
+    ulex_init(&l, "1h", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    /* 1 hour = 3600 seconds = 3,600,000,000 microseconds. */
+    UASSERT_EQ(t.u.i, 3600000000);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void lex_1d_yields_86400000000(void) {
+    ULexer l;
+    ulex_init(&l, "1d", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    /* 1 day = 86400 seconds = 86,400,000,000 microseconds. */
+    UASSERT_EQ(t.u.i, 86400000000);
+    UASSERT_EQ(t.len, 2);
+}
+
+static void lex_1mfoo_does_not_consume_suffix(void) {
+    ULexer l;
+    ulex_init(&l, "1mfoo", 5);
+    /* "mfoo" starts with 'm' followed by 'f' (ident-cont), so suffix not consumed. */
+    const UToken t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 1);
+    UASSERT_EQ(t1.len, 1);
+    /* Next token should be "mfoo" as an identifier. */
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 4);
+}
+
+static void lex_1ms_at_eof_consumed(void) {
+    ULexer l;
+    ulex_init(&l, "1ms", 3);
+    /* At EOF, the boundary check allows suffix consumption. */
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 1000);
+    UASSERT_EQ(t.len, 3);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -860,4 +952,13 @@ void test_lexer_suite(void) {
     utest_run("lex_recognizes_closure_keyword", lex_recognizes_closure_keyword);
     utest_run("lex_keyword_prefix_is_identifier", lex_keyword_prefix_is_identifier);
     utest_run("lex_all_eleven_keywords", lex_all_eleven_keywords);
+    utest_run("lex_100ms_yields_100000_int", lex_100ms_yields_100000_int);
+    utest_run("lex_2s_yields_2000000", lex_2s_yields_2000000);
+    utest_run("lex_500us_yields_500", lex_500us_yields_500);
+    utest_run("lex_1ns_yields_0_via_truncation", lex_1ns_yields_0_via_truncation);
+    utest_run("lex_1m_yields_60000000", lex_1m_yields_60000000);
+    utest_run("lex_1h_yields_3600000000", lex_1h_yields_3600000000);
+    utest_run("lex_1d_yields_86400000000", lex_1d_yields_86400000000);
+    utest_run("lex_1mfoo_does_not_consume_suffix", lex_1mfoo_does_not_consume_suffix);
+    utest_run("lex_1ms_at_eof_consumed", lex_1ms_at_eof_consumed);
 }

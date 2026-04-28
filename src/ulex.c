@@ -158,6 +158,9 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
     return t;
 }
 
+/* Forward declaration for suffix parsing in scan_decimal. */
+static int is_ident_cont(const char c);
+
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
 static UToken scan_decimal(ULexer *lex) {
@@ -234,6 +237,54 @@ static UToken scan_decimal(ULexer *lex) {
     t.col = start_col;
     t.len = (int)(lex->cur - start);
     t.u.i = value;
+
+    /* Check for duration suffix and convert to microseconds. */
+    if (lex->cur + 1 < lex->end && lex->cur[0] == 'm' && lex->cur[1] == 's' &&
+        (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
+        /* "ms" → multiply by 1000 to get microseconds */
+        lex->cur += 2;
+        value *= 1000;
+    }
+    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'u' && lex->cur[1] == 's' &&
+             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
+        /* "us" → already in microseconds */
+        lex->cur += 2;
+    }
+    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'n' && lex->cur[1] == 's' &&
+             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
+        /* "ns" → divide by 1000 (with truncation) to get microseconds */
+        lex->cur += 2;
+        value /= 1000;
+    }
+    else if (lex->cur < lex->end && lex->cur[0] == 's' &&
+             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
+        /* "s" → multiply by 1,000,000 to get microseconds */
+        lex->cur += 1;
+        value *= 1000000;
+    }
+    else if (lex->cur < lex->end && lex->cur[0] == 'm' &&
+             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
+        /* "m" → multiply by 60,000,000 to get microseconds */
+        lex->cur += 1;
+        value *= 60LL * 1000000;
+    }
+    else if (lex->cur < lex->end && lex->cur[0] == 'h' &&
+             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
+        /* "h" → multiply by 3,600,000,000 to get microseconds */
+        lex->cur += 1;
+        value *= 3600LL * 1000000;
+    }
+    else if (lex->cur < lex->end && lex->cur[0] == 'd' &&
+             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
+        /* "d" → multiply by 86,400,000,000 to get microseconds */
+        lex->cur += 1;
+        value *= 86400ULL * 1000000;
+    }
+
+    /* Update token length if a suffix was consumed. */
+    t.len = (int)(lex->cur - start);
+    t.u.i = value;
+
     return t;
 }
 
