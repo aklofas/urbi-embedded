@@ -81,6 +81,8 @@ static void gc_zero(void *p, size_t n) {
 void
 urbi_gc_init(UVM *vm)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Fields already zero-init by uvm_init:
      *   gc_phase, current_white, gc_paused, in_destroy_callback,
      *   gc_live_bytes, gc_total_allocated,

@@ -117,6 +117,17 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;
     vm->sweep_cursor_prev   = NULL;
+
+    /* T19 ISR-check + debug watchdog hooks: initialize before any subsystem
+     * calls URBI_ASSERT_NOT_ISR (T23 onwards). */
+    vm->isr_check_fn           = NULL;
+    vm->host_log_fn            = NULL;
+    vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
+    vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
+    vm->pad_watchdog[0]        = 0u;
+    vm->pad_watchdog[1]        = 0u;
+    vm->pad_watchdog[2]        = 0u;
+
     /* Delegate threshold + debt init to the GC strategy (T23). */
     urbi_gc_init(vm);
 
@@ -157,15 +168,6 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
-
-    /* T19 ISR-check + debug watchdog hooks. */
-    vm->isr_check_fn           = NULL;
-    vm->host_log_fn            = NULL;
-    vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
-    vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
-    vm->pad_watchdog[0]        = 0u;
-    vm->pad_watchdog[1]        = 0u;
-    vm->pad_watchdog[2]        = 0u;
 }
 
 void uvm_destroy(UVM *vm) {
