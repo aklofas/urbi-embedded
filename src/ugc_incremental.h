@@ -109,71 +109,172 @@ struct UClosure;
 #  endif
 #endif
 
-/* === uvalue_is_heap_white — forward declaration only ===
- *
- * The real implementation requires uvalue_is_heap() and uvalue_as_cell(),
- * which do not exist yet.  T25 defines this function in ugc_incremental.c
- * alongside the full barrier implementations.
- *
- * Declared here (not inline) so that ugc_incremental.h can be included
- * transitively without accidentally providing a wrong stub body. */
-bool uvalue_is_heap_white(struct UVM *vm, UValue v);   /* T25: defined in ugc_incremental.c */
-
 /* === gc_shade_gray — mark a cell gray and push onto the worklist ===
  * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
-/* === observer_dirty — mark a cell's watcher observer dirty ===
- * T33/T34 (row 11): defined in uwatcher.c */
-void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
+/* === observer_dirty — watcher dirty-set hook ===
+ * T34 (row 11): replace this stub with `extern void observer_dirty(...);`
+ * once src/uwatcher.c lands the real impl that walks the per-cell observer list.
+ * For T25 this is a no-op so the watcher dirty-set path compiles cleanly. */
+static inline void
+observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
+{
+    (void)vm; (void)cell; (void)key;
+}
+
+/* === uvalue_is_heap / uvalue_as_cell ===
+ *
+ * At M3 baseline the only heap-bearing UValKind is UVAL_CLOSURE, which carries
+ * a UClosure pointer stored in v.p.  All other kinds (NIL, INT, FLOAT, BOOL,
+ * STR, VOID) are either inline scalars or not GC-managed via UCell.
+ *
+ * TODO(M4+): extend uvalue_is_heap for UVAL_STRING (when strings move to heap),
+ * UVAL_OBJECT, UVAL_ARRAY, UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
+
+static inline bool
+uvalue_is_heap(UValue v)
+{
+    return v.kind == UVAL_CLOSURE;
+}
+
+static inline UCell *
+uvalue_as_cell(UValue v)
+{
+    /* Caller must have checked uvalue_is_heap(v) first.
+     * UVAL_CLOSURE stores a UClosure* in v.v.p; we return it as UCell*.
+     * NOTE(M4): UClosure does not embed UCell as first member at M3 baseline.
+     * urbi_gc_upvalue_write casts UClosure* → UCell* for the barrier check;
+     * this is only safe once UClosure embeds a UCell header at offset 0 (M4).
+     * For T25, tests construct synthetic cells via UVAL_CLOSURE tags pointing
+     * to urbi_gc_alloc'd UCell objects (test-only pattern). */
+    return (UCell *)v.v.p;
+}
+
+/* === uvalue_is_heap_white ===
+ *
+ * Two-step check: (a) UValue tag indicates heap-bearing kind (via uvalue_is_heap);
+ * (b) cell color matches current_white.  When (a) fails, (b) short-circuits.
+ *
+ * Declared here as a non-inline extern so that the barrier static-inline bodies
+ * above can call it using only the forward-declared struct UVM *.
+ * ugc_incremental.h cannot include uvm.h (circular: uvm.h -> ugc_capi.h ->
+ * ugc_incremental.h), so the full struct UVM definition is not available here.
+ * The inline barriers only need the function signature; the linker resolves the
+ * call to ugc_incremental.c where uvm.h is fully included.
+ *
+ * Defined in ugc_incremental.c (T25). */
+bool uvalue_is_heap_white(struct UVM *vm, UValue v);
 
 /* === Three inline barrier surfaces ===
  *
- * These are no-op stubs at T22.  T25 replaces each body with the real
- * Dijkstra forward-barrier logic:
- *   if (URBI_GC_INCREMENTAL_BARRIER && IS_BLACK(parent) && uvalue_is_heap_white(vm, child))
- *       gc_shade_gray(vm, uvalue_as_cell(child));
- *
- * The (void) casts suppress unused-parameter warnings in the stub bodies.
- *
  * urbi_gc_slot_write:
  *   Called when assigning a UValue to an object slot or Realm namespace binding.
+ *   Implements a forward (Dijkstra) write barrier: if the parent cell is black
+ *   and the child value is a white heap cell, shade the child gray to preserve
+ *   the tri-color invariant.  Also hooks the watcher dirty-set (row 10/11
+ *   boundary) when bit 6 is set on the parent.
  *   parent  — the containing cell (must already be GC-managed).
- *   key     — slot index or namespace key (for observer_dirty fold at T33).
+ *   key     — slot index or namespace key (for observer_dirty at T34).
  *   child   — the new value being stored.
+ *   NOTE: the barrier is a hook; the actual store is the CALLER'S responsibility.
  *
  * urbi_gc_register_write:
  *   Called when the dispatch loop writes a UValue into a strand register
  *   (OP_MOVE, arithmetic results, OP_LOADK, etc.).
+ *   Registers are roots walked at every mark phase via gc_walk_roots → strand
+ *   walker, so no barrier is needed: conceptually registers are "always gray".
  *   s       — the strand whose register file is being updated.
  *   reg_idx — register index within s->R[].
  *   child   — the value being stored.
  *
  * urbi_gc_upvalue_write:
  *   Called when OP_SETUPVAL stores a value through a closure's upvalue chain.
+ *   Applies the GC barrier (same Dijkstra logic as slot_write); no watcher
+ *   hook because closures are not directly observable by watchers in v1.
  *   closure — the closure owning the upvalue.
  *   up_idx  — index into closure->upvals[].
- *   child   — the value being stored. */
+ *   child   — the value being stored.
+ *   NOTE: the actual upvalue store is the CALLER'S responsibility.
+ *
+ * M2 callsite audit (T25):
+ *   OP_SETUPVAL handler (src/uvm.c ~line 861): UClosure does NOT embed UCell
+ *   as first member at M3 baseline, so casting UClosure* → UCell* for the
+ *   barrier is unsafe.  Wire urbi_gc_upvalue_write at M4 when UClosure gains
+ *   a UCell header at offset 0.
+ *   TODO(M4): wire `urbi_gc_upvalue_write(vm, cur_cl, b, s->R[a])` before the
+ *   store in OP_SETUPVAL once UClosure embeds UCell as first member.
+ *
+ *   unamespace_set (src/urealm_namespace.c ~line 106): UNamespace does NOT have
+ *   a UCell header at M3 baseline.  Wire urbi_gc_slot_write at M4 when
+ *   UNamespace gains a UCell header.
+ *   TODO(M4): wire `urbi_gc_slot_write(vm, &ns->cell_header, key, value)` in
+ *   unamespace_set once UNamespace embeds UCell as first member.
+ *
+ *   OP_SETSLOT (M4 reserved): dormant at M3; wired at M4 with full IC support.
+ *
+ * Net result: no concrete cell type at M3 embeds UCell as first member;
+ * the three barrier functions are fully implemented and tested here, with
+ * integration deferred to M4 when object types gain UCell headers. */
 
 static inline void
 urbi_gc_slot_write(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
 {
-    (void)vm; (void)parent; (void)key; (void)child;
-    /* T25: real Dijkstra forward barrier + observer_dirty fold */
+    uint8_t parent_gc = parent->gc_byte;
+
+    /* (1) GC barrier: forward Dijkstra ("shade the target").
+     * If parent is black and child is a white heap cell, paint child gray
+     * to maintain the no-black-to-white invariant. */
+    if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK
+                 && uvalue_is_heap_white(vm, child))) {
+        gc_shade_gray(vm, uvalue_as_cell(child));
+    }
+
+    /* (2) Watcher dirty-set hook (row 10/11 boundary).
+     * observer_dirty is a no-op stub at T25; T34 replaces it with the real
+     * impl that walks the per-cell observer list and bumps watcher_dirty_count.
+     * This strategy header is always compiled with URBI_GC_INCREMENTAL, so
+     * the watcher hook is always present (no #if guard needed here). */
+    if (UNLIKELY(parent_gc & UGC_HAS_WATCHER_OBSERVER)) {
+        observer_dirty(vm, parent, key);   /* row 11 — T34 */
+    }
+
+    /* (3) Actual store — caller's responsibility.
+     * The barrier is a hook only; callers must perform the store themselves
+     * immediately after calling urbi_gc_slot_write. */
 }
 
 static inline void
 urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UValue child)
 {
+    /* No GC barrier on register writes — registers are roots, walked at every
+     * mark phase via gc_walk_roots → strand walker.  The mark phase sees
+     * current register state; no parent-color check needed. */
+
+    /* No watcher dirty-set: registers are not watched directly (watchers read
+     * slots/Realm bindings, not VM-internal registers). */
+
     (void)vm; (void)s; (void)reg_idx; (void)child;
-    /* T25: shade gray if vm is in mark phase and child is heap-white */
 }
 
 static inline void
 urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure, uint8_t up_idx, UValue child)
 {
-    (void)vm; (void)closure; (void)up_idx; (void)child;
-    /* T25: shade gray if vm is in mark phase and child is heap-white */
+    UCell *parent = (UCell *)closure;
+    uint8_t parent_gc = parent->gc_byte;
+
+    /* GC barrier: forward Dijkstra — same logic as slot_write.
+     * NOTE(M4): This cast is only safe once UClosure embeds UCell as its
+     * first member.  At M3 baseline, urbi_gc_upvalue_write must not be called
+     * with a real UClosure* — it is tested here with synthetic UCell objects. */
+    if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK
+                 && uvalue_is_heap_white(vm, child))) {
+        gc_shade_gray(vm, uvalue_as_cell(child));
+    }
+
+    /* No watcher hook on upvalue writes: closures are not directly observable
+     * by watchers in v1 (no first-class "watch this closure's upvalue" surface). */
+    (void)up_idx; (void)child;
 }
 
 #endif /* UGC_INCREMENTAL_H */

@@ -154,9 +154,9 @@ find_sidecar_for_cell(UVM *vm, UCell *target)
  * FLOAT, BOOL, STR, VOID) either have no cell pointer or have cells managed
  * outside the GC heap (interned strings, v1 strong roots).
  *
- * TODO(T25): replace the manual UValKind check with the real
- * uvalue_is_heap() + uvalue_as_cell() helpers once they exist.  At T24
- * we discriminate inline to avoid a dependency on non-existent helpers. */
+ * T25: uvalue_is_heap() + uvalue_as_cell() are now defined as static inline
+ * in ugc_incremental.h.  This callback keeps its own inline kind check for
+ * the sidecar-based mark path; the barrier surfaces use the helpers. */
 static void
 mark_root_callback(UVM *vm, UValue *slot, void *ctx)
 {
@@ -856,13 +856,20 @@ urbi_unpin(UVM *vm, UValue v)
 }
 #endif
 
-/* === uvalue_is_heap_white stub (landing in T25) === */
-
+/* === uvalue_is_heap_white ===
+ *
+ * Defined here (not inline in the header) because ugc_incremental.h cannot
+ * include uvm.h (circular dependency: uvm.h → ugc_capi.h → ugc_incremental.h).
+ * The static-inline barriers in ugc_incremental.h call this via a forward decl;
+ * the linker resolves the call to this TU where UVM is fully defined.
+ *
+ * uvalue_is_heap and uvalue_as_cell are static inline in ugc_incremental.h;
+ * this function uses them directly. */
 bool
 uvalue_is_heap_white(UVM *vm, UValue v)
 {
-    /* T25: check UValue tag for heap-bearing kind, then check cell color. */
-    (void)vm;
-    (void)v;
-    return false;
+    if (!uvalue_is_heap(v)) return false;
+    UCell *c = uvalue_as_cell(v);
+    if (c == NULL) return false;
+    return (c->gc_byte & UGC_COLOR_MASK) == vm->current_white;
 }
