@@ -711,8 +711,6 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
 
 /* --- Helper: count how many times the GC root callback is invoked --- */
 
-static int g_root_cb_count;
-
 static void
 root_cb_count(struct UVM *vm, UValue *slot, void *ctx)
 {
