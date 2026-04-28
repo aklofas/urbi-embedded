@@ -705,6 +705,190 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
     uvm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T36 test cases: GC root walker for watchers + spawn_body relocation
+ * =================================================================== */
+
+/* --- Helper: count how many times the GC root callback is invoked --- */
+
+static int g_root_cb_count;
+
+static void
+root_cb_count(struct UVM *vm, UValue *slot, void *ctx)
+{
+    (void)vm; (void)slot;
+    int *count = (int *)ctx;
+    (*count)++;
+}
+
+/* 21. watcher_root_walker_visits_active_watchers:
+ *     Install one AT watcher with non-NULL condition, body, and onleave.
+ *     Call urbi_gc_walk_roots; verify callback was invoked at least 3 times
+ *     for the watcher (condition + body + onleave closures + last_value_cache). */
+UTEST(watcher_root_walker_visits_active_watchers)
+{
+    UVM      vm;
+    UWatcher *w;
+    int       count_before;
+    int       count_after;
+    int       total;
+
+    uvm_init(&vm, NULL, NULL);
+
+    /* Use non-NULL pointer sentinels for closures (cast; value not dereferenced
+     * by the GC walk itself — the GC mark callback only receives UValue pointers,
+     * and our counting stub ignores the value). */
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL,
+        /*condition=*/(UClosure *)1,
+        /*body=*/     (UClosure *)2,
+        /*onleave=*/  (UClosure *)3,
+        NULL, 0u);
+    UASSERT(w != NULL);
+
+    count_before = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_before);
+
+    /* Watcher must have contributed: condition(1) + body(1) + onleave(1) +
+     * last_value_cache(1) = 4 calls minimum.  Other root providers may add more. */
+    UASSERT(count_before >= 4);
+
+    /* Unregister and walk again; the delta should drop by at least 4. */
+    urbi_watcher_unregister_internal(&vm, w);
+
+    count_after = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_after);
+
+    total = count_before - count_after;
+    UASSERT(total >= 4);
+
+    uvm_destroy(&vm);
+}
+
+/* 22. watcher_root_walker_visits_pending_onleave:
+ *     Install watcher with non-NULL onleave; push to pending_onleave_queue;
+ *     walk roots; assert callback invoked at least once for that watcher
+ *     (onleave closure + last_value_cache). */
+UTEST(watcher_root_walker_visits_pending_onleave)
+{
+    UVM      vm;
+    UWatcher *w;
+    int       count_active;
+    int       count_pending;
+
+    uvm_init(&vm, NULL, NULL);
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL,
+        /*condition=*/NULL,
+        /*body=*/     NULL,
+        /*onleave=*/  (UClosure *)1,
+        NULL, 0u);
+    UASSERT(w != NULL);
+
+    /* Walk with watcher on active list. */
+    count_active = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_active);
+
+    /* Move watcher to pending_onleave_queue. */
+    pending_onleave_queue_push(&vm, w);
+
+    /* Walk with watcher on pending queue — should still see onleave + last_value_cache. */
+    count_pending = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_pending);
+
+    /* pending queue walker contributes at minimum: onleave(1) + last_value_cache(1) = 2. */
+    UASSERT(count_pending >= 2);
+
+    /* Drain to clean up. */
+    drain_pending_onleave_queue(&vm);
+
+    uvm_destroy(&vm);
+}
+
+/* 23. watcher_root_walker_skips_null_closures:
+ *     Install watcher with all closures NULL.  Walk roots; the watcher
+ *     contributes exactly 1 call (last_value_cache only) per active-list pass. */
+UTEST(watcher_root_walker_skips_null_closures)
+{
+    UVM      vm;
+    UWatcher *w;
+    int       count_with;
+    int       count_without;
+    int       delta;
+
+    uvm_init(&vm, NULL, NULL);
+
+    /* Walk roots with no watchers to get a baseline. */
+    count_without = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_without);
+
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL,
+        /*condition=*/NULL,
+        /*body=*/     NULL,
+        /*onleave=*/  NULL,
+        NULL, 0u);
+    UASSERT(w != NULL);
+
+    count_with = 0;
+    urbi_gc_walk_roots(&vm, root_cb_count, &count_with);
+
+    /* Delta must be exactly 1 (only last_value_cache; no closure callbacks). */
+    delta = count_with - count_without;
+    UASSERT_EQ(delta, 1);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
+/* 24. watcher_root_provider_count_is_5_after_init:
+ *     Verify 5 root providers are registered at uvm_init time. */
+UTEST(watcher_root_provider_count_is_5_after_init)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UASSERT_EQ(5u, vm.root_provider_count);
+    uvm_destroy(&vm);
+}
+
+/* 25. spawn_body_coroutine_relocated_still_works:
+ *     After moving spawn_body_coroutine to uwatcher_spawn.c, verify
+ *     the test_watcher_fire_hook delegation still works as before.
+ *
+ *     Install without condition hook so seed is nil (falsy).  Then set
+ *     the condition hook to return true on first dirty eval — this gives a
+ *     false→true rising edge that fires spawn_body_coroutine via fire hook. */
+UTEST(spawn_body_coroutine_relocated_still_works)
+{
+    UVM      vm;
+    UWatcher *w;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count = 0;
+
+    /* Install with no condition hook so seed = UVAL_NIL (falsy). */
+    w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, (UClosure *)1,
+        NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    /* Confirm seed is NIL/falsy. */
+    UASSERT(w->last_value_cache.kind == UVAL_NIL);
+
+    /* Now set the condition hook (returns true) and the fire hook. */
+    vm.test_watcher_condition_hook = condition_hook_fixed_true;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    /* Trigger one dirty eval — rising edge: nil→true fires once. */
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ(g_fire_count, 1);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -754,4 +938,15 @@ test_watcher_dirty_suite(void)
               pending_onleave_drain_ordering_FIFO);
     utest_run("tag_stop_pushes_watchers_to_onleave_queue",
               tag_stop_pushes_watchers_to_onleave_queue);
+    /* T36 cases */
+    utest_run("watcher_root_walker_visits_active_watchers",
+              watcher_root_walker_visits_active_watchers);
+    utest_run("watcher_root_walker_visits_pending_onleave",
+              watcher_root_walker_visits_pending_onleave);
+    utest_run("watcher_root_walker_skips_null_closures",
+              watcher_root_walker_skips_null_closures);
+    utest_run("watcher_root_provider_count_is_5_after_init",
+              watcher_root_provider_count_is_5_after_init);
+    utest_run("spawn_body_coroutine_relocated_still_works",
+              spawn_body_coroutine_relocated_still_works);
 }

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher eval pass: watcher_eval_dirty, invoke_condition_closure,
- * spawn_body_coroutine M3 stub.
+/* Watcher eval pass: watcher_eval_dirty, invoke_condition_closure.
  * Row 11.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
@@ -10,8 +9,9 @@
  *   invoke_condition_closure: calls vm->test_watcher_condition_hook if
  *     non-NULL; otherwise returns UVAL_NIL.  M5 will wire real bytecode
  *     execution via urbi_run_closure_on_scratch (spec §6.4 + §6.8).
- *   spawn_body_coroutine: M3 stub that calls vm->test_watcher_fire_hook if
- *     non-NULL; otherwise no-op.  M5 owns the real strand-pool spawn path. */
+ *   spawn_body_coroutine: lives in uwatcher_spawn.c (Row 11).
+ *     M3 stub delegates to vm->test_watcher_fire_hook if non-NULL; otherwise
+ *     no-op.  M5 owns the real strand-pool spawn path. */
 
 #include "uwatcher.h"
 #include "uvm.h"
@@ -101,31 +101,5 @@ watcher_eval_dirty(struct UVM *vm)
     vm->in_watcher_eval = 0;
 }
 
-/* === spawn_body_coroutine — M3 stub ===
- *
- * Called by watcher_eval_dirty when a watcher fires.
- *
- * M3 stub contract (spec §6.8):
- *   - If vm->test_watcher_fire_hook is set, call it and return.
- *   - Otherwise: no-op.  M3 has no urbiscript `at` syntax to install
- *     watchers from scripts, so production-mode fires are unreachable
- *     without explicit test-hook setup.
- *
- * TODO(T36): replace no-op branch with real strand-pool spawn:
- *   1. Pool-alloc body strand from coroutine pool.
- *   2. Inherit ambient tag chain via §4 (chain = [w->owning_tag]).
- *   3. Bind w->body as the entry closure.
- *   4. urbi_strand_start(new_body). */
-void
-spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
-{
-    URBI_ASSERT_NOT_ISR(vm);
-
-    if (vm->test_watcher_fire_hook != NULL) {
-        vm->test_watcher_fire_hook(vm, w);
-        return;
-    }
-    /* M5 owns the real implementation; no-op at M3. */
-    (void)vm;
-    (void)w;
-}
+/* spawn_body_coroutine lives in uwatcher_spawn.c (Row 11).
+ * Declaration is in uwatcher.h; watcher_eval_dirty calls it above. */

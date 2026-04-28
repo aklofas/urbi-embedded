@@ -143,13 +143,13 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     }
     vm->root_provider_count = 0u;
 
-    /* Register default root providers (T26).
-     * Order: scheduler first, then realm, intern, host-handle.
-     * T36 adds: urbi_gc_register_root_provider(vm, watcher_table_walk_roots). */
+    /* Register default root providers.
+     * Order: scheduler, realm, intern, host-handle, watcher table. */
     urbi_gc_register_root_provider(vm, sched_walk_roots);
     urbi_gc_register_root_provider(vm, realm_list_walk_roots);
     urbi_gc_register_root_provider(vm, intern_table_walk_roots);
     urbi_gc_register_root_provider(vm, host_handle_walk_roots);
+    urbi_gc_register_root_provider(vm, watcher_table_walk_roots);
 
     /* Type table + host-handle table. */
     {

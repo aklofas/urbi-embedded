@@ -162,13 +162,22 @@ void   watcher_eval_dirty(struct UVM *vm);
 void pending_onleave_queue_push(struct UVM *vm, struct UWatcher *w);
 void drain_pending_onleave_queue(struct UVM *vm);
 
-/* === Body spawn — T36 owns real impl; T34 ships minimal stub for linker === */
+/* === Body spawn (uwatcher_spawn.c) === */
 
 /* spawn_body_coroutine: called by watcher_eval_dirty when a watcher fires.
  * M3 stub: invokes vm->test_watcher_fire_hook if non-NULL; otherwise no-op.
  * M5 implementation: pool-alloc body strand, inherit ambient tag chain,
  * bind w->body as entry closure, call urbi_strand_start. Per spec §6.8. */
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+
+/* === GC root provider (uwatcher_gc.c) === */
+
+/* watcher_table_walk_roots: registered via urbi_gc_register_root_provider at
+ * uvm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
+ * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
+ * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
+ * read-set cells[] (concrete cell types land at M4). */
+void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #ifdef __cplusplus
 }
