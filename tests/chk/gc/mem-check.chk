@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: System.memCheck() verifies no memory leak for repeated allocation
+#         patterns: job creation (',', '&'), Object.new(), Tag.new(), parser,
+#         string conversion, Lobby creation.
+# defer-to: M6 (requires System.memCheck(), System.status(), System.Platform, and M6 stdlib types)
+#
+# Reason:
+#   System.memCheck() is a test-harness helper that measures VmData growth across
+#   an iteration loop.  It requires System.status() (M4 stdlib), System.Platform
+#   (M4 stdlib), Lobby.create() (M4), ',' and '&' separator runtime (M5 chk
+#   driver), Tag.new() method (M4), and Lobby.quit() (M4).  This is a full-stack
+#   memory regression test — appropriate to activate after M6 when the stdlib is
+#   feature-complete.
+#
+# Original urbiscript (activate at M6+ with full System stdlib):
+# # import System.*;
+# # function init_memCheck() { ... }|;
+# # init_memCheck();
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/mem-check.chk)

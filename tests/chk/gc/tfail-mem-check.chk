@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: memory-leak regression for 'at (e?)' watchers holding a reference
+#         on their creator object; Foo instances created in a loop should be
+#         collectible after the loop (no hidden watcher root).
+# defer-to: M6 (requires Event type, 'at (e?)' reactive watcher, and System.memCheck())
+#
+# Reason:
+#   The fixture creates a Foo class with an Event slot and an 'at (e?)' watcher
+#   in its init(), then checks for leaks via System.memCheck().  This requires:
+#   (1) class definition with init() (M4), (2) Event.new() type (M6 stdlib),
+#   (3) 'at (e?)' reactive watcher (M5 reactive runtime), (4) System.memCheck()
+#   (M6 stdlib).  The underlying GC root walker for watchers is implemented at
+#   M3 (T36) but the urbiscript-level Event/at-watcher surface is M5/M6.
+#
+# Original urbiscript (activate at M6 with Event type and reactive runtime):
+# # import System.*;
+# # var Global.nb_iter = 500 | System.systemFiles = []|;
+# # { class Foo { var e = Event.new(); function init() { at(e?) echo(1) } };
+# #   System.memCheck(closure() { for(Global.nb_iter) { Foo.new() } }); }|;

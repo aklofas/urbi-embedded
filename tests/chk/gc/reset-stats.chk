@@ -1,0 +1,19 @@
+# Milestone: M3
+# Covers: stats() returns cycle-count dictionary; resetStats() resets the cycle
+#         counter to 1; resetStats() | stats().isNil() shows nil during reset.
+# defer-to: M4 (requires stats() and resetStats() stdlib functions)
+#
+# Reason:
+#   stats() and resetStats() are System-namespace helpers scheduled for M4.
+#   The underlying determinism counter (urbi_get_determinism_checksum) is
+#   implemented at M3 as a C API diagnostic but is not exposed to the urbiscript
+#   layer as stats()/resetStats() until the System stdlib lands in M4.
+#
+# Original urbiscript (activate at M4 with System.stats/resetStats):
+# # import System.*;
+# # stats()["cycles"] > 1;
+# # [00000001] true
+# # resetStats(); stats()["cycles"];
+# # [00000002] 1
+# # resetStats() | stats().isNil();
+# # [00000003] true
