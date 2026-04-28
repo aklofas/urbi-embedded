@@ -1,5 +1,120 @@
 # Changelog
 
+## v0.3.0-concurrency — 2026-04-28
+
+The M3 concurrency milestone. Adds six subsystems above the M2 expression
+foundation: control transfer (exceptions, tags, unwind), chunk lifecycle
+(realms, namespaces, step driver), cooperative scheduler (ISR-safe event ring,
+strand C API), incremental tri-color GC (5-phase state machine, debt-triggered
+slices, 3 barrier surfaces, host-handle pinning), tag/watcher data and eval
+layer (UTag, UWatcher pool, read-set, watcher eval loop, pending-onleave drain),
+and determinism infrastructure (checksum diagnostic, CI gate, time literals,
+legacy corpus port). Bytecode bumped to v1.2; earlier `.urb` files are rejected
+at load time.
+
+### Breaking changes
+
+- **Bytecode v1.2**: version byte incremented; loader rejects v1.1 and earlier
+  modules with a diagnostic. Recompile all `.urb` files.
+
+### Language
+
+- Time and angle literals: `100ms`, `1s`, `2.5s`, `180deg` lexed to
+  `TOK_DURATION` / `TOK_ANGLE`; `ms`/`s`/`m`/`h`/`d` suffixes emit
+  microsecond integer values; `deg`/`rad` emit float radian values.
+- `,` (parallel fire-and-forget) and `&` (parallel join) separator runtime
+  activated. `,` spawns N-1 child strands + runs last child inline.
+  `&` compiles rhs to closure, runs lhs inline, then OP_FORK_JOIN /
+  OP_JOIN_WAIT; result is void. Child handles are `UVAL_STRAND` (kind=7).
+- `try` / `catch` / `finally` / `throw` — full emit and runtime; exception
+  value forwarded through catch register.
+- Tag scopes — `mytag: { ... }` compiles to OP_PUSH_TAG / body / OP_POP_TAG;
+  member-strand list maintained; `urbi_tag_stop` deposits UEXEC_TAG_STOP
+  with C-1 priority.
+
+### Unwind / exception model
+
+- `urbi_unwind` walker: 5-kind absorption (OK / RETURN / THROW / TAG_STOP /
+  CANCEL); replace-on-raise semantics; URBI_WARN_SUPPRESSED_UNWIND emitted
+  via `host_log_fn`.
+- `UExecStatus` enum (OK / RETURN / THROW / TAG_STOP / CANCEL / FATAL);
+  `urbi_exec_status_name`.
+
+### Chunk lifecycle and scheduler
+
+- `URealm` + `UNamespace`: per-realm GC root provider, 4-function Realm C API,
+  namespace resolution protocol.
+- `urbi_step` 4-state driver (OK / QUIESCENT / FATAL / YIELD_BUDGET); 4
+  chunk-execution wrappers.
+- ISR-safe SPSC event ring: `urbi_inject_event` as the sole ISR-safe entry
+  point; bounded drain at `urbi_step` entry.
+- Strand C API: `urbi_strand_create` / `start` / `spawn` / `cancel` / `panic`
+  / `reset`; ambient-tag attachment; cooperative FIFO run-queue.
+- `URBI_DEBUG` build mode: ISR-safety assertions at all non-ISR entry points;
+  callback watchdog (configurable warn / assert threshold).
+
+### Incremental GC
+
+- Tri-color mark-sweep with 5-phase state machine; `urbi_gc_slice(vm, budget)`
+  incremental driver; `urbi_gc_force_full` synchronous path.
+- Three barrier surfaces: `urbi_gc_slot_write` (forward Dijkstra + watcher
+  dirty hook), `urbi_gc_register_write` (no-op), `urbi_gc_upvalue_write`.
+- Root-provider registry: up to 8 providers; 5 registered at M3 (scheduler,
+  realm list, intern table, host handles, watcher table).
+- Host-handle table: `urbi_pin` / `urbi_unpin`; `urbi_register_type` with
+  finalizer dispatch; `UType.destroy` called from sweep.
+- GC pause max 2.8 µs measured (357× margin under 1 ms target).
+- `make test-gc-pause` gated stress binary; `make test-stress` 4-program suite;
+  `make test-gc-none-build` strategy-swap smoke; all wired into `make releasetest`.
+
+### Tag / watcher subsystem
+
+- `UTag` host-managed (via `alloc_fn`); ambient-tag inheritance via synthetic
+  TAG_SCOPE cleanup entries; member-strand and member-watcher lists.
+- `UWatcher` pool: 200-byte record, pre-allocated slab, freelist, `in_use` /
+  `high_water` counters.
+- Read-set capture: bit-6 (`UGC_HAS_WATCHER_OBSERVER`) lifecycle; tail-insert
+  for deterministic eval order; install-time `last_value_cache` seed.
+- Watcher eval loop: `watcher_eval_dirty` walks active list; edge/level firing
+  per spec §6.2/§6.3; `UScratchFrame` (~280 B) allocated at `uvm_init`.
+- Pending-onleave queue: drain reuses `in_watcher_eval` reentrancy guard;
+  OP_POP_TAG and `urbi_tag_stop` cascade watchers before scope destruction.
+
+### Determinism
+
+- `urbi_get_determinism_checksum` (`URBI_DEBUG`): XOR-reduce over active-watcher
+  list and dirty count; enables replay comparison.
+- `make test-determinism` CI gate: two consecutive `urbi_step` sweeps with
+  checksum equality assertion; wired into `make releasetest`.
+
+### Tests
+
+- Unit cases: 772 (up from 489, +283); debug variant 786.
+- `.chk` fixtures: 127 (up from 18, +109) across 8 subdirectories
+  (`control_transfer/`, `chunk_lifecycle/`, `scheduler/`, `gc/`, `tag/`,
+  `separator/`, `time_literals/`, `determinism/`).
+- Cross-build: ARM Cortex-M7 32 KB text / RISC-V rv32imc 41 KB text (host
+  65 KB). All three targets verified at `make cross-arm` / `make cross-riscv`.
+- All 8 gates green: `make test` / `test-debug` / `test-asan` / `test-ubsan` /
+  `cross-arm` / `cross-riscv` / `test-stress` / `test-gc-none-build`.
+
+### Known limitations / deferred
+
+- **Watcher body and on-leave execution** deferred to M5. `spawn_body_coroutine`
+  and `run_watcher_onleave` are M3 stubs; tests use `test_watcher_fire_hook`
+  and `test_watcher_onleave_hook` on `UVM`.
+- **`,` shared-frame semantics** (spec §7.1) deferred to M5+. Current
+  implementation uses closure-spawn; correctness is unchanged, only
+  per-child allocation overhead differs.
+- **`at`/`whenever`/`waituntil`** — reactive runtime deferred to M5.
+- **Object method dispatch** — deferred to M4.
+- **UVM struct padding** — `clang-analyzer-optin.performance.Padding` reports
+  36 bytes excess in `struct UVM`; full field reorder deferred to avoid
+  destroying semantic row-grouping in the struct comments.
+- **Most legacy `.chk` corpus fixtures** remain deferred (require M4 object
+  model or M5 reactive runtime). 127 fixtures active or structured as
+  deferred placeholders for future milestones.
+
 ## v0.2.0-expressions — 2026-04-25
 
 The M2 expressions milestone. Adds the full expression language surface

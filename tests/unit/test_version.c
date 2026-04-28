@@ -14,13 +14,13 @@ static void version_starts_with_zero(void) {
     UASSERT_EQ(v[0], '0');
 }
 
-static void version_contains_skeleton_suffix(void) {
+static void version_contains_milestone_suffix(void) {
     const char *v = urbi_version();
-    UASSERT(strstr(v, "skeleton") != NULL);
+    UASSERT(strstr(v, "concurrency") != NULL);
 }
 
 void test_version_suite(void) {
     utest_run("version_is_nonempty", version_is_nonempty);
     utest_run("version_starts_with_zero", version_starts_with_zero);
-    utest_run("version_contains_skeleton_suffix", version_contains_skeleton_suffix);
+    utest_run("version_contains_milestone_suffix", version_contains_milestone_suffix);
 }

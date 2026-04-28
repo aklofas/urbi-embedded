@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** M2 expressions. Full expression language above the arithmetic core: variables, closures with cascading upvalue capture, control flow (`if`/`else`, `while`), function definitions and calls, per-parameter `lazy` arguments, statement separators (`;`/`|` runtime; `,`/`&` parse-only), and multi-VM hardening. Bytecode v1.1. 489 unit tests + 18 `.chk` conformance fixtures passing at release / debug / ASan / UBSan / switch-dispatch / valgrind / cross-ARM / cross-RISC-V. Tagged `v0.2.0-expressions`.
+**Status:** M3 concurrency + real-time GC. Cooperative multi-strand scheduler, incremental tri-color mark-sweep GC (sub-3 µs max pause), tag-scope cancellation, watcher eval loop, parallel separators (`,`/`&`) runtime, exception unwind, realm/namespace chunk lifecycle, ISR-safe event ring, time and angle literals, and determinism infrastructure. Bytecode v1.2. 772 unit tests + 127 `.chk` conformance fixtures passing at release / debug / ASan / UBSan / cross-ARM / cross-RISC-V / stress / GC-none-build. Tagged `v0.3.0-concurrency`.
 
 ## Design goals
 
