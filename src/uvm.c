@@ -23,6 +23,7 @@
 #include "m3_forward_decls.h"
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
+#include "uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -176,6 +177,13 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
+    /* Watcher pool (T32): allocate after field zero-init and after GC init
+     * so pool_alloc can use vm->current_white and vm->alloc_fn is set. */
+    uwatcher_pool_init(vm);
+    /* OOM note: if uwatcher_pool_init returns -1, watcher_pool_base stays NULL.
+     * pool_alloc will return NULL on any install attempt — still safe, but the
+     * embedded caller should check vm->watcher_pool_base != NULL post-init. */
+
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
 }
@@ -186,7 +194,7 @@ void uvm_destroy(UVM *vm) {
     /* --- M3 teardown stubs (in reverse-init order) ---
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
-    /* T32: uwatcher_pool_destroy(vm); */
+    uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
     /* GC destroy must run after all subsystems that hold GC-managed cells.
      * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
      * sched queues) is freed below — none of it owns GC cells. */

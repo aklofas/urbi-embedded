@@ -696,11 +696,12 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
 }
 
 /* T18 note: uvm_init now allocates the event ring (allocation #1).
-   The call-frame stack allocation inside uvm_run is allocation #2.
-   We fail allocation #2 to exercise the OOM path inside uvm_run. */
+   T32 note: uvm_init now also allocates the watcher pool slab (allocation #2).
+   The call-frame stack allocation inside uvm_run is allocation #3.
+   We fail allocation #3 to exercise the OOM path inside uvm_run. */
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_nth_count  = 0;
-    uvm_alloc_fail_nth_target = 2;  /* fail the 2nd alloc (call-frame stack) */
+    uvm_alloc_fail_nth_target = 3;  /* fail the 3rd alloc (call-frame stack) */
     UModule c; fab_module_ret_only(&c, 0);
     UVM vm; uvm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;
@@ -988,8 +989,8 @@ UTEST(vm_create_zero_init_m3_fields) {
     /* Handle table (allocated at T27). */
     UASSERT(vm.handle_table == NULL);
     UASSERT_EQ(0u, vm.handle_table_cap);
-    /* Watcher pool (allocated at T32). */
-    UASSERT(vm.watcher_pool_base == NULL);
+    /* Watcher pool (allocated at T32 — pool_base is non-NULL post-init). */
+    UASSERT(vm.watcher_pool_base != NULL);
     UASSERT_EQ(0u, vm.watcher_pool_in_use);
     /* Host time hook must be non-NULL (default stub). */
     UASSERT(vm.host_time_us != NULL);
