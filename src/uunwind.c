@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uunwind.c — M3 control-transfer walker.
+/* uunwind.c — M3 control-transfer walker + row 7 C API (T12).
  *
  * T9: real 3-kind walker replacing T8's bridging stub.
  * Handles UEXEC_RETURN, UEXEC_THROW, and UEXEC_TAG_STOP (stub) via
@@ -29,6 +29,7 @@
 #include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "uvm_internal.h" /* vm_close_upvalues */
 #include "uvm.h"          /* dispatch_loop_until_yield */
+#include "urbi.h"         /* UErrCode, public API declarations */
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
@@ -300,4 +301,137 @@ fatal:
     s->fatal_status = s->pending_unwind;
     s->fatal_value  = s->unwind_value;
     s->state        = USTRAND_STATE_DEAD;
+}
+
+/* ===== Row 7 public C API (T12) =====
+ *
+ * These functions expose strand control-transfer to host C code.
+ * Thread safety: none at M3 — not ISR-safe.  T18 adds the ISR-safe path.
+ * Functions that accept NULL for mandatory pointer args return URBI_ERR_INVALID_ARG.
+ */
+
+/* urbi_tag_stop — cross-strand TAG_STOP deposit.
+ * T31 wires the real member-strand walk; T12 stub checks validity only. */
+int
+urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
+{
+    if (!vm || !tag) return URBI_ERR_INVALID_ARG;
+    /* Cross-strand deposit deferred to T31 (row 11 §3.5 — needs member_strands walk).
+     * T12 stub: arg validity verified, semantics are a no-op.  T31 replaces body. */
+    (void)value;
+    return URBI_OK;
+}
+
+/* urbi_strand_cancel — deposit CANCEL (fatal, no catch) on a strand. */
+int
+urbi_strand_cancel(struct UStrand *s, UValue cancel_reason)
+{
+    if (!s) return URBI_ERR_INVALID_ARG;
+    if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return URBI_ERR_STRAND_FATAL;
+    s->pending_unwind = UEXEC_CANCEL;
+    s->unwind_value   = cancel_reason;
+    /* If the strand is sleeping/waiting, unblock it so it can process the
+     * unwind.  USTRAND_IS_WAITING checks the upper nibble of s->state. */
+    if (USTRAND_IS_WAITING(s))
+        s->state = USTRAND_STATE_READY;
+    return URBI_OK;
+}
+
+/* urbi_strand_panic — skip walker, mark strand DEAD immediately.
+ * No cleanup runs.  The msg parameter is for diagnostic context; at M3 it
+ * is not stored (no string heap) — T16/T19 diagnostic infra will wire it.
+ * The fatal_value is set to nil; T29 may upgrade to a string UValue. */
+int
+urbi_strand_panic(struct UStrand *s, const char *msg)
+{
+    UValue nil;
+    nil.kind  = UVAL_NIL;
+    nil.v.i   = 0;
+
+    if (!s) return URBI_ERR_INVALID_ARG;
+    (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
+    s->fatal_status = UEXEC_CANCEL;
+    s->fatal_value  = nil;
+    s->state        = USTRAND_STATE_DEAD;
+    /* pending_unwind stays as-is; the strand is immediately dead.
+     * No cleanup runs — panic is the "kill unconditionally" path. */
+    return URBI_OK;
+}
+
+/* urbi_strand_unwind_status — read pending unwind state (non-destructive). */
+UExecStatus
+urbi_strand_unwind_status(const struct UStrand *s)
+{
+    return s ? s->pending_unwind : UEXEC_OK;
+}
+
+/* urbi_strand_is_fatal — query whether the strand has hit a fatal unwind.
+ * Returns true and populates out_status / out_value (both nullable) if fatal. */
+bool
+urbi_strand_is_fatal(const struct UStrand *s,
+                     UExecStatus *out_status, UValue *out_value)
+{
+    if (!s || s->fatal_status == UEXEC_OK) return false;
+    if (out_status) *out_status = s->fatal_status;
+    if (out_value)  *out_value  = s->fatal_value;
+    return true;
+}
+
+/* urbi_strand_reset — REPL session restart: clear all unwind / fatal state,
+ * reset cleanup-stack depth, return strand to DORMANT.
+ * Does not free or reallocate memory.  The register window (stack/R) is
+ * left intact; callers are expected to re-initialise it per their session
+ * semantics before the next dispatch. */
+int
+urbi_strand_reset(struct UStrand *s)
+{
+    UValue nil;
+    nil.kind = UVAL_NIL;
+    nil.v.i  = 0;
+
+    if (!s) return URBI_ERR_INVALID_ARG;
+
+    s->pending_unwind  = UEXEC_OK;
+    s->unwind_value    = nil;
+    s->unwind_target   = NULL;
+    s->fatal_status    = UEXEC_OK;
+    s->fatal_value     = nil;
+    s->cleanup_depth   = 0;
+    s->cleanup_top     = NULL;
+    s->state           = USTRAND_STATE_DORMANT;
+    return URBI_OK;
+}
+
+/* === Host-callback reentrance helpers ===
+ *
+ * These functions inject control-transfer events from inside a host C
+ * callback that is executing on the strand's behalf.  The dispatch loop
+ * reads s->pending_unwind when the callback returns and starts unwinding.
+ */
+
+/* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW). */
+void
+urbi_throw(struct UStrand *s, UValue value)
+{
+    s->pending_unwind = UEXEC_THROW;
+    s->unwind_value   = value;
+}
+
+/* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
+ * Named urbi_return_val (not urbi_return) to avoid conflict with the C
+ * keyword `return` in macro expansion contexts and to be unambiguous. */
+void
+urbi_return_val(struct UStrand *s, UValue value)
+{
+    s->pending_unwind = UEXEC_RETURN;
+    s->unwind_value   = value;
+}
+
+/* urbi_tag_stop_local — deposit TAG_STOP from within the same strand. */
+void
+urbi_tag_stop_local(struct UStrand *s, struct UTag *tag, UValue value)
+{
+    s->pending_unwind  = UEXEC_TAG_STOP;
+    s->unwind_target   = tag;
+    s->unwind_value    = value;
 }
