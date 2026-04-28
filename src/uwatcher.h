@@ -67,9 +67,10 @@ struct UTag;
  *   onleave        : 8 B
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Total          : 200 B + natural padding ≈ 208 B
+ *   Fixed portion  : 72 B
+ *   Total          : 72 + 128 = 200 B + natural padding ≈ 208 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 80 + 32 = 112 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 72 + 32 = 104 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 

@@ -177,12 +177,15 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
-    /* Watcher pool (T32): allocate after field zero-init and after GC init
+    /* Watcher pool: allocate after field zero-init and after GC init
      * so pool_alloc can use vm->current_white and vm->alloc_fn is set. */
     uwatcher_pool_init(vm);
     /* OOM note: if uwatcher_pool_init returns -1, watcher_pool_base stays NULL.
-     * pool_alloc will return NULL on any install attempt — still safe, but the
-     * embedded caller should check vm->watcher_pool_base != NULL post-init. */
+     * pool_alloc will return NULL on any install attempt — still safe. Matches the
+     * event_ring OOM pattern from row 9 scheduler work: silently leaves the pointer
+     * NULL; the install API returns NULL on first use, surfacing the failure at the
+     * use site rather than at vm_init. The embedded caller should check
+     * vm->watcher_pool_base != NULL post-init. */
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;

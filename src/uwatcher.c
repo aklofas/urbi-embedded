@@ -55,7 +55,9 @@ pool_alloc(struct UVM *vm)
     w->condition       = NULL;
     w->body            = NULL;
     w->onleave         = NULL;
-    /* Clear last_value_cache. */
+    /* Re-init last_value_cache kind+value; UValue._pad bytes are zero on
+     * first use (slab-zeroed at pool_init) and irrelevant on recycle since
+     * they have no semantic meaning. */
     w->last_value_cache.kind  = UVAL_NIL;
     w->last_value_cache.v.i   = 0;
     /* Clear read-set entries. */
