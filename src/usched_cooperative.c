@@ -308,4 +308,14 @@ sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     for (s = vm->sleep_q_head; s != NULL; s = s->wait_next) {
         strand_walk_roots(vm, s, cb, ctx);
     }
+
+    /* TODO(M4+/GC-root-WAITING_JOIN): WAITING_JOIN strands sit on
+     * child->joiners_head (added at T38 fork activation) and are NOT
+     * visited by either loop above. At M3 this is safe (no GC-managed
+     * cells in registers yet — UClosure is closure_list-owned, UStrand
+     * is realm-owned, neither GC). When M4 adds UObject/UString as
+     * GC-managed cells, JOIN-blocked parents' register stacks must be
+     * walked too — either add a third loop here that walks every live
+     * strand's joiners_head chain, or thread WAITING_JOIN strands onto
+     * a separate VM-level list. */
 }

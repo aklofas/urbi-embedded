@@ -61,7 +61,18 @@ urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
          * strand_runnable_count because it sees state=RUNNING.  But that count was
          * already decremented by sched_dequeue_ready_head above, so the block path
          * would double-decrement and erase a child strand's runnable slot.
-         * Re-increment once to restore the child's count entry. */
+         *
+         * Re-increment invariant: sched_dequeue_ready_head decremented
+         * strand_runnable_count when we picked this strand. If the strand
+         * transitioned to WAITING during dispatch (e.g. OP_JOIN_WAIT calls
+         * sched_strand_block which decrements for state == RUNNING), the counter
+         * is now double-decremented and the scheduler would lose track of the fact
+         * that the strand is waiting on something rather than gone entirely.
+         *
+         * Re-increment to restore symmetry. Any future blocking opcode that calls
+         * sched_strand_block from inside the dispatch loop must rely on this
+         * re-increment — adding such an opcode without checking this invariant
+         * will silently underflow the runnable count. */
         if (USTRAND_IS_WAITING(s)) {
             vm->strand_runnable_count++;
         }
