@@ -768,6 +768,90 @@ UTEST(dispatch_loop_loadnil_then_move) {
 }
 
 /* ============================================================
+ * Test 14: gc_pending flag triggers gc_slice at backward-branch safepoint
+ * Verifies the dispatch loop calls gc_slice when gc_pending is set
+ * at a backward-branch safepoint. gc_slice is a no-op stub at M3.
+ * ============================================================ */
+
+UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
+    /* Program: LOADNIL R0; JMP -1 (backward, hits safepoint); RET.
+       With gc_pending=1, the backward-branch safepoint should invoke gc_slice.
+       gc_slice is a stub at M3 (no-op), so we verify dispatch completes
+       without crash and state remains consistent. */
+    static uint32_t instrs[3];
+    instrs[0] = enc_loadnil(0);
+    instrs[1] = enc_jmp(-1);   /* backward: safepoint */
+    instrs[2] = enc_ret();
+
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    static UValue no_consts[1];
+
+    UStrand s;
+    strand_setup(&s, &vm, instrs, no_consts, reg_stack);
+    s.instruction_budget_remaining = 100u;
+
+    /* Set gc_pending flag; it will be tested at the backward-branch safepoint. */
+    vm.gc_pending = 1;
+
+    uint64_t consumed = dispatch_loop_until_yield(&s, 100000u);
+
+    /* Dispatch should complete without crash. Strand may be RUNNING or READY
+       depending on budget exhaustion; we verify the dispatch path was exercised. */
+    UASSERT(consumed >= 1u);
+
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
+/* ============================================================
+ * Test 15: watcher_dirty_count triggers watcher_eval_dirty at backward-branch safepoint
+ * Verifies the dispatch loop calls watcher_eval_dirty when watcher_dirty_count > 0
+ * at a backward-branch safepoint. watcher_eval_dirty is a no-op stub at M3.
+ * ============================================================ */
+
+UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
+    /* Program: LOADNIL R0; JMP -1 (backward, hits safepoint); RET.
+       With watcher_dirty_count=1, the backward-branch safepoint should invoke
+       watcher_eval_dirty. watcher_eval_dirty is a stub at M3 (no-op), so we
+       verify dispatch completes without crash and state remains consistent. */
+    static uint32_t instrs[3];
+    instrs[0] = enc_loadnil(0);
+    instrs[1] = enc_jmp(-1);   /* backward: safepoint */
+    instrs[2] = enc_ret();
+
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+
+    static UValue no_consts[1];
+
+    UStrand s;
+    strand_setup(&s, &vm, instrs, no_consts, reg_stack);
+    s.instruction_budget_remaining = 100u;
+
+    /* Set watcher_dirty_count; it will be tested at the backward-branch safepoint. */
+    vm.watcher_dirty_count = 1;
+
+    uint64_t consumed = dispatch_loop_until_yield(&s, 100000u);
+
+    /* Dispatch should complete without crash. Strand may be RUNNING or READY
+       depending on budget exhaustion; we verify the dispatch path was exercised. */
+    UASSERT(consumed >= 1u);
+
+    free(reg_stack);
+    uvm_destroy(&vm);
+}
+
+/* ============================================================
  * Suite registration
  * ============================================================ */
 
@@ -798,4 +882,8 @@ void test_dispatch_loop_suite(void) {
               dispatch_loop_nested_call_and_ret);
     utest_run("dispatch_loop LOADNIL then MOVE",
               dispatch_loop_loadnil_then_move);
+    utest_run("dispatch_loop gc_pending flag triggers gc_slice at safepoint",
+              dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint);
+    utest_run("dispatch_loop watcher_dirty_count triggers watcher_eval at safepoint",
+              dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint);
 }

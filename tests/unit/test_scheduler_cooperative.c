@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: URBI_SCHED_COOPERATIVE interface (row 9 §11.2).
-   Extended from 4 to 15 cases at T21. */
+   Extended from 4 to 23 cases at the row 9 sweep. */
 
 #include "utest.h"
 #include "usched_cooperative.h"
@@ -577,7 +577,61 @@ UTEST(sched_sleep_q_remove_while_advance)
     uvm_destroy(&vm);
 }
 
-/* Case 23: sched_walk_roots is a no-op stub; calling it doesn't crash. */
+/* Case 23: sched_quiescent returns false when watcher_active_count is non-zero. */
+UTEST(sched_quiescent_false_when_watcher_active_nonzero)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UASSERT(sched_quiescent(&vm));
+
+    vm.watcher_active_count = 1;
+    UASSERT(!sched_quiescent(&vm));
+
+    vm.watcher_active_count = 0;
+    UASSERT(sched_quiescent(&vm));
+
+    uvm_destroy(&vm);
+}
+
+/* Case 24: sched_quiescent returns false when event_queue_count is non-zero. */
+UTEST(sched_quiescent_false_when_event_queue_nonzero)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UASSERT(sched_quiescent(&vm));
+
+    vm.event_queue_count = 1;
+    UASSERT(!sched_quiescent(&vm));
+
+    vm.event_queue_count = 0;
+    UASSERT(sched_quiescent(&vm));
+
+    uvm_destroy(&vm);
+}
+
+/* Case 25: sched_quiescent returns false when host_call_pending_count is non-zero. */
+UTEST(sched_quiescent_false_when_host_call_pending_nonzero)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UASSERT(sched_quiescent(&vm));
+
+    vm.host_call_pending_count = 1;
+    UASSERT(!sched_quiescent(&vm));
+
+    vm.host_call_pending_count = 0;
+    UASSERT(sched_quiescent(&vm));
+
+    uvm_destroy(&vm);
+}
+
+/* Case 26: sched_walk_roots is a no-op stub; calling it doesn't crash. */
 UTEST(sched_walk_roots_noop)
 {
     UVM vm;
@@ -610,5 +664,8 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_sleep_q_remove_mid_element",         sched_sleep_q_remove_mid_element);
     utest_run("sched_sleep_q_insert_while_advance",       sched_sleep_q_insert_while_advance);
     utest_run("sched_sleep_q_remove_while_advance",       sched_sleep_q_remove_while_advance);
+    utest_run("sched_quiescent_false_when_watcher_active_nonzero", sched_quiescent_false_when_watcher_active_nonzero);
+    utest_run("sched_quiescent_false_when_event_queue_nonzero", sched_quiescent_false_when_event_queue_nonzero);
+    utest_run("sched_quiescent_false_when_host_call_pending_nonzero", sched_quiescent_false_when_host_call_pending_nonzero);
     utest_run("sched_walk_roots_noop",                    sched_walk_roots_noop);
 }
