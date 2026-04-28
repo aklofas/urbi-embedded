@@ -43,6 +43,7 @@ urbi_realm_create(struct UVM *vm)
     URealm *r;
 
     if (vm == NULL) return NULL;
+    URBI_ASSERT_NOT_ISR(vm);
 
     r = (URealm *)vm->alloc_fn(NULL, sizeof(URealm), vm->alloc_ud);
     if (r == NULL) return NULL;
@@ -98,6 +99,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
 
     if (realm == NULL) return;
     if (vm == NULL) return;
+    URBI_ASSERT_NOT_ISR(vm);
 
     /* Step 1: Stop the realm's tag.
      * No-op at M3 because tag == NULL.  When T29-T31 land, this becomes a
@@ -146,6 +148,7 @@ URealm *
 urbi_realm_global(struct UVM *vm)
 {
     if (vm == NULL) return NULL;
+    URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->global_realm != NULL) {
         return vm->global_realm;

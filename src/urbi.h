@@ -170,6 +170,93 @@ int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_
 int urbi_inject_event(struct UVM *vm, uint32_t event_id,
                       const void *payload, size_t len);
 
+/* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
+ *
+ * URBI_LOG_* — log level constants for host_log_fn callback.
+ * URBI_WATCHDOG_* — watchdog mode: warn or assert on slow callbacks.
+ * UHostFn — typedef for host-callable C functions invoked by OP_CALL.
+ * urbi_panic — fatal runtime error; aborts on hosted builds.
+ * URBI_ASSERT_NOT_ISR — asserts that the current call is NOT in ISR context.
+ * URBI_INTERNAL_ASSERT — internal precondition assertion (T20+ use).
+ * urbi_call_host_with_watchdog — debug-build wrapper for host callbacks.
+ * urbi_set_isr_check_fn — register ISR-context predicate.
+ * urbi_set_callback_watchdog_mode — set watchdog mode (WARN or ASSERT). */
+
+typedef enum {
+    URBI_LOG_DEBUG = 0,
+    URBI_LOG_INFO  = 1,
+    URBI_LOG_WARN  = 2,
+    URBI_LOG_ERROR = 3
+} ULogLevel;
+
+#define URBI_WATCHDOG_WARN   0
+#define URBI_WATCHDOG_ASSERT 1
+
+/* UHostFn: signature for host-implemented native functions called by OP_CALL.
+ * M5 wires this into the call-dispatch path; M3 defines the typedef for the
+ * watchdog wrapper infrastructure introduced here at T19. */
+typedef UValue (*UHostFn)(struct UStrand *s, int argc, UValue *argv);
+
+/* urbi_panic: fatal runtime error.
+ * On hosted builds: prints msg to stderr and calls abort().
+ * On freestanding builds: spins forever (no OS, no abort).
+ * Declared here; defined in urbi.c. */
+void urbi_panic(const char *msg);
+
+/* URBI_CALLBACK_WARN_US: default watchdog threshold (microseconds).
+ * Overridable at compile time: -DURBI_CALLBACK_WARN_US=2000 */
+#ifndef URBI_CALLBACK_WARN_US
+#  define URBI_CALLBACK_WARN_US 1000u
+#endif
+
+/* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not
+ * called from ISR context.  vm must be a pointer to a live UVM. */
+#ifdef URBI_DEBUG
+#  define URBI_ASSERT_NOT_ISR(vm) \
+       do { if ((vm)->isr_check_fn && (vm)->isr_check_fn()) \
+                urbi_panic("called non-ISR-safe function from ISR context"); \
+          } while (0)
+#else
+#  define URBI_ASSERT_NOT_ISR(vm) ((void)0)
+#endif
+
+/* URBI_INTERNAL_ASSERT: precondition assertion for internal runtime use.
+ * In hosted builds: uses assert(). In freestanding: silently skipped.
+ * T20+ uses this at strand entry-point preconditions. */
+#if __STDC_HOSTED__
+#  include <assert.h>
+#  define URBI_INTERNAL_ASSERT(cond) assert(cond)
+#else
+#  define URBI_INTERNAL_ASSERT(cond) ((void)0)
+#endif
+
+/* urbi_call_host_with_watchdog: invoke a UHostFn and check elapsed time.
+ * In URBI_DEBUG builds: times the call; if elapsed > vm->callback_warn_us,
+ *   logs a warning (URBI_WATCHDOG_WARN) or panics (URBI_WATCHDOG_ASSERT).
+ * In non-debug builds: collapses to a direct call with no overhead.
+ * vm  — the VM owning the call.
+ * s   — the strand executing the call (passed as first arg to fn).
+ * fn  — the host function to invoke.
+ * argc, argv — arguments forwarded to fn. */
+#ifdef URBI_DEBUG
+/* URBI_DEBUG builds: real function defined in urbi.c (needs full UVM struct). */
+UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
+                                    UHostFn fn, int argc, UValue *argv);
+#else
+/* Non-debug builds: zero-overhead macro — collapsed to a bare call. */
+#  define urbi_call_host_with_watchdog(vm, s, fn, argc, argv) \
+       ((fn)((s), (argc), (argv)))
+#endif
+
+/* urbi_set_isr_check_fn: register a predicate that returns true when called
+ * from ISR context.  Pass NULL to disable ISR checking (default). */
+void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void));
+
+/* urbi_set_callback_watchdog_mode: set the watchdog response mode.
+ * mode: URBI_WATCHDOG_WARN (0) — log warning via host_log_fn.
+ *       URBI_WATCHDOG_ASSERT (1) — call urbi_panic on threshold exceeded. */
+void urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode);
+
 #ifdef __cplusplus
 }
 #endif

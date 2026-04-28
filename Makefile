@@ -89,7 +89,7 @@ test: $(LIB) $(TEST_OBJ) test-integration test-chk
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
 		test
 
 test-asan:

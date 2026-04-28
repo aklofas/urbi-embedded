@@ -316,6 +316,7 @@ int
 urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 {
     if (!vm || !tag) return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
     /* Cross-strand deposit deferred to T31 (row 11 §3.5 — needs member_strands walk).
      * T12 stub: arg validity verified, semantics are a no-op.  T31 replaces body. */
     (void)value;
@@ -327,6 +328,7 @@ int
 urbi_strand_cancel(struct UStrand *s, UValue cancel_reason)
 {
     if (!s) return URBI_ERR_INVALID_ARG;
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return URBI_ERR_STRAND_FATAL;
     s->pending_unwind = UEXEC_CANCEL;
     s->unwind_value   = cancel_reason;
@@ -349,6 +351,7 @@ urbi_strand_panic(struct UStrand *s, const char *msg)
     nil.v.i   = 0;
 
     if (!s) return URBI_ERR_INVALID_ARG;
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
     s->fatal_status = UEXEC_CANCEL;
     s->fatal_value  = nil;
@@ -362,6 +365,7 @@ urbi_strand_panic(struct UStrand *s, const char *msg)
 UExecStatus
 urbi_strand_unwind_status(const struct UStrand *s)
 {
+    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     return s ? s->pending_unwind : UEXEC_OK;
 }
 
@@ -371,6 +375,7 @@ bool
 urbi_strand_is_fatal(const struct UStrand *s,
                      UExecStatus *out_status, UValue *out_value)
 {
+    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     if (!s || s->fatal_status == UEXEC_OK) return false;
     if (out_status) *out_status = s->fatal_status;
     if (out_value)  *out_value  = s->fatal_value;
@@ -390,6 +395,7 @@ urbi_strand_reset(struct UStrand *s)
     nil.v.i  = 0;
 
     if (!s) return URBI_ERR_INVALID_ARG;
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
 
     s->pending_unwind  = UEXEC_OK;
     s->unwind_value    = nil;
@@ -413,6 +419,7 @@ urbi_strand_reset(struct UStrand *s)
 void
 urbi_throw(struct UStrand *s, UValue value)
 {
+    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind = UEXEC_THROW;
     s->unwind_value   = value;
 }
@@ -423,6 +430,7 @@ urbi_throw(struct UStrand *s, UValue value)
 void
 urbi_return_val(struct UStrand *s, UValue value)
 {
+    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind = UEXEC_RETURN;
     s->unwind_value   = value;
 }
@@ -431,6 +439,7 @@ urbi_return_val(struct UStrand *s, UValue value)
 void
 urbi_tag_stop_local(struct UStrand *s, struct UTag *tag, UValue value)
 {
+    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind  = UEXEC_TAG_STOP;
     s->unwind_target   = tag;
     s->unwind_value    = value;

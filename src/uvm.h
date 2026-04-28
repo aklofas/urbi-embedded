@@ -170,6 +170,19 @@ typedef struct UVM {
 
     /* --- Row 9 host time hook --- */
     uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
+
+    /* --- T19 ISR-check + debug watchdog hooks ---
+     * isr_check_fn: returns true when called from ISR context; NULL = no check.
+     *   In URBI_DEBUG builds, every non-ISR-safe function asserts isr_check_fn() == false.
+     * host_log_fn: structured log callback; NULL = silent.  Called by debug-build
+     *   watchdog when a host callback exceeds callback_warn_us.
+     * callback_warn_us: watchdog threshold in microseconds (default URBI_CALLBACK_WARN_US).
+     * callback_watchdog_mode: URBI_WATCHDOG_WARN (0) or URBI_WATCHDOG_ASSERT (1). */
+    bool     (*isr_check_fn)(void);
+    void     (*host_log_fn)(struct UVM *vm, int level, const char *fmt, ...);
+    uint32_t   callback_warn_us;
+    uint8_t    callback_watchdog_mode;
+    uint8_t    pad_watchdog[3];        /* padding; zeroed */
 } UVM;
 
 /* --- API --- */

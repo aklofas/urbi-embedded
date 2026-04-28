@@ -51,6 +51,8 @@ chunk_strncpy(char *dst, const char *src, size_t cap)
 int
 urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Resolve realm: NULL → global (auto-create). */
     if (!realm) {
         realm = urbi_realm_global(vm);
@@ -92,6 +94,8 @@ int
 urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                char *out_buf, size_t out_buf_size)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Resolve realm. */
     if (!realm) {
         realm = urbi_realm_global(vm);
@@ -181,6 +185,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 int
 urbi_run_script(UVM *vm, URealm *realm, UModule *module)
 {
+    URBI_ASSERT_NOT_ISR(vm);
     return urbi_run_chunk(vm, realm, module, NULL);
 }
 
@@ -194,6 +199,7 @@ urbi_run_script(UVM *vm, URealm *realm, UModule *module)
 int
 urbi_load_module(UVM *vm, UModule *module, const char *module_name)
 {
+    URBI_ASSERT_NOT_ISR(vm);
     (void)vm;
     (void)module;
     (void)module_name;

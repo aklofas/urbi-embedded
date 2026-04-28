@@ -11,6 +11,8 @@
 UStepResult
 urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Fast-path: previous call left a fatal strand wired; caller must inspect
      * and reset (via urbi_strand_reset) or shut down before calling again. */
     if (vm->fatal_strand) return URBI_STEP_FATAL;
