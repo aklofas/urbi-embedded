@@ -6,6 +6,7 @@
 #define USTRAND_H
 
 #include <stdint.h>
+#include <stddef.h>   /* size_t */
 #include "uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 
@@ -164,6 +165,30 @@ struct UStrand {
 
 void ustrand_init(UStrand *s, struct UVM *vm);
 void ustrand_destroy(UStrand *s, struct UVM *vm);
+
+/* === T29: ambient-tag inheritance helpers ===
+ *
+ * urbi_strand_capture_ambient_chain: walk `parent`'s cleanup-stack bottom-up
+ *   and collect the owning_tag pointer from every TAG_SCOPE entry into
+ *   out_chain[].  Returns the count of tags collected.  Returns SIZE_MAX if
+ *   the chain would exceed out_cap (caller bug — use URBI_CLEANUP_MAX as cap).
+ *   Read-only; ISR-safe.
+ *
+ * urbi_strand_attach_ambient_tags: push synthetic TAG_SCOPE cleanup-entries
+ *   onto `new_s` for each tag in `chain[0..chain_count-1]`.  chain[0] is the
+ *   bottommost tag (pushed first).  On cleanup-stack overflow, sets
+ *   new_s->fatal_status = UEXEC_CANCEL, fatal_value = NIL, state = DEAD and
+ *   returns immediately.  Not ISR-safe. */
+
+struct UTag;   /* forward-decl; full struct in utag.h */
+
+size_t urbi_strand_capture_ambient_chain(struct UStrand *parent,
+                                         struct UTag   **out_chain,
+                                         size_t          out_cap);
+
+void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
+                                       struct UTag   **chain,
+                                       size_t          chain_count);
 
 #ifdef __cplusplus
 }

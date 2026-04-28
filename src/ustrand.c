@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UStrand lifecycle.
    T20 adds urbi_strand_create/start/spawn/destroy (full lifecycle C API).
-   Tag fields land at T29.  Cleanup-stack wiring: T3 (this file). */
+   T29 adds urbi_strand_attach_ambient_tags + urbi_strand_capture_ambient_chain.
+   Cleanup-stack wiring: T3 (this file). */
 
 #include "ustrand.h"
 #include "ucleanup.h"
+#include "utag.h"
 #include "uvm.h"
 #include "urealm.h"
 #include "usched_cooperative.h"
@@ -40,8 +42,51 @@ ustrand_init(UStrand *s, struct UVM *vm) {
        must call strand_cleanup_stack_init explicitly before use. */
 }
 
+/* strand_unlink_from_tags
+ *
+ * Walk all TAG_SCOPE entries on s's cleanup-stack and unlink s from each
+ * owning_tag's member_strands_head list.  Called by ustrand_destroy to maintain
+ * the §3.4 membership invariant before the cleanup-stack array is freed.
+ *
+ * The normal production path runs this via the row 7 walker during unwind;
+ * this ensures correctness when strands are torn down without executing bytecode
+ * (e.g., test teardown, OOM recovery, urbi_strand_panic). */
+static void
+strand_unlink_from_tags(UStrand *s)
+{
+    uint16_t i;
+
+    if (s->cleanup_base == NULL || s->cleanup_depth == 0) return;
+
+    for (i = 0; i < s->cleanup_depth; i++) {
+        UCleanupEntry *e = &s->cleanup_base[i];
+        UTag *tag;
+        UCleanupEntry **cur;
+
+        if (e->kind != UCLEANUP_TAG_SCOPE) continue;
+        tag = e->owning_tag;
+        if (tag == NULL) continue;
+
+        /* Unlink e from tag->member_strands_head singly-linked list. */
+        cur = &tag->member_strands_head;
+        while (*cur != NULL) {
+            if (*cur == e) {
+                *cur = e->next_member;
+                e->next_member = NULL;
+                break;
+            }
+            cur = &(*cur)->next_member;
+        }
+    }
+}
+
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* Unlink all TAG_SCOPE entries from their owning tags before freeing
+       the cleanup stack.  This maintains the §3.4 membership invariant
+       and allows utag_destroy to assert an empty member list. */
+    strand_unlink_from_tags(s);
+
     /* Free the pre-allocated cleanup stack if vm is available. */
     if (vm != NULL && s->cleanup_base != NULL) {
         strand_cleanup_stack_destroy(s, vm);
@@ -71,10 +116,15 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
     s->realm         = realm;
     s->entry_closure = entry;
 
-    /* T29: per row 11 §4, chunk-start ambient = [realm->tag] via
-       urbi_strand_attach_ambient_tags.  At M3 realm->tag is always NULL
-       (set to NULL at T14 as the M3 stub), so this block would be a no-op
-       even if the function existed.  Deferred cleanly. */
+    /* Row 11 §4.1: chunk-start ambient = [realm->tag].
+       Attach synthetic TAG_SCOPE entries so this strand appears in the
+       realm tag's member_strands_head list.  On overflow, attach sets
+       s->fatal_status = UEXEC_CANCEL and state = DEAD (detectable by caller). */
+    if (realm->tag != NULL) {
+        UTag *chain[1];
+        chain[0] = realm->tag;
+        urbi_strand_attach_ambient_tags(s, chain, 1);
+    }
 
     sched_strand_init(s, NULL);
 
@@ -117,4 +167,91 @@ urbi_strand_destroy(UStrand *s)
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
+}
+
+/* === T29: ambient-tag inheritance helpers ===
+ *
+ * Row 11 §4.1 / §4.3. */
+
+/* urbi_strand_capture_ambient_chain
+ *
+ * Walk `parent`'s cleanup-stack bottom-up (index 0 → depth-1) collecting
+ * the owning_tag from every TAG_SCOPE entry into out_chain[].
+ * Returns the number of tags collected, or SIZE_MAX on truncation. */
+
+size_t
+urbi_strand_capture_ambient_chain(struct UStrand *parent,
+                                  struct UTag   **out_chain,
+                                  size_t          out_cap)
+{
+    size_t n = 0;
+    uint16_t i;
+
+    if (parent == NULL || parent->cleanup_base == NULL) return 0;
+
+    for (i = 0; i < parent->cleanup_depth; i++) {
+        UCleanupEntry *e = &parent->cleanup_base[i];
+        if (e->kind != UCLEANUP_TAG_SCOPE) continue;
+        if (n >= out_cap) return (size_t)-1;  /* SIZE_MAX */
+        out_chain[n++] = e->owning_tag;
+    }
+    return n;
+}
+
+/* urbi_strand_attach_ambient_tags
+ *
+ * Push synthetic TAG_SCOPE cleanup-entries onto `new_s` for each tag in
+ * chain[0..chain_count-1].  chain[0] is the bottommost tag (pushed first),
+ * so it ends up at the bottom of the cleanup-stack and pops last.
+ *
+ * Each synthetic entry has:
+ *   kind            = UCLEANUP_TAG_SCOPE
+ *   flags           = 0 (no onleave — synthetic entries never own cleanup logic)
+ *   register_base   = 0, register_count = 0
+ *   handler_pc      = 0
+ *   owning_tag      = chain[i]
+ *   catch_pattern   = NULL
+ *   strand_back     = new_s
+ *   next_member     = chain[i]->member_strands_head (head-insert into tag's list)
+ *
+ * On cleanup-stack overflow: sets new_s->fatal_status = UEXEC_CANCEL,
+ * new_s->fatal_value = NIL, new_s->state = USTRAND_STATE_DEAD, and returns.
+ * The create caller can detect this via s->fatal_status. */
+
+void
+urbi_strand_attach_ambient_tags(struct UStrand *new_s,
+                                struct UTag   **chain,
+                                size_t          chain_count)
+{
+    size_t i;
+
+    if (new_s == NULL || chain_count == 0) return;
+    URBI_ASSERT_NOT_ISR(new_s->vm);
+
+    for (i = 0; i < chain_count; i++) {
+        UCleanupEntry *e = strand_cleanup_push(new_s);
+        if (e == NULL) {
+            /* Cleanup-stack overflow — strand cannot start safely. */
+            new_s->fatal_status = UEXEC_CANCEL;
+            new_s->fatal_value.kind = UVAL_NIL;
+            new_s->fatal_value.v.i  = 0;
+            new_s->state            = USTRAND_STATE_DEAD;
+            return;
+        }
+
+        /* Zero-init the entry (strand_cleanup_push returns a pointer into
+           the pre-zeroed allocation, but be explicit for each used field). */
+        e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
+        e->flags          = 0;
+        e->register_base  = 0;
+        e->register_count = 0;
+        e->handler_pc     = 0;
+        e->owning_tag     = chain[i];
+        e->catch_pattern  = NULL;
+        e->strand_back    = new_s;
+        e->next_member    = chain[i]->member_strands_head;
+
+        /* Head-insert this entry into the tag's member_strands_head list. */
+        chain[i]->member_strands_head = e;
+    }
 }

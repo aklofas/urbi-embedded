@@ -121,7 +121,8 @@ UTEST(realm_id_unique_monotonic)
     uvm_destroy(&vm);
 }
 
-/* 4. destroy_cascades_via_tag_stop: tag == NULL at M3; destroy completes without crash. */
+/* 4. destroy_cascades_via_tag_stop: realm->tag is created at T29; destroy completes
+ *    without crash.  urbi_tag_stop is a stub at M3; utag_destroy frees the tag. */
 UTEST(realm_destroy_cascades_via_tag_stop)
 {
     UVM vm;
@@ -129,10 +130,10 @@ UTEST(realm_destroy_cascades_via_tag_stop)
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    /* At M3, tag is always NULL. */
-    UASSERT(r->tag == NULL);
+    /* T29: realm->tag is now a real UTag (not NULL). */
+    UASSERT(r->tag != NULL);
 
-    /* Should not crash — tag guard prevents calling urbi_tag_stop. */
+    /* Should not crash — urbi_tag_stop (stub) + utag_destroy handle the tag. */
     urbi_realm_destroy(&vm, r);
     UASSERT(vm.realms_head == NULL);
 

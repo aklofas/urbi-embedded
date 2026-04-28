@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
+#include "utag.h"
 #include "uvm.h"
 #include "urbi.h"  /* urbi_tag_stop */
 
@@ -53,9 +54,12 @@ urbi_realm_create(struct UVM *vm)
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */
     r->flags = 0;
 
-    /* tag: stubbed to NULL at M3.
-     * T29: utag_create(vm) lands here. */
-    r->tag = NULL; /* T29: utag_create lands here. */
+    /* tag: root cleanup boundary for all strands in this realm. */
+    r->tag = utag_create(vm);
+    if (r->tag == NULL) {
+        vm->alloc_fn(r, 0, vm->alloc_ud);
+        return NULL;
+    }
 
     /* reflective: UVAL_NIL at M3; populated at M4+. */
     r->reflective.kind = UVAL_NIL;
@@ -64,6 +68,7 @@ urbi_realm_create(struct UVM *vm)
     /* Namespace. */
     r->bindings = unamespace_create(vm);
     if (r->bindings == NULL) {
+        utag_destroy(vm, r->tag);
         vm->alloc_fn(r, 0, vm->alloc_ud);
         return NULL;
     }
@@ -101,13 +106,14 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     if (vm == NULL) return;
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Step 1: Stop the realm's tag.
-     * No-op at M3 because tag == NULL.  When T29-T31 land, this becomes a
-     * real cross-strand walk. */
+    /* Step 1: Stop the realm's tag (T31 wires the real cross-strand walk;
+     * currently a stub that validates args and returns without side effects). */
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
     if (realm->tag != NULL) {
         urbi_tag_stop(vm, realm->tag, nil);
+        utag_destroy(vm, realm->tag);
+        realm->tag = NULL;
     }
 
     /* Step 2: Free namespace. */
@@ -226,7 +232,9 @@ urealm_teardown_all(struct UVM *vm)
  * vm->realms_head linked list.  For each Realm:
  *   1. realm->reflective (UVAL_NIL at M3; UValue slot still walked).
  *   2. namespace entries (via unamespace_walk_roots).
- *   3. realm->tag — skipped at M3 (NULL); T29 walker enrolls UVAL_TAG. */
+ *   3. realm->tag — UTag is host-managed at M3 (vm->alloc_fn, not urbi_gc_alloc).
+ *      GC walker enrollment for UTag is deferred to M5/M6 when UVAL_TAG is added
+ *      and UTag migrates to urbi_gc_alloc. */
 
 void
 realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
@@ -243,9 +251,9 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         /* 2. namespace bindings. */
         unamespace_walk_roots(r->bindings, cb, vm, ctx);
 
-        /* 3. tag — T29: walker enrolls UVAL_TAG. */
-        if (r->tag != NULL) {
-            /* T29: walker enrolls UVAL_TAG here. */
-        }
+        /* 3. tag — host-managed at M3; GC enrollment deferred to M5/M6.
+         *    UTag.name (UVAL_NIL at M3) will need to be walked once M6
+         *    populates it and UTag migrates to urbi_gc_alloc. */
+        (void)r->tag;
     }
 }

@@ -57,6 +57,8 @@ extern void test_ugc_barrier_suite(void);
 extern void test_ugc_walk_roots_suite(void);
 extern void test_ugc_handle_suite(void);
 extern void test_ugc_finalizer_suite(void);
+extern void test_tag_lifecycle_suite(void);
+extern void test_strand_spawn_inheritance_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -96,6 +98,8 @@ int main(void) {
     test_ugc_walk_roots_suite();
     test_ugc_handle_suite();
     test_ugc_finalizer_suite();
+    test_tag_lifecycle_suite();
+    test_strand_spawn_inheritance_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
