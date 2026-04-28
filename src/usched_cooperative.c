@@ -2,6 +2,40 @@
 /* Cooperative scheduler implementation — row 9 §2 contract.
    Freestanding-safe: only <stdbool.h> and <stdint.h> (both C99 freestanding). */
 
+/* === 5-counter liveness ownership (row 8 §3 Rule X) ===
+ *
+ * VM quiescence (sched_quiescent) AND's all five counters; M3 maintains 4
+ * (strand_suspended_count is excluded — always 0 at M3). Each subsystem
+ * owns one counter and maintains it at the relevant push/pop sites:
+ *
+ *   strand_runnable_count   — owned by sched_strand_make_runnable (++) /
+ *                             sched_strand_block (--) /
+ *                             T16 urbi_step driver (-- when dequeuing READY
+ *                             strands; -- when dispatch returns DEAD).
+ *                             Invariant: number of strands in READY or
+ *                             RUNNING state (i.e. consuming or eligible to
+ *                             consume CPU on this VM). The uvm_run transient
+ *                             strand is intentionally excluded: it bypasses
+ *                             sched_strand_make_runnable and balances its own
+ *                             READY-cycle increments at dequeue.
+ *
+ *   wakeup_pending_count    — owned by sleep_q_insert (++) /
+ *                             sleep_q_remove (--).
+ *                             Invariant: number of strands on the sleep queue.
+ *                             Decremented only when removal actually removes
+ *                             the strand (not when the strand was not found).
+ *
+ *   host_call_pending_count — owned by urbi_tag_stop cross-strand path (T31).
+ *                             Invariant: number of pending host-injected
+ *                             unwind events. M3 stub: always 0 until T31.
+ *
+ *   watcher_active_count    — owned by M5 (active watcher list).
+ *                             Invariant: number of live watchers; M3 stub: 0.
+ *
+ *   event_queue_count       — owned by M5+ (event scheduler).
+ *                             Invariant: number of pending events; M3 stub: 0.
+ */
+
 #include "usched_cooperative.h"
 #include "uvm.h"
 #include "ustrand.h"
@@ -24,6 +58,7 @@ sleep_q_insert(UVM *vm, UStrand *s)
         vm->sleep_q_head->wait_payload.wake_us > s->wait_payload.wake_us) {
         s->wait_next     = vm->sleep_q_head;
         vm->sleep_q_head = s;
+        vm->wakeup_pending_count++;
         return;
     }
     UStrand *cur = vm->sleep_q_head;
@@ -32,6 +67,7 @@ sleep_q_insert(UVM *vm, UStrand *s)
         cur = cur->wait_next;
     s->wait_next   = cur->wait_next;
     cur->wait_next = s;
+    vm->wakeup_pending_count++;
 }
 
 static void
@@ -40,6 +76,7 @@ sleep_q_remove(UVM *vm, UStrand *s)
     if (vm->sleep_q_head == s) {
         vm->sleep_q_head = s->wait_next;
         s->wait_next     = NULL;
+        if (vm->wakeup_pending_count > 0) vm->wakeup_pending_count--;
         return;
     }
     UStrand *cur = vm->sleep_q_head;
@@ -48,7 +85,9 @@ sleep_q_remove(UVM *vm, UStrand *s)
     if (cur) {
         cur->wait_next = s->wait_next;
         s->wait_next   = NULL;
+        if (vm->wakeup_pending_count > 0) vm->wakeup_pending_count--;
     }
+    /* If cur is NULL, s was not on the queue; do not decrement (no underflow). */
 }
 
 /* === Scheduler lifecycle === */

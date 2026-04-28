@@ -1307,6 +1307,17 @@ safepoint:
 #endif
 
 exit_strand:
+    /* strand_runnable_count ownership at exit:
+     *   - uvm_run transient strands are not tracked in strand_runnable_count
+     *     (they bypass sched_strand_make_runnable). The READY-cycle increment
+     *     via sched_strand_yield is balanced by the dequeue decrement in the
+     *     uvm_run loop (src/uvm.c, the strand_runnable_count-- block).
+     *   - T16 urbi_step driver: strands dequeued from the ready queue before
+     *     entering dispatch_loop_until_yield. T16 decrements strand_runnable_count
+     *     in the driver after dispatch returns with state == USTRAND_STATE_DEAD,
+     *     keeping the decrement co-located with the dequeue logic.
+     *   - sched_strand_block handles RUNNING → WAITING decrements inline.
+     * No decrement here; see T16 for the scheduler-driven DEAD-path decrement. */
     return steps_consumed;
 }
 
