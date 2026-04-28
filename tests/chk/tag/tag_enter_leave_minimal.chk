@@ -1,0 +1,7 @@
+# Milestone: M3
+# Covers: row 11 §2.2 / §2.3 OP_PUSH_TAG / OP_POP_TAG basic scope nesting;
+#         tag scope body runs to completion; variable set inside scope is
+#         visible outside after normal exit.
+
+var x = 0; var t = 0; t: { x = 99 }; x
+[00000000] 99

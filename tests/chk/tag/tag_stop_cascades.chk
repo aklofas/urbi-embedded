@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: nested tag scopes; stopping the outer tag cascades through the
+#         inner scope's onleave handler; cleanup ordering is outer-then-inner
+#         (row 7 §6.3 worked example).
+#
+# defer-to: M4/M5
+#
+# Reason: requires tag.stop() method-call syntax (M4 object model + method
+# dispatch) and onleave clause parse/emit (M5 reactive runtime).  At M3,
+# OP_PUSH_TAG / OP_POP_TAG are emitted but tag.stop() has no urbiscript
+# surface — it is only callable via the C API (urbi_tag_stop).  The onleave
+# keyword is not parsed at M3.
+#
+# When M4/M5 land, implement this fixture by uncommenting the source below.
+# Expected behaviour: outer.stop() cascades through inner onleave first, then
+# outer onleave; log ends up "io".
+#
+# Urbiscript source (activate at M4/M5):
+#   var log = "";
+#   var outer = Tag.new;
+#   var inner = Tag.new;
+#   outer: { inner: { 1 | outer.stop("done") | 2 } onleave { log = log + "i" } } onleave { log = log + "o" };
+#   log
+#   --- expected output ---
+#   [00000001] "io"

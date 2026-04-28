@@ -333,6 +333,84 @@ UTEST(spawned_strand_inherits_ambient_chain)
     uvm_destroy(&vm);
 }
 
+/* ============================================================
+ * §9.4 gap-fill: synthetic entry shape + termination unlink
+ * ============================================================ */
+
+/* 7. synthetic_entries_no_onleave
+ *
+ * Verify that synthetic TAG_SCOPE entries created by urbi_strand_create /
+ * urbi_strand_attach_ambient_tags have flags == 0 (no FLAG_HAS_ONLEAVE)
+ * and handler_pc == 0. */
+UTEST(synthetic_entries_no_onleave)
+{
+    UVM vm;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = urbi_strand_create(r, NULL);
+    UASSERT(s != NULL);
+    UASSERT(s->cleanup_depth >= 1u);
+
+    /* Walk all TAG_SCOPE entries on the cleanup stack. */
+    unsigned i;
+    for (i = 0; i < s->cleanup_depth; i++) {
+        UCleanupEntry *e = &s->cleanup_base[i];
+        if (e->kind != (uint8_t)UCLEANUP_TAG_SCOPE) continue;
+        /* Synthetic entries must have no onleave flag and no handler_pc. */
+        UASSERT_EQ((unsigned)e->flags,          0u);
+        UASSERT_EQ((unsigned)e->handler_pc,     0u);
+        /* Register range fields must be zero. */
+        UASSERT_EQ((unsigned)e->register_base,  0u);
+        UASSERT_EQ((unsigned)e->register_count, 0u);
+    }
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 8. synthetic_entries_unlink_on_termination
+ *
+ * Push a synthetic TAG_SCOPE entry for a local tag; destroy the strand;
+ * verify the tag's member_strands_head is NULL afterward (strand_unlink_from_tags
+ * ran). */
+UTEST(synthetic_entries_unlink_on_termination)
+{
+    UVM vm;
+    UTag local_tag;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = urbi_strand_create(r, NULL);
+    UASSERT(s != NULL);
+
+    /* Add a second synthetic entry for local_tag. */
+    tag_init_local(&local_tag);
+    UASSERT(push_tag_scope(s, &local_tag) != NULL);
+    UASSERT(s->cleanup_depth == 2u);
+
+    /* local_tag must now have s in its member list. */
+    UASSERT(local_tag.member_strands_head != NULL);
+    UASSERT(local_tag.member_strands_head->strand_back == s);
+
+    /* Destroy strand — strand_unlink_from_tags must unlink from local_tag. */
+    urbi_strand_destroy(s);
+
+    UASSERT(local_tag.member_strands_head == NULL);
+    /* realm->tag also cleared. */
+    UASSERT(r->tag->member_strands_head == NULL);
+
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -351,4 +429,8 @@ test_strand_spawn_inheritance_suite(void)
               attach_ambient_tags_overflow);
     utest_run("spawned_strand_inherits_ambient_chain",
               spawned_strand_inherits_ambient_chain);
+    /* §9.4 gap-fill: synthetic entry shape + termination unlink */
+    utest_run("synthetic_entries_no_onleave",          synthetic_entries_no_onleave);
+    utest_run("synthetic_entries_unlink_on_termination",
+              synthetic_entries_unlink_on_termination);
 }

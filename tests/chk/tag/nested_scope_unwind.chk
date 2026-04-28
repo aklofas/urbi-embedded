@@ -1,0 +1,33 @@
+# Milestone: M3
+# Covers: nested tag-scope + try/finally cleanup ordering per row 7 §6.3;
+#         verifies that the unwind walker pops TAG_SCOPE entries in innermost-
+#         first order through nested scopes, executing each onleave body before
+#         continuing outward.
+#
+# defer-to: M5
+#
+# Reason: requires onleave clause parse/emit (M5 reactive runtime).  At M3,
+# the row 7 unwind walker handles TAG_SCOPE absorption (pop-and-continue for
+# normal exit) but there is no parse support for the `onleave` keyword so
+# no onleave body can be installed.  The nested try/finally ordering is
+# already tested by tests/chk/control_transfer/nested_finally.chk; the
+# full tag-scope + try/finally combination must wait for M5.
+#
+# When M5 lands, implement this fixture by uncommenting the source below.
+# Expected behaviour: log records cleanup in innermost-first order "ioIO".
+#
+# Urbiscript source (activate at M5):
+#   var log = "";
+#   var outer = Tag.new;
+#   var inner = Tag.new;
+#   try {
+#     outer: {
+#       try {
+#         inner: { outer.stop() }
+#           onleave { log = log + "i" }
+#       } finally { log = log + "I" }
+#     } onleave { log = log + "o" }
+#   } finally { log = log + "O" };
+#   log
+#   --- expected output ---
+#   [00000001] "ioIO"

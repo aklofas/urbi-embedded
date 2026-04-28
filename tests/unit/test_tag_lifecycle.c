@@ -442,6 +442,185 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     uvm_destroy(&vm);
 }
 
+/* ============================================================
+ * §9.1 gap-fill cases: nested membership + realm root
+ * ============================================================ */
+
+/* Helper: init a stack-allocated UTag for use in tests that don't
+ * need the GC to manage the allocation. */
+static void
+tag_init_local_lifecycle(UTag *t)
+{
+    t->type_tag             = UTYPE_TAG;
+    t->gc_byte              = 0;
+    t->pad0                 = 0;
+    t->flags                = 0;
+    t->pad1[0]              = 0;
+    t->pad1[1]              = 0;
+    t->pad1[2]              = 0;
+    t->member_strands_head  = NULL;
+    t->member_watchers_head = NULL;
+    t->name.kind            = UVAL_NIL;
+    t->name.v.i             = 0;
+}
+
+/* Helper: push a synthetic TAG_SCOPE entry for tag onto s's cleanup stack.
+ * Wires next_member + member_strands_head + strand_back. */
+static UCleanupEntry *
+push_tag_scope_lifecycle(UStrand *s, UTag *tag)
+{
+    UCleanupEntry *e = strand_cleanup_push(s);
+    if (!e) return NULL;
+    e->kind        = (uint8_t)UCLEANUP_TAG_SCOPE;
+    e->flags       = 0;
+    e->owning_tag  = tag;
+    e->strand_back = s;
+    e->next_member = tag->member_strands_head;
+    tag->member_strands_head = e;
+    return e;
+}
+
+/* Count how many entries in a tag's member_strands_head list point to strand s. */
+static int
+count_strand_in_tag_members(UTag *tag, UStrand *s)
+{
+    UCleanupEntry *e = tag->member_strands_head;
+    int n = 0;
+    while (e != NULL) {
+        if (e->strand_back == s) n++;
+        e = e->next_member;
+    }
+    return n;
+}
+
+/* 12. nested_tag_membership
+ *
+ * Push 3 nested tag scopes (tag_a, tag_b, tag_c) onto a strand.
+ * Verify the strand appears in each tag's member_strands_head list.
+ * Then manually pop one scope at a time (via urbi_strand_destroy to
+ * exercise the strand_unlink_from_tags path) by destroying the strand. */
+UTEST(nested_tag_membership)
+{
+    UVM vm;
+    UTag tag_a, tag_b, tag_c;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    /* Create strand — inherits realm->tag as depth 0. */
+    UStrand *s = urbi_strand_create(r, NULL);
+    UASSERT(s != NULL);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 1u);
+
+    /* Push three more tag scopes. */
+    tag_init_local_lifecycle(&tag_a);
+    tag_init_local_lifecycle(&tag_b);
+    tag_init_local_lifecycle(&tag_c);
+
+    UASSERT(push_tag_scope_lifecycle(s, &tag_a) != NULL);
+    UASSERT(push_tag_scope_lifecycle(s, &tag_b) != NULL);
+    UASSERT(push_tag_scope_lifecycle(s, &tag_c) != NULL);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 4u);
+
+    /* Strand must appear in all four tags' member lists. */
+    UASSERT_EQ(count_strand_in_tag_members(r->tag,  s), 1);
+    UASSERT_EQ(count_strand_in_tag_members(&tag_a, s), 1);
+    UASSERT_EQ(count_strand_in_tag_members(&tag_b, s), 1);
+    UASSERT_EQ(count_strand_in_tag_members(&tag_c, s), 1);
+
+    /* Destroy strand: strand_unlink_from_tags must clear all three
+     * stack-allocated tags' member_strands_head. */
+    urbi_strand_destroy(s);
+
+    UASSERT(tag_a.member_strands_head == NULL);
+    UASSERT(tag_b.member_strands_head == NULL);
+    UASSERT(tag_c.member_strands_head == NULL);
+    /* realm->tag unlinked too. */
+    UASSERT(r->tag->member_strands_head == NULL);
+
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 13. realm_root_at_bottom
+ *
+ * Verify that every strand created via urbi_strand_create has
+ * realm->tag as the bottommost (index 0) TAG_SCOPE entry. */
+UTEST(realm_root_at_bottom)
+{
+    UVM vm;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+    UASSERT(r->tag != NULL);
+
+    UStrand *s = urbi_strand_create(r, NULL);
+    UASSERT(s != NULL);
+
+    /* cleanup_depth must be at least 1. */
+    UASSERT(s->cleanup_depth >= 1u);
+
+    /* The bottommost entry (index 0) must be a TAG_SCOPE with realm->tag. */
+    UCleanupEntry *bottom = &s->cleanup_base[0];
+    UASSERT_EQ((unsigned)bottom->kind, (unsigned)UCLEANUP_TAG_SCOPE);
+    UASSERT(bottom->owning_tag == r->tag);
+    UASSERT(bottom->strand_back == s);
+
+    /* The strand must appear in realm->tag's member list. */
+    UASSERT(count_strand_in_tag_members(r->tag, s) == 1);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 14. tag_stop_synchronous_no_bytecode
+ *
+ * After urbi_tag_stop, strands have pending_unwind == TAG_STOP but their
+ * state does not change (no bytecode executes synchronously — the deposit
+ * only sets the flag; the scheduler drives execution to the unwind walker).
+ * Verify: state remains DORMANT (not DEAD), and no instruction counter
+ * advances (the strand's pc is unchanged). */
+UTEST(tag_stop_synchronous_no_bytecode)
+{
+    UVM vm;
+    UValue nil;
+
+    uvm_init(&vm, NULL, NULL);
+
+    nil.kind = UVAL_NIL;
+    nil.v.i  = 0;
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s = urbi_strand_create(r, NULL);
+    UASSERT(s != NULL);
+
+    /* Record initial state. */
+    const uint32_t *pc_before = s->pc;
+    uint8_t         state_before = s->state;
+
+    /* Perform synchronous stop. */
+    int rc = urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ(rc, URBI_OK);
+
+    /* pending_unwind set — but state unchanged (no bytecode ran). */
+    UASSERT_EQ((int)s->pending_unwind, (int)UEXEC_TAG_STOP);
+    UASSERT_EQ((int)s->state, (int)state_before);
+
+    /* pc must not have advanced — urbi_tag_stop runs no bytecode. */
+    UASSERT(s->pc == pc_before);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -464,4 +643,8 @@ test_tag_lifecycle_suite(void)
               op_push_tag_oom_marks_strand_fatal);
     utest_run("op_push_tag cleanup overflow releases tag",
               op_push_tag_cleanup_overflow_releases_tag);
+    /* §9.1 gap-fill: nested membership + realm-root + synchronous-no-bytecode */
+    utest_run("nested_tag_membership",            nested_tag_membership);
+    utest_run("realm_root_at_bottom",             realm_root_at_bottom);
+    utest_run("tag_stop_synchronous_no_bytecode", tag_stop_synchronous_no_bytecode);
 }

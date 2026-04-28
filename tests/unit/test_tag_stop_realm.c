@@ -16,6 +16,7 @@
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
+#include "uwatcher.h"
 #include "urbi.h"
 
 #define UTEST(name) static void name(void)
@@ -248,6 +249,99 @@ UTEST(tag_stop_decrement_on_strand_destroy)
     uvm_destroy(&vm);
 }
 
+/* ============================================================
+ * §9.3 gap-fill: watcher cascade + drain ordering
+ * ============================================================ */
+
+/* 7. realm_destroy_cascade_watchers
+ *
+ * Install a watcher on realm->tag.  Call urbi_tag_stop (mimicking the
+ * realm-destroy cascade path).  Verify the watcher ends up on the
+ * pending_onleave_queue and is properly removed from tag->member_watchers_head. */
+UTEST(realm_destroy_cascade_watchers)
+{
+    UVM    vm;
+    UValue nil = make_nil();
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+    UASSERT(r->tag != NULL);
+
+    /* Install a watcher owned by realm->tag. */
+    UWatcher *w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, r->tag, NULL, NULL, NULL, NULL, 0u);
+    UASSERT(w != NULL);
+    UASSERT(r->tag->member_watchers_head == w);
+
+    /* urbi_tag_stop cascades watcher list to pending_onleave_queue. */
+    int rc = urbi_tag_stop(&vm, r->tag, nil);
+    UASSERT_EQ(rc, URBI_OK);
+
+    /* Watcher must be on the pending_onleave_queue. */
+    UASSERT(vm.pending_onleave_head == w);
+    /* Tag's member_watchers_head cleared by the cascade. */
+    UASSERT(r->tag->member_watchers_head == NULL);
+
+    /* Drain to unregister. */
+    drain_pending_onleave_queue(&vm);
+    UASSERT(vm.pending_onleave_head == NULL);
+    UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
+
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 8. realm_destroy_drain_ordering
+ *
+ * Install a watcher; push it to pending_onleave_queue; set dirty count.
+ * Verify that drain_pending_onleave_queue runs the onleave path BEFORE
+ * watcher_eval_dirty would run (i.e. drain clears in_watcher_eval correctly,
+ * leaving it available for a subsequent eval pass). */
+UTEST(realm_destroy_drain_ordering)
+{
+    UVM    vm;
+
+    uvm_init(&vm, NULL, NULL);
+
+    /* Sentinel: onleave hook records that drain ran. */
+    static int drain_ran;
+    drain_ran = 0;
+
+    /* Use a custom test hook to capture onleave invocation. */
+    vm.test_watcher_onleave_hook = NULL;  /* no hook needed; we observe state */
+
+    UWatcher *w = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, NULL, NULL,
+        /*onleave=*/(UClosure *)1, NULL, 0u);
+    UASSERT(w != NULL);
+
+    /* Simulate a dirty condition AND a pending cleanup simultaneously. */
+    vm.watcher_dirty_count = 3u;
+    pending_onleave_queue_push(&vm, w);
+
+    /* Before drain: in_watcher_eval must be false (drain hasn't run yet). */
+    UASSERT(!vm.in_watcher_eval);
+
+    /* Run drain — must leave in_watcher_eval false when it returns.
+     * After drain completes, watcher_dirty_count is unchanged (drain does not
+     * call watcher_eval_dirty; that's the scheduler's job after drain). */
+    drain_pending_onleave_queue(&vm);
+    UASSERT(!vm.in_watcher_eval);
+    UASSERT(vm.pending_onleave_head == NULL);
+    /* Dirty count must NOT have been cleared by drain alone. */
+    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 3u);
+
+    /* Now eval can run cleanly. */
+    watcher_eval_dirty(&vm);
+    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 0u);
+    UASSERT(!vm.in_watcher_eval);
+
+    (void)drain_ran;
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -266,4 +360,7 @@ test_tag_stop_realm_suite(void)
               tag_stop_overwrites_throw);
     utest_run("tag_stop counter decrements on strand destroy",
               tag_stop_decrement_on_strand_destroy);
+    /* §9.3 gap-fill: watcher cascade + drain ordering */
+    utest_run("realm_destroy_cascade_watchers",    realm_destroy_cascade_watchers);
+    utest_run("realm_destroy_drain_ordering",      realm_destroy_drain_ordering);
 }

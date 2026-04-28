@@ -887,6 +887,56 @@ UTEST(spawn_body_coroutine_relocated_still_works)
     uvm_destroy(&vm);
 }
 
+/* ===================================================================
+ * §9.2 gap-fill: eval_pass_walks_all_watchers
+ * =================================================================== */
+
+/* 26. eval_pass_walks_all_watchers:
+ *     Install 3 watchers; trigger one dirty-eval pass; assert all 3 have
+ *     their condition evaluated (fire_count reflects all 3 seeing a
+ *     false→true edge). */
+UTEST(eval_pass_walks_all_watchers)
+{
+    UVM      vm;
+    UWatcher *w1, *w2, *w3;
+
+    uvm_init(&vm, NULL, NULL);
+
+    g_fire_count = 0;
+
+    /* All three: AT mode, no seed (install with no condition hook → NIL cache),
+     * then set condition hook to fixed_true before eval so all see false→true. */
+    w1 = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+    w2 = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+    w3 = urbi_watcher_install_internal(
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+    UASSERT(w1 != NULL && w2 != NULL && w3 != NULL);
+
+    /* Seeds are NIL (falsy) because no condition hook was set during install. */
+    UASSERT_EQ((int)w1->last_value_cache.kind, (int)UVAL_NIL);
+    UASSERT_EQ((int)w2->last_value_cache.kind, (int)UVAL_NIL);
+    UASSERT_EQ((int)w3->last_value_cache.kind, (int)UVAL_NIL);
+
+    /* Set hooks to fire: condition_hook_fixed_true returns truthy;
+     * fire_hook_count increments g_fire_count once per fired watcher. */
+    vm.test_watcher_condition_hook = condition_hook_fixed_true;
+    vm.test_watcher_fire_hook      = fire_hook_count;
+
+    /* Single dirty-eval pass — all 3 see nil→true rising edge. */
+    vm.watcher_dirty_count = 1u;
+    watcher_eval_dirty(&vm);
+
+    /* All 3 must have fired. */
+    UASSERT_EQ(g_fire_count, 3);
+
+    urbi_watcher_unregister_internal(&vm, w1);
+    urbi_watcher_unregister_internal(&vm, w2);
+    urbi_watcher_unregister_internal(&vm, w3);
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void
@@ -947,4 +997,7 @@ test_watcher_dirty_suite(void)
               watcher_root_provider_count_is_5_after_init);
     utest_run("spawn_body_coroutine_relocated_still_works",
               spawn_body_coroutine_relocated_still_works);
+    /* §9.2 gap-fill: all-watchers walk in one eval pass */
+    utest_run("eval_pass_walks_all_watchers",
+              eval_pass_walks_all_watchers);
 }

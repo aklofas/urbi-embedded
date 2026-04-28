@@ -1,0 +1,22 @@
+# Milestone: M3
+# Covers: ambient tag chain is inherited by strands spawned via the `,`
+#         (fork-detach) separator; tag.stop() on the ambient tag cascades to
+#         the parallel strand (row 11 §4.3 + T38 separator runtime).
+#
+# defer-to: T38
+#
+# Reason: the `,` separator runtime (OP_FORK_DETACH) is not yet wired at M3;
+# T38 activates that opcode.  Additionally, tag.stop() method-call syntax
+# requires M4 object model.  Both must land before this fixture is active.
+#
+# When T38 + M4 land, implement this fixture by uncommenting the source below.
+# Expected behaviour: the spawned inner strand is a member of `t` and is
+# stopped when t.stop() fires.  "inner done" must NOT appear in output.
+#
+# Urbiscript source (activate at T38 + M4):
+#   var t = Tag.new;
+#   var log = "";
+#   t: { log = log + "outer", { log = log + "inner" | t.stop() } };
+#   log
+#   --- expected output ---
+#   [00000001] "outer"

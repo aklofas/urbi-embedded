@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: row 11 §3.2 — the unwind_value carried by UEXEC_TAG_STOP is opaque
+#         to urbiscript; no surface exists to read the in-flight value from
+#         inside an onleave handler or a finally block.
+#
+# defer-to: M5
+#
+# Reason: requires onleave clause parse/emit (M5 reactive runtime) and
+# tag.stop(value) surface syntax (M4 object model).  At M3, the unwind_value
+# field exists in UStrand but there is no urbiscript expression that can
+# read it.  This is a language-semantics assertion (the value is intentionally
+# hidden from user code) and can only be tested once onleave clauses exist.
+#
+# When M5 lands, implement this fixture by uncommenting the source below.
+# Expected behaviour: onleave body cannot read the stop value; trying to
+# reference it results in nil / no-binding, not the actual passed value.
+#
+# Urbiscript source (activate at M5):
+#   var t = Tag.new;
+#   var seen = nil;
+#   t: { 1 } onleave { seen = stopValue };
+#   t.stop("secret");
+#   seen
+#   --- expected output (value is opaque, stopValue is unbound → nil) ---
+#   [00000001] nil
