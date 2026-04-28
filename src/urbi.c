@@ -15,7 +15,7 @@ const char *urbi_version(void) { return URBI_VERSION; }
 /* urbi_panic: fatal runtime error.
  * Hosted: writes msg to stderr, then aborts.
  * Freestanding: spins forever (no OS abort). */
-void
+URBI_NORETURN void
 urbi_panic(const char *msg)
 {
 #if __STDC_HOSTED__

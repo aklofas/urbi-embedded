@@ -6,7 +6,7 @@
  * file compiles and links in both modes.
  *
  * make test       — default build: 1 case (smoke).
- * make test-debug — URBI_DEBUG=1: 1 smoke + 5 watchdog + 2 ISR-check cases. */
+ * make test-debug — URBI_DEBUG=1: 1 smoke + 4 watchdog + 3 ISR-check cases. */
 
 #include "utest.h"
 #include "urbi.h"

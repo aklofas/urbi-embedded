@@ -177,7 +177,6 @@ int urbi_inject_event(struct UVM *vm, uint32_t event_id,
  * UHostFn — typedef for host-callable C functions invoked by OP_CALL.
  * urbi_panic — fatal runtime error; aborts on hosted builds.
  * URBI_ASSERT_NOT_ISR — asserts that the current call is NOT in ISR context.
- * URBI_INTERNAL_ASSERT — internal precondition assertion (T20+ use).
  * urbi_call_host_with_watchdog — debug-build wrapper for host callbacks.
  * urbi_set_isr_check_fn — register ISR-context predicate.
  * urbi_set_callback_watchdog_mode — set watchdog mode (WARN or ASSERT). */
@@ -197,11 +196,22 @@ typedef enum {
  * watchdog wrapper infrastructure introduced here at T19. */
 typedef UValue (*UHostFn)(struct UStrand *s, int argc, UValue *argv);
 
+/* URBI_NORETURN: marks functions that never return.
+ * Used to suppress compiler "missing return" warnings when a function's only
+ * exit path is urbi_panic or similar fatal control flow. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define URBI_NORETURN __attribute__((noreturn))
+#elif defined(_MSC_VER)
+#  define URBI_NORETURN __declspec(noreturn)
+#else
+#  define URBI_NORETURN
+#endif
+
 /* urbi_panic: fatal runtime error.
  * On hosted builds: prints msg to stderr and calls abort().
  * On freestanding builds: spins forever (no OS, no abort).
  * Declared here; defined in urbi.c. */
-void urbi_panic(const char *msg);
+URBI_NORETURN void urbi_panic(const char *msg);
 
 /* URBI_CALLBACK_WARN_US: default watchdog threshold (microseconds).
  * Overridable at compile time: -DURBI_CALLBACK_WARN_US=2000 */
@@ -218,16 +228,6 @@ void urbi_panic(const char *msg);
           } while (0)
 #else
 #  define URBI_ASSERT_NOT_ISR(vm) ((void)0)
-#endif
-
-/* URBI_INTERNAL_ASSERT: precondition assertion for internal runtime use.
- * In hosted builds: uses assert(). In freestanding: silently skipped.
- * T20+ uses this at strand entry-point preconditions. */
-#if __STDC_HOSTED__
-#  include <assert.h>
-#  define URBI_INTERNAL_ASSERT(cond) assert(cond)
-#else
-#  define URBI_INTERNAL_ASSERT(cond) ((void)0)
 #endif
 
 /* urbi_call_host_with_watchdog: invoke a UHostFn and check elapsed time.
