@@ -45,8 +45,9 @@ typedef struct URealm {
     uint8_t      _pad[3];
 
     /* Tag-ownership: implicit watcher/coroutine cleanup boundary.
-     * T29 creates the real UTag; stubbed to NULL at M3. */
-    struct UTag *tag;           /* T29: utag_create(vm) lands here */
+     * UTag is created at realm-creation time and host-managed via vm->alloc_fn.
+     * GC migration (M5/M6) moves UTag to urbi_gc_alloc when needed. */
+    struct UTag *tag;           /* allocated by urbi_realm_create via utag_create */
 
     /* Namespace: top-level bindings */
     struct UNamespace *bindings; /* name → UValue map; owned */
@@ -95,7 +96,7 @@ void urealm_teardown_all(struct UVM *vm);
  * Iterates vm->realms_head linked list; for each Realm visits:
  *   1. realm->reflective
  *   2. namespace entries (via unamespace_walk_roots)
- *   3. realm->tag — skipped at M3 (NULL); T29 walker enrolls UVAL_TAG */
+ *   3. realm->tag — host-managed at M3; GC enrollment deferred to M5/M6 */
 void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* === 4 Realm lifecycle C API functions ===

@@ -95,6 +95,11 @@ urbi_realm_create(struct UVM *vm)
  *   4. Unlink from VM's realm list.
  *   5. Free the URealm struct itself.
  *
+ * Precondition at M3: All strands attached to this realm's tag must be dead
+ * before calling this function. This is the caller's responsibility at M3
+ * because urbi_tag_stop is still a no-op stub. Future T31 will wire the
+ * synchronous strand drain that enforces this automatically.
+ *
  * Safe to call with realm == NULL. */
 
 void
