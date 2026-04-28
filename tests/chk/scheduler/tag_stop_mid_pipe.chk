@@ -1,0 +1,27 @@
+# Milestone: M3
+# Covers: a tag stop delivered at an internal safepoint inside a `|`-chain
+#         unwinds the current strand through the cleanup stack, executing
+#         finally bodies and popping TAG_SCOPE entries in order (row 12 §5.3
+#         — safepoint delivery of pending UEXEC_TAG_STOP unwind).
+#
+# defer-to: M4 (requires Tag.stop() method syntax)
+#
+# Reason: verifying tag.stop() delivered at an internal pipe safepoint requires
+# calling t.stop() from within the tag scope body.  Method call syntax
+# (obj.method()) requires the M4 object model (prototype chain dispatch).
+# At M3, OP_PUSH_TAG/OP_POP_TAG are emitted and the unwind walker handles
+# UEXEC_TAG_STOP absorption for TAG_SCOPE frames; the gap is the urbiscript
+# surface for invoking the stop.  Synchronous single-strand tag stop with
+# finally is substantively tested in tests/chk/control_transfer/ and the
+# C-API-driven cross_strand_cancel.chk fixture.
+#
+# When M4 lands (Tag.stop() method), implement this by:
+#   var log = ""
+#   var t = Tag.new
+#   t: {
+#     try { log = log + "a" | t.stop() | log = log + "c" }
+#     finally { log = log + "F" }
+#   }
+#   log
+#   --- expected output ---
+#   [00000001] "aF"

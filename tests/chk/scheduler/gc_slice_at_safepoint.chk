@@ -1,0 +1,25 @@
+# Milestone: M3
+# Covers: an allocation-heavy strand sets vm->gc_pending (debt > threshold);
+#         urbi_gc_slice is invoked at the next dispatch-loop safepoint of any
+#         strand; GC slice runs and clears the pending flag (row 12 §4.4 —
+#         gc_pending safepoint hook in dispatch_loop_until_yield).
+#
+# defer-to: M4 (no GC-managed cell allocations available from REPL at M3)
+#
+# Reason: triggering gc_pending from REPL urbiscript requires allocating enough
+# GC-managed cells (UObject, UString) to exceed the gc_threshold.  At M3,
+# the GC-managed cell types (UObject, UString, UList) land at M4/M5; the only
+# allocations performed during REPL eval at M3 are closures and upvalue cells,
+# which go through the VM's alloc_fn but are NOT tracked in gc_total_allocated
+# (they are pre-GC bookkeeping, not GC-managed cells).  The GC slice mechanism
+# itself is fully wired at M3 (gc_debt accumulation, urbi_gc_slice dispatch)
+# and is covered by tests/unit/test_ugc_state_machine.c; the REPL-observable
+# version must wait for M4 allocatable cell types.
+#
+# When M4 lands (UObject / UString as GC cells), implement this by:
+#   var i = 0
+#   while (i < 5000) { var s = String.new("x") | i = i + 1 }
+#   -- verify gc_phase cycled and no OOM --
+#   i
+#   --- expected output ---
+#   [00000001] 5000

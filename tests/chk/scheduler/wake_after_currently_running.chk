@@ -1,0 +1,27 @@
+# Milestone: M3
+# Covers: a strand sleeping on the sleep queue is woken (its wake_us passes)
+#         while another strand is currently running; urbi_step delivers the
+#         wakeup at the next scheduler turn after the running strand yields or
+#         completes (row 12 §3.3 — sleep-queue drain runs at the end of each
+#         dispatch turn, after dispatch_loop_until_yield returns).
+#
+# defer-to: M5 (chk runner needs urbi_step driver path)
+#
+# Reason: observing that a sleeping strand wakes while another strand is
+# running requires two concurrent strands.  The chk runner uses the uvm_run
+# REPL path (no realm); `,` (OP_FORK_DETACH) and sleep-based suspension are
+# not available there.  The single-strand sleep path is covered by
+# tests/chk/scheduler/wait_sleep_basic.chk; this test additionally requires
+# parallel execution to verify the "wake while running" timing contract.
+# Substantive coverage via test_step_driver.c (step_wake_at_with_wakeup_pending).
+#
+# When M5 + urbi_step chk driver land, implement this by:
+#   # Two strands: first strand does work (loops 100 iters); second sleeps briefly.
+#   # After loop completes the sleeping strand should be scheduled (woken).
+#   var log = ""
+#   { var i = 0 | while (i < 100) i = i + 1 | log = log + "A" } ,
+#   { sleep(0) | log = log + "B" }
+#   -- step to quiescent --
+#   log
+#   --- expected output ---
+#   [00000001] "AB"

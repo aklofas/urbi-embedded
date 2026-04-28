@@ -1,0 +1,23 @@
+# Milestone: M3
+# Covers: watchers registered in order A-then-B fire in registration order
+#         when both conditions become true simultaneously (row 12 §6 watcher
+#         eval determinism — active_watchers_head preserves insertion order).
+#
+# defer-to: M5 (chk runner needs urbi_step driver path + M5 reactive runtime)
+#
+# Reason: verifying watcher firing order requires installing watchers via
+# `at (cond) body` syntax, which produces watcher body strands that run via
+# OP_FORK_DETACH (spawn_body_coroutine path).  The chk runner uses the REPL
+# (uvm_run path) — fork opcodes return TypeError there.  Additionally, the
+# `at` keyword emit path requires the M5 reactive runtime wiring (condition
+# closures, install/uninstall, edge/level detection).  The watcher pool and
+# dirty-set infrastructure is wired at M3 but the full activation requires M5.
+#
+# When M5 reactive runtime + urbi_step chk driver land, implement this by:
+#   var log = ""
+#   at (true) { log = log + "A" | stop }
+#   at (true) { log = log + "B" | stop }
+#   -- step to quiescent --
+#   log
+#   --- expected output (registration FIFO ordering) ---
+#   [00000001] "AB"

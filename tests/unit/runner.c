@@ -64,6 +64,11 @@ extern void test_watcher_pool_suite(void);
 extern void test_watcher_dirty_suite(void);
 extern void test_fork_suite(void);
 extern void test_determinism_suite(void);
+extern void test_sched_fifo_suite(void);
+extern void test_sched_pool_exhaust_suite(void);
+extern void test_pipe_budget_exhaust_suite(void);
+extern void test_determinism_two_runs_suite(void);
+extern void test_determinism_tunable_pin_suite(void);
 
 int main(void) {
     clock_t t0 = clock();
@@ -110,6 +115,11 @@ int main(void) {
     test_watcher_dirty_suite();
     test_fork_suite();
     test_determinism_suite();
+    test_sched_fifo_suite();
+    test_sched_pool_exhaust_suite();
+    test_pipe_budget_exhaust_suite();
+    test_determinism_two_runs_suite();
+    test_determinism_tunable_pin_suite();
     /* Add new suites here as test files are added. */
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;

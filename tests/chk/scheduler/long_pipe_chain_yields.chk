@@ -1,0 +1,24 @@
+# Milestone: M3
+# Covers: a long `|`-chain (many sequential statements) triggers a soft yield
+#         when the per-strand instruction_budget_remaining reaches zero; the
+#         VM yields the strand back to the tail of the FIFO ready queue so
+#         other strands can run, then resumes at the next instruction on the
+#         next dispatch turn (row 12 §3.2 budget-exhaustion safepoint).
+#
+# defer-to: M5 (chk runner needs urbi_step driver path)
+#
+# Reason: the chk runner executes under uvm_run which drives the entire REPL
+# input as a single transient strand without going through urbi_step or the
+# cooperative scheduler ready queue.  Budget-exhaustion soft yield is only
+# observable via urbi_step (the VM-wide step_budget_remaining > 0 check in
+# ustep.c).  The substantive single-strand budget path is covered by
+# test_pipe_budget_exhaust.c (unit test, which drives via urbi_step).
+# A proper chk fixture needs the ## host: driver mechanism to call urbi_step
+# with a small budget and assert URBI_STEP_RUNNING before completion.
+#
+# When M5 + urbi_step chk driver land, implement this by running:
+#   # tunables: default
+#   var i = 0 | while (i < 10000) { i = i + 1 }
+#   i
+#   --- expected output (loop completes across multiple urbi_step turns) ---
+#   [00000001] 10000
