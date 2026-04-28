@@ -5,6 +5,7 @@
 #include "uemit_internal.h"
 #include "uintern.h"
 #include "uvarint.h"
+#include "ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */
 
 #include <limits.h>
 #include <stdarg.h>
@@ -1268,6 +1269,339 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             return dst;
         }
     }
+    case AST_THROW: {
+        /* throw expr: eval the expression, emit OP_THROW, set pending_unwind.
+         * OP_THROW goes to safepoint; urbi_unwind walks the cleanup stack. */
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+        uint8_t val_reg = emit_expr(e, n->u.throw_expr.value);
+        if (e->error != EMIT_OK) return 0u;
+        uemit_throw(e, val_reg, (uint32_t)n->line);
+        /* throw is a statement; return a nil reg for the block's last-stmt logic. */
+        uint8_t rd = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u),
+                   (uint32_t)n->line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
+    case AST_TRY: {
+        /* try { body } [catch (e) { handler }] [finally { cleanup }]
+         *
+         * Bytecode layout:
+         *   [try_begin_pc]:
+         *     OP_TRY_BEGIN flags, handler_pc_placeholder
+         *     <body opcodes>
+         *     OP_TRY_END
+         *     OP_JMP past_handler_placeholder
+         *   [handler_pc]:           ← OP_TRY_BEGIN Bx points here
+         *     If catch:
+         *       OP_LOAD_CATCH_VALUE catch_reg  ; bind e = s->catch_value
+         *       <catch body opcodes>
+         *     If finally (no catch):
+         *       <finally body opcodes>
+         *       OP_RESUME 0          ; exit cleanup body; walker restores saved unwind
+         *     If catch + finally:
+         *       OP_LOAD_CATCH_VALUE catch_reg
+         *       <catch body opcodes>
+         *     (finally runs as a SEPARATE try-block wrapping the whole thing;
+         *      simplified at T10 to: catch-only handler OR finally-only handler)
+         *   [past_handler_pc]:
+         *     <continuation>
+         *
+         * T10 simplified: catch and finally are mutually exclusive handler blocks
+         * behind a single TRY_FRAME entry.  If both exist, we emit two TRY_FRAME
+         * entries: outer finally wraps inner try+catch.
+         *
+         * For the combined case (catch + finally), layout is:
+         *   OP_TRY_BEGIN FLAG_HAS_FINALLY, outer_finally_pc     ; outer TRY_FRAME
+         *     OP_TRY_BEGIN FLAG_HAS_CATCH, catch_pc             ; inner TRY_FRAME
+         *       <body>
+         *     OP_TRY_END
+         *     OP_JMP past_catch_pc
+         *   [catch_pc]:
+         *     OP_LOAD_CATCH_VALUE catch_reg
+         *     <catch body>
+         *   [past_catch_pc]:
+         *   OP_TRY_END    (outer)
+         *   OP_JMP past_finally_pc
+         *   [outer_finally_pc]:
+         *     <finally body>
+         *     OP_RESUME 0
+         *   [past_finally_pc]:
+         *
+         * Result register: the try's "value" is nil (try/catch/finally is a statement). */
+
+        if (e->current_fs == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        const int has_catch   = (n->u.try_stmt.catch_body != NULL);
+        const int has_finally = (n->u.try_stmt.finally_body != NULL);
+
+        /* Result dest — allocate a nil-holding register. */
+        uint8_t rd = e->next_reg;
+
+        if (has_catch && has_finally) {
+            /* === OUTER TRY_FRAME: finally wrapper === */
+            int outer_try_begin_pc = (int)emit_instr_count(e);
+            uemit_try_begin(e, FLAG_HAS_FINALLY, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* === INNER TRY_FRAME: catch wrapper === */
+            int inner_try_begin_pc = (int)emit_instr_count(e);
+            uemit_try_begin(e, FLAG_HAS_CATCH, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Body */
+            e->next_reg = rd;
+            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            emit_expr(e, n->u.try_stmt.body);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* OP_TRY_END (inner) */
+            uemit_try_end(e, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* JMP past catch */
+            int jmp_past_catch_pc = (int)emit_instr_count(e);
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch inner_try_begin handler_pc → catch handler */
+            {
+                int catch_target = (int)emit_instr_count(e);
+                emit_patch_instr(e, inner_try_begin_pc,
+                    uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_CATCH,
+                                   (uint16_t)catch_target));
+            }
+
+            /* Catch handler: declare catch var as a local, emit body */
+            {
+                const char *cv_name = NULL;
+                int catch_reg = (int)e->next_reg;
+                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->next_reg = e->current_fs->freereg;
+
+                if (n->u.try_stmt.catch_var_start != NULL && e->vm != NULL) {
+                    cv_name = ustr_intern(e->vm,
+                                          n->u.try_stmt.catch_var_start,
+                                          (size_t)n->u.try_stmt.catch_var_len);
+                    if (cv_name == NULL) { e->error = EMIT_OOM; return 0u; }
+                    int slot = uemit_declare_local(e, cv_name,
+                                                   n->u.try_stmt.catch_var_len);
+                    if (slot < 0) return 0u;
+                    catch_reg = slot;
+                    /* OP_LOAD_CATCH_VALUE loads s->catch_value into the local slot. */
+                    uemit_load_catch_value(e, (uint8_t)catch_reg,
+                                           (uint32_t)n->line);
+                    if (e->error != EMIT_OK) return 0u;
+                } else {
+                    /* No named variable — still load catch value to advance PC. */
+                    uint8_t tmp = e->next_reg++;
+                    if (e->next_reg > e->max_reg_seen)
+                        e->max_reg_seen = e->next_reg;
+                    uemit_load_catch_value(e, tmp, (uint32_t)n->line);
+                    if (e->error != EMIT_OK) return 0u;
+                }
+
+                if (!uemit_open_block(e, false)) return 0u;
+                emit_expr(e, n->u.try_stmt.catch_body);
+                if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+                if (!uemit_close_block(e)) return 0u;
+
+                /* Un-declare the catch variable by restoring nactvar. */
+                if (cv_name != NULL && e->current_fs->nactvar > 0) {
+                    e->current_fs->nactvar--;
+                    e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                    e->next_reg = e->current_fs->freereg;
+                }
+            }
+
+            /* Patch jmp_past_catch → here (past_catch_pc) */
+            {
+                int past_catch_target = (int)emit_instr_count(e);
+                int off = past_catch_target - (jmp_past_catch_pc + 1);
+                emit_patch_instr(e, jmp_past_catch_pc,
+                    uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+            }
+
+            /* OP_TRY_END (outer) */
+            uemit_try_end(e, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* JMP past finally */
+            int jmp_past_finally_pc = (int)emit_instr_count(e);
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch outer_try_begin handler_pc → finally handler */
+            {
+                int finally_target = (int)emit_instr_count(e);
+                emit_patch_instr(e, outer_try_begin_pc,
+                    uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_FINALLY,
+                                   (uint16_t)finally_target));
+            }
+
+            /* Finally body */
+            e->next_reg = rd;
+            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            if (!uemit_open_block(e, false)) return 0u;
+            emit_expr(e, n->u.try_stmt.finally_body);
+            if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+            if (!uemit_close_block(e)) return 0u;
+            uemit_resume(e, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch jmp_past_finally → here */
+            {
+                int past_finally_target = (int)emit_instr_count(e);
+                int off = past_finally_target - (jmp_past_finally_pc + 1);
+                emit_patch_instr(e, jmp_past_finally_pc,
+                    uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+            }
+
+        } else if (has_catch) {
+            /* === Catch-only TRY_FRAME === */
+            int try_begin_pc = (int)emit_instr_count(e);
+            uemit_try_begin(e, FLAG_HAS_CATCH, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Body */
+            e->next_reg = rd;
+            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            emit_expr(e, n->u.try_stmt.body);
+            if (e->error != EMIT_OK) return 0u;
+
+            uemit_try_end(e, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* JMP past handler */
+            int jmp_past_handler_pc = (int)emit_instr_count(e);
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch try_begin handler_pc → catch handler */
+            {
+                int catch_target = (int)emit_instr_count(e);
+                emit_patch_instr(e, try_begin_pc,
+                    uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_CATCH,
+                                   (uint16_t)catch_target));
+            }
+
+            /* Catch handler: declare var, emit OP_LOAD_CATCH_VALUE, emit body */
+            {
+                const char *cv_name = NULL;
+                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->next_reg = e->current_fs->freereg;
+
+                if (n->u.try_stmt.catch_var_start != NULL && e->vm != NULL) {
+                    cv_name = ustr_intern(e->vm,
+                                          n->u.try_stmt.catch_var_start,
+                                          (size_t)n->u.try_stmt.catch_var_len);
+                    if (cv_name == NULL) { e->error = EMIT_OOM; return 0u; }
+                    int slot = uemit_declare_local(e, cv_name,
+                                                   n->u.try_stmt.catch_var_len);
+                    if (slot < 0) return 0u;
+                    uemit_load_catch_value(e, (uint8_t)slot, (uint32_t)n->line);
+                    if (e->error != EMIT_OK) return 0u;
+                } else {
+                    uint8_t tmp = e->next_reg++;
+                    if (e->next_reg > e->max_reg_seen)
+                        e->max_reg_seen = e->next_reg;
+                    uemit_load_catch_value(e, tmp, (uint32_t)n->line);
+                    if (e->error != EMIT_OK) return 0u;
+                }
+
+                if (!uemit_open_block(e, false)) return 0u;
+                emit_expr(e, n->u.try_stmt.catch_body);
+                if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+                if (!uemit_close_block(e)) return 0u;
+
+                /* Un-declare catch var */
+                if (cv_name != NULL && e->current_fs->nactvar > 0) {
+                    e->current_fs->nactvar--;
+                    e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                    e->next_reg = e->current_fs->freereg;
+                }
+            }
+
+            /* Patch jmp_past_handler → here */
+            {
+                int past_target = (int)emit_instr_count(e);
+                int off = past_target - (jmp_past_handler_pc + 1);
+                emit_patch_instr(e, jmp_past_handler_pc,
+                    uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+            }
+
+        } else {
+            /* === Finally-only TRY_FRAME === */
+            int try_begin_pc = (int)emit_instr_count(e);
+            uemit_try_begin(e, FLAG_HAS_FINALLY, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Body */
+            e->next_reg = rd;
+            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            emit_expr(e, n->u.try_stmt.body);
+            if (e->error != EMIT_OK) return 0u;
+
+            uemit_try_end(e, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* JMP past finally (normal exit path) */
+            int jmp_past_finally_pc = (int)emit_instr_count(e);
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch try_begin handler_pc → finally handler */
+            {
+                int finally_target = (int)emit_instr_count(e);
+                emit_patch_instr(e, try_begin_pc,
+                    uinstr_enc_abx(OP_TRY_BEGIN, FLAG_HAS_FINALLY,
+                                   (uint16_t)finally_target));
+            }
+
+            /* Finally body */
+            e->next_reg = rd;
+            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+            if (!uemit_open_block(e, false)) return 0u;
+            emit_expr(e, n->u.try_stmt.finally_body);
+            if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+            if (!uemit_close_block(e)) return 0u;
+            uemit_resume(e, 0u, (uint32_t)n->line);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Patch jmp_past_finally → here */
+            {
+                int past_target = (int)emit_instr_count(e);
+                int off = past_target - (jmp_past_finally_pc + 1);
+                emit_patch_instr(e, jmp_past_finally_pc,
+                    uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+            }
+        }
+
+        /* Emit nil into rd for the "value" of the try expression. */
+        e->next_reg = rd;
+        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u),
+                   (uint32_t)n->line);
+        e->next_reg = rd + 1u;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
@@ -1408,9 +1742,10 @@ static const char *opname(const UOpcode op) {
     case OP_TRY_END:      return "TRY_END";
     case OP_PUSH_TAG:     return "PUSH_TAG";
     case OP_POP_TAG:      return "POP_TAG";
-    case OP_PUSH_FRAME_GUARD: return "PUSH_FRAME_GUARD";
-    case OP_RESUME:       return "RESUME";
-    case OP_MAX:          break;
+    case OP_PUSH_FRAME_GUARD:     return "PUSH_FRAME_GUARD";
+    case OP_RESUME:               return "RESUME";
+    case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
+    case OP_MAX:                  break;
     }
     return "OP?";
 }
@@ -1980,4 +2315,10 @@ void uemit_push_frame_guard(UEmitter *e, uint8_t register_base,
 /* OP_RESUME ABC: A = reg_state, B = C = 0. */
 void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line) {
     emit_instr(e, uinstr_enc_abc(OP_RESUME, reg_state, 0u, 0u), line);
+}
+
+/* OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
+ * T10 empirical addition — loads s->catch_value into R[A] at handler entry. */
+void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
+    emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0u, 0u), line);
 }

@@ -150,6 +150,11 @@ void uemit_push_frame_guard(UEmitter *e, uint8_t register_base,
 /* OP_RESUME: reg_state is the register holding the saved unwind state. */
 void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line);
 
+/* OP_LOAD_CATCH_VALUE: reg is the destination register for the caught value.
+ * Emitted as the first instruction of every catch-handler body; the unwind
+ * walker writes s->catch_value before jumping to the handler PC. */
+void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line);
+
 /* Write a human-readable disassembly of the module into buf.
    Returns bytes written (excluding null terminator).  Truncates if cap is
    too small; always null-terminates when cap > 0.

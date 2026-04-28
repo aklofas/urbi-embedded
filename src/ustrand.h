@@ -90,6 +90,9 @@ struct UStrand {
     UExecStatus             pending_unwind;
     uint8_t                 unwind_pad[3];
     UValue                  unwind_value;
+    UValue                  catch_value;       /* T10: last caught exception value;
+                                                  written by unwind walker on catch absorption;
+                                                  read by OP_LOAD_CATCH_VALUE at handler entry */
     struct UTag            *unwind_target;
     void                   *suppressed_head;   /* RESERVED v1.x */
     struct UCleanupEntry   *cleanup_top;

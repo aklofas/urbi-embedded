@@ -48,7 +48,11 @@ typedef enum {
     AST_LAZY_PARAM = 20,    /* formal parameter (`lazy x`) */
 
     /* M2 — assignment */
-    AST_ASSIGN     = 21     /* x = expr; assignment to existing local/upvalue */
+    AST_ASSIGN     = 21,    /* x = expr; assignment to existing local/upvalue */
+
+    /* M3 — control transfer */
+    AST_TRY        = 22,    /* try { body } [catch (e) { handler }] [finally { cleanup }] */
+    AST_THROW      = 23     /* throw expr */
 } UAstKind;
 
 typedef enum {
@@ -99,7 +103,10 @@ typedef enum {
     PARSE_CLOSURE_KEYWORD,         /* `closure(x){...}` form */
     PARSE_TRAILING_AMP,            /* `expr &` is illegal */
     PARSE_LAZY_OUT_OF_PARAM_LIST,
-    PARSE_LAZY_PARAM_DEFAULT       /* `lazy x = ...` reserved syntax */
+    PARSE_LAZY_PARAM_DEFAULT,      /* `lazy x = ...` reserved syntax */
+
+    /* M3 additions */
+    PARSE_TRY_NEEDS_CATCH_OR_FINALLY  /* `try { }` with neither catch nor finally */
 } UParseError;
 
 /*
@@ -131,6 +138,8 @@ typedef enum {
  *   u.ret         — AST_RETURN:     early exit with value
  *   u.param       — AST_PARAM, AST_LAZY_PARAM: formal parameters
  *   u.assign      — AST_ASSIGN: assignment to existing local/upvalue
+ *   u.try_stmt    — AST_TRY:    try body + optional catch/finally
+ *   u.throw_expr  — AST_THROW:  value expression to throw
  *
  * Position fields line/col are 1-based, matching the lexer.  For
  * AST_BINARY the position points at the operator token; for AST_ERROR
@@ -225,6 +234,18 @@ struct UAstNode {
             int         name_len;
             UAstNode   *value;
         } assign;
+        struct {                                            /* AST_TRY */
+            UAstNode   *body;              /* AST_BLOCK — the try body */
+            /* catch clause — both NULL when no catch */
+            const char *catch_var_start;   /* zero-copy catch variable name */
+            int         catch_var_len;
+            UAstNode   *catch_body;        /* AST_BLOCK or NULL */
+            /* finally clause */
+            UAstNode   *finally_body;      /* AST_BLOCK or NULL */
+        } try_stmt;
+        struct {                                            /* AST_THROW */
+            UAstNode   *value;             /* expression to throw */
+        } throw_expr;
     } u;
 };
 

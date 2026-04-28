@@ -138,6 +138,13 @@ typedef enum {
     OP_PUSH_FRAME_GUARD = 35,   /* A B:  register_base, register_count       */
     OP_RESUME           = 36,   /* A:    restore unwind state from R[A]      */
 
+    /* === M3 T10 empirical addition — needed for catch-binding ===
+     * OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
+     * Copies s->catch_value (written by the unwind walker on catch absorption)
+     * into R[A].  Emitted as the first instruction of every catch handler body
+     * so that the catch variable `e` receives the thrown value. */
+    OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
+
     OP_MAX
 } UOpcode;
 

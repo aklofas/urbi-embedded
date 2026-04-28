@@ -58,6 +58,12 @@ typedef enum {
     TOK_KW_FALSE,
     TOK_KW_NIL,
 
+    /* keywords — M3 control-transfer */
+    TOK_KW_TRY,
+    TOK_KW_CATCH,
+    TOK_KW_FINALLY,
+    TOK_KW_THROW,
+
     TOK_ERROR         /* malformed input */
 } UTokenType;
 

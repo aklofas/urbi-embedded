@@ -869,6 +869,64 @@ UTEST(parse_closure_keyword_errors) {
     ctx_destroy(&c);
 }
 
+/* T10 — try/catch/finally + throw parser tests. */
+
+UTEST(parse_try_finally_basic) {
+    /* "try { 42 } finally { 1 }" → AST_TRY, no catch, has finally_body */
+    ParseCtx c;
+    ctx_init(&c, "try { 42 } finally { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_TRY, (int)n->kind);
+    UASSERT(n->u.try_stmt.body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.try_stmt.body->kind);
+    UASSERT(n->u.try_stmt.catch_body == NULL);
+    UASSERT(n->u.try_stmt.catch_var_start == NULL);
+    UASSERT(n->u.try_stmt.finally_body != NULL);
+    UASSERT_EQ((int)AST_BLOCK, (int)n->u.try_stmt.finally_body->kind);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_try_catch_finally_full) {
+    /* "try { 1 } catch (e) { 2 } finally { 3 }" → both catch and finally */
+    ParseCtx c;
+    ctx_init(&c, "try { 1 } catch (e) { 2 } finally { 3 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_TRY, (int)n->kind);
+    UASSERT(n->u.try_stmt.body != NULL);
+    UASSERT(n->u.try_stmt.catch_body != NULL);
+    UASSERT(n->u.try_stmt.catch_var_start != NULL);
+    UASSERT_EQ(1, n->u.try_stmt.catch_var_len);  /* "e" */
+    UASSERT_EQ('e', n->u.try_stmt.catch_var_start[0]);
+    UASSERT(n->u.try_stmt.finally_body != NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_try_no_catch_no_finally_is_error) {
+    /* "try { 1 }" with neither catch nor finally → PARSE_TRY_NEEDS_CATCH_OR_FINALLY */
+    ParseCtx c;
+    ctx_init(&c, "try { 1 }");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_TRY_NEEDS_CATCH_OR_FINALLY, n->u.err.code);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_throw_basic) {
+    /* "throw 99" → AST_THROW with AST_INT value */
+    ParseCtx c;
+    ctx_init(&c, "throw 99");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_THROW, (int)n->kind);
+    UASSERT(n->u.throw_expr.value != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.throw_expr.value->kind);
+    UASSERT_EQ((int64_t)99, n->u.throw_expr.value->u.i);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -945,4 +1003,13 @@ void test_parser_suite(void) {
               parse_bare_function_with_name_errors);
     utest_run("parse: 'closure(x) { x + 1 }' is PARSE_CLOSURE_KEYWORD error",
               parse_closure_keyword_errors);
+    /* T10 — try/catch/finally + throw */
+    utest_run("parse: 'try { 42 } finally { 1 }' → AST_TRY with finally_body, no catch",
+              parse_try_finally_basic);
+    utest_run("parse: 'try { 1 } catch (e) { 2 } finally { 3 }' → both catch and finally",
+              parse_try_catch_finally_full);
+    utest_run("parse: 'try { 1 }' without catch/finally → PARSE_TRY_NEEDS_CATCH_OR_FINALLY",
+              parse_try_no_catch_no_finally_is_error);
+    utest_run("parse: 'throw 99' → AST_THROW with AST_INT value 99",
+              parse_throw_basic);
 }

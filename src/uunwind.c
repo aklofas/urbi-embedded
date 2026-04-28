@@ -64,8 +64,11 @@ pattern_matches(struct UPattern *pat, UValue val)
 static void
 bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
 {
-    /* M3 stub: no-op.  T10 will write val into the catch register. */
-    (void)s; (void)pat; (void)val;
+    /* T10: write the caught value into s->catch_value; the catch handler's
+     * first instruction (OP_LOAD_CATCH_VALUE) reads it into the named register.
+     * Pattern is ignored at M3 (match-all stub); M5 refines to class dispatch. */
+    (void)pat;
+    s->catch_value = val;
 }
 
 /* ===== pop_call_frame: restore caller's execution context =====

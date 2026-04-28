@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: return statement exits function and delivers value; OP_RETURN opcode;
+#         outer chunk sees the returned value as the call expression result.
+
+var f = function() { return 42 }; f()
+[00000001] 42

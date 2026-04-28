@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: uncaught throw terminates the strand fatally; top-level expression
+#         result is nil (strand died without producing a value).
+
+throw 42
+[00000001] nil

@@ -15,6 +15,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_VAR", "TOK_KW_FUNCTION", "TOK_KW_RETURN", "TOK_KW_IF", "TOK_KW_ELSE",
     "TOK_KW_WHILE", "TOK_KW_LAZY", "TOK_KW_CLOSURE", "TOK_KW_TRUE", "TOK_KW_FALSE",
     "TOK_KW_NIL",
+    "TOK_KW_TRY", "TOK_KW_CATCH", "TOK_KW_FINALLY", "TOK_KW_THROW",
     "TOK_ERROR"
 };
 
@@ -251,18 +252,22 @@ typedef struct {
     UTokenType  type;
 } UKeyword;
 
-/* Sorted by name for human readability; lookup is linear (11 entries —
+/* Sorted by name for human readability; lookup is linear (15 entries —
  * faster than a hash for this size). */
 static const UKeyword KEYWORDS[] = {
+    { "catch",    5, TOK_KW_CATCH    },
     { "closure",  7, TOK_KW_CLOSURE  },
     { "else",     4, TOK_KW_ELSE     },
     { "false",    5, TOK_KW_FALSE    },
+    { "finally",  7, TOK_KW_FINALLY  },
     { "function", 8, TOK_KW_FUNCTION },
     { "if",       2, TOK_KW_IF       },
     { "lazy",     4, TOK_KW_LAZY     },
     { "nil",      3, TOK_KW_NIL      },
     { "return",   6, TOK_KW_RETURN   },
+    { "throw",    5, TOK_KW_THROW    },
     { "true",     4, TOK_KW_TRUE     },
+    { "try",      3, TOK_KW_TRY      },
     { "var",      3, TOK_KW_VAR      },
     { "while",    5, TOK_KW_WHILE    }
 };

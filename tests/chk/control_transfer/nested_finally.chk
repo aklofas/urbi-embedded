@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: nested try/finally + outer catch; inner finally runs during unwind;
+#         outer catch absorbs the throw; side variable reflects caught value.
+
+var side = 0; try { try { throw 5 } finally { side = 10 } } catch (e) { side = e }; side
+[00000001] 5

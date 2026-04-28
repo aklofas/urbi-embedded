@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: try/finally with no exception; finally block runs only during unwind,
+#         not on normal exit; side-effect variable reflects try-body assignment.
+
+var side = 0; try { side = 1 } finally { side = 99 }; side
+[00000001] 1

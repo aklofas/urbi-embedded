@@ -323,8 +323,9 @@ static const char *op_name(uint8_t op) {
         case OP_TRY_END:        return "OP_TRY_END";
         case OP_PUSH_TAG:       return "OP_PUSH_TAG";
         case OP_POP_TAG:        return "OP_POP_TAG";
-        case OP_PUSH_FRAME_GUARD: return "OP_PUSH_FRAME_GUARD";
-        case OP_RESUME:         return "OP_RESUME";
+        case OP_PUSH_FRAME_GUARD:     return "OP_PUSH_FRAME_GUARD";
+        case OP_RESUME:               return "OP_RESUME";
+        case OP_LOAD_CATCH_VALUE:     return "OP_LOAD_CATCH_VALUE";
     }
     return "unknown";
 }
@@ -667,15 +668,16 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_JOIN_WAIT]  = &&label_OP_JOIN_WAIT,
         [OP_GETSLOT]    = &&label_OP_GETSLOT,
         [OP_SETSLOT]    = &&label_OP_SETSLOT,
-        /* M3 row 7 control-transfer stubs (T9/T10/T11 fill the real logic) */
-        [OP_THROW]            = &&label_row7_stub,
+        /* M3 row 7 control-transfer — T10 wires THROW/TRY_BEGIN/TRY_END/RESUME/LOAD_CATCH_VALUE */
+        [OP_THROW]            = &&label_OP_THROW,
         [OP_TAG_STOP]         = &&label_row7_stub,
-        [OP_TRY_BEGIN]        = &&label_row7_stub,
-        [OP_TRY_END]          = &&label_row7_stub,
+        [OP_TRY_BEGIN]        = &&label_OP_TRY_BEGIN,
+        [OP_TRY_END]          = &&label_OP_TRY_END,
         [OP_PUSH_TAG]         = &&label_row7_stub,
         [OP_POP_TAG]          = &&label_row7_stub,
         [OP_PUSH_FRAME_GUARD] = &&label_row7_stub,
-        [OP_RESUME]           = &&label_row7_stub,
+        [OP_RESUME]           = &&label_OP_RESUME,
+        [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
     };
 
     DISPATCH();
@@ -1098,24 +1100,83 @@ dispatch:
             HALT();
         }
 
-        /* M3 row 7 control-transfer stubs.
-         * Real logic lands at T9 (THROW/TAG_STOP/RESUME), T10 (TRY_BEGIN/TRY_END),
-         * T11 (PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD).
-         * Until then, dispatching any of these is an internal error. */
+        /* --- M3 row 7 control-transfer opcodes (T10 real dispatch) --- */
+
+        CASE(OP_THROW) {
+            /* OP_THROW ABx: A = reg_value, Bx = 0 (unused).
+             * Set pending_unwind = UEXEC_THROW and unwind_value = R[A],
+             * then go to safepoint where urbi_unwind() will walk the
+             * cleanup stack. */
+            uint8_t a = uinstr_a(*s->pc);
+            s->unwind_value   = s->R[a];
+            s->pending_unwind = UEXEC_THROW;
+            s->pc++;
+            goto safepoint;
+        }
+
+        CASE(OP_TRY_BEGIN) {
+            /* OP_TRY_BEGIN ABx: A = flags, Bx = handler_pc.
+             * Push a UCLEANUP_TRY_FRAME entry onto the cleanup stack. */
+            uint8_t  flags      = uinstr_a(*s->pc);
+            uint16_t handler_pc = uinstr_bx(*s->pc);
+            UCleanupEntry *entry = strand_cleanup_push(s);
+            if (entry == NULL) {
+                /* Cleanup stack full — strand fatal. */
+                s->fatal_status = UEXEC_THROW;
+                s->state        = USTRAND_STATE_DEAD;
+                goto exit_strand;
+            }
+            entry->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
+            entry->flags          = flags;
+            entry->handler_pc     = handler_pc;
+            entry->register_base  = 0u;
+            entry->register_count = 0u;
+            entry->owning_tag     = NULL;
+            entry->catch_pattern  = NULL;
+            entry->next_member    = NULL;
+            entry->strand_back    = NULL;
+            NEXT();
+        }
+
+        CASE(OP_TRY_END) {
+            /* OP_TRY_END ABC: no operands.  Pop the top UCLEANUP_TRY_FRAME entry. */
+            if (s->cleanup_depth > 0) {
+                strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
+            }
+            NEXT();
+        }
+
+        CASE(OP_RESUME) {
+            /* OP_RESUME: end of a finally/cleanup body.
+             * Exits dispatch_loop_until_yield so run_cleanup_with_replace()
+             * can check pending_unwind and restore the saved unwind state.
+             * State stays RUNNING; caller (run_cleanup_with_replace) handles
+             * the transition. */
+            s->pc++;
+            goto exit_strand;
+        }
+
+        CASE(OP_LOAD_CATCH_VALUE) {
+            /* OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
+             * Load s->catch_value (written by urbi_unwind on catch absorption)
+             * into R[A].  First instruction of every catch handler body. */
+            s->R[uinstr_a(*s->pc)] = s->catch_value;
+            NEXT();
+        }
+
+        /* M3 row 7 stubs — T11 will fill PUSH_TAG/POP_TAG/PUSH_FRAME_GUARD;
+         * TAG_STOP is T31.  Dispatching these before their task lands is an
+         * internal error caught by CI. */
 #if UVM_USE_COMPUTED_GOTO
         label_row7_stub:
 #else
-        case OP_THROW:
         case OP_TAG_STOP:
-        case OP_TRY_BEGIN:
-        case OP_TRY_END:
         case OP_PUSH_TAG:
         case OP_POP_TAG:
         case OP_PUSH_FRAME_GUARD:
-        case OP_RESUME:
 #endif
         {
-            URBI_DISPATCH_ASSERT(0 && "row 7 opcode runtime owned by T9/T10/T11");
+            URBI_DISPATCH_ASSERT(0 && "row 7 opcode runtime owned by T11/T31");
             vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "row 7 opcode: not yet implemented");
             HALT();
@@ -1225,9 +1286,9 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     }
     strand.vm    = vm;
     strand.state = USTRAND_STATE_DORMANT;
-    /* cleanup_base stays NULL — transient strands don't use unwind at T6. */
 
-    /* Allocate the per-strand register stack. */
+    /* Allocate the per-strand register stack first (preserves M2 OOM contract:
+     * first allocation failure → UVM_OOM with diagnostic before cleanup init). */
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
     strand.stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
     if (strand.stack == NULL) {
@@ -1237,6 +1298,10 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         return UVM_OOM;
     }
     vm_zero(strand.stack, stack_bytes);
+
+    /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
+     * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
+    (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* Wire frame-0 from module. */
     strand.R          = strand.stack;

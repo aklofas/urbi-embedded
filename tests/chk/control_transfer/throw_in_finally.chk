@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: throw inside finally body (C-1 replace-on-raise); new exception
+#         supersedes original; no outer catch → strand terminates fatally → nil.
+
+try { throw 1 } finally { throw 2 }
+[00000001] nil

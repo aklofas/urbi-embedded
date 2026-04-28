@@ -1,0 +1,6 @@
+# Milestone: M3
+# Covers: throw inside try block is caught by matching catch clause;
+#         catch variable receives the thrown value; OP_LOAD_CATCH_VALUE.
+
+var caught = 0; try { throw 77 } catch (e) { caught = e }; caught
+[00000001] 77

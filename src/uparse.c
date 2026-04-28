@@ -24,7 +24,8 @@ static const char * const kErrorMessages[] = {
     "the 'closure' keyword is retired at v1.0; use 'function' instead. MIGRATION TRAP: 'closure' bound 'this' lexically; 'function' binds at call site. See REVIVAL §14 L14",
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
-    "lazy parameter cannot have a default value"
+    "lazy parameter cannot have a default value",
+    "'try' requires at least one of 'catch' or 'finally'"
 };
 
 static const char * const kErrorNames[] = {
@@ -45,7 +46,8 @@ static const char * const kErrorNames[] = {
     "PARSE_CLOSURE_KEYWORD",
     "PARSE_TRAILING_AMP",
     "PARSE_LAZY_OUT_OF_PARAM_LIST",
-    "PARSE_LAZY_PARAM_DEFAULT"
+    "PARSE_LAZY_PARAM_DEFAULT",
+    "PARSE_TRY_NEEDS_CATCH_OR_FINALLY"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -151,6 +153,8 @@ static UAstNode *parse_if(UParser *p);
 static UAstNode *parse_while(UParser *p);
 static UAstNode *parse_function(UParser *p);
 static UAstNode *parse_return(UParser *p);
+static UAstNode *parse_try(UParser *p);
+static UAstNode *parse_throw(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -281,6 +285,10 @@ static UAstNode *parse_atom(UParser *p) {
     }
     case TOK_KW_FUNCTION:
         return parse_function(p);
+    case TOK_KW_TRY:
+        return parse_try(p);
+    case TOK_KW_THROW:
+        return parse_throw(p);
     case TOK_KW_CLOSURE:
         consume(p);
         return make_error(p, PARSE_CLOSURE_KEYWORD,
@@ -381,6 +389,16 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
     /* return [expr] */
     if (t.type == TOK_KW_RETURN) {
         return parse_return(p);
+    }
+
+    /* try { ... } [catch (e) { ... }] [finally { ... }] */
+    if (t.type == TOK_KW_TRY) {
+        return parse_try(p);
+    }
+
+    /* throw expr */
+    if (t.type == TOK_KW_THROW) {
+        return parse_throw(p);
     }
 
     /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
@@ -879,6 +897,97 @@ static UAstNode *parse_return(UParser *p) {
     UAstNode *node = make_node(p, AST_RETURN, kw.line, kw.col);
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.ret.value = value;
+    return node;
+}
+
+/* --- parse_throw: `throw expr` --- */
+
+static UAstNode *parse_throw(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_THROW */
+
+    UAstNode *value = parse_inner_tier(p);
+    if (!value) return (UAstNode *)&uparser_oom_sentinel;
+    if (value->kind == AST_ERROR) return value;
+
+    UAstNode *node = make_node(p, AST_THROW, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.throw_expr.value = value;
+    return node;
+}
+
+/* --- parse_try: `try { body } [catch (e) { handler }] [finally { cleanup }]`
+   Both catch and finally are optional, but at least one must be present. --- */
+
+static UAstNode *parse_try(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_TRY */
+
+    UAstNode *body = parse_block(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    const char *catch_var_start = NULL;
+    int         catch_var_len   = 0;
+    UAstNode   *catch_body      = NULL;
+    UAstNode   *finally_body    = NULL;
+
+    /* Optional catch clause. */
+    if (peek(p).type == TOK_KW_CATCH) {
+        consume(p);  /* consume 'catch' */
+
+        UToken lp = peek(p);
+        if (lp.type != TOK_LPAREN) {
+            return make_error(p, PARSE_EXPECTED_LPAREN,
+                              kErrorMessages[PARSE_EXPECTED_LPAREN],
+                              lp.line, lp.col);
+        }
+        consume(p);
+
+        UToken var_tok = peek(p);
+        if (var_tok.type != TOK_IDENT) {
+            return make_error(p, PARSE_EXPECTED_IDENT,
+                              kErrorMessages[PARSE_EXPECTED_IDENT],
+                              var_tok.line, var_tok.col);
+        }
+        consume(p);
+        catch_var_start = var_tok.u.str.start;
+        catch_var_len   = var_tok.u.str.len;
+
+        UToken rp = peek(p);
+        if (rp.type != TOK_RPAREN) {
+            return make_error(p, PARSE_EXPECTED_RPAREN,
+                              kErrorMessages[PARSE_EXPECTED_RPAREN],
+                              rp.line, rp.col);
+        }
+        consume(p);
+
+        catch_body = parse_block(p);
+        if (!catch_body) return (UAstNode *)&uparser_oom_sentinel;
+        if (catch_body->kind == AST_ERROR) return catch_body;
+    }
+
+    /* Optional finally clause. */
+    if (peek(p).type == TOK_KW_FINALLY) {
+        consume(p);  /* consume 'finally' */
+
+        finally_body = parse_block(p);
+        if (!finally_body) return (UAstNode *)&uparser_oom_sentinel;
+        if (finally_body->kind == AST_ERROR) return finally_body;
+    }
+
+    /* Require at least one of catch or finally. */
+    if (catch_body == NULL && finally_body == NULL) {
+        return make_error(p, PARSE_TRY_NEEDS_CATCH_OR_FINALLY,
+                          kErrorMessages[PARSE_TRY_NEEDS_CATCH_OR_FINALLY],
+                          kw.line, kw.col);
+    }
+
+    UAstNode *node = make_node(p, AST_TRY, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.try_stmt.body            = body;
+    node->u.try_stmt.catch_var_start = catch_var_start;
+    node->u.try_stmt.catch_var_len   = catch_var_len;
+    node->u.try_stmt.catch_body      = catch_body;
+    node->u.try_stmt.finally_body    = finally_body;
     return node;
 }
 

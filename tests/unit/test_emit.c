@@ -1373,6 +1373,64 @@ UTEST(emit_row7_resume_round_trip) {
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
 
+/* T10: OP_LOAD_CATCH_VALUE round-trip. */
+UTEST(emit_t10_load_catch_value_round_trip) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    uemit_load_catch_value(&e, /*reg=*/5, /*line=*/1);
+
+    UASSERT_EQ(EMIT_OK, e.error);
+    UASSERT_EQ((size_t)1, module.instr_count);
+    uint32_t w = module.instructions[0];
+    UASSERT_EQ((int)OP_LOAD_CATCH_VALUE, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)5, uinstr_a(w));
+    UASSERT_EQ((uint8_t)0, uinstr_b(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
+/* T10: AST_THROW emit produces OP_THROW after the value expression. */
+UTEST(emit_t10_throw_emits_op_throw) {
+    UVM vm; UModule module = {0}; UArena arena; UEmitter e;
+    uarena_init(&arena, 0);
+    uvm_init(&vm, NULL, NULL);
+    uemit_init(&e, &module, &arena, &vm, "test");
+
+    /* Build AST: throw 42 */
+    UAstNode val = {0};
+    val.kind  = AST_INT;
+    val.u.i   = 42;
+    UAstNode node = {0};
+    node.kind              = AST_THROW;
+    node.u.throw_expr.value = &val;
+
+    uemit_statement(&e, &node);
+    UASSERT_EQ(EMIT_OK, e.error);
+
+    /* Expect at least: LOADK R0 K0 ; THROW R0 ; LOADNIL R1
+     * Scan backwards for OP_THROW (throw is followed by LOADNIL for the
+     * statement result register, so it is not the final instruction). */
+    UASSERT(module.instr_count >= 2);
+    int throw_idx = -1;
+    for (int i = (int)module.instr_count - 1; i >= 0; i--) {
+        if ((int)uinstr_op(module.instructions[i]) == (int)OP_THROW) {
+            throw_idx = i;
+            break;
+        }
+    }
+    UASSERT(throw_idx >= 0);
+    uint32_t w = module.instructions[(size_t)throw_idx];
+    UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
+    /* A = destination register of the value expression (R0). */
+    UASSERT_EQ((uint8_t)0, uinstr_a(w));
+
+    uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1485,4 +1543,9 @@ void test_emit_suite(void) {
               emit_row7_push_frame_guard_round_trip);
     utest_run("emit row7: OP_RESUME encodes reg_state in A",
               emit_row7_resume_round_trip);
+    /* T10: try/catch/finally + throw emit */
+    utest_run("emit T10: OP_LOAD_CATCH_VALUE encodes dst reg in A",
+              emit_t10_load_catch_value_round_trip);
+    utest_run("emit T10: AST_THROW emits LOADK then OP_THROW with value reg",
+              emit_t10_throw_emits_op_throw);
 }
