@@ -8,6 +8,24 @@
 #include "uvm.h"
 #include <stdlib.h>
 
+/* Counting allocator that fails on the Nth allocation. */
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1 means never fail; 0+ triggers failure on that call */
+} AllocSpy;
+
+static void *spy_alloc(void *ptr, size_t n, void *ud) {
+    AllocSpy *spy = (AllocSpy *)ud;
+    if (n > 0 && ptr == NULL) {  /* allocation request (not a free) */
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+            return NULL;
+        }
+    }
+    /* Use stdlib for the actual allocation. */
+    return realloc(ptr, n);
+}
+
 #define UTEST(name) static void name(void)
 
 /* ===== Test 1: two-white flip ===== */
@@ -109,6 +127,51 @@ UTEST(ugc_alloc_triggers_pending_at_threshold)
     uvm_destroy(&vm);
 }
 
+/* ===== Test 6: alloc OOM on cell allocation ===== */
+
+/* When cell allocation fails (first spy_alloc call returns NULL), urbi_gc_alloc
+ * must return NULL and leave the VM state unchanged (gc_total_allocated and
+ * gc_pending must not be incremented). */
+UTEST(ugc_alloc_returns_null_on_cell_oom)
+{
+    AllocSpy spy;
+    spy.alloc_calls = 0;
+    spy.fail_at = 0;  /* fail the FIRST alloc — the cell itself */
+
+    UVM vm;
+    uvm_init(&vm, spy_alloc, &spy);
+
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32, UTYPE_OBJECT);
+    UASSERT(c == NULL);
+    /* Counters must NOT have been incremented on a failed alloc. */
+    UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
+    UASSERT_EQ(vm.gc_pending, 0u);
+
+    uvm_destroy(&vm);
+}
+
+/* ===== Test 7: alloc OOM on sidecar allocation ===== */
+
+/* When sidecar allocation fails (second spy_alloc call returns NULL), urbi_gc_alloc
+ * must free the cell, return NULL, and leave the VM state unchanged. */
+UTEST(ugc_alloc_returns_null_on_sidecar_oom)
+{
+    AllocSpy spy;
+    spy.alloc_calls = 0;
+    spy.fail_at = 1;  /* fail the SECOND alloc — the sidecar */
+
+    UVM vm;
+    uvm_init(&vm, spy_alloc, &spy);
+
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32, UTYPE_OBJECT);
+    UASSERT(c == NULL);
+    /* Cell allocation must have been rolled back (freed); counters NOT incremented. */
+    UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
+    UASSERT_EQ(vm.gc_pending, 0u);
+
+    uvm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void test_ugc_color_invariants_suite(void)
@@ -123,4 +186,8 @@ void test_ugc_color_invariants_suite(void)
               ugc_alloc_increments_debt);
     utest_run("ugc_alloc_triggers_pending_at_threshold",
               ugc_alloc_triggers_pending_at_threshold);
+    utest_run("ugc_alloc_returns_null_on_cell_oom",
+              ugc_alloc_returns_null_on_cell_oom);
+    utest_run("ugc_alloc_returns_null_on_sidecar_oom",
+              ugc_alloc_returns_null_on_sidecar_oom);
 }

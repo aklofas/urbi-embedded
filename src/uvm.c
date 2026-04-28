@@ -175,7 +175,10 @@ void uvm_destroy(UVM *vm) {
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     /* T32: uwatcher_pool_destroy(vm); */
-    urbi_gc_destroy(vm);      /* T23: free all GC-managed cells (must run last) */
+    /* GC destroy must run after all subsystems that hold GC-managed cells.
+     * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
+     * sched queues) is freed below — none of it owns GC cells. */
+    urbi_gc_destroy(vm);      /* T23: free all GC-managed cells */
     if (vm->event_ring && vm->alloc_fn) {
         vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
         vm->event_ring = NULL;

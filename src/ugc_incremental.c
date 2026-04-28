@@ -35,6 +35,7 @@
 #include "ugc_incremental.h"
 #include "ugc_capi.h"
 #include "uvm.h"
+#include "urbi.h"
 
 /* No <stdlib.h> or <string.h> — freestanding-strict like every other src/*.c.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */
@@ -53,6 +54,7 @@ typedef struct UAllCellsNode {
     UCell              *cell;
     size_t              size;
     struct UAllCellsNode *next;
+    struct UAllCellsNode *next_gray;  /* T24: gray work-list link; NULL when not on gray queue */
 } UAllCellsNode;
 
 /* Accessor: recover the sidecar head from vm->all_cells_head (which stores
@@ -111,6 +113,8 @@ urbi_gc_init(UVM *vm)
 void
 urbi_gc_destroy(UVM *vm)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     UAllCellsNode *node = gc_node_head(vm);
     vm->all_cells_head = NULL;
 
@@ -162,6 +166,8 @@ urbi_gc_destroy(UVM *vm)
 UCell *
 urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 {
+    URBI_ASSERT_NOT_ISR(vm);
+
     /* Allocate the cell. */
     UCell *cell = (UCell *)vm->alloc_fn(NULL, size, vm->alloc_ud);
     if (UNLIKELY(cell == NULL)) return NULL;
@@ -185,6 +191,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     node->cell = cell;
     node->size = size;
     node->next = gc_node_head(vm);
+    node->next_gray = NULL;
     /* Store sidecar head as UCell* (cast convention documented at top of file). */
     vm->all_cells_head = (UCell *)(void *)node;
 
@@ -215,8 +222,9 @@ gc_shade_gray(UVM *vm, UCell *cell)
 {
     (void)vm;
     cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_GRAY);
-    /* TODO(T24): push onto vm->gray_work_head once the 5-phase state machine
-     * is in place and gray_work_head has a consumer (mark_incremental slice). */
+    /* TODO(T24): locate the cell's UAllCellsNode (linear scan of all_cells_head, OR
+     * via a back-pointer field added to the cell at T27), then push onto vm->gray_work_head
+     * via the sidecar's next_gray link. */
 }
 
 /* === Stubs for ops declared in ugc_capi.h, landing in T24/T25/T26 ===
