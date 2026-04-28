@@ -506,7 +506,7 @@ urbi_strand_reset(struct UStrand *s)
 void
 urbi_throw(struct UStrand *s, UValue value)
 {
-    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind = UEXEC_THROW;
     s->unwind_value   = value;
 }
@@ -517,7 +517,7 @@ urbi_throw(struct UStrand *s, UValue value)
 void
 urbi_return_val(struct UStrand *s, UValue value)
 {
-    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind = UEXEC_RETURN;
     s->unwind_value   = value;
 }
@@ -526,7 +526,7 @@ urbi_return_val(struct UStrand *s, UValue value)
 void
 urbi_tag_stop_local(struct UStrand *s, struct UTag *tag, UValue value)
 {
-    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
+    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     s->pending_unwind  = UEXEC_TAG_STOP;
     s->unwind_target   = tag;
     s->unwind_value    = value;
