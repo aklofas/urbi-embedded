@@ -1,0 +1,17 @@
+# Milestone: M3
+# Covers: closure() keyword; closure capturing 'this', 'call'; call.evalArgAt()
+#         for lazy-to-eager eval; Lobby.overrideSlot(); closure applied across lobbies.
+# defer-to: M4 (requires call.evalArgAt, Lobby.overrideSlot, closure keyword syntax errors,
+#             and multi-lobby infrastructure)
+#
+# Reason:
+#   The fixture uses call.evalArgAt(0) and call.argAt(1) — call-object reflection
+#   scheduled for M4.  Lobby.overrideSlot() and Lobby.create() are M4 Lobby
+#   infrastructure.  'closure(y, z) { ... }' and the error message for
+#   'closure cannot be lazy' require the closure keyword with explicit parameter
+#   lists (M4 parser extension).  closure().apply(42) uses .apply() method (M4).
+#
+# Original urbiscript (activate at M4 with call reflection and Lobby infrastructure):
+# # class A { function f { var x = call.evalArgAt(0); ... closure(y, z) { [...] } } } | {};
+# # closure { 42 }; [00000001:error] !!! input.u:@.1-14: syntax error: closure cannot be lazy
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/closure/closure.chk)

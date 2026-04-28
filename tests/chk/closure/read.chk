@@ -1,0 +1,21 @@
+# Milestone: M3
+# Covers: read closure (adder pattern): inner function captures inc from outer scope;
+#         write closure (counter pattern): inner function mutates captured count;
+#         two-level closure; lobby access inside closure; call.argAt() lazy parameter.
+# defer-to: M4 (requires call.argAt(), Lobby.create(), Lobby.overrideSlot(), multi-lobby
+#             infrastructure, and Channel.topLevel access)
+#
+# Reason:
+#   The read and write closure patterns (adder, counter) are already covered at M3
+#   by tests/chk/closure/counter.chk and tests/chk/closure/two_level.chk.  The
+#   full legacy fixture additionally requires call.argAt() for lazy parameter access
+#   (M4 call-object reflection), Lobby.create() multi-lobby infrastructure (M4),
+#   Lobby.overrideSlot() (M4), and Channel.topLevel (M4 I/O system).  The complex
+#   two-lobby closure-sharing test cannot be replicated at M3.
+#
+# Original urbiscript (activate at M4 with Lobby infrastructure and call reflection):
+# # var adder = function(inc) { function(x) { x + inc } } | {};
+# # var a5 = adder(5) | {}; var a7 = adder(7) | {};
+# # a5(10); [00000001] 15
+# # a7(10); [00000002] 17
+# # ... (see legacy/repos/aldebaran-urbi/tests/2.x/closure/read.chk)

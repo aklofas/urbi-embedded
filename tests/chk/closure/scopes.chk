@@ -1,0 +1,20 @@
+# Milestone: M3
+# Covers: closure capture from definition scope, not call scope; 'var Object.f'
+#         slot assignment on a prototype; lookup of i inside f() resolves to
+#         outer global i, not inner block-local i.
+# defer-to: M4 (requires 'var Object.f' prototype slot assignment via object-model)
+#
+# Reason:
+#   'var Object.f = function(x) { i += x }' assigns a function to a slot on the
+#   Object prototype — requires M4 prototype-OOP slot write dispatch.  At M3, var
+#   declarations are local to the current compilation unit (no prototype slots).
+#   The core closure-captures-definition-scope semantic is verified at M3 via
+#   tests/chk/closure/counter.chk (counter increments outer n correctly).
+#   Compound assignment (i += x) is also not yet supported at M3.
+#
+# Original urbiscript (activate at M4 with prototype slot assignment):
+# # var i = 41; [00000001] 41
+# # var Object.f = function(x) { i += x } | {};
+# # { var i = 0; Object.f(1) };
+# # [00000002:error] !!! input.u:4.31: lookup failed: i
+# # i; [00000004] 41
