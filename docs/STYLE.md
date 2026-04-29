@@ -54,6 +54,24 @@ Abbreviations are fine when the context is tight (`l` for a `ULexer *` inside le
 
 ---
 
+## Case conventions: macros vs types
+
+The U-namespace prefix carries different case based on what it names:
+
+- **Macros and constants are `UPPER_SNAKE`** with an all-caps prefix:
+  `UGC_COLOR_BLACK`, `UGC_HAS_FINALIZER`, `URBI_GC_SLICE_BUDGET`,
+  `UVM_ERRMSG_CAP`, `URBI_DEBUG`.
+
+- **Types (typedefs, structs, enums) are `UCamelCase`** with a single
+  capital after the `U`: `UVM`, `UValue`, `UGcRootCallback`,
+  `UGcWalkPayloadFn`, `UWatcher`, `URealm`.
+
+This follows standard C convention (macros all-caps, types CamelCase) and
+is intentional, not a typo. Do not "normalize" `UGc*` types to `UGC_*` or
+vice versa.
+
+---
+
 ## Memory model
 
 - **No heap allocation inside the library.** The public API exposes a pluggable allocator to the host; the library itself never calls `malloc` / `free` / `calloc` / `realloc` directly.
