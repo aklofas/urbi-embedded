@@ -13,8 +13,8 @@
  *   - gc_phase getter returns correct value */
 
 #include "utest.h"
-#include "ugc_capi.h"
-#include "ugc_incremental.h"
+#include "urbi/gc.h"
+#include "gc/ugc_incremental.h"
 #include "uvm.h"
 #include <stdlib.h>
 

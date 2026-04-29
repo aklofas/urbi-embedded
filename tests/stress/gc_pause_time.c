@@ -12,7 +12,7 @@
  * Row 10 acceptance #4 + #8 (stress tests run; T46 owns the < 1 ms gate).
  * T28. */
 
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "uvm.h"
 #include <stdio.h>
 #include <stdlib.h>

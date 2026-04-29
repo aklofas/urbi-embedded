@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "utest.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 
 static void version_is_nonempty(void) {
     const char *v = urbi_version();

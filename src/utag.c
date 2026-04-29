@@ -5,15 +5,15 @@
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * Allocation uses vm->alloc_fn (realloc semantics).
  * Zero-fill initializes each field explicitly.
- * Assertions use URBI_INTERNAL_ASSERT from urbi_internal.h. */
+ * Assertions use URBI_INTERNAL_ASSERT from umacros.h. */
 
 #include "utag.h"
 #include "ucleanup.h"
 #include "ustrand.h"
 #include "uvm.h"
-#include "ugc.h"       /* UTYPE_TAG */
-#include "urbi.h"      /* URBI_ASSERT_NOT_ISR */
-#include "urbi_internal.h"
+#include "gc/ugc.h"       /* UTYPE_TAG */
+#include "urbi/urbi.h"      /* URBI_ASSERT_NOT_ISR */
+#include "umacros.h"
 
 /* === utag_create ===
  *

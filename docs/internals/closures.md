@@ -82,7 +82,7 @@ captures `x`, `find_or_install_upvalue` propagates the upvalue chain:
 
 | Component | Location |
 |---|---|
-| `UFuncState` struct definition | `src/uemit_internal.h` |
+| `UFuncState` struct definition | `src/uemit.h` |
 | `find_or_install_upvalue` | `src/uemit.c` |
 | Block open / close | `uemit_open_block`, `uemit_close_block` in `src/uemit.c` |
 | Back-edge close (while loops) | `uemit_emit_loop_back_close` in `src/uemit.c` |

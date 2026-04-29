@@ -4,10 +4,10 @@
 
 #include "utest.h"
 #include "ustrand.h"
-#include "urealm.h"
-#include "usched_cooperative.h"
+#include "realm/urealm.h"
+#include "sched/usched_cooperative.h"
 #include "uvm.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include <stdlib.h>
 
 #define UTEST(name) static void name(void)

@@ -11,19 +11,18 @@
 #endif
 
 #include "uvm.h"
-#include "urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
+#include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
-#include "usched_cooperative.h"
-#include "uvm_internal.h"
+#include "sched/usched_cooperative.h"
 #include "uunwind.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "uevent_ring.h"
-#include "m3_forward_decls.h"
+#include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
-#include "uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
+#include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 
 #if __STDC_HOSTED__
@@ -403,14 +402,14 @@ static const char *op_name(uint8_t op) {
 
 /* Fixed-buffer diagnostic writer. Truncates with "..." when the buffer
    fills. Freestanding: no snprintf, no <stdio.h>. */
-typedef struct DiagWriter {
+typedef struct UDiagWriter {
     char   *buf;
     size_t  cap;   /* buffer capacity */
     size_t  used;  /* bytes written so far (excluding trailing NUL) */
     bool    truncated;
-} DiagWriter;
+} UDiagWriter;
 
-static void diag_init(DiagWriter *w, char *buf, size_t cap) {
+static void diag_init(UDiagWriter *w, char *buf, size_t cap) {
     w->buf = buf;
     w->cap = cap;
     w->used = 0;
@@ -418,7 +417,7 @@ static void diag_init(DiagWriter *w, char *buf, size_t cap) {
     if (cap > 0) buf[0] = '\0';
 }
 
-static void diag_write_cstr(DiagWriter *w, const char *s) {
+static void diag_write_cstr(UDiagWriter *w, const char *s) {
     if (w->truncated) return;
     while (*s) {
         /* Leave 4 bytes for "..." + NUL. */
@@ -439,7 +438,7 @@ static void diag_write_cstr(DiagWriter *w, const char *s) {
 }
 
 /* Write an unsigned integer in decimal. */
-static void diag_write_u32(DiagWriter *w, uint32_t n) {
+static void diag_write_u32(UDiagWriter *w, uint32_t n) {
     char tmp[12];
     size_t i = 0;
     if (n == 0) {
@@ -457,14 +456,14 @@ static void diag_write_u32(DiagWriter *w, uint32_t n) {
     }
 }
 
-static void diag_write_size(DiagWriter *w, size_t n) {
+static void diag_write_size(UDiagWriter *w, size_t n) {
     /* size_t is at most 64 bits on our targets; fits in u32 for any
        realistic frame size or pc. Cap for safety. */
     if (n > UINT32_MAX) n = UINT32_MAX;
     diag_write_u32(w, (uint32_t)n);
 }
 
-static void diag_write_kind_name(DiagWriter *w, uint8_t kind) {
+static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
     diag_write_cstr(w, kind_name(kind));
 }
 
@@ -500,7 +499,7 @@ static uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-static void diag_write_prefix(DiagWriter *w, const UModule *module, size_t pc) {
+static void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
     uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
         diag_write_cstr(w, "instr ");
@@ -522,7 +521,7 @@ static void diag_write_prefix(DiagWriter *w, const UModule *module, size_t pc) {
    Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
 static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
                                         uint8_t op, uint8_t b_kind, uint8_t c_kind) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
@@ -537,7 +536,7 @@ static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t p
 /* Unary-op TypeError: one operand kind reported. */
 static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
                                        uint8_t op, uint8_t b_kind) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
@@ -549,7 +548,7 @@ static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc
 
 /* Format: "out of memory allocating register frame (<N> bytes requested)" */
 static void vm_format_oom(UVM *vm, size_t nbytes) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "out of memory allocating register frame (");
     diag_write_size(&w, nbytes);
@@ -611,7 +610,7 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
 /* Heapify all open cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
  * Called by OP_CLOSE, OP_RET, and urbi_unwind.
- * Declared non-static (exported via uvm_internal.h) for uunwind.c access. */
+ * Declared non-static (exported via uvm.h) for uunwind.c access. */
 void vm_close_upvalues(UStrand *s, UValue *threshold,
                        UUpvalCell **closed_list) {
     UUpvalCell **link = &s->open_upvals;
@@ -680,7 +679,7 @@ static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
 /* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
 static void vm_format_type_error_msg(UVM *vm, const char *msg) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "TypeError: ");
     diag_write_cstr(&w, msg);
@@ -1442,7 +1441,7 @@ safepoint:
         goto exit_strand;
     }
     vm->step_budget_remaining--;
-    if (vm->gc_pending)           gc_slice(vm, URBI_GC_SLICE_BUDGET);
+    if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
     if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
     /* Preemption flag reserved for v2; not checked at M3. */

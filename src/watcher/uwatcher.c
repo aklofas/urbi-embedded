@@ -8,11 +8,11 @@
 
 #include "uwatcher.h"
 #include "uvm.h"
-#include "ugc.h"            /* UTYPE_WATCHER */
-#include "ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
+#include "gc/ugc.h"            /* UTYPE_WATCHER */
+#include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
 #include "utag.h"           /* UTag, member_watchers_head */
-#include "urbi.h"           /* URBI_ASSERT_NOT_ISR */
-#include "urbi_internal.h"  /* URBI_INTERNAL_ASSERT */
+#include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
+#include "umacros.h"  /* URBI_INTERNAL_ASSERT */
 
 /* === Internal helpers === */
 

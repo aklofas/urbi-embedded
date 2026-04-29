@@ -2,15 +2,15 @@
 /* Per-scheduler API umbrella.  Consumers include this header (not usched.h
    directly) to get both the chosen scheduler's interface and the
    URBI_SCHED_HAS_* flags with correct defaults.
-   Include order: sched_capi.h → usched.h → usched_cooperative.h (for M3).
+   Include order: urbi/sched.h → usched.h → usched_cooperative.h (for M3).
    usched_cooperative.h hard-defines URBI_SCHED_HAS_* to 0; the #ifndef
    guards below are no-ops for cooperative and provide defaults for future
    RT/deadline schedulers that omit some flags. */
 
-#ifndef SCHED_CAPI_H
-#define SCHED_CAPI_H
+#ifndef URBI_SCHED_H
+#define URBI_SCHED_H
 
-#include "usched.h"
+#include "sched/usched.h"
 
 /* Per-scheduler feature flags — cooperative defaults (all 0).
    RT/deadline schedulers hard-define these before this point via their own
@@ -40,4 +40,4 @@ uint8_t     urbi_strand_get_priority(struct UStrand *s);
 USchedClass urbi_strand_get_sched_class(struct UStrand *s);
 #endif /* URBI_SCHED_HAS_PRIORITY */
 
-#endif /* SCHED_CAPI_H */
+#endif /* URBI_SCHED_H */

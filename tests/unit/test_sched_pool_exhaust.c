@@ -23,10 +23,10 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
-#include "urbi.h"
-#include "usched_cooperative.h"
+#include "urbi/urbi.h"
+#include "sched/usched_cooperative.h"
 
 #include <string.h>
 #include <stddef.h>

@@ -27,13 +27,12 @@
 #include "ustrand.h"
 #include "uframe.h"       /* UCallFrame */
 #include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
-#include "uvm_internal.h" /* vm_close_upvalues */
 #include "uvm.h"          /* dispatch_loop_until_yield */
-#include "urbi.h"         /* UErrCode, public API declarations */
-#include "usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
-#include "urbi_internal.h"      /* URBI_INTERNAL_ASSERT */
+#include "urbi/urbi.h"         /* UErrCode, public API declarations */
+#include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
+#include "umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "utag.h"               /* UTag, member_strands_head */
-#include "uwatcher.h"           /* pending_onleave_queue_push */
+#include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */

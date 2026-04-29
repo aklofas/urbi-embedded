@@ -9,7 +9,7 @@
  * Row 10 acceptance #4 (stress tests pass; GC phase returns to IDLE).
  * T28. */
 
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "uvm.h"
 #include <stdio.h>
 #include <stdlib.h>

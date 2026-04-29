@@ -4,14 +4,14 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "ugc.h"    /* UTYPE_TAG */
-#include "urbi.h"
+#include "gc/ugc.h"    /* UTYPE_TAG */
+#include "urbi/urbi.h"
 #include "umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <stdlib.h>
 

@@ -91,7 +91,7 @@ void urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
 /* === Row 8 chunk-lifecycle C API (M3 / T14) ===
  *
  * Realm lifecycle: create, destroy, global singleton, liveness query.
- * Full struct definition is in urealm.h; include it for direct field access.
+ * Full struct definition is in realm/urealm.h; include it for direct field access.
  * Forward-declaration here is sufficient for host code using only these funcs.
  *
  * Thread safety: none at M3 — same single-threaded constraint as row 7 API. */

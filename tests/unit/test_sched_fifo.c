@@ -15,11 +15,11 @@
  * tail-insertion path: s → ready_tail → new tail. */
 
 #include "utest.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uvm.h"
 #include "ustrand.h"
-#include "urbi.h"
-#include "urealm.h"
+#include "urbi/urbi.h"
+#include "realm/urealm.h"
 
 #define UTEST(name) static void name(void)
 

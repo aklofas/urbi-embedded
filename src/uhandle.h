@@ -13,7 +13,7 @@
 
 #include <stdint.h>
 #include "umodule.h"   /* UValue */
-#include "ugc.h"       /* UGcRootCallback */
+#include "gc/ugc.h"       /* UGcRootCallback */
 
 struct UVM;
 

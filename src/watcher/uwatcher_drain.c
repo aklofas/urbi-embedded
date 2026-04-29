@@ -38,8 +38,8 @@
 #include "uwatcher.h"
 #include "uvm.h"
 #include "utag.h"           /* UTag, member_watchers_head */
-#include "urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
-#include "urbi_internal.h"  /* URBI_INTERNAL_ASSERT */
+#include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
+#include "umacros.h"  /* URBI_INTERNAL_ASSERT */
 
 /* === run_watcher_onleave — file-scope static ===
  *

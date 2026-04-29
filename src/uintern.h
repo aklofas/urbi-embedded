@@ -7,7 +7,7 @@
 #include <stddef.h>
 
 /* Pull in UGcRootCallback typedef (via ugc.h → umodule.h for UValue). */
-#include "ugc.h"
+#include "gc/ugc.h"
 
 #ifdef __cplusplus
 extern "C" {

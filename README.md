@@ -77,7 +77,9 @@ See `./build/host/urbi --help` for the full flag list.
 ## Source layout
 
 ```text
-src/urbi.h        public top-level C API
+include/urbi/urbi.h  public top-level C API (umbrella)
+include/urbi/gc.h    public GC C API
+include/urbi/sched.h public scheduler C API
 src/urbi.c        top-level glue, version
 src/ulex.h        lexer API
 src/ulex.c        lexer

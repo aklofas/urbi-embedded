@@ -8,7 +8,7 @@
  * make test-debug — URBI_DEBUG=1: 1 smoke + 4 checksum sanity cases. */
 
 #include "utest.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvm.h"
 
 #include <string.h>
@@ -28,7 +28,7 @@ UTEST(determinism_checksum_smoke)
 
 #ifdef URBI_DEBUG
 
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "umodule.h"  /* UValue, UValKind */
 
 UTEST(determinism_checksum_returns_nonzero_on_empty_vm)

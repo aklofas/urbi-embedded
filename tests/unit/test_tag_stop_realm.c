@@ -12,12 +12,12 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "uwatcher.h"
-#include "urbi.h"
+#include "watcher/uwatcher.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 

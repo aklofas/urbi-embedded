@@ -19,7 +19,7 @@
 #include "ulex.h"
 #include "umodule.h"
 #include "uparse.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvalue.h"
 #include "uvm.h"
 

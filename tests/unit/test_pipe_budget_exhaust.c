@@ -22,16 +22,16 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "umodule.h"
 #include "uarena.h"
 #include "uast.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <string.h>
 #include <stdint.h>

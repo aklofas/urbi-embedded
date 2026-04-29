@@ -11,7 +11,7 @@
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
 #include "uvalue.h"   /* UValue — needed for handle_table field */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
-#include "ugc_capi.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
+#include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +21,7 @@ extern "C" {
    Types referenced in the UVM struct but defined in later tasks.
    Forward-decl only: all uses are pointer-typed.
    Note: UCell, UType, UGcRootCallback, UGcRootProviderFn are now defined in ugc.h
-   (pulled in via ugc_capi.h above). */
+   (pulled in via urbi/gc.h above). */
 struct UStrand;
 struct UEvent;
 struct URealm;
@@ -29,7 +29,7 @@ struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 
 /* --- M3 capacity macros --- */
-/* Dead path — uvm.h always pulls ugc_capi.h.  Guard retained only to prevent
+/* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
 #ifndef URBI_GC_INITIAL_THRESHOLD
 #  define URBI_GC_INITIAL_THRESHOLD (16 * 1024)
@@ -254,6 +254,17 @@ void uvm_destroy(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
 const char *uvm_error_name(UVMError code);
+
+/* --- Internal cross-module declarations ---
+ * Originally in uvm_internal.h (consolidated post-M3). All src/ headers are
+ * internal-by-definition after the include/urbi/ split — no separate friend
+ * header needed. */
+
+/* Heapify all open upvalue cells whose stack address is >= threshold.
+ * Removed cells are appended to *closed_list.
+ * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
+void vm_close_upvalues(struct UStrand *s, UValue *threshold,
+                       UUpvalCell **closed_list);
 
 #ifdef __cplusplus
 }

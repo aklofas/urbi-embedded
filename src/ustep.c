@@ -2,10 +2,10 @@
 /* urbi_step: 4-state cooperative scheduler driver (row 8 §6 / T16).
    Freestanding-safe: only <stdbool.h> and <stdint.h>. */
 
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvm.h"
 #include "ustrand.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uevent_ring.h"
 
 UStepResult

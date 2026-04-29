@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "umodule.h"
 #include "uintern.h"
-#include "urbi_internal.h"
+#include "umacros.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -90,7 +90,7 @@ urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
 /* Context struct for the namespace walk callback. */
 typedef struct {
     uint64_t h;
-} ChecksumCtx;
+} UChecksumCtx;
 
 /* unamespace_walk_roots callback: fold each UValue into the running hash.
  * UVAL_INT: hashes the integer value directly.
@@ -103,7 +103,7 @@ typedef struct {
 static void
 checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
 {
-    ChecksumCtx *c = (ChecksumCtx *)ctx;
+    UChecksumCtx *c = (UChecksumCtx *)ctx;
     (void)vm;
 
     FNV1A_MIX(c->h, root->kind);
@@ -146,7 +146,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(vm != NULL);
 
-    ChecksumCtx ctx;
+    UChecksumCtx ctx;
     struct URealm *r;
 
     ctx.h = FNV1A_SEED;

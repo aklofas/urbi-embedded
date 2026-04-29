@@ -11,12 +11,12 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "ugc.h"    /* UTYPE_TAG */
-#include "urbi.h"
+#include "gc/ugc.h"    /* UTYPE_TAG */
+#include "urbi/urbi.h"
 
 #include <stdlib.h>
 #include <stddef.h>  /* SIZE_MAX */

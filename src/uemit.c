@@ -2,7 +2,6 @@
 /* Bytecode emitter. */
 
 #include "uemit.h"
-#include "uemit_internal.h"
 #include "uintern.h"
 #include "uvarint.h"
 #include "ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */

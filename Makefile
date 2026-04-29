@@ -1,4 +1,4 @@
-SRC := $(wildcard src/*.c)
+SRC := $(wildcard src/*.c) $(wildcard src/gc/*.c) $(wildcard src/sched/*.c) $(wildcard src/watcher/*.c) $(wildcard src/realm/*.c)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
 
 TARGET ?= host
@@ -10,7 +10,7 @@ LIB := $(BUILDDIR)/liburbi.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
-CPPFLAGS += -Isrc -Itests/unit
+CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 
 all: $(LIB)
@@ -18,14 +18,13 @@ all: $(LIB)
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
 
-$(BUILDDIR)/src/%.o: src/%.c | $(BUILDDIR)/src
+$(BUILDDIR)/src/%.o: src/%.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(BUILDDIR)/tests/unit/%.o: tests/unit/%.c | $(BUILDDIR)/tests/unit
+$(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
-
-$(BUILDDIR)/src $(BUILDDIR)/tests/unit:
-	@mkdir -p $@
 
 # --- REPL binary --------------------------------------------------------
 #

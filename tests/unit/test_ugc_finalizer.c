@@ -3,8 +3,8 @@
  * invocation via UType.destroy.  Row 10 §7 + §5.3.  T27. */
 
 #include "utest.h"
-#include "ugc_capi.h"
-#include "ugc_incremental.h"
+#include "urbi/gc.h"
+#include "gc/ugc_incremental.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)

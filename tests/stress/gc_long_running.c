@@ -10,7 +10,7 @@
  * T28.  Lives in tests/stress/ — NOT wired into `make test` (slow path);
  * invoked by `make test-stress` and `make releasetest`. */
 
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "uvm.h"
 #include <stdio.h>
 #include <stdlib.h>

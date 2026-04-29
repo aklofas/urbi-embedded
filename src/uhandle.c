@@ -5,7 +5,7 @@
 
 #include "uhandle.h"
 #include "uvm.h"
-#include "urbi.h"   /* URBI_ASSERT_NOT_ISR */
+#include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
 
 #define INITIAL_CAP  16u
 

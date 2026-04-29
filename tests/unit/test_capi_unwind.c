@@ -14,7 +14,7 @@
  * 10. strand_cleanup_stack_init returns -1 when allocator returns NULL (T13). */
 
 #include "utest.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "uvm.h"

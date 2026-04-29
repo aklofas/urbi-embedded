@@ -6,7 +6,6 @@
 
 #include "uarena.h"
 #include "uemit.h"
-#include "uemit_internal.h"
 #include "uintern.h"
 #include "umodule.h"
 #include "uvm.h"

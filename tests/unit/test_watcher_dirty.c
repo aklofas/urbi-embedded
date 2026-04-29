@@ -5,13 +5,13 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "uwatcher.h"
-#include "ugc.h"            /* UTYPE_OBJECT */
-#include "ugc_capi.h"       /* urbi_gc_alloc */
-#include "ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
+#include "watcher/uwatcher.h"
+#include "gc/ugc.h"            /* UTYPE_OBJECT */
+#include "urbi/gc.h"       /* urbi_gc_alloc */
+#include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
 #include "utag.h"           /* utag_create / utag_destroy */
 #include "umodule.h"        /* UVAL_BOOL, UVAL_NIL */
-#include "urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
+#include "urbi/urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */
 #include <stddef.h>

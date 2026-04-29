@@ -3,7 +3,7 @@
    Extended from 4 to 23 cases at the row 9 sweep. */
 
 #include "utest.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uvm.h"
 #include "ustrand.h"
 

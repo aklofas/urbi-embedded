@@ -18,9 +18,9 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "ugc_capi.h"
-#include "ugc_incremental.h"
-#include "urealm.h"
+#include "urbi/gc.h"
+#include "gc/ugc_incremental.h"
+#include "realm/urealm.h"
 #include <stdlib.h>
 
 #define UTEST(name) static void name(void)
