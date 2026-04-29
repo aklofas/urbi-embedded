@@ -29,12 +29,12 @@
 typedef struct {
     const char *name;   /* interned pointer; NULL = vacant slot */
     UValue      value;
-} NsEntry;
+} UNsEntry;
 
 /* === UNamespace struct (opaque outside this file) === */
 
 struct UNamespace {
-    NsEntry  *entries;
+    UNsEntry  *entries;
     uint32_t  count;
     uint32_t  cap;
 };
@@ -58,7 +58,7 @@ struct UNamespace *
 unamespace_create(struct UVM *vm)
 {
     struct UNamespace *ns;
-    NsEntry *entries;
+    UNsEntry *entries;
     size_t entry_bytes;
 
     UREALM_NS_ASSERT(vm != NULL);
@@ -68,8 +68,8 @@ unamespace_create(struct UVM *vm)
     if (ns == NULL) return NULL;
     ns_zero(ns, sizeof(struct UNamespace));
 
-    entry_bytes = (size_t)NS_INITIAL_CAP * sizeof(NsEntry);
-    entries = (NsEntry *)vm->alloc_fn(NULL, entry_bytes, vm->alloc_ud);
+    entry_bytes = (size_t)NS_INITIAL_CAP * sizeof(UNsEntry);
+    entries = (UNsEntry *)vm->alloc_fn(NULL, entry_bytes, vm->alloc_ud);
     if (entries == NULL) {
         vm->alloc_fn(ns, 0, vm->alloc_ud);
         return NULL;
@@ -107,8 +107,8 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
                const char *name, UValue value)
 {
     uint32_t i;
-    NsEntry *old_entries;
-    NsEntry *new_entries;
+    UNsEntry *old_entries;
+    UNsEntry *new_entries;
     size_t new_cap;
     size_t new_bytes;
 
@@ -127,14 +127,14 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
     /* Grow if at capacity. */
     if (ns->count >= ns->cap) {
         new_cap   = (size_t)ns->cap * 2u;
-        new_bytes = new_cap * sizeof(NsEntry);
+        new_bytes = new_cap * sizeof(UNsEntry);
         old_entries = ns->entries;
-        new_entries = (NsEntry *)vm->alloc_fn(old_entries, new_bytes,
+        new_entries = (UNsEntry *)vm->alloc_fn(old_entries, new_bytes,
                                               vm->alloc_ud);
         if (new_entries == NULL) return -1;
         /* Zero the new slots (realloc does not zero the extended region). */
         {
-            size_t old_bytes = (size_t)ns->cap * sizeof(NsEntry);
+            size_t old_bytes = (size_t)ns->cap * sizeof(UNsEntry);
             size_t extra     = new_bytes - old_bytes;
             ns_zero((unsigned char *)new_entries + old_bytes, extra);
         }
