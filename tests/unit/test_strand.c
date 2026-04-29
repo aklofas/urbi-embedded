@@ -4,7 +4,7 @@
 
 #include "utest.h"
 #include "ustrand.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "uvm.h"
 #include "urbi/urbi.h"

@@ -17,7 +17,7 @@
 #include "uvalue.h"
 #include "sched/usched_cooperative.h"
 #include "uunwind.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "uevent_ring.h"
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */

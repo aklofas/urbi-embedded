@@ -19,7 +19,7 @@
  * 15.  realm_create_oom_returns_null: allocator returning NULL yields NULL from create. */
 
 #include "utest.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "uvm.h"
 #include "uintern.h"
 

@@ -19,7 +19,7 @@
 #include "uvm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 
 #define UTEST(name) static void name(void)
 

@@ -1,4 +1,4 @@
-SRC := $(wildcard src/*.c) $(wildcard src/gc/*.c) $(wildcard src/sched/*.c) $(wildcard src/watcher/*.c)
+SRC := $(wildcard src/*.c) $(wildcard src/gc/*.c) $(wildcard src/sched/*.c) $(wildcard src/watcher/*.c) $(wildcard src/realm/*.c)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
 
 TARGET ?= host

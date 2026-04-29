@@ -23,7 +23,7 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"
 #include "sched/usched_cooperative.h"

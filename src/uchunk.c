@@ -12,7 +12,7 @@
  * String helpers are implemented as byte loops below (same pattern as uemit.c). */
 
 #include "urbi/urbi.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "uvm.h"
 #include "umodule.h"
 #include "uarena.h"

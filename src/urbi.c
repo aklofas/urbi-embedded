@@ -2,7 +2,7 @@
 
 #include "urbi/urbi.h"
 #include "uvm.h"
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "umodule.h"
 #include "uintern.h"
 #include "umacros.h"

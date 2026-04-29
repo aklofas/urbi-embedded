@@ -28,7 +28,7 @@ UTEST(determinism_checksum_smoke)
 
 #ifdef URBI_DEBUG
 
-#include "urealm.h"
+#include "realm/urealm.h"
 #include "umodule.h"  /* UValue, UValKind */
 
 UTEST(determinism_checksum_returns_nonzero_on_empty_vm)
