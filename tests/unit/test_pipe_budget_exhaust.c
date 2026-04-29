@@ -24,7 +24,7 @@
 #include "uvm.h"
 #include "urealm.h"
 #include "ustrand.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "umodule.h"
 #include "uarena.h"
 #include "uast.h"

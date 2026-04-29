@@ -19,7 +19,7 @@
 
 #include "uwatcher.h"
 #include "uvm.h"
-#include "urbi.h"          /* URBI_ASSERT_NOT_ISR */
+#include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 
 void
 spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)

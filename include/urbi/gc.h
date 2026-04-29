@@ -7,8 +7,8 @@
  * uvm.h includes this file so that all inline barrier helpers are available
  * throughout the interpreter without additional explicit includes. */
 
-#ifndef UGC_CAPI_H
-#define UGC_CAPI_H
+#ifndef URBI_GC_H
+#define URBI_GC_H
 
 #include "ugc.h"
 
@@ -21,7 +21,7 @@
 #endif
 
 /* === Default feature flags ===
- * Strategy headers may #define these before ugc_capi.h is processed to
+ * Strategy headers may #define these before urbi/gc.h is processed to
  * override the defaults; the #ifndef guards here ensure strategy-set values
  * are not overwritten. */
 #ifndef URBI_GC_HAS_GENERATIONS
@@ -77,7 +77,7 @@ void urbi_unpin(struct UVM *vm, UValue v);
  *       struct UVM *vm, struct UClosure *closure, uint8_t up_idx, UValue child);
  *
  * These ops are declared (non-inline) and defined (inline) in the strategy
- * header included above.  ugc_capi.h does not re-declare them to avoid
+ * header included above.  urbi/gc.h does not re-declare them to avoid
  * duplicate-declaration warnings. */
 
 /* Default per-slice byte-work budget for urbi_gc_slice().
@@ -106,4 +106,4 @@ size_t urbi_gc_bytes_allocated_inline(struct UVM *vm);
  * to give the host-handle subsystem a proper home).  uvm.c includes uhandle.h
  * directly when registering the provider. */
 
-#endif /* UGC_CAPI_H */
+#endif /* URBI_GC_H */

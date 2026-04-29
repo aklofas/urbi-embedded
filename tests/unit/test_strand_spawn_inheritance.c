@@ -16,7 +16,7 @@
 #include "ucleanup.h"
 #include "utag.h"
 #include "ugc.h"    /* UTYPE_TAG */
-#include "urbi.h"
+#include "urbi/urbi.h"
 
 #include <stdlib.h>
 #include <stddef.h>  /* SIZE_MAX */

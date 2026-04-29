@@ -202,7 +202,7 @@ Enums solve all three at the language level.
 Every policy, mode, state, or kind that crosses the `urbi.h` boundary is declared as a `typedef enum` with `URBI_<NOUN>_<VALUE>` members:
 
 ```c
-/* src/urbi.h */
+/* include/urbi/urbi.h */
 typedef enum {
     URBI_EXHAUST_QUEUE = 0,  /* enqueue firings while pool is saturated */
     URBI_EXHAUST_DROP  = 1,  /* drop firings while pool is saturated */
@@ -360,10 +360,10 @@ The public C API is split across two headers with a strict rule: **aux must be s
 ### 6.1 Shape
 
 ```text
-src/urbi.h       — core runtime API       (target: < 80 functions at v1)
-src/urbi.c       — core implementation     (one TU)
-src/urbi_aux.h   — convenience layer       (target: ~40–60 functions by v1.x)
-src/urbi_aux.c   — convenience implementation (separate TU)
+include/urbi/urbi.h — core runtime API           (target: < 80 functions at v1)
+src/urbi.c          — core implementation        (one TU)
+src/urbi_aux.h      — convenience layer          (target: ~40–60 functions by v1.x)
+src/urbi_aux.c      — convenience implementation (separate TU)
 ```
 
 The two TUs compile independently. A target with tight flash can link `urbi.c` only and omit aux entirely; certification builds do the same to shrink the audit surface. Hosted / REPL / development builds link both.
@@ -398,13 +398,13 @@ Naming: `urbi_aux_*` prefix for every function in this header. No exceptions.
 
 ### 6.4 The strict-implementability rule
 
-Every aux function must satisfy: *the entire body is expressible as a sequence of calls to functions declared in `urbi.h`*. Private headers are not available (aux includes only `urbi.h`, not `urbi_internal.h` or subsystem headers). No tricks via shared global state, no "aux-only" internal API, no reaching-past.
+Every aux function must satisfy: *the entire body is expressible as a sequence of calls to functions declared in `urbi/urbi.h`*. Private headers are not available (aux includes only `urbi/urbi.h`, not `umacros.h` or subsystem headers). No tricks via shared global state, no "aux-only" internal API, no reaching-past.
 
 Concretely, aux.c looks like:
 
 ```c
 /* src/urbi_aux.c */
-#include "urbi.h"    /* and only urbi.h */
+#include "urbi/urbi.h"    /* and only urbi/urbi.h */
 #include "urbi_aux.h"
 
 int urbi_aux_build_list(urbi_state_t *vm, size_t n, const urbi_value_t *items) {

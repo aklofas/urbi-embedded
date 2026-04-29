@@ -11,7 +11,7 @@
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * String helpers are implemented as byte loops below (same pattern as uemit.c). */
 
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "urealm.h"
 #include "uvm.h"
 #include "umodule.h"

@@ -11,7 +11,7 @@
 #endif
 
 #include "uvm.h"
-#include "urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
+#include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
@@ -19,7 +19,7 @@
 #include "uunwind.h"
 #include "urealm.h"
 #include "uevent_ring.h"
-#include "ugc_capi.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
+#include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "uwatcher.h" /* uwatcher_pool_init/destroy (T32) */

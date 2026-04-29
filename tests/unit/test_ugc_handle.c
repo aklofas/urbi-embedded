@@ -4,7 +4,7 @@
  * Row 10 §5.6 + §8.  T27. */
 
 #include "utest.h"
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "ugc_incremental.h"
 #include "uhandle.h"
 #include "uvm.h"

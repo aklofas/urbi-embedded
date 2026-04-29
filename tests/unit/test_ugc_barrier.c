@@ -3,7 +3,7 @@
  * and observer_dirty hook.  Row 10 §4.  T25. */
 
 #include "utest.h"
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "ugc_incremental.h"
 #include "uvm.h"
 #include <stdlib.h>

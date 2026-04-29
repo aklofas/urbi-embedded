@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvm.h"
 #include "urealm.h"
 #include "umodule.h"

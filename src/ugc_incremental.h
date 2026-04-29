@@ -10,7 +10,7 @@
  *   - Real Dijkstra forward-barrier implementations of the three inline barrier surfaces
  *   - Forward declarations for gc_shade_gray and observer_dirty
  *
- * Included by ugc_capi.h when URBI_GC == URBI_GC_INCREMENTAL.
+ * Included by urbi/gc.h when URBI_GC == URBI_GC_INCREMENTAL.
  * Do NOT include uvm.h from this file (would be circular). */
 
 #ifndef UGC_INCREMENTAL_H
@@ -85,7 +85,7 @@ struct UClosure;
  *   Canonical definition lives here (row 10 §6.5); uvm.h carries a parallel
  *   #ifndef guard kept as a dead-path safeguard against double-definition.
  *
- * URBI_GC_SLICE_BUDGET: defined in ugc_capi.h (visible to all callers of
+ * URBI_GC_SLICE_BUDGET: defined in urbi/gc.h (visible to all callers of
  *   urbi_gc_slice, internal and external). */
 
 #ifndef URBI_GC_PAUSE_RATIO
@@ -150,7 +150,7 @@ uvalue_as_cell(UValue v)
  *
  * Declared here as a non-inline extern so that the barrier static-inline bodies
  * above can call it using only the forward-declared struct UVM *.
- * ugc_incremental.h cannot include uvm.h (circular: uvm.h -> ugc_capi.h ->
+ * ugc_incremental.h cannot include uvm.h (circular: uvm.h -> urbi/gc.h ->
  * ugc_incremental.h), so the full struct UVM definition is not available here.
  * The inline barriers only need the function signature; the linker resolves the
  * call to ugc_incremental.c where uvm.h is fully included.

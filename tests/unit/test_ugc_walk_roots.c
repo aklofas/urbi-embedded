@@ -18,7 +18,7 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "ugc_incremental.h"
 #include "urealm.h"
 #include <stdlib.h>

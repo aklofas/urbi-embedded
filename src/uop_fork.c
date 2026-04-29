@@ -27,7 +27,7 @@
 #include "ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
 #include "usched_cooperative.h"  /* sched_strand_block, sched_strand_make_runnable */
 #include "ucleanup.h"    /* URBI_CLEANUP_MAX */
-#include "urbi.h"        /* URBI_ASSERT_NOT_ISR */
+#include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
 #include "uframe.h"      /* UVM_STACK_CAP (also in uvm.h → uframe.h) */

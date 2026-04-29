@@ -16,7 +16,7 @@
 #include "uwatcher.h"
 #include "uvm.h"
 #include "uvalue.h"        /* uvalue_truthy */
-#include "urbi.h"          /* URBI_ASSERT_NOT_ISR */
+#include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h" /* URBI_INTERNAL_ASSERT */
 
 /* === invoke_condition_closure ===

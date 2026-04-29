@@ -3,11 +3,11 @@
  * type-tag constants, and non-inline GC C API declarations.
  *
  * Include hierarchy:
- *   ugc.h          <- this file (common defs + non-inline API)
- *   ugc_capi.h     <- strategy-dispatch router; includes ugc.h + strategy header
+ *   ugc.h             <- this file (common defs + non-inline API)
+ *   urbi/gc.h         <- strategy-dispatch router; includes ugc.h + strategy header
  *   ugc_incremental.h <- URBI_GC_INCREMENTAL strategy (gc_byte layout + barriers)
  *
- * uvm.h includes ugc_capi.h so that inline barrier helpers are visible
+ * uvm.h includes urbi/gc.h so that inline barrier helpers are visible
  * throughout the interpreter.  DO NOT include uvm.h from this file (circular). */
 
 #ifndef UGC_H
@@ -35,7 +35,7 @@
 struct UVM;
 
 /* === GC root provider callbacks ===
- * Declared here (not in uvm.h) so ugc_capi.h and ugc_incremental.h can use them
+ * Declared here (not in uvm.h) so urbi/gc.h and ugc_incremental.h can use them
  * without pulling in the full UVM struct definition.
  *
  * UGcRootCallback: called once per GC root during a root walk.
@@ -103,7 +103,7 @@ typedef struct UType {
 /* === Non-inline GC C API ===
  * Inline ops (alloc, slice, walk_roots, register_root_provider, init, destroy,
  * force_full, bytes_allocated_inline, and the three barrier surfaces) are
- * declared in ugc_capi.h via the strategy header. */
+ * declared in urbi/gc.h via the strategy header. */
 
 /* Register a built-in or host type descriptor with the VM.
  * Returns the assigned type_tag on success (always == type->type_tag).

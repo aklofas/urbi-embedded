@@ -19,7 +19,7 @@
 #include "urealm.h"
 #include "utag.h"
 #include "uvm.h"
-#include "urbi.h"  /* urbi_tag_stop */
+#include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "ustrand.h"  /* urbi_strand_destroy, UStrand.next_in_realm */
 
 /* === Zero-fill helper === */

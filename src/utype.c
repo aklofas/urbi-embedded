@@ -6,7 +6,7 @@
 
 #include "ugc.h"
 #include "uvm.h"
-#include "urbi.h"          /* URBI_ASSERT_NOT_ISR */
+#include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h" /* URBI_INTERNAL_ASSERT */
 
 uint8_t

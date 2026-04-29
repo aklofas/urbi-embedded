@@ -51,9 +51,9 @@
  * the cast but adds a UVM field.  We prefer not to change uvm.h at T24. */
 
 #include "ugc_incremental.h"
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "uvm.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "umacros.h"
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
@@ -865,7 +865,7 @@ urbi_unpin(UVM *vm, UValue v)
 /* === uvalue_is_heap_white ===
  *
  * Defined here (not inline in the header) because ugc_incremental.h cannot
- * include uvm.h (circular dependency: uvm.h → ugc_capi.h → ugc_incremental.h).
+ * include uvm.h (circular dependency: uvm.h → urbi/gc.h → ugc_incremental.h).
  * The static-inline barriers in ugc_incremental.h call this via a forward decl;
  * the linker resolves the call to this TU where UVM is fully defined.
  *

@@ -3,7 +3,7 @@
  * debt trigger.  Row 10 §3.1–§3.5.  T23 baseline. */
 
 #include "utest.h"
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 #include "ugc_incremental.h"
 #include "uvm.h"
 #include <stdlib.h>

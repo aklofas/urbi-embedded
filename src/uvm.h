@@ -11,7 +11,7 @@
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
 #include "uvalue.h"   /* UValue — needed for handle_table field */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
-#include "ugc_capi.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
+#include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +21,7 @@ extern "C" {
    Types referenced in the UVM struct but defined in later tasks.
    Forward-decl only: all uses are pointer-typed.
    Note: UCell, UType, UGcRootCallback, UGcRootProviderFn are now defined in ugc.h
-   (pulled in via ugc_capi.h above). */
+   (pulled in via urbi/gc.h above). */
 struct UStrand;
 struct UEvent;
 struct URealm;
@@ -29,7 +29,7 @@ struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 
 /* --- M3 capacity macros --- */
-/* Dead path — uvm.h always pulls ugc_capi.h.  Guard retained only to prevent
+/* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
 #ifndef URBI_GC_INITIAL_THRESHOLD
 #  define URBI_GC_INITIAL_THRESHOLD (16 * 1024)

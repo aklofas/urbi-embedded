@@ -10,7 +10,7 @@ LIB := $(BUILDDIR)/liburbi.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
-CPPFLAGS += -Isrc -Itests/unit
+CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 
 all: $(LIB)

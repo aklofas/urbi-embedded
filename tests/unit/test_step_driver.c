@@ -220,7 +220,7 @@ UTEST(runnable_count_stable_across_yield_cycle)
 
 /* ===== T16 urbi_step driver tests ===== */
 
-#include "urbi.h"   /* UStepResult, urbi_step */
+#include "urbi/urbi.h"   /* UStepResult, urbi_step */
 
 /* Case 7: urbi_step on a freshly initialised VM returns QUIESCENT.
    All 5 liveness counters are zero; no strands, no watchers. */

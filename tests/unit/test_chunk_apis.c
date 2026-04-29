@@ -4,7 +4,7 @@
 
 #include "utest.h"
 
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "urealm.h"
 #include "uvm.h"
 #include "umodule.h"

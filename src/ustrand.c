@@ -10,7 +10,7 @@
 #include "uvm.h"
 #include "urealm.h"
 #include "usched_cooperative.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "umacros.h"
 
 /* Zero a UStrand without memset — keeps the translation unit freestanding.

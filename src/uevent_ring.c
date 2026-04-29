@@ -5,7 +5,7 @@
 
 #include "uevent_ring.h"
 #include "uvm.h"
-#include "urbi.h"  /* URBI_ERR_EVENT_* error codes */
+#include "urbi/urbi.h"  /* URBI_ERR_EVENT_* error codes */
 
 /* Byte-copy helper: replaces memcpy.  No hosted headers in src/. */
 static void

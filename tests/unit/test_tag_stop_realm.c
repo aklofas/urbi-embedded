@@ -17,7 +17,7 @@
 #include "ucleanup.h"
 #include "utag.h"
 #include "uwatcher.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
 

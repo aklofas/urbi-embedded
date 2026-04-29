@@ -9,7 +9,7 @@
  * make test-debug — URBI_DEBUG=1: 1 smoke + 4 watchdog + 3 ISR-check cases. */
 
 #include "utest.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include "uvm.h"
 #include "ustrand.h"
 #include <stdint.h>

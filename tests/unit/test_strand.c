@@ -7,7 +7,7 @@
 #include "urealm.h"
 #include "usched_cooperative.h"
 #include "uvm.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include <stdlib.h>
 
 #define UTEST(name) static void name(void)

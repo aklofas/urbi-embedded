@@ -6,7 +6,7 @@
 #include "utest.h"
 #include "uevent_ring.h"
 #include "uvm.h"
-#include "urbi.h"
+#include "urbi/urbi.h"
 #include <stdint.h>
 #include <string.h>
 

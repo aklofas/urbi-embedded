@@ -10,7 +10,7 @@
  *
  * Row 10 acceptance #9.  T28. */
 
-#include "ugc_capi.h"
+#include "urbi/gc.h"
 
 /* Dummy values that satisfy the type signatures without UVM internals. */
 static UCell  g_parent;
