@@ -35,6 +35,7 @@ spy_alloc(void *ptr, size_t n, void *ud)
         if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at)
             return NULL;
     }
+    if (n == 0) { free(ptr); return NULL; }
     return realloc(ptr, n);
 }
 

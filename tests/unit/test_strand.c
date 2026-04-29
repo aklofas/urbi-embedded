@@ -100,7 +100,7 @@ static void *spy_alloc(void *ptr, size_t n, void *ud) {
             return NULL;
         }
     }
-    /* Use stdlib for the actual allocation. */
+    if (n == 0) { free(ptr); return NULL; }
     return realloc(ptr, n);
 }
 
