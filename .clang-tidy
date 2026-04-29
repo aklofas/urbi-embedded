@@ -40,6 +40,14 @@
 #   diagnostic here keeps clang-tidy clean without the `-Wno-gnu-*` flags
 #   needed by the GCC build.
 #
+# - clang-analyzer-optin.performance.Padding : flags structs whose field
+#   order leaves more than a small number of padding bytes.  UVM (and a
+#   handful of other long-lived singletons) is intentionally grouped by
+#   subsystem — alloc / M2-additions / scheduler / GC / watcher / counters
+#   — to keep code review tractable.  UVM is a singleton; padding cost is
+#   trivial vs. the readability of subsystem grouping.  Re-enable per-call
+#   site (or per-struct) if a hot per-cell layout ever needs it.
+#
 # bugprone-*, performance-*, portability-*, and clang-analyzer-* are kept
 # enabled (via clang-tidy defaults) since they catch real defects and
 # apply cleanly to C.
@@ -53,7 +61,8 @@ Checks: >
   -cert-err33-c,
   -bugprone-easily-swappable-parameters,
   -readability-identifier-length,
-  -clang-diagnostic-gnu-label-as-value
+  -clang-diagnostic-gnu-label-as-value,
+  -clang-analyzer-optin.performance.Padding
 
 WarningsAsErrors: ''
 
