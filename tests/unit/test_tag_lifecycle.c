@@ -11,7 +11,7 @@
 #include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
 #include "umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <stdlib.h>
 

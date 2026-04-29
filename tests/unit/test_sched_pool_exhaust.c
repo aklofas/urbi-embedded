@@ -26,7 +26,7 @@
 #include "urealm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <string.h>
 #include <stddef.h>

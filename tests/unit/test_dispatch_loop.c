@@ -9,7 +9,7 @@
 #include "uvm.h"
 #include "ustrand.h"
 #include "umodule.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "ucleanup.h"
 
 #include <stdlib.h>

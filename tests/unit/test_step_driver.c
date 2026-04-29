@@ -5,7 +5,7 @@
    Full scheduler / step-driver tests land at T21. */
 
 #include "utest.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uvm.h"
 #include "ustrand.h"
 #include <stdint.h>

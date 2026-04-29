@@ -21,7 +21,7 @@
 #include "uparse.h"
 #include "uvalue.h"
 #include "uop_fork.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <string.h>
 #include <stdlib.h>

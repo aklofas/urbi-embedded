@@ -31,7 +31,7 @@
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 
 #include <string.h>
 #include <stdint.h>

@@ -5,7 +5,7 @@
 #include "urbi/urbi.h"
 #include "uvm.h"
 #include "ustrand.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uevent_ring.h"
 
 UStepResult

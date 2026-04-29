@@ -29,7 +29,7 @@
 #include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "uvm.h"          /* dispatch_loop_until_yield */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
-#include "usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
+#include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
 #include "umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "utag.h"               /* UTag, member_strands_head */
 #include "uwatcher.h"           /* pending_onleave_queue_push */

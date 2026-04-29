@@ -9,7 +9,7 @@
 #include "utag.h"
 #include "uvm.h"
 #include "urealm.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"
 #include "umacros.h"
 

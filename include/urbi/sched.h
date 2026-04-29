@@ -10,7 +10,7 @@
 #ifndef URBI_SCHED_H
 #define URBI_SCHED_H
 
-#include "usched.h"
+#include "sched/usched.h"
 
 /* Per-scheduler feature flags — cooperative defaults (all 0).
    RT/deadline schedulers hard-define these before this point via their own

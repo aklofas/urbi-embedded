@@ -25,7 +25,7 @@
 #include "uop_fork.h"
 #include "umodule.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure, UProto */
 #include "ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
-#include "usched_cooperative.h"  /* sched_strand_block, sched_strand_make_runnable */
+#include "sched/usched_cooperative.h"  /* sched_strand_block, sched_strand_make_runnable */
 #include "ucleanup.h"    /* URBI_CLEANUP_MAX */
 #include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h"  /* URBI_INTERNAL_ASSERT */

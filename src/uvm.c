@@ -15,7 +15,7 @@
 #include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
-#include "usched_cooperative.h"
+#include "sched/usched_cooperative.h"
 #include "uunwind.h"
 #include "urealm.h"
 #include "uevent_ring.h"
