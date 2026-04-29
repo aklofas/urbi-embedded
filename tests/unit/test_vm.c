@@ -795,7 +795,7 @@ UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
     uvm_destroy(&vm);
 }
 
-/* DiagWriter truncation path (lines 176-184): a source_name long enough to
+/* UDiagWriter truncation path (lines 176-184): a source_name long enough to
    push past the UVM_ERRMSG_CAP boundary. The message ends with "...". */
 UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
     UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);

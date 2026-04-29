@@ -403,14 +403,14 @@ static const char *op_name(uint8_t op) {
 
 /* Fixed-buffer diagnostic writer. Truncates with "..." when the buffer
    fills. Freestanding: no snprintf, no <stdio.h>. */
-typedef struct DiagWriter {
+typedef struct UDiagWriter {
     char   *buf;
     size_t  cap;   /* buffer capacity */
     size_t  used;  /* bytes written so far (excluding trailing NUL) */
     bool    truncated;
-} DiagWriter;
+} UDiagWriter;
 
-static void diag_init(DiagWriter *w, char *buf, size_t cap) {
+static void diag_init(UDiagWriter *w, char *buf, size_t cap) {
     w->buf = buf;
     w->cap = cap;
     w->used = 0;
@@ -418,7 +418,7 @@ static void diag_init(DiagWriter *w, char *buf, size_t cap) {
     if (cap > 0) buf[0] = '\0';
 }
 
-static void diag_write_cstr(DiagWriter *w, const char *s) {
+static void diag_write_cstr(UDiagWriter *w, const char *s) {
     if (w->truncated) return;
     while (*s) {
         /* Leave 4 bytes for "..." + NUL. */
@@ -439,7 +439,7 @@ static void diag_write_cstr(DiagWriter *w, const char *s) {
 }
 
 /* Write an unsigned integer in decimal. */
-static void diag_write_u32(DiagWriter *w, uint32_t n) {
+static void diag_write_u32(UDiagWriter *w, uint32_t n) {
     char tmp[12];
     size_t i = 0;
     if (n == 0) {
@@ -457,14 +457,14 @@ static void diag_write_u32(DiagWriter *w, uint32_t n) {
     }
 }
 
-static void diag_write_size(DiagWriter *w, size_t n) {
+static void diag_write_size(UDiagWriter *w, size_t n) {
     /* size_t is at most 64 bits on our targets; fits in u32 for any
        realistic frame size or pc. Cap for safety. */
     if (n > UINT32_MAX) n = UINT32_MAX;
     diag_write_u32(w, (uint32_t)n);
 }
 
-static void diag_write_kind_name(DiagWriter *w, uint8_t kind) {
+static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
     diag_write_cstr(w, kind_name(kind));
 }
 
@@ -500,7 +500,7 @@ static uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-static void diag_write_prefix(DiagWriter *w, const UModule *module, size_t pc) {
+static void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
     uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
         diag_write_cstr(w, "instr ");
@@ -522,7 +522,7 @@ static void diag_write_prefix(DiagWriter *w, const UModule *module, size_t pc) {
    Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
 static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
                                         uint8_t op, uint8_t b_kind, uint8_t c_kind) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
@@ -537,7 +537,7 @@ static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t p
 /* Unary-op TypeError: one operand kind reported. */
 static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
                                        uint8_t op, uint8_t b_kind) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
     diag_write_cstr(&w, "TypeError: ");
@@ -549,7 +549,7 @@ static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc
 
 /* Format: "out of memory allocating register frame (<N> bytes requested)" */
 static void vm_format_oom(UVM *vm, size_t nbytes) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "out of memory allocating register frame (");
     diag_write_size(&w, nbytes);
@@ -680,7 +680,7 @@ static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
 /* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
 static void vm_format_type_error_msg(UVM *vm, const char *msg) {
-    DiagWriter w;
+    UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "TypeError: ");
     diag_write_cstr(&w, msg);
