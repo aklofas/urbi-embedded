@@ -78,19 +78,16 @@ struct UClosure;
 
 /* === Compile-time tunables (row 10 §6.5) ===
  *
- * URBI_GC_SLICE_BUDGET: default per-slice byte-work budget.
- *   MCU default 4096; Linux builds can override with -DURBI_GC_SLICE_BUDGET=16384.
- *
  * URBI_GC_PAUSE_RATIO: threshold = live_bytes * PAUSE_RATIO / 100.
  *   200 → threshold = 2× live (allocate up to 2× live before next cycle).
  *
  * URBI_GC_INITIAL_THRESHOLD: initial gc_threshold value set by urbi_gc_init().
- *   Canonical definition lives here (row 10 §6.5); uvm.h's #ifndef guard
- *   was a placeholder that is now removed. */
+ *   Canonical definition lives here (row 10 §6.5); uvm.h carries a parallel
+ *   #ifndef guard kept as a dead-path safeguard against double-definition.
+ *
+ * URBI_GC_SLICE_BUDGET: defined in ugc_capi.h (visible to all callers of
+ *   urbi_gc_slice, internal and external). */
 
-#ifndef URBI_GC_SLICE_BUDGET
-#  define URBI_GC_SLICE_BUDGET       4096
-#endif
 #ifndef URBI_GC_PAUSE_RATIO
 #  define URBI_GC_PAUSE_RATIO        200
 #endif

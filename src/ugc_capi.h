@@ -80,6 +80,13 @@ void urbi_unpin(struct UVM *vm, UValue v);
  * header included above.  ugc_capi.h does not re-declare them to avoid
  * duplicate-declaration warnings. */
 
+/* Default per-slice byte-work budget for urbi_gc_slice().
+ * MCU default; Linux builds can override with -DURBI_GC_SLICE_BUDGET=16384.
+ * Tunable per row 10 §6.5 of the M3 incremental GC design. */
+#ifndef URBI_GC_SLICE_BUDGET
+#  define URBI_GC_SLICE_BUDGET 4096
+#endif
+
 /* Non-inline op forward declarations (defined in ugc_incremental.c at T23): */
 UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
 void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);

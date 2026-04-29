@@ -20,7 +20,7 @@
 #include "uunwind.h"
 #include "urealm.h"
 #include "uevent_ring.h"
-#include "m3_forward_decls.h"
+#include "ugc_capi.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
@@ -1442,7 +1442,7 @@ safepoint:
         goto exit_strand;
     }
     vm->step_budget_remaining--;
-    if (vm->gc_pending)           gc_slice(vm, URBI_GC_SLICE_BUDGET);
+    if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
     if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
     /* Preemption flag reserved for v2; not checked at M3. */
