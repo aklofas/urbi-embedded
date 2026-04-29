@@ -20,6 +20,11 @@ MD033:
 # MD041 (first line must be H1) — on; pairs with MD025.
 MD041: true
 
+# MD024 (no duplicate headings) — allow same-name H3 headings in different
+# version sections; CHANGELOG.md uses ### Language, ### Tests etc. per release.
+MD024:
+  siblings_only: true
+
 # Heading capitalization and style — unforced. Match context.
 MD003: false
 
