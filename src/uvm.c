@@ -85,6 +85,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->realms_head  = NULL;
     vm->global_realm = NULL;
     vm->fatal_strand = NULL;
+    vm->realm_id_seq = 0u;
 
     /* Scheduler queues and step-driver state. */
     vm->ready_head             = NULL;
