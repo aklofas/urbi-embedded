@@ -16,7 +16,6 @@
 #include "uintern.h"
 #include "uvalue.h"
 #include "usched_cooperative.h"
-#include "uvm_internal.h"
 #include "uunwind.h"
 #include "urealm.h"
 #include "uevent_ring.h"
@@ -611,7 +610,7 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
 /* Heapify all open cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
  * Called by OP_CLOSE, OP_RET, and urbi_unwind.
- * Declared non-static (exported via uvm_internal.h) for uunwind.c access. */
+ * Declared non-static (exported via uvm.h) for uunwind.c access. */
 void vm_close_upvalues(UStrand *s, UValue *threshold,
                        UUpvalCell **closed_list) {
     UUpvalCell **link = &s->open_upvals;

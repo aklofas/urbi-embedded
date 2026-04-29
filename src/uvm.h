@@ -255,6 +255,17 @@ void uvm_destroy(UVM *vm);
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
 const char *uvm_error_name(UVMError code);
 
+/* --- Internal cross-module declarations ---
+ * Originally in uvm_internal.h (consolidated post-M3). All src/ headers are
+ * internal-by-definition after the include/urbi/ split — no separate friend
+ * header needed. */
+
+/* Heapify all open upvalue cells whose stack address is >= threshold.
+ * Removed cells are appended to *closed_list.
+ * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
+void vm_close_upvalues(struct UStrand *s, UValue *threshold,
+                       UUpvalCell **closed_list);
+
 #ifdef __cplusplus
 }
 #endif

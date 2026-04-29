@@ -27,7 +27,6 @@
 #include "ustrand.h"
 #include "uframe.h"       /* UCallFrame */
 #include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
-#include "uvm_internal.h" /* vm_close_upvalues */
 #include "uvm.h"          /* dispatch_loop_until_yield */
 #include "urbi.h"         /* UErrCode, public API declarations */
 #include "usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
