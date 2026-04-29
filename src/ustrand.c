@@ -11,7 +11,7 @@
 #include "urealm.h"
 #include "usched_cooperative.h"
 #include "urbi.h"
-#include "urbi_internal.h"
+#include "umacros.h"
 
 /* Zero a UStrand without memset — keeps the translation unit freestanding.
    Uses a volatile byte loop (same pattern as arena_zero in uarena.c) so the

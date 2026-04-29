@@ -17,7 +17,7 @@
 #include "uvm.h"
 #include "uvalue.h"        /* uvalue_truthy */
 #include "urbi.h"          /* URBI_ASSERT_NOT_ISR */
-#include "urbi_internal.h" /* URBI_INTERNAL_ASSERT */
+#include "umacros.h" /* URBI_INTERNAL_ASSERT */
 
 /* === invoke_condition_closure ===
  *

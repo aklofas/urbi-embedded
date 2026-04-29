@@ -54,7 +54,7 @@
 #include "ugc_capi.h"
 #include "uvm.h"
 #include "urbi.h"
-#include "urbi_internal.h"
+#include "umacros.h"
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */

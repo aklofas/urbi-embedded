@@ -7,7 +7,7 @@
 #include "ugc.h"
 #include "uvm.h"
 #include "urbi.h"          /* URBI_ASSERT_NOT_ISR */
-#include "urbi_internal.h" /* URBI_INTERNAL_ASSERT */
+#include "umacros.h" /* URBI_INTERNAL_ASSERT */
 
 uint8_t
 urbi_register_type(UVM *vm, const UType *type)

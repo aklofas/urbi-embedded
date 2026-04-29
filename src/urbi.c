@@ -5,7 +5,7 @@
 #include "urealm.h"
 #include "umodule.h"
 #include "uintern.h"
-#include "urbi_internal.h"
+#include "umacros.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
