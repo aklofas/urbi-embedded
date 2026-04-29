@@ -378,10 +378,10 @@ typedef struct {
     ULexError code;
     int line;
     int col;
-} TriviaResult;
+} UTriviaResult;
 
-static TriviaResult skip_trivia(ULexer *l) {
-    TriviaResult r = {LEX_OK, 0, 0};
+static UTriviaResult skip_trivia(ULexer *l) {
+    UTriviaResult r = {LEX_OK, 0, 0};
     while (l->cur < l->end) {
         const char c = *l->cur;
         if (c == ' ' || c == '\t') {
@@ -440,7 +440,7 @@ static TriviaResult skip_trivia(ULexer *l) {
 }
 
 UToken ulex_next(ULexer *lex) {
-    TriviaResult tr = skip_trivia(lex);
+    UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
         return make_error(tr.code, tr.line, tr.col, 2);
     }
