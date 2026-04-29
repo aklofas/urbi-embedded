@@ -5,8 +5,8 @@
 #include "utest.h"
 #include "uvm.h"
 #include "uwatcher.h"
-#include "ugc.h"            /* UTYPE_WATCHER */
-#include "ugc_incremental.h" /* UGC_IS_FIXED */
+#include "gc/ugc.h"            /* UTYPE_WATCHER */
+#include "gc/ugc_incremental.h" /* UGC_IS_FIXED */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */
 #include <stddef.h>

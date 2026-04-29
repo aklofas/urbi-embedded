@@ -12,7 +12,7 @@
 
 #include "uwatcher.h"
 #include "uvm.h"
-#include "ugc.h"
+#include "gc/ugc.h"
 
 void
 watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)

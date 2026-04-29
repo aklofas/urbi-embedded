@@ -4,7 +4,7 @@
  * urbi_register_type is declared in ugc.h.  The T26 stub that lived in
  * ugc_incremental.c is replaced here with the real implementation. */
 
-#include "ugc.h"
+#include "gc/ugc.h"
 #include "uvm.h"
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h" /* URBI_INTERNAL_ASSERT */

@@ -14,7 +14,7 @@
 
 #include "utest.h"
 #include "urbi/gc.h"
-#include "ugc_incremental.h"
+#include "gc/ugc_incremental.h"
 #include "uvm.h"
 #include <stdlib.h>
 

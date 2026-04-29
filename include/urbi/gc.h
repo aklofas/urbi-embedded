@@ -10,12 +10,12 @@
 #ifndef URBI_GC_H
 #define URBI_GC_H
 
-#include "ugc.h"
+#include "gc/ugc.h"
 
 #if URBI_GC == URBI_GC_INCREMENTAL
-#  include "ugc_incremental.h"
+#  include "gc/ugc_incremental.h"
 #elif URBI_GC == URBI_GC_NONE
-#  include "ugc_none.h"
+#  include "gc/ugc_none.h"
 #else
 #  error "URBI_GC set to unknown value"
 #endif

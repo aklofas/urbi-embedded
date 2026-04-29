@@ -13,7 +13,7 @@
 #include <stddef.h>    /* size_t */
 #include <stdint.h>
 
-#include "ugc.h"       /* UCell, UTYPE_WATCHER */
+#include "gc/ugc.h"       /* UCell, UTYPE_WATCHER */
 #include "umodule.h"   /* UValue, UClosure */
 
 #ifdef __cplusplus

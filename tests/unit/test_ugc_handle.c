@@ -5,7 +5,7 @@
 
 #include "utest.h"
 #include "urbi/gc.h"
-#include "ugc_incremental.h"
+#include "gc/ugc_incremental.h"
 #include "uhandle.h"
 #include "uvm.h"
 

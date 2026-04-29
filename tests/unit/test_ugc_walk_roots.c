@@ -19,7 +19,7 @@
 #include "utest.h"
 #include "uvm.h"
 #include "urbi/gc.h"
-#include "ugc_incremental.h"
+#include "gc/ugc_incremental.h"
 #include "urealm.h"
 #include <stdlib.h>
 

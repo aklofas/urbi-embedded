@@ -15,7 +15,7 @@
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "ugc.h"    /* UTYPE_TAG */
+#include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
 
 #include <stdlib.h>

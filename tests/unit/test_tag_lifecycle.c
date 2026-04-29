@@ -8,7 +8,7 @@
 #include "ustrand.h"
 #include "ucleanup.h"
 #include "utag.h"
-#include "ugc.h"    /* UTYPE_TAG */
+#include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
 #include "umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
 #include "usched_cooperative.h"

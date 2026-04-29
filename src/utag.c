@@ -11,7 +11,7 @@
 #include "ucleanup.h"
 #include "ustrand.h"
 #include "uvm.h"
-#include "ugc.h"       /* UTYPE_TAG */
+#include "gc/ugc.h"       /* UTYPE_TAG */
 #include "urbi/urbi.h"      /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h"
 
