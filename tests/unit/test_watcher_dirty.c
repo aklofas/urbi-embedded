@@ -5,7 +5,7 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "uwatcher.h"
+#include "watcher/uwatcher.h"
 #include "gc/ugc.h"            /* UTYPE_OBJECT */
 #include "urbi/gc.h"       /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */

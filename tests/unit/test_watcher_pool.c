@@ -4,7 +4,7 @@
 
 #include "utest.h"
 #include "uvm.h"
-#include "uwatcher.h"
+#include "watcher/uwatcher.h"
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED */
 
