@@ -14,10 +14,11 @@ extern "C" {
 
 /* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
-   v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — hard break for control transfer). */
+   v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
+   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table). */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1u
-#define URBI_BYTECODE_VERSION_MINOR  2u
+#define URBI_BYTECODE_VERSION_MINOR  3u
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4u) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
@@ -149,6 +150,9 @@ typedef enum {
      * so that the catch variable `e` receives the thrown value. */
     OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
 
+    /* M4 reserves; v1.x backlog implements (collapsed GETSLOT+CALL). */
+    OP_INVOKE           = 38,
+
     OP_MAX
 } UOpcode;
 
@@ -189,6 +193,14 @@ typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
  *   ptr == NULL && nbytes == 0 : no-op; return NULL.
  * ud is an opaque caller-supplied cookie passed through unchanged (same pattern as uarena). */
 
+/* Forward declaration — USymbol is introduced in M4 (see uintern.h / object
+ * model tasks).  UProto.ic_names below holds a parallel array of USymbol
+ * pointers populated at emit time; populated by emit, consumed by IC fill at
+ * module-instance load.  Defined as opaque here to keep umodule.h
+ * dependency-free from the object/intern layer. */
+struct USymbol;
+typedef struct USymbol USymbol;
+
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
  * function body.  The root chunk lives directly in UModule; nested
@@ -212,6 +224,16 @@ typedef struct UProto {
     uint8_t    max_reg;
     uint8_t    nupvals;          /* count of upvalues captured by this proto */
     uint8_t    nparams;          /* count of formal parameters */
+
+    /* === M4 v1.3 additions (encoding spec §5.1) === */
+    /* Number of GETSLOT/SETSLOT IC sites in this function.  Populated by the
+     * emitter; the parallel ic_names[] array is sized to this count.  Capped
+     * at 256 by the encoding spec §3.4 (an IC site index lives in a uint8). */
+    uint16_t       ic_count;
+    /* Parallel array, length == ic_count; set at emit time and consumed at
+     * module-instance load to populate UIC.name for each IC site.  Owned by
+     * the proto's allocator; freed in umodule_proto_destroy_buffers. */
+    USymbol      **ic_names;
 
     /* Allocator hook inherited from the owning module. */
     UModuleAllocFn alloc_fn;
