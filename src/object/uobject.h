@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* uobject.h — UObject / UProtos / USlot internal layout.
+ *
+ * Public API in include/urbi/object.h (lands at later M4 task).  This header
+ * is freestanding and may be included by any internal .c file that touches
+ * object slots, prototypes, or hidden classes.
+ *
+ * Spec references:
+ *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-prototype-chain-representation-design.md §3, §4
+ *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-uslot-uprops-collapse-design.md §3
+ *
+ * Reconciliation note (T0 R-1): the spec's §3 shorthand `UGCHeader gc_hdr; // 8B`
+ * collapses, in this codebase, to the existing 2-byte UCell embedded as the
+ * first member with 6 bytes of compiler-inserted natural alignment padding
+ * before the next pointer field.  Net layout still matches spec §3 (48 B);
+ * the per-VM UAllCellsNode sidecar (src/gc/ugc_incremental.c) supplies the
+ * "alloc-link" the spec mentions — NOT inline. */
+
+#ifndef UOBJECT_H
+#define UOBJECT_H
+
+#include <stdint.h>
+
+#include "umodule.h"   /* UValue (16 B) + USymbol forward-typedef */
+#include "gc/ugc.h"    /* UCell (2 B) */
+
+/* USymbol is forward-declared in umodule.h.  Real definition lives in
+ * uintern.h once the intern layer migrates to UString GC cells (later M4
+ * task).  Consumers of this header that need the full struct must include
+ * uintern.h explicitly. */
+
+/* === USlot ===
+ *
+ * USlot collapses to exactly one UValue (16 B) per the pre-M4 USlot/UProps
+ * spec §3.  Inlined into UObject as `USlot slots[shape->count]`. */
+typedef UValue USlot;
+_Static_assert(sizeof(USlot) == sizeof(UValue),
+               "USlot must equal UValue width");
+_Static_assert(sizeof(USlot) == 16,
+               "USlot must be 16 bytes per pre-M4 USlot/UProps spec §3");
+
+/* === forward decls (real definitions land at later M4 tasks) === */
+typedef struct UShape   UShape;
+typedef struct UProps   UProps;
+typedef struct UObject  UObject;
+
+/* === UProtos ===
+ *
+ * Heap form for n >= 2 prototypes per spec §4.2.  n == 0 (no protos) and
+ * n == 1 (single proto) use the tagged-pointer encoding stashed directly
+ * in UObject.protos and never allocate a UProtos block.  items[0] is the
+ * highest-priority prototype (MRO position 0). */
+typedef struct UProtos {
+    UCell             cell;          /* 2 B GC header (M3 sidecar pattern) */
+    /* 6 B compiler-inserted padding before n */
+    uint32_t          n;             /* prototype count; n >= 2 always */
+    uint32_t          _pad;          /* explicit pad to 8 B align items[] */
+    UObject          *items[];       /* flexible array of proto pointers */
+} UProtos;
+
+/* === UObject ===
+ *
+ * 48 B header per pre-M4 prototype-chain spec §3.  Field order is
+ * load-bearing: pinned by tests/unit/test_uobject.c offset checks.  All
+ * fields are populated by urbi_object_alloc (lands at later M4 task). */
+struct UObject {
+    UCell             cell;          /* 2 B — GC color + type tag (UCELL_TYPE_OBJECT later) */
+    /* 6 B compiler-inserted padding before shape* */
+    UShape           *shape;         /* 8 B — hidden class */
+    USlot            *slots;         /* 8 B — local slot storage, length == shape->count */
+    uintptr_t         protos;        /* 8 B — tagged single-or-heap proto encoding (§4.1) */
+    uint32_t          object_id;     /* 4 B — stable identity (§7) */
+    uint32_t          lookup_stamp;  /* 4 B — visited-set marker for prototype walk (§6); u32 truncation of UVM.lookup_id */
+    uint32_t          flags;         /* 4 B — atom family + frozen + readonly + spare */
+    uint32_t          reserved;      /* 4 B — zero at v1.0; named v1.x candidates (§8.2) */
+};
+_Static_assert(sizeof(struct UObject) == 48,
+               "UObject header must be 48 bytes per pre-M4 prototype-chain spec §3");
+
+#endif /* UOBJECT_H */
