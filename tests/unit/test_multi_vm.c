@@ -22,7 +22,9 @@ UTEST(uvm_init_zeroes_intern_table_and_topology_gen) {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
     UASSERT(vm.intern_table == NULL);
-    UASSERT_EQ((uint32_t)0, vm.topology_gen);
+    /* Per pre-M4 topology-generation spec §3.1: topology_gen init=1, reserves 0
+     * as the IC unfilled sentinel.  (Was 0 pre-M4.) */
+    UASSERT_EQ(1ull, vm.topology_gen);
     uvm_destroy(&vm);
 }
 
@@ -196,12 +198,13 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
 
 UTEST(topology_gen_is_per_vm_not_global) {
     /* Bump vm_a->topology_gen manually; assert vm_b->topology_gen
-     * unchanged. Verifies the per-VM relocation. */
+     * unchanged at its init value. Verifies the per-VM relocation.
+     * Per pre-M4 topology-generation spec §3.1: init=1 (was 0 pre-M4). */
     UVM vm_a, vm_b;
     uvm_init(&vm_a, NULL, NULL);
     uvm_init(&vm_b, NULL, NULL);
     vm_a.topology_gen = 17;
-    UASSERT_EQ((uint32_t)0, vm_b.topology_gen);
+    UASSERT_EQ(1ull, vm_b.topology_gen);
     uvm_destroy(&vm_a);
     uvm_destroy(&vm_b);
 }

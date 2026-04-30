@@ -1006,6 +1006,29 @@ UTEST(vm_gc_initial_threshold_set) {
     uvm_destroy(&vm);
 }
 
+/* M4 object-identity / topology-gen / DFS-visited fields per pre-M4
+ * topology-generation spec §3.1 and prototype-chain spec §7.1, §8.1. */
+UTEST(vm_object_fields_initialized_to_v1_0_contract) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* topology spec §3.1: initial value 1; reserves 0 as IC unfilled sentinel */
+    UASSERT_EQ(1ull, vm.topology_gen);
+
+    /* prototype-chain spec §7.1: lookup_id starts at 1; mark phase resets to 1 on rollover */
+    UASSERT_EQ(1ull, vm.lookup_id);
+
+    /* prototype-chain spec §8.1: object_id counter starts at 0; first alloc bumps to 1 */
+    UASSERT_EQ(0u, vm.next_object_id);
+
+    /* topology_gen and lookup_id are uint64_t; next_object_id is uint32_t */
+    UASSERT_EQ(8u, (unsigned)sizeof(vm.topology_gen));
+    UASSERT_EQ(8u, (unsigned)sizeof(vm.lookup_id));
+    UASSERT_EQ(4u, (unsigned)sizeof(vm.next_object_id));
+
+    uvm_destroy(&vm);
+}
+
 /* --- T8: OP_RET routing through pending_unwind / urbi_unwind --- */
 
 /* Top-frame return: OP_RET at frame_count==0 writes out_slot and marks strand
@@ -1135,6 +1158,8 @@ void test_vm_suite(void) {
               vm_create_zero_init_m3_fields);
     utest_run("uvm_init sets gc_threshold + negative gc_debt",
               vm_gc_initial_threshold_set);
+    utest_run("uvm_init sets M4 object/topology fields to v1.0 contract",
+              vm_object_fields_initialized_to_v1_0_contract);
     utest_run("vm: OP_RET at top frame marks strand dead, delivers value",
               vm_op_ret_top_frame_marks_strand_dead);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",

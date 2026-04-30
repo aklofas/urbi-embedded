@@ -93,9 +93,18 @@ typedef struct UVM {
 
     /* M2 additions — per pre-m2-multi-vm-audit-design.md */
     void      *intern_table;     /* opaque; owned by uintern.c (T3) */
-    uint32_t   topology_gen;     /* shape-tree generation; bumped at M4
-                                    on any slot-topology mutation. Zero-
-                                    init; never bumped at M2. */
+    uint64_t   topology_gen;     /* shape-tree generation; bumped on §4.1 mutations.
+                                    Per pre-M4 topology-generation spec §3.1: monotonic
+                                    only, init=1, reserves 0 as IC unfilled sentinel. */
+
+    /* === M4 additions (per pre-M4 prototype-chain spec §7.1, §8.1) === */
+    uint64_t   lookup_id;        /* per-VM monotonic counter; bumped at each top-level
+                                    lookup; truncated to u32 when stamping UObject.lookup_stamp.
+                                    Mark phase clears stamps + resets to 1 on low-32 wrap.
+                                    Init=1. */
+    uint32_t   next_object_id;   /* per-VM monotonic UObject identity counter; populated
+                                    at urbi_object_alloc. 32-bit wrap aborts the VM with
+                                    URBI_FATAL_OBJECT_ID_EXHAUSTED. Init=0 (first object → 1). */
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or

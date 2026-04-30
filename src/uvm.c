@@ -68,7 +68,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
     vm->intern_table = NULL;
-    vm->topology_gen = 0u;
+    vm->topology_gen   = 1ull;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
+    vm->lookup_id      = 1ull;   /* pre-M4 prototype-chain spec §7.1 */
+    vm->next_object_id = 0u;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
