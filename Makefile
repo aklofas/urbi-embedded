@@ -163,10 +163,33 @@ test-determinism: test-determinism-footprint test-determinism-default test-deter
 # Valgrind memcheck — runs the test suite under valgrind's memcheck tool.
 # Catches uninitialized reads, heap corruption, leaks.  Complements ASan:
 # memcheck's bit-precise tracking catches uninit reads that ASan misses.
-# Uses -O0 -g for readable stack traces; --error-exitcode=1 makes any
-# finding fail the build.
+# Uses -O1 -g: -g preserves stack traces, -O1 cuts the instruction volume
+# valgrind has to instrument (~20-30% faster than -O0) without harming
+# diagnosis. --error-exitcode=1 makes any finding fail the build.
+# --track-origins=yes and --show-leak-kinds=all are deliberately omitted —
+# they roughly double runtime and are only useful when triaging a hit;
+# re-enable locally for that. Default leak-check (definite+possible) is
+# enough for CI gating.
+#
+# Sharding: set URBI_SHARD_TOTAL=N URBI_SHARD_INDEX=I in the environment
+# to run only suites where (suite_index % N == I). CI uses N=4 across a
+# matrix; locally, leave unset to run all suites.
 test-valgrind: valgrind-tools
 	$(MAKE) TARGET=host-valgrind \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
+		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full -q" \
+		test
+
+# test-valgrind-deep — diagnostic counterpart to test-valgrind. Enables
+# --track-origins=yes (resolves uninit-read complaints to the allocation
+# site that produced the undefined byte) and --show-leak-kinds=all
+# (reports indirect/reachable/suppressed leaks, not just definite/possible).
+# Roughly 2× slower than test-valgrind. Intended for local triage when
+# test-valgrind reports a hit and you need a usable stack trace, or for
+# pre-release sweeps. NOT wired into CI — too expensive for per-push gating.
+# Sharding env vars (URBI_SHARD_TOTAL/INDEX) work here too.
+test-valgrind-deep: valgrind-tools
+	$(MAKE) TARGET=host-valgrind-deep \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" \
 		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full --track-origins=yes --show-leak-kinds=all -q" \
 		test
@@ -186,8 +209,9 @@ valgrind-tools:
 # for cross-compile verification; this target is for local pre-release
 # confidence that a branch will pass CI end-to-end.
 #
-# Runtime: ~3-5 minutes on typical development hardware (dominated by
-# test-valgrind). Invoked manually before tagging a release, or before
+# Runtime: ~5-10 minutes on typical development hardware (dominated by
+# the two valgrind passes — fast for CI parity, deep for triage-grade
+# diagnostics). Invoked manually before tagging a release, or before
 # pushing a branch that touches multiple subsystems.
 #
 # Uses recursive $(MAKE) rather than prerequisite-style target chaining
@@ -202,8 +226,10 @@ releasetest:
 	$(MAKE) test-ubsan
 	$(MAKE) test-debug
 	$(MAKE) test-switch
-	@echo "=== releasetest: valgrind memcheck ==="
+	@echo "=== releasetest: valgrind memcheck (fast) ==="
 	$(MAKE) test-valgrind
+	@echo "=== releasetest: valgrind memcheck (deep) ==="
+	$(MAKE) test-valgrind-deep
 	@echo "=== releasetest: static analysis ==="
 	$(MAKE) lint
 	@echo "=== releasetest: documentation ==="
@@ -474,4 +500,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build test-gc-pause
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build test-gc-pause

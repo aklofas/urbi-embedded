@@ -1,7 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Test runner. Invokes each test suite in sequence. */
+/* Test runner. Invokes each test suite in sequence.
+ *
+ * Optional env-var sharding for slow wrappers (valgrind):
+ *   URBI_SHARD_TOTAL=N URBI_SHARD_INDEX=I
+ * Each shard runs suites where (suite_index % N == I). When unset or
+ * TOTAL<=1, all suites run. Distribution is by suite-list position; if a
+ * shard runs long, reorder suites or rebalance N. */
 
 #include "utest.h"
+#include <stdlib.h>
 #include <time.h>
 
 int utest_checks = 0;
@@ -70,57 +77,85 @@ extern void test_pipe_budget_exhaust_suite(void);
 extern void test_determinism_two_runs_suite(void);
 extern void test_determinism_tunable_pin_suite(void);
 
+struct suite_entry {
+    const char *name;
+    void (*fn)(void);
+};
+
+static const struct suite_entry suites[] = {
+    {"version",                    test_version_suite},
+    {"lexer",                      test_lexer_suite},
+    {"arena",                      test_arena_suite},
+    {"parser",                     test_parser_suite},
+    {"varint",                     test_varint_suite},
+    {"module",                     test_module_suite},
+    {"emit",                       test_emit_suite},
+    {"vm",                         test_vm_suite},
+    {"pipeline",                   test_pipeline_suite},
+    {"uvalue",                     test_uvalue_suite},
+    {"multi_vm",                   test_multi_vm_suite},
+    {"intern",                     test_intern_suite},
+    {"funcstate",                  test_funcstate_suite},
+    {"separators",                 test_separators_suite},
+    {"function",                   test_function_suite},
+    {"lazy",                       test_lazy_suite},
+    {"strand",                     test_strand_suite},
+    {"cleanup",                    test_cleanup_suite},
+    {"scheduler_cooperative",      test_scheduler_cooperative_suite},
+    {"dispatch_loop",              test_dispatch_loop_suite},
+    {"unwind",                     test_unwind_suite},
+    {"capi_unwind",                test_capi_unwind_suite},
+    {"realm",                      test_realm_suite},
+    {"step_driver",                test_step_driver_suite},
+    {"chunk_apis",                 test_chunk_apis_suite},
+    {"event_ring",                 test_event_ring_suite},
+    {"callback_watchdog",          test_callback_watchdog_suite},
+    {"ugc_color_invariants",       test_ugc_color_invariants_suite},
+    {"ugc_state_machine",          test_ugc_state_machine_suite},
+    {"ugc_barrier",                test_ugc_barrier_suite},
+    {"ugc_walk_roots",             test_ugc_walk_roots_suite},
+    {"ugc_handle",                 test_ugc_handle_suite},
+    {"ugc_finalizer",              test_ugc_finalizer_suite},
+    {"tag_lifecycle",              test_tag_lifecycle_suite},
+    {"strand_spawn_inheritance",   test_strand_spawn_inheritance_suite},
+    {"tag_stop_realm",             test_tag_stop_realm_suite},
+    {"watcher_pool",               test_watcher_pool_suite},
+    {"watcher_dirty",              test_watcher_dirty_suite},
+    {"fork",                       test_fork_suite},
+    {"determinism",                test_determinism_suite},
+    {"sched_fifo",                 test_sched_fifo_suite},
+    {"sched_pool_exhaust",         test_sched_pool_exhaust_suite},
+    {"pipe_budget_exhaust",        test_pipe_budget_exhaust_suite},
+    {"determinism_two_runs",       test_determinism_two_runs_suite},
+    {"determinism_tunable_pin",    test_determinism_tunable_pin_suite},
+    /* Add new suites here as test files are added. */
+};
+
 int main(void) {
     clock_t t0 = clock();
 
-    printf("Running test suites\n");
+    int shard_total = 1;
+    int shard_index = 0;
+    const char *st = getenv("URBI_SHARD_TOTAL");
+    const char *si = getenv("URBI_SHARD_INDEX");
+    if (st && *st) shard_total = atoi(st);
+    if (si && *si) shard_index = atoi(si);
+    if (shard_total < 1) shard_total = 1;
+    if (shard_index < 0 || shard_index >= shard_total) shard_index = 0;
 
-    test_version_suite();
-    test_lexer_suite();
-    test_arena_suite();
-    test_parser_suite();
-    test_varint_suite();
-    test_module_suite();
-    test_emit_suite();
-    test_vm_suite();
-    test_pipeline_suite();
-    test_uvalue_suite();
-    test_multi_vm_suite();
-    test_intern_suite();
-    test_funcstate_suite();
-    test_separators_suite();
-    test_function_suite();
-    test_lazy_suite();
-    test_strand_suite();
-    test_cleanup_suite();
-    test_scheduler_cooperative_suite();
-    test_dispatch_loop_suite();
-    test_unwind_suite();
-    test_capi_unwind_suite();
-    test_realm_suite();
-    test_step_driver_suite();
-    test_chunk_apis_suite();
-    test_event_ring_suite();
-    test_callback_watchdog_suite();
-    test_ugc_color_invariants_suite();
-    test_ugc_state_machine_suite();
-    test_ugc_barrier_suite();
-    test_ugc_walk_roots_suite();
-    test_ugc_handle_suite();
-    test_ugc_finalizer_suite();
-    test_tag_lifecycle_suite();
-    test_strand_spawn_inheritance_suite();
-    test_tag_stop_realm_suite();
-    test_watcher_pool_suite();
-    test_watcher_dirty_suite();
-    test_fork_suite();
-    test_determinism_suite();
-    test_sched_fifo_suite();
-    test_sched_pool_exhaust_suite();
-    test_pipe_budget_exhaust_suite();
-    test_determinism_two_runs_suite();
-    test_determinism_tunable_pin_suite();
-    /* Add new suites here as test files are added. */
+    if (shard_total > 1) {
+        printf("Running test suites (shard %d/%d)\n",
+            shard_index, shard_total);
+    } else {
+        printf("Running test suites\n");
+    }
+
+    size_t n = sizeof(suites) / sizeof(suites[0]);
+    for (size_t i = 0; i < n; i++) {
+        if ((int)(i % (size_t)shard_total) == shard_index) {
+            suites[i].fn();
+        }
+    }
 
     double elapsed = (double)(clock() - t0) / CLOCKS_PER_SEC;
     printf("\n%d cases, %d checks, %d failed (%.3fs)\n",

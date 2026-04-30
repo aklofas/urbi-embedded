@@ -97,12 +97,21 @@ jobs:
           retention-days: 14
 
   valgrind:
-    name: valgrind (memcheck)
+    name: valgrind (memcheck shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # Memcheck wraps the unit suite (~772 cases post-M3); typical run is
-    # 15-25 minutes on the GitHub runner.  Cap defends against a future
-    # memory-bug-induced hang burning the GitHub 6-hour default.
-    timeout-minutes: 45
+    # Memcheck wraps the unit suite (~772 cases post-M3). Sharded across
+    # 4 parallel CI jobs via URBI_SHARD_INDEX/URBI_SHARD_TOTAL — runner.c
+    # filters suites by (index % total). Each shard also runs the
+    # non-wrapped test-integration + test-chk prerequisites; that's
+    # acceptable redundancy (sub-minute) compared to the valgrind bulk.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      URBI_SHARD_TOTAL: 4
+      URBI_SHARD_INDEX: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v5
       - name: Install tools
