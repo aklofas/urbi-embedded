@@ -88,6 +88,10 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->atom_event   = NULL;
     vm->atom_symbol  = NULL;
 
+    /* M4 T30 — UModuleInstance registry head: empty until first
+     * urbi_module_instance_create. */
+    vm->module_instances_head = NULL;
+
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */

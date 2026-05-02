@@ -29,6 +29,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     mi->module          = m;
     mi->vm              = vm;
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
+    mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for every nested proto's ic_count.  entries[0] is the
@@ -107,6 +108,14 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* Publish the bulk pointer last so a partial-init mi never hands a
      * half-formed UProtoInstanceArr to the walker. */
     mi->proto_instances = arr;
+
+    /* T30: register on the per-VM linked list AFTER both cells are wired.
+     * Insertion order at head — the determinism checksum walks every
+     * instance and folds in IC state, so order is observable.  Caller's
+     * create-order is itself deterministic in the test harness; therefore
+     * the iteration order is stable across runs. */
+    mi->next_in_vm = vm->module_instances_head;
+    vm->module_instances_head = mi;
 
     return mi;
 }

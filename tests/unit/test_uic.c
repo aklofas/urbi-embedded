@@ -16,6 +16,7 @@
 #include "object/umoduleinstance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
+#include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
 #include "uintern.h"
 #include "umodule.h"
 #include "uvm.h"
@@ -470,6 +471,127 @@ UTEST(resolve_slot_finds_via_protos) {
     uvm_destroy(&vm);
 }
 
+/* === T30: cross-VM IC isolation + determinism-checksum extension ===
+ *
+ * Two complementary tests:
+ *   1. Independent IC tables in two VMs — same UModule loaded into both
+ *      yields distinct UProtoInstanceArr cells; mutating one IC entry
+ *      does not bleed into the other (extends T16's same-VM independence
+ *      check across the VM boundary).
+ *   2. Determinism checksum incorporates IC state — manually filling an
+ *      IC entry must change the checksum value on the next call.
+ *
+ * The second test only runs under URBI_DEBUG (the checksum function is
+ * declared only in that build mode). */
+
+UTEST(multi_vm_two_vms_have_independent_ic_tables) {
+    UVM vm_a, vm_b;
+    uvm_init(&vm_a, NULL, NULL);
+    uvm_init(&vm_b, NULL, NULL);
+
+    /* Same module shape — but each VM gets its own UModuleInstance.  The
+     * IC tables (allocated via each VM's GC) must live in disjoint memory
+     * regions so a fill in vm_a never bleeds into vm_b. */
+    UModule m = {0};
+    UProto *p = umodule_alloc_nested_proto(&m);
+    UASSERT(p != NULL);
+
+    USymbol *foo_a = (USymbol *)ustr_intern(&vm_a, "foo", 3);
+    USymbol *foo_b = (USymbol *)ustr_intern(&vm_b, "foo", 3);
+    p->ic_count = 1;
+    p->ic_names = (USymbol **)malloc(sizeof(USymbol *));
+    UASSERT(p->ic_names != NULL);
+    /* Module's ic_names points at vm_a's interned symbol; vm_b's instance
+     * inherits that pointer.  That's intentional — the load-bearing test
+     * is per-VM IC mutation isolation, not interned-symbol isolation. */
+    p->ic_names[0] = foo_a;
+
+    UModuleInstance *mi_a = urbi_module_instance_create(&vm_a, &m);
+    UModuleInstance *mi_b = urbi_module_instance_create(&vm_b, &m);
+    UASSERT(mi_a != NULL); UASSERT(mi_b != NULL);
+
+    /* Each VM's registry head points at its own instance. */
+    UASSERT(vm_a.module_instances_head == mi_a);
+    UASSERT(vm_b.module_instances_head == mi_b);
+    UASSERT(mi_a->next_in_vm == NULL);
+    UASSERT(mi_b->next_in_vm == NULL);
+
+    /* Distinct UProtoInstanceArr blocks. */
+    UASSERT(mi_a->proto_instances != mi_b->proto_instances);
+
+    /* Distinct ic_table allocations. */
+    UProtoInstance *pi_a = &mi_a->proto_instances->entries[1];
+    UProtoInstance *pi_b = &mi_b->proto_instances->entries[1];
+    UASSERT(pi_a->ic_table != pi_b->ic_table);
+
+    /* Mutate IC[0] in vm_a; vm_b's IC[0] stays zero. */
+    pi_a->ic_table[0].n              = 2;
+    pi_a->ic_table[0].replace_cursor = 1;
+    pi_a->ic_table[0].topology_gen[0] = 42u;
+
+    UASSERT_EQ((int)pi_b->ic_table[0].n,              0);
+    UASSERT_EQ((int)pi_b->ic_table[0].replace_cursor, 0);
+    UASSERT_EQ((int)pi_b->ic_table[0].topology_gen[0], 0);
+
+    /* Sanity: vm_b's interned `foo` is not the same pointer as vm_a's,
+     * so per-VM intern tables are truly independent.  (Not a T30 invariant
+     * per se but useful pin against future regressions.) */
+    UASSERT(foo_a != foo_b);
+
+    urbi_module_instance_destroy(&vm_b, mi_b);
+    urbi_module_instance_destroy(&vm_a, mi_a);
+    umodule_destroy(&m);
+    uvm_destroy(&vm_b);
+    uvm_destroy(&vm_a);
+}
+
+#ifdef URBI_DEBUG
+UTEST(determinism_checksum_includes_ic_state) {
+    /* Snapshot checksum, manually fill an IC entry, snapshot again — the
+     * two checksums must differ.  Tests the §6 fold step in
+     * urbi_get_determinism_checksum. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m = {0};
+    UProto *p = umodule_alloc_nested_proto(&m);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    p->ic_count = 1;
+    p->ic_names = (USymbol **)malloc(sizeof(USymbol *));
+    p->ic_names[0] = foo;
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UASSERT(mi != NULL);
+
+    uint64_t h_before = urbi_get_determinism_checksum(&vm);
+
+    /* Fill IC[0] entry 0 by hand. */
+    UProtoInstance *pi = &mi->proto_instances->entries[1];
+    pi->ic_table[0].n               = 1;
+    pi->ic_table[0].replace_cursor  = 1;
+    pi->ic_table[0].topology_gen[0] = 7u;
+
+    uint64_t h_after = urbi_get_determinism_checksum(&vm);
+
+    UASSERT(h_before != h_after);
+
+    urbi_module_instance_destroy(&vm, mi);
+    umodule_destroy(&m);
+    uvm_destroy(&vm);
+}
+
+UTEST(determinism_checksum_stable_with_no_module_instances) {
+    /* Two consecutive checksum reads on a VM with no UModuleInstance must
+     * agree (the per-IC fold is a no-op when the registry head is NULL). */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    uint64_t h1 = urbi_get_determinism_checksum(&vm);
+    uint64_t h2 = urbi_get_determinism_checksum(&vm);
+    UASSERT(h1 == h2);
+    uvm_destroy(&vm);
+}
+#endif  /* URBI_DEBUG */
+
 void test_uic_suite(void) {
     utest_run("uic: layout at default 4 entries",
               uic_layout_at_default_4_entries);
@@ -501,4 +623,12 @@ void test_uic_suite(void) {
               slot_helpers_reject_invalid_args);
     utest_run("uic: resolve_slot finds via protos",
               resolve_slot_finds_via_protos);
+    utest_run("uic: two VMs have independent IC tables",
+              multi_vm_two_vms_have_independent_ic_tables);
+#ifdef URBI_DEBUG
+    utest_run("uic: determinism checksum includes IC state",
+              determinism_checksum_includes_ic_state);
+    utest_run("uic: determinism checksum stable with no module instances",
+              determinism_checksum_stable_with_no_module_instances);
+#endif
 }

@@ -88,11 +88,16 @@ typedef struct UProtoInstanceArr {
 
 /* === UModuleInstance === */
 typedef struct UModuleInstance {
-    UCell               cell;            /* type_tag = UTYPE_MODULE_INSTANCE */
+    UCell                    cell;            /* type_tag = UTYPE_MODULE_INSTANCE */
     /* 6 B compiler-inserted padding before module */
-    UModule            *module;          /* non-owning */
-    struct UVM         *vm;              /* non-owning */
-    UProtoInstanceArr  *proto_instances; /* non-owning; separate GC cell */
+    UModule                 *module;          /* non-owning */
+    struct UVM              *vm;              /* non-owning */
+    UProtoInstanceArr       *proto_instances; /* non-owning; separate GC cell */
+    /* T30: per-VM list of all live UModuleInstance cells.  Threaded onto
+     * vm->module_instances_head at create time so the determinism checksum
+     * (and any future cross-instance walker) can iterate every live IC
+     * table without an out-of-band registry. */
+    struct UModuleInstance  *next_in_vm;
 } UModuleInstance;
 
 /* === API === */

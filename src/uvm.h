@@ -28,6 +28,7 @@ struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
+struct UModuleInstance;   /* M4 T30 — defined in src/object/umoduleinstance.h */
 
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
@@ -125,6 +126,15 @@ typedef struct UVM {
     struct UObject *atom_tag;
     struct UObject *atom_event;
     struct UObject *atom_symbol;
+
+    /* === M4 T30 — UModuleInstance registry ===
+     * Linked list head of every live UModuleInstance threaded via
+     * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
+     * time (no removal at v1.0 — the GC reaps both the cell and any chain
+     * dangling references when the instance becomes unreachable; this
+     * registry is consulted only by the determinism checksum which itself
+     * runs at quiescent points where instance removal isn't observed). */
+    struct UModuleInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or
