@@ -356,6 +356,180 @@ UTEST(uobject_protos_foreach_heap_form_yields_all) {
     uvm_destroy(&vm);
 }
 
+/* === T10: prototype-mutation primitives ===
+ *
+ * Per pre-M4 prototype-chain spec §5.1-§5.4: every chain mutation routes
+ * through urbi_object_set_protos_{empty,single,heap}.  Each primitive must
+ *   (1) shade existing protos via the forward Dijkstra barrier,
+ *   (2) shade the inserted child(ren),
+ *   (3) bump vm->topology_gen.
+ * The five transitions exercised below cover all storage-form pairs the
+ * higher-level mutators (T11) can produce.
+ *
+ * vm->topology_gen is initialised to 1 at uvm_init (per pre-M4 topology
+ * spec §3.1, reserves 0 as the IC-unfilled sentinel).  Each primitive call
+ * bumps by exactly 1, so we sample pre/post around the call under test
+ * after all the setup allocations have happened. */
+
+/* Helper: allocate a UProtos block of size n via the GC, populate items[]
+ * from src.  Caller wraps with urbi_object_set_protos_heap. */
+static UProtos *
+make_uprotos(UVM *vm, UObject **src, uint32_t n) {
+    UProtos *up = (UProtos *)urbi_gc_alloc(
+            vm, sizeof(UProtos) + n * sizeof(UObject *), UTYPE_PROTOS);
+    if (up == NULL) return NULL;
+    up->n = n;
+    for (uint32_t i = 0; i < n; i++) {
+        up->items[i] = src[i];
+    }
+    return up;
+}
+
+UTEST(uobject_set_protos_empty_to_single_bumps_topology) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL); UASSERT(p != NULL);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 0);     /* sanity: empty form */
+    UASSERT_EQ((int)o->protos, 0);
+
+    uint64_t pre = vm.topology_gen;
+    urbi_object_set_protos_single(&vm, o, p);
+
+    /* Single form encoded; one proto reachable; topology bumped exactly once. */
+    UASSERT((o->protos & 1u) == 1u);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+    UASSERT(urbi_object_proto_at(o, 0u) == p);
+    UASSERT(vm.topology_gen == pre + 1u);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_single_to_heap_bumps_topology) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *c = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && a && b && c);
+
+    /* First transition o into single form so the next mutation exercises
+     * single → heap. */
+    urbi_object_set_protos_single(&vm, o, a);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+
+    UObject *items[3] = { a, b, c };
+    UProtos *up = make_uprotos(&vm, items, 3u);
+    UASSERT(up != NULL);
+
+    uint64_t pre = vm.topology_gen;
+    urbi_object_set_protos_heap(&vm, o, up);
+
+    /* Heap form: bit 0 clear, raw UProtos*; three protos visible; bumped. */
+    UASSERT_EQ((int)(o->protos & 1u), 0);
+    UASSERT((UProtos *)o->protos == up);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 3);
+    UASSERT(urbi_object_proto_at(o, 0u) == a);
+    UASSERT(urbi_object_proto_at(o, 1u) == b);
+    UASSERT(urbi_object_proto_at(o, 2u) == c);
+    UASSERT(vm.topology_gen == pre + 1u);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_heap_to_fresh_heap_bumps_topology) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *c = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *d = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && a && b && c && d);
+
+    /* Set up heap form first. */
+    UObject *items_old[2] = { a, b };
+    UProtos *up_old = make_uprotos(&vm, items_old, 2u);
+    UASSERT(up_old != NULL);
+    urbi_object_set_protos_heap(&vm, o, up_old);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 2);
+
+    /* Replace with a fresh, larger heap UProtos. */
+    UObject *items_new[3] = { c, d, a };
+    UProtos *up_new = make_uprotos(&vm, items_new, 3u);
+    UASSERT(up_new != NULL);
+    UASSERT(up_new != up_old);
+
+    uint64_t pre = vm.topology_gen;
+    urbi_object_set_protos_heap(&vm, o, up_new);
+
+    /* New UProtos installed; old one shaded by barrier (not validated here —
+     * the GC's bookkeeping owns that signal); count + items reflect new set. */
+    UASSERT((UProtos *)o->protos == up_new);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 3);
+    UASSERT(urbi_object_proto_at(o, 0u) == c);
+    UASSERT(urbi_object_proto_at(o, 1u) == d);
+    UASSERT(urbi_object_proto_at(o, 2u) == a);
+    UASSERT(vm.topology_gen == pre + 1u);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_heap_to_single_collapse_bumps_topology) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && a && b);
+
+    UObject *items[2] = { a, b };
+    UProtos *up = make_uprotos(&vm, items, 2u);
+    UASSERT(up != NULL);
+    urbi_object_set_protos_heap(&vm, o, up);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 2);
+    UASSERT_EQ((int)(o->protos & 1u), 0);             /* heap form */
+
+    uint64_t pre = vm.topology_gen;
+    urbi_object_set_protos_single(&vm, o, a);
+
+    /* Collapsed to single form; storage-form transition observed; bumped. */
+    UASSERT((o->protos & 1u) == 1u);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+    UASSERT(urbi_object_proto_at(o, 0u) == a);
+    UASSERT(vm.topology_gen == pre + 1u);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && p);
+
+    urbi_object_set_protos_single(&vm, o, p);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+
+    uint64_t pre = vm.topology_gen;
+    urbi_object_set_protos_empty(&vm, o);
+
+    /* Empty form (raw 0); zero protos; bumped. */
+    UASSERT_EQ((int)o->protos, 0);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 0);
+    UASSERT(vm.topology_gen == pre + 1u);
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -382,4 +556,14 @@ void test_uobject_suite(void) {
               uobject_protos_foreach_single_form_yields_one);
     utest_run("uobject: protos foreach heap form yields all",
               uobject_protos_foreach_heap_form_yields_all);
+    utest_run("uobject: set_protos empty -> single bumps topology",
+              uobject_set_protos_empty_to_single_bumps_topology);
+    utest_run("uobject: set_protos single -> heap bumps topology",
+              uobject_set_protos_single_to_heap_bumps_topology);
+    utest_run("uobject: set_protos heap -> fresh-heap bumps topology",
+              uobject_set_protos_heap_to_fresh_heap_bumps_topology);
+    utest_run("uobject: set_protos heap -> single (collapse) bumps topology",
+              uobject_set_protos_heap_to_single_collapse_bumps_topology);
+    utest_run("uobject: set_protos single -> empty (collapse) bumps topology",
+              uobject_set_protos_single_to_empty_collapse_bumps_topology);
 }

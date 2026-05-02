@@ -19,6 +19,7 @@
 #include "object/ushape.h"
 #include "uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_pin */
+#include "gc/ugc_incremental.h"   /* gc_shade_gray (T10 mutation primitives) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
 
@@ -114,6 +115,79 @@ urbi_atom_family_name(URBIAtomFamily f)
         case URBI_ATOM_SYMBOL:  return "Symbol";
         default:                return "?";
     }
+}
+
+/* === Prototype-mutation primitives (T10 — per pre-M4 prototype-chain spec §5) ===
+ *
+ * Three barrier-aware primitives — every prototype-chain mutation routes
+ * through one of these.  Each does the same three steps in order:
+ *   1. Forward Dijkstra barrier on the EXISTING protos value (shade pre-
+ *      overwrite — preserves the no-black-to-white tri-color invariant).
+ *   2. Forward barrier on the inserted child(ren) (shade pre-write).
+ *   3. Bump vm->topology_gen so cached IC entries observe the change
+ *      (per pre-M2 §7.4 / pre-M4 topology-generation spec §3.1).
+ *
+ * gc_shade_gray (src/gc/ugc_incremental.c) is idempotent and self-guards
+ * against non-white cells, so we can call it unconditionally without a
+ * separate uvalue_is_heap_white check — matching the pattern used in
+ * src/object/utypes_init.c walkers.  Under URBI_GC_NONE (v2 build) these
+ * primitives still run; gc_shade_gray's color check is a no-op when color
+ * tracking is disabled. */
+
+/* shade_existing_protos — internal helper. Decodes obj->protos's three
+ * storage forms (empty/single/heap per spec §4.1) and shades the underlying
+ * cell(s) before the field is overwritten. */
+static void
+shade_existing_protos(UVM *vm, UObject *obj)
+{
+    uintptr_t raw = obj->protos;
+    if (raw == 0u) {
+        return;   /* empty form — nothing to shade */
+    }
+    if ((raw & 1u) != 0u) {
+        /* single form: bit 0 set, address in high bits */
+        gc_shade_gray(vm, (UCell *)(raw >> 1));
+    } else {
+        /* heap form: raw is a UProtos*. Shade the UProtos cell itself.
+         * The UObject*s in items[] are reachable from the UProtos walker
+         * (utypes_init.c walk_uprotos), so shading the UProtos is sufficient
+         * to keep them alive across the overwrite — the GC will trace into
+         * items[] when it next dequeues this gray cell. */
+        gc_shade_gray(vm, (UCell *)raw);
+    }
+}
+
+void
+urbi_object_set_protos_empty(UVM *vm, UObject *obj)
+{
+    shade_existing_protos(vm, obj);
+    obj->protos = 0u;
+    vm->topology_gen++;
+}
+
+void
+urbi_object_set_protos_single(UVM *vm, UObject *obj, UObject *p)
+{
+    shade_existing_protos(vm, obj);
+    /* Forward barrier on the inserted child (per spec §5.3 — barrier is
+     * per-write, not per-disposition). */
+    gc_shade_gray(vm, (UCell *)p);
+    obj->protos = ((uintptr_t)p << 1) | 1u;
+    vm->topology_gen++;
+}
+
+void
+urbi_object_set_protos_heap(UVM *vm, UObject *obj, UProtos *up)
+{
+    shade_existing_protos(vm, obj);
+    /* Shade every item in the new UProtos plus the UProtos cell itself —
+     * pre-write barriers on inserted children (per spec §5.3). */
+    for (uint32_t i = 0; i < up->n; i++) {
+        gc_shade_gray(vm, (UCell *)up->items[i]);
+    }
+    gc_shade_gray(vm, (UCell *)up);
+    obj->protos = (uintptr_t)up;
+    vm->topology_gen++;
 }
 
 /* === urbi_object_root ===
@@ -220,10 +294,11 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
     if (o == NULL) {
         return NULL;
     }
-    /* Single-tag protos encoding per spec §4.1 (canonical form decoded by
-     * UPROTOS_FOREACH): low bit 1 marks single-tag, high bits hold the
-     * prototype pointer. */
-    o->protos = ((uintptr_t)root << 1) | 1u;
+    /* Route through the canonical T10 primitive: empty → single transition,
+     * with the forward Dijkstra barrier on the inserted root and a
+     * topology_gen bump.  o was just allocated with protos == 0 (empty form)
+     * so the "shade existing" branch is a no-op. */
+    urbi_object_set_protos_single(vm, o, root);
     *slot = o;
 
     pin_uobject(vm, o);

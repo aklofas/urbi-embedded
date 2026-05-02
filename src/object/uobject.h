@@ -140,6 +140,30 @@ UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
  * valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
 
+/* === Prototype-mutation primitives (T10 — per pre-M4 prototype-chain spec §5) ===
+ *
+ * Every prototype-chain mutation routes through one of these three primitives.
+ * Each primitive (1) fires the forward Dijkstra barrier on the existing protos
+ * value before overwriting it, (2) shades the inserted child(ren) (write-pre
+ * barrier on the new value), and (3) bumps vm->topology_gen (per pre-M2 §7.4 /
+ * pre-M4 topology-generation spec §3.1).
+ *
+ * Caller invariants:
+ *   - vm and obj must be non-NULL.
+ *   - For _single: p must be non-NULL.
+ *   - For _heap:  up must be non-NULL with up->n >= 2 (single-proto chains
+ *                 use _single; empty chains use _empty).  The UProtos block
+ *                 must already be allocated via urbi_gc_alloc (UTYPE_PROTOS)
+ *                 with up->items[] populated; this primitive only shades and
+ *                 publishes the pointer.
+ *
+ * Cycle detection / dedup / valid_proto checks are the caller's responsibility
+ * (T11 wires those at the higher-level urbi_object_add_proto / set_protos
+ * surfaces).  These primitives are the storage-form transition layer only. */
+void urbi_object_set_protos_empty (struct UVM *vm, UObject *obj);
+void urbi_object_set_protos_single(struct UVM *vm, UObject *obj, UObject *p);
+void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
+
 /* === UPROTOS_FOREACH (T9 — per pre-M4 prototype-chain spec §6.1) ===
  *
  * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
