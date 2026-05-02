@@ -61,6 +61,10 @@ typedef enum {
     /* M3 tag-scope separator */
     TOK_COLON,        /* : */
 
+    /* member access — M4 */
+    TOK_DOT,          /* .  — slot access (obj.x) */
+    TOK_ARROW,        /* -> — slot-property access (obj.x->prop) */
+
     /* keywords — M3 control-transfer */
     TOK_KW_TRY,
     TOK_KW_CATCH,

@@ -16,6 +16,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_WHILE", "TOK_KW_LAZY", "TOK_KW_CLOSURE", "TOK_KW_TRUE", "TOK_KW_FALSE",
     "TOK_KW_NIL",
     "TOK_COLON",
+    "TOK_DOT", "TOK_ARROW",
     "TOK_KW_TRY", "TOK_KW_CATCH", "TOK_KW_FINALLY", "TOK_KW_THROW",
     "TOK_ERROR"
 };
@@ -452,7 +453,13 @@ UToken ulex_next(ULexer *lex) {
     const char c = *lex->cur;
     switch (c) {
     case '+': lex->cur++; return make_tok(lex, TOK_PLUS,   start, 1);
-    case '-': lex->cur++; return make_tok(lex, TOK_MINUS,  start, 1);
+    case '-':
+        if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
+            lex->cur += 2;
+            return make_tok(lex, TOK_ARROW, start, 2);
+        }
+        lex->cur++;
+        return make_tok(lex, TOK_MINUS,  start, 1);
     case '*': lex->cur++; return make_tok(lex, TOK_STAR,   start, 1);
     case '/': lex->cur++; return make_tok(lex, TOK_SLASH,  start, 1);
     case '(': lex->cur++; return make_tok(lex, TOK_LPAREN, start, 1);
@@ -464,6 +471,7 @@ UToken ulex_next(ULexer *lex) {
     case '{': lex->cur++; return make_tok(lex, TOK_LBRACE, start, 1);
     case '}': lex->cur++; return make_tok(lex, TOK_RBRACE, start, 1);
     case ':': lex->cur++; return make_tok(lex, TOK_COLON,  start, 1);
+    case '.': lex->cur++; return make_tok(lex, TOK_DOT,    start, 1);
     case '=':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;

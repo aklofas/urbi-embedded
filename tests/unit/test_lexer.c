@@ -695,6 +695,36 @@ static void lex_braces_amp_comma(void) {
     UASSERT_EQ(t4.len, 1);
 }
 
+static void lex_dot_token(void) {
+    ULexer l;
+    ulex_init(&l, ".", 1);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_DOT);
+    UASSERT_EQ(t.len, 1);
+    UASSERT_EQ(t.col, 1);
+}
+
+static void lex_arrow_token(void) {
+    ULexer l;
+    ulex_init(&l, "->", 2);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ARROW);
+    UASSERT_EQ(t.len, 2);
+    UASSERT_EQ(t.col, 1);
+}
+
+static void lex_minus_then_gt_is_arrow(void) {
+    /* `->` and `- >` (with space) must lex differently. */
+    ULexer l;
+    ulex_init(&l, "- >", 3);
+    const UToken t1 = ulex_next(&l);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_MINUS);
+    UASSERT_EQ(t1.len, 1);
+    UASSERT_EQ(t2.type, TOK_GT);
+    UASSERT_EQ(t2.len, 1);
+}
+
 static void lex_lone_bang_is_error(void) {
     ULexer l;
     ulex_init(&l, "!", 1);
@@ -946,6 +976,9 @@ void test_lexer_suite(void) {
     utest_run("lex_le_vs_lt", lex_le_vs_lt);
     utest_run("lex_ge_vs_gt", lex_ge_vs_gt);
     utest_run("lex_braces_amp_comma", lex_braces_amp_comma);
+    utest_run("lex_dot_token", lex_dot_token);
+    utest_run("lex_arrow_token", lex_arrow_token);
+    utest_run("lex_minus_then_gt_is_arrow", lex_minus_then_gt_is_arrow);
     utest_run("lex_lone_bang_is_error", lex_lone_bang_is_error);
     utest_run("lex_recognizes_var_keyword", lex_recognizes_var_keyword);
     utest_run("lex_recognizes_function_keyword", lex_recognizes_function_keyword);
