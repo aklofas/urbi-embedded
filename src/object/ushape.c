@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* ushape.c — UShape root singleton + transition primitive stubs.
+/* ushape.c — UShape root singleton + transition primitives.
  *
  * Spec references:
  *   docs/superpowers/specs/2026-04-24-urbi-pre-m2-object-model-design.md §3, §7.1, §7.2
@@ -9,12 +9,95 @@
  * allocated on the first urbi_shape_root call.  All root-shape fields are
  * zero except cell (filled by urbi_gc_alloc).
  *
- * Transition primitives are stubs at this task; later tasks land the
- * transition-cache lookup + sibling-shape materialisation. */
+ * T13 lands the transition cache (UShapeMap), the real
+ * urbi_shape_transition_add_slot, and the real urbi_shape_find_slot.  The
+ * sibling-shape primitive (urbi_shape_transition_property) remains a stub
+ * until the property-install task lands. */
+
+#include <stddef.h>
+#include <stdint.h>
 
 #include "object/ushape.h"
 #include "uvm.h"
-#include "urbi/gc.h"          /* urbi_gc_alloc */
+#include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_SHAPE_MAP */
+
+/* === Transition-cache helpers (file-private) === */
+
+#define USHAPE_INITIAL_CAP   8u
+
+/* map_alloc — allocate a fresh UShapeMap with `cap` empty entries.
+ * cap MUST be a power of two.  Returns NULL on OOM. */
+static UShapeMap *
+map_alloc(struct UVM *vm, uint32_t cap)
+{
+    UCell *c = urbi_gc_alloc(vm,
+                             sizeof(UShapeMap)
+                             + (size_t)cap * sizeof(((UShapeMap *)0)->entries[0]),
+                             UTYPE_SHAPE_MAP);
+    if (c == NULL) {
+        return NULL;
+    }
+    UShapeMap *m = (UShapeMap *)c;
+    m->cap   = cap;
+    m->count = 0u;
+    m->_pad  = 0u;
+    for (uint32_t i = 0u; i < cap; i++) {
+        m->entries[i].k = NULL;
+        m->entries[i].v = NULL;
+    }
+    return m;
+}
+
+/* Hash USymbol pointer to a table slot.  Symbols are interned → pointer
+ * identity is the only valid comparison; the >>4 strips alignment-zero
+ * bits so adjacent allocations don't all collide on bucket 0. */
+static inline uint32_t
+map_hash(const USymbol *k, uint32_t mask)
+{
+    return (uint32_t)(((uintptr_t)k >> 4) & mask);
+}
+
+/* Linear-probe lookup.  Returns the entry's UShape* on hit, NULL on miss.
+ * cap is a power of two so mask = cap-1.  k MUST be non-NULL (NULL marks
+ * empty slots). */
+static UShape *
+map_get(const UShapeMap *m, const USymbol *k)
+{
+    const uint32_t mask = m->cap - 1u;
+    uint32_t i = map_hash(k, mask);
+    for (uint32_t probes = 0u; probes < m->cap; probes++) {
+        if (m->entries[i].k == NULL) {
+            return NULL;            /* empty slot — terminates the probe */
+        }
+        if (m->entries[i].k == k) {
+            return m->entries[i].v;
+        }
+        i = (i + 1u) & mask;
+    }
+    return NULL;
+}
+
+/* Linear-probe insert.  Caller has already ensured spare capacity (load
+ * < 75% post-insert).  Inserting a duplicate key overwrites the existing
+ * value but does NOT bump count — at v1.0 the only call site
+ * (urbi_shape_transition_add_slot) checks for existing entry first, so
+ * overwrite never actually happens.  k MUST be non-NULL. */
+static void
+map_put(UShapeMap *m, USymbol *k, UShape *v)
+{
+    const uint32_t mask = m->cap - 1u;
+    uint32_t i = map_hash(k, mask);
+    while (m->entries[i].k != NULL && m->entries[i].k != k) {
+        i = (i + 1u) & mask;
+    }
+    if (m->entries[i].k == NULL) {
+        m->count++;
+    }
+    m->entries[i].k = k;
+    m->entries[i].v = v;
+}
+
+/* === Public API === */
 
 UShape *urbi_shape_root(struct UVM *vm)
 {
@@ -44,10 +127,61 @@ UShape *urbi_shape_root(struct UVM *vm)
 UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
                                        USymbol *name)
 {
-    /* Transition-cache lookup + fresh-shape allocation lands at a later
-     * M4 task (per pre-M2 §7.1). */
-    (void)vm; (void)parent; (void)name;
-    return NULL;
+    if (vm == NULL || parent == NULL || name == NULL) {
+        return NULL;
+    }
+
+    /* 1. Lazy-allocate the transitions cache on first transition. */
+    if (parent->transitions == NULL) {
+        parent->transitions = map_alloc(vm, USHAPE_INITIAL_CAP);
+        if (parent->transitions == NULL) {
+            return NULL;
+        }
+    } else {
+        /* 2. Check existing cache for this name. */
+        UShape *cached = map_get(parent->transitions, name);
+        if (cached != NULL) {
+            return cached;
+        }
+    }
+
+    /* 3. Resize cache to 2x if inserting would push load >= 75%.
+     * Comparison ((count + 1) * 4) >= (cap * 3) avoids float math. */
+    if (((parent->transitions->count + 1u) * 4u)
+        >= (parent->transitions->cap * 3u)) {
+        UShapeMap *bigger = map_alloc(vm, parent->transitions->cap * 2u);
+        if (bigger == NULL) {
+            return NULL;
+        }
+        /* Rehash existing entries into the bigger table. */
+        for (uint32_t i = 0u; i < parent->transitions->cap; i++) {
+            if (parent->transitions->entries[i].k != NULL) {
+                map_put(bigger,
+                        parent->transitions->entries[i].k,
+                        parent->transitions->entries[i].v);
+            }
+        }
+        parent->transitions = bigger;
+    }
+
+    /* 4. Allocate the child UShape. */
+    UCell *cc = urbi_gc_alloc(vm, sizeof(UShape), UTYPE_SHAPE);
+    if (cc == NULL) {
+        return NULL;
+    }
+    UShape *child = (UShape *)cc;
+    child->name        = name;
+    child->index       = parent->count;
+    child->count       = parent->count + 1u;
+    child->flags       = parent->flags;
+    child->_pad        = 0u;
+    child->parent      = parent;
+    child->transitions = NULL;
+    child->props_table = NULL;
+
+    /* 5. Insert into the cache. */
+    map_put(parent->transitions, name, child);
+    return child;
 }
 
 UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
@@ -60,13 +194,15 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
     return NULL;
 }
 
-/* T12 stub: always returns -1 (slot not found locally).
- * T13 lands the real lineage walk over s->parent collecting matched USymbol
- * pointers; until then, urbi_object_lookup falls straight through to the
- * proto-walk path on every lookup, which is exactly what T12's cycle-safety
- * + rollover tests need to exercise. */
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
 {
-    (void)s; (void)name;
+    if (name == NULL) {
+        return -1;              /* NULL is the root-shape sentinel; never a slot */
+    }
+    for (const UShape *cur = s; cur != NULL; cur = cur->parent) {
+        if (cur->name == name) {
+            return (int32_t)cur->index;
+        }
+    }
     return -1;
 }

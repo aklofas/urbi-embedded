@@ -104,6 +104,7 @@ typedef struct UType {
 #define UTYPE_SLOTHANDLE       12   /* M4 — slot handle (later task) */
 #define UTYPE_MODULE_INSTANCE  13   /* M4 — module instance (later task) */
 #define UTYPE_PROTO_INSTANCE   14   /* M4 — proto-bound instance (later task) */
+#define UTYPE_SHAPE_MAP        15   /* M4 — UShapeMap transition cache (T13) */
 #define UTYPE_HOST_BASE  64  /* host-registered types start here */
 #define UTYPE_HOST_MAX   255
 

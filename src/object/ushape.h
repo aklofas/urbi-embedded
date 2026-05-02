@@ -31,9 +31,33 @@ extern "C" {
 
 struct UVM;
 
-/* UShapeMap — transition cache; opaque to consumers.  Definition lands at
- * a later M4 task with the transition-cache lookup implementation. */
-typedef struct UShapeMap UShapeMap;
+/* === UShapeMap ===
+ *
+ * Transition cache: a small open-addressing table mapping the added
+ * USymbol* (interned, pointer-identity) to the child UShape that adds
+ * that slot.  One UShapeMap per parent UShape, allocated lazily on the
+ * first transition out of that parent.
+ *
+ * Probe scheme: linear probing on the low bits of (key >> 4) — symbols
+ * are interned, so pointer identity is the only valid comparison and
+ * the shift strips alignment-zero bits.
+ *
+ * cap is a power of two; resize to 2x at >= 75% load.
+ *
+ * Walker (utypes_init.c walk_ushapemap) shades each non-NULL entry's
+ * value (UShape*).  Keys are USymbol* — interned, never collected per
+ * the intern-table contract — so the walker doesn't shade keys. */
+typedef struct UShapeMap {
+    UCell        cell;          /* 2 B GC header (type_tag = UTYPE_SHAPE_MAP) */
+    /* 2 B compiler-inserted padding before cap */
+    uint32_t     cap;           /* power of two */
+    uint32_t     count;         /* live entries */
+    uint32_t     _pad;          /* explicit pad to 8 B align entries[] */
+    struct {
+        USymbol *k;             /* interned-symbol pointer; NULL marks empty */
+        UShape  *v;             /* child shape adding k */
+    } entries[];                /* flexible array; length == cap */
+} UShapeMap;
 
 /* === UProps ===
  *
@@ -102,20 +126,20 @@ _Static_assert(sizeof(struct UProps) == 48,
  * the existing pointer thereafter.  Returns NULL on OOM. */
 UShape *urbi_shape_root(struct UVM *vm);
 
-/* Look up the child shape for adding `name` to `parent`.  Allocates fresh
- * if not already in the transition cache.  Per pre-M2 §7.1.
- * Stub at this task; transition-cache lookup lands later. */
+/* Look up or allocate the child shape for adding `name` to `parent`.  Per
+ * pre-M2 §7.1.  On first transition out of `parent`, allocates the
+ * transitions cache (cap=8).  Subsequent calls hit the cache and return
+ * the cached child unchanged (deterministic shape sharing).  Returns NULL
+ * on OOM. */
 UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
                                        USymbol *name);
 
 /* Find the slot index for `name` in `s`'s lineage.
  * Returns >= 0 on hit (slot index in UObject.slots[]), -1 on miss.
  *
- * STUB at T12: always returns -1.  T13 lands the real lineage walk
- * (parent-chain traversal collecting slot names by USymbol identity).
- * Until T13, urbi_object_lookup falls through to the proto-walk on every
- * call — exercising the cycle-safety + rollover paths but not the
- * local-slot-found fast path. */
+ * Walks parent-ward over `s`'s lineage; first ancestor whose `name` field
+ * matches by USymbol pointer identity is the slot, and its `index` is
+ * returned. */
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name);
 
 /* Look up the sibling shape for installing/removing a property on the slot

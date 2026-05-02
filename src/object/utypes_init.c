@@ -11,10 +11,11 @@
  *   UObject  walks shape (direct UCell*) + each USlot UValue payload via cb +
  *            each prototype (direct UObject*) via UPROTOS_FOREACH (T9).
  *   UProtos  walks items[i] (direct UObject*; embeds UCell at offset 0).
- *   UShape   walks parent (UShape*) + props_table[i] (UProps*).  Skips
- *            transitions (UShapeMap walker lands at later M4 task) and
- *            name (USymbol — interned, never collected per intern-table
- *            contract).
+ *   UShape   walks parent (UShape*) + transitions (UShapeMap*) +
+ *            props_table[i] (UProps*).  Skips name (USymbol — interned,
+ *            never collected per intern-table contract).
+ *   UShapeMap walks each entries[i].v (UShape*) when entry is occupied.
+ *            Keys (USymbol*) are interned, never collected.
  *   UProps   walks oget + oset (UValue payloads) via cb.
  *   USlotHandle / UModuleInstance / UProtoInstance — no-op walkers at this
  *            task.  Children traced once owning data lands (later M4 tasks).
@@ -99,10 +100,9 @@ walk_uprotos(struct UVM *vm, void *payload,
 
 /* === walk_ushape ===
  *
- * Traces parent (UShape*) + props_table[i] (UProps*).  Skips:
- *   - transitions (UShapeMap walker lands at a later M4 task)
- *   - name (USymbol — interned, lives for the VM lifetime per the
- *     intern-table contract; never collected) */
+ * Traces parent (UShape*) + transitions (UShapeMap*) + props_table[i]
+ * (UProps*).  Skips name (USymbol — interned, lives for the VM lifetime
+ * per the intern-table contract; never collected). */
 static void
 walk_ushape(struct UVM *vm, void *payload,
             UGcRootCallback cb, void *ctx)
@@ -115,6 +115,13 @@ walk_ushape(struct UVM *vm, void *payload,
         gc_shade_gray(vm, (UCell *)s->parent);
     }
 
+    /* transitions is the per-shape UShapeMap (T13).  NULL until the first
+     * slot is added out of this shape; non-NULL once any child shape has
+     * been created.  walk_ushapemap (below) shades each cached child. */
+    if (s->transitions != NULL) {
+        gc_shade_gray(vm, (UCell *)s->transitions);
+    }
+
     /* props_table is NULL until the first slot in this lineage installs
      * a property (per pre-M4 USlot/UProps spec §4.2).  When non-NULL it's
      * a dense array of length s->count; entries may themselves be NULL. */
@@ -124,6 +131,26 @@ walk_ushape(struct UVM *vm, void *payload,
             if (s->props_table[i] != NULL) {
                 gc_shade_gray(vm, (UCell *)s->props_table[i]);
             }
+        }
+    }
+}
+
+/* === walk_ushapemap ===
+ *
+ * Iterates the entries[] flexible array.  cap is the bucket count;
+ * occupied entries (k != NULL) hold (USymbol*, UShape*).  Keys are
+ * interned and not GC-managed — only values are shaded. */
+static void
+walk_ushapemap(struct UVM *vm, void *payload,
+               UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
+
+    UShapeMap *m = (UShapeMap *)((UCell *)payload - 1);
+    uint32_t i;
+    for (i = 0u; i < m->cap; i++) {
+        if (m->entries[i].v != NULL) {
+            gc_shade_gray(vm, (UCell *)m->entries[i].v);
         }
     }
 }
@@ -187,6 +214,15 @@ static const UType type_ushape = {
     .destroy       = NULL,
 };
 
+static const UType type_ushapemap = {
+    .type_tag      = UTYPE_SHAPE_MAP,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UShapeMap",
+    .walk_payload  = walk_ushapemap,
+    .destroy       = NULL,
+};
+
 static const UType type_uprops = {
     .type_tag      = UTYPE_PROPS,
     .flags         = 0u,
@@ -235,6 +271,7 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_OBJECT]          = (UType *)&type_uobject;
     vm->type_table[UTYPE_PROTOS]          = (UType *)&type_uprotos;
     vm->type_table[UTYPE_SHAPE]           = (UType *)&type_ushape;
+    vm->type_table[UTYPE_SHAPE_MAP]       = (UType *)&type_ushapemap;
     vm->type_table[UTYPE_PROPS]           = (UType *)&type_uprops;
     vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
