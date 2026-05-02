@@ -361,6 +361,21 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
                                     USymbol *name, uint8_t flag_bit,
                                     UValue value);
 
+/* === T36: GC root provider for atom singletons + module instances ===
+ *
+ * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Registered via
+ * urbi_gc_register_root_provider in uvm_init after urbi_object_builtin_types_init.
+ * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
+ * vm->root_shape, and every UModuleInstance reachable from
+ * vm->module_instances_head.  Each non-NULL cell is shaded gray directly via
+ * gc_shade_gray (the cells are direct UCell pointers, not UValue slots — the
+ * mark_root_callback only handles UVAL_CLOSURE / UVAL_OBJECT slots).
+ *
+ * Once registered, the manual urbi_pin calls on atom singletons (T8) become
+ * load-bearing only for cycles BEFORE this provider runs (i.e. mid-init
+ * allocations); after first MARK_ROOTS the root walker keeps them alive. */
+void urbi_object_register_gc_roots(struct UVM *vm);
+
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
     if (obj->protos == 0u) return 0u;

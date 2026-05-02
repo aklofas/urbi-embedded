@@ -5,9 +5,10 @@
  *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-prototype-chain-representation-design.md §3, §4.1, §8.1
  *
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
- * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  Each is pinned
- * via urbi_pin so that GC cycles before the T36 root-provider lands cannot
- * reclaim them.
+ * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root
+ * provider (m4_object_roots_walker, registered via urbi_object_register_gc_roots
+ * in uvm_init) keeps the singletons alive across GC cycles by shading each
+ * non-NULL vm->atom_* field directly during MARK_ROOTS.
  *
  * The single-tag prototype encoding `(root << 1) | 1` used in
  * urbi_object_atom matches the canonical form decoded by UPROTOS_FOREACH
@@ -18,8 +19,9 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
+#include "object/umoduleinstance.h"  /* T36: walk module_instances_head */
 #include "uvm.h"
-#include "urbi/gc.h"      /* urbi_gc_alloc + urbi_pin */
+#include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
@@ -45,24 +47,6 @@ next_id(UVM *vm)
         urbi_panic("URBI_FATAL_OBJECT_ID_EXHAUSTED");
     }
     return ++vm->next_object_id;
-}
-
-/* === pin_uobject ===
- *
- * urbi_pin takes a UValue (M3 row 10 §4.2) and only acts on heap-bearing
- * UValKinds (currently UVAL_CLOSURE only — UVAL_OBJECT is a later M4
- * addition).  At T8 the cleanest way to pin a UObject* is to wrap it as
- * a synthetic UVAL_CLOSURE so urbi_pin's uvalue_is_heap check passes;
- * UClosure embeds UCell as its first member at offset 0, so the cast is
- * well-defined and the pin reaches the real cell's gc_byte.  This mirrors
- * the helper used in tests/unit/test_ugc_handle.c. */
-static void
-pin_uobject(UVM *vm, UObject *o)
-{
-    UValue v = {0};
-    v.kind = UVAL_CLOSURE;
-    v.v.p  = (void *)o;
-    urbi_pin(vm, v);
 }
 
 /* === urbi_object_alloc ===
@@ -215,10 +199,10 @@ urbi_object_root(struct UVM *vm)
     /* protos already 0 (empty form) from urbi_object_alloc. */
     vm->atom_object = o;
 
-    /* Pin so GC won't collect — host-handle table from M3 row 10 §4.2.
-     * T36's root provider also covers this, but pinning at creation keeps
-     * semantics defensible during partial wiring. */
-    pin_uobject(vm, o);
+    /* T36: m4_object_roots_walker (registered via urbi_object_register_gc_roots
+     * in uvm_init) keeps this singleton alive across collection cycles by
+     * shading vm->atom_object directly during MARK_ROOTS.  No explicit pin
+     * needed — replaces the synthetic UVAL_CLOSURE wrapper trick used pre-T36. */
     return o;
 }
 
@@ -307,7 +291,7 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
     urbi_object_set_protos_single(vm, o, root);
     *slot = o;
 
-    pin_uobject(vm, o);
+    /* T36: kept alive by m4_object_roots_walker (see urbi_object_root). */
     return o;
 }
 
@@ -1056,4 +1040,58 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
     }
 
     return 0;
+}
+
+/* === T36: GC root provider for atom singletons + UModuleInstance list ===
+ *
+ * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Three new root sources:
+ *   1. Atom-family singletons (vm->atom_object .. vm->atom_symbol).
+ *   2. The root shape (vm->root_shape).
+ *   3. UModuleInstance chain reachable from vm->module_instances_head.
+ *
+ * Each is a direct UCell pointer (not a UValue), so we shade via
+ * gc_shade_gray rather than calling cb (mark_root_callback acts on UValue
+ * slots — UVAL_CLOSURE / UVAL_OBJECT — which doesn't fit the singleton
+ * pointers held in UVM fields).  The cb / ctx parameters are unused; their
+ * presence keeps the UGcRootProviderFn signature uniform across providers.
+ *
+ * Children are reached via the registered walkers in src/object/utypes_init.c:
+ *   - walk_uobject shades shape, slots, and the proto chain
+ *   - walk_ushape shades parent + transitions + props_table contents
+ *   - walk_umoduleinstance shades the proto_instances UProtoInstanceArr
+ * Once a UModuleInstance is alive, its UProtoInstance entries (containing UIC
+ * caches) keep the receiver shapes / slot pointers / uprops cached entries
+ * reachable through walk_uprotoinstance (T22+ wiring lands on cache fill). */
+static void
+m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
+
+    /* Atom-family singletons. */
+    if (vm->atom_object  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_object);
+    if (vm->atom_integer != NULL) gc_shade_gray(vm, (UCell *)vm->atom_integer);
+    if (vm->atom_float   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_float);
+    if (vm->atom_string  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_string);
+    if (vm->atom_list    != NULL) gc_shade_gray(vm, (UCell *)vm->atom_list);
+    if (vm->atom_dict    != NULL) gc_shade_gray(vm, (UCell *)vm->atom_dict);
+    if (vm->atom_tag     != NULL) gc_shade_gray(vm, (UCell *)vm->atom_tag);
+    if (vm->atom_event   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_event);
+    if (vm->atom_symbol  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_symbol);
+
+    /* Root shape. */
+    if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
+
+    /* UModuleInstance chain (each cell's IC tables + proto_instances are
+     * traced by walk_umoduleinstance / walk_uprotoinstance). */
+    for (UModuleInstance *mi = vm->module_instances_head;
+         mi != NULL;
+         mi = mi->next_in_vm) {
+        gc_shade_gray(vm, (UCell *)mi);
+    }
+}
+
+void
+urbi_object_register_gc_roots(struct UVM *vm)
+{
+    urbi_gc_register_root_provider(vm, m4_object_roots_walker);
 }

@@ -9,6 +9,9 @@
  *   - Walk completes without crash on an empty-but-initialised VM
  *   - Walk completes without crash after a realm is created
  *
+ * T36: extends with a test that the M4 root provider keeps atom singletons
+ * + the root shape alive across a full GC cycle (no manual urbi_pin).
+ *
  * Provider walker internals (sched, realm, intern, host_handle) are
  * exercised indirectly; their M4/M5 "reaches strand registers" and "reaches
  * realm bindings" aspects require UValue helpers that don't exist yet.
@@ -19,6 +22,9 @@
 #include "utest.h"
 #include "uvm.h"
 #include "urbi/gc.h"
+#include "urbi/object.h"            /* T36: urbi_object_root, urbi_object_atom */
+#include "object/uobject.h"         /* T36: UObject, URBI_ATOM_INTEGER */
+#include "object/ushape.h"          /* T36: urbi_shape_root */
 #include "gc/ugc_incremental.h"
 #include "realm/urealm.h"
 #include <stdlib.h>
@@ -143,6 +149,74 @@ UTEST(walk_roots_t26_mark_roots_phase_transition)
     uvm_destroy(&vm);
 }
 
+/* ===== T36: M4 root provider keeps atom singletons + root_shape alive =====
+ *
+ * Verifies that after the manual urbi_pin calls were removed (T36), the
+ * registered m4_object_roots_walker is the load-bearing reachability path:
+ * a full GC cycle does NOT reclaim atom_object / atom_integer / root_shape.
+ *
+ * Mechanism: peek into vm->all_cells_head's sidecar list (private layout
+ * mirrored locally — same trick test_ugc_object_cells.c uses) to verify
+ * each cell pointer is still present after urbi_gc_collect. */
+
+typedef struct M4MirrorNode {
+    void   *cell;
+    size_t  size;
+    struct M4MirrorNode *next;
+    struct M4MirrorNode *next_gray;
+} M4MirrorNode;
+
+static int cell_present(UVM *vm, UCell *target)
+{
+    M4MirrorNode *n = (M4MirrorNode *)(void *)vm->all_cells_head;
+    while (n != NULL) {
+        if (n->cell == (void *)target) return 1;
+        n = n->next;
+    }
+    return 0;
+}
+
+UTEST(walk_roots_t36_m4_object_singletons_survive_gc)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Touch the atom singletons + root shape so they exist. */
+    UObject *root      = urbi_object_root(&vm);
+    UObject *integer   = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UShape  *root_shp  = urbi_shape_root(&vm);
+
+    UASSERT(root != NULL);
+    UASSERT(integer != NULL);
+    UASSERT(root_shp != NULL);
+
+    /* Pre-condition: each cell is on the all-cells list. */
+    UASSERT(cell_present(&vm, (UCell *)root));
+    UASSERT(cell_present(&vm, (UCell *)integer));
+    UASSERT(cell_present(&vm, (UCell *)root_shp));
+
+    /* Force a full mark+sweep cycle.  Without the T36 root provider these
+     * cells would be reclaimed (T36 removed the manual urbi_pin).  With it,
+     * MARK_ROOTS shades each via gc_shade_gray and they survive sweep. */
+    urbi_gc_collect(&vm);
+    UASSERT_EQ(urbi_gc_phase(&vm), (int)GC_PHASE_IDLE);
+
+    /* Post-condition: the cells are still alive. */
+    UASSERT(cell_present(&vm, (UCell *)root));
+    UASSERT(cell_present(&vm, (UCell *)integer));
+    UASSERT(cell_present(&vm, (UCell *)root_shp));
+
+    /* Run a second cycle — proves the surviving cells went back to the
+     * current_white at end of cycle 1 and get re-marked on cycle 2 (no
+     * "stuck-black" pathology). */
+    urbi_gc_collect(&vm);
+    UASSERT(cell_present(&vm, (UCell *)root));
+    UASSERT(cell_present(&vm, (UCell *)integer));
+    UASSERT(cell_present(&vm, (UCell *)root_shp));
+
+    uvm_destroy(&vm);
+}
+
 /* === Suite entry point === */
 
 void test_ugc_walk_roots_suite(void)
@@ -158,4 +232,6 @@ void test_ugc_walk_roots_suite(void)
               walk_roots_t26_walk_with_realm);
     utest_run("walk_roots_t26_mark_roots_phase_transition",
               walk_roots_t26_mark_roots_phase_transition);
+    utest_run("walk_roots_t36_m4_object_singletons_survive_gc",
+              walk_roots_t36_m4_object_singletons_survive_gc);
 }

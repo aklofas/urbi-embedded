@@ -188,6 +188,14 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * vm->type_table[].  Built-in tags can't go through urbi_register_type
      * (which guards tags < UTYPE_HOST_BASE per src/utype.c). */
     urbi_object_builtin_types_init(vm);
+
+    /* T36: register the M4 GC root provider for atom singletons +
+     * vm->root_shape + the UModuleInstance chain.  Replaces the manual
+     * urbi_pin calls on atom singletons that lived in T8.  Must come
+     * after the type-table setup so the walker's gc_shade_gray invocations
+     * find a registered UType for each cell. */
+    urbi_object_register_gc_roots(vm);
+
     vm->handle_table         = NULL;
     vm->handle_table_cap     = 0u;
     vm->handle_table_next_id = 0u;
