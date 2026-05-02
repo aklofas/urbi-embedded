@@ -135,26 +135,47 @@ UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     uvm_destroy(&vm);
 }
 
-/* ===== Test 4: UShape walker traces parent + props_table children ===== */
+/* ===== Test 4: UShape walker traces parent + props_table children =====
+ *
+ * Test-local root provider: shades a single UCell* held in a file-static
+ * pointer.  The provider mechanism normally walks UValue slots via the
+ * mark callback; for direct UCell-headed roots like UShape* we bypass cb
+ * and call gc_shade_gray directly (same routine the cb ultimately calls
+ * for heap-bearing UValues).  Using gc_shade_gray instead of touching
+ * gc_byte directly keeps the cell on the gray work-list so the mark
+ * phase exercises its walker. */
+static UCell *g_test_root_cell = NULL;
+
+static void test_root_provider(UVM *vm, UGcRootCallback cb, void *ctx) {
+    (void)cb; (void)ctx;
+    if (g_test_root_cell != NULL) {
+        gc_shade_gray(vm, g_test_root_cell);
+    }
+}
+
+/* Sidecar mirror — only the `cell` field is read here, used to verify a
+ * given UCell* is still in vm->all_cells_head after sweep. */
+static int cell_is_alive(UVM *vm, UCell *target) {
+    MirrorNode *n = (MirrorNode *)(void *)vm->all_cells_head;
+    while (n != NULL) {
+        if (n->cell == target) return 1;
+        n = n->next;
+    }
+    return 0;
+}
 
 /* Build a UShape with a parent UShape and one UProps in its props_table.
- * Pin the child cells (UGC_IS_PINNED) so they stay alive across the
- * sweep; verify they survive while the dead intermediate cell does not.
- *
- * This test is the operational shape of the walker: it ensures the
- * UShape walker actually visits parent + props_table[i] (otherwise the
- * survival counts wouldn't match — pinning alone keeps cells alive but
- * the walker still has to call shade so the mark phase paints them
- * black before sweep re-paints to current_white). */
+ * Register a root provider that shades the leaf shape; after a full GC
+ * cycle, parent and child_props must survive — proving the UShape walker
+ * actually shaded them via parent / props_table[0]. */
 UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
+    urbi_gc_register_root_provider(&vm, test_root_provider);
 
-    /* Allocate the props_table backing array as a separate cell.  At M4
-     * baseline this is just a UCell-tagged blob (the per-shape props_table
-     * is a UProps**, not a GC cell itself; later tasks may relocate it).
-     * For this test we only care that the UShape walker traces the
-     * direct UProps* entries it dereferences. */
+    /* Allocate child cells first so they live earlier on all_cells_head
+     * than the parent shape; the walker order is independent of list
+     * order, so this only documents the layout. */
     UProps *child_props = (UProps *)urbi_gc_alloc(&vm, sizeof(UProps),
                                                   UTYPE_PROPS);
     UShape *parent     = (UShape *)urbi_gc_alloc(&vm, sizeof(UShape),
@@ -166,71 +187,74 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
                                             UTYPE_SHAPE);
     UASSERT(shape != NULL);
 
-    /* Pin the props_table backing storage (host-side test array) — not a
-     * GC cell, lives outside the heap, freed by the test on exit. */
+    /* props_table backing storage: host-side test array, not GC-managed.
+     * The walker only dereferences the UProps* entries it contains. */
     UProps *props_table[1];
     props_table[0] = child_props;
     shape->parent      = parent;
     shape->props_table = props_table;
     shape->count       = 1u;
 
-    /* Pin shape so it's a root for the cycle; without it shape itself
-     * would be reclaimed on cycle 1 (no other roots reference it). */
-    ((UCell *)shape)->gc_byte |= UGC_IS_PINNED;
+    /* Install shape as the only test root.  After the cycle, the mark
+     * phase shades shape gray, walks it (shading parent + child_props),
+     * and the sweep reclaims nothing reachable from the root. */
+    g_test_root_cell = (UCell *)shape;
 
-    /* Run a full GC cycle: shape (pinned) survives; the walker is
-     * invoked when shape transitions to gray during sweep's re-mark
-     * pass and traces parent + props_table[0]. */
     urbi_gc_collect(&vm);
 
-    /* Sweep complete; phase back to IDLE. */
     UASSERT_EQ(urbi_gc_phase(&vm), (int)GC_PHASE_IDLE);
 
-    /* shape is pinned so it always survives.  parent and child_props
-     * are NOT pinned — they survive only if the mark phase reached them
-     * via the shape walker.  At M3 sweep's pinned-survives logic re-paints
-     * the pinned cell to current_white but doesn't trace its children
-     * via the walker (mark roots is what does that, and shape isn't a
-     * root).  So at this task parent + child_props are reclaimed.
-     *
-     * The minimum invariant we test here: the cycle completes without
-     * panic, and the pinned shape pointer is still valid (gc_byte still
-     * carries UGC_IS_PINNED).  Stronger reachability assertions land
-     * once root-provider integration for objects ships at later M4 tasks
-     * (e.g. T22 SLOTHANDLE root provider). */
-    UASSERT(((UCell *)shape)->gc_byte & UGC_IS_PINNED);
+    /* All three cells must survive: the walker shaded parent + child_props
+     * via the shape's parent and props_table fields.  If the walker were
+     * a no-op (or skipped these fields) parent and child_props would be
+     * dead-white at sweep time and reclaimed. */
+    UASSERT(cell_is_alive(&vm, (UCell *)shape));
+    UASSERT(cell_is_alive(&vm, (UCell *)parent));
+    UASSERT(cell_is_alive(&vm, (UCell *)child_props));
 
-    /* Defensive: the walker MUST have been called on shape during the
-     * sweep's re-paint.  We can't directly observe that, but the cycle
-     * completing without a fall-through (no t->walk_payload check) is
-     * the load-bearing signal — the test would crash if the walker
-     * dereferenced a NULL field or hit an unhandled tag. */
-
+    /* Clear the root before destroy so cleanup doesn't re-shade a freed
+     * cell (uvm_destroy frees all live cells unconditionally). */
+    g_test_root_cell = NULL;
     uvm_destroy(&vm);
 }
 
-/* ===== Test 5: UProtos walker iterates items[] without crashing ===== */
-
-UTEST(ugc_object_cells_uprotos_walker_iterates_items) {
+/* ===== Test 5: UProtos walker traces items[] entries =====
+ *
+ * Allocate a UProtos block with two non-NULL UObject* entries (and one
+ * NULL slot to exercise the skip path).  Root the UProtos via the test
+ * provider; after a full cycle the two child UObjects must survive,
+ * proving the walker shaded items[i]. */
+UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
+    urbi_gc_register_root_provider(&vm, test_root_provider);
 
-    /* Allocate a UProtos block sized for 3 items.  All items are NULL
-     * (zero-init by urbi_gc_alloc); the walker must skip NULL entries. */
+    UObject *child0 = (UObject *)urbi_gc_alloc(&vm, sizeof(UObject),
+                                               UTYPE_OBJECT);
+    UObject *child1 = (UObject *)urbi_gc_alloc(&vm, sizeof(UObject),
+                                               UTYPE_OBJECT);
+    UASSERT(child0 != NULL);
+    UASSERT(child1 != NULL);
+
     UProtos *up = (UProtos *)urbi_gc_alloc(
             &vm, sizeof(UProtos) + 3u * sizeof(UObject *),
             UTYPE_PROTOS);
     UASSERT(up != NULL);
-    up->n = 3u;
+    up->n        = 3u;
+    up->items[0] = child0;
+    up->items[1] = NULL;     /* exercise the NULL-skip path */
+    up->items[2] = child1;
 
-    /* Pin so it survives the cycle and the walker is exercised. */
-    ((UCell *)up)->gc_byte |= UGC_IS_PINNED;
+    g_test_root_cell = (UCell *)up;
 
     urbi_gc_collect(&vm);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (int)GC_PHASE_IDLE);
-    UASSERT(((UCell *)up)->gc_byte & UGC_IS_PINNED);
+    UASSERT(cell_is_alive(&vm, (UCell *)up));
+    UASSERT(cell_is_alive(&vm, (UCell *)child0));
+    UASSERT(cell_is_alive(&vm, (UCell *)child1));
 
+    g_test_root_cell = NULL;
     uvm_destroy(&vm);
 }
 
@@ -245,6 +269,6 @@ void test_ugc_object_cells_suite(void) {
               ugc_object_cells_full_cycle_reclaims_unreferenced);
     utest_run("ugc_object_cells: ushape walker traces children",
               ugc_object_cells_ushape_walker_traces_children);
-    utest_run("ugc_object_cells: uprotos walker iterates items",
-              ugc_object_cells_uprotos_walker_iterates_items);
+    utest_run("ugc_object_cells: uprotos walker traces items",
+              ugc_object_cells_uprotos_walker_traces_items);
 }

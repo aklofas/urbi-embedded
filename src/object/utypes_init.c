@@ -5,7 +5,7 @@
  * Built-in tags (1..UTYPE_HOST_BASE-1) cannot be registered through
  * urbi_register_type per src/utype.c §guard.  This file owns direct
  * vm->type_table[tag] = &descriptor writes for the M4 cell types and is
- * called from uvm_init after urbi_gc_init.
+ * called from uvm_init after vm->type_table[] has been zeroed.
  *
  * Walker shape (per pre-M4 prototype-chain spec §6 + USlot/UProps spec §4):
  *   UObject  walks shape (direct UCell*) + each USlot UValue payload via cb.
@@ -31,6 +31,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
+#include "object/utypes_init.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "uvm.h"
@@ -223,7 +224,7 @@ static const UType type_uproto_instance = {
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
  * Built-in tags can't go through urbi_register_type (which guards against
  * tags < UTYPE_HOST_BASE per src/utype.c).  Called from uvm_init after
- * urbi_gc_init has zeroed type_table[]. */
+ * vm->type_table[] has been zeroed. */
 void
 urbi_object_builtin_types_init(struct UVM *vm)
 {

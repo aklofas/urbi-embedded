@@ -24,7 +24,7 @@
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
-#include "object/ushape.h" /* urbi_object_builtin_types_init (M4) */
+#include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
