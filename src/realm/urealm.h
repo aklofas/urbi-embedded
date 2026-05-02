@@ -66,7 +66,17 @@ typedef struct URealm {
     /* Strand ownership (T38): singly-linked list of all UStrand objects
      * created under this realm via urbi_strand_create.  Threaded via
      * UStrand.next_in_realm.  Walked by urbi_realm_destroy to free
-     * all heap-allocated strands when the realm is torn down. */
+     * all heap-allocated strands when the realm is torn down.
+     *
+     * GC walker contract (pre-M4 GC strand-walker spec §6.1):
+     *   strands_head MUST contain every live strand whose register window
+     *   may hold GC-managed UValues.  Scheduler implementations are
+     *   responsible for maintaining this invariant — the GC walker visits
+     *   every strand on this list (with the DEAD-state filter applied
+     *   inside strand_walk_roots).  This decouples GC correctness from any
+     *   single scheduler's internal queues (cooperative ready/sleep,
+     *   future priority bands, mutex/event wait queues, ...).
+     *   See docs/internals/scheduler-design.md for the full contract. */
     struct UStrand *strands_head;
 } URealm;
 
