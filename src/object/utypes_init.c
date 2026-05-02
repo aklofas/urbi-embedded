@@ -25,8 +25,9 @@
  *            walker (which iterates o->slots[0..shape->count] via cb).
  *            The wrapper cell stays alive because walk_uobject shades it
  *            via offsetof(USlotArray, entries) recovery (T26).
- *   USlotHandle / UModuleInstance / UProtoInstance — no-op walkers at this
- *            task.  Children traced once owning data lands (later M4 tasks).
+ *   USlotHandle walks owner (UObject*); shape_at_create + name are
+ *            reachable transitively through the owner.  T37.
+ *   UModuleInstance / UProtoInstance — see walkers below.
  *
  * cb is the GC's own mark_root_callback (see src/gc/ugc_incremental.c) —
  * it knows how to shade only those UValKinds that carry a heap cell.  At
@@ -40,6 +41,7 @@
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "object/umoduleinstance.h"
+#include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
@@ -197,13 +199,31 @@ walk_uprops(struct UVM *vm, void *payload,
 /* === walk_noop ===
  *
  * No-op walker for cell types whose payload is fully described but whose
- * children-walk lands at a later M4 task (USlotHandle remains here at T16;
- * UModuleInstance + UProtoInstance get real walkers below). */
+ * children-walk lands at a later M4 task. */
 static void
 walk_noop(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
 {
     (void)vm; (void)payload; (void)cb; (void)ctx;
+}
+
+/* === walk_uslothandle (T37) ===
+ *
+ * Strong reference to owner per pre-M4 USlot/UProps spec §7.6: shading
+ * h->owner keeps the holding UObject alive as long as the handle is
+ * reachable.  shape_at_create + name are reachable transitively through
+ * h->owner (owner->shape's lineage carries USymbol* keys via UShape.name,
+ * and USymbol is interned and never collected). */
+static void
+walk_uslothandle(struct UVM *vm, void *payload,
+                 UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;   /* direct-pointer walk doesn't go through cb */
+
+    USlotHandle *h = (USlotHandle *)((UCell *)payload - 1);
+    if (h->owner != NULL) {
+        gc_shade_gray(vm, (UCell *)h->owner);
+    }
 }
 
 /* === walk_umoduleinstance (T16) ===
@@ -319,7 +339,7 @@ static const UType type_uslothandle = {
     .flags         = 0u,
     .payload_size  = 0u,
     .name          = "USlotHandle",
-    .walk_payload  = walk_noop,
+    .walk_payload  = walk_uslothandle,
     .destroy       = NULL,
 };
 

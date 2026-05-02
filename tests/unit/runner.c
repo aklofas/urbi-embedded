@@ -77,6 +77,7 @@ extern void test_pipe_budget_exhaust_suite(void);
 extern void test_determinism_two_runs_suite(void);
 extern void test_determinism_tunable_pin_suite(void);
 extern void test_uobject_suite(void);
+extern void test_uslothandle_suite(void);
 extern void test_ushape_suite(void);
 extern void test_uic_suite(void);
 extern void test_topology_gen_suite(void);
@@ -136,6 +137,7 @@ static const struct suite_entry suites[] = {
     {"determinism_two_runs",       test_determinism_two_runs_suite},
     {"determinism_tunable_pin",    test_determinism_tunable_pin_suite},
     {"uobject",                    test_uobject_suite},
+    {"uslothandle",                test_uslothandle_suite},
     {"ushape",                     test_ushape_suite},
     {"uic",                        test_uic_suite},
     {"topology_gen",               test_topology_gen_suite},
