@@ -2342,6 +2342,36 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     return fs;
 }
 
+/* M4 T15: assign the next IC index for the current function.  Allocates
+ * fs->ic_names lazily in 16/32/64/128/256-slot chunks via the module
+ * allocator (matches the rest of the emitter — funcstate itself is
+ * arena-allocated, but variable-sized side tables go through the module
+ * allocator so they survive into the proto and are freed via
+ * umodule_proto_destroy_buffers). */
+int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
+    if (e == NULL || e->current_fs == NULL) return -1;
+    UFuncState *fs = e->current_fs;
+    if (fs->ic_next >= 256u) {
+        e->error = EMIT_TOO_MANY_IC_SITES;
+        return -1;
+    }
+    if (fs->ic_next >= fs->ic_names_cap) {
+        uint16_t new_cap = (fs->ic_names_cap == 0u) ? 16u
+            : (fs->ic_names_cap < 128u ? (uint16_t)(fs->ic_names_cap * 2u) : 256u);
+        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
+        USymbol **fresh = (USymbol **)alloc(fs->ic_names,
+                                            (size_t)new_cap * sizeof(USymbol *),
+                                            e->module->alloc_ud);
+        if (fresh == NULL) { e->error = EMIT_OOM; return -1; }
+        fs->ic_names = fresh;
+        fs->ic_names_cap = new_cap;
+    }
+    int idx = (int)fs->ic_next++;
+    fs->ic_names[idx] = name;
+    return idx;
+}
+
 UFuncState *uemit_close_function(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) return NULL;
@@ -2350,7 +2380,51 @@ UFuncState *uemit_close_function(UEmitter *e) {
         UProto *p = (UProto *)fs->target_proto;
         p->max_reg  = fs->max_reg_seen;
         p->nupvals  = (uint8_t)fs->nupvalues;
+
+        /* M4 T15: copy IC names side table into the UProto.  Use the
+         * proto's own allocator (inherited from the module at
+         * umodule_alloc_nested_proto time); the resulting array is freed
+         * by umodule_proto_destroy_buffers. */
+        p->ic_count = fs->ic_next;
+        if (p->ic_count > 0u) {
+            UModuleAllocFn palloc = p->alloc_fn;
+#if __STDC_HOSTED__
+            if (palloc == NULL) palloc = emit_alloc_for(e->module);
+#endif
+            if (palloc == NULL) {
+                e->error = EMIT_OOM;
+            } else {
+                USymbol **dst = (USymbol **)palloc(NULL,
+                    (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
+                if (dst == NULL) {
+                    e->error = EMIT_OOM;
+                    p->ic_count = 0;
+                    p->ic_names = NULL;
+                } else {
+                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                        dst[i] = fs->ic_names[i];
+                    }
+                    p->ic_names = dst;
+                }
+            }
+        } else {
+            p->ic_names = NULL;
+        }
     }
+    /* Always free the funcstate-side IC array (allocated via the module
+     * allocator).  Top-level funcstates never have a target_proto and so
+     * have nowhere to copy the names — we still free them to avoid a
+     * leak should an emit path ever call uemit_assign_ic_index at top
+     * level (no opcode currently does, but the API is callable). */
+    if (fs->ic_names != NULL) {
+        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        if (alloc != NULL) {
+            alloc(fs->ic_names, 0, e->module->alloc_ud);
+        }
+        fs->ic_names = NULL;
+        fs->ic_names_cap = 0;
+    }
+
     /* Restore prev_line to a sentinel so the parent proto's next instruction
      * bootstraps a fresh abs checkpoint after re-entering. This is a subtle
      * correctness point: without this reset, the first instruction of the
