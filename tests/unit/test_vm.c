@@ -6,6 +6,7 @@
 #include "umodule.h"
 #include "uarena.h"
 #include "uast.h"
+#include "uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
@@ -1054,6 +1055,61 @@ UTEST(vm_op_ret_nested_call_routes_through_walker) {
     UASSERT_EQ(7, out.v.i);
 }
 
+/* === T22 plumbing: UClosure.proto_inst === */
+
+UTEST(vm_uclosure_carries_proto_inst_field) {
+    /* Pin the new M4 field exists and is zero-initialized when an OP_CLOSURE
+     * runs against a uvm_run transient strand (no UModuleInstance bound at
+     * the M4 baseline — full module-instance wiring lands at a later task,
+     * see uclosure.h field comment). */
+    UValue out;
+    /* `var f = function() { 1 }; f` — last expression returns the closure
+     * itself.  vm->last_return_closure is preserved for inspection. */
+    UVM vm;
+    ULexer lex;
+    const char *src = "var f = function() { 1 }; f";
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue nil = {0};
+    out = nil;
+    UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
+    UASSERT_EQ((int)UVM_OK, (int)uvm_run(&vm, &module, &out));
+    UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
+    UClosure *cl = (UClosure *)out.v.p;
+    UASSERT(cl != NULL);
+    /* proto_inst is NULL at the M4 baseline — vm_alloc_closure zero-fills
+     * the cell and no module-instance binding has been wired yet.  This
+     * test pins that contract; it will tighten when later M4 tasks land
+     * the binding. */
+    UASSERT(cl->proto_inst == NULL);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_op_getslot_diagnoses_when_no_proto_inst_bound) {
+    /* `var o = nil; o.x` — emits OP_GETSLOT with the IC table required.
+     * uvm_run transient strands have no UModuleInstance bound (M4
+     * baseline), so the dispatch arm raises a clean diagnostic instead
+     * of dereferencing a NULL ic_table. */
+    UValue out;
+    UVMError rc = vm_pipeline_eval("var o = nil; o.x", &out);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
+}
+
 void test_vm_suite(void) {
     utest_run("vm_error_name covers all codes", vm_error_name_covers_all_codes);
     utest_run("uvm_init hosted NULL alloc falls back to stdlib shim",
@@ -1162,6 +1218,10 @@ void test_vm_suite(void) {
               vm_object_fields_initialized_to_v1_0_contract);
     utest_run("vm: OP_RET at top frame marks strand dead, delivers value",
               vm_op_ret_top_frame_marks_strand_dead);
+    utest_run("vm: UClosure carries proto_inst field (M4 plumbing)",
+              vm_uclosure_carries_proto_inst_field);
+    utest_run("vm: OP_GETSLOT diagnoses when no proto_inst bound",
+              vm_op_getslot_diagnoses_when_no_proto_inst_bound);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
               vm_op_ret_nested_call_routes_through_walker);
 }

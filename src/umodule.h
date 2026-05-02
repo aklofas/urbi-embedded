@@ -49,11 +49,15 @@ typedef enum {
     UVAL_STR     = 4,
     UVAL_CLOSURE = 5,             /* M2: function closure (proto + upvalues); runtime-only */
     UVAL_VOID    = 6,             /* M2: result of `&` separator; runtime-only */
-    UVAL_STRAND  = 7              /* M3: strand handle (OP_FORK_JOIN → OP_JOIN_WAIT); runtime-only.
+    UVAL_STRAND  = 7,             /* M3: strand handle (OP_FORK_JOIN → OP_JOIN_WAIT); runtime-only.
                                      Stores a UStrand* in v.p.  Walked by GC root walker:
                                      skipped at M3 (strands are sched-managed, not GC cells).
                                      TODO(M7+): revisit if strand handles become user-visible. */
-    /* 8-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
+    UVAL_OBJECT  = 8              /* M4: UObject pointer; runtime-only.  Stores a UObject* in v.p.
+                                     Receivers for OP_GETSLOT/OP_SETSLOT live in registers tagged
+                                     UVAL_OBJECT.  Heap-bearing for the GC barrier — UObject embeds
+                                     UCell as its first member, so uvalue_as_cell() works. */
+    /* 9-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
 } UValKind;
 
 typedef struct {

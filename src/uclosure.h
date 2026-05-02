@@ -17,8 +17,9 @@
 
 #include <stdint.h>
 
-#include "umodule.h"   /* UProto + forward typedef `UClosure` + UUpvalCell */
-#include "gc/ugc.h"    /* UCell (2 B) */
+#include "umodule.h"                       /* UProto + forward typedef `UClosure` + UUpvalCell */
+#include "gc/ugc.h"                        /* UCell (2 B) */
+#include "object/umoduleinstance.h"        /* UProtoInstance — M4: IC table per nested proto */
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Heap-allocated by OP_CLOSURE; lives until end-of-run via the strand's
@@ -36,6 +37,12 @@ struct UClosure {
     UCell             cell;        /* 2 B — type_tag + gc_byte at offset 0/1 */
     /* 6 B compiler-inserted padding before next pointer field */
     UProto           *proto;
+    UProtoInstance   *proto_inst;  /* M4 — points into the owning UModuleInstance's
+                                      proto_instances bulk; carries this closure's
+                                      IC table for OP_GETSLOT/OP_SETSLOT.  NULL when
+                                      no module instance is bound (e.g. uvm_run
+                                      transient strands at the M4 baseline; full
+                                      module-instance wiring lands at a later task). */
     struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
     uint8_t           nupvals;
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */

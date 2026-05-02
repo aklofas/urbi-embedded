@@ -134,27 +134,32 @@ void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
  *
- * At M3 baseline the only heap-bearing UValKind is UVAL_CLOSURE, which carries
- * a UClosure pointer stored in v.v.p.  All other kinds (NIL, INT, FLOAT, BOOL,
- * STR, VOID) are either inline scalars or not GC-managed via UCell.
+ * Heap-bearing UValKinds at M4: UVAL_CLOSURE (UClosure*) and UVAL_OBJECT
+ * (UObject*).  Both store a pointer in v.v.p; both embed UCell as the
+ * first struct member, so the cast in uvalue_as_cell is well-defined.
  *
- * TODO(M4+): extend uvalue_is_heap for UVAL_STRING (when strings move to heap),
- * UVAL_OBJECT, UVAL_ARRAY, UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
+ * Other kinds (NIL, INT, FLOAT, BOOL, STR, VOID, STRAND) are either inline
+ * scalars or not GC-managed via UCell.  STRAND deliberately skipped: M3
+ * strands are sched-managed, not GC cells.
+ *
+ * TODO(M5+): extend for UVAL_STRING (when strings move to heap), UVAL_ARRAY,
+ * UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
 
 static inline bool
 uvalue_is_heap(UValue v)
 {
-    return v.kind == UVAL_CLOSURE;
+    return v.kind == UVAL_CLOSURE || v.kind == UVAL_OBJECT;
 }
 
 static inline UCell *
 uvalue_as_cell(UValue v)
 {
     /* Caller must have checked uvalue_is_heap(v) first.
-     * UVAL_CLOSURE stores a UClosure* in v.v.p; we return it as UCell*.
-     * UClosure embeds UCell as its first member at offset 0 (M4 — see
-     * uclosure.h), so this cast is well-defined for real closure values
-     * as well as synthetic UCell objects allocated via urbi_gc_alloc. */
+     * UVAL_CLOSURE stores a UClosure* in v.v.p; UVAL_OBJECT stores a
+     * UObject* in v.v.p.  Both structs embed UCell as their first member
+     * at offset 0 (see uclosure.h, object/uobject.h), so this cast is
+     * well-defined for real heap values as well as synthetic UCell
+     * objects allocated via urbi_gc_alloc. */
     return (UCell *)v.v.p;
 }
 

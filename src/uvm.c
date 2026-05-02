@@ -26,6 +26,8 @@
 #include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
+#include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
+#include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -1228,17 +1230,180 @@ dispatch:
         }
 
         CASE(OP_GETSLOT) {
-            /* M4 slot read. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "GETSLOT: not implemented until M4");
-            HALT();
+            /* OP_GETSLOT ABC: R[A] := R[B].slot[ic_index].
+             *   A = dst_reg, B = recv_reg, C = ic_index.
+             *
+             * Fast path: linear scan of the IC entries for a (recv->shape,
+             * vm->topology_gen) match.  On hit, copy *slots[k] into R[A]
+             * (or, if FLAG_OGET set, dispatch the getter — currently raises
+             * a diagnostic; full getter dispatch lands when the frame-push
+             * wrapper API matures, see TODO below).
+             *
+             * Slow path: urbi_slot_get_slow walks the prototype chain,
+             * fills exactly one IC entry at ic->replace_cursor, and either
+             * copies the slot value to *out (no OGET) or signals OGET-flag
+             * present (caller would dispatch). */
+            uint32_t i = *s->pc;
+            uint8_t  dst_reg  = uinstr_a(i);
+            uint8_t  recv_reg = uinstr_b(i);
+            uint8_t  ic_index = uinstr_c(i);
+
+            /* Resolve the executing closure's UProtoInstance.  At M4
+             * baseline closures allocated via OP_CLOSURE inherit
+             * proto_inst from the parent (currently always NULL for
+             * uvm_run transient strands; full module-instance binding
+             * lands at a later M4 task — see uclosure.h field comment). */
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
+                             : s->entry_closure;
+            if (cur_cl == NULL || cur_cl->proto_inst == NULL
+                || cur_cl->proto_inst->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                HALT();
+            }
+            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+
+            if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: receiver is not an Object");
+                HALT();
+            }
+            UObject *recv = (UObject *)s->R[recv_reg].v.p;
+
+            /* Fast path: linear scan over ic->n entries. */
+            for (uint8_t k = 0; k < ic->n; k++) {
+                if (ic->recv_shapes[k]  == recv->shape
+                 && ic->topology_gen[k] == vm->topology_gen) {
+                    if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
+                        /* TODO(T39+): wire URBI_VM_DISPATCH_GETTER once the
+                         * frame-push wrapper for receiver+0-arg invocation
+                         * is defined.  Until then, getters are rejected at
+                         * dispatch with a clean diagnostic; corpus revival
+                         * fixtures (T42) exercise non-getter slot reads.
+                         * The IC entry itself was filled correctly by the
+                         * slow path on first install, so the diagnostic is
+                         * a runtime-only restriction, not a missing IC. */
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
+                        HALT();
+                    }
+                    s->R[dst_reg] = *ic->slots[k];
+                    NEXT();
+                }
+            }
+
+            /* Slow path. */
+            UValue v;
+            int rc = urbi_slot_get_slow(vm, recv, ic, &v);
+            if (rc != 0) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: slot lookup failed");
+                HALT();
+            }
+            /* Inspect the just-filled IC entry to decide if a getter is
+             * pending.  Same TODO as above — diagnose for now. */
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+                                        % URBI_IC_ENTRIES_PER_SITE);
+            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
+                HALT();
+            }
+            s->R[dst_reg] = v;
+            NEXT();
         }
 
         CASE(OP_SETSLOT) {
-            /* M4 slot write. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "SETSLOT: not implemented until M4");
-            HALT();
+            /* OP_SETSLOT ABC: R[B].slot[ic_index] := R[A].
+             *   A = src_reg, B = recv_reg, C = ic_index.
+             *
+             * Fast path: scan IC entries; on shape+topology match, dispatch
+             * setter (FLAG_OSET — currently diagnoses), reject CONSTANT, or
+             * write in place if FLAG_LOCAL.  A proto-chain hit (no LOCAL,
+             * no OSET) breaks out of the fast path so the slow path can do
+             * COW.
+             *
+             * Slow path: urbi_slot_set_slow walks the prototype chain and
+             * either installs a fresh local slot on recv (miss / COW) or
+             * fills the IC and writes through (local hit / setter pending). */
+            uint32_t i = *s->pc;
+            uint8_t  src_reg  = uinstr_a(i);
+            uint8_t  recv_reg = uinstr_b(i);
+            uint8_t  ic_index = uinstr_c(i);
+
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
+                             : s->entry_closure;
+            if (cur_cl == NULL || cur_cl->proto_inst == NULL
+                || cur_cl->proto_inst->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                HALT();
+            }
+            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+
+            if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: receiver is not an Object");
+                HALT();
+            }
+            UObject *recv = (UObject *)s->R[recv_reg].v.p;
+            UValue v = s->R[src_reg];
+
+            int slow_path = 1;
+            for (uint8_t k = 0; k < ic->n; k++) {
+                if (ic->recv_shapes[k]  == recv->shape
+                 && ic->topology_gen[k] == vm->topology_gen) {
+                    if (ic->flags[k] & URBI_SLOT_FLAG_OSET) {
+                        /* TODO(T39+): wire URBI_VM_DISPATCH_SETTER. */
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
+                        HALT();
+                    }
+                    if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "SETSLOT: cannot write to constant slot");
+                        HALT();
+                    }
+                    if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
+                        /* Direct in-place write.  Forward Dijkstra barrier
+                         * fires on the parent UObject (the cell containing
+                         * ic->slots[k]).  Cast UCell* via the pinned
+                         * UObject layout: the slot pointer must be inside
+                         * recv->slots[], so recv (which embeds UCell at
+                         * offset 0) is the parent cell. */
+                        urbi_gc_slot_write(vm, (UCell *)recv,
+                                           (uint32_t)((ic->slots[k] - recv->slots)),
+                                           v);
+                        *ic->slots[k] = v;
+                        slow_path = 0;
+                        break;
+                    }
+                    /* Proto-chain hit (no LOCAL, no OSET, not CONSTANT) →
+                     * fall to slow path for COW. */
+                    break;
+                }
+            }
+            if (!slow_path) {
+                NEXT();
+            }
+
+            /* Slow path. */
+            int rc = urbi_slot_set_slow(vm, recv, ic, v);
+            if (rc != 0) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: slot write failed (constant, OOM, or resolve overflow)");
+                HALT();
+            }
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+                                        % URBI_IC_ENTRIES_PER_SITE);
+            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
+                HALT();
+            }
+            NEXT();
         }
 
         /* --- M3 row 7 control-transfer opcodes (T10 real dispatch) --- */
