@@ -1955,6 +1955,7 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_CLOSURE_KEYWORD:    return "EMIT_CLOSURE_KEYWORD";
     case EMIT_LAZY_ON_METHOD:     return "EMIT_LAZY_ON_METHOD";
     case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
+    case EMIT_TOO_MANY_IC_SITES:  return "EMIT_TOO_MANY_IC_SITES";
     }
     return "EMIT_UNKNOWN";
 }
@@ -2003,6 +2004,7 @@ static const char *opname(const UOpcode op) {
     case OP_PUSH_FRAME_GUARD:     return "PUSH_FRAME_GUARD";
     case OP_RESUME:               return "RESUME";
     case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
+    case OP_INVOKE:               return "INVOKE";
     case OP_MAX:                  break;
     }
     return "OP?";

@@ -304,7 +304,10 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode);
  *
  * Thread safety: none at M4; same single-threaded constraint as the rest
  * of the v1.0 API. */
+#ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
+#define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
 typedef struct UModuleInstance UModuleInstance;
+#endif
 
 UModuleInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
 void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);

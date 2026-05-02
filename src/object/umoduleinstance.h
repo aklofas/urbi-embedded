@@ -68,6 +68,11 @@ extern "C" {
 
 struct UVM;
 
+#ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
+#define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
+typedef struct UModuleInstance UModuleInstance;
+#endif
+
 /* === UProtoInstance === */
 typedef struct UProtoInstance {
     UProto  *proto;          /* non-owning; NULL for the root-chunk entry */
@@ -86,19 +91,22 @@ typedef struct UProtoInstanceArr {
     UProtoInstance  entries[];     /* flexible array; trailing IC bytes follow */
 } UProtoInstanceArr;
 
-/* === UModuleInstance === */
-typedef struct UModuleInstance {
+/* === UModuleInstance ===
+ *
+ * Public typedef provided in include/urbi/urbi.h via a guarded forward decl;
+ * include that header before this one when both are needed. */
+struct UModuleInstance {
     UCell                    cell;            /* type_tag = UTYPE_MODULE_INSTANCE */
     /* 6 B compiler-inserted padding before module */
     UModule                 *module;          /* non-owning */
     struct UVM              *vm;              /* non-owning */
     UProtoInstanceArr       *proto_instances; /* non-owning; separate GC cell */
-    /* T30: per-VM list of all live UModuleInstance cells.  Threaded onto
+    /* Per-VM list of all live UModuleInstance cells.  Threaded onto
      * vm->module_instances_head at create time so the determinism checksum
      * (and any future cross-instance walker) can iterate every live IC
      * table without an out-of-band registry. */
     struct UModuleInstance  *next_in_vm;
-} UModuleInstance;
+};
 
 /* === API === */
 
