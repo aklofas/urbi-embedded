@@ -721,9 +721,12 @@ UTEST(uobject_lookup_safe_under_cycle) {
 }
 
 UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
-    /* Each top-level urbi_object_lookup call increments vm->lookup_id by
-     * exactly 1 (under non-rollover).  Two consecutive calls on a freshly
-     * allocated object should leave vm->lookup_id == initial + 2. */
+    /* Each top-level urbi_object_lookup call bumps vm->lookup_id under
+     * non-rollover.  Pre-T40 the bump count was exactly 1 per call; T40
+     * adds the GET_FALLBACK retry, so a miss now bumps twice (once for
+     * the original DFS, once for the fallback DFS).  Two consecutive
+     * miss-calls on a freshly allocated object therefore leave
+     * vm->lookup_id == initial + 4. */
     UVM vm;
     uvm_init(&vm, NULL, NULL);
     UASSERT_EQ((int)vm.lookup_id, 1);   /* uvm_init invariant per pre-M4 spec */
@@ -734,13 +737,14 @@ UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
     UValue out;
     out.kind = UVAL_NIL;
     UASSERT_EQ(urbi_object_lookup(&vm, o, NULL, &out), -1);
-    UASSERT_EQ((int)vm.lookup_id, 2);
+    UASSERT_EQ((int)vm.lookup_id, 3);   /* +1 for original, +1 for fallback retry (T40) */
 
     UASSERT_EQ(urbi_object_lookup(&vm, o, NULL, &out), -1);
-    UASSERT_EQ((int)vm.lookup_id, 3);
+    UASSERT_EQ((int)vm.lookup_id, 5);
 
-    /* The single object's stamp tracks the most recent call. */
-    UASSERT_EQ((int)o->lookup_stamp, 3);
+    /* The single object's stamp tracks the most recent stamp it received,
+     * which is the fallback-retry pass at the end of the second call. */
+    UASSERT_EQ((int)o->lookup_stamp, 5);
 
     uvm_destroy(&vm);
 }
@@ -753,7 +757,14 @@ UTEST(uobject_lookup_id_rollover_clears_stamps) {
      *
      * Triggered transparently from inside urbi_object_lookup when
      * (uint32_t)(lookup_id + 1) == 0, i.e. when lookup_id reaches a
-     * value whose low 32 bits are UINT32_MAX. */
+     * value whose low 32 bits are UINT32_MAX.
+     *
+     * T40 wrinkle: each top-level lookup call now bumps lookup_id twice
+     * on a miss (original DFS + fallback retry DFS).  The wrap protocol
+     * still gates each individual bump, so an internal rollover during
+     * the fallback retry triggers force_wrap mid-call.  This test sets
+     * lookup_id explicitly to UINT32_MAX to drive the wrap on entry to
+     * a call (rather than mid-call), keeping the assertion shape simple. */
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
@@ -769,23 +780,18 @@ UTEST(uobject_lookup_id_rollover_clears_stamps) {
     UASSERT(o1->lookup_stamp != 0u);
     UASSERT(o2->lookup_stamp != 0u);
 
-    /* Drive lookup_id close to the u32 rollover boundary.  Keep the high
-     * 32 bits at 0 so the wrap path is observable: arrange lookup_id so
-     * the next call would compute (uint32_t)(lookup_id + 1) == 0. */
-    vm.lookup_id = (uint64_t)UINT32_MAX - 1ull;
+    /* Drive lookup_id to UINT32_MAX so the very next bump tries to write
+     * (uint32_t)0 — i.e. force_wrap fires on entry to the next call. */
+    vm.lookup_id = (uint64_t)UINT32_MAX;
 
-    /* This call increments lookup_id to UINT32_MAX (no rollover yet). */
+    /* On entry: (UINT32_MAX + 1) low-32 == 0, force_wrap runs, lookup_id=1,
+     * all stamps cleared.  Inner lookup(o1, NULL) misses, stamps o1=1.
+     * Then T40 fallback retry: bump checks (1+1)=2 (no rollover), bump to 2,
+     * inner lookup(o1, "fallback") misses, re-stamps o1=2.  Returns -1. */
     UASSERT_EQ(urbi_object_lookup(&vm, o1, NULL, &out), -1);
-    UASSERT_EQ((int64_t)vm.lookup_id, (int64_t)UINT32_MAX);
-
-    /* Next call detects (uint32_t)(UINT32_MAX + 1) == 0 and force-wraps:
-     * clears every UObject.lookup_stamp + sets lookup_id = 1, then runs
-     * the lookup with the fresh id-1 stamp.  o1 ends up re-stamped with 1. */
-    UASSERT_EQ(urbi_object_lookup(&vm, o1, NULL, &out), -1);
-    UASSERT_EQ((int64_t)vm.lookup_id, 1);
-    UASSERT_EQ((int)o1->lookup_stamp, 1);
-    /* o2 was cleared by the wrap pass and never re-stamped (it wasn't
-     * the lookup target after the wrap), so its stamp stays 0. */
+    UASSERT_EQ((int64_t)vm.lookup_id, 2);
+    UASSERT_EQ((int)o1->lookup_stamp, 2);
+    /* o2 was cleared by the wrap pass and never re-stamped. */
     UASSERT_EQ((int)o2->lookup_stamp, 0);
 
     uvm_destroy(&vm);
@@ -904,6 +910,85 @@ UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
     uvm_destroy(&vm);
 }
 
+/* === T40: fallback retry on lookup miss ===
+ *
+ * Per pre-M2 §4.3.  On full-tree miss, urbi_object_lookup retries once
+ * with name = "fallback".  If that hits, the fallback's value flows back
+ * to the caller; if it misses too, the original miss stands.
+ *
+ * Cycle-safety: looking up "fallback" itself must not recurse — the
+ * retry is gated on (name != "fallback").
+ *
+ * Per the third-party-corpus-compatibility-audit B disposition v1.0 does
+ * NOT carry the legacy `call.message` reflection, so this test stores a
+ * plain UVAL_INT in the fallback slot.  The caller (here the test, real
+ * runtime: the OP_CALL site) is responsible for invoking it as a method
+ * if the value is a closure; here we just assert the value transferred. */
+
+UTEST(uobject_fallback_retry_on_miss) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+
+    USymbol *fallback_sym = (USymbol *)ustr_intern(&vm, "fallback", 8);
+    USymbol *bogus        = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
+    UASSERT(fallback_sym != NULL);
+    UASSERT(bogus != NULL);
+
+    /* Install a fallback slot holding UVAL_INT(99).  Real runtime would
+     * store a UClosure here; the lookup mechanism doesn't care. */
+    UValue v99;
+    v99.kind = UVAL_INT;
+    v99.v.i  = 99;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, fallback_sym, v99), 0);
+
+    /* Lookup of a missing name retries via "fallback" and succeeds with
+     * the fallback's value. */
+    UValue out;
+    out.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_object_lookup(&vm, o, bogus, &out), 0);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT_EQ((int)out.v.i, 99);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_fallback_lookup_of_fallback_itself_does_not_recurse) {
+    /* Looking up "fallback" on an object that doesn't have one must NOT
+     * trigger the retry (would recurse forever).  Returns -1 cleanly. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+
+    USymbol *fallback_sym = (USymbol *)ustr_intern(&vm, "fallback", 8);
+
+    UValue out;
+    out.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_object_lookup(&vm, o, fallback_sym, &out), -1);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
+    /* If the receiver has no "fallback" slot AND the original name misses,
+     * the retry also misses — overall result is -1. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *bogus = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
+
+    UValue out;
+    out.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_object_lookup(&vm, o, bogus, &out), -1);
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -962,4 +1047,10 @@ void test_uobject_suite(void) {
               uobject_set_local_slot_grows_slots_array_and_transitions_shape);
     utest_run("uobject: set_local_slot replaces existing value when present",
               uobject_set_local_slot_replaces_existing_value_when_present);
+    utest_run("uobject: fallback retry on lookup miss (T40)",
+              uobject_fallback_retry_on_miss);
+    utest_run("uobject: looking up 'fallback' itself does not recurse",
+              uobject_fallback_lookup_of_fallback_itself_does_not_recurse);
+    utest_run("uobject: no fallback slot → original miss",
+              uobject_fallback_no_fallback_slot_returns_miss);
 }

@@ -20,6 +20,7 @@
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "object/umoduleinstance.h"  /* T36: walk module_instances_head */
+#include "uintern.h"      /* T40: ustr_intern("fallback", ...) */
 #include "uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
@@ -559,9 +560,30 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     if (rc == 1) {
         return 0;   /* hit */
     }
-    /* Miss.  T40 lands the GET_FALLBACK retry path; at T12 a miss is
-     * simply reported. */
-    return -1;
+
+    /* T40: GET_FALLBACK retry per pre-M2 §4.3.  On full-tree miss, retry
+     * once with name = "fallback".  If fallback hits, return its value;
+     * the caller is responsible for invoking it as a method.  v1.0 does
+     * NOT implement the legacy `call.message` reflection layer (per
+     * third-party-corpus-compatibility-audit B disposition); fallback
+     * receives the bare value and must dispatch via plain function args.
+     *
+     * Cycle-safety: if `name` itself is "fallback", skip the retry —
+     * otherwise lookup of "fallback" missing on an object without one
+     * would recurse forever.  Bump lookup_id again so the second pass
+     * uses a fresh stamp against UObjects that were marked during the
+     * first pass; rollover-guard is identical to the entry path. */
+    USymbol *fb = (USymbol *)ustr_intern(vm, "fallback", 8);
+    if (name == fb) {
+        return -1;
+    }
+    if ((uint32_t)(vm->lookup_id + 1ull) == 0u) {
+        urbi_object_lookup_id_force_wrap(vm);
+    } else {
+        vm->lookup_id++;
+    }
+    rc = lookup_inner(vm, obj, fb, out);
+    return (rc == 1) ? 0 : -1;
 }
 
 /* clear_lookup_stamp_cb — urbi_gc_walk_all_cells callback that resets
