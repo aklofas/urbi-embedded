@@ -56,4 +56,23 @@ _Static_assert(sizeof(struct UIC) == 144,
     "UIC must be 144 B at default 4-entry, 64-bit pointers");
 #endif
 
+/* === T25: slow-path helpers ===
+ *
+ * Per pre-M4 GETSLOT/SETSLOT spec §6.3.  Called from the OP_GETSLOT /
+ * OP_SETSLOT dispatch arms when the inline-cache fast path misses
+ * (no shape+topology match).  Each helper resolves the slot via
+ * urbi_object_resolve_slot, fills exactly one IC entry at
+ * ic->replace_cursor, and returns 0/−1.  After fill the caller inspects
+ * ic->flags[(replace_cursor − 1) mod cap] to dispatch a getter/setter
+ * via URBI_VM_DISPATCH_GETTER / URBI_VM_DISPATCH_SETTER as needed; the
+ * helpers themselves never call into the VM dispatch loop. */
+
+struct UVM;
+/* UObject typedef is already in scope via "object/uobject.h" above. */
+
+int urbi_slot_get_slow(struct UVM *vm, UObject *recv, UIC *ic,
+                       UValue *out_value);
+int urbi_slot_set_slow(struct UVM *vm, UObject *recv, UIC *ic,
+                       UValue value);
+
 #endif /* UIC_H */

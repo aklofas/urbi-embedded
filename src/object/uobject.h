@@ -268,6 +268,26 @@ static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
 int  urbi_object_lookup(struct UVM *vm, UObject *obj, USymbol *name, UValue *out);
 void urbi_object_lookup_id_force_wrap(struct UVM *vm);
 
+/* === T25: resolve-slot helper (shared between IC slow path and USlotHandle) ===
+ *
+ * Per pre-M4 GETSLOT/SETSLOT spec §6.3.
+ *
+ * urbi_object_resolve_slot walks recv's prototype graph for `name` and on
+ * hit reports the holding UObject and the slot index in *holder->slots.
+ * Same DFS + lookup_stamp cycle-safety contract as urbi_object_lookup, but
+ * captures the (holder, index) pair for the IC slow path to fill cache
+ * entries that point directly at the storage cell.
+ *
+ * Returns:
+ *   1 — found (*out_holder + *out_index valid)
+ *   0 — miss (nothing written)
+ *  -1 — error (e.g. resolve-stack depth bound)
+ *
+ * Bumps vm->lookup_id on entry; honours the wrap protocol that
+ * urbi_object_lookup uses (force_wrap when the next id would be 0). */
+int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, USymbol *name,
+                             UObject **out_holder, uint32_t *out_index);
+
 /* === T26: install a local slot on a receiver ===
  *
  * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.

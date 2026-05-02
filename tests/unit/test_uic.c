@@ -15,6 +15,7 @@
 #include "object/uic.h"
 #include "object/umoduleinstance.h"
 #include "object/uobject.h"
+#include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "uintern.h"
 #include "umodule.h"
 #include "uvm.h"
@@ -218,6 +219,257 @@ UTEST(module_instance_invalid_args_return_null) {
     uvm_destroy(&vm);
 }
 
+/* === T25: slow-path helpers ===
+ *
+ * These tests exercise urbi_slot_get_slow / urbi_slot_set_slow at the
+ * library level — no VM dispatch required.  The full end-to-end OP_GETSLOT
+ * / OP_SETSLOT story is exercised at T42 by the legacy `.chk` revival
+ * fixtures (lookup, inheritance, slot-cow-const, shared-protos), so the
+ * dispatch-loop integration is verified there rather than reimplemented
+ * with synthetic UModule scaffolding here. */
+
+UTEST(get_slow_resolves_via_proto_walk_and_fills_ic) {
+    /* parent.bar = 123; child has parent as its proto.  child.bar must
+     * resolve via the prototype walk; the IC entry must record child's
+     * shape (not parent's) and clear FLAG_LOCAL (slot lives on parent). */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(parent != NULL); UASSERT(child != NULL);
+    urbi_object_set_protos_single(&vm, child, parent);
+
+    USymbol *bar = (USymbol *)ustr_intern(&vm, "bar", 3);
+    UASSERT(bar != NULL);
+
+    UValue v123;
+    v123.kind = UVAL_INT;
+    v123.v.i  = 123;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, bar, v123), 0);
+
+    UIC ic = {0};
+    ic.name = bar;
+
+    UValue out;
+    UASSERT_EQ(urbi_slot_get_slow(&vm, child, &ic, &out), 0);
+    UASSERT_EQ((int)out.v.i, 123);
+    UASSERT_EQ((int)ic.n, 1);
+    UASSERT(ic.recv_shapes[0] == child->shape);
+    UASSERT_EQ((int)(ic.flags[0] & URBI_SLOT_FLAG_LOCAL), 0);
+    UASSERT(ic.slots[0] == &parent->slots[0]);
+    UASSERT_EQ((int)ic.replace_cursor, 1);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(get_slow_local_hit_sets_flag_local) {
+    /* Receiver owns the slot directly — IC fill must record FLAG_LOCAL. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UValue v9;
+    v9.kind = UVAL_INT;
+    v9.v.i  = 9;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v9), 0);
+
+    UIC ic = {0};
+    ic.name = foo;
+
+    UValue out;
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, &out), 0);
+    UASSERT_EQ((int)out.v.i, 9);
+    UASSERT_EQ((int)ic.n, 1);
+    UASSERT(ic.recv_shapes[0] == o->shape);
+    UASSERT(ic.flags[0] & URBI_SLOT_FLAG_LOCAL);
+    UASSERT(ic.slots[0] == &o->slots[0]);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(get_slow_miss_returns_minus_one) {
+    /* No slot named foo anywhere on the chain → urbi_slot_get_slow returns
+     * -1 and does NOT fill the IC. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *missing = (USymbol *)ustr_intern(&vm, "missing", 7);
+
+    UIC ic = {0};
+    ic.name = missing;
+    UValue out;
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, &out), -1);
+    UASSERT_EQ((int)ic.n, 0);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(set_slow_does_cow_when_resolution_via_proto_chain) {
+    /* parent.bar = 0; child has parent as proto; set child.bar = 42.
+     * After the set: child has its own local slot bar = 42; parent.bar
+     * is unchanged at 0. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    urbi_object_set_protos_single(&vm, child, parent);
+
+    USymbol *bar = (USymbol *)ustr_intern(&vm, "bar", 3);
+    UValue v0;
+    v0.kind = UVAL_INT;
+    v0.v.i  = 0;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, bar, v0), 0);
+
+    /* Pre-condition: child has no local 'bar' yet. */
+    UASSERT_EQ((int)urbi_shape_find_slot(child->shape, bar), -1);
+
+    UIC ic = {0};
+    ic.name = bar;
+
+    UValue v42;
+    v42.kind = UVAL_INT;
+    v42.v.i  = 42;
+    UASSERT_EQ(urbi_slot_set_slow(&vm, child, &ic, v42), 0);
+
+    /* COW: child gained its own local 'bar' slot at index 0. */
+    int32_t cidx = urbi_shape_find_slot(child->shape, bar);
+    UASSERT(cidx >= 0);
+    UASSERT_EQ((int)child->slots[cidx].v.i, 42);
+
+    /* Parent's slot must still hold 0. */
+    int32_t pidx = urbi_shape_find_slot(parent->shape, bar);
+    UASSERT(pidx >= 0);
+    UASSERT_EQ((int)parent->slots[pidx].v.i, 0);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(set_slow_local_hit_writes_in_place_and_fills_ic) {
+    /* Receiver already owns the slot — write is in-place and the IC fills. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UValue v1;
+    v1.kind = UVAL_INT;
+    v1.v.i  = 1;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+    UShape *shape_before = o->shape;
+    USlot *slots_before  = o->slots;
+
+    UIC ic = {0};
+    ic.name = foo;
+
+    UValue v55;
+    v55.kind = UVAL_INT;
+    v55.v.i  = 55;
+    UASSERT_EQ(urbi_slot_set_slow(&vm, o, &ic, v55), 0);
+
+    /* In-place: shape and slot wrapper unchanged. */
+    UASSERT(o->shape == shape_before);
+    UASSERT(o->slots == slots_before);
+    UASSERT_EQ((int)o->slots[0].v.i, 55);
+
+    /* IC filled with FLAG_LOCAL. */
+    UASSERT_EQ((int)ic.n, 1);
+    UASSERT(ic.flags[0] & URBI_SLOT_FLAG_LOCAL);
+    UASSERT(ic.slots[0] == &o->slots[0]);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(set_slow_miss_installs_local_slot_on_receiver) {
+    /* No slot anywhere on the chain → install on receiver via leaf-shape-
+     * add.  No IC fill (subsequent miss-by-shape will re-resolve). */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *fresh = (USymbol *)ustr_intern(&vm, "fresh", 5);
+
+    UIC ic = {0};
+    ic.name = fresh;
+
+    UValue v7;
+    v7.kind = UVAL_INT;
+    v7.v.i  = 7;
+    UASSERT_EQ(urbi_slot_set_slow(&vm, o, &ic, v7), 0);
+
+    int32_t idx = urbi_shape_find_slot(o->shape, fresh);
+    UASSERT(idx >= 0);
+    UASSERT_EQ((int)o->slots[idx].v.i, 7);
+    UASSERT_EQ((int)ic.n, 0);   /* no fill on the miss-install path */
+
+    uvm_destroy(&vm);
+}
+
+UTEST(slot_helpers_reject_invalid_args) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *n = (USymbol *)ustr_intern(&vm, "n", 1);
+    UIC ic = {0};
+    ic.name = n;
+    UValue out;
+    UValue v;
+    v.kind = UVAL_NIL;
+
+    UASSERT_EQ(urbi_slot_get_slow(NULL, o, &ic, &out), -1);
+    UASSERT_EQ(urbi_slot_get_slow(&vm, NULL, &ic, &out), -1);
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, NULL, &out), -1);
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, NULL), -1);
+
+    UASSERT_EQ(urbi_slot_set_slow(NULL, o, &ic, v), -1);
+    UASSERT_EQ(urbi_slot_set_slow(&vm, NULL, &ic, v), -1);
+    UASSERT_EQ(urbi_slot_set_slow(&vm, o, NULL, v), -1);
+
+    /* ic with NULL name. */
+    UIC ic_no_name = {0};
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic_no_name, &out), -1);
+    UASSERT_EQ(urbi_slot_set_slow(&vm, o, &ic_no_name, v), -1);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(resolve_slot_finds_via_protos) {
+    /* Direct test of urbi_object_resolve_slot — the shared helper used by
+     * the slow paths and (later) USlotHandle. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *gp = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *p  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *c  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    urbi_object_set_protos_single(&vm, p, gp);
+    urbi_object_set_protos_single(&vm, c, p);
+
+    USymbol *deep = (USymbol *)ustr_intern(&vm, "deep", 4);
+    UValue v77;
+    v77.kind = UVAL_INT;
+    v77.v.i  = 77;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, gp, deep, v77), 0);
+
+    UObject *holder = NULL;
+    uint32_t idx = 0u;
+    UASSERT_EQ(urbi_object_resolve_slot(&vm, c, deep, &holder, &idx), 1);
+    UASSERT(holder == gp);
+    UASSERT_EQ((int)idx, 0);
+
+    /* Miss case. */
+    USymbol *gone = (USymbol *)ustr_intern(&vm, "gone", 4);
+    UASSERT_EQ(urbi_object_resolve_slot(&vm, c, gone, &holder, &idx), 0);
+
+    /* Bad-arg case. */
+    UASSERT_EQ(urbi_object_resolve_slot(NULL, c, deep, &holder, &idx), -1);
+    UASSERT_EQ(urbi_object_resolve_slot(&vm, NULL, deep, &holder, &idx), -1);
+
+    uvm_destroy(&vm);
+}
+
 void test_uic_suite(void) {
     utest_run("uic: layout at default 4 entries",
               uic_layout_at_default_4_entries);
@@ -233,4 +485,20 @@ void test_uic_suite(void) {
               module_instance_proto_with_zero_ic_count);
     utest_run("uic: module instance invalid args return NULL",
               module_instance_invalid_args_return_null);
+    utest_run("uic: get_slow resolves via proto walk and fills IC",
+              get_slow_resolves_via_proto_walk_and_fills_ic);
+    utest_run("uic: get_slow local hit sets FLAG_LOCAL",
+              get_slow_local_hit_sets_flag_local);
+    utest_run("uic: get_slow miss returns -1 (no IC fill)",
+              get_slow_miss_returns_minus_one);
+    utest_run("uic: set_slow does COW when resolution via proto chain",
+              set_slow_does_cow_when_resolution_via_proto_chain);
+    utest_run("uic: set_slow local hit writes in place and fills IC",
+              set_slow_local_hit_writes_in_place_and_fills_ic);
+    utest_run("uic: set_slow miss installs local slot on receiver",
+              set_slow_miss_installs_local_slot_on_receiver);
+    utest_run("uic: slot helpers reject invalid args",
+              slot_helpers_reject_invalid_args);
+    utest_run("uic: resolve_slot finds via protos",
+              resolve_slot_finds_via_protos);
 }

@@ -687,3 +687,66 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     obj->shape = new_shape;
     return 0;
 }
+
+/* === T25: urbi_object_resolve_slot ===
+ *
+ * Per pre-M4 GETSLOT/SETSLOT spec §6.3.  Same DFS shape as lookup_inner
+ * (left-first, cycle-safe via lookup_stamp), but captures (holder, index)
+ * rather than the slot value so the IC slow path can fill cache entries
+ * with a direct USlot* into the holding object's storage.
+ *
+ * Iterative DFS over a fixed 64-deep stack to bound prototype-graph depth
+ * (consistent with the legacy walker; deeper graphs are exotic and may be
+ * promoted to a heap-allocated stack in v1.x).  Stack overflow returns -1
+ * so the caller can surface a diagnostic. */
+#define URBI_RESOLVE_STACK_CAP 64
+
+int
+urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
+                         UObject **out_holder, uint32_t *out_index)
+{
+    if (vm == NULL || recv == NULL || name == NULL
+        || out_holder == NULL || out_index == NULL) {
+        return -1;
+    }
+
+    /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
+     * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
+     * for the entire DFS below. */
+    if ((uint32_t)(vm->lookup_id + 1ull) == 0u) {
+        urbi_object_lookup_id_force_wrap(vm);
+    } else {
+        vm->lookup_id++;
+    }
+
+    UObject *stack[URBI_RESOLVE_STACK_CAP];
+    int sp = 0;
+    stack[sp++] = recv;
+
+    while (sp > 0) {
+        UObject *cur = stack[--sp];
+        if (cur->lookup_stamp == (uint32_t)vm->lookup_id) {
+            continue;
+        }
+        cur->lookup_stamp = (uint32_t)vm->lookup_id;
+
+        int32_t idx = urbi_shape_find_slot(cur->shape, name);
+        if (idx >= 0) {
+            *out_holder = cur;
+            *out_index  = (uint32_t)idx;
+            return 1;
+        }
+
+        /* Push protos in reverse so left-first DFS pops them in declaration
+         * order (mirrors UPROTOS_FOREACH iteration order). */
+        uint32_t n = urbi_object_proto_count(cur);
+        for (uint32_t i = n; i > 0u; i--) {
+            if (sp >= URBI_RESOLVE_STACK_CAP) {
+                return -1;   /* depth overflow — caller raises diagnostic */
+            }
+            stack[sp++] = urbi_object_proto_at(cur, i - 1u);
+        }
+    }
+
+    return 0;
+}
