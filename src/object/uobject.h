@@ -140,4 +140,76 @@ UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
  * valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
 
+/* === UPROTOS_FOREACH (T9 — per pre-M4 prototype-chain spec §6.1) ===
+ *
+ * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
+ *   - empty:  obj->protos == 0
+ *   - single: obj->protos == ((p << 1) | 1u)   — bit 0 set, address in high bits
+ *   - heap:   obj->protos == (uintptr_t)up     — bit 0 clear, raw UProtos*
+ *
+ * UPROTOS_FOREACH dispatches across all three forms and captures
+ * obj->protos ONCE at iteration start, so iteration-during-mutation
+ * sees a stable snapshot (legacy semantics per spec §6.3).
+ *
+ * Usage:
+ *   UObject *p;
+ *   UPROTOS_FOREACH(obj, p) { ... visit p ... }
+ *
+ * Identifier-naming note: the for-loop scope already isolates __upf_ctx_local,
+ * so a fixed name is sufficient — no __LINE__ token-paste gymnastics required. */
+struct __upf_ctx {
+    uintptr_t  raw;       /* copy of obj->protos at iteration start */
+    UProtos   *up;        /* non-NULL only in heap case */
+    uint32_t   i;         /* 0..up->n in heap; 0/1 in single; unused in empty */
+};
+
+static inline struct __upf_ctx __upf_init(const UObject *obj) {
+    struct __upf_ctx c;
+    c.raw = obj->protos;
+    c.up  = NULL;
+    c.i   = 0u;
+    if (c.raw != 0u && (c.raw & 1u) == 0u) {
+        c.up = (UProtos *)c.raw;
+    }
+    return c;
+}
+
+static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
+    if (c->up != NULL) {
+        if (c->i >= c->up->n) return 0;
+        *out = c->up->items[c->i++];
+        return 1;
+    }
+    if ((c->raw & 1u) != 0u) {
+        if (c->i != 0u) return 0;
+        *out = (UObject *)(c->raw >> 1);
+        c->i = 1u;
+        return 1;
+    }
+    return 0;
+}
+
+#define UPROTOS_FOREACH(obj, p_var)                                     \
+    for (struct __upf_ctx __upf_ctx_local = __upf_init((obj));          \
+         __upf_next(&__upf_ctx_local, &(p_var));                        \
+        )
+
+/* Convenience inlines — count + indexed access across all three forms. */
+static inline uint32_t urbi_object_proto_count(const UObject *obj) {
+    if (obj->protos == 0u) return 0u;
+    if ((obj->protos & 1u) != 0u) return 1u;
+    return ((const UProtos *)obj->protos)->n;
+}
+
+static inline UObject *urbi_object_proto_at(const UObject *obj, uint32_t i) {
+    if (obj->protos == 0u) return NULL;
+    if ((obj->protos & 1u) != 0u) {
+        return (i == 0u) ? (UObject *)(obj->protos >> 1) : NULL;
+    }
+    {
+        UProtos *up = (UProtos *)obj->protos;
+        return (i < up->n) ? up->items[i] : NULL;
+    }
+}
+
 #endif /* UOBJECT_H */

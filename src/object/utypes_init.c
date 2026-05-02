@@ -8,10 +8,8 @@
  * called from uvm_init after vm->type_table[] has been zeroed.
  *
  * Walker shape (per pre-M4 prototype-chain spec §6 + USlot/UProps spec §4):
- *   UObject  walks shape (direct UCell*) + each USlot UValue payload via cb.
- *            UProtos walk via tagged uintptr_t.protos is a TODO (see comment
- *            inside walk_uobject) — needs UPROTOS_FOREACH macro from a later
- *            M4 task.
+ *   UObject  walks shape (direct UCell*) + each USlot UValue payload via cb +
+ *            each prototype (direct UObject*) via UPROTOS_FOREACH (T9).
  *   UProtos  walks items[i] (direct UObject*; embeds UCell at offset 0).
  *   UShape   walks parent (UShape*) + props_table[i] (UProps*).  Skips
  *            transitions (UShapeMap walker lands at later M4 task) and
@@ -38,10 +36,10 @@
 
 /* === walk_uobject ===
  *
- * Traces shape (direct UShape*) and each USlot UValue payload.  The
- * tagged-protos field is left as TODO until UPROTOS_FOREACH lands —
- * decoding the tagged-uintptr_t single-or-heap encoding requires the
- * accessor macro from a later M4 task. */
+ * Traces shape (direct UShape*), each USlot UValue payload via cb, and
+ * each prototype (direct UObject*) via UPROTOS_FOREACH.  The macro
+ * dispatches across the three storage forms of o->protos (empty/single/heap)
+ * per pre-M4 prototype-chain spec §4.1. */
 static void
 walk_uobject(struct UVM *vm, void *payload,
              UGcRootCallback cb, void *ctx)
@@ -67,11 +65,17 @@ walk_uobject(struct UVM *vm, void *payload,
         }
     }
 
-    /* TODO(later M4 task): walk o->protos via UPROTOS_FOREACH once the
-     * tagged single-or-heap accessor macro lands.  At this task protos is
-     * always 0 (zero-init by urbi_gc_alloc) on freshly allocated UObjects,
-     * which encodes "no prototypes" per pre-M4 prototype-chain spec §4.1
-     * tagged-pointer scheme. */
+    /* Walk the prototype chain.  UPROTOS_FOREACH captures o->protos once
+     * at iteration start and dispatches across empty/single/heap forms.
+     * Entries are direct UObject* (embed UCell at offset 0). */
+    {
+        UObject *p;
+        UPROTOS_FOREACH(o, p) {
+            if (p != NULL) {
+                gc_shade_gray(vm, (UCell *)p);
+            }
+        }
+    }
 }
 
 /* === walk_uprotos ===

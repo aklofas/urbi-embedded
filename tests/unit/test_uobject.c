@@ -10,6 +10,7 @@
 #include "object/uobject.h"
 #include "umodule.h"   /* UValue */
 #include "uvm.h"
+#include "urbi/gc.h"       /* urbi_gc_alloc — T9 heap UProtos */
 #include "urbi/object.h"   /* T8 public API */
 
 #include <stddef.h>
@@ -154,8 +155,8 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
     UASSERT_EQ((int)vm.atom_object->object_id, 1);
     UASSERT_EQ((int)integer->object_id,        2);
 
-    /* Single-tag prototype encoding per spec §4.1 (provisional T8 form;
-     * T9 lands UPROTOS_FOREACH which decodes this in one place).
+    /* Single-tag prototype encoding per spec §4.1 (the canonical form
+     * decoded by UPROTOS_FOREACH, T9).
      * Low bit 1 marks single-tag; high bits hold the prototype pointer. */
     UASSERT((integer->protos & 1u) == 1u);
     UASSERT((UObject *)(integer->protos >> 1) == vm.atom_object);
@@ -245,6 +246,116 @@ UTEST(uobject_proto_mutators_are_t11_stubs) {
     uvm_destroy(&vm);
 }
 
+/* === T9: UPROTOS_FOREACH dispatches across all three storage forms ===
+ *
+ * Per pre-M4 prototype-chain spec §4.1: UObject.protos has three forms —
+ * empty (0), single ((p<<1)|1), heap (UProtos*).  These tests exercise
+ * each form through UPROTOS_FOREACH plus the count/at convenience inlines. */
+
+UTEST(uobject_protos_foreach_empty_form_yields_nothing) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_root(&vm);   /* root has empty-form protos (0) */
+    UASSERT(o != NULL);
+    UASSERT_EQ((int)o->protos, 0);
+
+    int seen = 0;
+    UObject *p;
+    UPROTOS_FOREACH(o, p) {
+        (void)p;
+        seen++;
+    }
+    UASSERT_EQ(seen, 0);
+
+    /* Convenience inlines agree. */
+    UASSERT_EQ((int)urbi_object_proto_count(o), 0);
+    UASSERT(urbi_object_proto_at(o, 0u) == NULL);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_protos_foreach_single_form_yields_one) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Integer atom uses the single-tag form ((root << 1) | 1). */
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *root    = vm.atom_object;
+    UASSERT(integer != NULL);
+    UASSERT(root != NULL);
+    UASSERT((integer->protos & 1u) == 1u);   /* sanity: single form */
+
+    int seen = 0;
+    UObject *p   = NULL;
+    UObject *got = NULL;
+    UPROTOS_FOREACH(integer, p) {
+        if (seen == 0) got = p;
+        seen++;
+    }
+    UASSERT_EQ(seen, 1);
+    UASSERT(got == root);
+
+    /* Convenience inlines agree. */
+    UASSERT_EQ((int)urbi_object_proto_count(integer), 1);
+    UASSERT(urbi_object_proto_at(integer, 0u) == root);
+    UASSERT(urbi_object_proto_at(integer, 1u) == NULL);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_protos_foreach_heap_form_yields_all) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *root = urbi_object_root(&vm);
+    UObject *a    = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *b    = urbi_object_atom(&vm, URBI_ATOM_FLOAT_F);
+    UObject *c    = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UASSERT(root != NULL); UASSERT(a != NULL); UASSERT(b != NULL); UASSERT(c != NULL);
+
+    /* Heap form: allocate a UProtos block with three entries.  Bit 0 of
+     * the raw pointer must be clear (heap pointers are 8-byte aligned by
+     * the GC allocator), which is what UPROTOS_FOREACH checks to dispatch. */
+    UProtos *up = (UProtos *)urbi_gc_alloc(
+            &vm, sizeof(UProtos) + 3u * sizeof(UObject *), UTYPE_PROTOS);
+    UASSERT(up != NULL);
+    UASSERT(((uintptr_t)up & 1u) == 0u);   /* alignment sanity */
+    up->n        = 3u;
+    up->items[0] = a;
+    up->items[1] = b;
+    up->items[2] = c;
+
+    /* Splice the heap UProtos into root->protos so iteration sees the
+     * heap form (provisional direct write — T11 lands the formal mutator). */
+    root->protos = (uintptr_t)up;
+
+    int seen = 0;
+    UObject *p;
+    UObject *visited[3] = { NULL, NULL, NULL };
+    UPROTOS_FOREACH(root, p) {
+        if (seen < 3) visited[seen] = p;
+        seen++;
+    }
+    UASSERT_EQ(seen, 3);
+    UASSERT(visited[0] == a);
+    UASSERT(visited[1] == b);
+    UASSERT(visited[2] == c);
+
+    /* Convenience inlines agree. */
+    UASSERT_EQ((int)urbi_object_proto_count(root), 3);
+    UASSERT(urbi_object_proto_at(root, 0u) == a);
+    UASSERT(urbi_object_proto_at(root, 1u) == b);
+    UASSERT(urbi_object_proto_at(root, 2u) == c);
+    UASSERT(urbi_object_proto_at(root, 3u) == NULL);
+
+    /* Restore empty form before destroy so any GC walker re-entry stays
+     * within the well-defined empty case. */
+    root->protos = 0u;
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -265,4 +376,10 @@ void test_uobject_suite(void) {
               uobject_atom_invalid_family_returns_null);
     utest_run("uobject: proto mutators are T11 stubs",
               uobject_proto_mutators_are_t11_stubs);
+    utest_run("uobject: protos foreach empty form yields nothing",
+              uobject_protos_foreach_empty_form_yields_nothing);
+    utest_run("uobject: protos foreach single form yields one",
+              uobject_protos_foreach_single_form_yields_one);
+    utest_run("uobject: protos foreach heap form yields all",
+              uobject_protos_foreach_heap_form_yields_all);
 }

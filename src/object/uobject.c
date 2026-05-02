@@ -10,8 +10,8 @@
  * reclaim them.
  *
  * The single-tag prototype encoding `(root << 1) | 1` used in
- * urbi_object_atom is provisional — T9 lands the canonical UPROTOS_FOREACH
- * iteration path and decodes this form in one place. */
+ * urbi_object_atom matches the canonical form decoded by UPROTOS_FOREACH
+ * (src/object/uobject.h, T9). */
 
 #include <stdint.h>
 
@@ -146,8 +146,8 @@ urbi_object_root(struct UVM *vm)
  *
  * Lazy-allocate the named atom singleton on first call.  Each non-root
  * atom's protos field carries the single-tag encoding `(root << 1) | 1`
- * pointing at the root Object (provisional — T9's UPROTOS_FOREACH lands
- * the canonical decode path).
+ * pointing at the root Object (the canonical single form decoded by
+ * UPROTOS_FOREACH per pre-M4 prototype-chain spec §4.1).
  *
  * Returns NULL on OOM or invalid family tag. */
 UObject *
@@ -220,8 +220,9 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
     if (o == NULL) {
         return NULL;
     }
-    /* Single-tag protos encoding (provisional; T9 owns the canonical form):
-     * low bit 1 marks single-tag, high bits hold the prototype pointer. */
+    /* Single-tag protos encoding per spec §4.1 (canonical form decoded by
+     * UPROTOS_FOREACH): low bit 1 marks single-tag, high bits hold the
+     * prototype pointer. */
     o->protos = ((uintptr_t)root << 1) | 1u;
     *slot = o;
 
