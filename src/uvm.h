@@ -110,6 +110,22 @@ typedef struct UVM {
                                     (per pre-M2 §7.1).  NULL until first
                                     urbi_shape_root() call. */
 
+    /* === M4 atom-family singletons (T8) ===
+     * Lazy-allocated per-VM atom prototypes; pinned via urbi_pin so they
+     * survive early GC cycles before T36's root provider lands.  Each is
+     * NULL until first urbi_object_root / urbi_object_atom call.  Slot
+     * order mirrors URBIAtomFamily values 0..8 (object/integer/float/
+     * string/list/dict/tag/event/symbol). */
+    struct UObject *atom_object;     /* root Object — atom of all atoms; protos = empty */
+    struct UObject *atom_integer;
+    struct UObject *atom_float;
+    struct UObject *atom_string;
+    struct UObject *atom_list;
+    struct UObject *atom_dict;
+    struct UObject *atom_tag;
+    struct UObject *atom_event;
+    struct UObject *atom_symbol;
+
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or
      * on uvm_destroy().  Allows callers to inspect *out without immediately

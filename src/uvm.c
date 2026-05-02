@@ -74,6 +74,18 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->lookup_id      = 1ull;   /* pre-M4 prototype-chain spec §7.1 */
     vm->next_object_id = 0u;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
     vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
+
+    /* M4 atom-family singletons (T8): all NULL until first lazy-create. */
+    vm->atom_object  = NULL;
+    vm->atom_integer = NULL;
+    vm->atom_float   = NULL;
+    vm->atom_string  = NULL;
+    vm->atom_list    = NULL;
+    vm->atom_dict    = NULL;
+    vm->atom_tag     = NULL;
+    vm->atom_event   = NULL;
+    vm->atom_symbol  = NULL;
+
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */

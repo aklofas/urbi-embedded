@@ -74,10 +74,16 @@ typedef enum {
 #define URBI_OBJ_FLAG_SANDBOX_RO   (1u << 5)   /* per Luau prior art */
 /* bits 6..31 spare */
 
-/* === forward decls (real definitions land at later M4 tasks) === */
+/* === forward decls (real definitions land at later M4 tasks) ===
+ * UShape + UObject are also typedef'd in include/urbi/object.h (the public
+ * mirror); guard against C99-pedantic typedef redeclaration when both
+ * headers are pulled in by a single TU.  UProps is internal-only. */
+#ifndef URBI_OBJECT_TYPEDEF_DEFINED
+#define URBI_OBJECT_TYPEDEF_DEFINED
 typedef struct UShape   UShape;
-typedef struct UProps   UProps;
 typedef struct UObject  UObject;
+#endif
+typedef struct UProps   UProps;
 
 /* === UProtos ===
  *
@@ -118,5 +124,20 @@ struct UObject {
 _Static_assert(sizeof(struct UObject) == 48,
                "UObject header must be 48 bytes per pre-M4 prototype-chain spec §3");
 #endif
+
+/* === Internal allocator (T8) ===
+ *
+ * Allocate a fresh UObject in the named atom family.  Wires shape to the
+ * per-VM root hidden class, protos to the empty form (0), object_id to
+ * the next per-VM monotonic id, and flags to (family & ATOM_MASK).
+ * Returns NULL on OOM. */
+struct UVM;
+UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
+
+/* === Atom-family debug name (T8) ===
+ *
+ * Stable static string per atom family.  Used by error messages (T11
+ * valid_proto failure path and beyond). */
+const char *urbi_atom_family_name(URBIAtomFamily f);
 
 #endif /* UOBJECT_H */
