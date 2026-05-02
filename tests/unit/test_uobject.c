@@ -230,18 +230,34 @@ UTEST(uobject_atom_invalid_family_returns_null) {
     uvm_destroy(&vm);
 }
 
-/* === T8: T11-stubbed mutators return URBI_ERR_INVALID_ARG === */
+/* === T11: NULL-arg defensive contracts on the public mutators ===
+ *
+ * Replaces the T8 stub-return test once T11 lands real implementations.
+ * The five behavioural T11 contract tests live further down. */
 
-UTEST(uobject_proto_mutators_are_t11_stubs) {
+UTEST(uobject_proto_mutators_reject_null_args) {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_root(&vm);
     UASSERT(o != NULL);
 
-    UASSERT_EQ((int)urbi_object_add_proto   (&vm, o, o),       (int)URBI_ERR_INVALID_ARG);
-    UASSERT_EQ((int)urbi_object_remove_proto(&vm, o, o),       (int)URBI_ERR_INVALID_ARG);
-    UASSERT_EQ((int)urbi_object_set_protos  (&vm, o, NULL, 0u), (int)URBI_ERR_INVALID_ARG);
+    /* NULL vm / obj / proto rejected on add+remove. */
+    UASSERT_EQ((int)urbi_object_add_proto   (NULL, o, o),    (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_add_proto   (&vm, NULL, o),  (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_add_proto   (&vm, o, NULL),  (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_remove_proto(NULL, o, o),    (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_remove_proto(&vm, NULL, o),  (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_remove_proto(&vm, o, NULL),  (int)URBI_ERR_INVALID_ARG);
+
+    /* set_protos: NULL list with n>0 rejected; NULL list with n==0 is the
+     * "clear all protos" form and is valid. */
+    UASSERT_EQ((int)urbi_object_set_protos(NULL, o, NULL, 0u), (int)URBI_ERR_INVALID_ARG);
+    UASSERT_EQ((int)urbi_object_set_protos(&vm, NULL, NULL, 0u), (int)URBI_ERR_INVALID_ARG);
+    UObject *junk[1] = { NULL };
+    UASSERT_EQ((int)urbi_object_set_protos(&vm, o, NULL, 1u), (int)URBI_ERR_INVALID_ARG);
+    /* NULL entries inside a non-NULL list are also rejected. */
+    UASSERT_EQ((int)urbi_object_set_protos(&vm, o, junk, 1u), (int)URBI_ERR_INVALID_ARG);
 
     uvm_destroy(&vm);
 }
@@ -530,6 +546,127 @@ UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
     uvm_destroy(&vm);
 }
 
+/* === T11: behavioural contracts on add_proto / remove_proto / set_protos ===
+ *
+ * Per pre-M2 §5.1-§5.3 and pre-M4 prototype-chain spec §5.5:
+ *   - add_proto prepends at MRO position 0
+ *   - remove_proto on absent target is a silent no-op
+ *   - set_protos dedups first-occurrence-wins
+ *   - cross-atom-family inheritance is rejected
+ *   - set_protos validates atomically — no partial state on failure */
+
+UTEST(uobject_add_proto_prepends_position_zero) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && a && b);
+
+    /* Empty -> add b -> [b]; add a -> [a, b]. */
+    UASSERT_EQ((int)urbi_object_add_proto(&vm, o, b), (int)URBI_OK);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+    UASSERT(urbi_object_proto_at(o, 0u) == b);
+
+    UASSERT_EQ((int)urbi_object_add_proto(&vm, o, a), (int)URBI_OK);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 2);
+    UASSERT(urbi_object_proto_at(o, 0u) == a);   /* prepended */
+    UASSERT(urbi_object_proto_at(o, 1u) == b);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_remove_absent_proto_is_silent_noop) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o       = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *present = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *absent  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && present && absent);
+
+    UASSERT_EQ((int)urbi_object_add_proto(&vm, o, present), (int)URBI_OK);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+
+    /* Removing a proto that was never added returns URBI_OK and does not
+     * change the count (legacy semantics per pre-M2 §5.2). */
+    UASSERT_EQ((int)urbi_object_remove_proto(&vm, o, absent), (int)URBI_OK);
+    UASSERT_EQ((int)urbi_object_proto_count(o), 1);
+    UASSERT(urbi_object_proto_at(o, 0u) == present);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_dedups_first_occurrence_wins) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o && a && b);
+
+    UObject *list[4] = { a, b, a, b };
+    UASSERT_EQ((int)urbi_object_set_protos(&vm, o, list, 4u), (int)URBI_OK);
+
+    /* First-occurrence-wins → [a, b]; trailing repeats discarded. */
+    UASSERT_EQ((int)urbi_object_proto_count(o), 2);
+    UASSERT(urbi_object_proto_at(o, 0u) == a);
+    UASSERT(urbi_object_proto_at(o, 1u) == b);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_valid_proto_rejects_cross_atom_family) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UASSERT(integer && str);
+
+    uint32_t before = urbi_object_proto_count(integer);
+
+    /* Integer.add_proto(String) — cross-family, neither is root Object. */
+    UASSERT_EQ((int)urbi_object_add_proto(&vm, integer, str),
+               (int)URBI_ERR_INVALID_ARG);
+
+    /* No partial state: Integer's proto count is unchanged. */
+    UASSERT_EQ((int)urbi_object_proto_count(integer), (int)before);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *root    = urbi_object_root(&vm);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UASSERT(root && integer && str);
+
+    /* Snapshot Integer's pre-call proto state. */
+    uint32_t  before_n = urbi_object_proto_count(integer);
+    uintptr_t before_p = integer->protos;
+    uint64_t  before_g = vm.topology_gen;
+
+    /* set_protos with [root, str] on Integer: root is fine, but str fails
+     * the cross-family check.  Atomic — fails before any mutation. */
+    UObject *list[2] = { root, str };
+    UASSERT_EQ((int)urbi_object_set_protos(&vm, integer, list, 2u),
+               (int)URBI_ERR_INVALID_ARG);
+
+    /* No partial state: count, raw protos word, and topology_gen all
+     * unchanged. */
+    UASSERT_EQ((int)urbi_object_proto_count(integer), (int)before_n);
+    UASSERT(integer->protos == before_p);
+    UASSERT(vm.topology_gen == before_g);
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -548,8 +685,8 @@ void test_uobject_suite(void) {
               uobject_atom_via_object_f_returns_root);
     utest_run("uobject: atom invalid family returns NULL",
               uobject_atom_invalid_family_returns_null);
-    utest_run("uobject: proto mutators are T11 stubs",
-              uobject_proto_mutators_are_t11_stubs);
+    utest_run("uobject: proto mutators reject NULL args",
+              uobject_proto_mutators_reject_null_args);
     utest_run("uobject: protos foreach empty form yields nothing",
               uobject_protos_foreach_empty_form_yields_nothing);
     utest_run("uobject: protos foreach single form yields one",
@@ -566,4 +703,14 @@ void test_uobject_suite(void) {
               uobject_set_protos_heap_to_single_collapse_bumps_topology);
     utest_run("uobject: set_protos single -> empty (collapse) bumps topology",
               uobject_set_protos_single_to_empty_collapse_bumps_topology);
+    utest_run("uobject: add_proto prepends at position 0",
+              uobject_add_proto_prepends_position_zero);
+    utest_run("uobject: remove absent proto is silent no-op",
+              uobject_remove_absent_proto_is_silent_noop);
+    utest_run("uobject: set_protos dedups (first occurrence wins)",
+              uobject_set_protos_dedups_first_occurrence_wins);
+    utest_run("uobject: valid_proto rejects cross-atom-family",
+              uobject_valid_proto_rejects_cross_atom_family);
+    utest_run("uobject: set_protos aborts on invalid proto (no partial state)",
+              uobject_set_protos_aborts_on_invalid_proto_no_partial_state);
 }
