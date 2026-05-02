@@ -74,7 +74,14 @@ struct UObject {
     uint32_t          flags;         /* 4 B — atom family + frozen + readonly + spare */
     uint32_t          reserved;      /* 4 B — zero at v1.0; named v1.x candidates (§8.2) */
 };
+/* The 48-byte invariant assumes 64-bit pointers (the supported host ABI).
+ * On 32-bit cross targets (e.g. Cortex-M7, rv32), the pointer fields shrink
+ * and natural alignment changes, so the literal byte total no longer holds.
+ * Gate the assert on pointer width; runtime offset checks in
+ * tests/unit/test_uobject.c are host-only and supply the second signal there. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 _Static_assert(sizeof(struct UObject) == 48,
                "UObject header must be 48 bytes per pre-M4 prototype-chain spec §3");
+#endif
 
 #endif /* UOBJECT_H */

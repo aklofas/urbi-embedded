@@ -6,7 +6,8 @@
  *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-uslot-uprops-collapse-design.md §4.1, §4.2, §5.1, §5.2
  *
  * Layout invariants pinned by tests/unit/test_ushape.c.  UShape header is
- * 56 bytes (UCell + 6 B compiler-inserted pad + 7 fields totalling 48 B).
+ * 56 bytes on 64-bit hosts (UCell + 6 B compiler-inserted pad + 7 payload
+ * fields + 1 explicit `_pad` field totalling 48 B).
  *
  * UProps holds slot-property metadata (oget / oset / constant) and is
  * allocated lazily — the per-shape props_table side-table is NULL by
@@ -83,8 +84,17 @@ struct UShape {
     UShapeMap   *transitions;
     UProps     **props_table;
 };
+/* The 56 / 48 byte invariants below assume 64-bit pointers (the supported
+ * host ABI).  On 32-bit cross targets the pointer fields and pre-pointer
+ * padding shrink, so the literal byte totals no longer hold.  Gate on
+ * pointer width; runtime offset checks in tests/unit/test_ushape.c are
+ * host-only and supply the second signal there. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 _Static_assert(sizeof(struct UShape) == 56,
                "UShape header must be 56 bytes per pre-M4 USlot/UProps spec §4.1");
+_Static_assert(sizeof(struct UProps) == 48,
+               "UProps must be 48 bytes per pre-M4 USlot/UProps spec §4.2");
+#endif
 
 /* === API === */
 

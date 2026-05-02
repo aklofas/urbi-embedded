@@ -43,6 +43,19 @@ UTEST(ushape_field_order_matches_spec) {
     UASSERT_EQ((int)offsetof(UShape, props_table), 48);
 }
 
+/* === UProps layout ===
+ * cell -> oget -> oset -> bitfield word.  Pinned alongside the gated
+ * sizeof assert in ushape.h. */
+
+UTEST(ushape_uprops_layout_matches_spec) {
+    /* Width: 48 B on the supported 64-bit host ABI. */
+    UASSERT_EQ((int)sizeof(UProps), 48);
+    /* cell at offset 0; 6 B compiler-inserted pad before oget. */
+    UASSERT_EQ((int)offsetof(UProps, cell), 0);
+    UASSERT_EQ((int)offsetof(UProps, oget), 8);
+    UASSERT_EQ((int)offsetof(UProps, oset), 24);
+}
+
 /* === Root-shape singleton lifecycle === */
 
 UTEST(ushape_root_starts_null_then_lazy_allocates) {
@@ -104,6 +117,8 @@ void test_ushape_suite(void) {
               ushape_header_is_56_bytes);
     utest_run("ushape: field order matches spec",
               ushape_field_order_matches_spec);
+    utest_run("ushape: uprops layout matches spec",
+              ushape_uprops_layout_matches_spec);
     utest_run("ushape: root starts null then lazy-allocates",
               ushape_root_starts_null_then_lazy_allocates);
     utest_run("ushape: root is idempotent singleton",
