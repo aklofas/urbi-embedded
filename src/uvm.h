@@ -27,6 +27,7 @@ struct UEvent;
 struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
+struct UShape;       /* M4 — defined in src/object/ushape.h */
 
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
@@ -105,6 +106,9 @@ typedef struct UVM {
     uint32_t   next_object_id;   /* per-VM monotonic UObject identity counter; populated
                                     at urbi_object_alloc. 32-bit wrap aborts the VM with
                                     URBI_FATAL_OBJECT_ID_EXHAUSTED. Init=0 (first object → 1). */
+    struct UShape *root_shape;   /* lazy-allocated root hidden class
+                                    (per pre-M2 §7.1).  NULL until first
+                                    urbi_shape_root() call. */
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or
