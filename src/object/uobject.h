@@ -39,6 +39,41 @@ _Static_assert(sizeof(USlot) == sizeof(UValue),
 _Static_assert(sizeof(USlot) == 16,
                "USlot must be 16 bytes per pre-M4 USlot/UProps spec §3");
 
+/* === IC + UProps slot-property flag bits ===
+ *
+ * Per pre-M4 GETSLOT/SETSLOT spec §6.5.  These flags populate UIC.flags
+ * (inline-cache attribute summary) and the per-slot 4-bit nibbles packed
+ * into UShape.flags (v1.0 cap of 8 slots in the packed form; T15 spills
+ * to a side allocation when a UShape's slot count exceeds 8). */
+#define URBI_SLOT_FLAG_OGET      (1u << 0)   /* slot has a getter installed */
+#define URBI_SLOT_FLAG_OSET      (1u << 1)   /* slot has a setter installed */
+#define URBI_SLOT_FLAG_CONSTANT  (1u << 2)   /* slot value is constant */
+#define URBI_SLOT_FLAG_LOCAL     (1u << 3)   /* slot is on the receiver, not a prototype */
+/* bits 4-7 reserved for v1.x */
+
+/* === UObject.flags layout ===
+ *
+ * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
+ * the atom family (root Object, the eight built-in atoms, plus 9..15 spare);
+ * bit 4 is frozen; bit 5 is sandbox-readonly (per Luau prior art); the high
+ * bits are spare. */
+typedef enum {
+    URBI_ATOM_OBJECT  = 0,   /* root Object */
+    URBI_ATOM_INTEGER = 1,
+    URBI_ATOM_FLOAT   = 2,
+    URBI_ATOM_STRING  = 3,
+    URBI_ATOM_LIST    = 4,
+    URBI_ATOM_DICT    = 5,
+    URBI_ATOM_TAG     = 6,
+    URBI_ATOM_EVENT   = 7,
+    URBI_ATOM_SYMBOL  = 8
+    /* 9..15 reserved */
+} URBIAtomFamily;
+#define URBI_OBJ_ATOM_MASK         0x0Fu
+#define URBI_OBJ_FLAG_FROZEN       (1u << 4)
+#define URBI_OBJ_FLAG_SANDBOX_RO   (1u << 5)   /* per Luau prior art */
+/* bits 6..31 spare */
+
 /* === forward decls (real definitions land at later M4 tasks) === */
 typedef struct UShape   UShape;
 typedef struct UProps   UProps;
