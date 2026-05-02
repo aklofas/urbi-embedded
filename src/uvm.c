@@ -1194,10 +1194,15 @@ dispatch:
             /* `,` separator: spawn child closure as detached strand.
              * A = closure_reg.  Parent continues; child runs concurrently.
              * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
-             * Requires a realm-managed strand; uvm_run transient strands have no realm. */
-            if (s->realm == NULL) {
+             * Rejected from uvm_run's stack-local transient because that
+             * adapter only dispatches its own strand and would leak any
+             * spawned children.  T33 routes the transient onto
+             * vm->global_realm->strands_head for GC-walker visibility, so
+             * realm == NULL no longer discriminates; the dedicated flag
+             * is_uvm_run_transient does. */
+            if (s->is_uvm_run_transient) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (realm == NULL)");
+                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_detach(s, vm, *s->pc);
@@ -1208,10 +1213,10 @@ dispatch:
         CASE(OP_FORK_JOIN) {
             /* `&` separator LHS: spawn child closure, store handle in R[B].
              * A = closure_reg, B = child_handle_reg.
-             * Requires a realm-managed strand. */
-            if (s->realm == NULL) {
+             * Same uvm_run-transient guard as OP_FORK_DETACH; see note above. */
+            if (s->is_uvm_run_transient) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (realm == NULL)");
+                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_join(s, vm, *s->pc);
@@ -1730,8 +1735,9 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         size_t i;
         for (i = 0; i < n; i++) p[i] = 0;
     }
-    strand.vm    = vm;
-    strand.state = USTRAND_STATE_DORMANT;
+    strand.vm                   = vm;
+    strand.state                = USTRAND_STATE_DORMANT;
+    strand.is_uvm_run_transient = 1u;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init). */
@@ -1748,6 +1754,23 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
+
+    /* T33: route this transient onto vm->global_realm->strands_head so the
+     * GC realm-hierarchy walker (T32) visits its register window.  Lazy-create
+     * the global realm on first use; failure here is non-fatal — the strand
+     * stays realm=NULL and the GC walker simply skips it (M3 baseline behavior).
+     * The strand stays a stack-local UStrand and is unlinked again before the
+     * matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
+     * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
+     * / OP_FORK_JOIN guards now use to reject forks from a uvm_run transient. */
+    {
+        URealm *gr = urbi_realm_global(vm);
+        if (gr != NULL) {
+            strand.realm         = gr;
+            strand.next_in_realm = gr->strands_head;
+            gr->strands_head     = &strand;
+        }
+    }
 
     /* Wire frame-0 from module. */
     strand.R          = strand.stack;
@@ -1834,6 +1857,24 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* Free the register stack. */
     vm->alloc_fn(strand.stack, 0, vm->alloc_ud);
     strand.stack = NULL;
+
+    /* T33: unlink the transient from global_realm->strands_head before
+     * ustrand_destroy.  The stack-local UStrand is about to leave scope; if
+     * we leave it threaded, urealm_teardown_all → urbi_realm_destroy would
+     * walk strands_head and call urbi_strand_destroy on a stack address.
+     * Symmetric with the head-insert just before frame-0 wiring. */
+    if (strand.realm != NULL && strand.realm->strands_head != NULL) {
+        UStrand **pp = &strand.realm->strands_head;
+        while (*pp != NULL) {
+            if (*pp == &strand) {
+                *pp = strand.next_in_realm;
+                strand.next_in_realm = NULL;
+                break;
+            }
+            pp = &(*pp)->next_in_realm;
+        }
+        strand.realm = NULL;
+    }
 
     UVMError rc = vm->last_error;
     ustrand_destroy(&strand, vm);
