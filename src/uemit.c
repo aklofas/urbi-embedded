@@ -1794,6 +1794,72 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
         return rd;
     }
+    case AST_MEMBER_GET: {
+        /* M4 T20: obj.x → OP_GETSLOT.  Per pre-M4 GETSLOT/SETSLOT encoding
+         * spec §3: ABC layout where A=dst register, B=recv register,
+         * C=IC site index assigned by uemit_assign_ic_index. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Emit receiver into a temp register. */
+        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Intern the slot name to obtain the canonical USymbol pointer. */
+        USymbol *name = (USymbol *)ustr_intern(e->vm,
+                                               n->u.member.name_start,
+                                               (size_t)n->u.member.name_len);
+        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        /* Assign a per-site IC index (independent monomorphism per site). */
+        int ic_idx = uemit_assign_ic_index(e, name);
+        if (ic_idx < 0) return 0u;
+
+        /* Result reuses recv_reg in place — simple stack discipline. */
+        emit_instr(e, uinstr_enc_abc(OP_GETSLOT, recv_reg, recv_reg,
+                                     (uint8_t)ic_idx),
+                   (uint32_t)n->line);
+        return recv_reg;
+    }
+    case AST_MEMBER_SET: {
+        /* M4 T21: obj.x = v → OP_SETSLOT.  Per encoding spec §3:
+         * ABC layout where A=src register (value to write), B=recv register,
+         * C=IC site index.  Assignment evaluates to the assigned value. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Emit receiver into a temp, then RHS value into the next temp. */
+        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
+        if (e->error != EMIT_OK) return 0u;
+        uint8_t src_reg = emit_expr(e, n->u.member.value);
+        if (e->error != EMIT_OK) return 0u;
+
+        USymbol *name = (USymbol *)ustr_intern(e->vm,
+                                               n->u.member.name_start,
+                                               (size_t)n->u.member.name_len);
+        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        int ic_idx = uemit_assign_ic_index(e, name);
+        if (ic_idx < 0) return 0u;
+
+        emit_instr(e, uinstr_enc_abc(OP_SETSLOT, src_reg, recv_reg,
+                                     (uint8_t)ic_idx),
+                   (uint32_t)n->line);
+
+        /* Assignment expression value is the assigned value.  Collapse the
+         * recv temp by moving src down into recv_reg, matching the
+         * AST_BINARY convention (lhs holds the result, top temp freed). */
+        if (src_reg != recv_reg) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, recv_reg, src_reg, 0u),
+                       (uint32_t)n->line);
+        }
+        free_reg(e);              /* release the src temp; result in recv_reg */
+        return recv_reg;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
