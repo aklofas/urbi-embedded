@@ -241,17 +241,12 @@ typedef struct UProto {
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
- * Heap-allocated by OP_CLOSURE; lives until GC (M3).  The upvals[]
- * array is a trailing flexible member — allocate sizeof(UClosure) +
- * nupvals * sizeof(UUpvalCell*).
- * `next_alloc` threads all closures allocated in one uvm_run() into a
- * free list so they can be reclaimed at halt (pre-GC bookkeeping). */
-typedef struct UClosure {
-    UProto           *proto;
-    struct UClosure  *next_alloc; /* VM free-list link (pre-GC) */
-    uint8_t           nupvals;
-    UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
-} UClosure;
+ * Forward declaration only — full struct definition lives in uclosure.h
+ * (M4 split: UClosure embeds UCell as first member, which can't be done
+ * here without a circular include via gc/ugc.h).  Files that only need
+ * `UClosure *` use the typedef below; files that touch UClosure fields
+ * include "uclosure.h" explicitly. */
+typedef struct UClosure UClosure;
 
 /* --- UModule struct --- */
 

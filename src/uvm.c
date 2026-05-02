@@ -12,6 +12,7 @@
 
 #include "uvm.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
+#include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
@@ -578,6 +579,17 @@ static void vm_zero(void *const dst, const size_t n) {
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
  * Uses the VM's allocator.  Threads the new closure into *list_head so
  * the caller can free every closure at end-of-run (pre-GC bookkeeping).
+ *
+ * M4: UClosure embeds UCell at offset 0.  The cell header is initialised
+ * here (type_tag = UTYPE_CLOSURE, gc_byte = vm->current_white) so that
+ * urbi_gc_upvalue_write may safely cast UClosure* → UCell* and read a
+ * valid color for the barrier check.  The closure is NOT enrolled on
+ * vm->all_cells_head — lifetime stays with the strand's closure_list
+ * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
+ * as a follow-up M4 task; it requires enrolling the transient uvm_run
+ * strand as a GC root before closures stored in registers can survive
+ * a mid-dispatch collection cycle.
+ *
  * Returns NULL on OOM. */
 static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
                                   UClosure **list_head) {
@@ -588,6 +600,10 @@ static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
     UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
     if (cl == NULL) return NULL;
     vm_zero(cl, nbytes);
+    /* Cell header (M4): well-formed for barrier safety even though the
+     * closure is not on vm->all_cells_head at this commit. */
+    cl->cell.type_tag = UTYPE_CLOSURE;
+    cl->cell.gc_byte  = vm->current_white;
     cl->proto      = proto;
     cl->nupvals    = nup;
     cl->next_alloc = *list_head;
@@ -928,7 +944,10 @@ dispatch:
                 uint8_t a = uinstr_a(*s->pc);
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
-                /* TODO(M4): wire urbi_gc_upvalue_write here once UClosure embeds UCell as first member. */
+                /* GC barrier (M4): UClosure now embeds UCell at offset 0,
+                 * so urbi_gc_upvalue_write may safely cast UClosure* → UCell*
+                 * for the color check.  Hook fires before the actual store. */
+                urbi_gc_upvalue_write(vm, cur_cl, b, s->R[a]);
                 if (uvc->on_heap) {
                     uvc->u.value = s->R[a];
                 } else {

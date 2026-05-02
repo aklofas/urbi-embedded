@@ -5,15 +5,18 @@
 #include "utest.h"
 #include "urbi/gc.h"
 #include "gc/ugc_incremental.h"
+#include "uclosure.h"
 #include "uvm.h"
+#include <stddef.h>
 #include <stdlib.h>
 
 /* === Test helper: construct a UValue from a UCell* (test-only) ===
  *
  * Tags the value as UVAL_CLOSURE and stores the cell pointer in v.v.p.
- * At T25 no real UClosure objects have a UCell header, so barrier tests
- * use synthetic cells allocated via urbi_gc_alloc.  Production code will
- * use proper UClosure-bearing values once UClosure embeds UCell (M4).
+ * At M4 UClosure embeds UCell at offset 0, so urbi_gc_upvalue_write may
+ * be called with real closure pointers in production code; these unit
+ * tests still use synthetic UCell objects allocated via urbi_gc_alloc to
+ * isolate barrier behavior from closure construction.
  *
  * This helper is not exported — it exists only to build test UValues. */
 static UValue
@@ -162,8 +165,8 @@ UTEST(barrier_observer_bit_calls_stub)
 /* ===== Test 6: upvalue_write black parent + white child → child shaded ===== */
 
 /* urbi_gc_upvalue_write applies the same forward Dijkstra barrier as
- * slot_write.  Uses a synthetic UCell cast as UClosure* (T25 test-only pattern;
- * production use deferred to M4 when UClosure embeds UCell). */
+ * slot_write.  Uses a synthetic UCell cast as UClosure* — the cast is now
+ * well-defined because UClosure embeds UCell at offset 0 (M4). */
 UTEST(barrier_upvalue_black_stores_white_shades)
 {
     UVM vm;
@@ -186,6 +189,21 @@ UTEST(barrier_upvalue_black_stores_white_shades)
     uvm_destroy(&vm);
 }
 
+/* ===== Test 7: UClosure embeds UCell at offset 0 ===== */
+
+/* M4 closes the M3 deferral: UClosure embeds UCell as its first member, so
+ * urbi_gc_upvalue_write may safely cast UClosure* → UCell* for the barrier
+ * color check.  Verifies the structural invariant the cast relies on. */
+UTEST(barrier_upvalue_uclosure_embeds_ucell_at_offset_zero)
+{
+    /* The cast UClosure* → UCell* is well-defined only when UCell sits at
+     * offset 0 inside UClosure.  The two-byte common header (type_tag,
+     * gc_byte) must alias the first two bytes of the closure. */
+    UASSERT_EQ(offsetof(UClosure, cell), (size_t)0);
+    UASSERT_EQ(offsetof(UClosure, cell.type_tag), (size_t)0);
+    UASSERT_EQ(offsetof(UClosure, cell.gc_byte),  (size_t)1);
+}
+
 /* ===== Suite entry point ===== */
 
 void test_ugc_barrier_suite(void)
@@ -202,4 +220,6 @@ void test_ugc_barrier_suite(void)
               barrier_observer_bit_calls_stub);
     utest_run("barrier_upvalue_black_stores_white_shades",
               barrier_upvalue_black_stores_white_shades);
+    utest_run("barrier_upvalue_uclosure_embeds_ucell_at_offset_zero",
+              barrier_upvalue_uclosure_embeds_ucell_at_offset_zero);
 }

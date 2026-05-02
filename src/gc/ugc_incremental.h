@@ -135,11 +135,9 @@ uvalue_as_cell(UValue v)
 {
     /* Caller must have checked uvalue_is_heap(v) first.
      * UVAL_CLOSURE stores a UClosure* in v.v.p; we return it as UCell*.
-     * NOTE(M4): UClosure does not embed UCell as first member at M3 baseline.
-     * urbi_gc_upvalue_write casts UClosure* → UCell* for the barrier check;
-     * this is only safe once UClosure embeds a UCell header at offset 0 (M4).
-     * For T25, tests construct synthetic cells via UVAL_CLOSURE tags pointing
-     * to urbi_gc_alloc'd UCell objects (test-only pattern). */
+     * UClosure embeds UCell as its first member at offset 0 (M4 — see
+     * uclosure.h), so this cast is well-defined for real closure values
+     * as well as synthetic UCell objects allocated via urbi_gc_alloc. */
     return (UCell *)v.v.p;
 }
 
@@ -189,25 +187,16 @@ bool uvalue_is_heap_white(struct UVM *vm, UValue v);
  *   child   — the value being stored.
  *   NOTE: the actual upvalue store is the CALLER'S responsibility.
  *
- * M2 callsite audit (T25):
- *   OP_SETUPVAL handler (src/uvm.c ~line 861): UClosure does NOT embed UCell
- *   as first member at M3 baseline, so casting UClosure* → UCell* for the
- *   barrier is unsafe.  Wire urbi_gc_upvalue_write at M4 when UClosure gains
- *   a UCell header at offset 0.
- *   TODO(M4): wire `urbi_gc_upvalue_write(vm, cur_cl, b, s->R[a])` before the
- *   store in OP_SETUPVAL once UClosure embeds UCell as first member.
+ * Callsite status (M4):
+ *   OP_SETUPVAL handler (src/uvm.c): UClosure embeds UCell as first member at
+ *   offset 0 (see uclosure.h); urbi_gc_upvalue_write is wired before the store.
+ *   The barrier may safely cast UClosure* → UCell* for the color check.
  *
- *   unamespace_set (src/urealm_namespace.c ~line 106): UNamespace does NOT have
- *   a UCell header at M3 baseline.  Wire urbi_gc_slot_write at M4 when
- *   UNamespace gains a UCell header.
- *   TODO(M4): wire `urbi_gc_slot_write(vm, &ns->cell_header, key, value)` in
- *   unamespace_set once UNamespace embeds UCell as first member.
+ *   unamespace_set (src/realm/urealm_namespace.c): UNamespace still lacks a
+ *   UCell header at this commit.  Wire urbi_gc_slot_write when UNamespace
+ *   migrates to a UCell-headed cell (later M4 task).
  *
- *   OP_SETSLOT (M4 reserved): dormant at M3; wired at M4 with full IC support.
- *
- * Net result: no concrete cell type at M3 embeds UCell as first member;
- * the three barrier functions are fully implemented and tested here, with
- * integration deferred to M4 when object types gain UCell headers. */
+ *   OP_SETSLOT (M4 reserved): dormant; wired alongside full IC support. */
 
 static inline void
 urbi_gc_slot_write(struct UVM *vm, UCell *parent, uint32_t key, UValue child)
@@ -256,9 +245,8 @@ urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure, uint8_t up_idx, 
     uint8_t parent_gc = parent->gc_byte;
 
     /* GC barrier: forward Dijkstra — same logic as slot_write.
-     * NOTE(M4): This cast is only safe once UClosure embeds UCell as its
-     * first member.  At M3 baseline, urbi_gc_upvalue_write must not be called
-     * with a real UClosure* — it is tested here with synthetic UCell objects. */
+     * UClosure embeds UCell at offset 0 (M4 — see uclosure.h), so the
+     * cast above yields a valid header pointer. */
     if (UNLIKELY((parent_gc & UGC_COLOR_MASK) == UGC_COLOR_BLACK
                  && uvalue_is_heap_white(vm, child))) {
         gc_shade_gray(vm, uvalue_as_cell(child));

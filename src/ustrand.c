@@ -6,6 +6,7 @@
 
 #include "ustrand.h"
 #include "ucleanup.h"
+#include "uclosure.h"
 #include "utag.h"
 #include "uvm.h"
 #include "realm/urealm.h"
