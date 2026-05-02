@@ -241,6 +241,121 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
     uvm_destroy(&vm);
 }
 
+/* === T29 audit tests: surfaces that MUST NOT bump === */
+
+UTEST(topology_gen_row_4_2_1_local_slot_value_write_does_not_bump) {
+    /* §4.2 row 1: in-place value write on an existing local slot does NOT
+     * bump.  IC entries cached against this shape stay valid because the
+     * slot's storage location and shape are unchanged. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+
+    /* Snapshot AFTER the install; second set is the in-place case. */
+    uint64_t pre = vm.topology_gen;
+    UValue v2 = {.kind = UVAL_INT, .v = {.i = 2}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v2), 0);
+    UASSERT(vm.topology_gen == pre);   /* no bump */
+
+    uvm_destroy(&vm);
+}
+
+UTEST(topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype) {
+    /* §4.2 row 2: leaf-shape-add on an object that is NOT a prototype must
+     * NOT bump.  IC's per-site shape-mismatch check catches the new shape
+     * naturally on the next access. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT_EQ((int)(o->flags & URBI_OBJ_FLAG_IS_PROTOTYPE), 0);
+
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    USymbol *bar = (USymbol *)ustr_intern(&vm, "bar", 3);
+
+    uint64_t pre = vm.topology_gen;
+    UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+    UValue v2 = {.kind = UVAL_INT, .v = {.i = 2}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, bar, v2), 0);
+    UASSERT(vm.topology_gen == pre);   /* both slot adds: no bump */
+
+    uvm_destroy(&vm);
+}
+
+/* === T29 audit tests: IC interaction with topology_gen === */
+
+UTEST(uic_after_topology_bump_invalidates_entries) {
+    /* When topology_gen advances past the value cached in an IC entry, the
+     * IC's per-entry topology_gen field no longer matches vm->topology_gen.
+     * Fast-path dispatch checks (recv->shape == ic->recv_shapes[k]) AND
+     * (vm->topology_gen == ic->topology_gen[k]); the second arm is the
+     * topology invalidation gate per §3.1. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+
+    /* Fill an IC via the slow path. */
+    UIC ic = {0};
+    ic.name = foo;
+    UValue out;
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, &out), 0);
+    UASSERT_EQ((int)ic.n, 1);
+    uint64_t cached_gen = ic.topology_gen[0];
+    UASSERT(cached_gen == vm.topology_gen);   /* freshly filled, equal */
+
+    /* Force a bump via property install. */
+    UObject *root = urbi_object_root(&vm);
+    UValue getter = {.kind = UVAL_CLOSURE, .v = {.p = (void *)root}};
+    UASSERT_EQ(urbi_object_install_property(&vm, o, foo,
+                                            URBI_SLOT_FLAG_OGET, getter), 0);
+
+    /* The entry's cached topology_gen no longer matches vm->topology_gen.
+     * That mismatch is the invalidation signal — the dispatch fast path
+     * compares the two. */
+    UASSERT(cached_gen != vm.topology_gen);
+    UASSERT(ic.topology_gen[0] == cached_gen);   /* IC field unchanged */
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uic_stays_hot_after_local_slot_value_write) {
+    /* Conversely: in-place value write on a local slot does NOT bump,
+     * so the cached topology_gen[0] still matches vm->topology_gen.
+     * Fast-path stays warm. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+
+    UIC ic = {0};
+    ic.name = foo;
+    UValue out;
+    UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, &out), 0);
+    UASSERT(ic.topology_gen[0] == vm.topology_gen);
+
+    /* In-place rewrite — no bump. */
+    UValue v2 = {.kind = UVAL_INT, .v = {.i = 99}};
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v2), 0);
+
+    /* Cached topology_gen still matches. */
+    UASSERT(ic.topology_gen[0] == vm.topology_gen);
+    UASSERT_EQ((int)o->slots[0].v.i, 99);
+
+    uvm_destroy(&vm);
+}
+
 void test_topology_gen_suite(void) {
     /* §4.1 bump surfaces (T27 + T28). */
     utest_run("topology_gen: §4.1 row 1 — slot remove bumps",
@@ -255,4 +370,14 @@ void test_topology_gen_suite(void) {
               topology_gen_row_6_remove_oget_bumps);
     utest_run("topology_gen: §4.1 row 7 — in-place oget mutation bumps",
               topology_gen_row_7_in_place_oget_mutation_bumps);
+    /* §4.2 non-bump surfaces (T29). */
+    utest_run("topology_gen: §4.2 row 1 — local slot value write does not bump",
+              topology_gen_row_4_2_1_local_slot_value_write_does_not_bump);
+    utest_run("topology_gen: §4.2 row 2 — leaf-shape-add on non-prototype does not bump",
+              topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype);
+    /* IC invariant pinning (T29). */
+    utest_run("topology_gen: IC after topology bump shows mismatched generation",
+              uic_after_topology_bump_invalidates_entries);
+    utest_run("topology_gen: IC stays hot after local slot value write",
+              uic_stays_hot_after_local_slot_value_write);
 }
