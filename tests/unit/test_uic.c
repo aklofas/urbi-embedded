@@ -27,9 +27,19 @@
 #define UTEST(name) static void name(void)
 
 UTEST(uic_layout_at_default_4_entries) {
+    /* This test pins the v1.0 default (URBI_IC_ENTRIES_PER_SITE=4 → UIC=144 B
+     * on 64-bit hosts).  Cross-builds at the footprint preset (=2 per T44)
+     * or the extreme footprint (=1) intentionally select a smaller layout;
+     * skip the assertion in those builds rather than re-targeting it.  The
+     * compile-time sizeof_static asserts in src/object/uic.h cover the
+     * non-default sizes — this runtime test gates only the canonical
+     * default the determinism-default + cross-arm + cross-riscv targets
+     * compile against. */
+#if URBI_IC_ENTRIES_PER_SITE == 4
     UASSERT_EQ(URBI_IC_ENTRIES_PER_SITE, 4);
-#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
+#  if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
     UASSERT_EQ((int)sizeof(UIC), 144);
+#  endif
 #endif
 }
 
