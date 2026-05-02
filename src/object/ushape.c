@@ -59,3 +59,14 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
     (void)vm; (void)parent; (void)slot_index; (void)flag_bit; (void)install;
     return NULL;
 }
+
+/* T12 stub: always returns -1 (slot not found locally).
+ * T13 lands the real lineage walk over s->parent collecting matched USymbol
+ * pointers; until then, urbi_object_lookup falls straight through to the
+ * proto-walk path on every lookup, which is exactly what T12's cycle-safety
+ * + rollover tests need to exercise. */
+int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
+{
+    (void)s; (void)name;
+    return -1;
+}

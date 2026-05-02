@@ -108,6 +108,16 @@ UShape *urbi_shape_root(struct UVM *vm);
 UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
                                        USymbol *name);
 
+/* Find the slot index for `name` in `s`'s lineage.
+ * Returns >= 0 on hit (slot index in UObject.slots[]), -1 on miss.
+ *
+ * STUB at T12: always returns -1.  T13 lands the real lineage walk
+ * (parent-chain traversal collecting slot names by USymbol identity).
+ * Until T13, urbi_object_lookup falls through to the proto-walk on every
+ * call — exercising the cycle-safety + rollover paths but not the
+ * local-slot-found fast path. */
+int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name);
+
 /* Look up the sibling shape for installing/removing a property on the slot
  * at `slot_index` in `parent`.  Per pre-M2 §7.2 + pre-M4 USlot/UProps
  * collapse spec §5.1, §5.2.

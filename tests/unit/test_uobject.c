@@ -667,6 +667,156 @@ UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
     uvm_destroy(&vm);
 }
 
+/* === T12: cycle-safe DFS lookup ===
+ *
+ * Per pre-M4 prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
+ *
+ * Three test bodies in scope at T12:
+ *   - cycle safety: a→b→a graph terminates without infinite recursion
+ *   - lookup_id pre-bump on each top-level call leaves stamps fresh
+ *   - rollover: low-32 wrap of vm->lookup_id triggers force_wrap that
+ *     clears every UObject.lookup_stamp and resets lookup_id to 1
+ *
+ * The "found local slot" + "DFS prefers leftmost" tests defer to T13/T26
+ * — urbi_shape_find_slot is stubbed to return -1 here, so no slot lookup
+ * succeeds, and the DFS-ordering signal is not observable through the
+ * public API at this commit. */
+
+UTEST(uobject_lookup_safe_under_cycle) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Build a→b→a cycle in the proto graph.  Atom OBJECT permits any
+     * inheritance (valid_proto accepts root-Object on either side), so
+     * urbi_object_add_proto won't reject the second set_protos.
+     *
+     * Use the T10 primitive directly to bypass any v1.x cycle-check that
+     * might land at the public mutator surface — T12's contract is that
+     * the lookup primitive itself tolerates cycles. */
+    UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(a && b);
+
+    urbi_object_set_protos_single(&vm, a, b);
+    urbi_object_set_protos_single(&vm, b, a);
+
+    /* Sanity: the cycle is wired. */
+    UASSERT(urbi_object_proto_at(a, 0u) == b);
+    UASSERT(urbi_object_proto_at(b, 0u) == a);
+
+    /* Lookup of any name on a returns -1 (miss) without infinite recursion.
+     * The cycle guard fires on lookup_stamp the second time we reach a. */
+    UValue out;
+    out.kind = UVAL_NIL;
+    int rc = urbi_object_lookup(&vm, a, /*name*/ NULL, &out);
+    UASSERT_EQ(rc, -1);
+
+    /* Both a and b were stamped exactly once with the new lookup_id. */
+    UASSERT_EQ((int)a->lookup_stamp, (int)(uint32_t)vm.lookup_id);
+    UASSERT_EQ((int)b->lookup_stamp, (int)(uint32_t)vm.lookup_id);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
+    /* Each top-level urbi_object_lookup call increments vm->lookup_id by
+     * exactly 1 (under non-rollover).  Two consecutive calls on a freshly
+     * allocated object should leave vm->lookup_id == initial + 2. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    UASSERT_EQ((int)vm.lookup_id, 1);   /* uvm_init invariant per pre-M4 spec */
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+
+    UValue out;
+    out.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_object_lookup(&vm, o, NULL, &out), -1);
+    UASSERT_EQ((int)vm.lookup_id, 2);
+
+    UASSERT_EQ(urbi_object_lookup(&vm, o, NULL, &out), -1);
+    UASSERT_EQ((int)vm.lookup_id, 3);
+
+    /* The single object's stamp tracks the most recent call. */
+    UASSERT_EQ((int)o->lookup_stamp, 3);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_lookup_id_rollover_clears_stamps) {
+    /* Per pre-M4 prototype-chain spec §7.2: when the low 32 bits of
+     * vm->lookup_id would wrap to 0, urbi_object_lookup_id_force_wrap
+     * runs an immediate clear-pass over every UObject and resets
+     * vm->lookup_id back to 1.
+     *
+     * Triggered transparently from inside urbi_object_lookup when
+     * (uint32_t)(lookup_id + 1) == 0, i.e. when lookup_id reaches a
+     * value whose low 32 bits are UINT32_MAX. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o1 && o2);
+
+    /* Stamp both cells with a non-zero stamp under the current lookup_id. */
+    UValue out;
+    out.kind = UVAL_NIL;
+    UASSERT_EQ(urbi_object_lookup(&vm, o1, NULL, &out), -1);
+    UASSERT_EQ(urbi_object_lookup(&vm, o2, NULL, &out), -1);
+    UASSERT(o1->lookup_stamp != 0u);
+    UASSERT(o2->lookup_stamp != 0u);
+
+    /* Drive lookup_id close to the u32 rollover boundary.  Keep the high
+     * 32 bits at 0 so the wrap path is observable: arrange lookup_id so
+     * the next call would compute (uint32_t)(lookup_id + 1) == 0. */
+    vm.lookup_id = (uint64_t)UINT32_MAX - 1ull;
+
+    /* This call increments lookup_id to UINT32_MAX (no rollover yet). */
+    UASSERT_EQ(urbi_object_lookup(&vm, o1, NULL, &out), -1);
+    UASSERT_EQ((int64_t)vm.lookup_id, (int64_t)UINT32_MAX);
+
+    /* Next call detects (uint32_t)(UINT32_MAX + 1) == 0 and force-wraps:
+     * clears every UObject.lookup_stamp + sets lookup_id = 1, then runs
+     * the lookup with the fresh id-1 stamp.  o1 ends up re-stamped with 1. */
+    UASSERT_EQ(urbi_object_lookup(&vm, o1, NULL, &out), -1);
+    UASSERT_EQ((int64_t)vm.lookup_id, 1);
+    UASSERT_EQ((int)o1->lookup_stamp, 1);
+    /* o2 was cleared by the wrap pass and never re-stamped (it wasn't
+     * the lookup target after the wrap), so its stamp stays 0. */
+    UASSERT_EQ((int)o2->lookup_stamp, 0);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
+    /* Direct test of urbi_object_lookup_id_force_wrap: every UObject's
+     * lookup_stamp returns to 0, lookup_id resets to 1. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *o3 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o1 && o2 && o3);
+
+    /* Manually stamp them to exercise the clear pass. */
+    o1->lookup_stamp = 0xDEADBEEFu;
+    o2->lookup_stamp = 0xCAFEBABEu;
+    o3->lookup_stamp = 0x12345678u;
+
+    vm.lookup_id = 0xFEEDFACEull;
+
+    urbi_object_lookup_id_force_wrap(&vm);
+
+    UASSERT_EQ((int)o1->lookup_stamp, 0);
+    UASSERT_EQ((int)o2->lookup_stamp, 0);
+    UASSERT_EQ((int)o3->lookup_stamp, 0);
+    UASSERT_EQ((int)vm.lookup_id, 1);
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -713,4 +863,12 @@ void test_uobject_suite(void) {
               uobject_valid_proto_rejects_cross_atom_family);
     utest_run("uobject: set_protos aborts on invalid proto (no partial state)",
               uobject_set_protos_aborts_on_invalid_proto_no_partial_state);
+    utest_run("uobject: lookup safe under proto-graph cycle",
+              uobject_lookup_safe_under_cycle);
+    utest_run("uobject: lookup pre-bumps lookup_id on each call",
+              uobject_lookup_pre_bumps_lookup_id_each_call);
+    utest_run("uobject: lookup_id rollover clears stamps + resets to 1",
+              uobject_lookup_id_rollover_clears_stamps);
+    utest_run("uobject: lookup_id_force_wrap clears all UObject stamps",
+              uobject_lookup_id_force_wrap_clears_all_object_stamps);
 }

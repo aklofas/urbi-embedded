@@ -110,6 +110,23 @@ struct UClosure;
  * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);
 
+/* === urbi_gc_walk_all_cells — generic all-cells iterator (T12) ===
+ *
+ * Calls cb(vm, cell, ctx) once for every live GC cell on vm->all_cells_head.
+ * Iteration order is unspecified (matches sweep order — O(n) over the sidecar
+ * list).  Cells freed during the walk would corrupt iteration; cb must not
+ * trigger urbi_gc_alloc / urbi_gc_collect / sweep work.  cb may mutate
+ * cell->gc_byte / type-private payload bytes safely.
+ *
+ * Used by urbi_object_lookup_id_force_wrap (T12) to clear UObject.lookup_stamp
+ * bytes on u32 rollover.  T36 may fold this into the mark phase to avoid the
+ * separate pass; until then this iterator is the load-bearing surface.
+ *
+ * Internal API — the UAllCellsNode sidecar layout is private to
+ * ugc_incremental.c, so direct iteration outside that TU is not possible. */
+typedef void (*UGcCellCallback)(struct UVM *vm, UCell *cell, void *ctx);
+void urbi_gc_walk_all_cells(struct UVM *vm, UGcCellCallback cb, void *ctx);
+
 /* === observer_dirty — watcher dirty-set hook ===
  * Defined in src/uwatcher.c.  Increments vm->watcher_dirty_count; the
  * scheduler calls watcher_eval_dirty (T34) on the next safepoint turn. */

@@ -218,6 +218,34 @@ static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
          __upf_next(&__upf_ctx_local, &(p_var));                        \
         )
 
+/* === T12: cycle-safe DFS lookup primitive ===
+ *
+ * Per pre-M4 prototype-chain spec §6 + GETSLOT/SETSLOT spec §6.5.
+ *
+ * urbi_object_lookup performs a left-first depth-first walk of obj's
+ * prototype graph for the slot named `name`.  On hit, writes the slot
+ * value to *out and returns 0.  On miss, returns -1 (no fallback retry
+ * at T12; T40 lands the GET_FALLBACK retry path).
+ *
+ * Cycle safety: each top-level call bumps vm->lookup_id, then stamps every
+ * visited UObject's lookup_stamp (u32 truncation) so re-visits short-circuit.
+ * Cycles in the proto graph are tolerated — iteration terminates after one
+ * visit per object.  Without the stamp, a cycle a→b→a would loop forever.
+ *
+ * Rollover: the low 32 bits of vm->lookup_id wrap eventually.  When the
+ * next bump would produce 0, urbi_object_lookup_id_force_wrap is called to
+ * clear every UObject's lookup_stamp and reset lookup_id to 1.  T36 may
+ * fold the clear pass into the GC mark phase to avoid the separate
+ * iteration; the API contract here is unchanged.
+ *
+ * Returns 0 on hit, -1 on miss.  Negative-rc reservation matches the
+ * other M4 ABI surfaces (see urbi_object_add_proto).
+ *
+ * struct UVM is forward-declared above for urbi_object_alloc; it is
+ * already in scope here. */
+int  urbi_object_lookup(struct UVM *vm, UObject *obj, USymbol *name, UValue *out);
+void urbi_object_lookup_id_force_wrap(struct UVM *vm);
+
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
     if (obj->protos == 0u) return 0u;
