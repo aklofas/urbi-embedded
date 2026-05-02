@@ -10,16 +10,17 @@
  * zero except cell (filled by urbi_gc_alloc).
  *
  * T13 lands the transition cache (UShapeMap), the real
- * urbi_shape_transition_add_slot, and the real urbi_shape_find_slot.  The
- * sibling-shape primitive (urbi_shape_transition_property) remains a stub
- * until the property-install task lands. */
+ * urbi_shape_transition_add_slot, and the real urbi_shape_find_slot.
+ * T17 lands the sibling-shape primitive (urbi_shape_transition_property)
+ * and the lazy UPropsTable wrapper allocation. */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "object/ushape.h"
+#include "object/uobject.h"   /* URBI_SLOT_FLAG_* bits */
 #include "uvm.h"
-#include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_SHAPE_MAP */
+#include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_SHAPE_MAP, UTYPE_PROPS_TABLE */
 
 /* === Transition-cache helpers (file-private) === */
 
@@ -184,14 +185,97 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
     return child;
 }
 
+/* alloc_props_table — allocate a UPropsTable wrapper sized for `n` entries
+ * and seed each entry from `seed` (if non-NULL) or NULL.  Returns NULL on
+ * OOM.  n == 0 returns NULL (caller treats as "no table"). */
+static UPropsTable *
+alloc_props_table(struct UVM *vm, uint32_t n, UProps *const *seed)
+{
+    if (n == 0u) {
+        return NULL;
+    }
+    UCell *c = urbi_gc_alloc(vm,
+                             sizeof(UPropsTable)
+                             + (size_t)n * sizeof(UProps *),
+                             UTYPE_PROPS_TABLE);
+    if (c == NULL) {
+        return NULL;
+    }
+    UPropsTable *pt = (UPropsTable *)c;
+    pt->n    = n;
+    pt->_pad = 0u;
+    if (seed != NULL) {
+        for (uint32_t i = 0u; i < n; i++) {
+            pt->entries[i] = seed[i];
+        }
+    } else {
+        for (uint32_t i = 0u; i < n; i++) {
+            pt->entries[i] = NULL;
+        }
+    }
+    return pt;
+}
+
 UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install)
 {
-    /* Sibling-shape materialisation for property install/remove lands at a
-     * later M4 task (per pre-M2 §7.2 + pre-M4 USlot/UProps spec §5.1, §5.2). */
-    (void)vm; (void)parent; (void)slot_index; (void)flag_bit; (void)install;
-    return NULL;
+    /* Sibling-shape materialisation per pre-M2 §7.2 + pre-M4 USlot/UProps
+     * spec §5.1, §5.2.  Allocates a fresh sibling that shares parent's
+     * lineage but carries the new flag bit at slot_index's nibble and a
+     * copy-on-write props_table (caller writes the per-slot UProps* into
+     * sibling->props_table[slot_index] post-transition). */
+    if (vm == NULL || parent == NULL) {
+        return NULL;
+    }
+    if (parent->count == 0u || slot_index >= parent->count) {
+        return NULL;            /* no slot to attach a property to */
+    }
+
+    /* Compute new flag nibble at slot_index.  Per pre-M4 USlot/UProps
+     * spec §4.1, UShape.flags packs 4 bits/slot across slots (v1.0 cap of
+     * 8 slots in the packed form — spill side-table deferred to T-later). */
+    const uint32_t shift = slot_index * 4u;
+    const uint32_t old_nibble = (parent->flags >> shift) & 0xFu;
+    const uint32_t fb = (uint32_t)flag_bit & 0xFu;
+    const uint32_t new_nibble = install ? (old_nibble | fb)
+                                        : (old_nibble & ~fb);
+    if (old_nibble == new_nibble) {
+        return parent;          /* idempotent no-op */
+    }
+    const uint32_t new_flags = (parent->flags & ~(0xFu << shift))
+                             | (new_nibble << shift);
+
+    /* Allocate sibling shape (shallow copy with overrides).  Sibling shares
+     * parent->parent (NOT parent itself) — it represents the same set of
+     * slots, just with different per-slot property bits. */
+    UCell *sc = urbi_gc_alloc(vm, sizeof(UShape), UTYPE_SHAPE);
+    if (sc == NULL) {
+        return NULL;
+    }
+    UShape *sibling = (UShape *)sc;
+    sibling->name        = parent->name;
+    sibling->index       = parent->index;
+    sibling->count       = parent->count;
+    sibling->flags       = new_flags;
+    sibling->_pad        = 0u;
+    sibling->parent      = parent->parent;
+    sibling->transitions = NULL;   /* sibling builds its own future cache */
+    sibling->props_table = NULL;
+
+    /* Allocate sibling's props_table, seeding entries from parent's table
+     * when present (copy-on-write).  Caller writes the per-slot UProps*
+     * for slot_index post-transition. */
+    UPropsTable *pt = alloc_props_table(vm, parent->count,
+                                        parent->props_table);
+    if (pt == NULL) {
+        /* OOM on the props_table cell.  sibling is GC-managed; sweep
+         * reaps it.  No partial state to undo. */
+        return NULL;
+    }
+    sibling->props_table = pt->entries;
+
+    return sibling;
 }
 
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)

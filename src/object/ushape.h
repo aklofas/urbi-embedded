@@ -75,6 +75,26 @@ struct UProps {
     uint32_t     _spare   : 31;
 };
 
+/* === UPropsTable ===
+ *
+ * Wrapper GC cell holding a UShape's per-slot UProps* array.  Allocated
+ * lazily by urbi_shape_transition_property (T17) when the first property
+ * is installed on a shape's lineage.
+ *
+ * UShape.props_table points at the entries[] flexible array; the wrapper
+ * cell's reachability is provided by walk_ushape, which recovers the cell
+ * base from props_table via offsetof(UPropsTable, entries) and shades it.
+ *
+ * Field order is load-bearing (UCell first member; explicit pad to 8 B
+ * before entries[] so each UProps* element is naturally aligned). */
+typedef struct UPropsTable {
+    UCell        cell;              /* type_tag = UTYPE_PROPS_TABLE */
+    /* 2 B compiler-inserted padding before n */
+    uint32_t     n;                 /* entry count (== owning UShape.count) */
+    uint32_t     _pad;              /* explicit pad to 8 B align entries[] */
+    UProps      *entries[];         /* flexible array; length == n */
+} UPropsTable;
+
 /* === UShape ===
  *
  * Hidden class per pre-M2 §3 + pre-M4 USlot/UProps collapse §4.1.
@@ -142,10 +162,21 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
  * returned. */
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name);
 
-/* Look up the sibling shape for installing/removing a property on the slot
- * at `slot_index` in `parent`.  Per pre-M2 §7.2 + pre-M4 USlot/UProps
- * collapse spec §5.1, §5.2.
- * Stub at this task; sibling-shape materialisation lands later. */
+/* Materialise the sibling shape for installing or removing a property
+ * flag bit on the slot at `slot_index` in `parent`.  Per pre-M2 §7.2 +
+ * pre-M4 USlot/UProps collapse spec §5.1, §5.2.
+ *
+ * Behaviour:
+ *  - If `parent->count == 0` or `slot_index >= parent->count`: returns NULL.
+ *  - If the requested flag bit is already in the desired state: returns
+ *    `parent` unchanged (idempotent no-op; no allocation).
+ *  - Otherwise allocates a fresh sibling UShape sharing parent->parent
+ *    (NOT parent itself) with the new flag-nibble at slot_index, and a
+ *    fresh UPropsTable wrapper cell whose entries are seeded from
+ *    parent->props_table (copy-on-write).  Caller writes the per-slot
+ *    UProps* into sibling->props_table[slot_index] post-transition.
+ *
+ * Returns the (cached or fresh) sibling shape, or NULL on OOM. */
 UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install);

@@ -187,12 +187,17 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
                                             UTYPE_SHAPE);
     UASSERT(shape != NULL);
 
-    /* props_table backing storage: host-side test array, not GC-managed.
-     * The walker only dereferences the UProps* entries it contains. */
-    UProps *props_table[1];
-    props_table[0] = child_props;
+    /* props_table backing storage: allocate the UPropsTable wrapper cell
+     * (T17) so walk_ushape can recover and shade it via offsetof.  Seed
+     * entries[0] = child_props; the walker shades it via the wrapper. */
+    UPropsTable *pt = (UPropsTable *)urbi_gc_alloc(&vm,
+        sizeof(UPropsTable) + sizeof(UProps *), UTYPE_PROPS_TABLE);
+    UASSERT(pt != NULL);
+    pt->n          = 1u;
+    pt->_pad       = 0u;
+    pt->entries[0] = child_props;
     shape->parent      = parent;
-    shape->props_table = props_table;
+    shape->props_table = pt->entries;
     shape->count       = 1u;
 
     /* Install shape as the only test root.  After the cycle, the mark

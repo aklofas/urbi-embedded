@@ -12,11 +12,15 @@
  *            each prototype (direct UObject*) via UPROTOS_FOREACH (T9).
  *   UProtos  walks items[i] (direct UObject*; embeds UCell at offset 0).
  *   UShape   walks parent (UShape*) + transitions (UShapeMap*) +
- *            props_table[i] (UProps*).  Skips name (USymbol — interned,
- *            never collected per intern-table contract).
+ *            the UPropsTable wrapper cell (recovered via offsetof from
+ *            props_table) + each props_table[i] (UProps*).  Skips name
+ *            (USymbol — interned, never collected per intern-table contract).
  *   UShapeMap walks each entries[i].v (UShape*) when entry is occupied.
  *            Keys (USymbol*) are interned, never collected.
  *   UProps   walks oget + oset (UValue payloads) via cb.
+ *   UPropsTable no-op: entries[] are reachable through the owning
+ *            UShape walker (above).  The wrapper cell stays alive because
+ *            UShape's walker shades it.
  *   USlotHandle / UModuleInstance / UProtoInstance — no-op walkers at this
  *            task.  Children traced once owning data lands (later M4 tasks).
  *
@@ -26,6 +30,7 @@
  * extended in later M4/M5 tasks.  The walker calls are written today so
  * they automatically pick up the broader heap-bearing set when it lands. */
 
+#include <stddef.h>           /* offsetof */
 #include <stdint.h>
 
 #include "object/uobject.h"
@@ -124,9 +129,20 @@ walk_ushape(struct UVM *vm, void *payload,
     }
 
     /* props_table is NULL until the first slot in this lineage installs
-     * a property (per pre-M4 USlot/UProps spec §4.2).  When non-NULL it's
-     * a dense array of length s->count; entries may themselves be NULL. */
+     * a property (per pre-M4 USlot/UProps spec §4.2).  When non-NULL it
+     * points at the entries[] flexible array of a UPropsTable wrapper
+     * cell allocated by urbi_shape_transition_property (T17).
+     *
+     * Reachability: shade both (a) the wrapper cell itself, recovered via
+     * offsetof(UPropsTable, entries), and (b) each non-NULL UProps* entry.
+     *
+     * Test caveat: tests that synthesize props_table from a host-stack
+     * array (test_ugc_object_cells.c Test 4) MUST allocate via the
+     * UPropsTable wrapper to remain compatible with this walker. */
     if (s->props_table != NULL) {
+        UPropsTable *pt = (UPropsTable *)(void *)
+            ((uint8_t *)s->props_table - offsetof(UPropsTable, entries));
+        gc_shade_gray(vm, (UCell *)pt);
         uint32_t i;
         for (i = 0u; i < s->count; i++) {
             if (s->props_table[i] != NULL) {
@@ -263,6 +279,18 @@ static const UType type_uprops = {
     .destroy       = NULL,
 };
 
+/* UPropsTable walker is a no-op: the owning UShape's walker (above) iterates
+ * each non-NULL entries[i] and shades the UProps cells.  The wrapper cell
+ * itself stays alive because walk_ushape shades it via offsetof recovery. */
+static const UType type_upropstable = {
+    .type_tag      = UTYPE_PROPS_TABLE,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UPropsTable",
+    .walk_payload  = walk_noop,
+    .destroy       = NULL,
+};
+
 static const UType type_uslothandle = {
     .type_tag      = UTYPE_SLOTHANDLE,
     .flags         = 0u,
@@ -304,6 +332,7 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_SHAPE]           = (UType *)&type_ushape;
     vm->type_table[UTYPE_SHAPE_MAP]       = (UType *)&type_ushapemap;
     vm->type_table[UTYPE_PROPS]           = (UType *)&type_uprops;
+    vm->type_table[UTYPE_PROPS_TABLE]     = (UType *)&type_upropstable;
     vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;

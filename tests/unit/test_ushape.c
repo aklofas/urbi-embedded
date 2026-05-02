@@ -112,7 +112,8 @@ UTEST(ushape_transition_input_guards) {
      * otherwise create a confusing shape. */
     UASSERT(urbi_shape_transition_add_slot(&vm, root, NULL) == NULL);
 
-    /* sibling-property primitive stays a stub at T13. */
+    /* sibling-property primitive (T17): root has count == 0, so any
+     * slot_index is out of range and the call returns NULL. */
     UASSERT(urbi_shape_transition_property(&vm, root, 0u, 0u, 1) == NULL);
 
     uvm_destroy(&vm);
@@ -184,6 +185,70 @@ UTEST(ushape_distinct_shapes_for_distinct_construction_orders) {
     uvm_destroy(&vm);
 }
 
+/* === T17: transition_property installs flag bit + lazy props_table ===
+ *
+ * Installing a property bit on a slot in foo_shape produces a sibling
+ * shape that:
+ *   - Is distinct from foo_shape (fresh allocation).
+ *   - Shares foo_shape's parent (sibling lineage, not child).
+ *   - Has the requested flag bit set in the slot's flag-nibble.
+ *   - Has a non-NULL props_table (lazy allocation).
+ *   - Lineage walk still finds foo at index 0.
+ * Re-installing the same bit is idempotent and returns the same sibling. */
+
+UTEST(ushape_transition_property_installs_flag_and_lazy_props_table) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UShape *root = urbi_shape_root(&vm);
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UASSERT(foo != NULL);
+
+    UShape *foo_shape = urbi_shape_transition_add_slot(&vm, root, foo);
+    UASSERT(foo_shape != NULL);
+    UASSERT_EQ((int)foo_shape->count, 1);
+    UASSERT(foo_shape->props_table == NULL);
+    UASSERT_EQ((int)foo_shape->flags, 0);
+
+    /* Install OGET on slot 0. */
+    UShape *with_oget = urbi_shape_transition_property(&vm, foo_shape,
+        /*slot_index=*/0u, URBI_SLOT_FLAG_OGET, /*install=*/1);
+    UASSERT(with_oget != NULL);
+    UASSERT(with_oget != foo_shape);                 /* sibling, not parent */
+    UASSERT(with_oget->parent == foo_shape->parent); /* shares root parent */
+    UASSERT_EQ((int)with_oget->count, (int)foo_shape->count);
+    UASSERT(with_oget->name == foo);
+    UASSERT_EQ((int)with_oget->index, (int)foo_shape->index);
+
+    /* OGET nibble at slot 0 is set; foo_shape's stays clear. */
+    UASSERT_EQ((int)(with_oget->flags & URBI_SLOT_FLAG_OGET),
+               (int)URBI_SLOT_FLAG_OGET);
+    UASSERT_EQ((int)(foo_shape->flags & URBI_SLOT_FLAG_OGET), 0);
+
+    /* props_table lazy-allocated and seeded to NULL (parent had no table). */
+    UASSERT(with_oget->props_table != NULL);
+    UASSERT(with_oget->props_table[0] == NULL);
+
+    /* Lineage walk on the sibling still finds foo at index 0. */
+    UASSERT_EQ((int)urbi_shape_find_slot(with_oget, foo), 0);
+
+    /* Idempotent: re-installing OGET returns the input shape unchanged. */
+    UShape *again = urbi_shape_transition_property(&vm, with_oget,
+        0u, URBI_SLOT_FLAG_OGET, 1);
+    UASSERT(again == with_oget);
+
+    /* Removing OGET (not yet installed on foo_shape) is also a no-op. */
+    UShape *no_change = urbi_shape_transition_property(&vm, foo_shape,
+        0u, URBI_SLOT_FLAG_OGET, /*install=*/0);
+    UASSERT(no_change == foo_shape);
+
+    /* Out-of-range slot_index returns NULL. */
+    UASSERT(urbi_shape_transition_property(&vm, foo_shape,
+        /*slot_index=*/1u, URBI_SLOT_FLAG_OGET, 1) == NULL);
+
+    uvm_destroy(&vm);
+}
+
 void test_ushape_suite(void) {
     utest_run("ushape: header is 56 bytes",
               ushape_header_is_56_bytes);
@@ -201,4 +266,6 @@ void test_ushape_suite(void) {
               ushape_transition_cache_returns_same_shape_for_repeated_add);
     utest_run("ushape: distinct shapes for distinct construction orders",
               ushape_distinct_shapes_for_distinct_construction_orders);
+    utest_run("ushape: transition_property installs flag and lazy props_table",
+              ushape_transition_property_installs_flag_and_lazy_props_table);
 }
