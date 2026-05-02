@@ -94,7 +94,12 @@ typedef enum {
 #define URBI_OBJ_ATOM_MASK         0x0Fu
 #define URBI_OBJ_FLAG_FROZEN       (1u << 4)
 #define URBI_OBJ_FLAG_SANDBOX_RO   (1u << 5)   /* per Luau prior art */
-/* bits 6..31 spare */
+#define URBI_OBJ_FLAG_IS_PROTOTYPE (1u << 6)   /* T27: set when this object is referenced as another's prototype.
+                                                  Monotonic — never cleared.  Drives the conditional topology_gen
+                                                  bump in urbi_object_set_local_slot per topology spec §4.1 row 4
+                                                  (slot install on a prototype must invalidate IC entries that
+                                                  cached lookups walking through this object). */
+/* bits 7..31 spare */
 
 /* === forward decls (real definitions land at later M4 tasks) ===
  * UShape + UObject are also typedef'd in include/urbi/object.h (the public
@@ -311,6 +316,50 @@ int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, USymbol *name,
  * bump for the "obj is itself a prototype" case via the IS_PROTOTYPE flag. */
 int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
                                USymbol *name, UValue value);
+
+/* === T27: remove a local slot from a receiver ===
+ *
+ * Per topology-generation spec §4.1 row 1.  If the slot doesn't exist on
+ * obj's lineage, returns 0 (silent no-op, no allocation).  Otherwise rebuilds
+ * obj->shape via urbi_shape_transition_remove_slot, allocates a fresh
+ * USlotArray sized for new_shape->count, copies non-removed slot values,
+ * shades the old wrapper, publishes the new shape + slots pointer, and
+ * unconditionally bumps vm->topology_gen.
+ *
+ * Bumps unconditionally (whether obj is a prototype or not) because the
+ * slot-removal changes the lineage's resolution semantics: any IC entry
+ * that cached a slot pointer past this object is now potentially stale
+ * (the slot may have moved to a different index in the new shape).
+ *
+ * Returns 0 on success or no-op, -1 on OOM. */
+int urbi_object_remove_slot(struct UVM *vm, UObject *obj, USymbol *name);
+
+/* === T28: install / remove / mutate a slot property ===
+ *
+ * Per topology-generation spec §4.1 rows 5/6/7.  Each routes through
+ * urbi_shape_transition_property (T17) for the shape transition, then
+ * writes the per-slot UProps* into new_shape->props_table[idx], and
+ * bumps vm->topology_gen.
+ *
+ * - install: allocate a fresh UProps cell, write the supplied UValue at the
+ *   field selected by flag_bit (URBI_SLOT_FLAG_OGET or URBI_SLOT_FLAG_OSET)
+ *   and CONSTANT bit if flag_bit == URBI_SLOT_FLAG_CONSTANT, transition
+ *   shape, publish.  Returns -1 if the slot doesn't exist or on OOM.
+ * - remove: clear the flag bit on the per-slot UProps; if all flags now
+ *   clear, write NULL into props_table[idx].  Sibling shape transition
+ *   with install=0.  Returns 0 if the slot exists; silent no-op (still 0)
+ *   if the bit isn't set.  Returns -1 if the slot doesn't exist or on OOM.
+ * - set_property_value: in-place write into the existing UProps's oget /
+ *   oset field (no shape transition).  Bumps topology_gen because cached
+ *   IC uprops[] pointer is stale (next dispatch must re-fetch). */
+int urbi_object_install_property   (struct UVM *vm, UObject *obj,
+                                    USymbol *name, uint8_t flag_bit,
+                                    UValue value);
+int urbi_object_remove_property    (struct UVM *vm, UObject *obj,
+                                    USymbol *name, uint8_t flag_bit);
+int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
+                                    USymbol *name, uint8_t flag_bit,
+                                    UValue value);
 
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {

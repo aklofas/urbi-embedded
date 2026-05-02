@@ -290,3 +290,62 @@ int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
     }
     return -1;
 }
+
+/* T27: rebuild a shape with `name` dropped from the lineage.
+ *
+ * Per pre-M2 §7.1's "private shape lineage fallback" allowance.  Walks
+ * `parent` parent-ward into a fixed-depth name buffer, drops the entry
+ * matching `name`, then rebuilds from the root via add_slot over the
+ * surviving names (preserves declaration order of the survivors).
+ *
+ * Cap at URBI_SHAPE_REMOVE_DEPTH_CAP names (256) — deeper lineages return
+ * NULL so callers can surface a diagnostic.  Same depth-bound discipline
+ * as urbi_object_resolve_slot's resolve stack. */
+#define URBI_SHAPE_REMOVE_DEPTH_CAP  256u
+
+UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
+                                          USymbol *name)
+{
+    if (vm == NULL || parent == NULL || name == NULL) {
+        return NULL;
+    }
+    if (parent->count == 0u) {
+        return NULL;            /* nothing to drop */
+    }
+
+    /* Walk parent-ward, recording the (name) at each shape hop.  Order:
+     * names[0] is the leaf (last-added), names[depth-1] is the first-added. */
+    USymbol *names[URBI_SHAPE_REMOVE_DEPTH_CAP];
+    uint32_t depth = 0u;
+    int found = 0;
+    for (UShape *cur = parent; cur != NULL && cur->name != NULL;
+         cur = cur->parent) {
+        if (depth >= URBI_SHAPE_REMOVE_DEPTH_CAP) {
+            return NULL;        /* cap exceeded */
+        }
+        if (cur->name == name) {
+            found = 1;
+            /* Don't record the dropped name. */
+        } else {
+            names[depth++] = cur->name;
+        }
+    }
+    if (!found) {
+        return NULL;            /* `name` not in lineage */
+    }
+
+    /* Rebuild from the root in original add-order: names[depth-1] was added
+     * first, names[0] was added last (excluding the dropped one). */
+    UShape *root = urbi_shape_root(vm);
+    if (root == NULL) {
+        return NULL;
+    }
+    UShape *cur = root;
+    for (uint32_t i = depth; i > 0u; i--) {
+        cur = urbi_shape_transition_add_slot(vm, cur, names[i - 1u]);
+        if (cur == NULL) {
+            return NULL;
+        }
+    }
+    return cur;
+}

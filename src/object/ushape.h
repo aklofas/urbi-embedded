@@ -181,6 +181,22 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install);
 
+/* T27: build a child shape that drops `name` from `parent`'s lineage.
+ *
+ * Strategy (private shape lineage fallback per pre-M2 §7.1): walk parent
+ * parent-ward into a fixed-depth name buffer, drop the entry matching
+ * `name`, then rebuild from the root via urbi_shape_transition_add_slot
+ * over the surviving names in original order.  The resulting child shape
+ * is private (not cached in any transitions table beyond the per-name
+ * caches that add_slot already populates).
+ *
+ * Returns NULL if `name` is not in `parent`'s lineage, or on OOM.  Depth
+ * is capped at 256 names; deeper lineages return NULL (matches the M3-era
+ * 64-deep stack precedent in resolve_slot, doubled here because shape
+ * lineages can be longer than prototype graph depth). */
+UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
+                                          USymbol *name);
+
 #ifdef __cplusplus
 }
 #endif
