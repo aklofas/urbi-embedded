@@ -30,6 +30,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
+#include "object/umoduleinstance.h"
 #include "object/utypes_init.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
@@ -170,13 +171,43 @@ walk_uprops(struct UVM *vm, void *payload,
 /* === walk_noop ===
  *
  * No-op walker for cell types whose payload is fully described but whose
- * children-walk lands at a later M4 task (USlotHandle / UModuleInstance /
- * UProtoInstance).  Registering a non-NULL walker keeps the mark dispatch
- * exercising the function-pointer call site, which is the failure-mode we
- * want to surface early if a future change breaks it. */
+ * children-walk lands at a later M4 task (USlotHandle remains here at T16;
+ * UModuleInstance + UProtoInstance get real walkers below). */
 static void
 walk_noop(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
+{
+    (void)vm; (void)payload; (void)cb; (void)ctx;
+}
+
+/* === walk_umoduleinstance (T16) ===
+ *
+ * Shades the UProtoInstanceArr bulk so it survives sweep as long as the
+ * UModuleInstance is alive.  module is a non-owning pointer to a UModule
+ * that lives outside the GC heap (flash-resident in freestanding builds;
+ * caller-owned struct in hosted builds), so it's not shaded. */
+static void
+walk_umoduleinstance(struct UVM *vm, void *payload,
+                     UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
+
+    UModuleInstance *mi = (UModuleInstance *)((UCell *)payload - 1);
+    if (mi->proto_instances != NULL) {
+        gc_shade_gray(vm, (UCell *)mi->proto_instances);
+    }
+}
+
+/* === walk_uprotoinstance (T16) ===
+ *
+ * No children to mark at T16: every UIC entry is zero-init
+ * (recv_shapes / slots / uprops all NULL; topology_gen=0 = unfilled
+ * sentinel).  TODO(T22+): once IC fill lands, walk each UIC.recv_shapes[e],
+ * slots[e] (USlot UValue payload via cb), and uprops[e] for the live n
+ * entries per site.  USymbol.name is interned and never collected. */
+static void
+walk_uprotoinstance(struct UVM *vm, void *payload,
+                    UGcRootCallback cb, void *ctx)
 {
     (void)vm; (void)payload; (void)cb; (void)ctx;
 }
@@ -246,7 +277,7 @@ static const UType type_umodule_instance = {
     .flags         = 0u,
     .payload_size  = 0u,
     .name          = "UModuleInstance",
-    .walk_payload  = walk_noop,
+    .walk_payload  = walk_umoduleinstance,
     .destroy       = NULL,
 };
 
@@ -255,7 +286,7 @@ static const UType type_uproto_instance = {
     .flags         = 0u,
     .payload_size  = 0u,
     .name          = "UProtoInstance",
-    .walk_payload  = walk_noop,
+    .walk_payload  = walk_uprotoinstance,
     .destroy       = NULL,
 };
 
