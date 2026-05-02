@@ -106,6 +106,7 @@ typedef struct UType {
 #define UTYPE_PROTO_INSTANCE   14   /* M4 — proto-bound instance (later task) */
 #define UTYPE_SHAPE_MAP        15   /* M4 — UShapeMap transition cache (T13) */
 #define UTYPE_PROPS_TABLE      16   /* M4 — UPropsTable (per-shape UProps* array, T17) */
+#define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
 #define UTYPE_HOST_BASE  64  /* host-registered types start here */
 #define UTYPE_HOST_MAX   255
 

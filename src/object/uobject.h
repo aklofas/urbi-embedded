@@ -39,6 +39,28 @@ _Static_assert(sizeof(USlot) == sizeof(UValue),
 _Static_assert(sizeof(USlot) == 16,
                "USlot must be 16 bytes per pre-M4 USlot/UProps spec §3");
 
+/* === USlotArray ===
+ *
+ * Wrapper GC cell holding a UObject's grow-on-write slot storage.  Allocated
+ * lazily by urbi_object_set_local_slot (T26) on the first slot transition
+ * out of the empty root shape, then reallocated fresh on each subsequent
+ * leaf-shape-add (M3 GC is non-relocating).
+ *
+ * UObject.slots points at the entries[] flexible array; the wrapper cell's
+ * reachability is provided by walk_uobject, which recovers the cell base
+ * from obj->slots via offsetof(USlotArray, entries) and shades it.
+ *
+ * Field order is load-bearing (UCell first member; explicit pad to 8 B
+ * before entries[] so each USlot is naturally aligned).  Mirrors the
+ * UPropsTable / UProtoInstanceArr precedent. */
+typedef struct USlotArray {
+    UCell        cell;              /* type_tag = UTYPE_SLOT_ARRAY */
+    /* 2 B compiler-inserted padding before n */
+    uint32_t     n;                 /* entry count (== owning UShape.count) */
+    uint32_t     _pad;              /* explicit pad to 8 B align entries[] */
+    USlot        entries[];         /* flexible array; length == n */
+} USlotArray;
+
 /* === IC + UProps slot-property flag bits ===
  *
  * Per pre-M4 GETSLOT/SETSLOT spec §6.5.  These flags populate UIC.flags
@@ -245,6 +267,30 @@ static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
  * already in scope here. */
 int  urbi_object_lookup(struct UVM *vm, UObject *obj, USymbol *name, UValue *out);
 void urbi_object_lookup_id_force_wrap(struct UVM *vm);
+
+/* === T26: install a local slot on a receiver ===
+ *
+ * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.
+ *
+ * If `name` already exists locally on `obj` (i.e. urbi_shape_find_slot hits
+ * in obj->shape's lineage), perform an in-place value update; no shape
+ * transition, no topology_gen bump.
+ *
+ * Otherwise transition obj->shape to the child shape via
+ * urbi_shape_transition_add_slot, allocate a fresh USlotArray wrapper cell,
+ * copy over the existing slot values, write the new value at the freshly
+ * added index, shade the OLD wrapper cell (forward Dijkstra barrier — it is
+ * about to become unreachable), and publish the new shape + slots pointer.
+ *
+ * Returns 0 on success, -1 on OOM (either the shape transition or the
+ * USlotArray allocation failed).
+ *
+ * No topology_gen bump for the leaf-shape-add case: per topology spec
+ * §4.2 row 2, the IC's per-site shape-mismatch check is sufficient to
+ * invalidate stale entries on the receiver.  T27 lands the conditional
+ * bump for the "obj is itself a prototype" case via the IS_PROTOTYPE flag. */
+int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
+                               USymbol *name, UValue value);
 
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {

@@ -8,7 +8,9 @@
 #include "utest.h"
 
 #include "object/uobject.h"
+#include "object/ushape.h"  /* UShape — T26 set_local_slot tests */
 #include "umodule.h"   /* UValue */
+#include "uintern.h"   /* ustr_intern — T26 set_local_slot tests */
 #include "uvm.h"
 #include "urbi/gc.h"       /* urbi_gc_alloc — T9 heap UProtos */
 #include "urbi/object.h"   /* T8 public API */
@@ -817,6 +819,91 @@ UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
     uvm_destroy(&vm);
 }
 
+/* === T26: urbi_object_set_local_slot ===
+ *
+ * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.  Two
+ * behavioural tests:
+ *   - Adding a fresh slot grows the slot array via shape transition.
+ *   - Re-setting an existing slot is in-place value update (no growth). */
+
+UTEST(uobject_set_local_slot_grows_slots_array_and_transitions_shape) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+    UASSERT_EQ((int)o->shape->count, 0);
+    UASSERT(o->slots == NULL);
+
+    /* USymbol is opaque (forward-decl in umodule.h); intern returns
+     * const char* and we cast to USymbol* — same pattern as test_ushape.c
+     * and test_funcstate.c. */
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UASSERT(foo != NULL);
+
+    UValue v7;
+    v7.kind = UVAL_INT;
+    v7.v.i  = 7;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v7), 0);
+
+    UASSERT_EQ((int)o->shape->count, 1);
+    UASSERT(o->shape->name == foo);
+    UASSERT_EQ((int)o->shape->index, 0);
+    UASSERT(o->slots != NULL);
+    UASSERT_EQ((int)o->slots[0].kind, (int)UVAL_INT);
+    UASSERT_EQ((int)o->slots[0].v.i, 7);
+
+    /* Add a second slot — exercises the copy-old-then-write-new branch
+     * with a non-NULL old wrapper (forward Dijkstra barrier path). */
+    USymbol *bar = (USymbol *)ustr_intern(&vm, "bar", 3);
+    UASSERT(bar != NULL);
+
+    UValue v11;
+    v11.kind = UVAL_INT;
+    v11.v.i  = 11;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, bar, v11), 0);
+
+    UASSERT_EQ((int)o->shape->count, 2);
+    UASSERT(o->shape->name == bar);
+    UASSERT_EQ((int)o->shape->index, 1);
+    UASSERT_EQ((int)o->slots[0].v.i, 7);   /* preserved */
+    UASSERT_EQ((int)o->slots[1].v.i, 11);  /* new */
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
+    /* Re-setting an already-local slot is in-place value update.  Shape
+     * stays put (count unchanged); no fresh USlotArray allocation. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+
+    USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
+    UASSERT(foo != NULL);
+
+    UValue v1;
+    v1.kind = UVAL_INT;
+    v1.v.i  = 1;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v1), 0);
+    UShape *s_after_first = o->shape;
+    USlot  *slots_after_first = o->slots;
+
+    UValue v2;
+    v2.kind = UVAL_INT;
+    v2.v.i  = 2;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v2), 0);
+
+    UASSERT_EQ((int)o->shape->count, 1);          /* no growth — same name */
+    UASSERT(o->shape == s_after_first);           /* shape unchanged */
+    UASSERT(o->slots == slots_after_first);       /* slots wrapper unchanged */
+    UASSERT_EQ((int)o->slots[0].v.i, 2);          /* value overwritten */
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -871,4 +958,8 @@ void test_uobject_suite(void) {
               uobject_lookup_id_rollover_clears_stamps);
     utest_run("uobject: lookup_id_force_wrap clears all UObject stamps",
               uobject_lookup_id_force_wrap_clears_all_object_stamps);
+    utest_run("uobject: set_local_slot grows slots array + transitions shape",
+              uobject_set_local_slot_grows_slots_array_and_transitions_shape);
+    utest_run("uobject: set_local_slot replaces existing value when present",
+              uobject_set_local_slot_replaces_existing_value_when_present);
 }

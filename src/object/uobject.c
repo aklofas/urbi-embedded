@@ -13,6 +13,7 @@
  * urbi_object_atom matches the canonical form decoded by UPROTOS_FOREACH
  * (src/object/uobject.h, T9). */
 
+#include <stddef.h>       /* offsetof */
 #include <stdint.h>
 
 #include "object/uobject.h"
@@ -593,4 +594,96 @@ urbi_object_lookup_id_force_wrap(UVM *vm)
      * now an immediate dedicated pass is correct (per spec §7.2). */
     urbi_gc_walk_all_cells(vm, clear_lookup_stamp_cb, NULL);
     vm->lookup_id = 1ull;
+}
+
+/* === T26: install a local slot on a receiver ===
+ *
+ * Per pre-M2 §6.1 + pre-M4 topology-generation spec §4.2 row 2.
+ *
+ * Two cases:
+ *   1. Slot already exists on this lineage (urbi_shape_find_slot returns
+ *      an index >= 0): in-place value update.  No shape transition, no
+ *      USlotArray reallocation, no topology_gen bump.  Note: at v1.0
+ *      `obj->slots[idx]` is the dense receiver storage — assigning to it
+ *      stores the new value directly; no separate slot-write barrier is
+ *      needed because the OLD value (about to be overwritten) cannot point
+ *      at a black-marked cell that the GC has already scanned (USlot is
+ *      reachable via walk_uobject's per-slot UValue cb, which the GC re-
+ *      drives in the next slice — same reasoning as the UProps oget/oset
+ *      writes in T17).
+ *
+ *   2. Slot is new (find_slot returns -1): transition to the child shape
+ *      via urbi_shape_transition_add_slot, allocate a fresh USlotArray
+ *      sized for new_shape->count, copy the old slots, write the new
+ *      value at new_shape->index, shade the old wrapper (forward Dijkstra
+ *      — it is about to become unreachable), and publish the new shape +
+ *      slots pointer.  No topology_gen bump per topology spec §4.2 row 2
+ *      (IC shape-mismatch check covers this).
+ *
+ * Returns 0 on success, -1 on OOM. */
+int
+urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
+{
+    if (vm == NULL || obj == NULL || name == NULL) {
+        return -1;
+    }
+
+    /* Case 1: slot already in this lineage — in-place value update. */
+    int32_t existing = urbi_shape_find_slot(obj->shape, name);
+    if (existing >= 0) {
+        obj->slots[existing] = value;
+        return 0;
+    }
+
+    /* Case 2: leaf-shape-add.  Materialise (or hit cached) child shape. */
+    UShape *new_shape = urbi_shape_transition_add_slot(vm, obj->shape, name);
+    if (new_shape == NULL) {
+        return -1;
+    }
+
+    /* Allocate fresh USlotArray wrapper sized for the new shape's count.
+     * new_shape->count is always >= 1 here (we just added a slot to a
+     * shape whose count was N; the child has count N+1).  Layout follows
+     * the UPropsTable / UProtoInstanceArr precedent — UCell first, then
+     * n + _pad, then the entries[] FAM. */
+    UCell *c = urbi_gc_alloc(vm,
+                             sizeof(USlotArray)
+                             + (size_t)new_shape->count * sizeof(USlot),
+                             UTYPE_SLOT_ARRAY);
+    if (c == NULL) {
+        /* Shape transition already published `new_shape` into the parent's
+         * transitions cache; that's harmless — it's just a cached child
+         * shape that no UObject currently references.  No partial state to
+         * undo on the receiver. */
+        return -1;
+    }
+    USlotArray *fresh = (USlotArray *)c;
+    fresh->n    = new_shape->count;
+    fresh->_pad = 0u;
+
+    /* Copy old slot values into the new wrapper.  obj->shape->count is
+     * the old slot count (one less than new_shape->count). */
+    for (uint32_t i = 0u; i < obj->shape->count; i++) {
+        fresh->entries[i] = obj->slots[i];
+    }
+    /* Write the new slot value at the freshly added index. */
+    fresh->entries[new_shape->index] = value;
+
+    /* Forward Dijkstra barrier on the OLD wrapper cell — about to become
+     * unreachable.  Recover the wrapper base from obj->slots via offsetof
+     * (same trick walk_ushape uses for props_table -> UPropsTable).
+     * obj->slots is NULL for a freshly allocated UObject (root shape, no
+     * slots yet); only shade if there's an existing wrapper. */
+    if (obj->slots != NULL) {
+        UCell *old_wrapper = (UCell *)(void *)
+            ((uint8_t *)obj->slots - offsetof(USlotArray, entries));
+        gc_shade_gray(vm, old_wrapper);
+    }
+
+    /* Publish.  No topology_gen bump per topology spec §4.2 row 2 — the
+     * IC's per-site shape-mismatch check catches any cached entry that
+     * referenced the old shape. */
+    obj->slots = fresh->entries;
+    obj->shape = new_shape;
+    return 0;
 }

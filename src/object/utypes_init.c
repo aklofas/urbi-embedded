@@ -21,6 +21,10 @@
  *   UPropsTable no-op: entries[] are reachable through the owning
  *            UShape walker (above).  The wrapper cell stays alive because
  *            UShape's walker shades it.
+ *   USlotArray no-op: entries[] are reachable through the owning UObject's
+ *            walker (which iterates o->slots[0..shape->count] via cb).
+ *            The wrapper cell stays alive because walk_uobject shades it
+ *            via offsetof(USlotArray, entries) recovery (T26).
  *   USlotHandle / UModuleInstance / UProtoInstance — no-op walkers at this
  *            task.  Children traced once owning data lands (later M4 tasks).
  *
@@ -64,8 +68,14 @@ walk_uobject(struct UVM *vm, void *payload,
     /* Walk each USlot UValue payload via the mark callback.  The callback
      * checks uvalue_is_heap and shades the underlying cell if present.
      * USlot is a typedef for UValue (sizeof(USlot) == sizeof(UValue));
-     * shape->count is the slot count when shape is non-NULL. */
+     * shape->count is the slot count when shape is non-NULL.  Also shade
+     * the USlotArray wrapper cell itself (T26): o->slots points at the
+     * entries[] FAM, so recover the wrapper base via offsetof.  Same trick
+     * walk_ushape uses for props_table -> UPropsTable. */
     if (o->slots != NULL && o->shape != NULL) {
+        UCell *wrapper = (UCell *)(void *)
+            ((uint8_t *)o->slots - offsetof(USlotArray, entries));
+        gc_shade_gray(vm, wrapper);
         uint32_t i;
         for (i = 0u; i < o->shape->count; i++) {
             cb(vm, &o->slots[i], ctx);
@@ -291,6 +301,19 @@ static const UType type_upropstable = {
     .destroy       = NULL,
 };
 
+/* USlotArray walker is a no-op: entries[] are reachable through the owning
+ * UObject's walker (which iterates o->slots[0..shape->count] via cb).  The
+ * wrapper cell itself stays alive because walk_uobject shades it via
+ * offsetof recovery (T26). */
+static const UType type_uslot_array = {
+    .type_tag      = UTYPE_SLOT_ARRAY,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "USlotArray",
+    .walk_payload  = walk_noop,
+    .destroy       = NULL,
+};
+
 static const UType type_uslothandle = {
     .type_tag      = UTYPE_SLOTHANDLE,
     .flags         = 0u,
@@ -333,6 +356,7 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_SHAPE_MAP]       = (UType *)&type_ushapemap;
     vm->type_table[UTYPE_PROPS]           = (UType *)&type_uprops;
     vm->type_table[UTYPE_PROPS_TABLE]     = (UType *)&type_upropstable;
+    vm->type_table[UTYPE_SLOT_ARRAY]      = (UType *)&type_uslot_array;
     vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
