@@ -116,6 +116,12 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
                                        uint32_t slot_index,
                                        uint8_t flag_bit, int install);
 
+/* Register the M4 object-model cell types' UType descriptors directly into
+ * vm->type_table[].  Built-in tags (1..UTYPE_HOST_BASE-1) bypass
+ * urbi_register_type per src/utype.c.  Called from uvm_init after
+ * urbi_gc_init has zeroed type_table[]. */
+void urbi_object_builtin_types_init(struct UVM *vm);
+
 #ifdef __cplusplus
 }
 #endif

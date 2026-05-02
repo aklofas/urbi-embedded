@@ -24,6 +24,7 @@
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
+#include "object/ushape.h" /* urbi_object_builtin_types_init (M4) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -163,6 +164,11 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
     }
     vm->host_type_count      = 0u;
+
+    /* Register built-in M4 object-model UType descriptors directly into
+     * vm->type_table[].  Built-in tags can't go through urbi_register_type
+     * (which guards tags < UTYPE_HOST_BASE per src/utype.c). */
+    urbi_object_builtin_types_init(vm);
     vm->handle_table         = NULL;
     vm->handle_table_cap     = 0u;
     vm->handle_table_next_id = 0u;
