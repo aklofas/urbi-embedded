@@ -989,6 +989,75 @@ UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
     uvm_destroy(&vm);
 }
 
+/* === T39: urbi_object_clone ===
+ *
+ * Per pre-M2 §4.4 + atom-clone.chk.  The C primitive used by Class.new() /
+ * Object.new() once stdlib wiring lands.  v1.0 atom-aware: clone preserves
+ * parent's atom family in its flags low-4 and threads parent into protos
+ * as the single-tag form. */
+
+UTEST(uobject_clone_preserves_atom_family_and_protos_single) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UASSERT(integer != NULL);
+
+    UObject *c = urbi_object_clone(&vm, integer);
+    UASSERT(c != NULL);
+    /* Atom family preserved. */
+    UASSERT_EQ((int)(c->flags & URBI_OBJ_ATOM_MASK), (int)URBI_ATOM_INTEGER);
+    /* Clone's single proto is parent. */
+    UASSERT_EQ((int)urbi_object_proto_count(c), 1);
+    UASSERT(urbi_object_proto_at(c, 0u) == integer);
+    /* Clone has fresh object_id (distinct from parent). */
+    UASSERT(c->object_id != integer->object_id);
+    /* Clone has the root shape (no slots yet) — same shared singleton as parent. */
+    UASSERT(c->shape == integer->shape);
+    UASSERT_EQ((int)c->shape->count, 0);
+
+    /* Slots inherited via prototype walk: install bar on parent, then
+     * lookup bar on clone resolves to parent.bar's value. */
+    USymbol *bar = (USymbol *)ustr_intern(&vm, "bar", 3);
+    UValue v55; v55.kind = UVAL_INT; v55.v.i = 55;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, integer, bar, v55), 0);
+
+    UValue out;
+    UASSERT_EQ(urbi_object_lookup(&vm, c, bar, &out), 0);
+    UASSERT_EQ((int)out.v.i, 55);
+
+    /* Parent flagged IS_PROTOTYPE by set_protos_single (called inside clone). */
+    UASSERT((integer->flags & URBI_OBJ_FLAG_IS_PROTOTYPE) != 0u);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_clone_root_returns_object_atom_chained) {
+    /* Cloning the root Object yields a fresh Object whose single proto is
+     * the root itself.  Atom family stays URBI_ATOM_OBJECT. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UObject *root = urbi_object_root(&vm);
+    UObject *c    = urbi_object_clone(&vm, root);
+    UASSERT(c != NULL);
+    UASSERT_EQ((int)(c->flags & URBI_OBJ_ATOM_MASK), (int)URBI_ATOM_OBJECT);
+    UASSERT_EQ((int)urbi_object_proto_count(c), 1);
+    UASSERT(urbi_object_proto_at(c, 0u) == root);
+
+    uvm_destroy(&vm);
+}
+
+UTEST(uobject_clone_null_returns_null) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UASSERT(urbi_object_clone(&vm, NULL) == NULL);
+    UASSERT(urbi_object_clone(NULL, NULL) == NULL);
+
+    uvm_destroy(&vm);
+}
+
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
     utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
@@ -1053,4 +1122,10 @@ void test_uobject_suite(void) {
               uobject_fallback_lookup_of_fallback_itself_does_not_recurse);
     utest_run("uobject: no fallback slot → original miss",
               uobject_fallback_no_fallback_slot_returns_miss);
+    utest_run("uobject: clone preserves atom family + protos single (T39)",
+              uobject_clone_preserves_atom_family_and_protos_single);
+    utest_run("uobject: clone of root → fresh Object chained to root",
+              uobject_clone_root_returns_object_atom_chained);
+    utest_run("uobject: clone NULL returns NULL",
+              uobject_clone_null_returns_null);
 }

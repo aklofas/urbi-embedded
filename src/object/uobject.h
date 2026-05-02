@@ -161,6 +161,20 @@ _Static_assert(sizeof(struct UObject) == 48,
 struct UVM;
 UObject *urbi_object_alloc(struct UVM *vm, URBIAtomFamily family);
 
+/* === T39: clone a UObject (atom-aware) ===
+ *
+ * Per pre-M2 §4.4 + atom-clone.chk semantics.  Allocates a fresh UObject
+ * in the same atom family as `parent`, then threads `parent` into the
+ * clone's protos as the single-tag form (clone inherits all of parent's
+ * lineage via prototype lookup).  parent.flags's IS_PROTOTYPE bit is set
+ * by urbi_object_set_protos_single; subsequent slot installs on parent
+ * therefore bump topology_gen per topology spec §4.1 row 4.
+ *
+ * Returns NULL if parent is NULL or on OOM.  Does NOT install a `new`
+ * method on the result — Class.new() / Object.new() stdlib wiring lands
+ * with the M5 stdlib bring-up and depends on a working runtime call site. */
+UObject *urbi_object_clone(struct UVM *vm, UObject *parent);
+
 /* === Atom-family debug name (T8) ===
  *
  * Stable static string per atom family.  Used by error messages (T11

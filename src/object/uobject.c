@@ -296,6 +296,36 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
     return o;
 }
 
+/* === T39: urbi_object_clone ===
+ *
+ * Per pre-M2 §4.4 + atom-clone.chk.  Atom-aware clone:
+ *   - Allocates a fresh UObject in parent's atom family (low-4 of flags).
+ *   - Threads `parent` into the clone's protos as the single-tag form, so
+ *     `clone.foo` resolves via the prototype walk to parent.foo (or any
+ *     of parent's own prototypes).
+ *   - Marks parent as IS_PROTOTYPE (via urbi_object_set_protos_single's
+ *     monotonic flag set), so future slot installs on parent bump
+ *     topology_gen and invalidate IC entries that walked through it.
+ *
+ * Returns NULL on NULL parent or OOM. */
+UObject *
+urbi_object_clone(UVM *vm, UObject *parent)
+{
+    if (vm == NULL || parent == NULL) {
+        return NULL;
+    }
+    URBIAtomFamily fam =
+        (URBIAtomFamily)(parent->flags & URBI_OBJ_ATOM_MASK);
+    UObject *clone = urbi_object_alloc(vm, fam);
+    if (clone == NULL) {
+        return NULL;
+    }
+    /* set_protos_single fires the forward Dijkstra barrier on parent,
+     * sets URBI_OBJ_FLAG_IS_PROTOTYPE on parent, and bumps topology_gen. */
+    urbi_object_set_protos_single(vm, clone, parent);
+    return clone;
+}
+
 /* === T11: prototype-list mutators ===
  *
  * Implements the public ABI declared at T8 by composing the T10 mutation
