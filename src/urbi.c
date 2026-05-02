@@ -165,6 +165,15 @@ urbi_get_determinism_checksum(struct UVM *vm)
     /* 4. Intern table entry count (number of unique strings seen). */
     FNV1A_MIX(ctx.h, (uint64_t)uintern_count(vm));
 
+    /* 5. M4 topology + identity counters (per pre-M4 topology-generation
+     *    spec §5 and prototype-chain spec §8.1).  Surfaces non-determinism
+     *    in shape-tree mutation ordering, top-level-lookup sequencing, and
+     *    UObject identity assignment.  IC-state component lands once
+     *    GETSLOT/SETSLOT dispatch fills the IC tables. */
+    FNV1A_MIX(ctx.h, vm->topology_gen);
+    FNV1A_MIX(ctx.h, vm->lookup_id);
+    FNV1A_MIX(ctx.h, (uint64_t)vm->next_object_id);
+
     return ctx.h;
 }
 

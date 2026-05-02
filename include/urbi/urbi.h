@@ -318,6 +318,7 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  *   - watcher pool high-water mark
  *   - gc_total_allocated counter
  *   - intern table entry count
+ *   - topology_gen, lookup_id, next_object_id (M4 object-model counters)
  *
  * String values (UVAL_STR) are hashed by their interned pointer, which is
  * stable within a single VM lifetime but NOT guaranteed cross-run-stable
