@@ -28,6 +28,7 @@
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
+#include "object/umoduleinstance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -1786,6 +1787,12 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.pc_base    = module->instructions;
     strand.cur_consts = module->constants;
     strand.module     = module;
+    /* M4 follow-up: bind module_instance for OP_GETSLOT/SETSLOT IC dispatch.
+     * urbi_run_chunk already created the UModuleInstance via
+     * urbi_get_or_create_module_instance; uvm_run callers (test_vm.c
+     * pipeline, test_emit.c integration tests) get the binding here too
+     * so OP_CLOSURE can read s->module_instance directly. */
+    strand.module_instance = urbi_get_or_create_module_instance(vm, (UModule *)module);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.closure_list = NULL;
