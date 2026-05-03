@@ -1139,14 +1139,80 @@ UTEST(vm_op_closure_binds_proto_inst) {
     uvm_destroy(&vm);
 }
 
-UTEST(vm_op_getslot_diagnoses_when_no_proto_inst_bound) {
-    /* `var o = nil; o.x` — emits OP_GETSLOT with the IC table required.
-     * uvm_run transient strands have no UModuleInstance bound (M4
-     * baseline), so the dispatch arm raises a clean diagnostic instead
-     * of dereferencing a NULL ic_table. */
-    UValue out;
-    UVMError rc = vm_pipeline_eval("var o = nil; o.x", &out);
+UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
+    /* `var o = nil; o.x` — after T9, the IC table IS bound via
+     * s->module_instance at top-level (frame_count == 0).  The dispatch
+     * arm must reach the receiver-type check ("receiver is not an Object")
+     * rather than the earlier "no IC table bound" guard.
+     *
+     * Object.clone() is not accessible from urbiscript at this commit (no
+     * globals at v1.0), so a positive end-to-end slot-read test is deferred
+     * to T12 (when .chk fixtures port).  This test verifies the binding is
+     * wired by observing the diagnostic transition: pre-T9 → "no IC table
+     * bound"; post-T9 → "receiver is not an Object". */
+    UVM vm;
+    ULexer lex;
+    const char *src = "var o = nil; o.x";
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue out = {0};
+    UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
+    UVMError rc = uvm_run(&vm, &module, &out);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
+    /* Key assertion: error is from receiver-type check, not IC-table binding.
+     * Pre-T9: "no IC table bound (module instance not wired at M4 baseline)"
+     * Post-T9: "receiver is not an Object"  */
+    UASSERT(strstr(vm.last_errmsg, "receiver is not an Object") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
+    /* `var o = nil; o.x = 1` — parallel check for OP_SETSLOT.  After T9
+     * the SETSLOT arm must reach "receiver is not an Object", not the
+     * earlier "no IC table bound" diagnostic. */
+    UVM vm;
+    ULexer lex;
+    const char *src = "var o = nil; o.x = 1";
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue out = {0};
+    UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
+    UVMError rc = uvm_run(&vm, &module, &out);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
+    UASSERT(strstr(vm.last_errmsg, "receiver is not an Object") != NULL);
+    UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
 }
 
 void test_vm_suite(void) {
@@ -1261,8 +1327,10 @@ void test_vm_suite(void) {
               vm_uclosure_carries_proto_inst_field);
     utest_run("vm: OP_CLOSURE binds cl->proto_inst from strand's module_instance",
               vm_op_closure_binds_proto_inst);
-    utest_run("vm: OP_GETSLOT diagnoses when no proto_inst bound",
-              vm_op_getslot_diagnoses_when_no_proto_inst_bound);
+    utest_run("vm: OP_GETSLOT binds IC table at top-level (T9)",
+              vm_op_getslot_binds_ic_table_at_top_level);
+    utest_run("vm: OP_SETSLOT binds IC table at top-level (T9)",
+              vm_op_setslot_binds_ic_table_at_top_level);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
               vm_op_ret_nested_call_routes_through_walker);
 }
