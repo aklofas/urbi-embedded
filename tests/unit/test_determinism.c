@@ -29,7 +29,11 @@ UTEST(determinism_checksum_smoke)
 #ifdef URBI_DEBUG
 
 #include "realm/urealm.h"
-#include "umodule.h"  /* UValue, UValKind */
+#include "umodule.h"      /* UValue, UValKind */
+#include "object/uic.h"
+#include "object/umoduleinstance.h"
+
+#include <stdlib.h>  /* malloc */
 
 UTEST(determinism_checksum_returns_nonzero_on_empty_vm)
 {
@@ -154,6 +158,54 @@ UTEST(determinism_checksum_includes_next_object_id_and_lookup_id)
     uvm_destroy(&vm);
 }
 
+UTEST(determinism_checksum_folds_root_chunk_ic_state)
+{
+    /* T4 regression: entries[0] (root chunk) uses proto==NULL, so the old
+     * ic_count derivation `(pi->proto != NULL) ? pi->proto->ic_count : 0`
+     * always returned 0 — silently skipping root-chunk IC state from the
+     * checksum.  The fix reads ic_count from mi->module->ic_count when i==0.
+     *
+     * Build a module with ic_count == 1 at the root level (no nested protos).
+     * Create a UModuleInstance, verify the checksum changes after mutating
+     * the root-chunk IC entry (entries[0].ic_table[0]). */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m = {0};
+    USymbol *xsym = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(xsym != NULL);
+
+    /* Populate the module-level IC side table (root chunk). */
+    m.ic_count = 1;
+    m.ic_names = (USymbol **)malloc(1 * sizeof(USymbol *));
+    UASSERT(m.ic_names != NULL);
+    m.ic_names[0] = xsym;
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UASSERT(mi != NULL);
+
+    /* entries[0] must now have a real ic_table (T3 guarantee). */
+    UProtoInstance *pi0 = &mi->proto_instances->entries[0];
+    UASSERT(pi0->proto    == NULL);
+    UASSERT(pi0->ic_table != NULL);
+
+    /* Capture checksum before any IC mutation. */
+    uint64_t h_before = urbi_get_determinism_checksum(&vm);
+
+    /* Simulate a single IC fill: n=1, replace_cursor=1, topology_gen[0]=42. */
+    pi0->ic_table[0].n              = 1;
+    pi0->ic_table[0].replace_cursor = 1;
+    pi0->ic_table[0].topology_gen[0] = 42;
+
+    /* Checksum must change — root-chunk IC state is now folded in. */
+    uint64_t h_after = urbi_get_determinism_checksum(&vm);
+    UASSERT(h_before != h_after);
+
+    urbi_module_instance_destroy(&vm, mi);
+    umodule_destroy(&m);
+    uvm_destroy(&vm);
+}
+
 #endif /* URBI_DEBUG */
 
 /* ---- Suite entry point ---------------------------------------------------- */
@@ -175,5 +227,7 @@ void test_determinism_suite(void)
               determinism_checksum_includes_topology_gen);
     utest_run("determinism_checksum_includes_next_object_id_and_lookup_id",
               determinism_checksum_includes_next_object_id_and_lookup_id);
+    utest_run("determinism_checksum_folds_root_chunk_ic_state",
+              determinism_checksum_folds_root_chunk_ic_state);
 #endif
 }

@@ -198,8 +198,15 @@ urbi_get_determinism_checksum(struct UVM *vm)
             for (i = 0u; i < arr->n; i++) {
                 const UProtoInstance *pi = &arr->entries[i];
                 if (pi->ic_table == NULL) continue;
-                uint16_t ic_count = (pi->proto != NULL) ? pi->proto->ic_count
-                                                        : 0u;
+                uint16_t ic_count;
+                if (pi->proto != NULL) {
+                    ic_count = pi->proto->ic_count;
+                } else if (i == 0u) {
+                    /* Root chunk — read ic_count from UModule. */
+                    ic_count = mi->module->ic_count;
+                } else {
+                    ic_count = 0u;  /* entries[i>0] always have a proto */
+                }
                 uint16_t k;
                 for (k = 0u; k < ic_count; k++) {
                     const UIC *ic = &pi->ic_table[k];
