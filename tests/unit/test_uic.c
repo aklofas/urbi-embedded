@@ -633,6 +633,31 @@ UTEST(get_or_create_module_instance_caches_per_module) {
     uvm_destroy(&vm);
 }
 
+/* Same module loaded into two different VMs must produce distinct
+ * UModuleInstances, each threaded onto its own vm->module_instances_head. */
+UTEST(get_or_create_module_instance_isolated_per_vm) {
+    UVM vm_a, vm_b;
+    uvm_init(&vm_a, NULL, NULL);
+    uvm_init(&vm_b, NULL, NULL);
+
+    UModule m = {0};
+
+    UModuleInstance *mi_a = urbi_get_or_create_module_instance(&vm_a, &m);
+    UModuleInstance *mi_b = urbi_get_or_create_module_instance(&vm_b, &m);
+
+    UASSERT(mi_a != NULL);
+    UASSERT(mi_b != NULL);
+    UASSERT(mi_a != mi_b);  /* distinct instances per VM */
+
+    /* Each instance is reachable from its own VM's registry head. */
+    UASSERT(vm_a.module_instances_head == mi_a);
+    UASSERT(vm_b.module_instances_head == mi_b);
+
+    umodule_destroy(&m);
+    uvm_destroy(&vm_b);
+    uvm_destroy(&vm_a);
+}
+
 #ifdef URBI_DEBUG
 UTEST(determinism_checksum_includes_ic_state) {
     /* Snapshot checksum, manually fill an IC entry, snapshot again — the
@@ -769,6 +794,8 @@ void test_uic_suite(void) {
               module_instance_populates_root_chunk_ic_table);
     utest_run("uic: get_or_create_module_instance caches per module",
               get_or_create_module_instance_caches_per_module);
+    utest_run("uic: get_or_create_module_instance isolated per VM",
+              get_or_create_module_instance_isolated_per_vm);
     utest_run("uic: urbi_run_chunk creates module instance on first run",
               urbi_run_chunk_creates_module_instance_on_first_run);
 #ifdef URBI_DEBUG
