@@ -97,6 +97,16 @@ typedef struct UType {
 #define UTYPE_WATCHER    6   /* M3 row 11 */
 #define UTYPE_COROUTINE  7   /* row 9 */
 #define UTYPE_NAMESPACE  8   /* M3 row 8 */
+/* M4 object-model tags (UTYPE_OBJECT above is reused; not re-reserved). */
+#define UTYPE_PROTOS            9   /* M4 — heap UProtos block (n >= 2) */
+#define UTYPE_SHAPE            10   /* M4 — UShape hidden class */
+#define UTYPE_PROPS            11   /* M4 — UProps slot-property record */
+#define UTYPE_SLOTHANDLE       12   /* M4 — slot handle (later task) */
+#define UTYPE_MODULE_INSTANCE  13   /* M4 — module instance (later task) */
+#define UTYPE_PROTO_INSTANCE   14   /* M4 — proto-bound instance (later task) */
+#define UTYPE_SHAPE_MAP        15   /* M4 — UShapeMap transition cache (T13) */
+#define UTYPE_PROPS_TABLE      16   /* M4 — UPropsTable (per-shape UProps* array, T17) */
+#define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
 #define UTYPE_HOST_BASE  64  /* host-registered types start here */
 #define UTYPE_HOST_MAX   255
 

@@ -1,4 +1,4 @@
-SRC := $(wildcard src/*.c) $(wildcard src/gc/*.c) $(wildcard src/sched/*.c) $(wildcard src/watcher/*.c) $(wildcard src/realm/*.c)
+SRC := $(wildcard src/*.c) $(wildcard src/gc/*.c) $(wildcard src/sched/*.c) $(wildcard src/watcher/*.c) $(wildcard src/realm/*.c) $(wildcard src/object/*.c)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
 
 TARGET ?= host
@@ -126,7 +126,7 @@ test-switch:
 
 test-determinism-footprint:
 	$(MAKE) TARGET=host-determinism-footprint \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_CLEANUP_MAX=16 -DURBI_STRAND_BUDGET_MAX=200 -DURBI_GC_SLICE_BUDGET=2048" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_DEBUG=1 -DURBI_CLEANUP_MAX=16 -DURBI_STRAND_BUDGET_MAX=200 -DURBI_GC_SLICE_BUDGET=2048 -DURBI_IC_ENTRIES_PER_SITE=2" \
 		test
 	@echo "=== Determinism gate: footprint preset (100 runs) ==="
 	@for i in $$(seq 1 100); do \

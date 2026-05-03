@@ -36,7 +36,11 @@ typedef enum {
     EMIT_BARE_LAZY_FUNCTION,      /* T17: `function name { body }` */
     EMIT_CLOSURE_KEYWORD,         /* T17: `closure(x){...}` */
     EMIT_LAZY_ON_METHOD,          /* T16: lazy on method-bound function */
-    EMIT_LAZY_PARAM_ASSIGN        /* T16: assignment to lazy param */
+    EMIT_LAZY_PARAM_ASSIGN,       /* T16: assignment to lazy param */
+
+    /* M4 additions */
+    EMIT_TOO_MANY_IC_SITES        /* T15: function exceeds 256 IC sites
+                                     (pre-M4 GETSLOT/SETSLOT encoding §3.4) */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */
@@ -259,6 +263,18 @@ typedef struct UFuncState {
      * the emitter's main module. For nested protos (T14), this is the
      * nested UProto's instruction buffer. NULL at T6 — top-level only. */
     void *target_proto;              /* opaque; cast to UProto* in T14 */
+
+    /* === M4 T15: per-function IC site bookkeeping === */
+    /* Per pre-M4 GETSLOT/SETSLOT encoding spec §3.4 + §8.2.  Each
+     * OP_GETSLOT/SETSLOT instruction in this function carries an 8-bit IC
+     * index; ic_next is the next index to assign.  ic_names is a dynamic
+     * array (grown in 16/32/64/128/256-slot chunks) sized to ic_names_cap;
+     * at uemit_close_function, the populated [0, ic_next) prefix is copied
+     * into target_proto->ic_names and ic_count.  256-cap raises
+     * EMIT_TOO_MANY_IC_SITES. */
+    uint16_t   ic_next;              /* equals proto->ic_count after close */
+    USymbol  **ic_names;             /* lazily allocated via module allocator */
+    uint16_t   ic_names_cap;
 } UFuncState;
 
 /* Compile-time upvalue cascade. Walks parent FuncStates to find `name`
@@ -267,6 +283,17 @@ typedef struct UFuncState {
  * enclosing scope. Sets EMIT_UPVAL_EXHAUSTED on overflow. */
 int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
                             const char *name, int name_len);
+
+/* M4 T15: assign the next IC site index for the current function and
+ * record `name` in the funcstate's ic_names side table.  `name` is the
+ * (interned) USymbol* identifying the slot accessed by an OP_GETSLOT or
+ * OP_SETSLOT instruction; the caller writes the returned index into the
+ * instruction's C operand.  Returns the assigned index in [0, 256), or
+ * -1 on error (sets e->error to EMIT_TOO_MANY_IC_SITES on overflow,
+ * EMIT_OOM on growth-allocator failure).  Two calls for the same `name`
+ * return distinct indices — every emitted GETSLOT/SETSLOT site gets its
+ * own IC slot so per-site monomorphism is independent. */
+int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
 
 #ifdef __cplusplus
 }

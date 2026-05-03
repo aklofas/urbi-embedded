@@ -987,6 +987,91 @@ UTEST(parse_tag_prefix_empty_body) {
     ctx_destroy(&c);
 }
 
+/* --- T19 — slot member access (obj.x, obj.x = v) and slot-property
+       access (obj.x->prop, obj.x->prop = v). --- */
+
+UTEST(parse_member_get_basic) {
+    /* "obj.x" — postfix dot yields AST_MEMBER_GET with recv=ident(obj),
+       name=x, value=NULL. */
+    ParseCtx c;
+    ctx_init(&c, "obj.x");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->kind);
+    UASSERT(n->u.member.recv != NULL);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.member.recv->kind);
+    UASSERT_EQ(3, n->u.member.recv->u.ident.len);
+    UASSERT_EQ(1, n->u.member.name_len);
+    UASSERT_EQ('x', n->u.member.name_start[0]);
+    UASSERT(n->u.member.value == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_member_set_basic) {
+    /* "obj.x = 42" — yields AST_MEMBER_SET with value=AST_INT(42). */
+    ParseCtx c;
+    ctx_init(&c, "obj.x = 42");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_MEMBER_SET, (int)n->kind);
+    UASSERT(n->u.member.recv != NULL);
+    UASSERT_EQ((int)AST_IDENT, (int)n->u.member.recv->kind);
+    UASSERT_EQ(1, n->u.member.name_len);
+    UASSERT_EQ('x', n->u.member.name_start[0]);
+    UASSERT(n->u.member.value != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.member.value->kind);
+    UASSERT_EQ(42, (int)n->u.member.value->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_prop_get_basic) {
+    /* "obj.x->prop" — yields AST_PROP_GET wrapping an AST_MEMBER_GET. */
+    ParseCtx c;
+    ctx_init(&c, "obj.x->prop");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_PROP_GET, (int)n->kind);
+    UASSERT(n->u.prop.recv != NULL);
+    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->u.prop.recv->kind);
+    UASSERT_EQ(4, n->u.prop.prop_name_len);
+    UASSERT_EQ('p', n->u.prop.prop_name_start[0]);
+    UASSERT(n->u.prop.value == NULL);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_prop_set_basic) {
+    /* "obj.x->prop = 1" — yields AST_PROP_SET with value=AST_INT(1). */
+    ParseCtx c;
+    ctx_init(&c, "obj.x->prop = 1");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_PROP_SET, (int)n->kind);
+    UASSERT(n->u.prop.recv != NULL);
+    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->u.prop.recv->kind);
+    UASSERT_EQ(4, n->u.prop.prop_name_len);
+    UASSERT(n->u.prop.value != NULL);
+    UASSERT_EQ((int)AST_INT, (int)n->u.prop.value->kind);
+    UASSERT_EQ(1, (int)n->u.prop.value->u.i);
+    ctx_destroy(&c);
+}
+
+UTEST(parse_method_call_preserved) {
+    /* "obj.method()" — dot followed by '(' must still build an AST_CALL
+       (callee = AST_MEMBER_GET).  This guards the existing method-call
+       syntax against the new MEMBER_GET path. */
+    ParseCtx c;
+    ctx_init(&c, "obj.method()");
+    UAstNode *n = uparse_next_statement(&c.p);
+    UASSERT(n != NULL);
+    UASSERT_EQ((int)AST_CALL, (int)n->kind);
+    UASSERT_EQ(0, n->u.call.arg_count);
+    UASSERT(n->u.call.callee != NULL);
+    UASSERT_EQ((int)AST_MEMBER_GET, (int)n->u.call.callee->kind);
+    UASSERT_EQ(6, n->u.call.callee->u.member.name_len);
+    UASSERT_EQ('m', n->u.call.callee->u.member.name_start[0]);
+    ctx_destroy(&c);
+}
+
 void test_parser_suite(void) {
     utest_run("parse_empty_input_returns_null",  parse_empty_input_returns_null);
     utest_run("parse_error_name_known_codes",    parse_error_name_known_codes);
@@ -1079,4 +1164,12 @@ void test_parser_suite(void) {
               parse_tag_prefix_then_normal_stmt);
     utest_run("parse: 't: { }' — tag-prefix with empty block body",
               parse_tag_prefix_empty_body);
+    /* T19 — slot member access (obj.x, obj.x = v) and slot-property
+       access (obj.x->prop, obj.x->prop = v). */
+    utest_run("parse: 'obj.x' → AST_MEMBER_GET",                parse_member_get_basic);
+    utest_run("parse: 'obj.x = 42' → AST_MEMBER_SET",           parse_member_set_basic);
+    utest_run("parse: 'obj.x->prop' → AST_PROP_GET on MEMBER_GET", parse_prop_get_basic);
+    utest_run("parse: 'obj.x->prop = 1' → AST_PROP_SET on MEMBER_GET", parse_prop_set_basic);
+    utest_run("parse: 'obj.method()' preserved as AST_CALL{callee=MEMBER_GET}",
+              parse_method_call_preserved);
 }

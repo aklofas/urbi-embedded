@@ -129,6 +129,7 @@ void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
+    if (proto->ic_names     != NULL) alloc(proto->ic_names,     0, alloc_ud);
     /* Zero the proto struct but do not free proto itself (owned by nested[]). */
     module_zero(proto, sizeof(*proto));
 }
@@ -183,9 +184,11 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
         return ULOAD_BAD_MAGIC;
     }
 
-    /* version byte: 0x12 = v1.2 (16*major + minor); v1.0 and v1.1 are hard-rejected
-       because M3 changed OP_RETURN dispatch semantics (pending_unwind path); loading
-       old modules silently would produce incorrect nested-unwind behaviour. */
+    /* version byte: 0x13 = v1.3 (16*major + minor); v1.0/v1.1/v1.2 are
+       hard-rejected.  v1.2 → v1.3 is the M4 break (UProto.ic_count + ic_names
+       side table); loading older modules silently would leave IC sites
+       uninitialized.  v1.0 and v1.1 are also rejected for the same M3
+       OP_RETURN dispatch-semantics reason. */
     if (buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(errmsg, errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",

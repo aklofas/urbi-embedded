@@ -756,6 +756,28 @@ urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     }
 }
 
+/* === urbi_gc_walk_all_cells ===
+ *
+ * Generic all-cells iterator (T12).  Walks the sidecar list and invokes
+ * cb(vm, cell, ctx) once per live cell.  cb must not free, allocate, or
+ * trigger sweep work — it may safely mutate cell->gc_byte and the cell's
+ * type-private payload bytes.
+ *
+ * Used by urbi_object_lookup_id_force_wrap to clear UObject.lookup_stamp on
+ * u32 rollover.  The sidecar list pre-dates T27's trailing-pointer
+ * collapse; once T27 lands the implementation here updates to the same
+ * iteration form, but the public signature stays the same. */
+void
+urbi_gc_walk_all_cells(UVM *vm, UGcCellCallback cb, void *ctx)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    UAllCellsNode *node = gc_node_head(vm);
+    while (node != NULL) {
+        cb(vm, node->cell, ctx);
+        node = node->next;
+    }
+}
+
 /* === urbi_gc_register_root_provider ===
  *
  * Appends provider to the VM's fixed root-provider array.

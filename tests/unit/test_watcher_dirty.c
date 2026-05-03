@@ -840,13 +840,14 @@ UTEST(watcher_root_walker_skips_null_closures)
     uvm_destroy(&vm);
 }
 
-/* 24. watcher_root_provider_count_is_5_after_init:
- *     Verify 5 root providers are registered at uvm_init time. */
-UTEST(watcher_root_provider_count_is_5_after_init)
+/* 24. watcher_root_provider_count_is_6_after_init:
+ *     Verify 6 root providers are registered at uvm_init time
+ *     (sched, realm, intern, host_handle, watcher_table, T36 m4_object). */
+UTEST(watcher_root_provider_count_is_6_after_init)
 {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
-    UASSERT_EQ(5u, vm.root_provider_count);
+    UASSERT_EQ(6u, vm.root_provider_count);
     uvm_destroy(&vm);
 }
 
@@ -993,8 +994,8 @@ test_watcher_dirty_suite(void)
               watcher_root_walker_visits_pending_onleave);
     utest_run("watcher_root_walker_skips_null_closures",
               watcher_root_walker_skips_null_closures);
-    utest_run("watcher_root_provider_count_is_5_after_init",
-              watcher_root_provider_count_is_5_after_init);
+    utest_run("watcher_root_provider_count_is_6_after_init",
+              watcher_root_provider_count_is_6_after_init);
     utest_run("spawn_body_coroutine_relocated_still_works",
               spawn_body_coroutine_relocated_still_works);
     /* §9.2 gap-fill: all-watchers walk in one eval pass */

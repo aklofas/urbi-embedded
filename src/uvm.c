@@ -12,6 +12,7 @@
 
 #include "uvm.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
+#include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
 #include "uintern.h"
 #include "uvalue.h"
@@ -24,6 +25,9 @@
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
+#include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
+#include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
+#include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -68,7 +72,26 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
     vm->intern_table = NULL;
-    vm->topology_gen = 0u;
+    vm->topology_gen   = 1ull;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
+    vm->lookup_id      = 1ull;   /* pre-M4 prototype-chain spec §7.1 */
+    vm->next_object_id = 0u;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
+    vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
+
+    /* M4 atom-family singletons (T8): all NULL until first lazy-create. */
+    vm->atom_object  = NULL;
+    vm->atom_integer = NULL;
+    vm->atom_float   = NULL;
+    vm->atom_string  = NULL;
+    vm->atom_list    = NULL;
+    vm->atom_dict    = NULL;
+    vm->atom_tag     = NULL;
+    vm->atom_event   = NULL;
+    vm->atom_symbol  = NULL;
+
+    /* M4 T30 — UModuleInstance registry head: empty until first
+     * urbi_module_instance_create. */
+    vm->module_instances_head = NULL;
+
     vm->last_return_closure  = NULL;
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
@@ -160,6 +183,19 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         }
     }
     vm->host_type_count      = 0u;
+
+    /* Register built-in M4 object-model UType descriptors directly into
+     * vm->type_table[].  Built-in tags can't go through urbi_register_type
+     * (which guards tags < UTYPE_HOST_BASE per src/utype.c). */
+    urbi_object_builtin_types_init(vm);
+
+    /* T36: register the M4 GC root provider for atom singletons +
+     * vm->root_shape + the UModuleInstance chain.  Replaces the manual
+     * urbi_pin calls on atom singletons that lived in T8.  Must come
+     * after the type-table setup so the walker's gc_shade_gray invocations
+     * find a registered UType for each cell. */
+    urbi_object_register_gc_roots(vm);
+
     vm->handle_table         = NULL;
     vm->handle_table_cap     = 0u;
     vm->handle_table_next_id = 0u;
@@ -569,6 +605,17 @@ static void vm_zero(void *const dst, const size_t n) {
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
  * Uses the VM's allocator.  Threads the new closure into *list_head so
  * the caller can free every closure at end-of-run (pre-GC bookkeeping).
+ *
+ * M4: UClosure embeds UCell at offset 0.  The cell header is initialised
+ * here (type_tag = UTYPE_CLOSURE, gc_byte = vm->current_white) so that
+ * urbi_gc_upvalue_write may safely cast UClosure* → UCell* and read a
+ * valid color for the barrier check.  The closure is NOT enrolled on
+ * vm->all_cells_head — lifetime stays with the strand's closure_list
+ * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
+ * as a follow-up M4 task; it requires enrolling the transient uvm_run
+ * strand as a GC root before closures stored in registers can survive
+ * a mid-dispatch collection cycle.
+ *
  * Returns NULL on OOM. */
 static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
                                   UClosure **list_head) {
@@ -579,6 +626,10 @@ static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
     UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
     if (cl == NULL) return NULL;
     vm_zero(cl, nbytes);
+    /* Cell header (M4): well-formed for barrier safety even though the
+     * closure is not on vm->all_cells_head at this commit. */
+    cl->cell.type_tag = UTYPE_CLOSURE;
+    cl->cell.gc_byte  = vm->current_white;
     cl->proto      = proto;
     cl->nupvals    = nup;
     cl->next_alloc = *list_head;
@@ -919,7 +970,10 @@ dispatch:
                 uint8_t a = uinstr_a(*s->pc);
                 uint8_t b = uinstr_b(*s->pc);
                 UUpvalCell *uvc = cur_cl->upvals[b];
-                /* TODO(M4): wire urbi_gc_upvalue_write here once UClosure embeds UCell as first member. */
+                /* GC barrier (M4): UClosure now embeds UCell at offset 0,
+                 * so urbi_gc_upvalue_write may safely cast UClosure* → UCell*
+                 * for the color check.  Hook fires before the actual store. */
+                urbi_gc_upvalue_write(vm, cur_cl, b, s->R[a]);
                 if (uvc->on_heap) {
                     uvc->u.value = s->R[a];
                 } else {
@@ -1148,10 +1202,15 @@ dispatch:
             /* `,` separator: spawn child closure as detached strand.
              * A = closure_reg.  Parent continues; child runs concurrently.
              * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
-             * Requires a realm-managed strand; uvm_run transient strands have no realm. */
-            if (s->realm == NULL) {
+             * Rejected from uvm_run's stack-local transient because that
+             * adapter only dispatches its own strand and would leak any
+             * spawned children.  T33 routes the transient onto
+             * vm->global_realm->strands_head for GC-walker visibility, so
+             * realm == NULL no longer discriminates; the dedicated flag
+             * is_uvm_run_transient does. */
+            if (s->is_uvm_run_transient) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (realm == NULL)");
+                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_detach(s, vm, *s->pc);
@@ -1162,10 +1221,10 @@ dispatch:
         CASE(OP_FORK_JOIN) {
             /* `&` separator LHS: spawn child closure, store handle in R[B].
              * A = closure_reg, B = child_handle_reg.
-             * Requires a realm-managed strand. */
-            if (s->realm == NULL) {
+             * Same uvm_run-transient guard as OP_FORK_DETACH; see note above. */
+            if (s->is_uvm_run_transient) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (realm == NULL)");
+                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_join(s, vm, *s->pc);
@@ -1188,17 +1247,180 @@ dispatch:
         }
 
         CASE(OP_GETSLOT) {
-            /* M4 slot read. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "GETSLOT: not implemented until M4");
-            HALT();
+            /* OP_GETSLOT ABC: R[A] := R[B].slot[ic_index].
+             *   A = dst_reg, B = recv_reg, C = ic_index.
+             *
+             * Fast path: linear scan of the IC entries for a (recv->shape,
+             * vm->topology_gen) match.  On hit, copy *slots[k] into R[A]
+             * (or, if FLAG_OGET set, dispatch the getter — currently raises
+             * a diagnostic; full getter dispatch lands when the frame-push
+             * wrapper API matures, see TODO below).
+             *
+             * Slow path: urbi_slot_get_slow walks the prototype chain,
+             * fills exactly one IC entry at ic->replace_cursor, and either
+             * copies the slot value to *out (no OGET) or signals OGET-flag
+             * present (caller would dispatch). */
+            uint32_t i = *s->pc;
+            uint8_t  dst_reg  = uinstr_a(i);
+            uint8_t  recv_reg = uinstr_b(i);
+            uint8_t  ic_index = uinstr_c(i);
+
+            /* Resolve the executing closure's UProtoInstance.  At M4
+             * baseline closures allocated via OP_CLOSURE inherit
+             * proto_inst from the parent (currently always NULL for
+             * uvm_run transient strands; full module-instance binding
+             * lands at a later M4 task — see uclosure.h field comment). */
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
+                             : s->entry_closure;
+            if (cur_cl == NULL || cur_cl->proto_inst == NULL
+                || cur_cl->proto_inst->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                HALT();
+            }
+            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+
+            if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: receiver is not an Object");
+                HALT();
+            }
+            UObject *recv = (UObject *)s->R[recv_reg].v.p;
+
+            /* Fast path: linear scan over ic->n entries. */
+            for (uint8_t k = 0; k < ic->n; k++) {
+                if (ic->recv_shapes[k]  == recv->shape
+                 && ic->topology_gen[k] == vm->topology_gen) {
+                    if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
+                        /* TODO(T39+): wire URBI_VM_DISPATCH_GETTER once the
+                         * frame-push wrapper for receiver+0-arg invocation
+                         * is defined.  Until then, getters are rejected at
+                         * dispatch with a clean diagnostic; corpus revival
+                         * fixtures (T42) exercise non-getter slot reads.
+                         * The IC entry itself was filled correctly by the
+                         * slow path on first install, so the diagnostic is
+                         * a runtime-only restriction, not a missing IC. */
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
+                        HALT();
+                    }
+                    s->R[dst_reg] = *ic->slots[k];
+                    NEXT();
+                }
+            }
+
+            /* Slow path. */
+            UValue v;
+            int rc = urbi_slot_get_slow(vm, recv, ic, &v);
+            if (rc != 0) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: slot lookup failed");
+                HALT();
+            }
+            /* Inspect the just-filled IC entry to decide if a getter is
+             * pending.  Same TODO as above — diagnose for now. */
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+                                        % URBI_IC_ENTRIES_PER_SITE);
+            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
+                HALT();
+            }
+            s->R[dst_reg] = v;
+            NEXT();
         }
 
         CASE(OP_SETSLOT) {
-            /* M4 slot write. Structural placeholder. */
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "SETSLOT: not implemented until M4");
-            HALT();
+            /* OP_SETSLOT ABC: R[B].slot[ic_index] := R[A].
+             *   A = src_reg, B = recv_reg, C = ic_index.
+             *
+             * Fast path: scan IC entries; on shape+topology match, dispatch
+             * setter (FLAG_OSET — currently diagnoses), reject CONSTANT, or
+             * write in place if FLAG_LOCAL.  A proto-chain hit (no LOCAL,
+             * no OSET) breaks out of the fast path so the slow path can do
+             * COW.
+             *
+             * Slow path: urbi_slot_set_slow walks the prototype chain and
+             * either installs a fresh local slot on recv (miss / COW) or
+             * fills the IC and writes through (local hit / setter pending). */
+            uint32_t i = *s->pc;
+            uint8_t  src_reg  = uinstr_a(i);
+            uint8_t  recv_reg = uinstr_b(i);
+            uint8_t  ic_index = uinstr_c(i);
+
+            UClosure *cur_cl = (s->frame_count > 0)
+                             ? s->frames[s->frame_count - 1].closure
+                             : s->entry_closure;
+            if (cur_cl == NULL || cur_cl->proto_inst == NULL
+                || cur_cl->proto_inst->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                HALT();
+            }
+            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+
+            if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: receiver is not an Object");
+                HALT();
+            }
+            UObject *recv = (UObject *)s->R[recv_reg].v.p;
+            UValue v = s->R[src_reg];
+
+            int slow_path = 1;
+            for (uint8_t k = 0; k < ic->n; k++) {
+                if (ic->recv_shapes[k]  == recv->shape
+                 && ic->topology_gen[k] == vm->topology_gen) {
+                    if (ic->flags[k] & URBI_SLOT_FLAG_OSET) {
+                        /* TODO(T39+): wire URBI_VM_DISPATCH_SETTER. */
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
+                        HALT();
+                    }
+                    if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
+                        vm->last_error = UVM_TYPE_ERROR;
+                        vm_format_type_error_msg(vm, "SETSLOT: cannot write to constant slot");
+                        HALT();
+                    }
+                    if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
+                        /* Direct in-place write.  Forward Dijkstra barrier
+                         * fires on the parent UObject (the cell containing
+                         * ic->slots[k]).  Cast UCell* via the pinned
+                         * UObject layout: the slot pointer must be inside
+                         * recv->slots[], so recv (which embeds UCell at
+                         * offset 0) is the parent cell. */
+                        urbi_gc_slot_write(vm, (UCell *)recv,
+                                           (uint32_t)((ic->slots[k] - recv->slots)),
+                                           v);
+                        *ic->slots[k] = v;
+                        slow_path = 0;
+                        break;
+                    }
+                    /* Proto-chain hit (no LOCAL, no OSET, not CONSTANT) →
+                     * fall to slow path for COW. */
+                    break;
+                }
+            }
+            if (!slow_path) {
+                NEXT();
+            }
+
+            /* Slow path. */
+            int rc = urbi_slot_set_slow(vm, recv, ic, v);
+            if (rc != 0) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: slot write failed (constant, OOM, or resolve overflow)");
+                HALT();
+            }
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+                                        % URBI_IC_ENTRIES_PER_SITE);
+            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
+                HALT();
+            }
+            NEXT();
         }
 
         /* --- M3 row 7 control-transfer opcodes (T10 real dispatch) --- */
@@ -1521,8 +1743,9 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         size_t i;
         for (i = 0; i < n; i++) p[i] = 0;
     }
-    strand.vm    = vm;
-    strand.state = USTRAND_STATE_DORMANT;
+    strand.vm                   = vm;
+    strand.state                = USTRAND_STATE_DORMANT;
+    strand.is_uvm_run_transient = 1u;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init). */
@@ -1539,6 +1762,23 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
+
+    /* T33: route this transient onto vm->global_realm->strands_head so the
+     * GC realm-hierarchy walker (T32) visits its register window.  Lazy-create
+     * the global realm on first use; failure here is non-fatal — the strand
+     * stays realm=NULL and the GC walker simply skips it (M3 baseline behavior).
+     * The strand stays a stack-local UStrand and is unlinked again before the
+     * matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
+     * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
+     * / OP_FORK_JOIN guards now use to reject forks from a uvm_run transient. */
+    {
+        URealm *gr = urbi_realm_global(vm);
+        if (gr != NULL) {
+            strand.realm         = gr;
+            strand.next_in_realm = gr->strands_head;
+            gr->strands_head     = &strand;
+        }
+    }
 
     /* Wire frame-0 from module. */
     strand.R          = strand.stack;
@@ -1625,6 +1865,24 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     /* Free the register stack. */
     vm->alloc_fn(strand.stack, 0, vm->alloc_ud);
     strand.stack = NULL;
+
+    /* T33: unlink the transient from global_realm->strands_head before
+     * ustrand_destroy.  The stack-local UStrand is about to leave scope; if
+     * we leave it threaded, urealm_teardown_all → urbi_realm_destroy would
+     * walk strands_head and call urbi_strand_destroy on a stack address.
+     * Symmetric with the head-insert just before frame-0 wiring. */
+    if (strand.realm != NULL && strand.realm->strands_head != NULL) {
+        UStrand **pp = &strand.realm->strands_head;
+        while (*pp != NULL) {
+            if (*pp == &strand) {
+                *pp = strand.next_in_realm;
+                strand.next_in_realm = NULL;
+                break;
+            }
+            pp = &(*pp)->next_in_realm;
+        }
+        strand.realm = NULL;
+    }
 
     UVMError rc = vm->last_error;
     ustrand_destroy(&strand, vm);

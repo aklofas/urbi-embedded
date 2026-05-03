@@ -25,6 +25,7 @@
 
 #include "uunwind.h"
 #include "ustrand.h"
+#include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "uframe.h"       /* UCallFrame */
 #include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "uvm.h"          /* dispatch_loop_until_yield */

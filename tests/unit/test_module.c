@@ -157,14 +157,14 @@ UTEST(deserialize_rejects_v1_0_module) {
 }
 
 UTEST(deserialize_rejects_v1_1_module) {
-    /* Version byte 0x11 (M2) must be rejected at v1.2 loader: OP_RETURN dispatch
-       semantics changed between M2 and M3; loading old modules silently would
-       produce wrong nested-unwind behaviour.  Hard break is the safe choice. */
+    /* Version byte 0x11 (M2) must be rejected: OP_RETURN dispatch semantics
+       changed between M2 and M3; loading old modules silently would produce
+       wrong nested-unwind behaviour.  Hard break is the safe choice. */
     uint8_t buf[30];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = 0x11;  /* version byte (v1.1 — M2; should be rejected by v1.2 loader) */
+    buf[4] = 0x11;  /* version byte (v1.1 — M2; should be rejected) */
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -182,13 +182,39 @@ UTEST(deserialize_rejects_v1_1_module) {
     umodule_destroy(&c);
 }
 
-UTEST(deserialize_accepts_v12_module) {
-    /* A minimal well-formed v1.2 module must be accepted. */
+UTEST(deserialize_rejects_v1_2_module) {
+    /* Version byte 0x12 (M3) must be rejected by the v1.3 loader: M4 added
+       UProto.ic_count + UProto.ic_names side table; loading v1.2 silently
+       would leave IC sites uninitialized.  Hard break per encoding spec §7. */
     uint8_t buf[30];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = URBI_BYTECODE_VERSION_BYTE;  /* v1.2 */
+    buf[4] = 0x12;  /* version byte (v1.2 — M3; should be rejected by v1.3 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    /* errmsg should name the rejected version so users know what they have */
+    UASSERT(strstr(errmsg, "0x12") != NULL || strstr(errmsg, "1.2") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_accepts_v13_module) {
+    /* A minimal well-formed v1.3 module must be accepted. */
+    uint8_t buf[30];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;  /* v1.3 */
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -202,6 +228,35 @@ UTEST(deserialize_accepts_v12_module) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
     umodule_destroy(&c);
+}
+
+UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
+    /* M4 v1.3: umodule_alloc_nested_proto must zero ic_count and ic_names
+       (encoding spec §5.1).  Subsequent M4 tasks rely on this so freshly
+       allocated protos start with no IC sites. */
+    UModule m = {0};
+    UProto *p = umodule_alloc_nested_proto(&m);
+    UASSERT(p != NULL);
+    UASSERT_EQ((unsigned)p->ic_count, 0u);
+    UASSERT_EQ((void *)p->ic_names, (void *)NULL);
+    umodule_destroy(&m);
+}
+
+UTEST(uproto_destroy_frees_ic_names) {
+    /* M4 v1.3: umodule_proto_destroy_buffers must free the ic_names array.
+       Allocate via stdlib so destroy (alloc_fn == NULL → stdlib_alloc) frees it. */
+    UModule m = {0};
+    UProto *p = umodule_alloc_nested_proto(&m);
+    UASSERT(p != NULL);
+    /* Pretend the emitter populated ic_count + ic_names with two opaque slots. */
+    p->ic_count = 2;
+    p->ic_names = (USymbol **)malloc(2 * sizeof(USymbol *));
+    UASSERT(p->ic_names != NULL);
+    p->ic_names[0] = NULL;
+    p->ic_names[1] = NULL;
+    /* umodule_destroy frees nested protos via umodule_proto_destroy_buffers. */
+    umodule_destroy(&m);
+    /* If we reach here without leaking under ASan, ic_names was freed. */
 }
 
 UTEST(deserialize_rejects_wrong_int_width) {
@@ -1286,8 +1341,14 @@ void test_module_suite(void) {
               deserialize_rejects_v1_0_module);
     utest_run("deserialize rejects v1.1 module (M2 hard break)",
               deserialize_rejects_v1_1_module);
-    utest_run("deserialize accepts v1.2 module",
-              deserialize_accepts_v12_module);
+    utest_run("deserialize rejects v1.2 module (M4 hard break)",
+              deserialize_rejects_v1_2_module);
+    utest_run("deserialize accepts v1.3 module",
+              deserialize_accepts_v13_module);
+    utest_run("uproto alloc zero-inits ic_count and ic_names",
+              uproto_alloc_zero_inits_ic_count_and_ic_names);
+    utest_run("uproto destroy frees ic_names",
+              uproto_destroy_frees_ic_names);
     utest_run("deserialize rejects wrong int_width",
               deserialize_rejects_wrong_int_width);
     utest_run("deserialize rejects wrong float_type",

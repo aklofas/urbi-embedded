@@ -27,6 +27,8 @@ struct UEvent;
 struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
+struct UShape;       /* M4 — defined in src/object/ushape.h */
+struct UModuleInstance;   /* M4 T30 — defined in src/object/umoduleinstance.h */
 
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
@@ -93,9 +95,46 @@ typedef struct UVM {
 
     /* M2 additions — per pre-m2-multi-vm-audit-design.md */
     void      *intern_table;     /* opaque; owned by uintern.c (T3) */
-    uint32_t   topology_gen;     /* shape-tree generation; bumped at M4
-                                    on any slot-topology mutation. Zero-
-                                    init; never bumped at M2. */
+    uint64_t   topology_gen;     /* shape-tree generation; bumped on §4.1 mutations.
+                                    Per pre-M4 topology-generation spec §3.1: monotonic
+                                    only, init=1, reserves 0 as IC unfilled sentinel. */
+
+    /* === M4 additions (per pre-M4 prototype-chain spec §7.1, §8.1) === */
+    uint64_t   lookup_id;        /* per-VM monotonic counter; bumped at each top-level
+                                    lookup; truncated to u32 when stamping UObject.lookup_stamp.
+                                    Mark phase clears stamps + resets to 1 on low-32 wrap.
+                                    Init=1. */
+    uint32_t   next_object_id;   /* per-VM monotonic UObject identity counter; populated
+                                    at urbi_object_alloc. 32-bit wrap aborts the VM with
+                                    URBI_FATAL_OBJECT_ID_EXHAUSTED. Init=0 (first object → 1). */
+    struct UShape *root_shape;   /* lazy-allocated root hidden class
+                                    (per pre-M2 §7.1).  NULL until first
+                                    urbi_shape_root() call. */
+
+    /* === M4 atom-family singletons (T8) ===
+     * Lazy-allocated per-VM atom prototypes; pinned via urbi_pin so they
+     * survive early GC cycles before T36's root provider lands.  Each is
+     * NULL until first urbi_object_root / urbi_object_atom call.  Slot
+     * order mirrors URBIAtomFamily values 0..8 (object/integer/float/
+     * string/list/dict/tag/event/symbol). */
+    struct UObject *atom_object;     /* root Object — atom of all atoms; protos = empty */
+    struct UObject *atom_integer;
+    struct UObject *atom_float;
+    struct UObject *atom_string;
+    struct UObject *atom_list;
+    struct UObject *atom_dict;
+    struct UObject *atom_tag;
+    struct UObject *atom_event;
+    struct UObject *atom_symbol;
+
+    /* === M4 T30 — UModuleInstance registry ===
+     * Linked list head of every live UModuleInstance threaded via
+     * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
+     * time (no removal at v1.0 — the GC reaps both the cell and any chain
+     * dangling references when the instance becomes unreachable; this
+     * registry is consulted only by the determinism checksum which itself
+     * runs at quiescent points where instance removal isn't observed). */
+    struct UModuleInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent uvm_run() call.  Freed at the start of the next uvm_run() or

@@ -55,7 +55,13 @@ typedef enum {
     AST_THROW      = 23,    /* throw expr */
 
     /* M3 — tag scope */
-    AST_TAG_PREFIX = 24     /* mytag: { body } — tag-scope syntax; onleave deferred to M5 */
+    AST_TAG_PREFIX = 24,    /* mytag: { body } — tag-scope syntax; onleave deferred to M5 */
+
+    /* M4 — slot member access */
+    AST_MEMBER_GET = 25,    /* obj.x         — recv + name */
+    AST_MEMBER_SET = 26,    /* obj.x = v     — recv + name + value */
+    AST_PROP_GET   = 27,    /* obj.x->prop   — recv + prop_name */
+    AST_PROP_SET   = 28     /* obj.x->prop = v — recv + prop_name + value */
 } UAstKind;
 
 typedef enum {
@@ -144,6 +150,12 @@ typedef enum {
  *   u.try_stmt    — AST_TRY:    try body + optional catch/finally
  *   u.throw_expr  — AST_THROW:  value expression to throw
  *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave=NULL at M3
+ *   u.member      — AST_MEMBER_GET, AST_MEMBER_SET: slot read / slot assignment
+ *   u.prop        — AST_PROP_GET, AST_PROP_SET: slot-property read / assignment
+ *
+ * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
+ * with var_decl/assign/param.  The parser has no UVM and therefore cannot
+ * intern; emit will canonicalize via ustr_intern when it has VM access.
  *
  * Position fields line/col are 1-based, matching the lexer.  For
  * AST_BINARY the position points at the operator token; for AST_ERROR
@@ -255,6 +267,18 @@ struct UAstNode {
             UAstNode   *body;              /* AST_BLOCK — the tag-scoped body */
             UAstNode   *onleave;           /* onleave body — NULL at M3; M5 wires syntax */
         } tag_prefix;
+        struct {                                            /* AST_MEMBER_GET, AST_MEMBER_SET */
+            UAstNode   *recv;              /* receiver expression */
+            const char *name_start;        /* zero-copy lexeme view */
+            int         name_len;
+            UAstNode   *value;             /* SET only; NULL for GET */
+        } member;
+        struct {                                            /* AST_PROP_GET, AST_PROP_SET */
+            UAstNode   *recv;              /* the obj.x sub-expression (typically AST_MEMBER_GET) */
+            const char *prop_name_start;   /* zero-copy lexeme view */
+            int         prop_name_len;
+            UAstNode   *value;             /* SET only; NULL for GET */
+        } prop;
     } u;
 };
 

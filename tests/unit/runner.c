@@ -76,6 +76,14 @@ extern void test_sched_pool_exhaust_suite(void);
 extern void test_pipe_budget_exhaust_suite(void);
 extern void test_determinism_two_runs_suite(void);
 extern void test_determinism_tunable_pin_suite(void);
+extern void test_uobject_suite(void);
+extern void test_uslothandle_suite(void);
+extern void test_ushape_suite(void);
+extern void test_uic_suite(void);
+extern void test_topology_gen_suite(void);
+extern void test_ugc_object_cells_suite(void);
+extern void test_gc_strand_walker_suite(void);
+extern void test_scheduler_invariant_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -128,6 +136,14 @@ static const struct suite_entry suites[] = {
     {"pipe_budget_exhaust",        test_pipe_budget_exhaust_suite},
     {"determinism_two_runs",       test_determinism_two_runs_suite},
     {"determinism_tunable_pin",    test_determinism_tunable_pin_suite},
+    {"uobject",                    test_uobject_suite},
+    {"uslothandle",                test_uslothandle_suite},
+    {"ushape",                     test_ushape_suite},
+    {"uic",                        test_uic_suite},
+    {"topology_gen",               test_topology_gen_suite},
+    {"ugc_object_cells",           test_ugc_object_cells_suite},
+    {"gc_strand_walker",           test_gc_strand_walker_suite},
+    {"scheduler_invariant",        test_scheduler_invariant_suite},
     /* Add new suites here as test files are added. */
 };
 

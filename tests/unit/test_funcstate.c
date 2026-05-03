@@ -392,6 +392,114 @@ UTEST(loop_back_emit_close_no_op_when_not_captured) {
     teardown(&m, &a, &v);
 }
 
+/* --- M4 T15: per-function IC counter + ic_names side table --- */
+
+UTEST(funcstate_ic_counter_increments_per_emitted_getslot) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    UFuncState *fs = uemit_open_function(&e, NULL);
+
+    /* USymbol is opaque (forward-declared in umodule.h); ustr_intern returns
+     * the canonical const char* — pointer-equality is identity.  Cast to
+     * USymbol* here so the rest of the codebase can treat the ic_names array
+     * as an opaque-symbol slot. */
+    USymbol *foo = (USymbol *)ustr_intern(&v, "foo", 3);
+    USymbol *bar = (USymbol *)ustr_intern(&v, "bar", 3);
+    UASSERT(foo != NULL);
+    UASSERT(bar != NULL);
+
+    UASSERT_EQ(0, uemit_assign_ic_index(&e, foo));
+    UASSERT_EQ(1, uemit_assign_ic_index(&e, bar));
+    /* Same name, fresh index — every site is independently monomorphizable. */
+    UASSERT_EQ(2, uemit_assign_ic_index(&e, foo));
+    UASSERT_EQ((uint16_t)3, fs->ic_next);     /* cppcheck-suppress nullPointerRedundantCheck */
+    UASSERT(fs->ic_names != NULL);
+    UASSERT(fs->ic_names[0] == foo);
+    UASSERT(fs->ic_names[1] == bar);
+    UASSERT(fs->ic_names[2] == foo);
+    UASSERT_EQ((int)EMIT_OK, (int)e.error);
+
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+    uemit_open_function(&e, NULL);
+
+    USymbol *x = (USymbol *)ustr_intern(&v, "x", 1);
+    UASSERT(x != NULL);
+    for (int i = 0; i < 256; i++) {
+        int idx = uemit_assign_ic_index(&e, x);
+        UASSERT(idx >= 0);
+        UASSERT_EQ(i, idx);
+    }
+    /* The 257th call must fail with EMIT_TOO_MANY_IC_SITES. */
+    UASSERT_EQ(-1, uemit_assign_ic_index(&e, x));
+    UASSERT_EQ((int)EMIT_TOO_MANY_IC_SITES, (int)e.error);
+
+    /* Clear error so close path runs cleanly. */
+    e.error = EMIT_OK;
+    uemit_close_function(&e);
+    teardown(&m, &a, &v);
+}
+
+UTEST(funcstate_ic_close_copies_into_target_proto) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    /* Top-level funcstate plus a nested proto + child funcstate — that's
+     * the only path where ic_count/ic_names actually land somewhere
+     * (UProto has these fields, UModule does not). */
+    UFuncState *parent = uemit_open_function(&e, NULL);
+    UProto *child_proto = umodule_alloc_nested_proto(&m);
+    UASSERT(child_proto != NULL);
+    UFuncState *child = uemit_open_function(&e, parent);
+    UASSERT(child != NULL);
+    child->target_proto = child_proto;          /* cppcheck-suppress nullPointerRedundantCheck */
+
+    USymbol *a1 = (USymbol *)ustr_intern(&v, "alpha", 5);
+    USymbol *b1 = (USymbol *)ustr_intern(&v, "beta",  4);
+    UASSERT_EQ(0, uemit_assign_ic_index(&e, a1));
+    UASSERT_EQ(1, uemit_assign_ic_index(&e, b1));
+
+    uemit_close_function(&e);                   /* close child */
+
+    UASSERT_EQ((unsigned)2, (unsigned)child_proto->ic_count);
+    UASSERT(child_proto->ic_names != NULL);
+    UASSERT(child_proto->ic_names[0] == a1);
+    UASSERT(child_proto->ic_names[1] == b1);
+
+    /* Funcstate-side array was freed by close_function. */
+    UASSERT(child->ic_names == NULL);
+    UASSERT_EQ((uint16_t)0, child->ic_names_cap);
+
+    uemit_close_function(&e);                   /* close parent */
+    teardown(&m, &a, &v);                       /* umodule_destroy frees child_proto->ic_names */
+}
+
+UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {
+    UEmitter e; UModule m; UArena a; UVM v;
+    setup(&e, &m, &a, &v);
+
+    UFuncState *parent = uemit_open_function(&e, NULL);
+    UProto *child_proto = umodule_alloc_nested_proto(&m);
+    UASSERT(child_proto != NULL);
+    UFuncState *child = uemit_open_function(&e, parent);
+    UASSERT(child != NULL);
+    child->target_proto = child_proto;          /* cppcheck-suppress nullPointerRedundantCheck */
+
+    /* Don't call uemit_assign_ic_index — ic_next stays 0. */
+    uemit_close_function(&e);                   /* close child */
+
+    UASSERT_EQ((unsigned)0, (unsigned)child_proto->ic_count);
+    UASSERT(child_proto->ic_names == NULL);
+
+    uemit_close_function(&e);                   /* close parent */
+    teardown(&m, &a, &v);
+}
+
 void test_funcstate_suite(void) {
     utest_run("funcstate open zeroes freereg and nactvar",
         funcstate_open_zeroes_freereg_and_nactvar);
@@ -431,4 +539,12 @@ void test_funcstate_suite(void) {
         loop_back_emit_close_when_captured);
     utest_run("loop back emit close no-op when not captured",
         loop_back_emit_close_no_op_when_not_captured);
+    utest_run("funcstate ic counter increments per emitted GETSLOT",
+        funcstate_ic_counter_increments_per_emitted_getslot);
+    utest_run("funcstate ic counter caps at 256 with EMIT_TOO_MANY_IC_SITES",
+        funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites);
+    utest_run("funcstate ic close copies into target proto",
+        funcstate_ic_close_copies_into_target_proto);
+    utest_run("funcstate ic close with zero sites leaves proto null",
+        funcstate_ic_close_with_zero_sites_leaves_proto_null);
 }

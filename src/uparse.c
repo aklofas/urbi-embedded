@@ -145,6 +145,7 @@ static UAstNode *parse_expression(UParser *p, int min_prec);
 static UAstNode *parse_prefix(UParser *p);
 static UAstNode *parse_atom(UParser *p);
 static UAstNode *parse_call_args(UParser *p, UAstNode *callee);
+static UAstNode *parse_member_access(UParser *p, UAstNode *recv, bool *out_is_assign);
 static UAstNode *parse_inner_tier(UParser *p);
 static UAstNode *parse_outer_tier(UParser *p);
 static UAstNode *parse_statement_or_expr(UParser *p);
@@ -423,7 +424,8 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
         UAstNode *lhs = make_ident(p, name.u.str.start, name.u.str.len,
                                    name.line, name.col);
         if (!lhs) return NULL;
-        /* Pratt climb: handle postfix `(args)` and arithmetic operators. */
+        /* Pratt climb: handle postfix `(args)`, member access, and
+           arithmetic operators.  Mirrors parse_expression's postfix tier. */
         for (;;) {
             UToken op = peek(p);
             /* Postfix call: highest precedence. */
@@ -431,6 +433,19 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
                 lhs = parse_call_args(p, lhs);
                 if (!lhs) return NULL;
                 if (lhs->kind == AST_ERROR) return lhs;
+                continue;
+            }
+            /* Postfix member-access: `.IDENT [= rhs]` / `->IDENT [= rhs]`.
+               On SET, parse_member_access already consumed `= value` via
+               parse_inner_tier (which itself greedily absorbs `|`/`&`),
+               so return immediately rather than re-entering the outer
+               separator loop. */
+            if (op.type == TOK_DOT || op.type == TOK_ARROW) {
+                bool is_assign = false;
+                lhs = parse_member_access(p, lhs, &is_assign);
+                if (!lhs) return NULL;
+                if (lhs->kind == AST_ERROR) return lhs;
+                if (is_assign) return lhs;
                 continue;
             }
             int prec = infix_prec(op.type);
@@ -526,6 +541,79 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
     return node;
 }
 
+/* --- parse_member_access: handle a single `.IDENT` or `->IDENT` postfix.
+   Caller has confirmed peek() is TOK_DOT or TOK_ARROW; this function
+   consumes the operator, the IDENT, and (optionally) `= rhs`.
+
+   Shape produced:
+     obj.x        → AST_MEMBER_GET
+     obj.x = v    → AST_MEMBER_SET   (consumes `= v`)
+     obj.x->y     → AST_PROP_GET
+     obj.x->y = v → AST_PROP_SET     (consumes `= v`)
+
+   The caller's postfix loop should `break` after a SET arm (assignment
+   terminates further chaining) and `continue` after a GET arm so that
+   `obj.x.y` and `obj.x()` keep building on the result.
+
+   *out_is_assign is set to true when the SET form was produced.
+
+   Returns the new node, or an AST_ERROR / OOM sentinel on failure. --- */
+
+static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
+                                     bool *out_is_assign) {
+    UToken op = consume(p);  /* TOK_DOT or TOK_ARROW */
+    *out_is_assign = false;
+
+    UToken name = peek(p);
+    if (name.type != TOK_IDENT) {
+        return make_error(p, PARSE_EXPECTED_IDENT,
+                          kErrorMessages[PARSE_EXPECTED_IDENT],
+                          name.line, name.col);
+    }
+    consume(p);
+
+    const bool is_arrow = (op.type == TOK_ARROW);
+
+    if (peek(p).type == TOK_EQ) {
+        consume(p);  /* consume '=' */
+        UAstNode *value = parse_inner_tier(p);
+        if (!value) return NULL;
+        if (value->kind == AST_ERROR) return value;
+        UAstNode *node = make_node(p, is_arrow ? AST_PROP_SET : AST_MEMBER_SET,
+                                   op.line, op.col);
+        if (!node) return NULL;
+        if (is_arrow) {
+            node->u.prop.recv            = recv;
+            node->u.prop.prop_name_start = name.u.str.start;
+            node->u.prop.prop_name_len   = name.u.str.len;
+            node->u.prop.value           = value;
+        } else {
+            node->u.member.recv       = recv;
+            node->u.member.name_start = name.u.str.start;
+            node->u.member.name_len   = name.u.str.len;
+            node->u.member.value      = value;
+        }
+        *out_is_assign = true;
+        return node;
+    }
+
+    UAstNode *node = make_node(p, is_arrow ? AST_PROP_GET : AST_MEMBER_GET,
+                               op.line, op.col);
+    if (!node) return NULL;
+    if (is_arrow) {
+        node->u.prop.recv            = recv;
+        node->u.prop.prop_name_start = name.u.str.start;
+        node->u.prop.prop_name_len   = name.u.str.len;
+        node->u.prop.value           = NULL;
+    } else {
+        node->u.member.recv       = recv;
+        node->u.member.name_start = name.u.str.start;
+        node->u.member.name_len   = name.u.str.len;
+        node->u.member.value      = NULL;
+    }
+    return node;
+}
+
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
 static UAstNode *parse_expression(UParser *p, int min_prec) {
@@ -541,6 +629,19 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
             left = parse_call_args(p, left);
             if (!left) return NULL;
             if (left->kind == AST_ERROR) return left;
+            continue;
+        }
+
+        /* Postfix member-access: `expr.IDENT [= rhs]` and `expr->IDENT [= rhs]`.
+           Same precedence tier as the postfix call.  After a SET form, stop
+           climbing — assignment terminates the postfix chain.  After a GET,
+           keep looping so chains like `a.b.c` and `a.b()` keep building. */
+        if ((op.type == TOK_DOT || op.type == TOK_ARROW) && min_prec <= 7) {
+            bool is_assign = false;
+            left = parse_member_access(p, left, &is_assign);
+            if (!left) return NULL;
+            if (left->kind == AST_ERROR) return left;
+            if (is_assign) break;
             continue;
         }
 

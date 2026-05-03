@@ -39,6 +39,7 @@
 #include "usched_cooperative.h"
 #include "uvm.h"
 #include "ustrand.h"
+#include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -287,35 +288,28 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 /* === GC root walker for the scheduler ===
  *
  * Called by the GC as a registered root provider (row 10 §5.2).
- * Walks all non-DEAD strands on the ready queue and the sleep queue.
+ * Iterates the realm hierarchy (vm->realms_head → realm.strands_head)
+ * rather than scheduler-private ready/sleep queues, so that strands
+ * blocked in any wait state (WAITING_JOIN, future WAITING_EVENT, …)
+ * are visited.  DEAD-strand filter stays inside strand_walk_roots.
  *
- * vm->cur_strand does not exist on UVM at M3 baseline (intentional per T19
- * design choice — see T19 notes).  The ready + sleep queues cover all strands
- * eligible for or blocked from scheduling.
- * TODO(T26+): if a "currently dispatching" strand field is added to UVM,
- * walk it here too to cover RUNNING strands not yet back on the ready queue. */
+ * Per pre-M4 GC strand-walker spec §4.2, §6.1:
+ *   Every UStrand whose register window may contain GC-managed UValues
+ *   MUST be reachable from vm->realms_head → realm.strands_head.
+ *   Scheduler implementations are responsible for maintaining this
+ *   invariant; the walker assumes it without re-verification. */
 void
 sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
+    URealm  *r;
     UStrand *s;
 
-    /* Walk ready queue (READY state strands). */
-    for (s = vm->ready_head; s != NULL; s = s->ready_next) {
-        strand_walk_roots(vm, s, cb, ctx);
+    /* Realm-hierarchy walk per pre-M4 GC strand-walker spec §4.2. Visits every
+     * live strand regardless of state (READY/RUNNING/WAITING_*); DEAD-strand
+     * filter stays in strand_walk_roots. */
+    for (r = vm->realms_head; r != NULL; r = r->next_in_vm) {
+        for (s = r->strands_head; s != NULL; s = s->next_in_realm) {
+            strand_walk_roots(vm, s, cb, ctx);
+        }
     }
-
-    /* Walk sleep queue (WAITING_SLEEP state strands). */
-    for (s = vm->sleep_q_head; s != NULL; s = s->wait_next) {
-        strand_walk_roots(vm, s, cb, ctx);
-    }
-
-    /* TODO(M4+/GC-root-WAITING_JOIN): WAITING_JOIN strands sit on
-     * child->joiners_head (added at T38 fork activation) and are NOT
-     * visited by either loop above. At M3 this is safe (no GC-managed
-     * cells in registers yet — UClosure is closure_list-owned, UStrand
-     * is realm-owned, neither GC). When M4 adds UObject/UString as
-     * GC-managed cells, JOIN-blocked parents' register stacks must be
-     * walked too — either add a third loop here that walks every live
-     * strand's joiners_head chain, or thread WAITING_JOIN strands onto
-     * a separate VM-level list. */
 }

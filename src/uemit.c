@@ -1794,6 +1794,72 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         e->current_fs->freereg = e->next_reg;
         return rd;
     }
+    case AST_MEMBER_GET: {
+        /* M4 T20: obj.x → OP_GETSLOT.  Per pre-M4 GETSLOT/SETSLOT encoding
+         * spec §3: ABC layout where A=dst register, B=recv register,
+         * C=IC site index assigned by uemit_assign_ic_index. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Emit receiver into a temp register. */
+        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Intern the slot name to obtain the canonical USymbol pointer. */
+        USymbol *name = (USymbol *)ustr_intern(e->vm,
+                                               n->u.member.name_start,
+                                               (size_t)n->u.member.name_len);
+        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        /* Assign a per-site IC index (independent monomorphism per site). */
+        int ic_idx = uemit_assign_ic_index(e, name);
+        if (ic_idx < 0) return 0u;
+
+        /* Result reuses recv_reg in place — simple stack discipline. */
+        emit_instr(e, uinstr_enc_abc(OP_GETSLOT, recv_reg, recv_reg,
+                                     (uint8_t)ic_idx),
+                   (uint32_t)n->line);
+        return recv_reg;
+    }
+    case AST_MEMBER_SET: {
+        /* M4 T21: obj.x = v → OP_SETSLOT.  Per encoding spec §3:
+         * ABC layout where A=src register (value to write), B=recv register,
+         * C=IC site index.  Assignment evaluates to the assigned value. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        /* Emit receiver into a temp, then RHS value into the next temp. */
+        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
+        if (e->error != EMIT_OK) return 0u;
+        uint8_t src_reg = emit_expr(e, n->u.member.value);
+        if (e->error != EMIT_OK) return 0u;
+
+        USymbol *name = (USymbol *)ustr_intern(e->vm,
+                                               n->u.member.name_start,
+                                               (size_t)n->u.member.name_len);
+        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        int ic_idx = uemit_assign_ic_index(e, name);
+        if (ic_idx < 0) return 0u;
+
+        emit_instr(e, uinstr_enc_abc(OP_SETSLOT, src_reg, recv_reg,
+                                     (uint8_t)ic_idx),
+                   (uint32_t)n->line);
+
+        /* Assignment expression value is the assigned value.  Collapse the
+         * recv temp by moving src down into recv_reg, matching the
+         * AST_BINARY convention (lhs holds the result, top temp freed). */
+        if (src_reg != recv_reg) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, recv_reg, src_reg, 0u),
+                       (uint32_t)n->line);
+        }
+        free_reg(e);              /* release the src temp; result in recv_reg */
+        return recv_reg;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
@@ -1889,6 +1955,7 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_CLOSURE_KEYWORD:    return "EMIT_CLOSURE_KEYWORD";
     case EMIT_LAZY_ON_METHOD:     return "EMIT_LAZY_ON_METHOD";
     case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
+    case EMIT_TOO_MANY_IC_SITES:  return "EMIT_TOO_MANY_IC_SITES";
     }
     return "EMIT_UNKNOWN";
 }
@@ -1937,6 +2004,7 @@ static const char *opname(const UOpcode op) {
     case OP_PUSH_FRAME_GUARD:     return "PUSH_FRAME_GUARD";
     case OP_RESUME:               return "RESUME";
     case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
+    case OP_INVOKE:               return "INVOKE";
     case OP_MAX:                  break;
     }
     return "OP?";
@@ -2186,7 +2254,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
-    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* version v1.2 */
+    buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* version v1.3 */
     buf[5] = 0x00u;              /* flags: none defined */
     buf[6]  = 0x19u; buf[7]  = 0x93u;   /* canary bytes 0-1 */
     buf[8]  = '\r';  buf[9]  = '\n';    /* canary bytes 2-3 */
@@ -2342,6 +2410,36 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     return fs;
 }
 
+/* M4 T15: assign the next IC index for the current function.  Allocates
+ * fs->ic_names lazily in 16/32/64/128/256-slot chunks via the module
+ * allocator (matches the rest of the emitter — funcstate itself is
+ * arena-allocated, but variable-sized side tables go through the module
+ * allocator so they survive into the proto and are freed via
+ * umodule_proto_destroy_buffers). */
+int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
+    if (e == NULL || e->current_fs == NULL) return -1;
+    UFuncState *fs = e->current_fs;
+    if (fs->ic_next >= 256u) {
+        e->error = EMIT_TOO_MANY_IC_SITES;
+        return -1;
+    }
+    if (fs->ic_next >= fs->ic_names_cap) {
+        uint16_t new_cap = (fs->ic_names_cap == 0u) ? 16u
+            : (fs->ic_names_cap < 128u ? (uint16_t)(fs->ic_names_cap * 2u) : 256u);
+        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
+        USymbol **fresh = (USymbol **)alloc(fs->ic_names,
+                                            (size_t)new_cap * sizeof(USymbol *),
+                                            e->module->alloc_ud);
+        if (fresh == NULL) { e->error = EMIT_OOM; return -1; }
+        fs->ic_names = fresh;
+        fs->ic_names_cap = new_cap;
+    }
+    int idx = (int)fs->ic_next++;
+    fs->ic_names[idx] = name;
+    return idx;
+}
+
 UFuncState *uemit_close_function(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) return NULL;
@@ -2350,7 +2448,51 @@ UFuncState *uemit_close_function(UEmitter *e) {
         UProto *p = (UProto *)fs->target_proto;
         p->max_reg  = fs->max_reg_seen;
         p->nupvals  = (uint8_t)fs->nupvalues;
+
+        /* M4 T15: copy IC names side table into the UProto.  Use the
+         * proto's own allocator (inherited from the module at
+         * umodule_alloc_nested_proto time); the resulting array is freed
+         * by umodule_proto_destroy_buffers. */
+        p->ic_count = fs->ic_next;
+        if (p->ic_count > 0u) {
+            UModuleAllocFn palloc = p->alloc_fn;
+#if __STDC_HOSTED__
+            if (palloc == NULL) palloc = emit_alloc_for(e->module);
+#endif
+            if (palloc == NULL) {
+                e->error = EMIT_OOM;
+            } else {
+                USymbol **dst = (USymbol **)palloc(NULL,
+                    (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
+                if (dst == NULL) {
+                    e->error = EMIT_OOM;
+                    p->ic_count = 0;
+                    p->ic_names = NULL;
+                } else {
+                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                        dst[i] = fs->ic_names[i];
+                    }
+                    p->ic_names = dst;
+                }
+            }
+        } else {
+            p->ic_names = NULL;
+        }
     }
+    /* Always free the funcstate-side IC array (allocated via the module
+     * allocator).  Top-level funcstates never have a target_proto and so
+     * have nowhere to copy the names — we still free them to avoid a
+     * leak should an emit path ever call uemit_assign_ic_index at top
+     * level (no opcode currently does, but the API is callable). */
+    if (fs->ic_names != NULL) {
+        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        if (alloc != NULL) {
+            alloc(fs->ic_names, 0, e->module->alloc_ud);
+        }
+        fs->ic_names = NULL;
+        fs->ic_names_cap = 0;
+    }
+
     /* Restore prev_line to a sentinel so the parent proto's next instruction
      * bootstraps a fresh abs checkpoint after re-entering. This is a subtle
      * correctness point: without this reset, the first instruction of the

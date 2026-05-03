@@ -199,7 +199,11 @@ Coverage targets: ≥ 90% line coverage, ≥ 80% branch coverage per subsystem. 
 
 Commit hygiene is covered in `CONTRIBUTING.md`. Briefly:
 
-- Subsystem prefix: `lex:`, `parse:`, `vm:`, `gc:`, `tests:`, `build:`, `ci:`, `docs:`, etc.
+- Subsystem prefix: `lex:`, `parse:`, `emit:`, `vm:`, `intern:`, `module:`, `gc:`, `sched:`, `strand:`, `react:`, `tag:`, `unwind:`, `realm:`, `step:`, `event:`, `chk:`, `obj:`, `shape:`, `slot:`, `ic:`, `tests:`, `build:`, `ci:`, `docs:`, etc.
+  - `obj:` — `src/object/uobject.c/h`, `tests/unit/test_uobject.c` (UObject, prototype chain, lookup_inner, object_id)
+  - `shape:` — `src/object/ushape.c/h`, `tests/unit/test_ushape.c` (UShape, transition cache, props_table)
+  - `slot:` — `src/object/uslothandle.c/h`, `tests/unit/test_uslothandle.c` (USlotHandle, validate-and-refresh)
+  - `ic:` — `src/object/uic.c/h`, `src/object/umoduleinstance.c/h`, `tests/unit/test_uic.c` (inline cache, UModuleInstance, slot_get/set_slow)
 - Imperative mood, ≤ 72-char subject, no trailing period.
 - Body explains WHY. One concern per commit.
 - Commits stand alone. Don't reference internal workflow artifacts that live outside the public repo.

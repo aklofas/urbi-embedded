@@ -7,6 +7,7 @@
 
 #include "uarena.h"
 #include "uemit.h"
+#include "uintern.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)
@@ -1431,6 +1432,80 @@ UTEST(emit_t10_throw_emits_op_throw) {
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
 
+/* --- M4 T20+T21 — AST_MEMBER_GET → OP_GETSLOT, AST_MEMBER_SET → OP_SETSLOT --- */
+
+UTEST(emit_member_get_emits_op_getslot_with_ic_index_zero) {
+    /* "var obj = nil; obj.x" — first GETSLOT emit assigns IC index 0.
+     * obj must be bound as a local so emit_expr resolves the receiver via
+     * the local-lookup path (unbound identifier → EMIT_UNRESOLVED_NAME).
+     * Drives the parse → emit pipeline statement-by-statement so we can
+     * inspect the funcstate's IC bookkeeping before uemit_finish closes it. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var obj = nil; obj.x");
+
+    UAstNode *stmt;
+    while ((stmt = uparse_next_statement(&c.p)) != NULL) {
+        UASSERT_EQ(EMIT_OK, uemit_statement(&c.e, stmt));
+    }
+    /* Don't finish yet — keep current_fs alive for IC inspection. */
+
+    /* Find the GETSLOT instruction. */
+    int gs_idx = -1;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
+            gs_idx = (int)i;
+            break;
+        }
+    }
+    UASSERT(gs_idx >= 0);
+    uint32_t w = c.module.instructions[(size_t)gs_idx];
+    /* OP_GETSLOT ABC: A=dst, B=recv, C=ic_index. */
+    UASSERT_EQ((int)OP_GETSLOT, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));        /* first IC site → index 0 */
+    /* The funcstate's ic_next bumped by exactly one for the single site. */
+    UASSERT(c.e.current_fs != NULL);
+    UASSERT_EQ((uint16_t)1, c.e.current_fs->ic_next);
+    UASSERT(c.e.current_fs->ic_names != NULL);
+    /* Name "x" was interned and recorded. */
+    const char *xn = ustr_intern(&c.vm, "x", 1);
+    UASSERT(c.e.current_fs->ic_names[0] == (USymbol *)xn);
+
+    UASSERT_EQ(EMIT_OK, uemit_finish(&c.e));
+    emit_ctx_destroy(&c);
+}
+
+UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
+    /* "var obj = nil; obj.x = 42" — first SETSLOT emit assigns IC index 0. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var obj = nil; obj.x = 42");
+
+    UAstNode *stmt;
+    while ((stmt = uparse_next_statement(&c.p)) != NULL) {
+        UASSERT_EQ(EMIT_OK, uemit_statement(&c.e, stmt));
+    }
+
+    int ss_idx = -1;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
+            ss_idx = (int)i;
+            break;
+        }
+    }
+    UASSERT(ss_idx >= 0);
+    uint32_t w = c.module.instructions[(size_t)ss_idx];
+    /* OP_SETSLOT ABC: A=src, B=recv, C=ic_index. */
+    UASSERT_EQ((int)OP_SETSLOT, (int)uinstr_op(w));
+    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+    UASSERT(c.e.current_fs != NULL);
+    UASSERT_EQ((uint16_t)1, c.e.current_fs->ic_next);
+    UASSERT(c.e.current_fs->ic_names != NULL);
+    const char *xn = ustr_intern(&c.vm, "x", 1);
+    UASSERT(c.e.current_fs->ic_names[0] == (USymbol *)xn);
+
+    UASSERT_EQ(EMIT_OK, uemit_finish(&c.e));
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1548,4 +1623,9 @@ void test_emit_suite(void) {
               emit_t10_load_catch_value_round_trip);
     utest_run("emit T10: AST_THROW emits LOADK then OP_THROW with value reg",
               emit_t10_throw_emits_op_throw);
+    /* M4: AST_MEMBER_GET / AST_MEMBER_SET → OP_GETSLOT / OP_SETSLOT */
+    utest_run("emit: AST_MEMBER_GET → OP_GETSLOT with IC index 0",
+              emit_member_get_emits_op_getslot_with_ic_index_zero);
+    utest_run("emit: AST_MEMBER_SET → OP_SETSLOT with IC index 0",
+              emit_member_set_emits_op_setslot_with_ic_index_zero);
 }

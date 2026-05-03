@@ -6,6 +6,7 @@
 #include "umodule.h"
 #include "uarena.h"
 #include "uast.h"
+#include "uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
@@ -979,10 +980,11 @@ UTEST(vm_create_zero_init_m3_fields) {
     UASSERT_EQ(0u, vm.flag_preemption);
     /* ISR ring: T18 allocates it at uvm_init time. */
     UASSERT(vm.event_ring != NULL);
-    /* GC root provider registry — 5 providers registered at uvm_init:
+    /* GC root provider registry — 6 providers registered at uvm_init:
      * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
-     * host_handle_walk_roots, watcher_table_walk_roots. */
-    UASSERT_EQ(5u, vm.root_provider_count);
+     * host_handle_walk_roots, watcher_table_walk_roots, plus T36's
+     * m4_object_roots_walker (atom singletons + root_shape + module_instances). */
+    UASSERT_EQ(6u, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */
     UASSERT(vm.realms_head  == NULL);
     UASSERT(vm.global_realm == NULL);
@@ -1003,6 +1005,29 @@ UTEST(vm_gc_initial_threshold_set) {
     uvm_init(&vm, NULL, NULL);
     UASSERT_EQ((size_t)URBI_GC_INITIAL_THRESHOLD, vm.gc_threshold);
     UASSERT(vm.gc_debt < 0);  /* starts negative; goes positive at debt threshold */
+    uvm_destroy(&vm);
+}
+
+/* M4 object-identity / topology-gen / DFS-visited fields per pre-M4
+ * topology-generation spec §3.1 and prototype-chain spec §7.1, §8.1. */
+UTEST(vm_object_fields_initialized_to_v1_0_contract) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* topology spec §3.1: initial value 1; reserves 0 as IC unfilled sentinel */
+    UASSERT_EQ(1ull, vm.topology_gen);
+
+    /* prototype-chain spec §7.1: lookup_id starts at 1; mark phase resets to 1 on rollover */
+    UASSERT_EQ(1ull, vm.lookup_id);
+
+    /* prototype-chain spec §8.1: object_id counter starts at 0; first alloc bumps to 1 */
+    UASSERT_EQ(0u, vm.next_object_id);
+
+    /* topology_gen and lookup_id are uint64_t; next_object_id is uint32_t */
+    UASSERT_EQ(8u, (unsigned)sizeof(vm.topology_gen));
+    UASSERT_EQ(8u, (unsigned)sizeof(vm.lookup_id));
+    UASSERT_EQ(4u, (unsigned)sizeof(vm.next_object_id));
+
     uvm_destroy(&vm);
 }
 
@@ -1029,6 +1054,61 @@ UTEST(vm_op_ret_nested_call_routes_through_walker) {
     UASSERT_EQ(UVM_OK, vm_pipeline_eval("var f = function() { 7 }; f()", &out));
     UASSERT_EQ(UVAL_INT, (int)out.kind);
     UASSERT_EQ(7, out.v.i);
+}
+
+/* === T22 plumbing: UClosure.proto_inst === */
+
+UTEST(vm_uclosure_carries_proto_inst_field) {
+    /* Pin the new M4 field exists and is zero-initialized when an OP_CLOSURE
+     * runs against a uvm_run transient strand (no UModuleInstance bound at
+     * the M4 baseline — full module-instance wiring lands at a later task,
+     * see uclosure.h field comment). */
+    UValue out;
+    /* `var f = function() { 1 }; f` — last expression returns the closure
+     * itself.  vm->last_return_closure is preserved for inspection. */
+    UVM vm;
+    ULexer lex;
+    const char *src = "var f = function() { 1 }; f";
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue nil = {0};
+    out = nil;
+    UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
+    UASSERT_EQ((int)UVM_OK, (int)uvm_run(&vm, &module, &out));
+    UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
+    UClosure *cl = (UClosure *)out.v.p;
+    UASSERT(cl != NULL);
+    /* proto_inst is NULL at the M4 baseline — vm_alloc_closure zero-fills
+     * the cell and no module-instance binding has been wired yet.  This
+     * test pins that contract; it will tighten when later M4 tasks land
+     * the binding. */
+    UASSERT(cl->proto_inst == NULL);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_op_getslot_diagnoses_when_no_proto_inst_bound) {
+    /* `var o = nil; o.x` — emits OP_GETSLOT with the IC table required.
+     * uvm_run transient strands have no UModuleInstance bound (M4
+     * baseline), so the dispatch arm raises a clean diagnostic instead
+     * of dereferencing a NULL ic_table. */
+    UValue out;
+    UVMError rc = vm_pipeline_eval("var o = nil; o.x", &out);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
 }
 
 void test_vm_suite(void) {
@@ -1135,8 +1215,14 @@ void test_vm_suite(void) {
               vm_create_zero_init_m3_fields);
     utest_run("uvm_init sets gc_threshold + negative gc_debt",
               vm_gc_initial_threshold_set);
+    utest_run("uvm_init sets M4 object/topology fields to v1.0 contract",
+              vm_object_fields_initialized_to_v1_0_contract);
     utest_run("vm: OP_RET at top frame marks strand dead, delivers value",
               vm_op_ret_top_frame_marks_strand_dead);
+    utest_run("vm: UClosure carries proto_inst field (M4 plumbing)",
+              vm_uclosure_carries_proto_inst_field);
+    utest_run("vm: OP_GETSLOT diagnoses when no proto_inst bound",
+              vm_op_getslot_diagnoses_when_no_proto_inst_bound);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",
               vm_op_ret_nested_call_routes_through_walker);
 }

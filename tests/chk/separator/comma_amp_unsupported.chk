@@ -1,12 +1,13 @@
 # Milestone: M3
 # Covers: ',' and '&' compile successfully at M3 but require urbi_step driver
-# (realm-managed strand) to run. The uvm_run REPL path has no realm; these
-# opcodes produce a runtime TypeError in that context. The chk runner uses
-# the REPL (uvm_run path), so we expect TypeError at runtime, not emit error.
-# Real concurrent execution is tested via unit tests (test_fork.c).
+# (urbi_strand_create-allocated strand with an entry_closure) to run. The
+# uvm_run REPL path uses a stack-local transient strand with no entry_closure;
+# these opcodes produce a runtime TypeError in that context. The chk runner
+# uses the REPL (uvm_run path), so we expect TypeError at runtime, not emit
+# error. Real concurrent execution is tested via unit tests (test_fork.c).
 
 1 , 2
-[00000001] !!! TypeError: OP_FORK_DETACH: `,` requires urbi_step driver (realm == NULL)
+[00000001] !!! TypeError: OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)
 
 1 & 2
-[00000002] !!! TypeError: OP_FORK_JOIN: `&` requires urbi_step driver (realm == NULL)
+[00000002] !!! TypeError: OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)

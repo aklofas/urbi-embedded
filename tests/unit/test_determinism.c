@@ -5,7 +5,7 @@
  * both modes to confirm the file compiles and links cleanly.
  *
  * make test       — default build: 1 case (smoke).
- * make test-debug — URBI_DEBUG=1: 1 smoke + 4 checksum sanity cases. */
+ * make test-debug — URBI_DEBUG=1: 1 smoke + 6 checksum sanity cases. */
 
 #include "utest.h"
 #include "urbi/urbi.h"
@@ -120,6 +120,40 @@ UTEST(determinism_checksum_two_identical_vms_match)
     uvm_destroy(&vm2);
 }
 
+UTEST(determinism_checksum_includes_topology_gen)
+{
+    /* Per pre-M4 topology-generation spec §5: the determinism gate must
+     * surface any divergence in shape-tree mutation ordering.  Bumping
+     * topology_gen on an otherwise-quiescent VM must change the hash. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    uint64_t pre = urbi_get_determinism_checksum(&vm);
+    vm.topology_gen += 5;
+    uint64_t post = urbi_get_determinism_checksum(&vm);
+    UASSERT(pre != post);
+    uvm_destroy(&vm);
+}
+
+UTEST(determinism_checksum_includes_next_object_id_and_lookup_id)
+{
+    /* Per pre-M4 prototype-chain spec §8.1: changes to next_object_id (and
+     * lookup_id, by symmetry) must perturb the checksum.  Both counters are
+     * mixed; flipping either produces a different hash. */
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    uint64_t pre = urbi_get_determinism_checksum(&vm);
+    vm.next_object_id += 1;
+    uint64_t post_oid = urbi_get_determinism_checksum(&vm);
+    UASSERT(pre != post_oid);
+
+    vm.lookup_id += 1;
+    uint64_t post_lid = urbi_get_determinism_checksum(&vm);
+    UASSERT(post_oid != post_lid);
+
+    uvm_destroy(&vm);
+}
+
 #endif /* URBI_DEBUG */
 
 /* ---- Suite entry point ---------------------------------------------------- */
@@ -137,5 +171,9 @@ void test_determinism_suite(void)
               determinism_checksum_differs_after_namespace_binding);
     utest_run("determinism_checksum_two_identical_vms_match",
               determinism_checksum_two_identical_vms_match);
+    utest_run("determinism_checksum_includes_topology_gen",
+              determinism_checksum_includes_topology_gen);
+    utest_run("determinism_checksum_includes_next_object_id_and_lookup_id",
+              determinism_checksum_includes_next_object_id_and_lookup_id);
 #endif
 }

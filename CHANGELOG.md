@@ -1,5 +1,207 @@
 # Changelog
 
+## v0.4.0-objects — 2026-05-02
+
+The M4 object model milestone. Introduces a prototype-based object system
+with hidden-class shape inference, per-call-site inline caches, copy-on-write
+slot inheritance, and atom-family inheritance constraints. Bytecode bumped
+to v1.3; earlier `.urb` files are rejected at load time.
+
+### Breaking changes
+
+- **Bytecode v1.3**: version byte incremented; loader rejects v1.2 and earlier
+  modules with a diagnostic. `UProto` gains `ic_count` (uint16) + `ic_names`
+  side table (USymbol** parallel array). Recompile all `.urb` files.
+
+### Object model
+
+- `UObject` (48 B header): `cell` (GC) + `shape` + `slots` + `protos`
+  (tagged uintptr_t) + `object_id` (per-VM monotonic) + `lookup_stamp` (cycle
+  guard) + `flags` (atom family low 4 bits + IS_PROTOTYPE / FROZEN /
+  SANDBOX_RO bits).
+- Tagged-pointer prototype chain with three storage forms: empty (`protos=0`),
+  single (`(p<<1)|1` — most common in legacy code), and heap (`UProtos*`
+  pointer with bit 0 clear). `UPROTOS_FOREACH` macro captures `obj->protos`
+  once at iteration start (legacy semantics per spec §6.3).
+- `UShape` (56 B): hidden-class with `name` (last-added slot), `index`,
+  `count`, `flags` (4-bit per-slot nibbles for OGET/OSET/CONSTANT/LOCAL),
+  `parent`, `transitions` (UShapeMap cache), `props_table` (lazy per-slot
+  UProps* dense array via UPropsTable wrapper).
+- `UShapeMap` transition cache (open-addressing hash, power-of-2 capacity,
+  USymbol* identity hashing); `urbi_shape_transition_add_slot` shares
+  child shapes for identical construction sequences.
+- `USlot` collapsed to 16 B (typedef of `UValue`); slot storage is
+  `USlotArray` wrapper (UCell + entries[]).
+- `UProps` (48 B): per-slot getter/setter/constant flag side table; allocated
+  lazily when any slot in the shape lineage installs a property; stored in
+  per-shape `UPropsTable`.
+- Atom-family singletons: 9 lazily-allocated per-VM prototypes (Object,
+  Integer, Float, String, List, Dict, Tag, Event, Symbol). Atoms pinned via
+  GC root provider, not manual handle-table pinning.
+
+### Inline caches and dispatch
+
+- `UIC` (144 B at `URBI_IC_ENTRIES_PER_SITE=4`, the default; 80 B at =2;
+  48 B at =1): per-site inline cache with `name`, parallel arrays of
+  `recv_shapes` / `topology_gen` / `slots` / `uprops` / `flags`, `n` valid
+  count, and `replace_cursor`.
+- `URBI_IC_ENTRIES_PER_SITE` compile-time tunable {1, 2, 4} drives IC site
+  width; default 4, footprint preset binds 2.
+- `UModuleInstance` + `UProtoInstance`: per-VM RAM tier separate from the
+  read-only `UModule`. Two instances of the same module have independent
+  IC tables; threaded onto `vm->module_instances_head`.
+- Per-function emit-time IC bookkeeping: `UFuncState.ic_next` counter,
+  `ic_names` dynamic array (16-slot growth chunks), capped at 256 sites
+  per function (`EMIT_TOO_MANY_IC_SITES`).
+- `urbi_object_resolve_slot`: cycle-safe DFS over prototype chain
+  (left-first via `UPROTOS_FOREACH`), 64-deep stack bound, `lookup_id`
+  stamping for re-entry guard with rollover handling.
+- COW on assignment to inherited slot: `urbi_slot_set_slow` installs a
+  local slot on receiver via `urbi_object_set_local_slot`, leaving the
+  prototype's slot intact.
+
+### Language and parser
+
+- `OP_GETSLOT` (opcode 27) and `OP_SETSLOT` (opcode 28) ABC-encoded:
+  A=dst (or src), B=recv, C=ic_index. IC tables looked up via
+  `cur_closure->proto_inst->ic_table[ic_index]`.
+- AST nodes: `AST_MEMBER_GET` / `AST_MEMBER_SET` for `obj.x` / `obj.x = v`;
+  `AST_PROP_GET` / `AST_PROP_SET` for `obj.x->prop` / `obj.x->prop = v`.
+- Lexer tokens: `TOK_DOT` (`.`) and `TOK_ARROW` (`->`).
+- Parser preserves method-call syntax: `obj.method()` parses as
+  `AST_CALL{callee=AST_MEMBER_GET}` not as `AST_MEMBER_GET` followed by
+  `AST_CALL`.
+
+### Public C API
+
+- `include/urbi/object.h`: opaque `UObject` / `UShape` typedefs; atom-family
+  enum (`URBIAtomFamilyTag` with `_F` suffix to avoid namespace collision
+  with internal `URBIAtomFamily`); `urbi_object_root` /
+  `urbi_object_atom` / `urbi_object_add_proto` / `urbi_object_remove_proto`
+  / `urbi_object_set_protos`.
+- `UModuleInstance` opaque typedef + `urbi_module_instance_create` /
+  `urbi_module_instance_destroy`.
+- `USlotHandle` wrapper: `urbi_object_get_slot` returns a handle pointing
+  at the slot's current owner (may be the receiver or an inherited
+  prototype). `urbi_slothandle_read_value` / `write_value` validate or
+  refresh on access; handles become permanently invalid after the slot is
+  removed.
+- Fallback slot retry: `urbi_object_lookup` retries once with name=`fallback`
+  on full-tree miss. Cycle-safe (no infinite recursion when looking up
+  `fallback` itself).
+
+### Inheritance semantics
+
+- `valid_proto`: atom-family constraint at addProto/setProtos time. An atom
+  can only inherit from its own family or root Object; root Object never
+  blocks.
+- `urbi_object_set_protos` is atomic: validate every survivor before any
+  state change. Dedup first-occurrence-wins, capped at 64 unique items.
+- `IS_PROTOTYPE` bit (`URBI_OBJ_FLAG_IS_PROTOTYPE`): set monotonically on
+  any UObject when it joins another object's protos chain. Read by
+  `urbi_object_set_local_slot` to drive the conditional topology bump.
+- `urbi_object_clone` (atom-aware): preserves parent's atom family in the
+  clone's flags low-4-bits and threads the parent into protos as the
+  single-tag form.
+
+### topology_gen mutation surfaces
+
+Every IC-invalidating mutation surface bumps `vm->topology_gen` (u64 since
+T2). 12 surfaces per the topology-generation spec §4.1:
+
+- Slot install / remove on a prototype (rows 1, 4); slot install on a
+  non-prototype receiver does NOT bump (caught by the IC's shape-mismatch
+  check per §4.2 row 2).
+- Property install / remove / in-place mutate (rows 5–7) via
+  `urbi_object_install_property` / `_remove_property` / `_set_property_value`.
+- Prototype-chain mutations (rows 8–12) via `urbi_object_set_protos_*`.
+
+`urbi_get_determinism_checksum` (URBI_DEBUG) folds `topology_gen` +
+`lookup_id` + `next_object_id` plus per-IC state (`n` + `replace_cursor` +
+`recv_shapes[]` + `topology_gen[]`) into the per-step checksum. The
+existing CI determinism gate (3 presets × 100 runs) remains green.
+
+### Garbage collector
+
+- New cell types: `UTYPE_PROTOS=9`, `UTYPE_SHAPE=10`, `UTYPE_PROPS=11`,
+  `UTYPE_SLOTHANDLE=12`, `UTYPE_MODULE_INSTANCE=13`,
+  `UTYPE_PROTO_INSTANCE=14`, `UTYPE_SHAPE_MAP=15`,
+  `UTYPE_PROPS_TABLE=16`, `UTYPE_SLOT_ARRAY=17`. (`UTYPE_OBJECT=1` is the
+  pre-existing M3 baseline tag.)
+- Per-type mark walkers in `src/object/utypes_init.c`. `UObject` walker
+  shades `shape` + `slots[i]` UValue payloads + `protos` chain via
+  `UPROTOS_FOREACH`. `UShape` walker shades `parent` + `transitions` +
+  `props_table` entries. Wrappers (UPropsTable, USlotArray,
+  UProtoInstance bulk) reach their content via the owning UObject's
+  walker through `offsetof` arithmetic.
+- `UClosure` embeds `UCell` as first member (closes the M3 baseline
+  TODO). `urbi_gc_upvalue_write` may now safely cast `UClosure*` →
+  `UCell*` for the barrier color check; OP_SETUPVAL invokes the
+  barrier before the actual store.
+- New `UVAL_OBJECT` UValue kind (=8); incremental GC's `uvalue_is_heap`
+  / `uvalue_as_cell` treat UVAL_OBJECT as heap-bearing.
+- M4 GC root provider registered at `uvm_init`: walks the 9 atom
+  singletons + root shape + every `UModuleInstance` on the per-VM list.
+- GC strand walker swapped from `ready_head` + `sleep_q_head` to
+  realm-hierarchy iteration (`vm->realms_head` → `realm.strands_head`).
+  Closes the WAITING_JOIN root gap; generalizes to any wait state.
+- Transient strands (uvm_run helpers) routed to `vm->global_realm` at
+  creation; unlinked symmetrically at exit.
+
+### Public-facing scheduler contract
+
+- New `docs/internals/scheduler-design.md` documents the GC walker
+  contract: every strand whose register window may hold GC-managed
+  UValues MUST be reachable via `vm->realms_head → realm.strands_head`.
+  Scheduler implementations are responsible; the GC walker assumes the
+  invariant without re-verification.
+
+### Tests and CI
+
+- 884 unit cases / 5330 checks at default build; 902/5370 under
+  URBI_DEBUG. Green under host + ASan + UBSan; cross-arm (Cortex-M7) +
+  cross-riscv (rv32imc) build clean.
+- New test suites: `test_uic`, `test_uslothandle`, `test_topology_gen`,
+  `test_scheduler_invariant`, `test_gc_strand_walker`,
+  `test_ugc_object_cells`. Existing `test_uobject` / `test_ushape` /
+  `test_funcstate` extended.
+- `make test-determinism` (3 presets × 100 runs) green.
+- `make releasetest` aggregate target: all stages green.
+- Footprint preset (`URBI_IC_ENTRIES_PER_SITE=2`) builds and tests pass.
+
+### Known limitations / deferred
+
+- **`UClosure.proto_inst` binding for transient strands**: the
+  OP_GETSLOT / OP_SETSLOT dispatch arms are wired but the `proto_inst`
+  field on a closure created by `vm_alloc_closure` is NULL (no
+  UModuleInstance association). Affects urbiscript-level slot dispatch
+  through transient strands; the dispatch arms diagnose with
+  `TypeError: GETSLOT: no IC table bound`. Unblocking this requires 1–2
+  commits in `src/uvm.c` near OP_CALL plus the strand-spawn path. All
+  C-API paths (urbi_object_resolve_slot, urbi_slot_get_slow,
+  urbi_slot_set_slow, urbi_slot_handle_*) work end-to-end.
+- **Class declaration emit** (`class Foo : A, B { body }`),
+  **Class.new() stdlib wiring**, **get/set parse sugar**: deferred
+  pending the proto_inst binding above.
+- **Legacy `.chk` fixture ports** (lookup, inheritance, slot-cow-const,
+  shared-protos, class, fallback, atom-clone, atoms): deferred for the
+  same reason.
+- **Getter / setter dispatch macros** (`URBI_VM_DISPATCH_GETTER` /
+  `_SETTER`): the IC entries' OGET/OSET flags are honored at slow-path
+  fill time, but the dispatch macros themselves are deferred to land
+  alongside the frame-push wrapper at `Class.new()`.
+- **Wire-trailer reader / writer for v1.3 `UProto.ic_count` /
+  `ic_names`**: in-memory foundation lands at T1; nested-proto
+  serialization deferred to a future task that adds the symbol-pool
+  framing.
+- **`URBI_IC_ENTRIES_PER_SITE=1` build**: a pre-existing `replace_cursor`
+  modulo-1 wraparound assumption (cursor=0 vs assertion of cursor=1) in
+  one IC test is unrelated to T44; default (=4) and footprint (=2) both
+  pass cleanly.
+- **Determinism `.chk` fixture covering all 12 §4.1 surfaces**: deferred
+  pending end-to-end runtime; URBI_DEBUG `determinism_checksum_includes_
+  ic_state` test pins the IC-fold step at unit level.
+
 ## v0.3.0-concurrency — 2026-04-28
 
 The M3 concurrency milestone. Adds six subsystems above the M2 expression

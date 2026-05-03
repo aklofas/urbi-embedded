@@ -6,6 +6,8 @@
 #include "umodule.h"
 #include "uintern.h"
 #include "umacros.h"
+#include "object/uic.h"
+#include "object/umoduleinstance.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -164,6 +166,53 @@ urbi_get_determinism_checksum(struct UVM *vm)
 
     /* 4. Intern table entry count (number of unique strings seen). */
     FNV1A_MIX(ctx.h, (uint64_t)uintern_count(vm));
+
+    /* 5. M4 topology + identity counters (per pre-M4 topology-generation
+     *    spec §5 and prototype-chain spec §8.1).  Surfaces non-determinism
+     *    in shape-tree mutation ordering, top-level-lookup sequencing, and
+     *    UObject identity assignment. */
+    FNV1A_MIX(ctx.h, vm->topology_gen);
+    FNV1A_MIX(ctx.h, vm->lookup_id);
+    FNV1A_MIX(ctx.h, (uint64_t)vm->next_object_id);
+
+    /* 6. M4 T30 — per-IC observable state.  Walk every live UModuleInstance
+     *    on the per-VM registry (insertion-order; deterministic in any
+     *    well-formed test harness) and, for each UIC site in each
+     *    UProtoInstance's IC table, fold in:
+     *      - ic->n              (live entry count)
+     *      - ic->replace_cursor (round-robin eviction position)
+     *      - per entry e in [0, n): topology_gen[e] (cached generation;
+     *        ordering of fills observable in the run)
+     *
+     *    Pointer fields (recv_shapes / slots / uprops) are NOT folded —
+     *    they are heap addresses and not stable across process invocations.
+     *    The (n, replace_cursor, topology_gen[]) triple is sufficient to
+     *    detect ordering divergences across runs because IC fill ordering
+     *    is itself driven by topology_gen ticks. */
+    {
+        const struct UModuleInstance *mi;
+        for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
+            const UProtoInstanceArr *arr = mi->proto_instances;
+            if (arr == NULL) continue;
+            uint16_t i;
+            for (i = 0u; i < arr->n; i++) {
+                const UProtoInstance *pi = &arr->entries[i];
+                if (pi->ic_table == NULL) continue;
+                uint16_t ic_count = (pi->proto != NULL) ? pi->proto->ic_count
+                                                        : 0u;
+                uint16_t k;
+                for (k = 0u; k < ic_count; k++) {
+                    const UIC *ic = &pi->ic_table[k];
+                    FNV1A_MIX(ctx.h, (uint64_t)ic->n);
+                    FNV1A_MIX(ctx.h, (uint64_t)ic->replace_cursor);
+                    int e;
+                    for (e = 0; e < ic->n; e++) {
+                        FNV1A_MIX(ctx.h, ic->topology_gen[e]);
+                    }
+                }
+            }
+        }
+    }
 
     return ctx.h;
 }
