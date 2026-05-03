@@ -490,6 +490,7 @@ void umodule_destroy(UModule *module) {
         if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);
         if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
+        if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
     }
     /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
        alloc_ud are all reset; caller must re-init before re-use). */
