@@ -1091,11 +1091,49 @@ UTEST(vm_uclosure_carries_proto_inst_field) {
     UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
     UClosure *cl = (UClosure *)out.v.p;
     UASSERT(cl != NULL);
-    /* proto_inst is NULL at the M4 baseline — vm_alloc_closure zero-fills
-     * the cell and no module-instance binding has been wired yet.  This
-     * test pins that contract; it will tighten when later M4 tasks land
-     * the binding. */
-    UASSERT(cl->proto_inst == NULL);
+    /* proto_inst is non-NULL after T8: OP_CLOSURE now binds it from the
+     * strand's module_instance (entries[bx + 1] where bx is the nested-proto
+     * index).  The proto pointer must match the closure's own proto. */
+    UASSERT(cl->proto_inst != NULL);
+    UASSERT(cl->proto_inst->proto == cl->proto);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
+UTEST(vm_op_closure_binds_proto_inst) {
+    /* OP_CLOSURE must populate cl->proto_inst from the strand's
+     * module_instance bulk (entries[bx + 1] mirrors module->nested[bx]).
+     * Keep VM + module alive while inspecting the closure (vm_pipeline_eval
+     * destroys them before returning, making cl a dangling pointer). */
+    UValue out;
+    UVM vm;
+    ULexer lex;
+    const char *src = "var f = function() { 1 }; f";
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    UModule module = {0};
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+    UValue nil = {0};
+    out = nil;
+    UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
+    UASSERT_EQ((int)UVM_OK, (int)uvm_run(&vm, &module, &out));
+    UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
+    UClosure *cl = (UClosure *)out.v.p;
+    UASSERT(cl != NULL);
+    UASSERT(cl->proto_inst != NULL);
+    UASSERT(cl->proto_inst->proto == cl->proto);
     umodule_destroy(&module);
     uarena_destroy(&arena);
     uvm_destroy(&vm);
@@ -1221,6 +1259,8 @@ void test_vm_suite(void) {
               vm_op_ret_top_frame_marks_strand_dead);
     utest_run("vm: UClosure carries proto_inst field (M4 plumbing)",
               vm_uclosure_carries_proto_inst_field);
+    utest_run("vm: OP_CLOSURE binds cl->proto_inst from strand's module_instance",
+              vm_op_closure_binds_proto_inst);
     utest_run("vm: OP_GETSLOT diagnoses when no proto_inst bound",
               vm_op_getslot_diagnoses_when_no_proto_inst_bound);
     utest_run("vm: OP_RET in nested call routes through urbi_unwind walker",

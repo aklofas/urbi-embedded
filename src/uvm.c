@@ -1002,6 +1002,18 @@ dispatch:
                 vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
+            /* M4 follow-up: bind proto_inst so the new closure can dispatch
+             * OP_GETSLOT/OP_SETSLOT against the per-VM IC table.  entries[0]
+             * is the root chunk; entries[bx + 1] is the matching nested proto. */
+            if (s->module_instance != NULL
+                && s->module_instance->proto_instances != NULL
+                && (size_t)bx + 1u < (size_t)s->module_instance->proto_instances->n) {
+                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1u];
+            }
+            /* If no module_instance is bound (defensive — shouldn't happen at
+             * M4 follow-up baseline since uvm_run wires it), proto_inst stays
+             * NULL and OP_GETSLOT/SETSLOT will diagnose cleanly. */
+
             /* Read nupvals pseudo-instructions. */
             {
                 int i;
