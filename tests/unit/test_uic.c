@@ -602,6 +602,31 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     uvm_destroy(&vm_a);
 }
 
+/* === T5: urbi_get_or_create_module_instance cache helper ===
+ *
+ * Same (vm, module) pair must return the same UModuleInstance on repeated
+ * calls; a different module must yield a different instance. */
+
+UTEST(get_or_create_module_instance_caches_per_module) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m1 = {0};
+    UModule m2 = {0};
+
+    UModuleInstance *a1 = urbi_get_or_create_module_instance(&vm, &m1);
+    UModuleInstance *a2 = urbi_get_or_create_module_instance(&vm, &m1);
+    UModuleInstance *b1 = urbi_get_or_create_module_instance(&vm, &m2);
+
+    UASSERT(a1 != NULL);
+    UASSERT(a1 == a2);   /* same module → same instance */
+    UASSERT(a1 != b1);   /* different module → different instance */
+
+    umodule_destroy(&m1);
+    umodule_destroy(&m2);
+    uvm_destroy(&vm);
+}
+
 #ifdef URBI_DEBUG
 UTEST(determinism_checksum_includes_ic_state) {
     /* Snapshot checksum, manually fill an IC entry, snapshot again — the
@@ -684,6 +709,8 @@ void test_uic_suite(void) {
               multi_vm_two_vms_have_independent_ic_tables);
     utest_run("uic: module instance populates root chunk IC table",
               module_instance_populates_root_chunk_ic_table);
+    utest_run("uic: get_or_create_module_instance caches per module",
+              get_or_create_module_instance_caches_per_module);
 #ifdef URBI_DEBUG
     utest_run("uic: determinism checksum includes IC state",
               determinism_checksum_includes_ic_state);

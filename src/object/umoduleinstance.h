@@ -121,6 +121,14 @@ UModuleInstance *urbi_module_instance_create (struct UVM *vm, UModule *m);
  * an explicit teardown for IC entries that pin host resources). */
 void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
 
+/* Look up a UModuleInstance for (vm, m) on vm->module_instances_head; if
+ * absent, create it via urbi_module_instance_create and thread on.  Used by
+ * the chunk-run path so OP_GETSLOT / OP_SETSLOT find a real IC table on
+ * first execution of a module.  Returns NULL only on OOM during create.
+ * O(N) in the size of the per-VM instance list — acceptable since N is
+ * the number of distinct loaded modules per VM (typically <10). */
+UModuleInstance *urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
+
 #ifdef __cplusplus
 }
 #endif

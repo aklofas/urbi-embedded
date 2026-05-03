@@ -148,3 +148,14 @@ urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
     (void)vm;
     (void)mi;
 }
+
+UModuleInstance *
+urbi_get_or_create_module_instance(struct UVM *vm, UModule *m)
+{
+    if (vm == NULL || m == NULL) return NULL;
+    UModuleInstance *mi;
+    for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
+        if (mi->module == m) return mi;
+    }
+    return urbi_module_instance_create(vm, m);
+}
