@@ -69,12 +69,13 @@ typedef enum {
 
 /* === Forward declarations for types that land in later tasks. === */
 
-struct UTag;     /* T29 */
-struct UEvent;   /* reactive runtime */
-struct UVM;      /* uvm.h — forward-decl to avoid circular include */
-struct URealm;   /* urealm.h — forward-decl for strand lifecycle context */
-struct UModule;  /* umodule.h — forward-decl for strand execution context */
-struct UClosure; /* umodule.h — forward-decl for closure list threading */
+struct UTag;             /* T29 */
+struct UEvent;           /* reactive runtime */
+struct UVM;              /* uvm.h — forward-decl to avoid circular include */
+struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
+struct UModule;          /* umodule.h — forward-decl for strand execution context */
+struct UClosure;         /* umodule.h — forward-decl for closure list threading */
+struct UModuleInstance;  /* object/umoduleinstance.h — M4 follow-up: per-(vm,module) IC tier */
 
 /* === UStrand struct (M3 baseline) ===
    T20 and T29 add lifecycle operations; T9 wires the unwind walker;
@@ -172,6 +173,10 @@ struct UStrand {
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
     const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
+    struct UModuleInstance *module_instance; /* M4 follow-up: per-(vm,module) IC RAM tier;
+                                               bound by uvm_run / urbi_run_chunk via
+                                               urbi_get_or_create_module_instance.  May be
+                                               NULL if not yet wired (defensive). */
     UCallFrame              frames[UVM_MAX_FRAMES];
     int                     frame_count;
     UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */

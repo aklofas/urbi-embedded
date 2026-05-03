@@ -21,6 +21,7 @@
 #include "ulex.h"
 #include "uparse.h"
 #include "uvalue.h"
+#include "object/umoduleinstance.h"
 #include <stddef.h>    /* size_t */
 
 /* Freestanding-safe byte-copy: copy at most (cap-1) bytes from src into dst,
@@ -58,6 +59,12 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         realm = urbi_realm_global(vm);
         if (!realm) return URBI_ERR_OOM;
     }
+
+    /* M4 follow-up: bind UModuleInstance so OP_GETSLOT/SETSLOT find IC table.
+     * Cache lookup on vm->module_instances_head; lazy create.  OOM here is
+     * not fatal — uvm_run will surface a clean diagnostic on first GETSLOT
+     * if the binding never happened. */
+    (void)urbi_get_or_create_module_instance(vm, (UModule *)module);
 
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;

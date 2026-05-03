@@ -20,6 +20,12 @@
 #include "uintern.h"
 #include "umodule.h"
 #include "uvm.h"
+#include "realm/urealm.h"
+#include "uarena.h"
+#include "uast.h"
+#include "uemit.h"
+#include "ulex.h"
+#include "uparse.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -674,6 +680,58 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
 }
 #endif  /* URBI_DEBUG */
 
+/* === T6: urbi_run_chunk binds UModuleInstance on first run ===
+ *
+ * Verifies that urbi_run_chunk populates vm->module_instances_head for the
+ * module it runs, so downstream OP_GETSLOT/SETSLOT can find the IC table. */
+
+UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Compile a trivial source ("var x = 1;") into a fresh module. */
+    UModule m = {0};
+    UArena arena;
+    uarena_init(&arena, 4096);
+
+    const char *src = "var x = 1;";
+    size_t src_len = sizeof("var x = 1;") - 1u;
+    ULexer lex;
+    ulex_init(&lex, src, src_len);
+
+    UEmitter e;
+    uemit_init(&e, &m, &arena, &vm, NULL);
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        if (uemit_statement(&e, node) != EMIT_OK) break;
+        uarena_reset(&arena);
+    }
+    UASSERT_EQ((int)uemit_finish(&e), (int)EMIT_OK);
+
+    /* Pre-condition: no module instance exists yet. */
+    UASSERT(vm.module_instances_head == NULL);
+
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UValue out = {0};
+    int rc = urbi_run_chunk(&vm, r, &m, &out);
+    UASSERT_EQ(rc, (int)URBI_OK);
+
+    /* Post-condition: module_instances_head is populated and points to our module. */
+    UASSERT(vm.module_instances_head != NULL);
+    UASSERT(vm.module_instances_head->module == &m);
+
+    umodule_destroy(&m);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
 void test_uic_suite(void) {
     utest_run("uic: layout at default 4 entries",
               uic_layout_at_default_4_entries);
@@ -711,6 +769,8 @@ void test_uic_suite(void) {
               module_instance_populates_root_chunk_ic_table);
     utest_run("uic: get_or_create_module_instance caches per module",
               get_or_create_module_instance_caches_per_module);
+    utest_run("uic: urbi_run_chunk creates module instance on first run",
+              urbi_run_chunk_creates_module_instance_on_first_run);
 #ifdef URBI_DEBUG
     utest_run("uic: determinism checksum includes IC state",
               determinism_checksum_includes_ic_state);
