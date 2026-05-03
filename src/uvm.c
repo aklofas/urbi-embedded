@@ -1010,9 +1010,9 @@ dispatch:
                 && (size_t)bx + 1u < (size_t)s->module_instance->proto_instances->n) {
                 cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1u];
             }
-            /* If no module_instance is bound (defensive — shouldn't happen at
-             * M4 follow-up baseline since uvm_run wires it), proto_inst stays
-             * NULL and OP_GETSLOT/SETSLOT will diagnose cleanly. */
+            /* If no module_instance is bound (defensive — uvm_run wires it for
+             * every normal execution path), proto_inst stays NULL and
+             * OP_GETSLOT/SETSLOT will diagnose cleanly. */
 
             /* Read nupvals pseudo-instructions. */
             {

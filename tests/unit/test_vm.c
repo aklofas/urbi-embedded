@@ -1059,10 +1059,11 @@ UTEST(vm_op_ret_nested_call_routes_through_walker) {
 /* === T22 plumbing: UClosure.proto_inst === */
 
 UTEST(vm_uclosure_carries_proto_inst_field) {
-    /* Pin the new M4 field exists and is zero-initialized when an OP_CLOSURE
-     * runs against a uvm_run transient strand (no UModuleInstance bound at
-     * the M4 baseline — full module-instance wiring lands at a later task,
-     * see uclosure.h field comment). */
+    /* Pin that the M4 UClosure.proto_inst field is populated by OP_CLOSURE
+     * when a UModuleInstance is bound (uvm_run wires it).  A module with no
+     * nested functions has ic_count==0 so proto_inst for index bx+1==1 won't
+     * be in range — proto_inst stays NULL, which is the correct defensive
+     * outcome.  See uclosure.h field comment. */
     UValue out;
     /* `var f = function() { 1 }; f` — last expression returns the closure
      * itself.  vm->last_return_closure is preserved for inspection. */

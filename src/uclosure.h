@@ -39,10 +39,11 @@ struct UClosure {
     UProto           *proto;
     UProtoInstance   *proto_inst;  /* M4 — points into the owning UModuleInstance's
                                       proto_instances bulk; carries this closure's
-                                      IC table for OP_GETSLOT/OP_SETSLOT.  NULL when
-                                      no module instance is bound (e.g. uvm_run
-                                      transient strands at the M4 baseline; full
-                                      module-instance wiring lands at a later task). */
+                                      IC table for OP_GETSLOT/OP_SETSLOT.  Bound by
+                                      OP_CLOSURE from s->module_instance->proto_instances
+                                      ->entries[bx + 1].  NULL only when no
+                                      module_instance was wired (defensive — shouldn't
+                                      occur in production paths). */
     struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
     uint8_t           nupvals;
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
