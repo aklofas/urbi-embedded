@@ -481,6 +481,53 @@ UTEST(resolve_slot_finds_via_protos) {
     uvm_destroy(&vm);
 }
 
+/* === T3 follow-up: entries[0] populated from UModule.ic_count ===
+ *
+ * Verifies that urbi_module_instance_create wires up entries[0].ic_table
+ * from UModule.ic_count / ic_names (root-chunk IC sites added by T2). */
+
+UTEST(module_instance_populates_root_chunk_ic_table) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m = {0};
+
+    /* Intern two symbols for the root-chunk IC sites. */
+    USymbol *sx = (USymbol *)ustr_intern(&vm, "x", 1);
+    USymbol *sy = (USymbol *)ustr_intern(&vm, "y", 1);
+    UASSERT(sx != NULL); UASSERT(sy != NULL);
+
+    /* Populate root-chunk IC fields directly (mimics what T2's emitter does). */
+    m.ic_count = 2;
+    USymbol *names[2];
+    names[0] = sx;
+    names[1] = sy;
+    m.ic_names = names;
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UASSERT(mi != NULL);
+
+    /* entries[0] must carry a real ic_table (not NULL). */
+    UASSERT(mi->proto_instances->entries[0].ic_table != NULL);
+
+    /* Name pointers must match by identity (interned symbols). */
+    UASSERT(mi->proto_instances->entries[0].ic_table[0].name == sx);
+    UASSERT(mi->proto_instances->entries[0].ic_table[1].name == sy);
+
+    /* Both sites must be zero-initialized. */
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[0].n, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[0].replace_cursor, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].n, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].replace_cursor, 0);
+
+    urbi_module_instance_destroy(&vm, mi);
+    /* Prevent umodule_destroy from freeing the static names[] array. */
+    m.ic_names = NULL;
+    m.ic_count = 0;
+    umodule_destroy(&m);
+    uvm_destroy(&vm);
+}
+
 /* === T30: cross-VM IC isolation + determinism-checksum extension ===
  *
  * Two complementary tests:
@@ -635,6 +682,8 @@ void test_uic_suite(void) {
               resolve_slot_finds_via_protos);
     utest_run("uic: two VMs have independent IC tables",
               multi_vm_two_vms_have_independent_ic_tables);
+    utest_run("uic: module instance populates root chunk IC table",
+              module_instance_populates_root_chunk_ic_table);
 #ifdef URBI_DEBUG
     utest_run("uic: determinism checksum includes IC state",
               determinism_checksum_includes_ic_state);
