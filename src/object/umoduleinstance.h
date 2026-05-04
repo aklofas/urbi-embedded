@@ -126,7 +126,12 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  * the chunk-run path so OP_GETSLOT / OP_SETSLOT find a real IC table on
  * first execution of a module.  Returns NULL only on OOM during create.
  * O(N) in the size of the per-VM instance list — acceptable since N is
- * the number of distinct loaded modules per VM (typically <10). */
+ * the number of distinct loaded modules per VM (typically <10).
+ *
+ * Single-threaded-VM contract: walk-then-prepend is unsynchronised; caller
+ * must not invoke from multiple host threads concurrently against the same
+ * vm.  Safe today under URBI_SCHED_COOPERATIVE; revisit if parallel realms
+ * ship. */
 UModuleInstance *urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
 
 #ifdef __cplusplus
