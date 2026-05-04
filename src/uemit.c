@@ -2479,11 +2479,32 @@ UFuncState *uemit_close_function(UEmitter *e) {
             p->ic_names = NULL;
         }
     }
+    /* M4 follow-up: top-level funcstate (no target_proto) — copy IC names
+     * into UModule.ic_count / ic_names so urbi_module_instance_create can
+     * populate proto_instances->entries[0].  Mirrors the UProto path above. */
+    if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0u) {
+        UModule *mod = e->module;
+        UModuleAllocFn malloc_fn = emit_alloc_for(e->module);
+        if (malloc_fn == NULL) {
+            e->error = EMIT_OOM;
+        } else {
+            USymbol **dst = (USymbol **)malloc_fn(NULL,
+                (size_t)fs->ic_next * sizeof(USymbol *), e->module->alloc_ud);
+            if (dst == NULL) {
+                e->error = EMIT_OOM;
+            } else {
+                for (uint16_t i = 0; i < fs->ic_next; i++) {
+                    dst[i] = fs->ic_names[i];
+                }
+                mod->ic_count = fs->ic_next;
+                mod->ic_names = dst;
+            }
+        }
+    }
     /* Always free the funcstate-side IC array (allocated via the module
-     * allocator).  Top-level funcstates never have a target_proto and so
-     * have nowhere to copy the names — we still free them to avoid a
-     * leak should an emit path ever call uemit_assign_ic_index at top
-     * level (no opcode currently does, but the API is callable). */
+     * allocator).  For nested funcstates the names were copied into UProto
+     * above; for top-level funcstates they were copied into UModule by the
+     * block above.  Either way the funcstate-side buffer is now redundant. */
     if (fs->ic_names != NULL) {
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc != NULL) {

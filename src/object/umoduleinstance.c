@@ -32,17 +32,18 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
-     * IC tables for every nested proto's ic_count.  entries[0] is the
-     * root chunk (no ICs at v1.0); entries[1..n-1] mirror module->nested[].
+     * IC tables for root chunk + every nested proto's ic_count.
+     * entries[0] is the root chunk; entries[1..n-1] mirror module->nested[].
      *
-     * Bulk size = sizeof(UProtoInstanceArr)         (header + cell + pad)
-     *           + n * sizeof(UProtoInstance)         (entries[] payload)
-     *           + sum(nested[i]->ic_count) * sizeof(UIC)  (trailing IC region) */
+     * Bulk size = sizeof(UProtoInstanceArr)              (header + cell + pad)
+     *           + n * sizeof(UProtoInstance)              (entries[] payload)
+     *           + m->ic_count * sizeof(UIC)              (root-chunk IC region)
+     *           + sum(nested[i]->ic_count) * sizeof(UIC)  (nested IC region) */
     uint16_t n = (uint16_t)(1u + m->nested_count);
 
     size_t entries_bytes = (size_t)n * sizeof(UProtoInstance);
 
-    size_t ic_bytes = 0u;
+    size_t ic_bytes = (size_t)m->ic_count * sizeof(UIC);  /* root-chunk ICs */
     for (size_t i = 0u; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
         if (p == NULL) continue;
@@ -66,12 +67,29 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * pointer-arithmetic past the FAM. */
     UIC *ic_cursor = (UIC *)(void *)((uint8_t *)arr->entries + entries_bytes);
 
-    /* entries[0]: root chunk.  No IC sites at v1.0 (the root chunk doesn't
-     * emit GETSLOT/SETSLOT today; module-level slot access is wrapped in a
-     * function before reaching the IC path).  Leave proto NULL + ic_table
-     * NULL — slot[0] is intentionally a sentinel. */
-    arr->entries[0].proto    = NULL;
-    arr->entries[0].ic_table = NULL;
+    /* entries[0]: root chunk.  ic_table populated from UModule's ic_count /
+     * ic_names side table (M4 follow-up — root chunk now carries IC sites
+     * for top-level GETSLOT/SETSLOT). */
+    arr->entries[0].proto = NULL;
+    if (m->ic_count == 0u) {
+        arr->entries[0].ic_table = NULL;
+    } else {
+        arr->entries[0].ic_table = ic_cursor;
+        for (uint16_t k = 0u; k < m->ic_count; k++) {
+            UIC *ic = &ic_cursor[k];
+            ic->name           = (m->ic_names != NULL) ? m->ic_names[k] : NULL;
+            ic->n              = 0u;
+            ic->replace_cursor = 0u;
+            for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
+                ic->recv_shapes[e]  = NULL;
+                ic->topology_gen[e] = 0u;
+                ic->slots[e]        = NULL;
+                ic->uprops[e]       = NULL;
+                ic->flags[e]        = 0u;
+            }
+        }
+        ic_cursor += m->ic_count;
+    }
 
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
      * slice of the trailing IC region; zero-fill every entry so an unfilled
@@ -129,4 +147,15 @@ urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
      * explicit finalizer). */
     (void)vm;
     (void)mi;
+}
+
+UModuleInstance *
+urbi_get_or_create_module_instance(struct UVM *vm, UModule *m)
+{
+    if (vm == NULL || m == NULL) return NULL;
+    UModuleInstance *mi;
+    for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
+        if (mi->module == m) return mi;
+    }
+    return urbi_module_instance_create(vm, m);
 }

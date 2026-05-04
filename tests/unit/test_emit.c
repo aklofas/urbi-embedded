@@ -1506,6 +1506,23 @@ UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
     emit_ctx_destroy(&c);
 }
 
+UTEST(emit_top_level_member_get_populates_module_ic_count) {
+    /* "var o = nil; o.x" — a top-level OP_GETSLOT site.  After uemit_finish,
+     * UModule.ic_count must be 1 and ic_names[0] must be the intern of "x".
+     * This regresses the silent miscompile where the top-level funcstate's
+     * ic_names were freed without being copied into UModule. */
+    EmitCtx c;
+    emit_ctx_init(&c, "var o = nil; o.x");
+    UASSERT_EQ(EMIT_OK, emit_ctx_run(&c));
+
+    UASSERT_EQ((uint16_t)1, c.module.ic_count);
+    UASSERT(c.module.ic_names != NULL);
+    const char *xn = ustr_intern(&c.vm, "x", 1);
+    UASSERT(c.module.ic_names[0] == (USymbol *)xn);
+
+    emit_ctx_destroy(&c);
+}
+
 void test_emit_suite(void);
 
 void test_emit_suite(void) {
@@ -1628,4 +1645,6 @@ void test_emit_suite(void) {
               emit_member_get_emits_op_getslot_with_ic_index_zero);
     utest_run("emit: AST_MEMBER_SET → OP_SETSLOT with IC index 0",
               emit_member_set_emits_op_setslot_with_ic_index_zero);
+    utest_run("emit: top-level 'o.x' populates UModule.ic_count + ic_names after finish",
+              emit_top_level_member_get_populates_module_ic_count);
 }

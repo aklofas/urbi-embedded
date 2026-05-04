@@ -20,6 +20,12 @@
 #include "uintern.h"
 #include "umodule.h"
 #include "uvm.h"
+#include "realm/urealm.h"
+#include "uarena.h"
+#include "uast.h"
+#include "uemit.h"
+#include "ulex.h"
+#include "uparse.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -481,6 +487,53 @@ UTEST(resolve_slot_finds_via_protos) {
     uvm_destroy(&vm);
 }
 
+/* === T3 follow-up: entries[0] populated from UModule.ic_count ===
+ *
+ * Verifies that urbi_module_instance_create wires up entries[0].ic_table
+ * from UModule.ic_count / ic_names (root-chunk IC sites added by T2). */
+
+UTEST(module_instance_populates_root_chunk_ic_table) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m = {0};
+
+    /* Intern two symbols for the root-chunk IC sites. */
+    USymbol *sx = (USymbol *)ustr_intern(&vm, "x", 1);
+    USymbol *sy = (USymbol *)ustr_intern(&vm, "y", 1);
+    UASSERT(sx != NULL); UASSERT(sy != NULL);
+
+    /* Populate root-chunk IC fields directly (mimics what T2's emitter does). */
+    m.ic_count = 2;
+    USymbol *names[2];
+    names[0] = sx;
+    names[1] = sy;
+    m.ic_names = names;
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UASSERT(mi != NULL);
+
+    /* entries[0] must carry a real ic_table (not NULL). */
+    UASSERT(mi->proto_instances->entries[0].ic_table != NULL);
+
+    /* Name pointers must match by identity (interned symbols). */
+    UASSERT(mi->proto_instances->entries[0].ic_table[0].name == sx);
+    UASSERT(mi->proto_instances->entries[0].ic_table[1].name == sy);
+
+    /* Both sites must be zero-initialized. */
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[0].n, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[0].replace_cursor, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].n, 0);
+    UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].replace_cursor, 0);
+
+    urbi_module_instance_destroy(&vm, mi);
+    /* Prevent umodule_destroy from freeing the static names[] array. */
+    m.ic_names = NULL;
+    m.ic_count = 0;
+    umodule_destroy(&m);
+    uvm_destroy(&vm);
+}
+
 /* === T30: cross-VM IC isolation + determinism-checksum extension ===
  *
  * Two complementary tests:
@@ -555,6 +608,56 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     uvm_destroy(&vm_a);
 }
 
+/* === T5: urbi_get_or_create_module_instance cache helper ===
+ *
+ * Same (vm, module) pair must return the same UModuleInstance on repeated
+ * calls; a different module must yield a different instance. */
+
+UTEST(get_or_create_module_instance_caches_per_module) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    UModule m1 = {0};
+    UModule m2 = {0};
+
+    UModuleInstance *a1 = urbi_get_or_create_module_instance(&vm, &m1);
+    UModuleInstance *a2 = urbi_get_or_create_module_instance(&vm, &m1);
+    UModuleInstance *b1 = urbi_get_or_create_module_instance(&vm, &m2);
+
+    UASSERT(a1 != NULL);
+    UASSERT(a1 == a2);   /* same module → same instance */
+    UASSERT(a1 != b1);   /* different module → different instance */
+
+    umodule_destroy(&m1);
+    umodule_destroy(&m2);
+    uvm_destroy(&vm);
+}
+
+/* Same module loaded into two different VMs must produce distinct
+ * UModuleInstances, each threaded onto its own vm->module_instances_head. */
+UTEST(get_or_create_module_instance_isolated_per_vm) {
+    UVM vm_a, vm_b;
+    uvm_init(&vm_a, NULL, NULL);
+    uvm_init(&vm_b, NULL, NULL);
+
+    UModule m = {0};
+
+    UModuleInstance *mi_a = urbi_get_or_create_module_instance(&vm_a, &m);
+    UModuleInstance *mi_b = urbi_get_or_create_module_instance(&vm_b, &m);
+
+    UASSERT(mi_a != NULL);
+    UASSERT(mi_b != NULL);
+    UASSERT(mi_a != mi_b);  /* distinct instances per VM */
+
+    /* Each instance is reachable from its own VM's registry head. */
+    UASSERT(vm_a.module_instances_head == mi_a);
+    UASSERT(vm_b.module_instances_head == mi_b);
+
+    umodule_destroy(&m);
+    uvm_destroy(&vm_b);
+    uvm_destroy(&vm_a);
+}
+
 #ifdef URBI_DEBUG
 UTEST(determinism_checksum_includes_ic_state) {
     /* Snapshot checksum, manually fill an IC entry, snapshot again — the
@@ -602,6 +705,58 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
 }
 #endif  /* URBI_DEBUG */
 
+/* === T6: urbi_run_chunk binds UModuleInstance on first run ===
+ *
+ * Verifies that urbi_run_chunk populates vm->module_instances_head for the
+ * module it runs, so downstream OP_GETSLOT/SETSLOT can find the IC table. */
+
+UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Compile a trivial source ("var x = 1;") into a fresh module. */
+    UModule m = {0};
+    UArena arena;
+    uarena_init(&arena, 4096);
+
+    const char *src = "var x = 1;";
+    size_t src_len = sizeof("var x = 1;") - 1u;
+    ULexer lex;
+    ulex_init(&lex, src, src_len);
+
+    UEmitter e;
+    uemit_init(&e, &m, &arena, &vm, NULL);
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        if (uemit_statement(&e, node) != EMIT_OK) break;
+        uarena_reset(&arena);
+    }
+    UASSERT_EQ((int)uemit_finish(&e), (int)EMIT_OK);
+
+    /* Pre-condition: no module instance exists yet. */
+    UASSERT(vm.module_instances_head == NULL);
+
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UValue out = {0};
+    int rc = urbi_run_chunk(&vm, r, &m, &out);
+    UASSERT_EQ(rc, (int)URBI_OK);
+
+    /* Post-condition: module_instances_head is populated and points to our module. */
+    UASSERT(vm.module_instances_head != NULL);
+    UASSERT(vm.module_instances_head->module == &m);
+
+    umodule_destroy(&m);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
 void test_uic_suite(void) {
     utest_run("uic: layout at default 4 entries",
               uic_layout_at_default_4_entries);
@@ -635,6 +790,14 @@ void test_uic_suite(void) {
               resolve_slot_finds_via_protos);
     utest_run("uic: two VMs have independent IC tables",
               multi_vm_two_vms_have_independent_ic_tables);
+    utest_run("uic: module instance populates root chunk IC table",
+              module_instance_populates_root_chunk_ic_table);
+    utest_run("uic: get_or_create_module_instance caches per module",
+              get_or_create_module_instance_caches_per_module);
+    utest_run("uic: get_or_create_module_instance isolated per VM",
+              get_or_create_module_instance_isolated_per_vm);
+    utest_run("uic: urbi_run_chunk creates module instance on first run",
+              urbi_run_chunk_creates_module_instance_on_first_run);
 #ifdef URBI_DEBUG
     utest_run("uic: determinism checksum includes IC state",
               determinism_checksum_includes_ic_state);

@@ -28,6 +28,7 @@
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
+#include "object/umoduleinstance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -1001,6 +1002,18 @@ dispatch:
                 vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
+            /* M4 follow-up: bind proto_inst so the new closure can dispatch
+             * OP_GETSLOT/OP_SETSLOT against the per-VM IC table.  entries[0]
+             * is the root chunk; entries[bx + 1] is the matching nested proto. */
+            if (s->module_instance != NULL
+                && s->module_instance->proto_instances != NULL
+                && (size_t)bx + 1u < (size_t)s->module_instance->proto_instances->n) {
+                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1u];
+            }
+            /* If no module_instance is bound (defensive — uvm_run wires it for
+             * every normal execution path), proto_inst stays NULL and
+             * OP_GETSLOT/SETSLOT will diagnose cleanly. */
+
             /* Read nupvals pseudo-instructions. */
             {
                 int i;
@@ -1265,21 +1278,27 @@ dispatch:
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve the executing closure's UProtoInstance.  At M4
-             * baseline closures allocated via OP_CLOSURE inherit
-             * proto_inst from the parent (currently always NULL for
-             * uvm_run transient strands; full module-instance binding
-             * lands at a later M4 task — see uclosure.h field comment). */
-            UClosure *cur_cl = (s->frame_count > 0)
-                             ? s->frames[s->frame_count - 1].closure
-                             : s->entry_closure;
-            if (cur_cl == NULL || cur_cl->proto_inst == NULL
-                || cur_cl->proto_inst->ic_table == NULL) {
+            /* Resolve IC table:
+             *   frame_count == 0 (top-level / root chunk):
+             *       use s->module_instance->proto_instances->entries[0]
+             *   frame_count > 0 (nested call):
+             *       use frames[top].closure->proto_inst (set by OP_CLOSURE) */
+            UProtoInstance *pi = NULL;
+            if (s->frame_count == 0) {
+                if (s->module_instance != NULL
+                    && s->module_instance->proto_instances != NULL) {
+                    pi = &s->module_instance->proto_instances->entries[0];
+                }
+            } else {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL) pi = cur_cl->proto_inst;
+            }
+            if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                vm_format_type_error_msg(vm, "GETSLOT: no IC table bound");
                 HALT();
             }
-            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+            UIC *ic = &pi->ic_table[ic_index];
 
             if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -1349,16 +1368,27 @@ dispatch:
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            UClosure *cur_cl = (s->frame_count > 0)
-                             ? s->frames[s->frame_count - 1].closure
-                             : s->entry_closure;
-            if (cur_cl == NULL || cur_cl->proto_inst == NULL
-                || cur_cl->proto_inst->ic_table == NULL) {
+            /* Resolve IC table:
+             *   frame_count == 0 (top-level / root chunk):
+             *       use s->module_instance->proto_instances->entries[0]
+             *   frame_count > 0 (nested call):
+             *       use frames[top].closure->proto_inst (set by OP_CLOSURE) */
+            UProtoInstance *pi = NULL;
+            if (s->frame_count == 0) {
+                if (s->module_instance != NULL
+                    && s->module_instance->proto_instances != NULL) {
+                    pi = &s->module_instance->proto_instances->entries[0];
+                }
+            } else {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL) pi = cur_cl->proto_inst;
+            }
+            if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: no IC table bound (module instance not wired at M4 baseline)");
+                vm_format_type_error_msg(vm, "SETSLOT: no IC table bound");
                 HALT();
             }
-            UIC *ic = &cur_cl->proto_inst->ic_table[ic_index];
+            UIC *ic = &pi->ic_table[ic_index];
 
             if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -1786,6 +1816,12 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.pc_base    = module->instructions;
     strand.cur_consts = module->constants;
     strand.module     = module;
+    /* M4 follow-up: bind module_instance for OP_GETSLOT/SETSLOT IC dispatch.
+     * urbi_run_chunk already created the UModuleInstance via
+     * urbi_get_or_create_module_instance; uvm_run callers (test_vm.c
+     * pipeline, test_emit.c integration tests) get the binding here too
+     * so OP_CLOSURE can read s->module_instance directly. */
+    strand.module_instance = urbi_get_or_create_module_instance(vm, (UModule *)module);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.closure_list = NULL;

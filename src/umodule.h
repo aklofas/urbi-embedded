@@ -283,6 +283,14 @@ typedef struct UModule {
     size_t      nested_count;
     size_t      nested_cap;
 
+    /* === M4 v1.3 root-chunk IC fields === Mirror UProto.ic_count / ic_names
+     * for the root chunk's GETSLOT/SETSLOT sites.  Populated by the emitter
+     * via uemit_close_function on the top-level funcstate; consumed by
+     * urbi_module_instance_create to populate proto_instances->entries[0].
+     * Capped at 256 (encoding spec §3.4 — uint8 ic_index field). */
+    uint16_t       ic_count;
+    USymbol      **ic_names;     /* parallel array; len == ic_count; allocator-owned */
+
     /* M2 addition — per pre-m2-multi-vm-audit-design.md.
      * Set by uemit_init at compile time; zero on freshly-deserialized
      * modules. Used only for optional debug-assert paths in v1.0;

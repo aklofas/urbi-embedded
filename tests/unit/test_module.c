@@ -1320,6 +1320,13 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     umodule_destroy(&c);
 }
 
+UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
+    UModule m = {0};
+    UASSERT_EQ(0u, (unsigned)m.ic_count);
+    UASSERT(m.ic_names == NULL);
+    umodule_destroy(&m);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1431,4 +1438,6 @@ void test_module_suite(void) {
               deserialize_truncated_at_metadata_max_reg);
     utest_run("deserialize module grow reuses existing buffer cap",
               deserialize_module_grow_reuses_existing_cap);
+    utest_run("umodule_init zeroes ic_count and ic_names",
+              umodule_init_zeroes_ic_count_and_ic_names);
 }
