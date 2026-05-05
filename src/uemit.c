@@ -2092,6 +2092,81 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->current_fs->freereg = e->next_reg;
         return rd;
     }
+    case AST_AT_SLOT_CHANGE: {
+        /* T63: at (obj.x.changed?) body [onleave] / at sync variant.
+         * Spec #4 §4.2: emit GETSLOT_CHANGE_EVENT then AT_EVENT_INSTALL.
+         *
+         *   recv_reg  := emit receiver expression
+         *   ic_idx    := uemit_assign_ic_index for slot name
+         *   event_reg := OP_GETSLOT_CHANGE_EVENT(event_reg, recv_reg, ic_idx)
+         *   body_reg  := emit_function_literal(body, 1 param)
+         *   alt_reg   := emit_function_literal(onleave, 0 params) or 0xFF
+         *                OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL
+         */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        UAstNode *recv_ast    = n->u.at_slot_change.receiver;
+        const char *sname     = n->u.at_slot_change.slot_name;
+        size_t      sname_len = n->u.at_slot_change.slot_name_len;
+        UAstNode *body_ast    = n->u.at_slot_change.body;
+        UAstNode *onleave_ast = n->u.at_slot_change.onleave;
+        bool      sync_flag   = n->u.at_slot_change.is_sync;
+
+        uint8_t recv_reg = emit_expr(e, recv_ast);
+        if (e->error != EMIT_OK) return 0u;
+
+        USymbol *slot_sym = (USymbol *)ustr_intern(e->vm, sname, sname_len);
+        if (slot_sym == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        int ic_idx = uemit_assign_ic_index(e, slot_sym);
+        if (ic_idx < 0) return 0u;
+
+        /* Emit the event-lookup; result overwrites recv_reg (same
+         * register reuse as OP_GETSLOT in AST_MEMBER_GET). */
+        uint8_t event_reg = recv_reg;
+        emit_instr(e, uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT,
+                                     event_reg, recv_reg, (uint8_t)ic_idx),
+                   (uint32_t)n->line);
+
+        /* Body closure: 1 param (payload value on event fire). */
+        UAstNode payload_param;
+        emit_zero(&payload_param, sizeof payload_param);
+        payload_param.kind               = AST_PARAM;
+        payload_param.line               = body_ast ? body_ast->line : n->line;
+        payload_param.col                = 1;
+        payload_param.u.param.name_start = "__payload";
+        payload_param.u.param.name_len   = 9;
+        UAstNode *params_arr[1] = { &payload_param };
+
+        uint8_t body_reg = (body_ast != NULL)
+            ? emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        uint8_t alt_reg = (onleave_ast != NULL)
+            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
+        emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
+                   (uint32_t)n->line);
+
+        if (alt_reg  != 0xFFu) free_reg(e);
+        if (body_reg != 0xFFu) free_reg(e);
+        free_reg(e);  /* event_reg */
+
+        uint8_t rd = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
