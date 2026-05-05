@@ -24,6 +24,8 @@ extern "C" {
  * Keep this header dependency-minimal: forward-decl rather than include. */
 struct UVM;
 struct UTag;
+struct URealm;
+struct UStrand;
 
 /* === Pool size build flags === */
 
@@ -46,6 +48,7 @@ struct UTag;
 #define URBI_WATCHER_ACTIVE              0x01u  /* installed and live */
 #define URBI_WATCHER_PENDING_UNREGISTER  0x02u  /* stop requested; drain before free */
 #define URBI_WATCHER_FIRED_DURING_EVAL   0x04u  /* condition fired while eval in progress */
+#define URBI_WATCHER_PENDING_REFIRE      0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 
@@ -65,12 +68,14 @@ struct UTag;
  *   condition      : 8 B
  *   body           : 8 B
  *   onleave        : 8 B
+ *   realm          : 8 B  (spec #1 §4.1)
+ *   body_strand    : 8 B  (spec #1 §4.1)
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Fixed portion  : 72 B
- *   Total          : 72 + 128 = 200 B + natural padding ≈ 208 B
+ *   Fixed portion  : 88 B
+ *   Total          : 88 + 128 = 216 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 72 + 32 = 104 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 88 + 32 = 120 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 
@@ -95,6 +100,10 @@ typedef struct UWatcher {
     UClosure     *condition;              /* 8 B  evaluated each watcher_eval_dirty */
     UClosure     *body;                   /* 8 B  spawned per fire (M5) */
     UClosure     *onleave;               /* 8 B  NULL if no onleave clause */
+
+    /* === Body-spawn lifecycle anchors (spec #1 §4.1) === */
+    struct URealm  *realm;              /* 8 B  owning realm; set at install, cleared at unregister */
+    struct UStrand *body_strand;        /* 8 B  non-NULL while body coroutine runs; NULL otherwise */
 
     /* === Edge detection === */
     UValue    last_value_cache;            /* 16 B  prior condition result */
