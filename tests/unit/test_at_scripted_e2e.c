@@ -41,10 +41,8 @@ static UValue
 make_int(int64_t n)
 {
     UValue v;
-    int i;
     v.kind = UVAL_INT;
-    for (i = 0; i < 7; i++) v._pad[i] = 0;
-    v.v.i = n;
+    v.v.i  = n;
     return v;
 }
 
@@ -232,7 +230,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * The body strand (if spawned) is now in the ready queue.
      * run_to_no_runnable drives urbi_step until no runnable strands remain. */
     int step_rc = run_to_no_runnable(&vm);
-    (void)step_rc;
+    UASSERT(step_rc != -1);  /* URBI_STEP_FATAL → body strand crashed */
 
     /* === Phase 4: verify body fired exactly once ===
      *
