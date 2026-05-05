@@ -1,0 +1,34 @@
+# Milestone: M5
+# Covers: cross-spec chain: cond watcher fires → body emits event → event
+#         subscriber fires; at(x > threshold) body emits e!, at(e?) logs.
+#         Tests that a rising-edge cond watcher can trigger event dispatch
+#         as a downstream effect (spec cross-spec §2.2).
+#
+# defer-to: T59 (Event.new()) + M5-scratch-frame (cond eval + body dispatch)
+#
+# Reason:
+#   The cond watcher (at x>threshold) requires scratch-frame condition
+#   evaluation (invoke_condition_closure stub).  The body dispatch requires
+#   spawn_body_coroutine (stub).  Event.new() requires T59 stdlib binding.
+#   The composition of cond-watcher + event emit is a pure sequencing of two
+#   already-implemented C-level paths: watcher_eval_dirty → spawn body coroutine
+#   → body runs e! → urbi_event_emit_async → event subscriber fires.
+#
+# Activate when Event.new() + cond eval + body dispatch are wired.
+#
+# Urbiscript source (activate at T59 + M5-scratch-frame):
+#   var threshold = 5;
+#   var e = Event.new();
+#   var log = "";
+#   at (threshold > 3) e!;
+#   at (e?) Realm.log = Realm.log + "event";
+#   Realm.threshold = 10;
+#   log
+#   --- expected output ---
+#   [00000000] 5
+#   [00000001] nil
+#   [00000002] ""
+#   [00000003] nil
+#   [00000004] nil
+#   [00000005] 10
+#   [00000006] "event"

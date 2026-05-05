@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: e! (async emit) — event fires all AT_EVENT subscribers in registration
+#         order; subscriber bodies run asynchronously on spawned coroutines.
+#
+# defer-to: T59 (Event.new() stdlib binding) + M5-scratch-frame
+#
+# Reason:
+#   Event.new() requires T59 stdlib binding (attaches Event prototype to realm
+#   globals via urbi_populate_realm_globals).  The at (e?) subscribe watcher
+#   uses OP_AT_EVENT_INSTALL (T47), which is wired.  The subscriber body
+#   dispatch requires spawn_body_coroutine (stub at M5-stub phase).  The
+#   urbi_event_emit_async path is exercised by test_event_emit_async.c.
+#
+# Activate when Event.new() + scratch-frame body dispatch are wired.
+#
+# Urbiscript source (activate at T59 + M5-scratch-frame):
+#   var e = Event.new();
+#   var log = "";
+#   at (e?) Realm.log = Realm.log + "A";
+#   at (e?) Realm.log = Realm.log + "B";
+#   e!;
+#   log
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] ""
+#   [00000002] nil
+#   [00000003] nil
+#   [00000004] nil
+#   [00000005] "AB"

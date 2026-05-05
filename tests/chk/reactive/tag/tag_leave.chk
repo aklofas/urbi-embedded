@@ -1,0 +1,28 @@
+# Milestone: M5
+# Covers: at (mytag.leave?) — tier-2 tag-leave event; subscriber fires when
+#         OP_POP_TAG executes (normal exit and tag.stop() cascades); ordering
+#         relative to tier-1 onleave clause (spec #3 §3.2).
+#
+# defer-to: T55 (tag enter/leave emit hooks) + T59 (Tag.new() stdlib)
+#
+# Reason:
+#   Same blockers as tag_enter.chk.  Additionally, the ordering between tier-1
+#   onleave and tier-2 leave-event subscribers is specified in spec #3 §4.3:
+#   tier-1 fires first, then tier-2.  This ordering is verified in
+#   test_tag_enter_leave.c.  The scripted fixture additionally requires
+#   tag.stop() method dispatch (M4 dispatch path, already present).
+#
+# Activate when Tag.new() + leave-event wiring + body dispatch are complete.
+#
+# Urbiscript source (activate at T55 + T59 + M5-scratch-frame):
+#   var t = Tag.new("scope");
+#   var log = "";
+#   at (t.leave?) Realm.log = Realm.log + "out";
+#   t: { 1 } onleave { Realm.log = Realm.log + "tier1" };
+#   log
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] ""
+#   [00000002] nil
+#   [00000003] 1
+#   [00000004] "tier1out"

@@ -1,0 +1,27 @@
+# Milestone: M5
+# Covers: at (obj.x.changed?) subscriber fires on slot mutation; basic
+#         slot-change event: single subscriber, single write, single fire.
+#
+# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+#
+# Reason:
+#   Object.new() and slot-change event subscription via at (obj.x.changed?)
+#   require T69 globals exposure + stdlib.  The OP_GETSLOT_CHANGED fast-path
+#   probe (test_op_getslot_change_event.c) and urbi_emit_slot_change_if_subscribed
+#   chain walk (test_slot_change_callsites.c) are tested at the C level.
+#   The subscriber body dispatch requires scratch-frame execution.
+#
+# Activate when Object.new() + slot-change scripted subscribe + body dispatch wired.
+#
+# Urbiscript source (activate at T69 + M5-scratch-frame):
+#   var obj = Object.new();
+#   var fired = 0;
+#   at (obj.x.changed?) Realm.fired = Realm.fired + 1;
+#   obj.x = 42;
+#   fired
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] 0
+#   [00000002] nil
+#   [00000003] 42
+#   [00000004] 1

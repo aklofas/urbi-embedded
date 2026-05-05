@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: at (cond) body onleave cleanup — onleave fires on falling edge after
+#         body has fired on rising edge; BODY_FIRED_SINCE_ONLEAVE guard prevents
+#         onleave without a preceding body fire.
+#
+# defer-to: M5-scratch-frame
+#
+# Reason:
+#   invoke_onleave_inline is a M5-stub (uwatcher_eval.c); it is a no-op unless
+#   test_watcher_onleave_hook is set.  The at_with_onleave_fires_on_falling_edge
+#   unit test (test_at_fire_paths.c T43) exercises this via hook.  The RAII
+#   cleanup pattern requires scratch-frame execution to run onleave closures.
+#
+# Activate when scratch-frame execution is wired.
+#
+# Urbiscript source (activate at M5 scratch-frame):
+#   var x = 0;
+#   var log = "";
+#   at (x > 5) Realm.log = Realm.log + "up" onleave Realm.log = Realm.log + "down";
+#   Realm.x = 10;
+#   Realm.x = 0;
+#   log
+#   --- expected output ---
+#   [00000000] 0
+#   [00000001] ""
+#   [00000002] nil
+#   [00000003] 10
+#   [00000004] 0
+#   [00000005] "updown"
