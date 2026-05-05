@@ -139,12 +139,29 @@ drain_pending_onleave_queue(UVM *vm)
 
     vm->in_watcher_eval = 1;
 
-    while (vm->pending_onleave_head != NULL) {
-        UWatcher *w = vm->pending_onleave_head;
-        vm->pending_onleave_head = w->next_active;
-        if (vm->pending_onleave_tail == w) {
-            vm->pending_onleave_tail = NULL;
+    /* Spec #1 §6.3: iterate with a pointer-to-pointer walk so we can skip
+     * (defer) entries whose body strand is still alive without disturbing
+     * the FIFO order.  Deferred entries remain on the queue and are retried
+     * at the next safepoint (bounded by URBI_CLEANUP_MAX latency).
+     *
+     * tail pointer invariant: after the loop, pending_onleave_tail must point
+     * to the last remaining entry, or NULL if the queue is empty.
+     * We recompute tail in a single forward scan after the main loop rather
+     * than trying to maintain it inline during removal — the queue is short
+     * (bounded by URBI_WATCHER_POOL_SIZE) and this drain runs at safepoints. */
+    UWatcher **pp = &vm->pending_onleave_head;
+    while (*pp != NULL) {
+        UWatcher *w = *pp;
+
+        if (w->body_strand != NULL) {
+            /* Body still running — defer: leave on queue, advance pointer. */
+            pp = &w->next_active;
+            continue;
         }
+
+        /* Pop from queue (pp already points to the right link field). */
+        *pp = w->next_active;
+        w->next_active = NULL;
 
         /* Run onleave handler if present. */
         if (w->onleave != NULL) {
@@ -155,6 +172,18 @@ drain_pending_onleave_queue(UVM *vm)
          * already removed from tag list), active_watchers_head unlink (no-op —
          * PUSH already removed from active list), pool_free, decrement counter. */
         urbi_watcher_unregister_internal(vm, w);
+        /* pp is unchanged — now points to what was w->next_active, i.e.
+         * the next entry (already advanced by the *pp = w->next_active above). */
+    }
+
+    /* Recompute tail: scan from head to find the last entry (O(n), but n is
+     * small and this only runs when at least one entry was present). */
+    if (vm->pending_onleave_head == NULL) {
+        vm->pending_onleave_tail = NULL;
+    } else {
+        UWatcher *t = vm->pending_onleave_head;
+        while (t->next_active != NULL) t = t->next_active;
+        vm->pending_onleave_tail = t;
     }
 
     vm->in_watcher_eval = 0;

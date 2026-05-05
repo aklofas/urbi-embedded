@@ -1783,6 +1783,16 @@ safepoint:
 #endif
 
 exit_strand:
+    /* Spec #1 §6.1: notify the watcher that its body strand completed.
+     * Called after the unwind/cleanup-stack walker has finished (the safepoint
+     * and halt_error paths both run urbi_unwind before reaching here) but before
+     * the strand object is freed by the scheduler's dead-path cleanup.
+     * urbi_watcher_body_completed clears both s->watcher_body_owner and
+     * w->body_strand atomically and handles PENDING_REFIRE / PENDING_UNREGISTER. */
+    if (s->state == USTRAND_STATE_DEAD && s->watcher_body_owner != NULL) {
+        urbi_watcher_body_completed(vm, s);
+    }
+
     /* Wake any JOIN-blocked parents if this strand just reached DEAD. */
     if (s->state == USTRAND_STATE_DEAD && s->joiners_head != NULL) {
         fork_wake_joiners(s, vm);
