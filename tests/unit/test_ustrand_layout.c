@@ -21,9 +21,21 @@ static void ustrand_spec1_field(void)
     (void)s;
 }
 
+static void ustrand_spec3_fields(void)
+{
+    UStrand s = {0};
+    s.next_event_waiter = NULL;
+    s.wait_event_target = NULL;
+    s.last_event_payload = (UValue){0};
+    UASSERT_EQ(0x33u, USTRAND_WAIT_EVENT);
+    UASSERT(sizeof(UStrand) >= 288u);  /* spec #3 §3.3 default */
+    (void)s;
+}
+
 void
 test_ustrand_layout_suite(void)
 {
     printf("test_ustrand_layout\n");
     utest_run("ustrand_spec1_field", ustrand_spec1_field);
+    utest_run("ustrand_spec3_fields", ustrand_spec3_fields);
 }

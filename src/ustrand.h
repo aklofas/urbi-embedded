@@ -52,6 +52,10 @@ extern "C" {
    0x32 = USTRAND_WAITING (0x30) | USTRAND_REASON_WATCHER (0x02). */
 #define USTRAND_WAIT_WATCHER          0x32u
 
+/* spec #3 §3.3 — waituntil(e?) strand parked awaiting Event emit.
+   0x33 = USTRAND_WAITING (0x30) | USTRAND_REASON_EVENT (0x03). */
+#define USTRAND_WAIT_EVENT            0x33u
+
 /* Helper macros — take a pointer to UStrand. */
 #define USTRAND_IS_WAITING(s)  (((s)->state & USTRAND_STATE_MASK) == USTRAND_WAITING)
 #define USTRAND_GET_STATE(s)   ((s)->state & USTRAND_STATE_MASK)
@@ -160,6 +164,15 @@ struct UStrand {
      * The scheduler's strand-completion path calls urbi_watcher_body_completed
      * with O(1) lookup via this back-pointer. NULL for all other strands. */
     struct UWatcher        *watcher_body_owner;
+
+    /* --- Event-waiter fields (spec #3 §3.3) ---
+     * Populated when strand is in USTRAND_WAIT_EVENT state.
+     * next_event_waiter: intrusive singly-linked waiters_head chain on UEvent.
+     * wait_event_target: back-pointer to the UEvent being waited on (for unregister).
+     * last_event_payload: written by UEvent emit before unblocking; read by waituntil(). */
+    struct UStrand         *next_event_waiter;
+    struct UEvent          *wait_event_target;
+    UValue                  last_event_payload;
 
     /* --- Join-blocker list (OP_FORK_JOIN / OP_JOIN_WAIT) ---
      * Singly-linked list of strands that are JOIN-blocked on THIS strand.
