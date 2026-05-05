@@ -26,6 +26,7 @@
 #include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
 #include "uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
+#include "uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
 #include "event_native.h"              /* event_native_register (T53) */
 #include "tag_native.h"                /* tag_native_register (T54) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
@@ -1669,6 +1670,14 @@ dispatch:
             entry->next_member    = tag->member_strands_head;  /* head-insert */
             entry->strand_back    = s;
             tag->member_strands_head = entry;
+            /* T55: tier-2 enter event hook (spec #3 §8.3).
+             * Fast-path: two loads + branch when no subscribers (typical case).
+             * Zero alloc. Subscribers see the tag already ambient (entry pushed above). */
+            if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
+                UValue nil_val = {0};
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                c_event_emit_sync(s->vm, tag->enter_event, nil_val);
+            }
             NEXT();
         }
 
@@ -1702,6 +1711,15 @@ dispatch:
                     if (*pp == top) {
                         *pp = top->next_member;
                     }
+                }
+                /* T55: tier-2 leave event hook (spec #3 §8.3).
+                 * Fires BEFORE the tier-1 watcher cascade so subscribers see the
+                 * tag still ambient (spec ordering rationale: tier-1 onleave runs last). */
+                if (tag != NULL && tag->leave_event != NULL &&
+                    tag->leave_event->at_watchers_head != NULL) {
+                    UValue nil_val = {0};
+                    nil_val.kind = (uint8_t)UVAL_NIL;
+                    c_event_emit_sync(s->vm, tag->leave_event, nil_val);
                 }
                 /* Watcher cascade: push each watcher registered on this tag to
                  * the pending-onleave queue before cleanup_pop + utag_destroy.
