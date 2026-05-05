@@ -85,6 +85,7 @@ UTEST(emit_diag_warn_records_message) {
     UASSERT(e.diag_buf[0].message != NULL);
     UASSERT(strstr(e.diag_buf[0].message, "test warning 42") != NULL);
 
+    emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
     uvm_destroy(&vm);
@@ -112,6 +113,7 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     /* Bytecode was emitted (at least one instruction). */
     UASSERT(module.instr_count >= 1u);
 
+    emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
 }
 
@@ -142,6 +144,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     UASSERT_EQ(2, e.diag_buf[1].line);
     UASSERT_EQ(3, e.diag_buf[2].line);
 
+    emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
     uvm_destroy(&vm);
@@ -164,6 +167,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UASSERT_EQ(0, e.diag_buf[0].line);
     UASSERT_EQ(0, e.diag_buf[0].col);
 
+    emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
     uvm_destroy(&vm);

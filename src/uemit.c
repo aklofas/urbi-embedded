@@ -2474,6 +2474,26 @@ void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...) {
 #endif
 }
 
+void emit_diag_free_all(UEmitter *e) {
+#if __STDC_HOSTED__
+    if (e->diag_buf == NULL) return;
+    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    /* Free each message string individually. */
+    for (int i = 0; i < e->diag_count; i++) {
+        if (e->diag_buf[i].message != NULL) {
+            alloc((void *)e->diag_buf[i].message, 0, e->module->alloc_ud);
+        }
+    }
+    /* Free the buffer array itself. */
+    alloc(e->diag_buf, 0, e->module->alloc_ud);
+    e->diag_buf  = NULL;
+    e->diag_count = 0;
+    e->diag_cap   = 0;
+#else
+    (void)e;
+#endif
+}
+
 void uemit_init(UEmitter *e, UModule *module, UArena *arena,
                 struct UVM *vm, const char *source_name) {
     emit_zero(e, sizeof(*e));

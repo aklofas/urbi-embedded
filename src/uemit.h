@@ -145,6 +145,11 @@ const char *uemit_error_name(UEmitError code);
  * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
 void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 
+/* T32: Free all diagnostic message strings and the diag_buf array itself.
+ * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
+ * associated module is destroyed.  No-op on freestanding builds. */
+void emit_diag_free_all(UEmitter *e);
+
 /* --- M3 row 7 control-transfer opcode encoder helpers ---
  *
  * These emit exactly one instruction word into the module.  All accept the
