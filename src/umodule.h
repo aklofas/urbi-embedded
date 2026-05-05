@@ -54,11 +54,20 @@ typedef enum {
                                      Stores a UStrand* in v.p.  Walked by GC root walker:
                                      skipped at M3 (strands are sched-managed, not GC cells).
                                      TODO(M7+): revisit if strand handles become user-visible. */
-    UVAL_OBJECT  = 8              /* M4: UObject pointer; runtime-only.  Stores a UObject* in v.p.
+    UVAL_OBJECT  = 8,             /* M4: UObject pointer; runtime-only.  Stores a UObject* in v.p.
                                      Receivers for OP_GETSLOT/OP_SETSLOT live in registers tagged
                                      UVAL_OBJECT.  Heap-bearing for the GC barrier — UObject embeds
                                      UCell as its first member, so uvalue_as_cell() works. */
-    /* 9-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
+    UVAL_EVENT   = 9,             /* M5: UEvent pointer; runtime-only.  Stores a UEvent* in v.p.
+                                     Heap-bearing for the GC barrier — UEvent embeds UCell as its
+                                     first member.  Used by tag.enter / tag.leave getters and
+                                     urbi_native_event_new (T53). */
+    UVAL_HOST_FN = 10             /* M5: native host function slot; runtime-only.  Stores a
+                                     UHostFn (function pointer) in v.v.p cast to void*.
+                                     Used by event_native_register / tag_native_register (T53/T54)
+                                     to populate proto slots that OP_CALL can dispatch into.
+                                     NOT heap-bearing — function pointers are not GC cells. */
+    /* 11-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
 } UValKind;
 
 typedef struct {

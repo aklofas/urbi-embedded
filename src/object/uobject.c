@@ -1131,6 +1131,10 @@ m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->atom_event   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_event);
     if (vm->atom_symbol  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_symbol);
 
+    /* M5 T53/T54 native proto objects. */
+    if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
+    if (vm->tag_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->tag_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

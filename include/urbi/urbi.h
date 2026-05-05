@@ -32,7 +32,9 @@ typedef enum {
     URBI_ERR_COMPILE                    = -5,   /* parse/emit error during eval */
     URBI_ERR_CLEANUP_OVERFLOW           = -6,   /* cleanup stack full (row 7 §4.3) */
     URBI_ERR_EVENT_PAYLOAD_TOO_LARGE    = -7,   /* event ring payload exceeds capacity */
-    URBI_ERR_EVENT_RING_FULL            = -8    /* event ring is full (no space) */
+    URBI_ERR_EVENT_RING_FULL            = -8,   /* event ring is full (no space) */
+    URBI_ERR_PROTECTED_SLOT             = -9,   /* write to a read-only native slot (T54) */
+    URBI_ERR_OUT_OF_MEMORY              = -10   /* allocator returned NULL in native code */
 } UErrCode;
 
 /* === Row 7 control-transfer C API (M3 / T12) ===

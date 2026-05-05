@@ -119,6 +119,7 @@ extern void test_event_emit_async_suite(void);
 extern void test_event_emit_sync_suite(void);
 extern void test_event_waituntil_suite(void);
 extern void test_waituntil_tag_stop_suite(void);
+extern void test_event_native_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -214,6 +215,7 @@ static const struct suite_entry suites[] = {
     {"event_emit_sync",            test_event_emit_sync_suite},
     {"event_waituntil",            test_event_waituntil_suite},
     {"waituntil_tag_stop",         test_waituntil_tag_stop_suite},
+    {"event_native",               test_event_native_suite},
     /* Add new suites here as test files are added. */
 };
 

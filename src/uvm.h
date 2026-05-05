@@ -155,6 +155,17 @@ typedef struct UVM {
     struct UObject *atom_event;
     struct UObject *atom_symbol;
 
+    /* === M5 T53/T54 — native proto objects ===
+     * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
+     *   Allocated at uvm_init by event_native_register.  NULL until then.
+     *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
+     * tag_proto: UObject carrying native getter slots (enter/leave).
+     *   Allocated at uvm_init by tag_native_register.  NULL until then.
+     * Both protos have atom_event / atom_tag as their single prototype respectively,
+     * mirroring the M4 atom hierarchy. */
+    struct UObject *event_proto;
+    struct UObject *tag_proto;
+
     /* === M4 T30 — UModuleInstance registry ===
      * Linked list head of every live UModuleInstance threaded via
      * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
@@ -368,6 +379,14 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void uvm_destroy(UVM *vm);
+
+/* Allocate vm->event_proto + vm->tag_proto and install their native slots.
+ * Must be called after uvm_init.  Separated from uvm_init because unit tests
+ * that check exact post-init cell / intern counts would break otherwise
+ * (same lazy pattern as the atom-family singletons).
+ * Safe to call multiple times — re-entrant calls are no-ops if protos already
+ * allocated. */
+void urbi_native_protos_init(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
 const char *uvm_error_name(UVMError code);

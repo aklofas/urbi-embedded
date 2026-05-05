@@ -26,6 +26,8 @@
 #include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
 #include "uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
+#include "event_native.h"              /* event_native_register (T53) */
+#include "tag_native.h"                /* tag_native_register (T54) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
@@ -90,6 +92,10 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->atom_tag     = NULL;
     vm->atom_event   = NULL;
     vm->atom_symbol  = NULL;
+
+    /* M5 T53/T54 native proto objects: NULL until event/tag_native_register. */
+    vm->event_proto = NULL;
+    vm->tag_proto   = NULL;
 
     /* M4 T30 — UModuleInstance registry head: empty until first
      * urbi_module_instance_create. */
@@ -198,6 +204,18 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * after the type-table setup so the walker's gc_shade_gray invocations
      * find a registered UType for each cell. */
     urbi_object_register_gc_roots(vm);
+
+    /* T53/T54: event_native_register + tag_native_register allocate UObject
+     * proto cells and intern slot-name strings.  They are NOT called here
+     * because existing GC + intern + object-model tests assert on exact cell /
+     * entry counts immediately after uvm_init (the atom singletons themselves
+     * are lazy for the same reason).  Callers that need the native protos must
+     * call urbi_native_protos_init(vm) after uvm_init — or test them via the
+     * typed C helpers (tag_enter_getter / tag_leave_getter) directly.
+     *
+     * The full "call from VM init" wiring will land when the globals-exposure
+     * task (T59) makes Event/Tag resolvable by name, at which point the cell
+     * counts in the affected unit tests will be updated in the same commit. */
 
     vm->handle_table         = NULL;
     vm->handle_table_cap     = 0u;
@@ -323,6 +341,21 @@ void uvm_destroy(UVM *vm) {
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The uvm_run adapter cleans up strand.open_upvals before destroy. */
+}
+
+/* urbi_native_protos_init: allocate vm->event_proto + vm->tag_proto and
+ * install their native slots.  Must be called after uvm_init.
+ *
+ * Separated from uvm_init because existing unit tests that assert exact
+ * cell / intern counts immediately post-init would break (atoms are lazy
+ * for the same reason).  The T59 globals-exposure task will wire this into
+ * the vm-create path once the affected tests are updated to account for the
+ * additional cells. */
+void
+urbi_native_protos_init(UVM *vm)
+{
+    event_native_register(vm);
+    tag_native_register(vm);
 }
 
 const char *uvm_error_name(UVMError code) {

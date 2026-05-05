@@ -149,12 +149,13 @@ void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
  * strands are sched-managed, not GC cells.
  *
  * TODO(M5+): extend for UVAL_STRING (when strings move to heap), UVAL_ARRAY,
- * UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
+ * UVAL_TAG, UVAL_WATCHER once those UValKinds exist.
+ * M5: UVAL_EVENT added (UEvent embeds UCell at offset 0). */
 
 static inline bool
 uvalue_is_heap(UValue v)
 {
-    return v.kind == UVAL_CLOSURE || v.kind == UVAL_OBJECT;
+    return v.kind == UVAL_CLOSURE || v.kind == UVAL_OBJECT || v.kind == UVAL_EVENT;
 }
 
 static inline UCell *
