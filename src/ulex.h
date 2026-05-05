@@ -79,6 +79,10 @@ typedef enum {
     TOK_KW_SYNC,
     TOK_KW_ASYNC,
 
+    /* M5 punctuation — event postfix sugar */
+    TOK_QUESTION,      /* ? — event-subscribe postfix inside at(...) */
+    TOK_BANG,          /* ! — event-emit postfix (e.g. `e!`) */
+
     TOK_ERROR         /* malformed input */
 } UTokenType;
 

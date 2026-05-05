@@ -27,7 +27,9 @@ static const char * const kErrorMessages[] = {
     "'lazy' keyword only allowed in parameter lists",
     "lazy parameter cannot have a default value",
     "'try' requires at least one of 'catch' or 'finally'",
-    "reserved keyword used as variable name (M5 reactive runtime); rename the variable"
+    "reserved keyword used as variable name (M5 reactive runtime); rename the variable",
+    "postfix '?' is only valid inside at(...); use 'at (e?) body' for event-subscribe",
+    "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg"
 };
 
 static const char * const kErrorNames[] = {
@@ -50,7 +52,9 @@ static const char * const kErrorNames[] = {
     "PARSE_LAZY_OUT_OF_PARAM_LIST",
     "PARSE_LAZY_PARAM_DEFAULT",
     "PARSE_TRY_NEEDS_CATCH_OR_FINALLY",
-    "PARSE_RESERVED_KEYWORD_AS_IDENT"
+    "PARSE_RESERVED_KEYWORD_AS_IDENT",
+    "PARSE_QUESTION_OUTSIDE_AT",
+    "PARSE_EMIT_MULTI_ARG_V1"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -485,6 +489,14 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
                 if (is_assign) return lhs;
                 continue;
             }
+            /* Postfix `?` — only valid inside at(...) condition context. */
+            if (op.type == TOK_QUESTION) {
+                if (p->at_event_cond) break;  /* let parse_at consume it */
+                consume(p);
+                return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
+                                  kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
+                                  op.line, op.col);
+            }
             int prec = infix_prec(op.type);
             if (prec == 0) break;
             consume(p);
@@ -680,6 +692,17 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
             if (left->kind == AST_ERROR) return left;
             if (is_assign) break;
             continue;
+        }
+
+        /* Postfix `?` — only valid inside at(...) condition.
+         * When at_event_cond is set, pass through (parse_at will consume it).
+         * Otherwise it is an error. */
+        if (op.type == TOK_QUESTION && min_prec <= 7) {
+            if (p->at_event_cond) break;  /* let parse_at consume it */
+            consume(p);
+            return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
+                              kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
+                              op.line, op.col);
         }
 
         int prec = infix_prec(op.type);
@@ -1161,16 +1184,23 @@ static UAstNode *parse_try(UParser *p) {
     return node;
 }
 
-/* --- parse_at: `at` [`sync`|`async`] `(` cond `)` body [`onleave` handler] --- */
+/* --- parse_at: `at` [`sync`|`async`] `(` cond[?] `)` body [`onleave` handler]
+ *
+ * Postfix `?` inside the parentheses selects the event-subscribe form:
+ *   at (e?) body            → AST_AT_EVENT (sync_flag=false)
+ *   at sync (e?) body       → AST_AT_EVENT (sync_flag=true)
+ * Without `?`, produces AST_WATCHER as before. --- */
 static UAstNode *parse_at(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_AT */
 
     /* Optional `sync` or `async` modifier. */
     int mode = UWATCHER_AT;
+    bool is_sync = false;
     UToken mod = peek(p);
     if (mod.type == TOK_KW_SYNC) {
         consume(p);
         mode = UWATCHER_AT_SYNC;
+        is_sync = true;
     } else if (mod.type == TOK_KW_ASYNC) {
         consume(p);
         /* `at async` is accepted as `at` (redundant modifier); silent at v1.0. */
@@ -1185,9 +1215,48 @@ static UAstNode *parse_at(UParser *p) {
     }
     consume(p);
 
+    /* Enable the at_event_cond context so that `?` in the inner expression
+     * is not immediately flagged as an error — parse_at checks for it after
+     * the expression parse returns. */
+    p->at_event_cond = true;
     UAstNode *cond = parse_inner_tier(p);
+    p->at_event_cond = false;
     if (!cond) return (UAstNode *)&uparser_oom_sentinel;
     if (cond->kind == AST_ERROR) return cond;
+
+    /* Check for trailing `?` — event-subscribe form. */
+    if (peek(p).type == TOK_QUESTION) {
+        UToken q = consume(p);  /* consume '?' */
+        UToken rp2 = peek(p);
+        if (rp2.type != TOK_RPAREN) {
+            return make_error(p, PARSE_EXPECTED_RPAREN,
+                              kErrorMessages[PARSE_EXPECTED_RPAREN],
+                              rp2.line, rp2.col);
+        }
+        consume(p);
+
+        UAstNode *body = parse_statement_or_expr(p);
+        if (!body) return (UAstNode *)&uparser_oom_sentinel;
+        if (body->kind == AST_ERROR) return body;
+
+        /* Optional `onleave` handler. */
+        UAstNode *onleave = NULL;
+        if (peek(p).type == TOK_KW_ONLEAVE) {
+            consume(p);
+            onleave = parse_statement_or_expr(p);
+            if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+            if (onleave->kind == AST_ERROR) return onleave;
+        }
+
+        UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
+        if (!node) return (UAstNode *)&uparser_oom_sentinel;
+        node->u.at_event.event_expr = cond;
+        node->u.at_event.body       = body;
+        node->u.at_event.onleave    = onleave;
+        node->u.at_event.is_sync    = is_sync;
+        (void)q;  /* position used for kw */
+        return node;
+    }
 
     UToken rp = peek(p);
     if (rp.type != TOK_RPAREN) {
@@ -1386,6 +1455,7 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;
+    p->at_event_cond = false;
 }
 
 UAstNode *uparse_next_statement(UParser *p) {

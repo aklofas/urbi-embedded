@@ -2035,6 +2035,63 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             e->current_fs->freereg = e->next_reg;
         return rd;
     }
+    case AST_AT_EVENT: {
+        /* T45: at (e?) body [onleave] / at sync (e?) body [onleave]
+         *
+         * Emit the event-expression into a register, build a 1-param body
+         * closure (R[0] receives the emit payload per spec #3 §5.5) and an
+         * optional 0-param onleave closure, then emit the appropriate install
+         * opcode: OP_AT_EVENT_INSTALL (=43) or OP_AT_EVENT_SYNC_INSTALL (=44).
+         * 0xFF in the alt_reg slot signals "no onleave" to the runtime. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        UAstNode *event_ast   = n->u.at_event.event_expr;
+        UAstNode *body_ast    = n->u.at_event.body;
+        UAstNode *onleave_ast = n->u.at_event.onleave;
+        bool      sync_flag   = n->u.at_event.is_sync;
+
+        uint8_t event_reg = emit_expr(e, event_ast);
+        if (e->error != EMIT_OK) return 0u;
+
+        /* Body closure: 1 param (payload). */
+        UAstNode payload_param;
+        emit_zero(&payload_param, sizeof payload_param);
+        payload_param.kind              = AST_PARAM;
+        payload_param.line              = body_ast ? body_ast->line : n->line;
+        payload_param.col               = 1;
+        payload_param.u.param.name_start = "__payload";
+        payload_param.u.param.name_len   = 9;
+        UAstNode *params_arr[1] = { &payload_param };
+
+        uint8_t body_reg = (body_ast != NULL)
+            ? emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        uint8_t alt_reg = (onleave_ast != NULL)
+            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
+        emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
+                   (uint32_t)n->line);
+
+        if (alt_reg  != 0xFFu) free_reg(e);
+        if (body_reg != 0xFFu) free_reg(e);
+        free_reg(e);  /* event_reg */
+
+        uint8_t rd = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
