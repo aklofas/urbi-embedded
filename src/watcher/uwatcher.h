@@ -26,6 +26,7 @@ struct UVM;
 struct UTag;
 struct URealm;
 struct UStrand;
+struct UEvent;   /* defined in T17; used only as pointer here */
 
 /* === Pool size build flags === */
 
@@ -39,10 +40,12 @@ struct UStrand;
 
 /* === Watcher mode constants === */
 
-#define UWATCHER_AT        1   /* at (cond) body — edge-triggered */
-#define UWATCHER_WHENEVER  2   /* whenever (cond) body — level-triggered */
-#define UWATCHER_AT_SYNC   3   /* at (cond) body synchronous variant */
-#define UWATCHER_WAITUNTIL 4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
+#define UWATCHER_AT             1   /* at (cond) body — edge-triggered */
+#define UWATCHER_WHENEVER       2   /* whenever (cond) body — level-triggered */
+#define UWATCHER_AT_SYNC        3   /* at (cond) body synchronous variant */
+#define UWATCHER_WAITUNTIL      4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
+#define UWATCHER_AT_EVENT       5   /* at (event) body — fires on Event.emit (spec #3 §3.2) */
+#define UWATCHER_AT_EVENT_SYNC  6   /* at (event) body synchronous variant (spec #3 §3.2) */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
@@ -73,12 +76,14 @@ struct UStrand;
  *   realm          : 8 B  (spec #1 §4.1)
  *   body_strand    : 8 B  (spec #1 §4.1)
  *   waiter_strand  : 8 B  (spec #2 §5.1)
+ *   next_in_event  : 8 B  (spec #3 §3.2)
+ *   event          : 8 B  (spec #3 §3.2)
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Fixed portion  : 96 B
- *   Total          : 96 + 128 = 224 B
+ *   Fixed portion  : 112 B
+ *   Total          : 112 + 128 = 240 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 96 + 32 = 128 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 112 + 32 = 144 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 
@@ -88,7 +93,7 @@ typedef struct UWatcher {
     uint8_t   gc_byte;                     /* 1 B  UGC_IS_FIXED set; color bits as usual */
 
     /* === Watcher-private state === */
-    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL */
+    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL / _AT_EVENT / _AT_EVENT_SYNC */
     uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP (M5 dispatch) */
     uint8_t   flags;                       /* 1 B  URBI_WATCHER_ACTIVE / _PENDING_UNREGISTER / _FIRED_DURING_EVAL */
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
@@ -110,6 +115,10 @@ typedef struct UWatcher {
 
     /* === waituntil parking (spec #2 §5.1) === */
     struct UStrand *waiter_strand;      /* 8 B  strand blocked on waituntil(cond); NULL for AT/WHENEVER */
+
+    /* === Event-watcher threading (spec #3 §3.2) === */
+    struct UWatcher *next_in_event;     /* 8 B  UEvent.at_watchers_head chain; NULL for cond watchers */
+    struct UEvent   *event;             /* 8 B  back-pointer for O(1) unregister; NULL for cond watchers */
 
     /* === Edge detection === */
     UValue    last_value_cache;            /* 16 B  prior condition result */

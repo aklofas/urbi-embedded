@@ -55,6 +55,23 @@ static void uwatcher_spec2_fields(void)
     (void)w;
 }
 
+static void uwatcher_spec3_fields(void)
+{
+    UWatcher w = {0};
+    /* Compile-time field presence checks: assignment must compile. */
+    w.next_in_event = NULL;
+    w.event         = NULL;
+    /* Mode constants per spec #3 §3.2. */
+    UASSERT_EQ((int)UWATCHER_AT_EVENT,      5);
+    UASSERT_EQ((int)UWATCHER_AT_EVENT_SYNC, 6);
+    /* spec #3 §3.2: two pointer fields added → sizeof grows by 16 B.
+     * Pre-#3 default layout was 224 B; post-#3 ≥ 240 B. */
+#if URBI_WATCHER_READSET_MAX >= 16
+    UASSERT(sizeof(UWatcher) >= 240u);
+#endif
+    (void)w;
+}
+
 void
 test_uwatcher_layout_suite(void)
 {
@@ -65,4 +82,6 @@ test_uwatcher_layout_suite(void)
               uwatcher_pending_refire_does_not_collide);
     utest_run("uwatcher_spec2_fields",
               uwatcher_spec2_fields);
+    utest_run("uwatcher_spec3_fields",
+              uwatcher_spec3_fields);
 }
