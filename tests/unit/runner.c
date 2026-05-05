@@ -122,6 +122,7 @@ extern void test_waituntil_tag_stop_suite(void);
 extern void test_event_native_suite(void);
 extern void test_tag_native_suite(void);
 extern void test_tag_enter_leave_suite(void);
+extern void test_event_gc_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -220,6 +221,7 @@ static const struct suite_entry suites[] = {
     {"event_native",               test_event_native_suite},
     {"tag_native",                 test_tag_native_suite},
     {"tag_enter_leave",            test_tag_enter_leave_suite},
+    {"event_gc",                   test_event_gc_suite},
     /* Add new suites here as test files are added. */
 };
 
