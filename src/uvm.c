@@ -231,8 +231,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->watcher_pool_high_water = 0u;
     vm->in_watcher_eval        = 0u;
     vm->pad_in_eval[0]         = 0u;
-    vm->pad_in_eval[1]         = 0u;
-    vm->pad_in_eval[2]         = 0u;
+    vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
     vm->watcher_scratch_frame  = NULL;
     /* spec #2 §5.2 install-time trace state. */
     vm->in_watcher_install     = 0u;
@@ -2022,6 +2021,7 @@ safepoint:
     vm->step_budget_remaining--;
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
+    urbi_drain_deferred_slot_changes(vm);   /* spec #4 §5.4: before watcher_eval_dirty */
     if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
     /* Preemption flag reserved for v2; not checked at M3. */
     /* Resume dispatch. */
