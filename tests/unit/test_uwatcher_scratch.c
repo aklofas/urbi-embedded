@@ -100,6 +100,59 @@ UTEST(scratch_runner_returns_integer_value)
     uvm_destroy(&vm);
 }
 
+/* scratch_runner_sets_threw_on_unhandled_throw
+ *
+ * Compile "nil()" — calling a non-closure value triggers OP_CALL's
+ * "callee is not a closure" type-error path (vm_format_type_error_msg,
+ * which is safe with a NULL strand.module).  The dispatch loop halts
+ * with vm->last_error == UVM_TYPE_ERROR.  The helper must:
+ *   - set *out_threw = 1
+ *   - reset vm->last_error to UVM_OK
+ *   - leave *out_result as UVAL_NIL */
+UTEST(scratch_runner_sets_threw_on_unhandled_throw)
+{
+    UVM    vm;
+    UArena arena;
+    UModule module;
+
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    memset(&module, 0, sizeof(module));
+
+    int ok = compile_source(&vm, &arena, &module, "nil()");
+    UASSERT(ok);
+
+    UProto proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
+
+    UClosure cl;
+    memset(&cl, 0, sizeof(cl));
+    cl.proto   = &proto;
+    cl.nupvals = 0;
+
+    UValue out   = {0};
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch(&vm, &cl, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(1, threw);
+    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+
+    /* Helper must reset vm->last_error so the caller's next VM operation
+     * does not see the cond's stale error state. */
+    UASSERT_EQ((int)UVM_OK, (int)vm.last_error);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -110,4 +163,6 @@ test_uwatcher_scratch_suite(void)
     printf("test_uwatcher_scratch\n");
     utest_run("scratch_runner_returns_integer_value",
               scratch_runner_returns_integer_value);
+    utest_run("scratch_runner_sets_threw_on_unhandled_throw",
+              scratch_runner_sets_threw_on_unhandled_throw);
 }
