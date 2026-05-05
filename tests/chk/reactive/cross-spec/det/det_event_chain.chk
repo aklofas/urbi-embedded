@@ -1,0 +1,36 @@
+# Milestone: M5
+# Covers: determinism rule D-cross-1 — chained event dispatch; 4 events where
+#         each subscriber emits the next event in the chain; verify subscriber
+#         ordering is byte-stable across 100x3 preset runs.
+#
+# defer-to: T59 (Event.new() stdlib) + M5-scratch-frame
+#
+# Reason:
+#   Requires Event.new() T59 stdlib binding and scratch-frame body dispatch.
+#   The chain ordering (e0 fires → sub emits e1 → sub emits e2 → sub emits e3)
+#   depends on urbi_event_emit_async queuing behaviour: each emit enqueues
+#   subscriber bodies on the deferred event ring (spec #3 §6.1), which drains
+#   in FIFO registration order.  The chain correctness is exercised by
+#   test_event_emit_async.c at the C level.
+#
+#   When active: byte-identical output across 100 runs under each of the 3
+#   tunable presets (default, footprint, URBI_GC_NONE) per D-cross-1.
+#   Total chain log: 4 events × 50 dispatches = 200 deterministic lines.
+#
+# Activate at T59 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T59 + M5-scratch-frame):
+#   var e0 = Event.new();
+#   var e1 = Event.new();
+#   var e2 = Event.new();
+#   var e3 = Event.new();
+#   var seq = "";
+#   at (e0?) { Realm.seq = Realm.seq + "0"; e1! };
+#   at (e1?) { Realm.seq = Realm.seq + "1"; e2! };
+#   at (e2?) { Realm.seq = Realm.seq + "2"; e3! };
+#   at (e3?) Realm.seq = Realm.seq + "3";
+#   var i = 0;
+#   while (i < 50) { e0!; Realm.i = i + 1 };
+#   seq
+#   --- expected output (50 repetitions of "0123") ---
+#   [00000001] "01230123...0123"
