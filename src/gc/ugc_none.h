@@ -32,6 +32,7 @@
 #define UGC_IS_PINNED            0x00u
 #define UGC_IS_FIXED             0x00u
 #define UGC_HAS_WATCHER_OBSERVER 0x00u
+#define UGC_HAS_SLOT_CHANGE_EVENT 0x00u
 
 /* === Phase constant — NONE is permanently IDLE (no cycles) === */
 #define GC_PHASE_IDLE            0

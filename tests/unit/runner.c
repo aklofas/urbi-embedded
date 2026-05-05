@@ -87,6 +87,7 @@ extern void test_gc_strand_walker_suite(void);
 extern void test_scheduler_invariant_suite(void);
 extern void test_op_allocation_suite(void);
 extern void test_disasm_suite(void);
+extern void test_gc_byte_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -150,6 +151,7 @@ static const struct suite_entry suites[] = {
     {"scheduler_invariant",        test_scheduler_invariant_suite},
     {"op_allocation",              test_op_allocation_suite},
     {"disasm",                     test_disasm_suite},
+    {"gc_byte",                    test_gc_byte_suite},
     /* Add new suites here as test files are added. */
 };
 

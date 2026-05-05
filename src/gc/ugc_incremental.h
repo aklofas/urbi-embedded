@@ -35,7 +35,9 @@ struct UClosure;
  * Bit 4  — pinned (exempt from sweep)
  * Bit 5  — fixed / pool-managed (never freed by GC sweep)
  * Bit 6  — has watcher observer (read-set membership; row 10/11 boundary)
- * Bit 7  — RESERVED */
+ * Bit 7  — has slot-change event subscriber (spec #4 §3.4; post-store hook fires
+ *           if any slot on this UObject has a slot-change subscriber).
+ *           After this allocation, all 8 gc_byte bits are claimed. */
 
 #define UGC_COLOR_MASK            0x03
 #define   UGC_COLOR_WHITE0          0x00
@@ -48,7 +50,11 @@ struct UClosure;
 #define UGC_IS_PINNED             0x10
 #define UGC_IS_FIXED              0x20    /* pool-managed; never swept */
 #define UGC_HAS_WATCHER_OBSERVER  0x40    /* row 10/11 boundary; T33 maintains */
-#define UGC_RESERVED7             0x80
+#define UGC_HAS_SLOT_CHANGE_EVENT 0x80   /* spec #4 §3.4: post-store hook fires
+                                          * if any slot on this UObject has a
+                                          * slot-change subscriber. After this
+                                          * allocation, all 8 gc_byte bits are
+                                          * claimed. */
 
 /* === Two-white scheme (row 10 §3.2) ===
  *
