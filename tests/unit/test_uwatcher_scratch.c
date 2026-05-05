@@ -153,6 +153,75 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
     uvm_destroy(&vm);
 }
 
+/* scratch_runner_handles_null_closure
+ *
+ * Passing NULL as the closure must return 0 immediately with
+ * *out_result = UVAL_NIL and *out_threw = 0.  This models the
+ * watcher-installed-without-condition contract. */
+UTEST(scratch_runner_handles_null_closure)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Pre-poison the out params to confirm the helper overwrites them. */
+    UValue out;
+    out.kind  = (uint8_t)UVAL_INT;
+    out.v.i   = 999;
+    int threw = 1;
+
+    int rc = urbi_run_closure_on_scratch(&vm, NULL, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+
+    uvm_destroy(&vm);
+}
+
+/* scratch_runner_returns_nil_for_nil_literal
+ *
+ * Compile "nil", run via urbi_run_closure_on_scratch, and verify
+ * out.kind == UVAL_NIL with threw == 0.  Mirrors T3's integer test. */
+UTEST(scratch_runner_returns_nil_for_nil_literal)
+{
+    UVM    vm;
+    UArena arena;
+    UModule module;
+
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    memset(&module, 0, sizeof(module));
+
+    int ok = compile_source(&vm, &arena, &module, "nil");
+    UASSERT(ok);
+
+    UProto proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
+
+    UClosure cl;
+    memset(&cl, 0, sizeof(cl));
+    cl.proto    = &proto;
+    cl.nupvals  = 0;
+
+    UValue out   = {0};
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch(&vm, &cl, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -165,4 +234,8 @@ test_uwatcher_scratch_suite(void)
               scratch_runner_returns_integer_value);
     utest_run("scratch_runner_sets_threw_on_unhandled_throw",
               scratch_runner_sets_threw_on_unhandled_throw);
+    utest_run("scratch runner handles NULL closure",
+              scratch_runner_handles_null_closure);
+    utest_run("scratch runner returns nil for nil literal",
+              scratch_runner_returns_nil_for_nil_literal);
 }
