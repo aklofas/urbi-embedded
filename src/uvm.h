@@ -60,6 +60,15 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 
 /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
+/* --- spec #2 §5.2: per-VM install-time trace state ---
+ * URBI_WATCHER_READSET_MAX sets the trace_read_set[] capacity.
+ * Default 16; footprint preset (cross-arm/cross-riscv Makefile) overrides to 4.
+ * uwatcher.h carries the same guard — when both headers are included the first
+ * definition wins; both use identical defaults so either order is safe. */
+#ifndef URBI_WATCHER_READSET_MAX
+#  define URBI_WATCHER_READSET_MAX  16
+#endif
+
 /* --- Scratch frame for watcher condition + onleave evaluation (T34) ---
  *
  * One per VM, allocated at uvm_init and freed at uvm_destroy.
@@ -223,6 +232,23 @@ typedef struct UVM {
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     uint8_t  pad_in_eval[3];           /* padding; zeroed */
     void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
+
+    /* --- spec #2 §5.2 install-time trace state ---
+     * in_watcher_install: set while evaluating cond during watcher install
+     *   to enable OP_GETSLOT read-set tracing.  Mutually exclusive with
+     *   in_watcher_eval (never both set at once; URBI_DEBUG asserts land in R4).
+     * trace_overflow: set when trace_read_set[] is full and a new cell would
+     *   have been recorded.  Install treats overflow as "untrackable — skip IC".
+     * trace_read_set_count: number of valid UCell* entries written into
+     *   trace_read_set[].  Reset to 0 at the start of each install evaluation.
+     * trace_read_set[]: ring buffer of UCell pointers touched during install
+     *   cond evaluation; written by OP_GETSLOT when in_watcher_install is set.
+     *   Array is uninitialized storage; only indices [0, trace_read_set_count)
+     *   are valid.  Sized by URBI_WATCHER_READSET_MAX. */
+    uint8_t   in_watcher_install;
+    uint8_t   trace_overflow;
+    uint16_t  trace_read_set_count;
+    struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
     /* M3-only test hooks for watcher eval/fire (M5 replaces with real
      * urbi_run_closure_on_scratch and spawn_body_coroutine).

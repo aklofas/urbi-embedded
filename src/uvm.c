@@ -212,6 +212,12 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->pad_in_eval[1]         = 0u;
     vm->pad_in_eval[2]         = 0u;
     vm->watcher_scratch_frame  = NULL;
+    /* spec #2 §5.2 install-time trace state. */
+    vm->in_watcher_install     = 0u;
+    vm->trace_overflow         = 0u;
+    vm->trace_read_set_count   = 0u;
+    /* trace_read_set[] is uninitialized: only read when in_watcher_install is set,
+     * and entries are written before they are read. */
     vm->test_watcher_condition_hook = NULL;
     vm->test_watcher_fire_hook      = NULL;
     vm->test_watcher_onleave_hook   = NULL;

@@ -94,6 +94,7 @@ extern void test_ustrand_layout_suite(void);
 extern void test_uevent_suite(void);
 extern void test_utag_gc_suite(void);
 extern void test_uchanged_node_suite(void);
+extern void test_uvm_trace_fields_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -164,6 +165,7 @@ static const struct suite_entry suites[] = {
     {"uevent",                     test_uevent_suite},
     {"utag_gc",                    test_utag_gc_suite},
     {"uchanged_node",              test_uchanged_node_suite},
+    {"uvm_trace_fields",           test_uvm_trace_fields_suite},
     /* Add new suites here as test files are added. */
 };
 
