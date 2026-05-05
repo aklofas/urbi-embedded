@@ -105,6 +105,7 @@ extern void test_emit_function_literal_suite(void);
 extern void test_cond_side_effect_suite(void);
 extern void test_emit_diag_suite(void);
 extern void test_emit_watcher_suite(void);
+extern void test_install_skeleton_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -186,6 +187,7 @@ static const struct suite_entry suites[] = {
     {"cond_side_effect",           test_cond_side_effect_suite},
     {"emit_diag",                  test_emit_diag_suite},
     {"emit_watcher",               test_emit_watcher_suite},
+    {"install_skeleton",           test_install_skeleton_suite},
     /* Add new suites here as test files are added. */
 };
 
