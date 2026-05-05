@@ -23,7 +23,8 @@
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
-#include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
+#include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
+#include "watcher/uwatcher_install.h"  /* install_watcher_runtime (T41-T42) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
@@ -848,10 +849,10 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
         /* M4 reserve stub — not yet implemented. */
         [OP_INVOKE]                = &&label_m5_stub,
-        /* M5 reactive runtime stubs — individual tasks wire dispatch. */
-        [OP_AT_INSTALL]            = &&label_m5_stub,
-        [OP_AT_SYNC_INSTALL]       = &&label_m5_stub,
-        [OP_WHENEVER_INSTALL]      = &&label_m5_stub,
+        /* M5 reactive runtime — T41 wires AT/WHENEVER install opcodes. */
+        [OP_AT_INSTALL]            = &&label_OP_AT_INSTALL,
+        [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
+        [OP_WHENEVER_INSTALL]      = &&label_OP_WHENEVER_INSTALL,
         [OP_WAITUNTIL_INSTALL]     = &&label_m5_stub,
         [OP_AT_EVENT_INSTALL]      = &&label_m5_stub,
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_m5_stub,
@@ -1734,6 +1735,44 @@ dispatch:
             HALT();
         }
 
+        /* === T41: OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===
+         *
+         * ABC-encoded: A = cond_reg, B = body_reg, C = onleave_reg (0xFF = absent).
+         * Routes through install_watcher_runtime with the appropriate UWATCHER_*
+         * mode.  On return the watcher is installed and the strand continues to the
+         * next instruction — at-watchers do not block the installing strand.
+         * Spec #2 §6.3. */
+        CASE(OP_AT_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UClosure *cond    = (UClosure *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
+            NEXT();
+        }
+
+        CASE(OP_AT_SYNC_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            UClosure *cond = (UClosure *)s->R[A].v.p;
+            UClosure *body = (UClosure *)s->R[B].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
+            NEXT();
+        }
+
+        CASE(OP_WHENEVER_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UClosure *cond    = (UClosure *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
+            NEXT();
+        }
+
         /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
          * its entry in the dispatch table (computed-goto) or this switch arm.
          * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
@@ -1741,9 +1780,6 @@ dispatch:
         label_m5_stub:
 #else
         case OP_INVOKE:
-        case OP_AT_INSTALL:
-        case OP_AT_SYNC_INSTALL:
-        case OP_WHENEVER_INSTALL:
         case OP_WAITUNTIL_INSTALL:
         case OP_AT_EVENT_INSTALL:
         case OP_AT_EVENT_SYNC_INSTALL:
