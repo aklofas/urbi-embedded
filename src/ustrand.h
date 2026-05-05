@@ -247,6 +247,22 @@ void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
                                        struct UTag   **chain,
                                        size_t          chain_count);
 
+/* === spec #1 §5.5: urbi_strand_arm_from_closure ===
+ *
+ * Allocate a register stack for `s` and wire up the execution-state fields
+ * (R, pc, pc_base, cur_consts, frame_count, open_upvals, closure_list,
+ * closed_cells, out_slot) from `entry` and the strand's own vm->alloc_fn.
+ *
+ * Called by fork_spawn_child (T38) and the watcher body-spawn path (T24)
+ * so the stack-alloc + pc-arming sequence is not duplicated.
+ *
+ * Returns 0 on success, -1 on allocation failure (s is left unarmed; caller
+ * is responsible for tearing down s).
+ *
+ * NOTE: does NOT set s->module — callers that need module for diagnostics or
+ * nested-proto lookup must set it explicitly after this call returns 0. */
+int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
+
 #ifdef __cplusplus
 }
 #endif

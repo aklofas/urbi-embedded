@@ -91,57 +91,32 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
         }
     }
 
-    /* Arm child execution state from entry_closure->proto.
+    /* Arm child execution state from child_closure->proto.
      *
      * urbi_strand_create() leaves all execution fields zero-init
      * ("frame-0 setup deferred to urbi_step or a future urbi_strand_arm
-     * helper" per ustrand.c).  We are that arm helper for fork-spawned
-     * strands.  The child runs with frame_count == 0, just like uvm_run's
-     * transient strand; OP_RET at frame_count == 0 writes to out_slot
-     * (NULL for detached children) and transitions to DEAD cleanly.
+     * helper" per ustrand.c).  urbi_strand_arm_from_closure is that helper.
+     * The child runs with frame_count == 0, just like uvm_run's transient
+     * strand; OP_RET at frame_count == 0 writes to out_slot (NULL for
+     * detached children) and transitions to DEAD cleanly.
      *
      * GETUPVAL/SETUPVAL at frame_count == 0 fall back to
      * s->entry_closure (already set by urbi_strand_create) — see uvm.c
      * OP_GETUPVAL dispatch. */
-    {
-        struct UVM *vm = s->vm;
-        UProto *proto  = child_closure->proto;
-        const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
-
-        child->stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
-        if (child->stack == NULL) {
-            /* OOM allocating register stack — tear down child. */
-            urbi_strand_destroy(child);
-            s->fatal_status     = UEXEC_CANCEL;
-            s->fatal_value.kind = (uint8_t)UVAL_NIL;
-            s->fatal_value.v.i  = 0;
-            s->state            = USTRAND_STATE_DEAD;
-            return NULL;
-        }
-
-        /* Zero the register stack (freestanding-safe volatile byte loop). */
-        {
-            volatile unsigned char *p = (volatile unsigned char *)child->stack;
-            size_t i;
-            for (i = 0; i < stack_bytes; i++) p[i] = 0;
-        }
-
-        child->R          = child->stack;
-        child->pc         = proto->instructions;
-        child->pc_base    = proto->instructions;
-        child->cur_consts = proto->constants
-                            ? proto->constants
-                            : s->cur_consts;   /* fallback: parent's constant pool */
-        child->module     = s->module;         /* diagnostics + nested-proto lookup */
-        child->frame_count  = 0;
-        child->open_upvals  = NULL;
-        child->closure_list = NULL;   /* child_closure is owned by parent's closure_list;
-                                         do not double-free it here. If the child creates
-                                         sub-closures via OP_CLOSURE, they will be added
-                                         to child->closure_list naturally. */
-        child->closed_cells = NULL;
-        child->out_slot     = NULL;            /* detached: result is discarded */
+    if (urbi_strand_arm_from_closure(child, child_closure) != 0) {
+        /* OOM allocating register stack — tear down child. */
+        urbi_strand_destroy(child);
+        s->fatal_status     = UEXEC_CANCEL;
+        s->fatal_value.kind = (uint8_t)UVAL_NIL;
+        s->fatal_value.v.i  = 0;
+        s->state            = USTRAND_STATE_DEAD;
+        return NULL;
     }
+
+    child->module = s->module;   /* diagnostics + nested-proto lookup */
+    /* child_closure is owned by parent's closure_list; do not double-free it.
+     * If the child creates sub-closures via OP_CLOSURE they are added to
+     * child->closure_list naturally. */
 
     return child;
 }
