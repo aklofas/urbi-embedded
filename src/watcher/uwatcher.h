@@ -251,6 +251,15 @@ void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 void   urbi_watcher_check_invariants(struct UVM *vm);
 #endif /* URBI_DEBUG */
 
+/* Default 4096 dispatch ops — generous for typical conds (`x > 5`,
+ * `obj.slot != nil`).  Override at compile time for footprint targets:
+ *   -DURBI_SCRATCH_BUDGET_OPS=512
+ * Conds that exhaust the budget log a warn, set out_threw=1, and return 0
+ * (caller treats as cond-throw → install fails or eval skips fire). */
+#ifndef URBI_SCRATCH_BUDGET_OPS
+#  define URBI_SCRATCH_BUDGET_OPS 4096
+#endif
+
 /* === urbi_run_closure_on_scratch (spec #2 §6.4 + §7.3 phase 3) ===
  *
  * Run `closure` to OP_RET on a transient scratch-frame strand and capture
@@ -265,24 +274,20 @@ void   urbi_watcher_check_invariants(struct UVM *vm);
  * ops; cond closures must not OP_YIELD or block (spec §6.4 no-yield contract
  * — yield/block trips a debug-mode assertion and degrades to nil + warn).
  *
- * Return value: 0 on clean OP_RET; -1 on register-stack OOM (transient
- * setup fail).  *out_result holds the OP_RET value (UVAL_NIL on OOM or
- * NULL closure).  *out_threw is set to 1 on unhandled THROW or TAG_STOP
- * unwind out of the cond, 0 otherwise.  Callers must pass non-NULL out
- * pointers. */
+ * `closure` may be NULL: returns 0 immediately with *out_result=UVAL_NIL,
+ * *out_threw=0 (matches the prior stub contract for watchers installed
+ * without a condition).
+ *
+ * Return value: 0 on clean OP_RET, NULL closure, budget exhaustion, or
+ * cond throw; -1 only on register-stack OOM (transient setup fail).
+ * *out_result holds the OP_RET value (UVAL_NIL on OOM, NULL closure,
+ * cond throw, or budget exhaustion).  *out_threw is set to 1 on unhandled
+ * THROW / TAG_STOP unwind or budget exhaustion, 0 otherwise.  Callers must
+ * pass non-NULL out pointers. */
 int urbi_run_closure_on_scratch(struct UVM      *vm,
                                 struct UClosure *closure,
                                 UValue          *out_result,
                                 int             *out_threw);
-
-/* Default 4096 dispatch ops — generous for typical conds (`x > 5`,
- * `obj.slot != nil`).  Override at compile time for footprint targets:
- *   -DURBI_SCRATCH_BUDGET_OPS=512
- * Conds that exhaust the budget log a warn and treat as nil + threw=0
- * (caller treats as cond-throw → install fails or eval skips fire). */
-#ifndef URBI_SCRATCH_BUDGET_OPS
-#  define URBI_SCRATCH_BUDGET_OPS 4096
-#endif
 
 #ifdef __cplusplus
 }
