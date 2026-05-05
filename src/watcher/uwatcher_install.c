@@ -7,12 +7,14 @@
  * T36: OP_GETSLOT trace probe arm (phase 2+3).
  * T37: run cond on scratch frame + overflow/fault routing (phase 3+4).
  * T38: pool alloc + initialize watcher fields (spec #2 §7.4–§7.5).
- * T39: read-set copy + bit-6 mark + linked-list insertion (spec #2 §7.6). */
+ * T39: read-set copy + bit-6 mark + linked-list insertion (spec #2 §7.6).
+ * T40: WAITUNTIL strand-block or immediate-wake fast path (spec #2 §7.7). */
 
 #include "watcher/uwatcher_install.h"
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "uvm.h"                /* UVM, URBI_LOG_WARN */
-#include "ustrand.h"            /* UStrand */
+#include "ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
+#include "uvalue.h"             /* uvalue_truthy (T40) */
 #include "ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
@@ -217,10 +219,25 @@ install_watcher_runtime(
 
     vm->watcher_active_count++;
 
-    /* WAITUNTIL strand-block arrives in T40; non-WAITUNTIL returns OK here. */
+    /* WAITUNTIL strand-block (spec #2 §7.7):
+     *
+     * If cond evaluates truthy at install time, the rising edge IS the install
+     * moment — unregister immediately and let the strand continue to the next
+     * instruction (fast path / immediate wake).
+     *
+     * Otherwise, park the waiter strand by transitioning it to WAITING with
+     * USTRAND_WAIT_WATCHER reason (0x32).  The OP_WAITUNTIL_INSTALL dispatcher
+     * (T42) observes the WAITING state and yields to the scheduler.  The
+     * eval-pass wake (T43) will resume the strand when the rising edge fires. */
     if (mode == UWATCHER_WAITUNTIL) {
-        /* T40: park waiter_strand. For now, fall through to OK. */
-        (void)0;
+        if (uvalue_truthy(&cond_value)) {
+            /* Immediate wake: unregister the just-installed watcher and let
+             * the strand fall through to the next instruction. */
+            urbi_watcher_unregister_internal(vm, w);
+            return URBI_INSTALL_OK;
+        }
+        /* Park waiter strand until the rising edge fires (T43 wires wake). */
+        s->state = USTRAND_WAIT_WATCHER;
     }
 
     return URBI_INSTALL_OK;
