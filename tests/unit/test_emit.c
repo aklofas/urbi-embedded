@@ -106,19 +106,20 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
-    /* Two instructions: LOADK R0 K0 ; RET R0 */
+    /* Two instructions: LOADK R1 K0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)2, module.instr_count);
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
     UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
 
     /* Constant pool: one UVAL_INT entry, value 42 */
     UASSERT_EQ((size_t)1,      module.const_count);
     UASSERT_EQ((uint8_t)UVAL_INT, module.constants[0].kind);
     UASSERT_EQ((int64_t)42,    module.constants[0].v.i);
-    UASSERT_EQ((uint8_t)0,     module.max_reg);
+    UASSERT_EQ((uint8_t)1,     module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -175,19 +176,20 @@ UTEST(emit_ast_binary_1_plus_2) {
     bin.line = 1;
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
-    /* LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0 */
+    /* LOADK R1 K0 ; LOADK R2 K1 ; ADD R1 R1 R2 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)4, module.instr_count);
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)2, uinstr_a(module.instructions[1]));
     UASSERT_EQ((int)OP_ADD, (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[2]));
-    UASSERT_EQ((uint8_t)1, uinstr_c(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[2]));
+    UASSERT_EQ((uint8_t)2, uinstr_c(module.instructions[2]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[3]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[3]));
-    UASSERT_EQ((uint8_t)1, module.max_reg);
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[3]));
+    UASSERT_EQ((uint8_t)2, module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -248,9 +250,10 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &top));
     /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
        child still needs its own register simultaneously.  For the two-level
-       tree (ab)+(cd) the peak is R2: emitting `d` requires R0(ab-lhs),
-       R1(cd-lhs), R2(d) live at once before the inner free_reg. */
-    UASSERT_EQ((uint8_t)2, module.max_reg);
+       tree (ab)+(cd) the peak is R3: emitting `d` requires R1(ab-lhs),
+       R2(cd-lhs), R3(d) live at once before the inner free_reg.
+       (T73: chunk-top pre-reserves R0, so temps start at R1.) */
+    UASSERT_EQ((uint8_t)3, module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -278,21 +281,23 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &unary));
 
+    /* LOADK R1 K0 ; NEG R1 R1 0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)3, module.instr_count);
 
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
 
     UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_b(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_b(module.instructions[1]));
     UASSERT_EQ((uint8_t)0,    uinstr_c(module.instructions[1]));
 
     UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[2]));
 
-    UASSERT_EQ((uint8_t)0,    module.max_reg);
+    UASSERT_EQ((uint8_t)1,    module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -511,7 +516,8 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     UASSERT(strstr(buf, "LOADK") != NULL);
     UASSERT(strstr(buf, "ADD")   != NULL);
     UASSERT(strstr(buf, "RET")   != NULL);
-    UASSERT(strstr(buf, "R0")    != NULL);
+    /* T73: chunk-top pre-reserves R0; temps start at R1. */
+    UASSERT(strstr(buf, "R1")    != NULL);
     uarena_destroy(&arena);
     umodule_destroy(&module);
 uvm_destroy(&vm);
@@ -994,10 +1000,11 @@ UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
     UAstNode n = {0};
     n.kind = AST_BOOL; n.u.b = true; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
-    /* Instructions: LOADBOOL R0 1 0 ; RET R0 */
+    /* Instructions: LOADBOOL R1 1 0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot) */
     UASSERT_EQ((size_t)2, module.instr_count);
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
@@ -1022,7 +1029,8 @@ UTEST(emit_ast_nil_emits_loadnil) {
     n.kind = AST_NIL; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
     UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    /* T73: chunk-top pre-reserves R0; first temp is R1. */
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
 
@@ -1456,8 +1464,9 @@ UTEST(emit_t10_throw_emits_op_throw) {
     UASSERT(throw_idx >= 0);
     uint32_t w = module.instructions[(size_t)throw_idx];
     UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
-    /* A = destination register of the value expression (R0). */
-    UASSERT_EQ((uint8_t)0, uinstr_a(w));
+    /* A = destination register of the value expression (R1 at chunk-top).
+     * T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1. */
+    UASSERT_EQ((uint8_t)1, uinstr_a(w));
 
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }

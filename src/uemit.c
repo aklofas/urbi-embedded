@@ -30,6 +30,16 @@ static void emit_memcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) pd[i] = ps[i];
 }
 
+/* Local byte-move (overlapping-safe right shift).  Used by the prologue
+   prepend helper to shift instruction / line-delta arrays rightward. */
+static void emit_memmove_right(void *dst, const void *src, size_t n) {
+    unsigned char *pd = (unsigned char *)dst;
+    const unsigned char *ps = (const unsigned char *)src;
+    /* Right-shift: iterate backwards so overlapping src→dst works. */
+    size_t i = n;
+    while (i > 0) { i--; pd[i] = ps[i]; }
+}
+
 /* Local strlen replacement (byte-loop).  Freestanding-safe. */
 static size_t emit_strlen(const char *s) {
     size_t n = 0;
@@ -794,14 +804,11 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             /* Mark first actual global read (for nested functions the slot
              * was pre-reserved but references_global starts false). */
             fs->references_global = true;
-            /* Emit OP_LOAD_REALM_GLOBAL inline at the point of first global
-             * reference.  For chunk-top functions this is effectively a
-             * prologue; for nested functions T73 will move this to entry.
+            /* OP_LOAD_REALM_GLOBAL is emitted as a function prologue by the
+             * frame finalizer (uemit_close_function, T73), not inline here.
              * The register stays stable (local-zone floor) for the remainder
-             * of the function. */
-            emit_instr(e, uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, fs->r_global_slot,
-                                         0u, 0u),
-                       (uint32_t)n->line);
+             * of the function body regardless of when the first reference
+             * appears — including inside branch arms that may not execute. */
         }
         {
             uint8_t dst = e->next_reg;
@@ -865,11 +872,8 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                         e->max_reg_seen = e->next_reg;
                 }
                 fs->references_global = true;
-                /* Emit OP_LOAD_REALM_GLOBAL inline at first chunk-top global
-                 * use (analogous to T71 path). */
-                emit_instr(e, uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, fs->r_global_slot,
-                                             0u, 0u),
-                           (uint32_t)n->line);
+                /* OP_LOAD_REALM_GLOBAL is prepended as a function prologue by
+                 * uemit_close_function (T73) — not emitted inline here. */
             }
 
             /* Emit init expression into a temp register. */
@@ -3052,6 +3056,22 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
     emit_zero(fs, sizeof(UFuncState));
     fs->parent = parent;
     fs->target_proto = NULL;            /* T14 wires nested-proto bufs */
+
+    /* T73: For the chunk-top funcstate (parent == NULL), pre-reserve
+     * r_global_slot = 0 unconditionally, mirroring what emit_function_literal
+     * does for nested functions.  This ensures r_global_slot is never
+     * overwritten by a condition register (rd) in an if/while expression —
+     * both would land at index 0 without the pre-reservation.  The prologue
+     * OP_LOAD_REALM_GLOBAL is still only emitted iff references_global is
+     * true; the reserved register is simply unused for pure-local chunks. */
+    if (parent == NULL && fs->freereg < (uint8_t)(UFS_MAX_REGS - 1)) {
+        fs->r_global_slot      = fs->freereg;
+        fs->global_slot_reserved = true;
+        fs->freereg++;
+        if (fs->freereg > fs->max_reg_seen)
+            fs->max_reg_seen = fs->freereg;
+    }
+
     e->current_fs = fs;
     return fs;
 }
@@ -3086,9 +3106,188 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     return idx;
 }
 
+/* T73: Prepend one instruction to the current function's instruction buffer.
+ *
+ * Routes to UProto.instructions / line_deltas (nested function) or
+ * UModule.instructions / line_deltas (chunk root), mirroring the routing
+ * done by emit_instr.
+ *
+ * All abs_lines entries' pc values are bumped by 1 because every existing
+ * instruction is now at pc+1.  The prepended instruction itself gets a
+ * line_delta entry of INT8_MIN (abs-checkpoint sentinel) with an abs_line
+ * entry at pc=0 pointing at the first pre-existing instruction's line so
+ * that a debugger can attribute the prologue to the function's start.
+ *
+ * Note on line_deltas capacity: line_deltas is resized to exactly
+ * instr_count bytes on each append (no separate cap field); the prepend
+ * reallocates it to (old_count + 1) bytes via the same realloc semantics.
+ *
+ * Returns true on success, false on OOM (sets e->error). */
+static bool prologue_prepend_instr(UEmitter *e, uint32_t instr) {
+    UProto *p = (e->current_fs && e->current_fs->target_proto)
+                ? (UProto *)e->current_fs->target_proto
+                : NULL;
+
+    if (p != NULL) {
+        /* === Nested proto path === */
+
+        /* Instructions: grow by 1, shift right, insert at [0]. */
+        if (!proto_grow(e->module, p,
+                        (void **)&p->instructions, &p->instr_cap,
+                        p->instr_count + 1u, sizeof(uint32_t))) {
+            e->error = EMIT_OOM; return false;
+        }
+        if (p->instr_count > 0u) {
+            emit_memmove_right(p->instructions + 1, p->instructions,
+                               p->instr_count * sizeof(uint32_t));
+        }
+        p->instructions[0] = instr;
+        p->instr_count++;
+
+        /* Patch instructions that store absolute PCs in their Bx field.
+         * OP_TRY_BEGIN Bx = handler_pc; OP_PUSH_TAG Bx = onleave_pc.
+         * All targets shifted right by 1 — increment by 1. */
+        for (size_t pi = 1u; pi < p->instr_count; pi++) {
+            UOpcode op = uinstr_op(p->instructions[pi]);
+            if (op == OP_TRY_BEGIN || op == OP_PUSH_TAG) {
+                uint8_t  a  = uinstr_a(p->instructions[pi]);
+                uint16_t bx = uinstr_bx(p->instructions[pi]);
+                p->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1u));
+            }
+        }
+
+        /* line_deltas: resize to new instr_count, shift right, insert at [0].
+         * line_deltas uses no separate cap — allocate exactly instr_count bytes. */
+        {
+            UModuleAllocFn alloc = p->alloc_fn;
+#if __STDC_HOSTED__
+            if (alloc == NULL) alloc = emit_stdlib_alloc;
+#else
+            if (alloc == NULL) { e->error = EMIT_OOM; return false; }
+#endif
+            int8_t *fresh = (int8_t *)alloc(p->line_deltas,
+                                            p->instr_count * sizeof(int8_t),
+                                            p->alloc_ud);
+            if (fresh == NULL) { e->error = EMIT_OOM; return false; }
+            p->line_deltas = fresh;
+        }
+        if (p->instr_count > 1u) {
+            emit_memmove_right(p->line_deltas + 1, p->line_deltas,
+                               (p->instr_count - 1u) * sizeof(int8_t));
+        }
+        p->line_deltas[0] = (int8_t)-128;   /* abs-checkpoint sentinel */
+
+        /* Bump all existing abs_lines pc values. */
+        for (size_t ai = 0; ai < p->abs_line_count; ai++) {
+            p->abs_lines[ai].pc++;
+        }
+        /* Insert an abs_line entry at pc=0 using the first real instruction's
+         * line (which is now at abs_lines[0].pc == 1 after the bump). */
+        uint32_t line0 = 0u;
+        if (p->abs_line_count > 0u && p->abs_lines[0].pc == 1u) {
+            line0 = p->abs_lines[0].line;
+        }
+        if (!proto_grow(e->module, p,
+                        (void **)&p->abs_lines, &p->abs_line_cap,
+                        p->abs_line_count + 1u, sizeof(UAbsLine))) {
+            e->error = EMIT_OOM; return false;
+        }
+        if (p->abs_line_count > 0u) {
+            emit_memmove_right(p->abs_lines + 1, p->abs_lines,
+                               p->abs_line_count * sizeof(UAbsLine));
+        }
+        p->abs_lines[0].pc   = 0u;
+        p->abs_lines[0].line = line0;
+        p->abs_line_count++;
+
+    } else {
+        /* === Root module path === */
+
+        /* Instructions. */
+        if (!emit_grow(e->module,
+                       (void **)&e->module->instructions,
+                       &e->module->instr_cap,
+                       e->module->instr_count + 1u, sizeof(uint32_t))) {
+            e->error = EMIT_OOM; return false;
+        }
+        if (e->module->instr_count > 0u) {
+            emit_memmove_right(e->module->instructions + 1,
+                               e->module->instructions,
+                               e->module->instr_count * sizeof(uint32_t));
+        }
+        e->module->instructions[0] = instr;
+        e->module->instr_count++;
+
+        /* Patch absolute-PC instructions shifted right by 1. */
+        for (size_t pi = 1u; pi < e->module->instr_count; pi++) {
+            UOpcode op = uinstr_op(e->module->instructions[pi]);
+            if (op == OP_TRY_BEGIN || op == OP_PUSH_TAG) {
+                uint8_t  a  = uinstr_a(e->module->instructions[pi]);
+                uint16_t bx = uinstr_bx(e->module->instructions[pi]);
+                e->module->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1u));
+            }
+        }
+
+        /* line_deltas: reallocate to new instr_count bytes, shift, insert. */
+        {
+            UModuleAllocFn alloc = emit_alloc_for(e->module);
+            if (alloc == NULL) { e->error = EMIT_OOM; return false; }
+            int8_t *fresh = (int8_t *)alloc(e->module->line_deltas,
+                                            e->module->instr_count * sizeof(int8_t),
+                                            e->module->alloc_ud);
+            if (fresh == NULL) { e->error = EMIT_OOM; return false; }
+            e->module->line_deltas = fresh;
+        }
+        if (e->module->instr_count > 1u) {
+            emit_memmove_right(e->module->line_deltas + 1,
+                               e->module->line_deltas,
+                               (e->module->instr_count - 1u) * sizeof(int8_t));
+        }
+        e->module->line_deltas[0] = (int8_t)-128;
+
+        /* Bump existing abs_lines pc values. */
+        for (size_t ai = 0; ai < e->module->abs_line_count; ai++) {
+            e->module->abs_lines[ai].pc++;
+        }
+        uint32_t line0 = 0u;
+        if (e->module->abs_line_count > 0u && e->module->abs_lines[0].pc == 1u) {
+            line0 = e->module->abs_lines[0].line;
+        }
+        if (!emit_grow(e->module,
+                       (void **)&e->module->abs_lines,
+                       &e->module->abs_line_cap,
+                       e->module->abs_line_count + 1u, sizeof(UAbsLine))) {
+            e->error = EMIT_OOM; return false;
+        }
+        if (e->module->abs_line_count > 0u) {
+            emit_memmove_right(e->module->abs_lines + 1,
+                               e->module->abs_lines,
+                               e->module->abs_line_count * sizeof(UAbsLine));
+        }
+        e->module->abs_lines[0].pc   = 0u;
+        e->module->abs_lines[0].line = line0;
+        e->module->abs_line_count++;
+    }
+    return true;
+}
+
 UFuncState *uemit_close_function(UEmitter *e) {
     UFuncState *fs = e->current_fs;
     if (fs == NULL) return NULL;
+
+    /* T73: Frame prologue — prepend OP_LOAD_REALM_GLOBAL as the first
+     * instruction iff this function body referenced at least one realm
+     * global.  This guarantees r_global_slot holds realm->global_object
+     * before any OP_GETSLOT / OP_SETSLOT that targets the global object,
+     * even when the first global reference is inside a branch arm that
+     * may not be taken at runtime.  Pure-local functions are left
+     * prologue-free (no wasted instruction). */
+    if (fs->references_global && e->error == EMIT_OK) {
+        uint32_t prologue = uinstr_enc_abc(OP_LOAD_REALM_GLOBAL,
+                                           fs->r_global_slot, 0u, 0u);
+        prologue_prepend_instr(e, prologue);
+    }
+
     /* Roll max_reg_seen into target_proto when closing a nested function. */
     if (fs->target_proto != NULL) {
         UProto *p = (UProto *)fs->target_proto;

@@ -135,6 +135,7 @@ extern void test_registry_table_suite(void);
 extern void test_realm_populate_suite(void);
 extern void test_emit_global_lookup_suite(void);
 extern void test_emit_global_var_suite(void);
+extern void test_op_load_realm_global_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -246,6 +247,7 @@ static const struct suite_entry suites[] = {
     {"realm_populate",            test_realm_populate_suite},
     {"emit_global_lookup",        test_emit_global_lookup_suite},
     {"emit_global_var",           test_emit_global_var_suite},
+    {"op_load_realm_global",      test_op_load_realm_global_suite},
     /* Add new suites here as test files are added. */
 };
 
