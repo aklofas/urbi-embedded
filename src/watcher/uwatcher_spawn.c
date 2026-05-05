@@ -40,7 +40,15 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
 
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Step 1 (exhaust-policy check) deferred to T26 — happy path here. */
+    /* Step 1 (spec #1 §5.3 step 1): exhaust-policy gate.
+     * If a body strand is already running, cap depth at 1. */
+    if (w->body_strand != NULL) {
+        if (w->exhaust_policy == URBI_EXHAUST_QUEUE) {
+            w->flags |= URBI_WATCHER_PENDING_REFIRE;
+        }
+        /* URBI_EXHAUST_DROP: silent drop — fall through to return. */
+        return;
+    }
 
     /* Step 2: allocate body strand (DORMANT). */
     body = urbi_strand_create(w->realm, w->body);
