@@ -153,7 +153,17 @@ struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
  *
  * T33 completes:
  *   - read_set wiring (cells[] + bit-6 UGC_HAS_WATCHER_OBSERVER)
- *   - member_watchers_head insertion in owning_tag */
+ *   - member_watchers_head insertion in owning_tag
+ *
+ * **Test-only seam:** `urbi_watcher_install_internal` is the low-level pool
+ * + wiring path used by unit tests (`tests/unit/test_watcher_*.c` etc.).  It
+ * does NOT run real bytecode dispatch on the condition closure — install-
+ * time seeding short-circuits via `test_watcher_condition_hook` when set,
+ * else seeds nil.  Production install goes through
+ * `install_watcher_runtime` (uwatcher_install.c), which uses the real
+ * scratch-frame helper.  Tests passing fake `(UClosure *)1` sentinels MUST
+ * also set `test_watcher_condition_hook` before any subsequent eval, since
+ * eval *does* dispatch real bytecode now (post-T8). */
 
 struct UWatcher *urbi_watcher_install_internal(
     struct UVM       *vm,
@@ -170,8 +180,12 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 /* === Eval pass (T34) === */
 
 /* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
- * At M3, uses vm->test_watcher_condition_hook if non-NULL; otherwise returns
- * UVAL_NIL (graceful degradation — M5 wires real bytecode execution here).
+ * Routes to `vm->test_watcher_condition_hook` if set (existing fire-path
+ * tests inject specific values); otherwise dispatches real bytecode via
+ * `urbi_run_closure_on_scratch` (uwatcher_scratch.c).  Eval-time throws
+ * fail-soft as nil — the watcher does not fire this pass and the caller
+ * (watcher_eval_dirty, which is void) cannot propagate.  Returns nil when
+ * `w->condition == NULL` (no-condition watchers fire on dirty-mark only).
  * Per spec §6.4. */
 UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
 
