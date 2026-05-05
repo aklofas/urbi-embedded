@@ -30,6 +30,7 @@
 #include "sched/usched_cooperative.h"       /* sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */
 #include "watcher/uwatcher_install.h"       /* install_watcher_runtime */
+#include "urbi/urbi.h"                      /* URBI_LOG_WARN */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -278,13 +279,15 @@ UTEST(trace_disabled_when_flag_clear)
     uvm_destroy(&vm);
 }
 
-/* 5. install_arms_trace_fields
+/* 5. install_arms_and_resets_trace_fields
  *
- * install_watcher_runtime (non-recursive path, stub returns OK) must set
- * in_watcher_install=1, trace_overflow=0, trace_read_set_count=0 at phase 2.
- * After it returns, in_watcher_install is 1 (T37 will reset it; for now the
- * T36 stub leaves it set so downstream probes continue to fire). */
-UTEST(install_arms_trace_fields)
+ * install_watcher_runtime (non-recursive path, no-throw hook) must:
+ *   - Phase 2: set in_watcher_install=1, clear trace_overflow and
+ *     trace_read_set_count.
+ *   - Phase 4: clear in_watcher_install=0 after running the cond stub.
+ *   - Return URBI_INSTALL_OK when the cond hook does not throw and
+ *     no overflow occurs. */
+UTEST(install_arms_and_resets_trace_fields)
 {
     UVM vm;
     UStrand s;
@@ -292,22 +295,133 @@ UTEST(install_arms_trace_fields)
     uvm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
-    /* Pre-condition: dirty values to verify reset. */
+    /* Pre-condition: dirty values to verify the phase-2 reset. */
     vm.trace_overflow       = 1;
     vm.trace_read_set_count = 7;
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
 
+    /* Stub (no hook) returns OK; in_watcher_install must be 0 after phase 4. */
     UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
-
-    /* Phase 2 must have armed the trace. */
-    UASSERT_EQ(1, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.in_watcher_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
-    UASSERT_EQ(0, (int)vm.trace_read_set_count);
 
-    /* Clean up (T37 resets in_watcher_install; here we do it manually). */
-    vm.in_watcher_install = 0;
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* ===================================================================
+ * T37 test helpers
+ * =================================================================== */
+
+/* Hook that simulates overflow: fills trace_read_set_count to MAX then
+ * sets trace_overflow=1 (replicating what URBI_WATCHER_READSET_MAX+1
+ * OP_GETSLOT hits would do). */
+static void
+hook_force_overflow(struct UVM *vm, struct UClosure *cond,
+                    UValue *out_result, int *out_threw)
+{
+    UValue nil = {0};
+    (void)cond;
+    /* Simulate MAX reads + one overflow hit. */
+    vm->trace_read_set_count = (uint16_t)URBI_WATCHER_READSET_MAX;
+    vm->trace_overflow       = 1;
+    *out_result = nil;
+    *out_threw  = 0;
+}
+
+/* Hook that simulates a cond-throw. */
+static void
+hook_force_throw(struct UVM *vm, struct UClosure *cond,
+                 UValue *out_result, int *out_threw)
+{
+    UValue nil = {0};
+    (void)vm;
+    (void)cond;
+    *out_result = nil;
+    *out_threw  = 1;
+}
+
+/* Log-capture state for T37 warn tests. */
+static int g_t37_warn_count;
+static char g_t37_last_msg[256];
+
+static void
+capture_log_t37(struct UVM *vm, int level, const char *fmt, ...)
+{
+    (void)vm;
+    if (level == URBI_LOG_WARN) {
+        g_t37_warn_count++;
+        strncpy(g_t37_last_msg, fmt, sizeof(g_t37_last_msg) - 1);
+        g_t37_last_msg[sizeof(g_t37_last_msg) - 1] = '\0';
+    }
+}
+
+/* ===================================================================
+ * T37 test cases
+ * =================================================================== */
+
+/* 6. install_returns_readset_over_when_overflow
+ *
+ * When the cond hook forces trace_overflow=1, install_watcher_runtime must:
+ *   - Return URBI_INSTALL_READSET_OVER.
+ *   - Reset in_watcher_install to 0.
+ *   - Clear trace_overflow.
+ *   - Fire a URBI_LOG_WARN containing "read-set exceeds". */
+UTEST(install_returns_readset_over_when_overflow)
+{
+    UVM vm;
+    UStrand s;
+
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
+
+    g_t37_warn_count = 0;
+    vm.host_log_fn            = capture_log_t37;
+    vm.test_install_cond_hook = hook_force_overflow;
+
+    UWatcherInstallResult r = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_READSET_OVER, (int)r);
+    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.trace_overflow);   /* cleared by phase 4 */
+    UASSERT_EQ(1, g_t37_warn_count);
+    UASSERT(strstr(g_t37_last_msg, "read-set exceeds") != NULL);
+
+    vm.test_install_cond_hook = NULL;
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* 7. install_returns_trace_fault_on_cond_throw
+ *
+ * When the cond hook sets *out_threw=1, install_watcher_runtime must:
+ *   - Return URBI_INSTALL_TRACE_FAULT.
+ *   - Reset in_watcher_install to 0.
+ *   - Fire a URBI_LOG_WARN containing "condition threw". */
+UTEST(install_returns_trace_fault_on_cond_throw)
+{
+    UVM vm;
+    UStrand s;
+
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
+
+    g_t37_warn_count = 0;
+    vm.host_log_fn            = capture_log_t37;
+    vm.test_install_cond_hook = hook_force_throw;
+
+    UWatcherInstallResult r = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_TRACE_FAULT, (int)r);
+    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    UASSERT_EQ(1, g_t37_warn_count);
+    UASSERT(strstr(g_t37_last_msg, "condition threw") != NULL);
+
+    vm.test_install_cond_hook = NULL;
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
 }
@@ -328,6 +442,10 @@ test_install_trace_suite(void)
               trace_overflow_sets_flag_and_caps);
     utest_run("trace_disabled_when_flag_clear",
               trace_disabled_when_flag_clear);
-    utest_run("install_arms_trace_fields",
-              install_arms_trace_fields);
+    utest_run("install_arms_and_resets_trace_fields",
+              install_arms_and_resets_trace_fields);
+    utest_run("install_returns_readset_over_when_overflow",
+              install_returns_readset_over_when_overflow);
+    utest_run("install_returns_trace_fault_on_cond_throw",
+              install_returns_trace_fault_on_cond_throw);
 }

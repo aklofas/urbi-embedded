@@ -286,6 +286,16 @@ typedef struct UVM {
      * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
+    /* T37 stub test hook for run_closure_on_scratch_frame_with_result.
+     * M5 will replace this with real bytecode dispatch on vm->watcher_scratch_frame.
+     * When non-NULL, install_watcher_runtime calls this instead of the real runner.
+     *   Signature: hook(vm, cond, out_result, out_threw)
+     *   - out_result receives the simulated return value.
+     *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
+     * NULL → run_closure_on_scratch_frame_with_result returns UVAL_NIL, no throw. */
+    void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
+                                     UValue *out_result, int *out_threw);
+
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;
     struct UWatcher *pending_onleave_tail;

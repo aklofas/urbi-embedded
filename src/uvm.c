@@ -221,6 +221,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->test_watcher_condition_hook = NULL;
     vm->test_watcher_fire_hook      = NULL;
     vm->test_watcher_onleave_hook   = NULL;
+    vm->test_install_cond_hook      = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
