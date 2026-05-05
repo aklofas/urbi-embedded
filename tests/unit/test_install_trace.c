@@ -1,0 +1,333 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Unit tests: OP_GETSLOT trace probe for watcher install (T36, spec #2 §7.3).
+ *
+ * T36 cases:
+ *   1. trace_records_slot_reads_during_install:
+ *      Set in_watcher_install=1, run OP_GETSLOT against a real UObject.
+ *      Verify trace_read_set[0] == (UCell *)obj and trace_read_set_count == 1.
+ *   2. trace_deduplicates_same_receiver:
+ *      Run OP_GETSLOT twice with the same receiver.
+ *      trace_read_set_count stays at 1 (dedupe by linear scan).
+ *   3. trace_overflow_sets_flag_and_caps:
+ *      Run OP_GETSLOT URBI_WATCHER_READSET_MAX+2 times with distinct receivers.
+ *      trace_read_set_count must clamp to URBI_WATCHER_READSET_MAX; trace_overflow=1.
+ *   4. trace_disabled_when_flag_clear:
+ *      in_watcher_install=0 (default): OP_GETSLOT does NOT touch trace_read_set_count.
+ *   5. install_arms_trace_fields:
+ *      install_watcher_runtime (non-recursive path) sets in_watcher_install=1,
+ *      trace_overflow=0, trace_read_set_count=0 before returning the stub OK. */
+
+#include "utest.h"
+#include "uvm.h"
+#include "ustrand.h"
+#include "umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
+#include "uintern.h"                        /* ustr_intern */
+#include "object/uobject.h"                 /* UObject, urbi_object_alloc,
+                                               urbi_object_set_local_slot */
+#include "object/uic.h"                     /* UIC */
+#include "object/umoduleinstance.h"         /* urbi_module_instance_create,
+                                               UModuleInstance, UProtoInstance */
+#include "sched/usched_cooperative.h"       /* sched_init */
+#include "watcher/uwatcher.h"               /* UWATCHER_AT */
+#include "watcher/uwatcher_install.h"       /* install_watcher_runtime */
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define UTEST(name) static void name(void)
+
+/* ===================================================================
+ * Bytecode / strand setup helpers
+ * =================================================================== */
+
+/* Allocate a UObject with one slot named "x" = integer 42.
+ * Caller owns the GC reference (pinned via urbi_pin before use). */
+static UObject *
+make_object_with_x_slot(UVM *vm)
+{
+    UObject *obj = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+    if (obj == NULL) return NULL;
+    USymbol *x = (USymbol *)ustr_intern(vm, "x", 1);
+    UValue v;
+    v.kind  = UVAL_INT;
+    v.v.i   = 42;
+    (void)urbi_object_set_local_slot(vm, obj, x, v);
+    return obj;
+}
+
+/* Set up a UModule with ic_count=1 for the root proto ("x" IC site 0).
+ * Caller must umodule_destroy(&m) when done.
+ * Returns 1 on success, 0 on failure. */
+static int
+make_module_with_one_ic_site(UVM *vm, UModule *m, uint32_t *instrs_out,
+                              size_t max_instrs)
+{
+    (void)max_instrs;
+    memset(m, 0, sizeof(*m));
+
+    /* Root proto ic_count = 1; ic_names points to "x". */
+    m->ic_count = 1;
+    m->ic_names = (USymbol **)malloc(sizeof(USymbol *));
+    if (m->ic_names == NULL) return 0;
+    m->ic_names[0] = (USymbol *)ustr_intern(vm, "x", 1);
+
+    /* Bytecode: OP_GETSLOT R[1] = R[0].slot[0]; OP_RET R[0].
+     *   A=1 (dst), B=0 (recv_reg), C=0 (ic_index). */
+    instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1u, 0u, 0u);
+    instrs_out[1] = uinstr_enc_abc(OP_RET,     0u, 0u, 0u);
+
+    m->instructions = instrs_out;
+    m->instr_count  = 2;
+    return 1;
+}
+
+/* Init a minimal strand pointing at `instrs` with reg_stack as its registers.
+ * R[0] is set to a UVAL_OBJECT pointing at `obj`.
+ * s->module_instance is wired to `mi`. */
+static void
+strand_setup_for_getslot(UStrand *s, UVM *vm,
+                         const uint32_t *instrs,
+                         UValue *reg_stack,
+                         UObject *obj,
+                         UModuleInstance *mi)
+{
+    /* Zero-init via volatile to silence compilers complaining about the
+     * partially-initialised struct (UStrand has many fields). */
+    volatile unsigned char *p = (volatile unsigned char *)s;
+    size_t n = sizeof(*s);
+    size_t i;
+    for (i = 0; i < n; i++) p[i] = 0;
+
+    s->vm              = vm;
+    s->state           = USTRAND_STATE_RUNNING;
+    s->stack           = reg_stack;
+    s->R               = reg_stack;
+    s->pc              = instrs;
+    s->pc_base         = instrs;
+    s->module          = NULL;
+    s->module_instance = mi;
+    s->frame_count     = 0;
+    s->open_upvals     = NULL;
+    s->closure_list    = NULL;
+    s->closed_cells    = NULL;
+    s->out_slot        = NULL;
+
+    /* R[0] = the object receiver. */
+    reg_stack[0].kind  = (uint8_t)UVAL_OBJECT;
+    reg_stack[0].v.p   = obj;
+}
+
+/* Run a single OP_GETSLOT (followed by OP_RET) against `obj` on `vm`.
+ * Requires vm->topology_gen to be initialised (non-zero sentinel — see uvm_init).
+ * Returns the number of opcodes consumed by dispatch_loop_until_yield. */
+static uint64_t
+run_one_getslot(UVM *vm, UObject *obj)
+{
+    static uint32_t instrs[2];
+    static UValue   reg_stack[8];
+    UModule         m;
+    UStrand         s;
+
+    memset(reg_stack, 0, sizeof(reg_stack));
+
+    if (!make_module_with_one_ic_site(vm, &m, instrs, 2)) return 0;
+
+    UModuleInstance *mi = urbi_get_or_create_module_instance(vm, &m);
+    if (mi == NULL) { free(m.ic_names); return 0; }
+
+    /* Wire the IC name so the slow path can resolve it on first miss. */
+    UProtoInstance *pi = &mi->proto_instances->entries[0];
+    if (pi->ic_table != NULL) {
+        pi->ic_table[0].name = (USymbol *)ustr_intern(vm, "x", 1);
+    }
+
+    strand_setup_for_getslot(&s, vm, instrs, reg_stack, obj, mi);
+
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+
+    /* Module IC names are heap-allocated in this helper; umodule_destroy
+     * would free instructions (stack here), so only free ic_names manually. */
+    free(m.ic_names);
+    m.ic_names = NULL;
+
+    return consumed;
+}
+
+/* ===================================================================
+ * Test cases
+ * =================================================================== */
+
+/* 1. trace_records_slot_reads_during_install
+ *
+ * With in_watcher_install=1, running OP_GETSLOT must append the receiver's
+ * UCell* to trace_read_set and increment trace_read_set_count to 1. */
+UTEST(trace_records_slot_reads_during_install)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UObject *obj = make_object_with_x_slot(&vm);
+    UASSERT(obj != NULL);
+
+    vm.in_watcher_install   = 1;
+    vm.trace_overflow        = 0;
+    vm.trace_read_set_count  = 0;
+
+    uint64_t consumed = run_one_getslot(&vm, obj);
+    UASSERT(consumed >= 1);
+
+    UASSERT_EQ(1, (int)vm.trace_read_set_count);
+    UASSERT(vm.trace_read_set[0] == (UCell *)obj);
+    UASSERT_EQ(0, (int)vm.trace_overflow);
+
+    vm.in_watcher_install = 0;
+    uvm_destroy(&vm);
+}
+
+/* 2. trace_deduplicates_same_receiver
+ *
+ * Running OP_GETSLOT twice against the same object while in_watcher_install=1
+ * must leave trace_read_set_count at 1 (dedupe by linear scan). */
+UTEST(trace_deduplicates_same_receiver)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UObject *obj = make_object_with_x_slot(&vm);
+    UASSERT(obj != NULL);
+
+    vm.in_watcher_install   = 1;
+    vm.trace_overflow        = 0;
+    vm.trace_read_set_count  = 0;
+
+    /* First read: records the cell. */
+    run_one_getslot(&vm, obj);
+    UASSERT_EQ(1, (int)vm.trace_read_set_count);
+
+    /* Second read: same receiver, must not add a second entry. */
+    run_one_getslot(&vm, obj);
+    UASSERT_EQ(1, (int)vm.trace_read_set_count);
+    UASSERT_EQ(0, (int)vm.trace_overflow);
+
+    vm.in_watcher_install = 0;
+    uvm_destroy(&vm);
+}
+
+/* 3. trace_overflow_sets_flag_and_caps
+ *
+ * Running OP_GETSLOT against URBI_WATCHER_READSET_MAX+2 distinct objects
+ * must set trace_overflow=1 and leave trace_read_set_count exactly at
+ * URBI_WATCHER_READSET_MAX (no writes beyond the array bound). */
+UTEST(trace_overflow_sets_flag_and_caps)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Allocate MAX+2 distinct objects. */
+    size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2u;
+    UObject **objs = (UObject **)malloc(extra * sizeof(UObject *));
+    UASSERT(objs != NULL);
+    size_t i;
+    for (i = 0; i < extra; i++) {
+        objs[i] = make_object_with_x_slot(&vm);
+        UASSERT(objs[i] != NULL);
+    }
+
+    vm.in_watcher_install   = 1;
+    vm.trace_overflow        = 0;
+    vm.trace_read_set_count  = 0;
+
+    for (i = 0; i < extra; i++) {
+        run_one_getslot(&vm, objs[i]);
+    }
+
+    UASSERT_EQ((int)URBI_WATCHER_READSET_MAX, (int)vm.trace_read_set_count);
+    UASSERT_EQ(1, (int)vm.trace_overflow);
+
+    vm.in_watcher_install = 0;
+    free(objs);
+    uvm_destroy(&vm);
+}
+
+/* 4. trace_disabled_when_flag_clear
+ *
+ * With in_watcher_install=0 (default), OP_GETSLOT must NOT touch
+ * trace_read_set_count — the UNLIKELY branch is not taken. */
+UTEST(trace_disabled_when_flag_clear)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UObject *obj = make_object_with_x_slot(&vm);
+    UASSERT(obj != NULL);
+
+    /* Default: in_watcher_install == 0. */
+    UASSERT_EQ(0, (int)vm.in_watcher_install);
+    vm.trace_read_set_count = 0;
+
+    run_one_getslot(&vm, obj);
+
+    UASSERT_EQ(0, (int)vm.trace_read_set_count);
+
+    uvm_destroy(&vm);
+}
+
+/* 5. install_arms_trace_fields
+ *
+ * install_watcher_runtime (non-recursive path, stub returns OK) must set
+ * in_watcher_install=1, trace_overflow=0, trace_read_set_count=0 at phase 2.
+ * After it returns, in_watcher_install is 1 (T37 will reset it; for now the
+ * T36 stub leaves it set so downstream probes continue to fire). */
+UTEST(install_arms_trace_fields)
+{
+    UVM vm;
+    UStrand s;
+
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
+
+    /* Pre-condition: dirty values to verify reset. */
+    vm.trace_overflow       = 1;
+    vm.trace_read_set_count = 7;
+
+    UWatcherInstallResult r = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+
+    /* Phase 2 must have armed the trace. */
+    UASSERT_EQ(1, (int)vm.in_watcher_install);
+    UASSERT_EQ(0, (int)vm.trace_overflow);
+    UASSERT_EQ(0, (int)vm.trace_read_set_count);
+
+    /* Clean up (T37 resets in_watcher_install; here we do it manually). */
+    vm.in_watcher_install = 0;
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Suite entry
+ * =================================================================== */
+
+void
+test_install_trace_suite(void)
+{
+    printf("test_install_trace\n");
+    utest_run("trace_records_slot_reads_during_install",
+              trace_records_slot_reads_during_install);
+    utest_run("trace_deduplicates_same_receiver",
+              trace_deduplicates_same_receiver);
+    utest_run("trace_overflow_sets_flag_and_caps",
+              trace_overflow_sets_flag_and_caps);
+    utest_run("trace_disabled_when_flag_clear",
+              trace_disabled_when_flag_clear);
+    utest_run("install_arms_trace_fields",
+              install_arms_trace_fields);
+}

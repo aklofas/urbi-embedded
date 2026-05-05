@@ -74,6 +74,15 @@ install_watcher_runtime(
     /* Safety: install must not be re-entered from the install path itself. */
     URBI_INTERNAL_ASSERT(vm->in_watcher_install == 0);
 
-    /* Trace + alloc + insert: T36–T39. */
+    /* Phase 2 (spec #2 §7.3): arm the OP_GETSLOT read-set trace.
+     * in_watcher_install gates the UNLIKELY probe in the dispatch loop.
+     * trace_overflow and trace_read_set_count are reset here so the probe
+     * starts collecting from a clean slate for this install invocation. */
+    vm->in_watcher_install   = 1;
+    vm->trace_overflow       = 0;
+    vm->trace_read_set_count = 0;
+
+    /* Phase 3+4 (trace run + overflow/fault routing): T37.
+     * Phase 5 (pool alloc + linked-list insert): T38–T39. */
     return URBI_INSTALL_OK;
 }

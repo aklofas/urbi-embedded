@@ -1362,6 +1362,29 @@ dispatch:
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
 
+            /* Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
+             * tracing reads, record the receiver's GC cell.
+             * UNLIKELY: this branch is taken only during install-time cond eval
+             * — never on the normal hot path.  Zero overhead when bit is clear. */
+            if (UNLIKELY(vm->in_watcher_install)) {
+                UCell *cell = (UCell *)recv;
+                bool already_present = false;
+                size_t _ti;
+                for (_ti = 0; _ti < (size_t)vm->trace_read_set_count; _ti++) {
+                    if (vm->trace_read_set[_ti] == cell) {
+                        already_present = true;
+                        break;
+                    }
+                }
+                if (!already_present) {
+                    if ((size_t)vm->trace_read_set_count < (size_t)URBI_WATCHER_READSET_MAX) {
+                        vm->trace_read_set[vm->trace_read_set_count++] = cell;
+                    } else {
+                        vm->trace_overflow = 1;
+                    }
+                }
+            }
+
             /* Fast path: linear scan over ic->n entries. */
             for (uint8_t k = 0; k < ic->n; k++) {
                 if (ic->recv_shapes[k]  == recv->shape

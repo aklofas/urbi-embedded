@@ -107,6 +107,7 @@ extern void test_emit_diag_suite(void);
 extern void test_emit_watcher_suite(void);
 extern void test_install_skeleton_suite(void);
 extern void test_resolve_owning_tag_suite(void);
+extern void test_install_trace_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -190,6 +191,7 @@ static const struct suite_entry suites[] = {
     {"emit_watcher",               test_emit_watcher_suite},
     {"install_skeleton",           test_install_skeleton_suite},
     {"resolve_owning_tag",         test_resolve_owning_tag_suite},
+    {"install_trace",              test_install_trace_suite},
     /* Add new suites here as test files are added. */
 };
 
