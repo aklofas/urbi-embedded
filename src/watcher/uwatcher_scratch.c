@@ -5,13 +5,23 @@
  * pattern (src/uvm.c:2112) but scoped to single-closure cond evaluation
  * with bounded dispatch budget and no-yield contract.
  *
+ * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
+ * All allocation goes through vm->alloc_fn.
+ *
  * Used by:
  *   - run_closure_on_scratch_frame_with_result (install path, uwatcher_install.c)
  *   - invoke_condition_closure                  (eval path, uwatcher_eval.c)
  *
  * Out of scope (follow-up): invoke_body_inline, invoke_onleave_inline,
  * watcher drain onleave, event sync-emit body.  All four can wire to this
- * same helper as small replacements at their respective call sites. */
+ * same helper as small replacements at their respective call sites.
+ *
+ * **Limitation:** strand.module is left NULL.  The dispatch loop dereferences
+ * s->module in OP_CLOSURE (nested function literal) and in some type-error
+ * formatters.  Cond closures with nested function literals are unsupported
+ * at v0.5.1; typical conds (x > 5, obj.slot != nil, 1 + 1) don't trip this.
+ * Plumbing module through requires a UProto.module back-pointer or wrapping
+ * UClosure with the owning module reference — out of scope for this patch. */
 
 #include "watcher/uwatcher.h"
 #include "uvm.h"
@@ -37,6 +47,11 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
     *out_result = nil;
     *out_threw  = 0;
 
+    /* Reset last_error at entry so a stale error from a prior VM operation
+     * doesn't get misread as a cond throw.  Mirrors uvm_run's entry pattern. */
+    vm->last_error = UVM_OK;
+    vm->last_errmsg[0] = '\0';
+
     /* NULL closure: graceful nil — matches the prior stub contract for
      * watchers installed without a condition. */
     if (closure == NULL) return 0;
@@ -61,6 +76,9 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
         }
         return -1;
     }
+
+    /* strand.module is intentionally left NULL — see the function docstring
+     * for the OP_CLOSURE limitation.  Typical cond closures don't trigger it. */
 
     /* Initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
@@ -120,7 +138,7 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
         strand.realm = NULL;
     }
 
-    /* Teardown sequence: mirrors uvm_run's tail block (src/uvm.c:2251-2305).
+    /* Teardown sequence: adapted from uvm_run's tail block (unlink reordered to before free) (src/uvm.c:2251-2305).
      * closure_list and closed_cells are nulled before ustrand_destroy to
      * avoid double-free on the same list if ustrand_destroy were to walk them
      * (it doesn't at v1.0, but belt-and-suspenders matches uvm_run). */
