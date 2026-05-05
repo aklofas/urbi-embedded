@@ -188,10 +188,21 @@ void drain_pending_onleave_queue(struct UVM *vm);
 
 /* === Body spawn (uwatcher_spawn.c) === */
 
-/* spawn_body_coroutine: called by watcher_eval_dirty when a watcher fires.
- * M3 stub: invokes vm->test_watcher_fire_hook if non-NULL; otherwise no-op.
- * M5 implementation: pool-alloc body strand, inherit ambient tag chain,
- * bind w->body as entry closure, call urbi_strand_start. Per spec §6.8. */
+/* do_spawn_body_coroutine: M5 real implementation (spec #1 §5.3 steps 2-6).
+ *   Allocates body strand via urbi_strand_create, attaches owning_tag when
+ *   distinct from realm->tag, arms via urbi_strand_arm_from_closure, wires
+ *   back-pointers, and enqueues via urbi_strand_start.  Three OOM points
+ *   (strand alloc / ambient overflow / stack alloc) all log URBI_LOG_WARN and
+ *   tear down any partial state — watcher remains installed for future fires.
+ *   fire_context is NULL at M5 baseline; spec #2 wires patterns later.
+ *   Exhaust gate arrives in T26. */
+void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
+                               void *fire_context);
+
+/* spawn_body_coroutine: two-arg adapter called by watcher_eval_dirty.
+ * M5: delegates to do_spawn_body_coroutine when w->body != NULL.
+ *     Falls back to vm->test_watcher_fire_hook when body is NULL
+ *     (condition-only watchers used in unit tests). */
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
 /* === GC root provider (uwatcher_gc.c) === */

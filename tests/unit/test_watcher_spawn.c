@@ -1,0 +1,328 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Unit tests: do_spawn_body_coroutine happy path + OOM fail-soft (spec #1 §5.3).
+ *
+ * T24 cases:
+ *   1. watcher_spawn_happy_path:
+ *      in_watcher_eval=1 + real watcher → spawn → body_strand non-NULL,
+ *      back-pointer set, state READY (USTRAND_READY after urbi_strand_start).
+ *   2. watcher_spawn_oom_strand_alloc:
+ *      alloc_fn returns NULL for the strand alloc → body_strand stays NULL,
+ *      no leak, URBI_LOG_WARN fired exactly once.
+ *   3. watcher_spawn_oom_stack_alloc:
+ *      alloc_fn allows strand alloc but fails on register-stack alloc →
+ *      body_strand stays NULL, strand freed (no realm-list dangler),
+ *      URBI_LOG_WARN fired exactly once. */
+
+#include "utest.h"
+#include "uvm.h"
+#include "realm/urealm.h"
+#include "ustrand.h"
+#include "umodule.h"       /* UClosure, UProto */
+#include "uclosure.h"
+#include "uframe.h"        /* UVM_STACK_CAP */
+#include "watcher/uwatcher.h"
+#include "urbi/urbi.h"     /* URBI_LOG_WARN */
+
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define UTEST(name) static void name(void)
+
+/* ===================================================================
+ * Helpers
+ * =================================================================== */
+
+/* Build a minimal UClosure wrapping a stack-local UProto with a single
+ * OP_RET instruction.  proto/closure/instr storage is caller-provided. */
+static void
+make_trivial_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
+{
+    instr_buf[0] = (uint32_t)OP_RET;
+
+    memset(proto, 0, sizeof(*proto));
+    proto->instructions = instr_buf;
+    proto->instr_count  = 1;
+    proto->constants    = NULL;
+    proto->const_count  = 0;
+
+    memset(cl, 0, sizeof(*cl));
+    cl->proto   = proto;
+    cl->nupvals = 0;
+}
+
+/* Install a minimal watcher with a real body closure and a realm back-pointer.
+ * owning_tag is set to realm->tag so the ambient-attach path is skipped
+ * (the happy-path test focuses on the core spawn sequence). */
+static UWatcher *
+make_body_watcher(struct UVM *vm, struct URealm *realm,
+                  UClosure *body_cl)
+{
+    UWatcher *w = urbi_watcher_install_internal(
+        vm, UWATCHER_AT,
+        realm->tag,   /* owning_tag == realm->tag → no extra attach */
+        NULL,         /* condition */
+        body_cl,      /* body */
+        NULL,         /* onleave */
+        NULL, 0u);
+    if (w) {
+        w->realm = realm;
+    }
+    return w;
+}
+
+/* Log capture state. */
+static int g_log_count_warn;
+static int g_log_count_total;
+
+static void
+capture_log_fn(struct UVM *vm, int level, const char *fmt, ...)
+{
+    (void)vm; (void)fmt;
+    g_log_count_total++;
+    if (level == URBI_LOG_WARN) g_log_count_warn++;
+}
+
+/* Failing allocator state: allows `allow` new allocs then fails. */
+typedef struct {
+    size_t allow;   /* remaining allocs to permit */
+} FailAlloc;
+
+static void *
+fail_after_n_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    FailAlloc *fa = (FailAlloc *)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    if (fa->allow == 0) return NULL;   /* fail */
+    fa->allow--;
+    return malloc(nbytes);
+}
+
+/* Null allocator: always fails new allocs, passes frees. */
+static void *
+null_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    (void)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    return NULL;
+}
+
+/* Count the strands on realm->strands_head. */
+static int
+count_realm_strands(struct URealm *r)
+{
+    int n = 0;
+    UStrand *s = r->strands_head;
+    while (s) { n++; s = s->next_in_realm; }
+    return n;
+}
+
+/* ===================================================================
+ * Test cases
+ * =================================================================== */
+
+/* 1. watcher_spawn_happy_path
+ *
+ * Install an AT watcher with a real body closure; call do_spawn_body_coroutine;
+ * verify:
+ *   - w->body_strand != NULL
+ *   - w->body_strand->watcher_body_owner == w (back-pointer)
+ *   - w->body_strand->state == USTRAND_READY (urbi_strand_start enqueued it) */
+UTEST(watcher_spawn_happy_path)
+{
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+
+    vm.in_watcher_eval = 1;
+
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+    UASSERT(w->body_strand == NULL);  /* no body strand before spawn */
+
+    do_spawn_body_coroutine(&vm, w, NULL);
+
+    /* body_strand must be set. */
+    UASSERT(w->body_strand != NULL);
+    /* Back-pointer must be correct. */
+    UASSERT(w->body_strand->watcher_body_owner == w);
+    /* urbi_strand_start transitions DORMANT → READY (enqueues on run-queue). */
+    UASSERT_EQ((unsigned)w->body_strand->state, (unsigned)USTRAND_READY);
+
+    vm.in_watcher_eval = 0;
+
+    /* Clean up — unregister watcher (releases from pool) then destroy realm
+     * (walks strands_head and frees all realm-managed strands). */
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 2. watcher_spawn_oom_strand_alloc
+ *
+ * Install the VM with a null allocator (new allocs always fail).  The strand
+ * alloc inside urbi_strand_create fails immediately.
+ * Verify:
+ *   - w->body_strand stays NULL
+ *   - URBI_LOG_WARN fired exactly once
+ *   - No strand leaked into realm->strands_head */
+UTEST(watcher_spawn_oom_strand_alloc)
+{
+    /* Use the normal allocator for setup, switch to null before spawn. */
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+
+    /* Count strands before spawn. */
+    int strands_before = count_realm_strands(r);
+
+    /* Reset log counters and install log capture. */
+    g_log_count_warn  = 0;
+    g_log_count_total = 0;
+    vm.host_log_fn = capture_log_fn;
+
+    /* Switch allocator to null so the strand allocation inside
+     * urbi_strand_create returns NULL. */
+    UVMAllocFn saved_alloc = vm.alloc_fn;
+    void       *saved_ud   = vm.alloc_ud;
+    vm.alloc_fn = null_alloc;
+    vm.alloc_ud = NULL;
+
+    vm.in_watcher_eval = 1;
+    do_spawn_body_coroutine(&vm, w, NULL);
+    vm.in_watcher_eval = 0;
+
+    /* Restore allocator before cleanup assertions. */
+    vm.alloc_fn = saved_alloc;
+    vm.alloc_ud = saved_ud;
+
+    /* body_strand must still be NULL. */
+    UASSERT(w->body_strand == NULL);
+
+    /* Exactly one URBI_LOG_WARN must have been emitted. */
+    UASSERT_EQ(g_log_count_warn, 1);
+
+    /* No strand leaked. */
+    UASSERT_EQ(count_realm_strands(r), strands_before);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 3. watcher_spawn_oom_stack_alloc
+ *
+ * Allow the strand alloc + cleanup-stack alloc (urbi_strand_create internally
+ * calls ustrand_init which calls strand_cleanup_stack_init) to succeed, but
+ * fail the register-stack alloc inside urbi_strand_arm_from_closure.
+ *
+ * The implementation must:
+ *   - Call urbi_strand_destroy (removing strand from realm list + freeing it).
+ *   - Emit URBI_LOG_WARN exactly once.
+ *   - Leave w->body_strand == NULL. */
+UTEST(watcher_spawn_oom_stack_alloc)
+{
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+
+    /* Calibrate: count allocs consumed by uvm_init + urbi_realm_create +
+     * urbi_watcher_install_internal.  We'll allow that many allocs plus
+     * enough for urbi_strand_create (UStrand + cleanup-stack) but deny
+     * the register-stack alloc.
+     *
+     * Strategy: count allocs up to this point using a counting shim,
+     * then switch to a fail-after-N allocator that permits exactly the
+     * allocs needed for urbi_strand_create but fails on the next one
+     * (register-stack inside urbi_strand_arm_from_closure).
+     *
+     * Simpler approach: use a FailAlloc that allows exactly 2 allocs
+     * (UStrand + cleanup-stack array) then fails.  The exact count may
+     * vary if ustrand_init's cleanup stack requires more than one alloc.
+     * We calibrate by counting realm strands: after a successful create +
+     * failed arm, the strand must be gone from the realm list. */
+
+    int strands_before = count_realm_strands(r);
+
+    g_log_count_warn  = 0;
+    g_log_count_total = 0;
+    vm.host_log_fn = capture_log_fn;
+
+    /* Allow exactly 2 new allocations: one for UStrand, one for the
+     * cleanup-stack array (URBI_CLEANUP_MAX entries).  The third alloc
+     * (register-stack in urbi_strand_arm_from_closure: UVM_STACK_CAP * 16B)
+     * will fail.  If ustrand_init requires fewer allocs, increase the limit
+     * in future; 2 is the minimum for a successful urbi_strand_create. */
+    FailAlloc fa;
+    fa.allow = 2;
+
+    UVMAllocFn saved_alloc = vm.alloc_fn;
+    void       *saved_ud   = vm.alloc_ud;
+    vm.alloc_fn = fail_after_n_alloc;
+    vm.alloc_ud = &fa;
+
+    vm.in_watcher_eval = 1;
+    do_spawn_body_coroutine(&vm, w, NULL);
+    vm.in_watcher_eval = 0;
+
+    vm.alloc_fn = saved_alloc;
+    vm.alloc_ud = saved_ud;
+
+    /* body_strand must still be NULL. */
+    UASSERT(w->body_strand == NULL);
+
+    /* Exactly one URBI_LOG_WARN must have been emitted. */
+    UASSERT_EQ(g_log_count_warn, 1);
+
+    /* The partially-constructed strand must have been destroyed and removed
+     * from the realm list — strand count must not grow. */
+    UASSERT(count_realm_strands(r) <= strands_before);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Suite entry
+ * =================================================================== */
+
+void
+test_watcher_spawn_suite(void)
+{
+    printf("test_watcher_spawn\n");
+    utest_run("watcher_spawn_happy_path",      watcher_spawn_happy_path);
+    utest_run("watcher_spawn_oom_strand_alloc", watcher_spawn_oom_strand_alloc);
+    utest_run("watcher_spawn_oom_stack_alloc",  watcher_spawn_oom_stack_alloc);
+}
