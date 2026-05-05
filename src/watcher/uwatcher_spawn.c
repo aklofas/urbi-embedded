@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher body spawn — M5 implementation (spec #1 §5.3).
+/* Watcher body spawn — M5 implementation (spec #1 §5.2–§5.3).
  *
  * do_spawn_body_coroutine: the real three-step spawn sequence.
  *   1. urbi_strand_create — OOM → log warn, return; watcher stays installed.
@@ -12,19 +12,26 @@
  * fire_context is the value / pattern context from the event that triggered
  * this spawn.  M5 baseline always passes NULL; spec #2 wires patterns later.
  *
- * spawn_body_coroutine: the two-arg adapter called by watcher_eval_dirty.
- *   M5 replaces the M3 stub (test_watcher_fire_hook delegation) with a call to
- *   do_spawn_body_coroutine.  The fire-hook delegation is removed; tests that
- *   need hook-based fire observation should either install a real watcher or
- *   use the spawn path directly.  Existing tests that relied on the hook for
- *   edge/level counting continue to work because watcher_eval_dirty still calls
- *   spawn_body_coroutine and the tests don't install real body closures. */
+ * spawn_body_coroutine: eval-pass entry (spec #1 §5.2).
+ *   Called by watcher_eval_dirty when condition fires and w->body != NULL.
+ *   In URBI_DEBUG builds, asserts: in_watcher_eval == 1 (eval-pass contract),
+ *   AT/WHENEVER mode, ACTIVE flag, no PENDING_UNREGISTER, body and realm non-NULL.
+ *   The test_watcher_fire_hook delegation for body-less watchers has moved to
+ *   watcher_eval_dirty (test-only path; watcher_eval_dirty only calls this
+ *   function when w->body != NULL).
+ *
+ * respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+ *   Called when a body strand reaches DEAD and PENDING_REFIRE is set.
+ *   Shares do_spawn_body_coroutine but omits the in_watcher_eval assert
+ *   (completion path runs outside eval, after strand-DEAD notification).
+ *   Static in production builds; tests reach it via extern declaration. */
 
 #include "watcher/uwatcher.h"
 #include "ustrand.h"
 #include "uvm.h"
 #include "realm/urealm.h"  /* URealm — needed for w->realm->tag comparison */
 #include "urbi/urbi.h"     /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
+#include "umacros.h"       /* URBI_INTERNAL_ASSERT */
 
 void
 do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
@@ -82,18 +89,34 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
 void
 spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 {
+#ifdef URBI_DEBUG
     URBI_ASSERT_NOT_ISR(vm);
+    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(w != NULL);
+    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT || w->mode == UWATCHER_WHENEVER);
+    URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_ACTIVE) != 0);
+    URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) == 0);
+    URBI_INTERNAL_ASSERT(w->body != NULL);
+    URBI_INTERNAL_ASSERT(w->realm != NULL);
+#endif
+    do_spawn_body_coroutine(vm, w, NULL);
+}
 
-    /* M5: delegate to the real spawn path when a body closure is present.
-     * NULL body → no-op (watcher installed with body=NULL is legal for
-     * condition-monitoring uses). */
-    if (w->body != NULL) {
-        do_spawn_body_coroutine(vm, w, NULL);
-        return;
-    }
-
-    /* No body closure — fall back to the test fire hook if installed. */
-    if (vm->test_watcher_fire_hook != NULL) {
-        vm->test_watcher_fire_hook(vm, w);
-    }
+/* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+ * Not in the public include/urbi/ API; tests reach it via extern declaration
+ * in uwatcher.h or directly.  Not static — must be linkable from test code. */
+void
+respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
+{
+#ifdef URBI_DEBUG
+    URBI_ASSERT_NOT_ISR(vm);
+    /* No in_watcher_eval assert — completion path runs outside eval. */
+    URBI_INTERNAL_ASSERT(w != NULL);
+    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT || w->mode == UWATCHER_WHENEVER);
+    URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_ACTIVE) != 0);
+    URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) == 0);
+    URBI_INTERNAL_ASSERT(w->body != NULL);
+    URBI_INTERNAL_ASSERT(w->realm != NULL);
+#endif
+    do_spawn_body_coroutine(vm, w, NULL);
 }

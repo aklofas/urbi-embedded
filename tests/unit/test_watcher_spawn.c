@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: do_spawn_body_coroutine happy path + OOM fail-soft (spec #1 §5.3).
+/* Unit tests: do_spawn_body_coroutine happy path + OOM fail-soft (spec #1 §5.3),
+ * and spawn / respawn entry-point contract asserts (spec #1 §5.2, T25).
  *
  * T24 cases:
  *   1. watcher_spawn_happy_path:
@@ -11,7 +12,13 @@
  *   3. watcher_spawn_oom_stack_alloc:
  *      alloc_fn allows strand alloc but fails on register-stack alloc →
  *      body_strand stays NULL, strand freed (no realm-list dangler),
- *      URBI_LOG_WARN fired exactly once. */
+ *      URBI_LOG_WARN fired exactly once.
+ *
+ * T25 cases (URBI_DEBUG only):
+ *   4. watcher_spawn_rejects_at_sync:
+ *      AT_SYNC mode → spawn_body_coroutine assert fires.
+ *   5. watcher_respawn_skips_eval_assert:
+ *      respawn_body_coroutine with in_watcher_eval=0 succeeds. */
 
 #include "utest.h"
 #include "uvm.h"
@@ -27,6 +34,35 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+
+#ifdef URBI_DEBUG
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+/* EXPECT_ABORT: assert that expr causes abort (via assert() failure).
+ * Uses fork+waitpid: child executes expr; parent verifies abnormal exit.
+ * Only meaningful in URBI_DEBUG builds where URBI_INTERNAL_ASSERT is assert(). */
+#define EXPECT_ABORT(expr)                                                   \
+    do {                                                                     \
+        utest_checks++;                                                      \
+        pid_t _pid = fork();                                                 \
+        if (_pid == 0) {                                                     \
+            (expr);                                                          \
+            _exit(0); /* should not reach — abort expected */                \
+        }                                                                    \
+        int _st = 0;                                                         \
+        waitpid(_pid, &_st, 0);                                              \
+        int _aborted = WIFSIGNALED(_st) ||                                   \
+                       (WIFEXITED(_st) && WEXITSTATUS(_st) != 0);           \
+        if (!_aborted) {                                                     \
+            utest_failures++;                                                \
+            printf("  FAIL: %s:%d: " #expr " did not abort\n",              \
+                   __FILE__, __LINE__);                                      \
+            fflush(stdout);                                                  \
+        }                                                                    \
+    } while (0)
+#endif /* URBI_DEBUG */
 
 #define UTEST(name) static void name(void)
 
@@ -315,6 +351,84 @@ UTEST(watcher_spawn_oom_stack_alloc)
 }
 
 /* ===================================================================
+ * T25 cases (spec #1 §5.2 entry-point contract)
+ * =================================================================== */
+
+#ifdef URBI_DEBUG
+
+/* 4. watcher_spawn_rejects_at_sync
+ *
+ * AT_SYNC bodies run inline on the scratch frame and must never go through
+ * spawn_body_coroutine.  In URBI_DEBUG builds the mode assert fires. */
+UTEST(watcher_spawn_rejects_at_sync)
+{
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+
+    /* Override mode to AT_SYNC after install. */
+    w->mode = UWATCHER_AT_SYNC;
+    vm.in_watcher_eval = 1;
+
+    /* AT_SYNC mode must trigger the mode assert inside spawn_body_coroutine. */
+    EXPECT_ABORT(spawn_body_coroutine(&vm, w));
+
+    vm.in_watcher_eval = 0;
+
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+/* 5. watcher_respawn_skips_eval_assert
+ *
+ * respawn_body_coroutine is the completion-path entry: it must succeed even
+ * when in_watcher_eval == 0 (the eval guard applies only to spawn_body_coroutine).
+ * Verify body_strand is set after a successful respawn call. */
+UTEST(watcher_respawn_skips_eval_assert)
+{
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    uvm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+
+    /* in_watcher_eval == 0: this is the completion path. */
+    UASSERT(vm.in_watcher_eval == 0);
+
+    respawn_body_coroutine(&vm, w);
+
+    /* Spawn must have succeeded — body_strand non-NULL. */
+    UASSERT(w->body_strand != NULL);
+
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    uvm_destroy(&vm);
+}
+
+#endif /* URBI_DEBUG */
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -325,4 +439,8 @@ test_watcher_spawn_suite(void)
     utest_run("watcher_spawn_happy_path",      watcher_spawn_happy_path);
     utest_run("watcher_spawn_oom_strand_alloc", watcher_spawn_oom_strand_alloc);
     utest_run("watcher_spawn_oom_stack_alloc",  watcher_spawn_oom_stack_alloc);
+#ifdef URBI_DEBUG
+    utest_run("watcher_spawn_rejects_at_sync",     watcher_spawn_rejects_at_sync);
+    utest_run("watcher_respawn_skips_eval_assert",  watcher_respawn_skips_eval_assert);
+#endif
 }

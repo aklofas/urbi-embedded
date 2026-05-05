@@ -95,7 +95,14 @@ watcher_eval_dirty(struct UVM *vm)
                 break;
         }
 
-        if (fire) spawn_body_coroutine(vm, w);
+        if (fire) {
+            if (w->body != NULL) {
+                spawn_body_coroutine(vm, w);
+            } else if (vm->test_watcher_fire_hook != NULL) {
+                /* Test-only path: body-less watcher; fire hook observes the fire. */
+                vm->test_watcher_fire_hook(vm, w);
+            }
+        }
     }
 
     vm->in_watcher_eval = 0;

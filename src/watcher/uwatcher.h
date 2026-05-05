@@ -199,11 +199,19 @@ void drain_pending_onleave_queue(struct UVM *vm);
 void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
                                void *fire_context);
 
-/* spawn_body_coroutine: two-arg adapter called by watcher_eval_dirty.
- * M5: delegates to do_spawn_body_coroutine when w->body != NULL.
- *     Falls back to vm->test_watcher_fire_hook when body is NULL
- *     (condition-only watchers used in unit tests). */
+/* spawn_body_coroutine: eval-pass entry called by watcher_eval_dirty.
+ * Precondition: w->body != NULL (watcher_eval_dirty only calls this when body
+ * is set; body-less watchers use test_watcher_fire_hook directly in eval).
+ * In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER mode,
+ * ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+
+/* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+ * Called when body strand reaches DEAD and PENDING_REFIRE is set.
+ * No in_watcher_eval assert (runs outside eval at strand-DEAD notification).
+ * Not in the public include/urbi/ API; declared here for internal callers
+ * and test code (reachable via this header or an explicit extern declaration). */
+void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
 /* === GC root provider (uwatcher_gc.c) === */
 
