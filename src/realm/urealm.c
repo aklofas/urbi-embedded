@@ -20,7 +20,8 @@
 #include "utag.h"
 #include "uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
-#include "ustrand.h"  /* urbi_strand_destroy, UStrand.next_in_realm */
+#include "ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
+#include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
 
 /* === Zero-fill helper === */
 
@@ -263,11 +264,11 @@ urealm_teardown_all(struct UVM *vm)
  *
  * GC root provider: enumerates all UValues reachable from every Realm in
  * vm->realms_head linked list.  For each Realm:
- *   1. realm->reflective (UVAL_NIL at M3; UValue slot still walked).
+ *   1. realm->reflective (UVAL_NIL at M5; UValue slot still walked).
  *   2. namespace entries (via unamespace_walk_roots).
- *   3. realm->tag — UTag is host-managed at M3 (vm->alloc_fn, not urbi_gc_alloc).
- *      GC walker enrollment for UTag is deferred to M5/M6 when UVAL_TAG is added
- *      and UTag migrates to urbi_gc_alloc. */
+ *   3. realm->tag — GC-managed at M5 (T18: urbi_gc_alloc, UTYPE_TAG).
+ *      Shaded via gc_shade_gray so the UTYPE_TAG walker runs and yields
+ *      name + enter_event + leave_event + member_watchers_head chain. */
 
 void
 realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
@@ -284,9 +285,9 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         /* 2. namespace bindings. */
         unamespace_walk_roots(r->bindings, cb, vm, ctx);
 
-        /* 3. tag — host-managed at M3; GC enrollment deferred to M5/M6.
-         *    UTag.name (UVAL_NIL at M3) will need to be walked once M6
-         *    populates it and UTag migrates to urbi_gc_alloc. */
-        (void)r->tag;
+        /* 3. tag — GC-managed at M5 T18; shade so the UTag walker runs. */
+        if (r->tag != NULL) {
+            gc_shade_gray(vm, (UCell *)r->tag);
+        }
     }
 }

@@ -44,9 +44,10 @@
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
+#include "utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
-#include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent at_watchers chain */
+#include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "uvm.h"
 
 /* === walk_uobject ===
@@ -292,6 +293,46 @@ walk_uevent(struct UVM *vm, void *payload,
     }
 }
 
+/* === walk_utag (T18 — spec #3 §3.4) ===
+ *
+ * Yields name (UValue payload via cb) and shades each UWatcher in the
+ * member_watchers_head chain (direct UCell* walk — same pattern as
+ * walk_uevent above).  Also shades enter_event and leave_event when
+ * non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
+ *
+ * member_strands_head (UCleanupEntry chain) is intentionally NOT walked:
+ * UStrands are root-walked separately via the realm hierarchy (M3 row 10 /
+ * GC roots spec §5.3).  Walking them here would double-visit strands. */
+static void
+walk_utag(struct UVM *vm, void *payload,
+          UGcRootCallback cb, void *ctx)
+{
+    UTag *t = (UTag *)((UCell *)payload - 1);
+
+    /* name is a UValue payload; route through cb so the mark callback
+     * applies the heap-bearing check and shades the underlying cell if any. */
+    cb(vm, &t->name, ctx);
+
+    /* enter_event and leave_event are UEvent* (direct UCell* walk). */
+    if (t->enter_event != NULL) {
+        gc_shade_gray(vm, (UCell *)t->enter_event);
+    }
+    if (t->leave_event != NULL) {
+        gc_shade_gray(vm, (UCell *)t->leave_event);
+    }
+
+    /* Walk the member_watchers_head intrusive list.  UWatcher embeds UCell
+     * as its first member (type_tag at offset 0), so the cast is well-defined
+     * (same as the UObject/UShape walkers above). */
+    {
+        UWatcher *w = t->member_watchers_head;
+        while (w != NULL) {
+            gc_shade_gray(vm, (UCell *)w);
+            w = w->next_in_tag;
+        }
+    }
+}
+
 /* === Static UType descriptors ===
  *
  * payload_size is set to 0 (variable / not pinned at this task) for all
@@ -404,6 +445,15 @@ static const UType type_uevent = {
     .destroy       = NULL,
 };
 
+static const UType type_utag = {
+    .type_tag      = UTYPE_TAG,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UTag",
+    .walk_payload  = walk_utag,
+    .destroy       = NULL,
+};
+
 /* === urbi_object_builtin_types_init ===
  *
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
@@ -424,4 +474,5 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
     vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
+    vm->type_table[UTYPE_TAG]             = (UType *)&type_utag;
 }

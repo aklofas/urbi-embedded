@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UTag lifecycle + ambient-tag scope lookup.
- * Row 11 / T29.
+ * Row 11 / T29; GC-promoted at M5 T18.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
- * Allocation uses vm->alloc_fn (realloc semantics).
+ * Allocation uses urbi_gc_alloc (GC-managed from birth, M5 T18).
  * Zero-fill initializes each field explicitly.
  * Assertions use URBI_INTERNAL_ASSERT from umacros.h. */
 
@@ -12,32 +12,34 @@
 #include "ustrand.h"
 #include "uvm.h"
 #include "gc/ugc.h"       /* UTYPE_TAG */
-#include "urbi/urbi.h"      /* URBI_ASSERT_NOT_ISR */
+#include "urbi/gc.h"      /* urbi_gc_alloc */
+#include "urbi/urbi.h"    /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h"
 
 /* === utag_create ===
  *
- * Allocate a UTag via vm->alloc_fn and zero-initialize all fields.
- * type_tag and gc_byte are set explicitly so a future GC migration is a
- * single-line change: replace the alloc with urbi_gc_alloc and remove the
- * manual header init.
+ * Allocate a UTag via urbi_gc_alloc and zero-initialize payload fields.
+ * urbi_gc_alloc zeroes the whole allocation and sets gc_byte = current_white.
+ * We set the identity fields explicitly after allocation.
  *
  * Returns NULL on OOM. */
 
 UTag *
 utag_create(struct UVM *vm)
 {
-    UTag *tag;
+    UCell *c;
+    UTag  *tag;
 
     if (vm == NULL) return NULL;
     URBI_ASSERT_NOT_ISR(vm);
 
-    tag = (UTag *)vm->alloc_fn(NULL, sizeof(UTag), vm->alloc_ud);
-    if (tag == NULL) return NULL;
+    c = urbi_gc_alloc(vm, sizeof(UTag), UTYPE_TAG);
+    if (c == NULL) return NULL;
 
-    /* Explicit zero-init of every field (freestanding: no memset). */
+    tag = (UTag *)c;
+    /* urbi_gc_alloc zeroes the allocation and sets gc_byte = current_white.
+     * Set identity and payload fields explicitly. */
     tag->type_tag              = UTYPE_TAG;
-    tag->gc_byte               = 0;
     tag->pad0                  = 0;
     tag->flags                 = 0;
     tag->pad1[0]               = 0;
@@ -45,6 +47,8 @@ utag_create(struct UVM *vm)
     tag->pad1[2]               = 0;
     tag->member_strands_head   = NULL;
     tag->member_watchers_head  = NULL;
+    tag->enter_event           = NULL;
+    tag->leave_event           = NULL;
     tag->name.kind             = UVAL_NIL;
     tag->name.v.i              = 0;
 
@@ -53,23 +57,27 @@ utag_create(struct UVM *vm)
 
 /* === utag_destroy ===
  *
- * Free a UTag via vm->alloc_fn.  NULL-safe.
- * Asserts that member lists are empty per §3.5 membership invariant:
- * all TAG_SCOPE entries must have been popped (and thus unlinked) before
- * the tag is destroyed. */
+ * Assert the §3.5 membership invariant (member lists must be empty).
+ * Does NOT free the UTag memory — the GC sweep reclaims GC-managed cells.
+ * NULL-safe.
+ *
+ * Called from OP_POP_TAG, urbi_realm_destroy, and rollback paths in
+ * urbi_realm_create and OP_PUSH_TAG.  All callers must ensure member lists
+ * are empty before calling (strand_unlink_from_tags / pending_onleave_queue
+ * handle unlinking). */
 
 void
 utag_destroy(struct UVM *vm, UTag *tag)
 {
     if (tag == NULL) return;
     if (vm == NULL) return;
-    URBI_ASSERT_NOT_ISR(vm);
 
     /* §3.5 invariant: member lists must be empty at destroy time. */
     URBI_INTERNAL_ASSERT(tag->member_strands_head  == NULL);
     URBI_INTERNAL_ASSERT(tag->member_watchers_head == NULL);
 
-    vm->alloc_fn(tag, 0, vm->alloc_ud);
+    /* GC-managed: the GC sweep reclaims the cell; no alloc_fn free here. */
+    (void)vm;
 }
 
 /* === urbi_strand_scope_tag ===
