@@ -34,7 +34,9 @@ typedef enum {
     URBI_ERR_EVENT_PAYLOAD_TOO_LARGE    = -7,   /* event ring payload exceeds capacity */
     URBI_ERR_EVENT_RING_FULL            = -8,   /* event ring is full (no space) */
     URBI_ERR_PROTECTED_SLOT             = -9,   /* write to a read-only native slot (T54) */
-    URBI_ERR_OUT_OF_MEMORY              = -10   /* allocator returned NULL in native code */
+    URBI_ERR_OUT_OF_MEMORY              = -10,  /* allocator returned NULL in native code */
+    URBI_ERR_CONST_SLOT_WRITE           = -11,  /* write to a const-flagged slot (T74) */
+    URBI_ERR_SLOT_NOT_FOUND             = -12   /* slot name not found on object (T74) */
 } UErrCode;
 
 /* === Row 7 control-transfer C API (M3 / T12) ===

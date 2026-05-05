@@ -1468,7 +1468,14 @@ dispatch:
             int rc = urbi_slot_get_slow(vm, recv, ic, &v);
             if (rc != 0) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: slot lookup failed");
+                {
+                    UDiagWriter _w;
+                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                    diag_write_cstr(&_w, "TypeError: GETSLOT: slot '");
+                    if (ic->name != NULL)
+                        diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "' not found");
+                }
                 HALT();
             }
             /* Inspect the just-filled IC entry to decide if a getter is
@@ -1544,7 +1551,14 @@ dispatch:
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
                         vm->last_error = UVM_TYPE_ERROR;
-                        vm_format_type_error_msg(vm, "SETSLOT: cannot write to constant slot");
+                        {
+                            UDiagWriter _w;
+                            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                            diag_write_cstr(&_w, "TypeError: SETSLOT: cannot write to constant slot '");
+                            if (ic->name != NULL)
+                                diag_write_cstr(&_w, (const char *)ic->name);
+                            diag_write_cstr(&_w, "'");
+                        }
                         HALT();
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
@@ -1575,7 +1589,14 @@ dispatch:
             int rc = urbi_slot_set_slow(vm, recv, ic, v);
             if (rc != 0) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: slot write failed (constant, OOM, or resolve overflow)");
+                {
+                    UDiagWriter _w;
+                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                    diag_write_cstr(&_w, "TypeError: SETSLOT: slot write failed for '");
+                    if (ic->name != NULL)
+                        diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
+                }
                 HALT();
             }
             uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
