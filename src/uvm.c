@@ -34,6 +34,7 @@
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 #include "object/umoduleinstance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
+#include "uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -909,7 +910,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_WAITUNTIL_INSTALL]     = &&label_OP_WAITUNTIL_INSTALL,
         [OP_AT_EVENT_INSTALL]      = &&label_OP_AT_EVENT_INSTALL,
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
-        [OP_GETSLOT_CHANGE_EVENT]  = &&label_m5_stub,
+        [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
         [OP_LOAD_REALM_GLOBAL]     = &&label_m5_stub,
     };
 
@@ -1909,6 +1910,59 @@ dispatch:
             NEXT();
         }
 
+        /* === T61: OP_GETSLOT_CHANGE_EVENT ===
+         *
+         * ABC: A = dst_reg, B = recv_reg, C = ic_index.
+         * R[A] := the UEvent for (R[B], ic_table[C].name), lazy-created.
+         * Non-object receiver: R[A] := NIL + URBI_LOG_WARN (fail-soft).
+         * Spec #4 §4.1. */
+        CASE(OP_GETSLOT_CHANGE_EVENT) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+
+            if (s->R[B].kind != (uint8_t)UVAL_OBJECT) {
+                if (vm->host_log_fn)
+                    vm->host_log_fn(vm, URBI_LOG_WARN,
+                        "slot-change install on non-object receiver");
+                UValue nil_val;
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                nil_val.v.i  = 0;
+                s->R[A] = nil_val;
+                NEXT();
+            }
+
+            /* Resolve IC table (same pattern as OP_GETSLOT). */
+            UProtoInstance *pi = NULL;
+            if (s->frame_count == 0) {
+                if (s->module_instance != NULL
+                    && s->module_instance->proto_instances != NULL) {
+                    pi = &s->module_instance->proto_instances->entries[0];
+                }
+            } else {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL) pi = cur_cl->proto_inst;
+            }
+            if (pi == NULL || pi->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT_CHANGE_EVENT: no IC table bound");
+                HALT();
+            }
+
+            UObject *obj   = (UObject *)s->R[B].v.p;
+            USymbol *name  = pi->ic_table[C].name;
+            UEvent  *e     = urbi_object_get_or_create_change_event(vm, obj, name);
+            if (e != NULL) {
+                s->R[A] = uvalue_from_event(e);
+            } else {
+                UValue nil_val;
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                nil_val.v.i  = 0;
+                s->R[A] = nil_val;
+            }
+            NEXT();
+        }
+
         /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
          * its entry in the dispatch table (computed-goto) or this switch arm.
          * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
@@ -1916,7 +1970,6 @@ dispatch:
         label_m5_stub:
 #else
         case OP_INVOKE:
-        case OP_GETSLOT_CHANGE_EVENT:
         case OP_LOAD_REALM_GLOBAL:
 #endif
         {
