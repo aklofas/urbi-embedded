@@ -6,16 +6,20 @@
  * T35: resolve_owning_tag — cleanup-stack walk.
  * T36: OP_GETSLOT trace probe arm (phase 2+3).
  * T37: run cond on scratch frame + overflow/fault routing (phase 3+4).
- * T38–T39: pool alloc, read-set wire, list insert. */
+ * T38: pool alloc + initialize watcher fields (spec #2 §7.4–§7.5).
+ * T39: read-set copy + bit-6 mark + linked-list insertion (spec #2 §7.6). */
 
 #include "watcher/uwatcher_install.h"
-#include "watcher/uwatcher.h"   /* UWATCHER_AT etc. */
+#include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "ustrand.h"            /* UStrand */
 #include "ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
 #include "umacros.h"            /* URBI_INTERNAL_ASSERT */
+#include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER */
+#include "gc/ugc.h"             /* UCell */
+#include "utag.h"               /* UTag, member_watchers_head */
 
 /* === resolve_owning_tag (spec #2 §7.2) ===
  *
@@ -37,6 +41,9 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
         if ((uint8_t)e->kind == (uint8_t)UCLEANUP_TAG_SCOPE)
             return e->owning_tag;
     }
+    /* Fallback: realm tag, or NULL if the strand has no realm (e.g. stack-init
+     * in tests or internal strands outside a realm). */
+    if (s->realm == NULL) return NULL;
     return s->realm->tag;
 }
 
@@ -90,14 +97,9 @@ install_watcher_runtime(
     struct UClosure *onleave,
     struct UStrand  *waiter)
 {
-    UValue cond_value = {0};
-    int    cond_threw = 0;
-
-    (void)s;
-    (void)mode;
-    (void)body;
-    (void)onleave;
-    (void)waiter;
+    UValue    cond_value = {0};
+    int       cond_threw = 0;
+    UWatcher *w;
 
     /* Re-entry guard: reject install from within scratch-frame eval.
      * This catches the case where a watcher condition closure itself
@@ -143,6 +145,74 @@ install_watcher_runtime(
         return URBI_INSTALL_TRACE_FAULT;
     }
 
-    /* Phase 5 (pool alloc + linked-list insert): T38–T39. */
+    /* Phase 5a (spec #2 §7.4): warn on empty read-set, then proceed.
+     * An inert watcher (one that never fires) is introspectable and can be
+     * stopped via its owning tag — no surprise no-op. */
+    if (vm->trace_read_set_count == 0) {
+        if (vm->host_log_fn)
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "watcher condition references no observable cells; will never fire");
+        /* Install proceeds — watcher is inert but introspectable. */
+    }
+
+    /* Phase 5b (spec #2 §7.4): pool-alloc the watcher record. */
+    w = uwatcher_pool_alloc(vm);
+    if (w == NULL) {
+        if (vm->host_log_fn)
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "watcher install: pool exhausted");
+        return URBI_INSTALL_OOM_POOL;
+    }
+
+    /* Phase 5c (spec #2 §7.5): initialize watcher fields.
+     * type_tag and gc_byte are set by uwatcher_pool_alloc.
+     * exhaust_policy defaults to URBI_EXHAUST_QUEUE (0) from pool_alloc;
+     * no VM-level default field exists yet — overwrite for clarity. */
+    w->mode             = mode;
+    w->exhaust_policy   = URBI_EXHAUST_QUEUE;
+    w->flags            = URBI_WATCHER_ACTIVE;
+    w->read_set_count   = (uint8_t)vm->trace_read_set_count;
+    w->owning_tag       = resolve_owning_tag(s);
+    w->realm            = s->realm;
+    w->condition        = cond;
+    w->body             = body;
+    w->onleave          = onleave;
+    w->waiter_strand    = waiter;
+    w->last_value_cache = cond_value;
+    w->body_strand      = NULL;
+
+    /* Phase 5d (read-set copy + bit-6 mark): T39.
+     * cells[] populated and UGC_HAS_WATCHER_OBSERVER set per cell in T39. */
+
+    /* Phase 5e (spec #2 §7.6): tail-append to active and tag member lists.
+     * Tail-append preserves FIFO registration order (row 12 §3.2 contract). */
+    w->next_active = NULL;
+    if (vm->active_watchers_head == NULL) {
+        vm->active_watchers_head = w;
+    } else {
+        UWatcher *tail = vm->active_watchers_head;
+        while (tail->next_active != NULL) tail = tail->next_active;
+        tail->next_active = w;
+    }
+
+    w->next_in_tag = NULL;
+    if (w->owning_tag != NULL) {
+        UWatcher *tail = w->owning_tag->member_watchers_head;
+        if (tail == NULL) {
+            w->owning_tag->member_watchers_head = w;
+        } else {
+            while (tail->next_in_tag != NULL) tail = tail->next_in_tag;
+            tail->next_in_tag = w;
+        }
+    }
+
+    vm->watcher_active_count++;
+
+    /* WAITUNTIL strand-block arrives in T40; non-WAITUNTIL returns OK here. */
+    if (mode == UWATCHER_WAITUNTIL) {
+        /* T40: park waiter_strand. For now, fall through to OK. */
+        (void)0;
+    }
+
     return URBI_INSTALL_OK;
 }

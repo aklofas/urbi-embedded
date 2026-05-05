@@ -138,6 +138,13 @@ int  uwatcher_pool_init(struct UVM *vm);
  * Must be called before urbi_gc_destroy in uvm_destroy. */
 void uwatcher_pool_destroy(struct UVM *vm);
 
+/* uwatcher_pool_alloc: pop one watcher entry from the pool freelist.
+ * Initialises type_tag, gc_byte, flags, and read_set_count to safe defaults.
+ * Returns NULL when the pool is exhausted.
+ * Not ISR-safe.  Caller is responsible for wiring all semantic fields and
+ * inserting the result into the active and tag member lists. */
+struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
+
 /* === Install / unregister (C-internal; not in public urbi headers at M3) ===
  *
  * T32 ships minimal stubs:
