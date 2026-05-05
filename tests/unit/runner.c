@@ -103,6 +103,7 @@ extern void test_watcher_lifecycle_suite(void);
 extern void test_watcher_gc_invariants_suite(void);
 extern void test_emit_function_literal_suite(void);
 extern void test_cond_side_effect_suite(void);
+extern void test_emit_diag_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -182,6 +183,7 @@ static const struct suite_entry suites[] = {
     {"watcher_gc_invariants",      test_watcher_gc_invariants_suite},
     {"emit_function_literal",      test_emit_function_literal_suite},
     {"cond_side_effect",           test_cond_side_effect_suite},
+    {"emit_diag",                  test_emit_diag_suite},
     /* Add new suites here as test files are added. */
 };
 

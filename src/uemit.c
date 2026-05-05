@@ -9,6 +9,9 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stddef.h>
+#if __STDC_HOSTED__
+#  include <stdio.h>              /* vsnprintf — emit_diag_warn message formatting */
+#endif
 
 /* Local zero-fill.  Replaces memset so uemit.c compiles without a hosted
    <string.h>.  volatile prevents GCC/Clang from recognizing the loop and
@@ -1955,6 +1958,49 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 }
 
 /* --- Public API --- */
+
+/* T32: Append a warn-level diagnostic to the emitter's buffer.
+ * Uses emit_alloc_for (module allocator) so that the buffer and message
+ * strings survive for the lifetime of the emit session.  On OOM the
+ * diagnostic is silently dropped — warns are never fatal. */
+void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...) {
+#if __STDC_HOSTED__
+    /* Grow the buffer if needed (doubling from 0 → 4 → 8 …). */
+    if (e->diag_count >= e->diag_cap) {
+        int new_cap = e->diag_cap > 0 ? e->diag_cap * 2 : 4;
+        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        UEmitDiag *nb = (UEmitDiag *)alloc(e->diag_buf,
+                                            (size_t)new_cap * sizeof(UEmitDiag),
+                                            e->module->alloc_ud);
+        if (nb == NULL) return;  /* OOM — drop silently */
+        e->diag_buf = nb;
+        e->diag_cap = new_cap;
+    }
+
+    /* Format the message into a fixed-size stack buffer then copy. */
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    (void)vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    /* Copy the message string using the module allocator. */
+    size_t msg_len = emit_strlen(buf);
+    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    char *msg = (char *)alloc(NULL, msg_len + 1u, e->module->alloc_ud);
+    if (msg == NULL) return;  /* OOM — drop silently */
+    emit_memcpy(msg, buf, msg_len + 1u);
+
+    e->diag_buf[e->diag_count].level   = UEMIT_DIAG_WARN;
+    e->diag_buf[e->diag_count].line    = n ? n->line : 0;
+    e->diag_buf[e->diag_count].col     = n ? n->col  : 0;
+    e->diag_buf[e->diag_count].message = msg;
+    e->diag_count++;
+#else
+    /* Freestanding: no vsnprintf available; diagnostics not supported. */
+    (void)e; (void)n; (void)fmt;
+#endif
+}
 
 void uemit_init(UEmitter *e, UModule *module, UArena *arena,
                 struct UVM *vm, const char *source_name) {

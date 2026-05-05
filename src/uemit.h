@@ -4,6 +4,7 @@
 #ifndef UEMIT_H
 #define UEMIT_H
 
+#include <stdarg.h>               /* va_list — emit_diag_warn variadic */
 #include <stdbool.h>
 #include <stddef.h>               /* ptrdiff_t */
 #include <stdint.h>
@@ -15,6 +16,15 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* --- emit-time diagnostic (warn/error) plumbing (T32) --- */
+
+typedef struct {
+    enum { UEMIT_DIAG_WARN = 0, UEMIT_DIAG_ERROR = 1 } level;
+    int         line;
+    int         col;
+    const char *message;    /* allocator-owned copy; freed by emit_diag_free_all */
+} UEmitDiag;
 
 /* --- emit-time errors (distinct from loader errors) --- */
 
@@ -66,6 +76,14 @@ typedef struct UEmitter {
                                       (pass-through semantics, spec §4.2) */
     UEmitError    error;           /* sticky: first error latches */
     struct UFuncState *current_fs; /* M2: current compilation function */
+
+    /* T32: warn-level diagnostic buffer.  emit_diag_warn appends here;
+     * never causes emit to fail.  diag_buf is module-allocator-owned and
+     * grows by doubling.  diag_count diagnostics are valid after
+     * uemit_finish; callers may walk diag_buf[0..diag_count-1]. */
+    UEmitDiag   *diag_buf;
+    int          diag_count;
+    int          diag_cap;
 } UEmitter;
 
 /* --- API --- */
@@ -120,6 +138,12 @@ void uemit_emit_loop_back_close(UEmitter *e);
 
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
+
+/* T32: Append a warn-level diagnostic to the emitter's diag buffer.
+ * n may be NULL (position will be 0,0).  fmt is a printf-style format
+ * string.  Does not set e->error; emit continues normally.
+ * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
+void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 
 /* --- M3 row 7 control-transfer opcode encoder helpers ---
  *
