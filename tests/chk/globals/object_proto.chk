@@ -1,0 +1,12 @@
+# Milestone: M5
+# Covers: spec #5 §1.4 — Object prototype resolves as a realm global.
+#         Identity check proves the slot is stable (same pointer returned
+#         on two successive reads).
+#
+# Full plan fixture was:
+#   echo(typeof(Object))   → "UObject"
+# typeof() and echo() are not implemented at M5 baseline; this variant
+# tests reachability and slot stability instead.
+
+(Object) == (Object)
+[00000000] true

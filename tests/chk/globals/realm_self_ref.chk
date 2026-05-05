@@ -1,0 +1,8 @@
+# Milestone: M5
+# Covers: spec #5 §1.4 — Realm self-reference slot; chunk-top var declaration
+#         binds to the realm global object; Realm.x reads it back.
+
+var x = 5
+[00000000] 5
+Realm.x
+[00000001] 5
