@@ -133,3 +133,74 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
     }
     e->waiters_head = NULL;
 }
+
+/* === c_event_waituntil (spec #3 §7.1) ===
+ *
+ * Tail-appends the calling strand to e->waiters_head, transitions to
+ * USTRAND_WAIT_EVENT (0x33), and decrements strand_runnable_count.
+ *
+ * Callers that dispatch via the bytecode loop (T53 opcode binding) MUST
+ * goto exit_strand after this call returns — the strand is now WAITING
+ * and must not consume further opcodes until woken by c_event_emit_*.
+ *
+ * On wake: c_event_emit_* deposits last_event_payload before calling
+ * sched_strand_make_runnable.  The T53 opcode binding reads the payload
+ * from s->last_event_payload after the strand resumes execution.
+ *
+ * Scratch-context guard: calling from within a watcher scratch or eval
+ * frame is undefined (can deadlock or corrupt scratch state).  Returns
+ * NIL + URBI_LOG_WARN if in_watcher_scratch or in_watcher_eval is set. */
+UValue
+c_event_waituntil(struct UVM *vm, struct UEvent *e)
+{
+    struct UStrand *s;
+    UValue payload;
+
+    URBI_ASSERT_NOT_ISR(vm);
+
+    /* Scratch / eval context guard (spec §7.1 safety note). */
+    if (vm->in_watcher_scratch || vm->in_watcher_eval) {
+        if (vm->host_log_fn)
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "waituntil from scratch context — undefined; returning NIL");
+        payload.kind = UVAL_NIL;
+        payload.v.i  = 0;
+        return payload;
+    }
+
+    s = vm->cur_strand;
+
+    /* Initialise wait fields. */
+    s->next_event_waiter  = NULL;
+    s->wait_event_target  = e;
+    s->last_event_payload.kind = UVAL_NIL;
+    s->last_event_payload.v.i  = 0;
+
+    /* Tail-append to waiters_head. */
+    if (!e->waiters_head) {
+        e->waiters_head = s;
+    } else {
+        struct UStrand *t = e->waiters_head;
+        while (t->next_event_waiter) t = t->next_event_waiter;
+        t->next_event_waiter = s;
+    }
+
+    /* Transition to WAIT_EVENT and decrement runnable count.
+     * USTRAND_WAIT_EVENT (0x33) uses sub-code 0x03 — distinct from
+     * USTRAND_REASON_EVENT (0x02) used by sched_strand_block.  Set directly
+     * to preserve the intended encoding.  Decrement count only when the
+     * strand is RUNNING (normal dispatch path) to avoid underflow.
+     * The urbi_step loop re-increments when it sees USTRAND_IS_WAITING(s)
+     * on return from dispatch_loop_until_yield, restoring balance. */
+    if (s->state == USTRAND_STATE_RUNNING && vm->strand_runnable_count > 0)
+        vm->strand_runnable_count--;
+    s->state = USTRAND_WAIT_EVENT;
+
+    /* Return last_event_payload (NIL at park time; meaningful value is
+     * deposited by c_event_emit_* on wake and read by the T53 opcode
+     * handler after the strand resumes at the next dispatch slice). */
+    payload = s->last_event_payload;
+    s->last_event_payload.kind = UVAL_NIL;
+    s->last_event_payload.v.i  = 0;
+    return payload;
+}

@@ -255,6 +255,12 @@ typedef struct UVM {
     uint8_t  pad_in_eval[2];           /* padding; zeroed */
     void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
 
+    /* --- spec #3 §7.1: currently-dispatching strand ---
+     * Set to the running strand by urbi_step before dispatch_loop_until_yield,
+     * cleared after.  Required by c_event_waituntil to locate the caller strand.
+     * NULL when no strand is dispatching (between urbi_step slices). */
+    struct UStrand *cur_strand;
+
     /* --- spec #2 §5.2 install-time trace state ---
      * in_watcher_install: set while evaluating cond during watcher install
      *   to enable OP_GETSLOT read-set tracing.  Mutually exclusive with
