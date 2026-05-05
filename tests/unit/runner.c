@@ -33,6 +33,7 @@ void utest_run(const char *name, void (*fn)(void)) {
 /* Test suite declarations — one per test_*.c file. */
 extern void test_version_suite(void);
 extern void test_lexer_suite(void);
+extern void test_lex_keywords_suite(void);
 extern void test_arena_suite(void);
 extern void test_parser_suite(void);
 extern void test_varint_suite(void);
@@ -93,6 +94,7 @@ struct suite_entry {
 static const struct suite_entry suites[] = {
     {"version",                    test_version_suite},
     {"lexer",                      test_lexer_suite},
+    {"lex_keywords",               test_lex_keywords_suite},
     {"arena",                      test_arena_suite},
     {"parser",                     test_parser_suite},
     {"varint",                     test_varint_suite},

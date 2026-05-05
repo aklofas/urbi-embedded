@@ -18,6 +18,8 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_COLON",
     "TOK_DOT", "TOK_ARROW",
     "TOK_KW_TRY", "TOK_KW_CATCH", "TOK_KW_FINALLY", "TOK_KW_THROW",
+    "TOK_KW_AT", "TOK_KW_WHENEVER", "TOK_KW_WAITUNTIL",
+    "TOK_KW_ONLEAVE", "TOK_KW_SYNC", "TOK_KW_ASYNC",
     "TOK_ERROR"
 };
 
@@ -306,21 +308,27 @@ typedef struct {
 /* Sorted by name for human readability; lookup is linear (15 entries —
  * faster than a hash for this size). */
 static const UKeyword KEYWORDS[] = {
-    { "catch",    5, TOK_KW_CATCH    },
-    { "closure",  7, TOK_KW_CLOSURE  },
-    { "else",     4, TOK_KW_ELSE     },
-    { "false",    5, TOK_KW_FALSE    },
-    { "finally",  7, TOK_KW_FINALLY  },
-    { "function", 8, TOK_KW_FUNCTION },
-    { "if",       2, TOK_KW_IF       },
-    { "lazy",     4, TOK_KW_LAZY     },
-    { "nil",      3, TOK_KW_NIL      },
-    { "return",   6, TOK_KW_RETURN   },
-    { "throw",    5, TOK_KW_THROW    },
-    { "true",     4, TOK_KW_TRUE     },
-    { "try",      3, TOK_KW_TRY      },
-    { "var",      3, TOK_KW_VAR      },
-    { "while",    5, TOK_KW_WHILE    }
+    { "async",     5, TOK_KW_ASYNC    },
+    { "at",        2, TOK_KW_AT       },
+    { "catch",     5, TOK_KW_CATCH    },
+    { "closure",   7, TOK_KW_CLOSURE  },
+    { "else",      4, TOK_KW_ELSE     },
+    { "false",     5, TOK_KW_FALSE    },
+    { "finally",   7, TOK_KW_FINALLY  },
+    { "function",  8, TOK_KW_FUNCTION },
+    { "if",        2, TOK_KW_IF       },
+    { "lazy",      4, TOK_KW_LAZY     },
+    { "nil",       3, TOK_KW_NIL      },
+    { "onleave",   7, TOK_KW_ONLEAVE  },
+    { "return",    6, TOK_KW_RETURN   },
+    { "sync",      4, TOK_KW_SYNC     },
+    { "throw",     5, TOK_KW_THROW    },
+    { "true",      4, TOK_KW_TRUE     },
+    { "try",       3, TOK_KW_TRY      },
+    { "var",       3, TOK_KW_VAR      },
+    { "waituntil", 9, TOK_KW_WAITUNTIL},
+    { "whenever",  8, TOK_KW_WHENEVER },
+    { "while",     5, TOK_KW_WHILE    }
 };
 #define KEYWORD_COUNT (sizeof KEYWORDS / sizeof KEYWORDS[0])
 
