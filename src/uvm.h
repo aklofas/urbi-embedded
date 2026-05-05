@@ -330,12 +330,15 @@ typedef struct UVM {
     /* --- spec #4 §3.5 slot-change re-entrancy + deferred-emit ring ---
      * slot_change_reentrancy_warned: one-shot flag; set on first re-entrant
      *   slot-write during a sync slot-change body; gates URBI_LOG_WARN.
+     * slot_change_ring_full_warned: one-shot flag; set when the deferred ring
+     *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
      * deferred_slot_changes: heap-allocated ring buffer (cap entries),
      *   freed in uvm_destroy.  NOT GC-managed — entries live only while
      *   head != tail; drain logic (R6) clears each slot after firing.
      * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
     uint8_t                 slot_change_reentrancy_warned;
+    uint8_t                 slot_change_ring_full_warned;
     UDeferredSlotChange    *deferred_slot_changes;
     uint16_t                deferred_slot_changes_head;
     uint16_t                deferred_slot_changes_tail;

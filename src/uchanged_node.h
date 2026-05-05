@@ -26,8 +26,10 @@
 
 #include <stdint.h>
 
-#include "gc/ugc.h"    /* UCell, UTYPE_CHANGED_NODE */
-#include "uevent.h"    /* UEvent forward-compatible include */
+#include "gc/ugc.h"              /* UCell, UTYPE_CHANGED_NODE */
+#include "gc/ugc_incremental.h"  /* UGC_HAS_SLOT_CHANGE_EVENT, LIKELY, UNLIKELY */
+#include "uevent.h"              /* UEvent forward-compatible include */
+#include "umodule.h"             /* UValue, USymbol */
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,6 +79,58 @@ struct UEvent;
 struct UEvent *urbi_object_get_or_create_change_event(struct UVM    *vm,
                                                        struct UObject *obj,
                                                        struct USymbol *name);
+
+/* === urbi_defer_slot_change (spec #4 §5.3) ===
+ *
+ * Write (parent, key, new_value) to the tail of the per-VM deferred SPSC
+ * ring.  Called from urbi_emit_slot_change_slow when re-entrancy is
+ * detected.  Ring-full silently drops with a one-shot URBI_LOG_WARN. */
+void urbi_defer_slot_change(struct UVM    *vm,
+                            struct UObject *parent,
+                            struct USymbol *key,
+                            UValue          new_value);
+
+/* === urbi_emit_slot_change_slow (spec #4 §5.1) ===
+ *
+ * Slow path: called when UGC_HAS_SLOT_CHANGE_EVENT is set on parent.
+ * Walks changed_events_head by USymbol identity, dispatches via
+ * c_event_emit_sync.  Re-entrancy from scratch context routes to the
+ * deferred-emit ring (T66).  In URBI_DEBUG builds asserts bit-7-set
+ * without a matching chain entry. */
+void urbi_emit_slot_change_slow(struct UVM    *vm,
+                                struct UObject *parent,
+                                struct USymbol *key,
+                                UValue          new_value);
+
+/* === urbi_emit_slot_change_if_subscribed (spec #4 §5.1) — inline fast path ===
+ *
+ * Tests bit 7 of parent->cell.gc_byte with a single branch.  On the common
+ * case (no subscriber, bit clear) this expands to ~2 instructions and does
+ * not call into the slow path.  On the rare case (subscriber installed) the
+ * slow path walks the UChangedNode chain by USymbol pointer identity and
+ * dispatches via c_event_emit_sync.
+ *
+ * Call site pattern (all slot-write callsites):
+ *   store(obj, idx, v);
+ *   urbi_emit_slot_change_if_subscribed(vm, obj, key_sym, v);
+ */
+static inline void
+urbi_emit_slot_change_if_subscribed(struct UVM    *vm,
+                                    struct UObject *parent,
+                                    struct USymbol *key,
+                                    UValue          new_value)
+{
+    if (LIKELY(!(((UCell *)parent)->gc_byte & UGC_HAS_SLOT_CHANGE_EVENT))) return;
+    urbi_emit_slot_change_slow(vm, parent, key, new_value);
+}
+
+/* === urbi_drain_deferred_slot_changes (spec #4 §5.3) ===
+ *
+ * Drain the per-VM deferred slot-change ring (filled by re-entrant writes
+ * during a sync slot-change body).  Called at every safepoint BEFORE
+ * watcher_eval_dirty, per spec §5.4 ordering.
+ * No-op when the ring is empty (head == tail) or NULL (OOM at init). */
+void urbi_drain_deferred_slot_changes(struct UVM *vm);
 
 #ifdef __cplusplus
 }

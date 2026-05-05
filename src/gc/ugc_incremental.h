@@ -112,6 +112,14 @@ struct UClosure;
 #  endif
 #endif
 
+#ifndef LIKELY
+#  if defined(__GNUC__) || defined(__clang__)
+#    define LIKELY(x) __builtin_expect(!!(x), 1)
+#  else
+#    define LIKELY(x) (x)
+#  endif
+#endif
+
 /* === gc_shade_gray — mark a cell gray and push onto the worklist ===
  * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);

@@ -259,6 +259,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
     vm->slot_change_reentrancy_warned = 0u;
+    vm->slot_change_ring_full_warned  = 0u;
     vm->deferred_slot_changes_head    = 0u;
     vm->deferred_slot_changes_tail    = 0u;
     vm->deferred_slot_changes_cap     = 0u;
