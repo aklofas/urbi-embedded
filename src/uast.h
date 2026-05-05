@@ -115,7 +115,10 @@ typedef enum {
     PARSE_LAZY_PARAM_DEFAULT,      /* `lazy x = ...` reserved syntax */
 
     /* M3 additions */
-    PARSE_TRY_NEEDS_CATCH_OR_FINALLY  /* `try { }` with neither catch nor finally */
+    PARSE_TRY_NEEDS_CATCH_OR_FINALLY, /* `try { }` with neither catch nor finally */
+
+    /* M5 additions */
+    PARSE_RESERVED_KEYWORD_AS_IDENT   /* `var at = 1`: hard keyword used as variable name */
 } UParseError;
 
 /*

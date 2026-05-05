@@ -39,8 +39,11 @@ typedef enum {
     EMIT_LAZY_PARAM_ASSIGN,       /* T16: assignment to lazy param */
 
     /* M4 additions */
-    EMIT_TOO_MANY_IC_SITES        /* T15: function exceeds 256 IC sites
+    EMIT_TOO_MANY_IC_SITES,       /* T15: function exceeds 256 IC sites
                                      (pre-M4 GETSLOT/SETSLOT encoding §3.4) */
+
+    /* M5 additions */
+    EMIT_RESERVED_KEYWORD_AS_IDENT /* T4: `var at = 1` — hard keyword as variable name */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */

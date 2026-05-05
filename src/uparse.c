@@ -25,7 +25,8 @@ static const char * const kErrorMessages[] = {
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
     "lazy parameter cannot have a default value",
-    "'try' requires at least one of 'catch' or 'finally'"
+    "'try' requires at least one of 'catch' or 'finally'",
+    "reserved keyword used as variable name (M5 reactive runtime); rename the variable"
 };
 
 static const char * const kErrorNames[] = {
@@ -47,7 +48,8 @@ static const char * const kErrorNames[] = {
     "PARSE_TRAILING_AMP",
     "PARSE_LAZY_OUT_OF_PARAM_LIST",
     "PARSE_LAZY_PARAM_DEFAULT",
-    "PARSE_TRY_NEEDS_CATCH_OR_FINALLY"
+    "PARSE_TRY_NEEDS_CATCH_OR_FINALLY",
+    "PARSE_RESERVED_KEYWORD_AS_IDENT"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -320,7 +322,21 @@ static UAstNode *parse_atom(UParser *p) {
 static UAstNode *parse_var_decl(UParser *p) {
     UToken kw = consume(p);          /* consume TOK_KW_VAR */
     UToken name = peek(p);
-    if (name.type != TOK_IDENT) {
+
+    /* Detect hard reserved keywords used as variable names (T4, spec #2 §3.11).
+     * TOK_KW_ASYNC is soft — allowed as identifier at v1.0. */
+    if (name.type == TOK_KW_AT       || name.type == TOK_KW_WHENEVER  ||
+        name.type == TOK_KW_WAITUNTIL || name.type == TOK_KW_ONLEAVE  ||
+        name.type == TOK_KW_SYNC) {
+        return make_error(p, PARSE_RESERVED_KEYWORD_AS_IDENT,
+                          kErrorMessages[PARSE_RESERVED_KEYWORD_AS_IDENT],
+                          name.line, name.col);
+    }
+
+    /* TOK_KW_ASYNC is a soft keyword — accepted as an identifier at v1.0.
+     * The lexer always populates u.str for keyword tokens, so u.str.start
+     * and u.str.len are valid even when type == TOK_KW_ASYNC. */
+    if (name.type != TOK_IDENT && name.type != TOK_KW_ASYNC) {
         return make_error(p, PARSE_EXPECTED_IDENT,
                           kErrorMessages[PARSE_EXPECTED_IDENT],
                           name.line, name.col);

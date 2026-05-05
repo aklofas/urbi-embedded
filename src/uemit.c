@@ -1955,7 +1955,8 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_CLOSURE_KEYWORD:    return "EMIT_CLOSURE_KEYWORD";
     case EMIT_LAZY_ON_METHOD:     return "EMIT_LAZY_ON_METHOD";
     case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
-    case EMIT_TOO_MANY_IC_SITES:  return "EMIT_TOO_MANY_IC_SITES";
+    case EMIT_TOO_MANY_IC_SITES:           return "EMIT_TOO_MANY_IC_SITES";
+    case EMIT_RESERVED_KEYWORD_AS_IDENT:   return "EMIT_RESERVED_KEYWORD_AS_IDENT";
     }
     return "EMIT_UNKNOWN";
 }
