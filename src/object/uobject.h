@@ -126,30 +126,40 @@ typedef struct UProtos {
     UObject          *items[];       /* flexible array of proto pointers */
 } UProtos;
 
+/* === Forward declaration for UChangedNode (spec #4 §3.1) ===
+ *
+ * Full definition in src/uchanged_node.h.  Declared here as an incomplete
+ * type so struct UObject can hold the head pointer without a circular
+ * include dependency (uchanged_node.h includes uevent.h, which is not
+ * needed by every consumer of uobject.h). */
+struct UChangedNode;
+
 /* === UObject ===
  *
- * 48 B header per pre-M4 prototype-chain spec §3.  Field order is
- * load-bearing: pinned by tests/unit/test_uobject.c offset checks.  All
- * fields are populated by urbi_object_alloc (lands at later M4 task). */
+ * 56 B header on 64-bit host after M5 spec #4 §3.1 adds changed_events_head
+ * (was 48 B at M4).  Field order is load-bearing: pinned by
+ * tests/unit/test_uobject.c offset checks.  All fields are populated by
+ * urbi_object_alloc. */
 struct UObject {
-    UCell             cell;          /* 2 B — GC color + type tag (UCELL_TYPE_OBJECT later) */
+    UCell             cell;                  /* 2 B — GC color + type tag (UCELL_TYPE_OBJECT later) */
     /* 6 B compiler-inserted padding before shape* */
-    UShape           *shape;         /* 8 B — hidden class */
-    USlot            *slots;         /* 8 B — local slot storage, length == shape->count */
-    uintptr_t         protos;        /* 8 B — tagged single-or-heap proto encoding (§4.1) */
-    uint32_t          object_id;     /* 4 B — stable identity (§7) */
-    uint32_t          lookup_stamp;  /* 4 B — visited-set marker for prototype walk (§6); u32 truncation of UVM.lookup_id */
-    uint32_t          flags;         /* 4 B — atom family + frozen + readonly + spare */
-    uint32_t          reserved;      /* 4 B — zero at v1.0; named v1.x candidates (§8.2) */
+    UShape           *shape;                 /* 8 B — hidden class */
+    USlot            *slots;                 /* 8 B — local slot storage, length == shape->count */
+    uintptr_t         protos;                /* 8 B — tagged single-or-heap proto encoding (§4.1) */
+    uint32_t          object_id;             /* 4 B — stable identity (§7) */
+    uint32_t          lookup_stamp;          /* 4 B — visited-set marker for prototype walk (§6); u32 truncation of UVM.lookup_id */
+    uint32_t          flags;                 /* 4 B — atom family + frozen + readonly + spare */
+    uint32_t          reserved;              /* 4 B — zero at v1.0; named v1.x candidates (§8.2) */
+    struct UChangedNode *changed_events_head; /* 8 B — slot-change subscriber chain (spec #4 §3.1); NULL at alloc */
 };
-/* The 48-byte invariant assumes 64-bit pointers (the supported host ABI).
+/* The 56-byte invariant assumes 64-bit pointers (the supported host ABI).
  * On 32-bit cross targets (e.g. Cortex-M7, rv32), the pointer fields shrink
  * and natural alignment changes, so the literal byte total no longer holds.
  * Gate the assert on pointer width; runtime offset checks in
  * tests/unit/test_uobject.c are host-only and supply the second signal there. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UObject) == 48,
-               "UObject header must be 48 bytes per pre-M4 prototype-chain spec §3");
+_Static_assert(sizeof(struct UObject) == 56,
+               "UObject header must be 56 bytes per M5 spec #4 §3.1");
 #endif
 
 /* === Internal allocator (T8) ===

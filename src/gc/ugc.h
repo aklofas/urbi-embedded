@@ -108,6 +108,7 @@ typedef struct UType {
 #define UTYPE_PROPS_TABLE      16   /* M4 — UPropsTable (per-shape UProps* array, T17) */
 #define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
 #define UTYPE_EVENT            18   /* M5 — UEvent reactive cell (spec #3 §3.1) */
+#define UTYPE_CHANGED_NODE     19   /* M5 — UChangedNode slot-change subscriber (spec #4 §3.1) */
 #define UTYPE_HOST_BASE  64  /* host-registered types start here */
 #define UTYPE_HOST_MAX   255
 

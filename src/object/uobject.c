@@ -73,12 +73,13 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
     if (o->shape == NULL) {
         return NULL;
     }
-    o->slots        = NULL;       /* zero-slot at construction; T15 lands slot transitions */
-    o->protos       = 0u;         /* empty form per spec §4.1 */
-    o->object_id    = next_id(vm);
-    o->lookup_stamp = 0u;
-    o->flags        = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
-    o->reserved     = 0u;
+    o->slots               = NULL;  /* zero-slot at construction; T15 lands slot transitions */
+    o->protos              = 0u;   /* empty form per spec §4.1 */
+    o->object_id           = next_id(vm);
+    o->lookup_stamp        = 0u;
+    o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
+    o->reserved            = 0u;
+    o->changed_events_head = NULL; /* lazy-alloc at first `obj.x.changed?` install (R6) */
     return o;
 }
 

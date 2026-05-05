@@ -44,6 +44,7 @@
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
+#include "uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE (spec #4 §3.1) */
 #include "utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
@@ -97,6 +98,13 @@ walk_uobject(struct UVM *vm, void *payload,
                 gc_shade_gray(vm, (UCell *)p);
             }
         }
+    }
+
+    /* Shade the slot-change subscriber chain (spec #4 §3.1).  NULL at alloc;
+     * lazy-populated at first `obj.x.changed?` install (R6).  UChangedNode
+     * embeds UCell as its first member, so the cast to UCell* is well-defined. */
+    if (o->changed_events_head != NULL) {
+        gc_shade_gray(vm, (UCell *)o->changed_events_head);
     }
 }
 
@@ -293,6 +301,31 @@ walk_uevent(struct UVM *vm, void *payload,
     }
 }
 
+/* === walk_uchanged_node (spec #4 §3.1) ===
+ *
+ * Yields name (USymbol* — interned, never collected; NOT walked here) and
+ * shades event (UEvent*) and next (UChangedNode*) as direct GC-managed cells.
+ * The subscriber list is walked one node at a time: walk_uchanged_node is
+ * called for each node, and each node shades only its own ->next link;
+ * the GC traversal loop visits every grey cell in turn. */
+static void
+walk_uchanged_node(struct UVM *vm, void *payload,
+                   UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
+
+    UChangedNode *n = (UChangedNode *)((UCell *)payload - 1);
+
+    /* name is interned (lives for VM lifetime); no shade needed. */
+
+    if (n->event != NULL) {
+        gc_shade_gray(vm, (UCell *)n->event);
+    }
+    if (n->next != NULL) {
+        gc_shade_gray(vm, (UCell *)n->next);
+    }
+}
+
 /* === walk_utag (T18 — spec #3 §3.4) ===
  *
  * Yields name (UValue payload via cb) and shades each UWatcher in the
@@ -445,6 +478,15 @@ static const UType type_uevent = {
     .destroy       = NULL,
 };
 
+static const UType type_uchanged_node = {
+    .type_tag      = UTYPE_CHANGED_NODE,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UChangedNode",
+    .walk_payload  = walk_uchanged_node,
+    .destroy       = NULL,
+};
+
 static const UType type_utag = {
     .type_tag      = UTYPE_TAG,
     .flags         = 0u,
@@ -474,5 +516,6 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
     vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
+    vm->type_table[UTYPE_CHANGED_NODE]    = (UType *)&type_uchanged_node;
     vm->type_table[UTYPE_TAG]             = (UType *)&type_utag;
 }
