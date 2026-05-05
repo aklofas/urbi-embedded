@@ -371,6 +371,20 @@ static UOpcode binop_to_opcode(const UAstBinaryOp op) {
 /* Forward declaration (emit_lazy_thunk calls emit_expr). */
 static uint8_t emit_expr(UEmitter *e, UAstNode *n);
 
+/* T30: Compile a function literal into a UProto + OP_CLOSURE sequence.
+ * params/nparams describe the formal parameter list (AST_PARAM or
+ * AST_LAZY_PARAM nodes).  body must be an AST_BLOCK.  When as_expression
+ * is true, the child proto returns its last expression's register value
+ * (cond-closure semantics); when false, the child proto returns nil
+ * regardless of its last statement (body/onleave closure semantics).
+ * Returns the parent register holding the resulting UVAL_CLOSURE, or 0
+ * with e->error set on failure.
+ * Requires e->current_fs != NULL and e->vm != NULL. */
+static uint8_t emit_function_literal(UEmitter *e,
+                                     UAstNode **params, int nparams,
+                                     UAstNode  *body,
+                                     bool       as_expression);
+
 /* T16: Compile `expr` as a zero-arg closure (lazy thunk).
  * Builds a synthetic AST_FUNCTION wrapping `expr` in a single-statement
  * body, then recurses into the AST_FUNCTION emit arm.  The result register
@@ -451,6 +465,109 @@ static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
     uint8_t dst = emit_expr(e, &fn_node);
     e->lazy_arg_context = saved_ctx;
     return dst;
+}
+
+/* T30: emit_function_literal — shared helper for AST_FUNCTION and (T33+)
+ * watcher/waituntil cond/body/onleave closures.  See forward declaration
+ * above for parameter semantics. */
+static uint8_t emit_function_literal(UEmitter *e,
+                                     UAstNode **params, int nparams,
+                                     UAstNode  *body,
+                                     bool       as_expression) {
+    UFuncState *parent_fs = e->current_fs;
+
+    /* 1. Allocate a new UProto under the module's nested[] list. */
+    UProto *child_proto = umodule_alloc_nested_proto(e->module);
+    if (child_proto == NULL) { e->error = EMIT_OOM; return 0u; }
+    int proto_idx = (int)(e->module->nested_count - 1);
+
+    /* 2. Open a nested FuncState targeting child_proto. */
+    UFuncState *child_fs = uemit_open_function(e, parent_fs);
+    if (child_fs == NULL) return 0u;
+    child_fs->target_proto = child_proto;
+
+    /* 3. Declare parameters as locals in child_fs. */
+    {
+        int pi;
+        for (pi = 0; pi < nparams; pi++) {
+            UAstNode *pn = params[pi];
+            const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
+                                            (size_t)pn->u.param.name_len);
+            if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0u; }
+            int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
+            if (slot < 0) { uemit_close_function(e); return 0u; }
+            if (pn->kind == AST_LAZY_PARAM) {
+                child_fs->actvars[slot].is_lazy = true;
+            }
+        }
+    }
+    child_proto->nparams = (uint8_t)nparams;
+
+    /* Sync the flat register cursor to the child's freereg so temps
+     * inside the function body are allocated above all param slots. */
+    e->next_reg = child_fs->freereg;
+
+    /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto. */
+    uint8_t body_reg = emit_expr(e, body);
+    if (e->error != EMIT_OK) {
+        uemit_close_function(e);
+        return 0u;
+    }
+
+    /* 5. Final OP_RET.  as_expression=true: return body's last result.
+     *    as_expression=false: return nil (body runs for side-effects). */
+    if (as_expression) {
+        emit_instr(e, uinstr_enc_abc(OP_RET, body_reg, 0u, 0u),
+                   (uint32_t)body->line);
+    } else {
+        uint8_t nil_reg = e->next_reg;
+        if (nil_reg < child_fs->freereg) nil_reg = child_fs->freereg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, nil_reg, 0u, 0u),
+                   (uint32_t)body->line);
+        emit_instr(e, uinstr_enc_abc(OP_RET, nil_reg, 0u, 0u),
+                   (uint32_t)body->line);
+    }
+
+    /* 6. Capture upvalue descriptors before closing child_fs. */
+    int nup = child_fs->nupvalues;
+    UUpvalDesc upvals_copy[UFS_MAX_UPVALUES];
+    {
+        int ui;
+        for (ui = 0; ui < nup; ui++) {
+            upvals_copy[ui] = child_fs->upvalues[ui];
+        }
+    }
+
+    uemit_close_function(e);   /* pops back to parent_fs */
+
+    /* 7. In parent, emit OP_CLOSURE + nup pseudo-instructions. */
+    {
+        uint8_t dst = e->current_fs->freereg;
+        if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+            e->error = EMIT_REG_EXHAUSTED;
+            return 0u;
+        }
+        e->current_fs->freereg++;
+        if (e->current_fs->freereg > e->current_fs->max_reg_seen)
+            e->current_fs->max_reg_seen = e->current_fs->freereg;
+        e->next_reg = e->current_fs->freereg;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+
+        emit_instr(e, uinstr_enc_abx(OP_CLOSURE, dst, (uint16_t)proto_idx),
+                   (uint32_t)body->line);
+        {
+            int ui;
+            for (ui = 0; ui < nup; ui++) {
+                UUpvalDesc *ud = &upvals_copy[ui];
+                emit_instr(e,
+                    uinstr_enc_abc(OP_MOVE, 0u,
+                                   ud->in_stack ? 1u : 0u,
+                                   (uint8_t)ud->idx),
+                    (uint32_t)body->line);
+            }
+        }
+        return dst;
+    }
 }
 
 /* AST walker — returns the register holding the result of the expression.
@@ -1261,102 +1378,18 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         return ret_reg;
     }
     case AST_FUNCTION: {
+        /* T30: thin caller — all logic lives in emit_function_literal.
+         * as_expression=true preserves original semantics: the child proto
+         * returns its last statement's result register (existing M2 behaviour). */
         if (e->current_fs == NULL || e->vm == NULL) {
             e->error = EMIT_UNSUPPORTED_AST;
             return 0u;
         }
-        UFuncState *parent_fs = e->current_fs;
-
-        /* 1. Allocate a new UProto under the module's nested[] list. */
-        UProto *child_proto = umodule_alloc_nested_proto(e->module);
-        if (child_proto == NULL) { e->error = EMIT_OOM; return 0u; }
-        int proto_idx = (int)(e->module->nested_count - 1);
-
-        /* 2. Open a nested FuncState targeting child_proto. */
-        UFuncState *child_fs = uemit_open_function(e, parent_fs);
-        if (child_fs == NULL) return 0u;
-        child_fs->target_proto = child_proto;
-
-        /* 3. Declare parameters as locals in child_fs. */
-        {
-            int pi;
-            for (pi = 0; pi < n->u.func.param_count; pi++) {
-                UAstNode *pn = n->u.func.params[pi];
-                const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
-                                                (size_t)pn->u.param.name_len);
-                if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0u; }
-                int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
-                if (slot < 0) { uemit_close_function(e); return 0u; }
-                if (pn->kind == AST_LAZY_PARAM) {
-                    child_fs->actvars[slot].is_lazy = true;
-                }
-            }
-        }
-        child_proto->nparams = (uint8_t)n->u.func.param_count;
-
-        /* Sync the flat register cursor to the child's freereg so temps
-         * inside the function body are allocated above all param slots.
-         * Without this, a lazy-param force that allocates a temp via
-         * next_reg could pick a register that overlaps a param (e.g.,
-         * MOVE R0, R0 → CALL R0 overwrites the thunk with its result,
-         * breaking subsequent reads of the same lazy param). */
-        e->next_reg = child_fs->freereg;
-
-        /* 4. Compile body (AST_BLOCK); emit_instr routes to child_proto.
-         *    Save the result register the block returns. */
-        uint8_t body_reg = emit_expr(e, n->u.func.body);
-        if (e->error != EMIT_OK) {
-            uemit_close_function(e);
-            return 0u;
-        }
-
-        /* 5. Final OP_RET in child proto using the block's result register.
-         *    AST_BLOCK returns the last statement's result reg (or 0 for empty).
-         *    If the block was empty or returned nil, body_reg is still valid. */
-        emit_instr(e, uinstr_enc_abc(OP_RET, body_reg, 0u, 0u),
-                   (uint32_t)n->line);
-
-        /* 6. Capture upvalue descriptors before closing child_fs. */
-        int nup = child_fs->nupvalues;
-        UUpvalDesc upvals_copy[UFS_MAX_UPVALUES];
-        {
-            int ui;
-            for (ui = 0; ui < nup; ui++) {
-                upvals_copy[ui] = child_fs->upvalues[ui];
-            }
-        }
-
-        uemit_close_function(e);   /* pops back to parent_fs */
-
-        /* 7. In parent, emit OP_CLOSURE + nup pseudo-instructions. */
-        {
-            uint8_t dst = e->current_fs->freereg;
-            if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
-                e->error = EMIT_REG_EXHAUSTED;
-                return 0u;
-            }
-            e->current_fs->freereg++;
-            if (e->current_fs->freereg > e->current_fs->max_reg_seen)
-                e->current_fs->max_reg_seen = e->current_fs->freereg;
-            e->next_reg = e->current_fs->freereg;
-            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-
-            emit_instr(e, uinstr_enc_abx(OP_CLOSURE, dst, (uint16_t)proto_idx),
-                       (uint32_t)n->line);
-            {
-                int ui;
-                for (ui = 0; ui < nup; ui++) {
-                    UUpvalDesc *ud = &upvals_copy[ui];
-                    /* Pseudo-instruction: B=in_stack, C=src_idx */
-                    emit_instr(e,
-                        uinstr_enc_abc(OP_MOVE, 0u,
-                                       ud->in_stack ? 1u : 0u,
-                                       (uint8_t)ud->idx),
-                        (uint32_t)n->line);
-                }
-            }
-            return dst;
-        }
+        return emit_function_literal(e,
+                                     n->u.func.params,
+                                     n->u.func.param_count,
+                                     n->u.func.body,
+                                     /*as_expression=*/true);
     }
     case AST_THROW: {
         /* throw expr: eval the expression, emit OP_THROW, set pending_unwind.
