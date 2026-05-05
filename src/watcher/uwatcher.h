@@ -230,8 +230,19 @@ void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
  * uvm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
  * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
  * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
- * read-set cells[] (concrete cell types land at M4). */
+ * read-set cells[] (concrete cell types land at M4).
+ * Note (spec #1 §7.1): body_strand and realm are NOT yielded — body strands
+ * are reached via realm->strands_head; realms are host-allocated. */
 void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+
+#ifdef URBI_DEBUG
+/* urbi_watcher_check_invariants: URBI_DEBUG-only bidirectional pointer check.
+ * Validates that every active watcher with body_strand != NULL has:
+ *   1. body_strand->watcher_body_owner == w.
+ *   2. body_strand on w->realm->strands_head.
+ * Called at watcher_eval_dirty entry.  spec #1 §7.2. */
+void   urbi_watcher_check_invariants(struct UVM *vm);
+#endif /* URBI_DEBUG */
 
 #ifdef __cplusplus
 }

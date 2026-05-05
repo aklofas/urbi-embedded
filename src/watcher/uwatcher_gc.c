@@ -13,6 +13,11 @@
 #include "uwatcher.h"
 #include "uvm.h"
 #include "gc/ugc.h"
+#ifdef URBI_DEBUG
+#include "ustrand.h"
+#include "realm/urealm.h"
+#include "umacros.h"   /* URBI_INTERNAL_ASSERT */
+#endif
 
 void
 watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
@@ -20,6 +25,10 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
     /* No URBI_ASSERT_NOT_ISR — root walkers run from GC slice path which
      * is itself ISR-asserted at T26 entry points.  (See sched_walk_roots
      * for precedent — also no per-walker ISR assert.) */
+
+    /* Note (spec #1 §7.1): body_strand and realm are NOT yielded here.
+     * Body strands are reached via realm->strands_head (row 10 §3.5).
+     * Realms are host-allocated, not GC-managed at v1.0. */
 
     /* Active watchers */
     for (struct UWatcher *w = vm->active_watchers_head; w != NULL; w = w->next_active) {
@@ -65,3 +74,27 @@ watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         cb(vm, &w->last_value_cache, ctx);
     }
 }
+
+#ifdef URBI_DEBUG
+/* urbi_watcher_check_invariants: URBI_DEBUG-only bidirectional pointer check.
+ * Called at watcher_eval_dirty entry to validate that every active watcher
+ * with a live body_strand satisfies:
+ *   1. body_strand->watcher_body_owner == w  (back-pointer consistency).
+ *   2. body_strand is reachable on w->realm->strands_head  (GC walker contract).
+ * spec #1 §7.2. */
+void
+urbi_watcher_check_invariants(struct UVM *vm)
+{
+    for (struct UWatcher *w = vm->active_watchers_head; w != NULL; w = w->next_active) {
+        if (w->body_strand != NULL) {
+            URBI_INTERNAL_ASSERT(w->body_strand->watcher_body_owner == w);
+            /* Body strand must still be on the realm strand list. */
+            int found = 0;
+            for (struct UStrand *s = w->realm->strands_head; s != NULL; s = s->next_in_realm) {
+                if (s == w->body_strand) { found = 1; break; }
+            }
+            URBI_INTERNAL_ASSERT(found);
+        }
+    }
+}
+#endif /* URBI_DEBUG */

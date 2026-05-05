@@ -64,6 +64,11 @@ watcher_eval_dirty(struct UVM *vm)
     URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->watcher_dirty_count == 0) return;
+
+#ifdef URBI_DEBUG
+    urbi_watcher_check_invariants(vm);
+#endif
+
     vm->watcher_dirty_count = 0;
 
     URBI_INTERNAL_ASSERT(!vm->in_watcher_eval);
