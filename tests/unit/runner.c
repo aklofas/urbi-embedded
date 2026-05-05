@@ -110,6 +110,7 @@ extern void test_resolve_owning_tag_suite(void);
 extern void test_install_trace_suite(void);
 extern void test_waituntil_install_suite(void);
 extern void test_at_install_dispatch_suite(void);
+extern void test_at_fire_paths_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -196,6 +197,7 @@ static const struct suite_entry suites[] = {
     {"install_trace",              test_install_trace_suite},
     {"waituntil_install",          test_waituntil_install_suite},
     {"at_install_dispatch",        test_at_install_dispatch_suite},
+    {"at_fire_paths",              test_at_fire_paths_suite},
     /* Add new suites here as test files are added. */
 };
 
