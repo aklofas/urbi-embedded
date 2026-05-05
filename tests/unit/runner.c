@@ -129,6 +129,7 @@ extern void test_op_getslot_change_event_suite(void);
 extern void test_parse_at_slot_change_suite(void);
 extern void test_emit_at_slot_change_suite(void);
 extern void test_slot_change_emit_suite(void);
+extern void test_slot_change_callsites_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -234,6 +235,7 @@ static const struct suite_entry suites[] = {
     {"parse_at_slot_change",       test_parse_at_slot_change_suite},
     {"emit_at_slot_change",        test_emit_at_slot_change_suite},
     {"slot_change_emit",           test_slot_change_emit_suite},
+    {"slot_change_callsites",      test_slot_change_callsites_suite},
     /* Add new suites here as test files are added. */
 };
 

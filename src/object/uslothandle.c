@@ -12,6 +12,7 @@
 #include "uvm.h"
 #include "urbi/gc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
+#include "uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === urbi_object_get_slot ===
  *
@@ -101,5 +102,6 @@ urbi_slothandle_write_value(UVM *vm, USlotHandle *h, UValue v)
      * USlotHandle writes are direct so we wire the barrier explicitly). */
     urbi_gc_slot_write(vm, (UCell *)h->owner, h->slot_index, v);
     h->owner->slots[h->slot_index] = v;
+    urbi_emit_slot_change_if_subscribed(vm, h->owner, h->name, v);
     return 0;
 }

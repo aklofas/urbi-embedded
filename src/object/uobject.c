@@ -26,6 +26,7 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
+#include "uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === next_id ===
  *
@@ -674,6 +675,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     int32_t existing = urbi_shape_find_slot(obj->shape, name);
     if (existing >= 0) {
         obj->slots[existing] = value;
+        urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
         return 0;
     }
 
@@ -735,6 +737,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     if (obj->flags & URBI_OBJ_FLAG_IS_PROTOTYPE) {
         vm->topology_gen++;
     }
+    urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
     return 0;
 }
 

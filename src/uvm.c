@@ -1559,6 +1559,7 @@ dispatch:
                                            (uint32_t)((ic->slots[k] - recv->slots)),
                                            v);
                         *ic->slots[k] = v;
+                        urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
                         slow_path = 0;
                         break;
                     }
@@ -1585,6 +1586,7 @@ dispatch:
                 vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
                 HALT();
             }
+            urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }
 
