@@ -307,3 +307,73 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
 
     return URBI_OK;
 }
+
+/* === M5 public C API: realm global slot install / read (spec #5 §7) ===
+ *
+ * Three thin wrappers over ustr_intern + urbi_object_set_local_slot /
+ * urbi_object_install_property / urbi_object_resolve_slot.  The
+ * implementations reuse rg_strlen for the freestanding (no <string.h>) discipline. */
+
+int
+urbi_realm_set_global(UVM *vm, URealm *realm,
+                      const char *name, size_t name_len, UValue value)
+{
+    if (vm == NULL || realm == NULL || realm->global_object == NULL ||
+            name == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    if (sym == NULL) {
+        return URBI_ERR_OOM;
+    }
+    int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
+    return (rc == 0) ? URBI_OK : URBI_ERR_OOM;
+}
+
+int
+urbi_realm_set_global_const(UVM *vm, URealm *realm,
+                             const char *name, size_t name_len, UValue value)
+{
+    if (vm == NULL || realm == NULL || realm->global_object == NULL ||
+            name == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    if (sym == NULL) {
+        return URBI_ERR_OOM;
+    }
+    int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
+    if (rc != 0) {
+        return URBI_ERR_OOM;
+    }
+    rc = urbi_object_install_property(vm, realm->global_object, sym,
+                                      URBI_SLOT_FLAG_CONSTANT, value);
+    return (rc == 0) ? URBI_OK : URBI_ERR_OOM;
+}
+
+int
+urbi_realm_get_global(UVM *vm, URealm *realm,
+                      const char *name, size_t name_len, UValue *out_value)
+{
+    if (vm == NULL || realm == NULL || realm->global_object == NULL ||
+            name == NULL || out_value == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    if (sym == NULL) {
+        return URBI_ERR_OOM;
+    }
+    UObject  *holder = NULL;
+    uint32_t  idx    = 0;
+    int found = urbi_object_resolve_slot(vm, realm->global_object, sym,
+                                         &holder, &idx);
+    if (found == 1) {
+        *out_value = holder->slots[idx];
+        return URBI_OK;
+    }
+    if (found == 0) {
+        return URBI_ERR_SLOT_NOT_FOUND;
+    }
+    /* found == -1: resolve-stack depth overflow or other error */
+    return URBI_ERR_OOM;
+}

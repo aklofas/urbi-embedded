@@ -121,6 +121,30 @@ bool           urbi_realm_has_live_work(struct URealm *realm,
                                         uint32_t *out_watchers,
                                         uint32_t *out_wakes);
 
+/* === M5 realm globals C API (spec #5 §7) ===
+ *
+ * Install or retrieve slots on realm->global_object directly from host C.
+ * Use urbi_realm_set_global_const to create a write-protected binding that
+ * urbiscript cannot overwrite at runtime.
+ *
+ * name / name_len — raw byte string (need not be NUL-terminated).
+ * value           — the UValue to store (any kind, including UVAL_NIL).
+ * out_value       — caller-allocated; written on URBI_OK return from get.
+ *
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_INVALID_ARG if vm, realm, or name is NULL.
+ * Returns URBI_ERR_OOM if intern or slot allocation fails.
+ * urbi_realm_get_global additionally returns URBI_ERR_SLOT_NOT_FOUND when
+ * the name is absent from the global object's prototype chain. */
+int urbi_realm_set_global(struct UVM *vm, struct URealm *realm,
+                          const char *name, size_t name_len, UValue value);
+
+int urbi_realm_set_global_const(struct UVM *vm, struct URealm *realm,
+                                const char *name, size_t name_len, UValue value);
+
+int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
+                          const char *name, size_t name_len, UValue *out_value);
+
 /* === Row 8 step driver + chunk-execution C API (M3 / T16) ===
  *
  * urbi_step: drive the VM for up to budget_instructions opcodes, returning
