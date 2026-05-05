@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: tier-2 tag enter/leave event ordering (spec #3 §8.3, §10.2):
+#         at (t.enter?) fires before OP_PUSH_TAG body runs; at (t.leave?)
+#         fires before tier-1 watcher cascade (i.e., while tag is still ambient).
+#         Two successive tag-scope entries produce EinLEinL in deterministic order.
+#
+# defer-to: T59
+#
+# Reason:
+#   The fixture requires:
+#     - String literals (not yet lexed/parsed at M5 baseline)
+#     - Tag.new() constructor (requires globals exposure + T59 stdlib binding)
+#     - at (t.enter?) / at (t.leave?) event-subscribe watchers (require globals
+#       access for `t`, plus T59 to wire Tag.enter / Tag.leave as resolvable names)
+#   The tier-2 hook itself (T55 OP_PUSH_TAG / OP_POP_TAG enter/leave emit) is
+#   exercised end-to-end in tests/unit/test_tag_enter_leave.c.
+#
+# Activate at T59 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T59):
+#   var t = Tag.new("t");
+#   var log = "";
+#   at (t.enter?) function () { log = log + "E" };
+#   at (t.leave?) function () { log = log + "L" };
+#   t: { log = log + "in" };
+#   t: { log = log + "in" };
+#   echo(log);
+#   --- expected output ---
+#   [00000001] "EinLEinL"
