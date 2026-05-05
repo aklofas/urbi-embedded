@@ -91,6 +91,7 @@ extern void test_gc_byte_suite(void);
 extern void test_ast_alloc_suite(void);
 extern void test_uwatcher_layout_suite(void);
 extern void test_ustrand_layout_suite(void);
+extern void test_uevent_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -158,6 +159,7 @@ static const struct suite_entry suites[] = {
     {"ast_alloc",                  test_ast_alloc_suite},
     {"uwatcher_layout",            test_uwatcher_layout_suite},
     {"ustrand_layout",             test_ustrand_layout_suite},
+    {"uevent",                     test_uevent_suite},
     /* Add new suites here as test files are added. */
 };
 

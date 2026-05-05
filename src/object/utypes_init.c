@@ -43,8 +43,10 @@
 #include "object/umoduleinstance.h"
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
+#include "uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
+#include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent at_watchers chain */
 #include "uvm.h"
 
 /* === walk_uobject ===
@@ -258,6 +260,38 @@ walk_uprotoinstance(struct UVM *vm, void *payload,
     (void)vm; (void)payload; (void)cb; (void)ctx;
 }
 
+/* === walk_uevent (spec #3 §3.1) ===
+ *
+ * Yields name (UValue payload via cb) and shades each UWatcher in the
+ * at_watchers_head chain (direct UCell* walk — same pattern as walk_ushape
+ * shading UProps* entries).
+ *
+ * waiters_head (UStrand chain) is intentionally NOT walked here: UStrands
+ * are root-walked separately via the realm hierarchy (per M3 row 10 / GC
+ * roots spec §5.3).  Walking them here would double-visit them and could
+ * upset the write-barrier invariant during incremental mark. */
+static void
+walk_uevent(struct UVM *vm, void *payload,
+            UGcRootCallback cb, void *ctx)
+{
+    UEvent *ev = (UEvent *)((UCell *)payload - 1);
+
+    /* name is a UValue payload; route through cb so the mark callback
+     * applies the heap-bearing check and shades the underlying cell if any. */
+    cb(vm, &ev->name, ctx);
+
+    /* Walk the at_watchers_head intrusive list.  UWatcher embeds UCell as
+     * its first member (type_tag at offset 0), so the cast to UCell* is
+     * well-defined (same as the UObject/UShape walkers above). */
+    {
+        UWatcher *w = ev->at_watchers_head;
+        while (w != NULL) {
+            gc_shade_gray(vm, (UCell *)w);
+            w = w->next_in_event;
+        }
+    }
+}
+
 /* === Static UType descriptors ===
  *
  * payload_size is set to 0 (variable / not pinned at this task) for all
@@ -361,6 +395,15 @@ static const UType type_uproto_instance = {
     .destroy       = NULL,
 };
 
+static const UType type_uevent = {
+    .type_tag      = UTYPE_EVENT,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UEvent",
+    .walk_payload  = walk_uevent,
+    .destroy       = NULL,
+};
+
 /* === urbi_object_builtin_types_init ===
  *
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
@@ -380,4 +423,5 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
+    vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
 }
