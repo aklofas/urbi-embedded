@@ -14,6 +14,7 @@ extern "C" {
 
 struct UVM;
 struct UEvent;
+struct UStrand;
 
 /* c_event_emit_async: fan out payload to all subscribers asynchronously.
  *   AT_EVENT / AT_EVENT_SYNC watcher bodies → spawn strand via
@@ -38,6 +39,20 @@ void c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload);
  * Requires vm->cur_strand to point at the currently-dispatching strand.
  * Not ISR-safe. Added by T51. */
 UValue c_event_waituntil(struct UVM *vm, struct UEvent *e);
+
+/* uevent_waiter_unregister: splice s out of e->waiters_head (spec #3 §6.4).
+ *
+ * Called when a strand on USTRAND_WAIT_EVENT transitions out for any
+ * non-emit reason (tag-stop, cancel, panic).  After this call:
+ *   - s is no longer linked on e->waiters_head.
+ *   - s->wait_event_target == NULL.
+ *   - s->next_event_waiter == NULL.
+ *   - s->last_event_payload is left NIL — caller resumes with NIL,
+ *     interpreted by stdlib as cancellation.
+ *
+ * Idempotent: if s->wait_event_target is already NULL, returns immediately.
+ * Not ISR-safe. Added by T52. */
+void uevent_waiter_unregister(struct UStrand *s);
 
 #ifdef __cplusplus
 }

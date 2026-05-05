@@ -9,6 +9,42 @@
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 
+/* === uevent_waiter_unregister (spec #3 §6.4) ===
+ *
+ * Splice s out of e->waiters_head when a strand on USTRAND_WAIT_EVENT
+ * transitions out for a non-emit reason (tag-stop, cancel, panic).
+ *
+ * Idempotent: if wait_event_target is NULL the strand is not on any waiter
+ * chain (either never parked, or already woken by an emit), so return early.
+ *
+ * last_event_payload is left NIL — the caller resumes with NIL on
+ * cancellation, which stdlib interprets as "wait interrupted". */
+void
+uevent_waiter_unregister(struct UStrand *s)
+{
+    struct UEvent  *e;
+    struct UStrand **prev;
+    struct UStrand  *cur;
+
+    if (!s->wait_event_target) return;
+
+    e    = s->wait_event_target;
+    prev = &e->waiters_head;
+    cur  = e->waiters_head;
+
+    while (cur && cur != s) {
+        prev = &cur->next_event_waiter;
+        cur  = cur->next_event_waiter;
+    }
+    /* cur == s (found) or cur == NULL (s was already removed — shouldn't
+     * happen under single-threaded cooperative scheduler, but be safe). */
+    if (cur) *prev = cur->next_event_waiter;
+
+    s->wait_event_target = NULL;
+    s->next_event_waiter = NULL;
+    /* last_event_payload stays NIL — caller resumes with NIL on cancellation. */
+}
+
 /* === c_event_emit_async (spec #3 §5.2) ===
  *
  * Fan out payload to all subscribers in FIFO registration order.

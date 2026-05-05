@@ -34,6 +34,7 @@
 #include "umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
+#include "uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
@@ -384,6 +385,12 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
             vm->host_call_pending_count++;
         }
 
+        /* Unlink from event waiter chain before waking (spec #3 §6.4).
+         * Must happen before state transition so the waiter list is consistent
+         * when the strand next runs.  Idempotent if not on an event chain. */
+        if (s->state == USTRAND_WAIT_EVENT)
+            uevent_waiter_unregister(s);
+
         /* Wake any blocked strand so it can consume the unwind. */
         if (USTRAND_IS_WAITING(s)) {
             if (USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP)
@@ -420,9 +427,13 @@ urbi_strand_cancel(struct UStrand *s, UValue cancel_reason)
     s->pending_unwind = UEXEC_CANCEL;
     s->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
-     * unwind.  USTRAND_IS_WAITING checks the upper nibble of s->state. */
-    if (USTRAND_IS_WAITING(s))
+     * unwind.  USTRAND_IS_WAITING checks the upper nibble of s->state.
+     * Unlink from event waiter chain first (spec #3 §6.4). */
+    if (USTRAND_IS_WAITING(s)) {
+        if (s->state == USTRAND_WAIT_EVENT)
+            uevent_waiter_unregister(s);
         s->state = USTRAND_STATE_READY;
+    }
     return URBI_OK;
 }
 
@@ -440,6 +451,11 @@ urbi_strand_panic(struct UStrand *s, const char *msg)
     if (!s) return URBI_ERR_INVALID_ARG;
     if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
     (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
+    /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
+     * Prevents stale pointers in e->waiters_head if the strand is freed
+     * without ever being woken by an emit. */
+    if (s->state == USTRAND_WAIT_EVENT)
+        uevent_waiter_unregister(s);
     s->fatal_status = UEXEC_CANCEL;
     s->fatal_value  = nil;
     s->state        = USTRAND_STATE_DEAD;
