@@ -232,6 +232,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->in_watcher_eval        = 0u;
     vm->pad_in_eval[0]         = 0u;
     vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
+    vm->in_watcher_scratch     = 0u;   /* spec #3 §5.4: missing from M5 init — fix */
     vm->watcher_scratch_frame  = NULL;
     /* spec #2 §5.2 install-time trace state. */
     vm->in_watcher_install     = 0u;
