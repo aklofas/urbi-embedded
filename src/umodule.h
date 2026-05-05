@@ -15,10 +15,11 @@ extern "C" {
 /* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
    v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
-   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table). */
+   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
+   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds). */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1u
-#define URBI_BYTECODE_VERSION_MINOR  3u
+#define URBI_BYTECODE_VERSION_MINOR  4u
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4u) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
@@ -53,11 +54,20 @@ typedef enum {
                                      Stores a UStrand* in v.p.  Walked by GC root walker:
                                      skipped at M3 (strands are sched-managed, not GC cells).
                                      TODO(M7+): revisit if strand handles become user-visible. */
-    UVAL_OBJECT  = 8              /* M4: UObject pointer; runtime-only.  Stores a UObject* in v.p.
+    UVAL_OBJECT  = 8,             /* M4: UObject pointer; runtime-only.  Stores a UObject* in v.p.
                                      Receivers for OP_GETSLOT/OP_SETSLOT live in registers tagged
                                      UVAL_OBJECT.  Heap-bearing for the GC barrier — UObject embeds
                                      UCell as its first member, so uvalue_as_cell() works. */
-    /* 9-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
+    UVAL_EVENT   = 9,             /* M5: UEvent pointer; runtime-only.  Stores a UEvent* in v.p.
+                                     Heap-bearing for the GC barrier — UEvent embeds UCell as its
+                                     first member.  Used by tag.enter / tag.leave getters and
+                                     urbi_native_event_new (T53). */
+    UVAL_HOST_FN = 10             /* M5: native host function slot; runtime-only.  Stores a
+                                     UHostFn (function pointer) in v.v.p cast to void*.
+                                     Used by event_native_register / tag_native_register (T53/T54)
+                                     to populate proto slots that OP_CALL can dispatch into.
+                                     NOT heap-bearing — function pointers are not GC cells. */
+    /* 11-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0 */
 } UValKind;
 
 typedef struct {
@@ -156,6 +166,22 @@ typedef enum {
 
     /* M4 reserves; v1.x backlog implements (collapsed GETSLOT+CALL). */
     OP_INVOKE           = 38,
+
+    /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
+    OP_AT_INSTALL              = 39,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_AT_SYNC_INSTALL         = 40,  /* ABC: same shape as OP_AT_INSTALL        */
+    OP_WHENEVER_INSTALL        = 41,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_WAITUNTIL_INSTALL       = 42,  /* ABC: cond_reg, 0, 0                     */
+
+    /* M5 reactive runtime — pre-M5 spec #3 (event syncEmit + tag.enter/leave) */
+    OP_AT_EVENT_INSTALL        = 43,  /* ABC: event_reg, body_reg, onleave_or_FF */
+    OP_AT_EVENT_SYNC_INSTALL   = 44,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
+
+    /* M5 reactive runtime — pre-M5 spec #4 (slot-change events) */
+    OP_GETSLOT_CHANGE_EVENT    = 45,  /* ABC: dst_reg, recv_reg, name_sym_id     */
+
+    /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
+    OP_LOAD_REALM_GLOBAL       = 46,  /* ABC: dst_reg, sym_id_hi, sym_id_lo      */
 
     OP_MAX
 } UOpcode;

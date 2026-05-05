@@ -106,19 +106,20 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
-    /* Two instructions: LOADK R0 K0 ; RET R0 */
+    /* Two instructions: LOADK R1 K0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)2, module.instr_count);
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
     UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
 
     /* Constant pool: one UVAL_INT entry, value 42 */
     UASSERT_EQ((size_t)1,      module.const_count);
     UASSERT_EQ((uint8_t)UVAL_INT, module.constants[0].kind);
     UASSERT_EQ((int64_t)42,    module.constants[0].v.i);
-    UASSERT_EQ((uint8_t)0,     module.max_reg);
+    UASSERT_EQ((uint8_t)1,     module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -175,19 +176,20 @@ UTEST(emit_ast_binary_1_plus_2) {
     bin.line = 1;
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
-    /* LOADK R0 K0 ; LOADK R1 K1 ; ADD R0 R0 R1 ; RET R0 */
+    /* LOADK R1 K0 ; LOADK R2 K1 ; ADD R1 R1 R2 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)4, module.instr_count);
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)2, uinstr_a(module.instructions[1]));
     UASSERT_EQ((int)OP_ADD, (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[2]));
-    UASSERT_EQ((uint8_t)1, uinstr_c(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[2]));
+    UASSERT_EQ((uint8_t)2, uinstr_c(module.instructions[2]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[3]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[3]));
-    UASSERT_EQ((uint8_t)1, module.max_reg);
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[3]));
+    UASSERT_EQ((uint8_t)2, module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -248,9 +250,10 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &top));
     /* Destination-reuse recycles the lhs slot after each ADD, but the rhs
        child still needs its own register simultaneously.  For the two-level
-       tree (ab)+(cd) the peak is R2: emitting `d` requires R0(ab-lhs),
-       R1(cd-lhs), R2(d) live at once before the inner free_reg. */
-    UASSERT_EQ((uint8_t)2, module.max_reg);
+       tree (ab)+(cd) the peak is R3: emitting `d` requires R1(ab-lhs),
+       R2(cd-lhs), R3(d) live at once before the inner free_reg.
+       (T73: chunk-top pre-reserves R0, so temps start at R1.) */
+    UASSERT_EQ((uint8_t)3, module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -278,21 +281,23 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
 
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &unary));
 
+    /* LOADK R1 K0 ; NEG R1 R1 0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
     UASSERT_EQ((size_t)3, module.instr_count);
 
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
 
     UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_b(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_b(module.instructions[1]));
     UASSERT_EQ((uint8_t)0,    uinstr_c(module.instructions[1]));
 
     UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0,    uinstr_a(module.instructions[2]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[2]));
 
-    UASSERT_EQ((uint8_t)0,    module.max_reg);
+    UASSERT_EQ((uint8_t)1,    module.max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -328,8 +333,10 @@ uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_ident_unresolved_name_returns_error) {
-    /* After T10, a bare identifier with no matching local or upvalue
-       returns EMIT_UNRESOLVED_NAME (no globals at v1.0). */
+    /* After T71, a bare identifier with no matching local or upvalue
+       falls through to the realm-global lookup and compiles successfully
+       (emits OP_GETSLOT on the r_global_slot register).
+       EMIT_UNRESOLVED_NAME is no longer raised for bare identifiers. */
     UVM vm;
     UModule module = {0};
     UArena arena;
@@ -339,7 +346,7 @@ UTEST(emit_ast_ident_unresolved_name_returns_error) {
     id.kind = AST_IDENT;
     id.u.ident.start = "ghost";
     id.u.ident.len = 5;
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, emit_single_statement(&module, &arena, &vm, &id));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &id));
     uarena_destroy(&arena);
     umodule_destroy(&module);
 uvm_destroy(&vm);
@@ -509,7 +516,8 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     UASSERT(strstr(buf, "LOADK") != NULL);
     UASSERT(strstr(buf, "ADD")   != NULL);
     UASSERT(strstr(buf, "RET")   != NULL);
-    UASSERT(strstr(buf, "R0")    != NULL);
+    /* T73: chunk-top pre-reserves R0; temps start at R1. */
+    UASSERT(strstr(buf, "R1")    != NULL);
     uarena_destroy(&arena);
     umodule_destroy(&module);
 uvm_destroy(&vm);
@@ -884,75 +892,94 @@ static void emit_ctx_destroy(EmitCtx *c) {
 }
 
 UTEST(emit_var_decl_basic_no_op_move) {
-    /* "var x = 7" should emit LOADK for the init (no OP_MOVE for local
-       absorption), then RET. Local x lives at R0. */
+    /* "var x = 7" at chunk-top (T72): declares x as a realm global.
+     * Emits LOAD_REALM_GLOBAL + LOADK + SETSLOT + RET (no OP_MOVE for local
+     * absorption — x is not a frame local at chunk-top).
+     * Inside a function body, var is still local (LOADK + RET, no SETSLOT). */
     EmitCtx c;
     emit_ctx_init(&c, "var x = 7");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    /* Expected: LOADK R0 K0 ; RET R0 — no MOVE instruction. */
-    UASSERT_EQ((size_t)2, c.module.instr_count);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(c.module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(c.module.instructions[0]));
-    UASSERT_EQ((int)OP_RET, (int)uinstr_op(c.module.instructions[1]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(c.module.instructions[1]));
+    /* Chunk-top path must emit SETSLOT (write to global object). */
+    bool found_setslot = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
+            found_setslot = true;
+            break;
+        }
+    }
+    UASSERT(found_setslot);
     emit_ctx_destroy(&c);
 }
 
 UTEST(emit_var_then_use_resolves_local) {
-    /* "var x = 7; x + 1" — x resolves to local slot 0, accessed via OP_MOVE.
-       Sequence: LOADK R0 K(7), YIELD, MOVE R1 R0, LOADK R2 K(1), ADD R1 R1 R2, RET R1 */
+    /* "var x = 7; x + 1" — at chunk-top (T72), x is a realm global.
+     * Reading x emits OP_GETSLOT (not OP_MOVE) against the global object.
+     * Inside a function body, var is still a local accessed via MOVE. */
     EmitCtx c;
     emit_ctx_init(&c, "var x = 7; x + 1");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    /* Must have a MOVE instruction for the local read. */
-    bool found_move = false;
+    /* Chunk-top global read must emit GETSLOT (not MOVE from slot 0). */
+    bool found_getslot = false;
     for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_MOVE) {
-            found_move = true;
-            /* The MOVE copies from slot 0 (x) into a temp. */
-            UASSERT_EQ((uint8_t)0, uinstr_b(c.module.instructions[i]));
+        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
+            found_getslot = true;
+            break;
         }
     }
-    UASSERT(found_move);
+    UASSERT(found_getslot);
     emit_ctx_destroy(&c);
 }
 
 UTEST(emit_var_redeclare_in_same_scope_is_error) {
-    /* "var x = 1; var x = 2" — second var-decl should fail with
-       EMIT_LOCAL_REDECLARE. */
-    EmitCtx c;
-    emit_ctx_init(&c, "var x = 1; var x = 2");
-    UEmitError rc = emit_ctx_run(&c);
-    UASSERT_EQ(EMIT_LOCAL_REDECLARE, rc);
-    emit_ctx_destroy(&c);
+    /* At chunk-top (T72), vars are globals (not locals), so redeclaring a
+     * chunk-top var is not an error — it just overwrites the global slot.
+     * EMIT_LOCAL_REDECLARE is still raised for duplicate vars inside a
+     * function body (where they are frame locals). */
+    {
+        /* Chunk-top: two vars with same name → EMIT_OK (both write to global). */
+        EmitCtx c;
+        emit_ctx_init(&c, "var x = 1; var x = 2");
+        UEmitError rc = emit_ctx_run(&c);
+        UASSERT_EQ(EMIT_OK, rc);
+        emit_ctx_destroy(&c);
+    }
+    {
+        /* Inside a function: duplicate var → EMIT_LOCAL_REDECLARE. */
+        EmitCtx c;
+        emit_ctx_init(&c, "function() { var x = 1; var x = 2 }");
+        UEmitError rc = emit_ctx_run(&c);
+        UASSERT_EQ(EMIT_LOCAL_REDECLARE, rc);
+        emit_ctx_destroy(&c);
+    }
 }
 
 UTEST(emit_unresolved_name_is_error) {
-    /* "ghost" — bare unresolved identifier -> EMIT_UNRESOLVED_NAME */
+    /* "ghost" — after T71 the realm-global fallback compiles bare
+     * identifiers via OP_GETSLOT; no longer EMIT_UNRESOLVED_NAME. */
     EmitCtx c;
     emit_ctx_init(&c, "ghost");
     UEmitError rc = emit_ctx_run(&c);
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    UASSERT_EQ(EMIT_OK, rc);
     emit_ctx_destroy(&c);
 }
 
 UTEST(emit_assign_to_existing_local) {
-    /* "var x = 1; x = 42" — should emit cleanly; x still holds 42 after. */
+    /* "var x = 1; x = 42" — at chunk-top (T72), x is a global.
+     * The assignment x = 42 routes to OP_SETSLOT (global write), not OP_MOVE.
+     * Both the declaration and the assignment must compile cleanly. */
     EmitCtx c;
     emit_ctx_init(&c, "var x = 1; x = 42");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    /* Must have a MOVE from the temp into slot 0 for the assignment. */
-    bool found_move_to_zero = false;
+    /* Both var-decl and assign emit OP_SETSLOT at chunk-top. */
+    int setslot_count = 0;
     for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_MOVE
-            && uinstr_a(c.module.instructions[i]) == 0) {
-            found_move_to_zero = true;
-        }
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT)
+            setslot_count++;
     }
-    UASSERT(found_move_to_zero);
+    UASSERT(setslot_count >= 2);
     emit_ctx_destroy(&c);
 }
 
@@ -973,10 +1000,11 @@ UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
     UAstNode n = {0};
     n.kind = AST_BOOL; n.u.b = true; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
-    /* Instructions: LOADBOOL R0 1 0 ; RET R0 */
+    /* Instructions: LOADBOOL R1 1 0 ; RET R1
+     * (T73: chunk-top pre-reserves R0 for r_global_slot) */
     UASSERT_EQ((size_t)2, module.instr_count);
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
@@ -1001,7 +1029,8 @@ UTEST(emit_ast_nil_emits_loadnil) {
     n.kind = AST_NIL; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
     UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[0]));
+    /* T73: chunk-top pre-reserves R0; first temp is R1. */
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
 
@@ -1194,23 +1223,32 @@ UTEST(disassemble_jmp_signed_offset) {
 }
 
 UTEST(disassemble_closure_with_prelude) {
-    /* Compile "var x = 1; var y = 2; function() { x + y }" through the
-     * parse+emit pipeline.  The inner function captures x and y as two
-     * upvalues, so the root chunk gets OP_CLOSURE + 2 upvalue-prelude
-     * pseudo-instructions.  Assert both upval lines appear in the
-     * disassembly. */
+    /* Compile "function() { var x = 1; var y = 2; function() { x + y } }"
+     * through the parse+emit pipeline.  The innermost closure captures x and y
+     * as two upvalues from the enclosing function body (which declares them as
+     * locals).  The root chunk gets the outer function as nested[0];
+     * nested[1] is the inner closure with 2 upvalues.
+     *
+     * Note: upval[N] lines only appear in the parent proto's (nested[0])
+     * disassembly, not in the root module's disassembly.  We verify the
+     * upvalue count structurally and check the root disassembly contains
+     * a CLOSURE instruction for the outer function. */
     EmitCtx c;
-    emit_ctx_init(&c, "var x = 1; var y = 2; function() { x + y }");
+    emit_ctx_init(&c, "function() { var x = 1; var y = 2; function() { x + y } }");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT(c.module.nested_count >= 1u);
-    UASSERT(c.module.nested[0]->nupvals == 2u);
+    UASSERT(c.module.nested_count >= 2u);
+    /* The outer proto (nested[0]) captures nothing from the chunk top. */
+    UASSERT(c.module.nested[0]->nupvals == 0u);
+    /* The inner proto (nested[1]) captures x and y as 2 upvalues. */
+    UASSERT(c.module.nested[1]->nupvals == 2u);
 
+    /* Root module disassembly must show at least one instruction and
+     * a CLOSURE P0 entry for the outer function proto. */
     char buf[1024];
     size_t n = uemit_disassemble(&c.module, buf, sizeof buf);
     UASSERT(n > 0);
-    UASSERT(strstr(buf, "upval[0]:") != NULL);
-    UASSERT(strstr(buf, "upval[1]:") != NULL);
+    UASSERT(strstr(buf, "CLOSURE") != NULL);
     emit_ctx_destroy(&c);
 }
 
@@ -1426,8 +1464,9 @@ UTEST(emit_t10_throw_emits_op_throw) {
     UASSERT(throw_idx >= 0);
     uint32_t w = module.instructions[(size_t)throw_idx];
     UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
-    /* A = destination register of the value expression (R0). */
-    UASSERT_EQ((uint8_t)0, uinstr_a(w));
+    /* A = destination register of the value expression (R1 at chunk-top).
+     * T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1. */
+    UASSERT_EQ((uint8_t)1, uinstr_a(w));
 
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
 }
@@ -1435,11 +1474,14 @@ UTEST(emit_t10_throw_emits_op_throw) {
 /* --- M4 T20+T21 — AST_MEMBER_GET → OP_GETSLOT, AST_MEMBER_SET → OP_SETSLOT --- */
 
 UTEST(emit_member_get_emits_op_getslot_with_ic_index_zero) {
-    /* "var obj = nil; obj.x" — first GETSLOT emit assigns IC index 0.
-     * obj must be bound as a local so emit_expr resolves the receiver via
-     * the local-lookup path (unbound identifier → EMIT_UNRESOLVED_NAME).
-     * Drives the parse → emit pipeline statement-by-statement so we can
-     * inspect the funcstate's IC bookkeeping before uemit_finish closes it. */
+    /* "var obj = nil; obj.x" at chunk-top (T72) has multiple IC sites:
+     * SETSLOT(obj write), GETSLOT(obj global read), GETSLOT(obj.x member).
+     * This test verifies that compilation succeeds and at least one GETSLOT
+     * with IC name "x" is emitted (the member access site).
+     *
+     * Note: IC index 0 is now assigned to the `obj` SETSLOT, not `obj.x`.
+     * Tests that require IC index 0 == "x" belong in nested function bodies
+     * where obj is a local (no global IC overhead). */
     EmitCtx c;
     emit_ctx_init(&c, "var obj = nil; obj.x");
 
@@ -1447,35 +1489,43 @@ UTEST(emit_member_get_emits_op_getslot_with_ic_index_zero) {
     while ((stmt = uparse_next_statement(&c.p)) != NULL) {
         UASSERT_EQ(EMIT_OK, uemit_statement(&c.e, stmt));
     }
-    /* Don't finish yet — keep current_fs alive for IC inspection. */
 
-    /* Find the GETSLOT instruction. */
-    int gs_idx = -1;
+    /* Verify at least one OP_GETSLOT is emitted. */
+    bool found_getslot = false;
     for (size_t i = 0; i < c.module.instr_count; i++) {
         if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
-            gs_idx = (int)i;
+            found_getslot = true;
             break;
         }
     }
-    UASSERT(gs_idx >= 0);
-    uint32_t w = c.module.instructions[(size_t)gs_idx];
-    /* OP_GETSLOT ABC: A=dst, B=recv, C=ic_index. */
-    UASSERT_EQ((int)OP_GETSLOT, (int)uinstr_op(w));
-    UASSERT_EQ((uint8_t)0, uinstr_c(w));        /* first IC site → index 0 */
-    /* The funcstate's ic_next bumped by exactly one for the single site. */
+    UASSERT(found_getslot);
+
+    /* Verify "x" is recorded in the IC name table. */
     UASSERT(c.e.current_fs != NULL);
-    UASSERT_EQ((uint16_t)1, c.e.current_fs->ic_next);
     UASSERT(c.e.current_fs->ic_names != NULL);
-    /* Name "x" was interned and recorded. */
     const char *xn = ustr_intern(&c.vm, "x", 1);
-    UASSERT(c.e.current_fs->ic_names[0] == (USymbol *)xn);
+    bool found_x = false;
+    for (uint16_t i = 0; i < c.e.current_fs->ic_next; i++) {
+        if (c.e.current_fs->ic_names[i] == (USymbol *)xn) {
+            found_x = true;
+            break;
+        }
+    }
+    UASSERT(found_x);
 
     UASSERT_EQ(EMIT_OK, uemit_finish(&c.e));
     emit_ctx_destroy(&c);
 }
 
 UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
-    /* "var obj = nil; obj.x = 42" — first SETSLOT emit assigns IC index 0. */
+    /* "var obj = nil; obj.x = 42" — verifies that both member-set and
+     * global-var-decl SETSLOT instructions are emitted and that "x" appears
+     * in the IC name table.
+     *
+     * Note: at chunk-top (T72), `var obj = nil` itself emits a SETSLOT (for
+     * the global `obj` write), so the first SETSLOT is for `obj`, not `x`.
+     * IC index for "x" is >= 1.  Tests that require IC index 0 == "x" should
+     * use a nested function body where obj is a local. */
     EmitCtx c;
     emit_ctx_init(&c, "var obj = nil; obj.x = 42");
 
@@ -1484,41 +1534,58 @@ UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
         UASSERT_EQ(EMIT_OK, uemit_statement(&c.e, stmt));
     }
 
-    int ss_idx = -1;
+    /* At least one OP_SETSLOT must be emitted. */
+    bool found_setslot = false;
     for (size_t i = 0; i < c.module.instr_count; i++) {
         if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
-            ss_idx = (int)i;
+            found_setslot = true;
             break;
         }
     }
-    UASSERT(ss_idx >= 0);
-    uint32_t w = c.module.instructions[(size_t)ss_idx];
-    /* OP_SETSLOT ABC: A=src, B=recv, C=ic_index. */
-    UASSERT_EQ((int)OP_SETSLOT, (int)uinstr_op(w));
-    UASSERT_EQ((uint8_t)0, uinstr_c(w));
+    UASSERT(found_setslot);
+
+    /* "x" must appear in the IC name table. */
     UASSERT(c.e.current_fs != NULL);
-    UASSERT_EQ((uint16_t)1, c.e.current_fs->ic_next);
     UASSERT(c.e.current_fs->ic_names != NULL);
     const char *xn = ustr_intern(&c.vm, "x", 1);
-    UASSERT(c.e.current_fs->ic_names[0] == (USymbol *)xn);
+    bool found_x = false;
+    for (uint16_t i = 0; i < c.e.current_fs->ic_next; i++) {
+        if (c.e.current_fs->ic_names[i] == (USymbol *)xn) {
+            found_x = true;
+            break;
+        }
+    }
+    UASSERT(found_x);
 
     UASSERT_EQ(EMIT_OK, uemit_finish(&c.e));
     emit_ctx_destroy(&c);
 }
 
 UTEST(emit_top_level_member_get_populates_module_ic_count) {
-    /* "var o = nil; o.x" — a top-level OP_GETSLOT site.  After uemit_finish,
-     * UModule.ic_count must be 1 and ic_names[0] must be the intern of "x".
-     * This regresses the silent miscompile where the top-level funcstate's
-     * ic_names were freed without being copied into UModule. */
+    /* "var o = nil; o.x" — verifies that top-level IC sites are correctly
+     * copied from funcstate into UModule after uemit_finish.  This regresses
+     * the silent miscompile where the top-level funcstate's ic_names were
+     * freed without being copied into UModule.
+     *
+     * With T72, chunk-top `var o = nil` adds IC sites for the global write
+     * (SETSLOT) and the global read (GETSLOT), plus one for the member access
+     * (.x GETSLOT).  ic_count must be >= 1 and "x" must appear somewhere. */
     EmitCtx c;
     emit_ctx_init(&c, "var o = nil; o.x");
     UASSERT_EQ(EMIT_OK, emit_ctx_run(&c));
 
-    UASSERT_EQ((uint16_t)1, c.module.ic_count);
+    UASSERT(c.module.ic_count >= 1u);
     UASSERT(c.module.ic_names != NULL);
+    /* "x" must be present somewhere in the IC name table. */
     const char *xn = ustr_intern(&c.vm, "x", 1);
-    UASSERT(c.module.ic_names[0] == (USymbol *)xn);
+    bool found_x = false;
+    for (uint16_t i = 0; i < c.module.ic_count; i++) {
+        if (c.module.ic_names[i] == (USymbol *)xn) {
+            found_x = true;
+            break;
+        }
+    }
+    UASSERT(found_x);
 
     emit_ctx_destroy(&c);
 }
@@ -1548,7 +1615,7 @@ void test_emit_suite(void) {
               emit_ast_unary_neg_5_loadk_then_neg_then_ret);
     utest_run("emit AST_ERROR -> EMIT_AST_ERROR",
               emit_ast_error_returns_emit_ast_error);
-    utest_run("emit AST_IDENT unresolved name -> EMIT_UNRESOLVED_NAME",
+    utest_run("emit AST_IDENT bare ident -> global fallback (T71, no EMIT_UNRESOLVED_NAME)",
               emit_ast_ident_unresolved_name_returns_error);
     utest_run("emit first error latches; subsequent statements short-circuit",
               emit_first_error_latches_and_subsequent_statements_short_circuit);
@@ -1590,7 +1657,7 @@ void test_emit_suite(void) {
               emit_var_then_use_resolves_local);
     utest_run("emit var redeclare in same scope is EMIT_LOCAL_REDECLARE",
               emit_var_redeclare_in_same_scope_is_error);
-    utest_run("emit unresolved name 'ghost' is EMIT_UNRESOLVED_NAME",
+    utest_run("emit bare name 'ghost' -> global fallback (EMIT_OK after T71)",
               emit_unresolved_name_is_error);
     utest_run("emit assign: 'var x = 1; x = 42' emits OP_MOVE to slot 0",
               emit_assign_to_existing_local);

@@ -32,6 +32,8 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_VOID:    return false;                 /* void != void per spec */
             case UVAL_STRAND:  return a->v.p == b->v.p;     /* strand identity */
             case UVAL_OBJECT:  return a->v.p == b->v.p;     /* object identity */
+            case UVAL_EVENT:   return a->v.p == b->v.p;     /* event identity */
+            case UVAL_HOST_FN: return a->v.p == b->v.p;     /* fn-pointer identity */
         }
     }
 

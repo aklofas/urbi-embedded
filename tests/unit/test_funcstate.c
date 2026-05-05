@@ -35,7 +35,8 @@ UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
 
     UFuncState *fs = uemit_open_function(&e, NULL);
     UASSERT(fs != NULL);
-    UASSERT_EQ((uint8_t)0, fs->max_reg_seen);  // cppcheck-suppress nullPointerRedundantCheck
+    /* T73: chunk-top pre-reserves r_global_slot=R0, so max_reg_seen starts at 1. */
+    UASSERT_EQ((uint8_t)1, fs->max_reg_seen);  // cppcheck-suppress nullPointerRedundantCheck
     UASSERT_EQ(0, fs->nactvar);
     UASSERT_EQ(0, fs->nupvalues);
     UASSERT_EQ(0, fs->nblocks);
@@ -52,12 +53,13 @@ UTEST(funcstate_declare_local_pushes_actvar_and_advances_freereg) {
 
     const char *name = ustr_intern(&v, "x", 1);
     int slot = uemit_declare_local(&e, name, 1);
-    UASSERT_EQ(0, slot);
+    /* T73: chunk-top pre-reserves R0, so first local is at slot 1. */
+    UASSERT_EQ(1, slot);
     UASSERT_EQ(1, fs->nactvar);
-    UASSERT_EQ((uint8_t)1, fs->freereg);
+    UASSERT_EQ((uint8_t)2, fs->freereg);
     UASSERT(fs->actvars[0].name == name);    /* canonical pointer eq */
-    UASSERT_EQ((uint8_t)0, fs->actvars[0].slot);
-    UASSERT_EQ((uint8_t)1, fs->max_reg_seen);
+    UASSERT_EQ((uint8_t)1, fs->actvars[0].slot);
+    UASSERT_EQ((uint8_t)2, fs->max_reg_seen);
 
     uemit_close_function(&e);
     teardown(&m, &a, &v);
@@ -71,11 +73,12 @@ UTEST(funcstate_declare_three_locals) {
     int s1 = uemit_declare_local(&e, ustr_intern(&v, "a", 1), 1);
     int s2 = uemit_declare_local(&e, ustr_intern(&v, "b", 1), 1);
     int s3 = uemit_declare_local(&e, ustr_intern(&v, "c", 1), 1);
-    UASSERT_EQ(0, s1);
-    UASSERT_EQ(1, s2);
-    UASSERT_EQ(2, s3);
+    /* T73: chunk-top pre-reserves R0, so locals start at slot 1. */
+    UASSERT_EQ(1, s1);
+    UASSERT_EQ(2, s2);
+    UASSERT_EQ(3, s3);
     UASSERT_EQ(3, fs->nactvar);
-    UASSERT_EQ((uint8_t)3, fs->freereg);
+    UASSERT_EQ((uint8_t)4, fs->freereg);
 
     uemit_close_function(&e);
     teardown(&m, &a, &v);
@@ -87,7 +90,7 @@ UTEST(funcstate_redeclare_in_same_scope_errors) {
     uemit_open_function(&e, NULL);
 
     const char *name = ustr_intern(&v, "x", 1);
-    UASSERT_EQ(0, uemit_declare_local(&e, name, 1));
+    UASSERT_EQ(1, uemit_declare_local(&e, name, 1));  /* T73: first local at slot 1 */
     UASSERT_EQ(-1, uemit_declare_local(&e, name, 1));      /* duplicate */
     UASSERT_EQ((int)EMIT_LOCAL_REDECLARE, (int)e.error);
 
@@ -153,16 +156,16 @@ UTEST(block_close_restores_nactvar_and_freereg) {
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
-    uemit_declare_local(&e, ustr_intern(&v, "outer", 5), 5);  /* slot 0 */
+    uemit_declare_local(&e, ustr_intern(&v, "outer", 5), 5);  /* slot 1 (T73: R0 pre-reserved) */
     uemit_open_block(&e, false);
-    uemit_declare_local(&e, ustr_intern(&v, "inner_a", 7), 7); /* slot 1 */
-    uemit_declare_local(&e, ustr_intern(&v, "inner_b", 7), 7); /* slot 2 */
+    uemit_declare_local(&e, ustr_intern(&v, "inner_a", 7), 7); /* slot 2 */
+    uemit_declare_local(&e, ustr_intern(&v, "inner_b", 7), 7); /* slot 3 */
     UASSERT_EQ(3, fs->nactvar);
-    UASSERT_EQ((uint8_t)3, fs->freereg);
+    UASSERT_EQ((uint8_t)4, fs->freereg);
 
     uemit_close_block(&e);
     UASSERT_EQ(1, fs->nactvar);
-    UASSERT_EQ((uint8_t)1, fs->freereg);
+    UASSERT_EQ((uint8_t)2, fs->freereg);
     UASSERT_EQ(0, fs->nblocks);
 
     uemit_close_function(&e);
@@ -246,14 +249,14 @@ UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
 
     UFuncState *outer = uemit_open_function(&e, NULL);
     const char *x = ustr_intern(&v, "x", 1);
-    uemit_declare_local(&e, x, 1);                    /* slot 0 in outer */
+    uemit_declare_local(&e, x, 1);                    /* slot 1 in outer (T73: R0 pre-reserved) */
 
     UFuncState *inner = uemit_open_function(&e, outer);
     int idx = find_or_install_upvalue(&e, inner, x, 1);
     UASSERT_EQ(0, idx);
     UASSERT_EQ(1, inner->nupvalues);
     UASSERT(inner->upvalues[0].in_stack == true);
-    UASSERT_EQ((uint8_t)0, inner->upvalues[0].idx);
+    UASSERT_EQ((uint8_t)1, inner->upvalues[0].idx);  /* T73: outer local is at slot 1 */
     UASSERT(outer->actvars[0].is_captured == true);   /* cppcheck-suppress nullPointerRedundantCheck */
 
     uemit_close_function(&e);
@@ -267,7 +270,7 @@ UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
 
     UFuncState *outer = uemit_open_function(&e, NULL);
     const char *x = ustr_intern(&v, "x", 1);
-    uemit_declare_local(&e, x, 1);                   /* slot 0 outer */
+    uemit_declare_local(&e, x, 1);                   /* slot 1 outer (T73: R0 pre-reserved) */
 
     UFuncState *mid   = uemit_open_function(&e, outer);
     UFuncState *inner = uemit_open_function(&e, mid);
@@ -276,7 +279,7 @@ UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
     UASSERT_EQ(0, idx);
     UASSERT_EQ(1, mid->nupvalues);                   /* cppcheck-suppress nullPointerRedundantCheck */
     UASSERT(mid->upvalues[0].in_stack == true);
-    UASSERT_EQ((uint8_t)0, mid->upvalues[0].idx);
+    UASSERT_EQ((uint8_t)1, mid->upvalues[0].idx);    /* T73: outer local is at slot 1 */
     UASSERT_EQ(1, inner->nupvalues);                 /* cppcheck-suppress nullPointerRedundantCheck */
     UASSERT(inner->upvalues[0].in_stack == false);
     UASSERT_EQ((uint8_t)0, inner->upvalues[0].idx);

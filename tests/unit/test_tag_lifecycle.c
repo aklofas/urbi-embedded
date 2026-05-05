@@ -138,6 +138,8 @@ UTEST(strand_scope_tag_returns_innermost)
     inner_tag.pad1[2]              = 0;
     inner_tag.member_strands_head  = NULL;
     inner_tag.member_watchers_head = NULL;
+    inner_tag.enter_event          = NULL;
+    inner_tag.leave_event          = NULL;
     inner_tag.name.kind            = UVAL_NIL;
     inner_tag.name.v.i             = 0;
 
@@ -457,6 +459,8 @@ tag_init_local_lifecycle(UTag *t)
     t->pad1[2]              = 0;
     t->member_strands_head  = NULL;
     t->member_watchers_head = NULL;
+    t->enter_event          = NULL;
+    t->leave_event          = NULL;
     t->name.kind            = UVAL_NIL;
     t->name.v.i             = 0;
 }

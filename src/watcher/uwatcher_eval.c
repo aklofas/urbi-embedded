@@ -18,6 +18,7 @@
 #include "uvalue.h"        /* uvalue_truthy */
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h" /* URBI_INTERNAL_ASSERT */
+#include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
 
 /* === invoke_condition_closure ===
  *
@@ -45,57 +46,211 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
     return nil;
 }
 
+/* === invoke_body_inline ===
+ *
+ * Run w->body synchronously on the VM scratch frame (AT_SYNC mode).
+ * M5 stub: delegates to vm->test_watcher_fire_hook when non-NULL.
+ * M5 proper: replace with real dispatch_loop_until_yield execution on
+ * vm->watcher_scratch_frame.
+ *
+ * Preconditions (URBI_DEBUG asserted):
+ *   - vm->in_watcher_eval == 1 (we are inside watcher_eval_dirty).
+ *   - w->mode == UWATCHER_AT_SYNC.
+ *   - w->body != NULL.                                             */
+static void
+invoke_body_inline(struct UVM *vm, struct UWatcher *w)
+{
+#ifdef URBI_DEBUG
+    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT_SYNC);
+    URBI_INTERNAL_ASSERT(w->body != NULL);
+#endif
+
+    /* M5 stub: fire hook observes the inline body execution in tests.
+     * M5 proper: run_closure_on_scratch_frame(vm, w->body) here. */
+    if (vm->test_watcher_fire_hook != NULL) {
+        vm->test_watcher_fire_hook(vm, w);
+    }
+    /* If no hook and no real execution: silent no-op (graceful degradation). */
+}
+
+/* === invoke_onleave_inline ===
+ *
+ * Run w->onleave synchronously on the VM scratch frame (falling-edge path).
+ * M5 stub: delegates to vm->test_watcher_onleave_hook when non-NULL.
+ * M5 proper: replace with real dispatch_loop_until_yield execution on
+ * vm->watcher_scratch_frame.
+ *
+ * Preconditions (URBI_DEBUG asserted):
+ *   - vm->in_watcher_eval == 1.
+ *   - w->onleave != NULL.                                         */
+static void
+invoke_onleave_inline(struct UVM *vm, struct UWatcher *w)
+{
+#ifdef URBI_DEBUG
+    URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
+    URBI_INTERNAL_ASSERT(w->onleave != NULL);
+#endif
+
+    /* M5 stub: onleave hook observes inline onleave execution in tests.
+     * M5 proper: run_closure_on_scratch_frame(vm, w->onleave) here. */
+    if (vm->test_watcher_onleave_hook != NULL) {
+        vm->test_watcher_onleave_hook(vm, w);
+        return;
+    }
+    /* M5: real urbi_run_closure_on_scratch call borrows vm->watcher_scratch_frame.
+     * At M3/M5-stub: graceful no-op if no hook. */
+    (void)vm;
+    (void)w;
+}
+
 /* === watcher_eval_dirty ===
  *
  * Walk active_watchers_head, evaluate each watcher's condition, and fire
- * spawn_body_coroutine on rising-edge (AT/AT_SYNC) or level (WHENEVER).
+ * the appropriate action based on mode and edge detection:
  *
- * Per spec §6.2:
+ *   AT        rising edge  → spawn_body_coroutine (async)
+ *             falling edge + BODY_FIRED_SINCE_ONLEAVE + onleave != NULL
+ *                          → invoke_onleave_inline; clear flag
+ *   AT_SYNC   rising edge  → invoke_body_inline (synchronous, no yield)
+ *   WHENEVER  level true   → spawn_body_coroutine each pass
+ *   WAITUNTIL rising edge  → wake waiter_strand, unregister self
+ *
+ * Per spec #2 §8.3:
  *   - Early-exit if watcher_dirty_count == 0.
  *   - Reset watcher_dirty_count BEFORE the loop so any condition that
  *     re-triggers the dirty bit during eval is caught on the next safepoint.
  *   - in_watcher_eval reentrancy guard prevents recursive install/eval.
- *   - Watchers with URBI_WATCHER_PENDING_UNREGISTER are skipped. */
+ *   - Watchers with URBI_WATCHER_PENDING_UNREGISTER are skipped.
+ *   - last_value_cache updated after firing decision.
+ *   - WAITUNTIL: capture next_active before calling unregister_internal
+ *     (unregister frees the slot; the pointer is stale after the call). */
 void
 watcher_eval_dirty(struct UVM *vm)
 {
     struct UWatcher *w;
+    struct UWatcher *next;
 
     URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->watcher_dirty_count == 0) return;
+
+#ifdef URBI_DEBUG
+    urbi_watcher_check_invariants(vm);
+
+    /* Spec #2 §8.7: WAITUNTIL invariant — bidirectional contract.
+     * Every WAITUNTIL watcher must have waiter_strand != NULL.
+     * Every non-NULL waiter_strand must be in USTRAND_WAIT_WATCHER state. */
+    for (w = vm->active_watchers_head; w != NULL; w = w->next_active) {
+        URBI_INTERNAL_ASSERT(
+            w->mode != UWATCHER_WAITUNTIL || w->waiter_strand != NULL);
+        URBI_INTERNAL_ASSERT(
+            w->waiter_strand == NULL ||
+            w->waiter_strand->state == USTRAND_WAIT_WATCHER);
+    }
+#endif
+
     vm->watcher_dirty_count = 0;
 
     URBI_INTERNAL_ASSERT(!vm->in_watcher_eval);
     vm->in_watcher_eval = 1;
 
-    for (w = vm->active_watchers_head; w != NULL; w = w->next_active) {
+    w = vm->active_watchers_head;
+    while (w != NULL) {
         UValue new_val;
         UValue old_val;
-        int fire;
+        int rising;
+        int falling;
 
-        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) continue;
+        /* Capture next before any potential unregister (WAITUNTIL path frees w). */
+        next = w->next_active;
+
+        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+            w = next;
+            continue;
+        }
 
         new_val = invoke_condition_closure(vm, w);
         old_val = w->last_value_cache;
-        w->last_value_cache = new_val;
 
-        fire = 0;
+        rising  = uvalue_truthy(&new_val) && !uvalue_truthy(&old_val);
+        falling = !uvalue_truthy(&new_val) && uvalue_truthy(&old_val);
+
         switch (w->mode) {
             case UWATCHER_AT:
+                if (rising) {
+                    if (w->body != NULL) {
+                        spawn_body_coroutine(vm, w);
+                    } else if (vm->test_watcher_fire_hook != NULL) {
+                        vm->test_watcher_fire_hook(vm, w);
+                    }
+                    w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
+                }
+                if (falling &&
+                    (w->flags & URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE) &&
+                    w->onleave != NULL) {
+                    invoke_onleave_inline(vm, w);
+                    w->flags &= (uint8_t)~(uint8_t)URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
+                }
+                w->last_value_cache = new_val;
+                break;
+
             case UWATCHER_AT_SYNC:
-                /* Rising-edge: fires only on false→true transition. */
-                fire = uvalue_truthy(&new_val) && !uvalue_truthy(&old_val);
+                if (rising) {
+                    if (w->body != NULL) {
+                        invoke_body_inline(vm, w);
+                    } else if (vm->test_watcher_fire_hook != NULL) {
+                        vm->test_watcher_fire_hook(vm, w);
+                    }
+                    w->flags |= URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
+                }
+                if (falling &&
+                    (w->flags & URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE) &&
+                    w->onleave != NULL) {
+                    invoke_onleave_inline(vm, w);
+                    w->flags &= (uint8_t)~(uint8_t)URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE;
+                }
+                w->last_value_cache = new_val;
                 break;
+
             case UWATCHER_WHENEVER:
-                /* Level: fires every dirty pass while condition is truthy. */
-                fire = uvalue_truthy(&new_val);
+                /* Level-triggered: fires every dirty pass while condition truthy. */
+                if (uvalue_truthy(&new_val)) {
+                    if (w->body != NULL) {
+                        spawn_body_coroutine(vm, w);
+                    } else if (vm->test_watcher_fire_hook != NULL) {
+                        vm->test_watcher_fire_hook(vm, w);
+                    }
+                }
+                w->last_value_cache = new_val;
                 break;
+
+            case UWATCHER_WAITUNTIL:
+                if (rising) {
+                    struct UStrand *waiter = w->waiter_strand;
+                    /* Clear waiter pointer BEFORE unregister so the unregister
+                     * scan does not observe a stale pointer. */
+                    w->waiter_strand = NULL;
+                    /* urbi_watcher_unregister_internal unlinks from active list
+                     * and returns w to the pool — do NOT touch w after this. */
+                    urbi_watcher_unregister_internal(vm, w);
+                    /* Wake the blocked strand: WAIT_WATCHER → READY. */
+                    sched_strand_make_runnable(waiter);
+                    /* w is freed; skip the post-switch last_value_cache update.
+                     * Advance directly to next. */
+                    w = next;
+                    continue;
+                }
+                w->last_value_cache = new_val;
+                break;
+
             default:
+                /* Unknown mode — update cache and skip. */
+                w->last_value_cache = new_val;
                 break;
         }
 
-        if (fire) spawn_body_coroutine(vm, w);
+        w = next;
     }
 
     vm->in_watcher_eval = 0;

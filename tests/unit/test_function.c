@@ -428,9 +428,12 @@ UTEST(closure_captures_local) {
 }
 
 UTEST(closure_writes_outer_local) {
-    /* var x = 0; (function() { x = 9 })(); x → 9 */
+    /* Tests OP_SETUPVAL (upvalue write-back) from an inner closure.
+     * Note: chunk-top vars are realm globals under T72 (accessed via
+     * GETSLOT/SETSLOT, not captured as upvalues).  To exercise the
+     * upvalue write path, the outer var must live in a function body. */
     UValue out;
-    UVMError rc = fn_eval("var x = 0; (function() { x = 9 })(); x", &out);
+    UVMError rc = fn_eval("(function() { var x = 0; (function() { x = 9 })(); x })()", &out);
     UASSERT_EQ(UVM_OK, rc);
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(9, (int)out.v.i);

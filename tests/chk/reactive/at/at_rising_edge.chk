@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: at (cond) body — rising-edge fire; body runs once when condition
+#         transitions false→true; does not re-fire if condition stays true.
+#
+# defer-to: M5-scratch-frame
+#
+# Reason:
+#   invoke_condition_closure and run_closure_on_scratch_frame_with_result are
+#   M5-stub functions (uwatcher_eval.c / uwatcher_install.c); both return
+#   UVAL_NIL unless the test_watcher_condition_hook or test_install_cond_hook
+#   is set.  End-to-end script-level condition evaluation and body dispatch
+#   require the scratch-frame execution path to be wired (M5 proper).
+#   Rising/falling edge logic is exercised by test_at_fire_paths.c T43 unit
+#   tests using those hooks.
+#
+# Activate when scratch-frame execution is wired by replacing the source below.
+#
+# Urbiscript source (activate at M5 scratch-frame):
+#   var x = 0;
+#   var fired = 0;
+#   at (x > 5) Realm.fired = Realm.fired + 1;
+#   Realm.x = 10;
+#   fired
+#   --- expected output ---
+#   [00000000] 0
+#   [00000001] 0
+#   [00000002] nil
+#   [00000003] 10
+#   [00000004] 1

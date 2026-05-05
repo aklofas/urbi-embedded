@@ -2,7 +2,19 @@
 /* Streaming Pratt parser implementation. */
 
 #include "uparse.h"
+#include "watcher/uwatcher.h"
 #include <stddef.h>
+
+/* Local string helper — compare an (unterminated) lexeme against a literal.
+ * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */
+static int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
+    if (len != lit_len) return 0;
+    int i;
+    for (i = 0; i < len; i++) {
+        if (bytes[i] != literal[i]) return 0;
+    }
+    return 1;
+}
 
 /* --- Static error-message table.  Indices must match UParseError. --- */
 
@@ -25,7 +37,12 @@ static const char * const kErrorMessages[] = {
     "trailing '&' is illegal",
     "'lazy' keyword only allowed in parameter lists",
     "lazy parameter cannot have a default value",
-    "'try' requires at least one of 'catch' or 'finally'"
+    "'try' requires at least one of 'catch' or 'finally'",
+    "reserved keyword used as variable name (M5 reactive runtime); rename the variable",
+    "postfix '?' is only valid inside at(...); use 'at (e?) body' for event-subscribe",
+    "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg",
+    "bare '.changed' outside at(...) is a slot-change event; use: at (obj.x.changed?) body",
+    "slot-change event cannot be emitted; use slot assignment to trigger subscribers"
 };
 
 static const char * const kErrorNames[] = {
@@ -47,7 +64,12 @@ static const char * const kErrorNames[] = {
     "PARSE_TRAILING_AMP",
     "PARSE_LAZY_OUT_OF_PARAM_LIST",
     "PARSE_LAZY_PARAM_DEFAULT",
-    "PARSE_TRY_NEEDS_CATCH_OR_FINALLY"
+    "PARSE_TRY_NEEDS_CATCH_OR_FINALLY",
+    "PARSE_RESERVED_KEYWORD_AS_IDENT",
+    "PARSE_QUESTION_OUTSIDE_AT",
+    "PARSE_EMIT_MULTI_ARG_V1",
+    "PARSE_SLOT_CHANGED_BARE_V1",
+    "PARSE_SLOT_CHANGED_EMIT_V1"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -157,6 +179,9 @@ static UAstNode *parse_return(UParser *p);
 static UAstNode *parse_try(UParser *p);
 static UAstNode *parse_throw(UParser *p);
 static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
+static UAstNode *parse_at(UParser *p);
+static UAstNode *parse_whenever(UParser *p);
+static UAstNode *parse_waituntil(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -233,7 +258,7 @@ static UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
-/* --- parse_prefix: unary +/- then atom.  Unary '+' is a no-op. --- */
+/* --- parse_prefix: unary +/- /! then atom.  Unary '+' is a no-op. --- */
 
 static UAstNode *parse_prefix(UParser *p) {
     UToken t = peek(p);
@@ -247,6 +272,15 @@ static UAstNode *parse_prefix(UParser *p) {
         if (!operand) return NULL;
         if (operand->kind == AST_ERROR) return operand;
         return make_unary(p, UOP_NEG, operand, t.line, t.col);
+    }
+    if (t.type == TOK_BANG) {
+        /* Prefix `!x` — logical NOT.  Recognized here (primary position) so
+         * postfix `e!` (in the post-primary loop) does not steal it. */
+        consume(p);
+        UAstNode *operand = parse_prefix(p);
+        if (!operand) return NULL;
+        if (operand->kind == AST_ERROR) return operand;
+        return make_unary(p, UOP_NOT, operand, t.line, t.col);
     }
     return parse_atom(p);
 }
@@ -320,7 +354,21 @@ static UAstNode *parse_atom(UParser *p) {
 static UAstNode *parse_var_decl(UParser *p) {
     UToken kw = consume(p);          /* consume TOK_KW_VAR */
     UToken name = peek(p);
-    if (name.type != TOK_IDENT) {
+
+    /* Detect hard reserved keywords used as variable names (T4, spec #2 §3.11).
+     * TOK_KW_ASYNC is soft — allowed as identifier at v1.0. */
+    if (name.type == TOK_KW_AT       || name.type == TOK_KW_WHENEVER  ||
+        name.type == TOK_KW_WAITUNTIL || name.type == TOK_KW_ONLEAVE  ||
+        name.type == TOK_KW_SYNC) {
+        return make_error(p, PARSE_RESERVED_KEYWORD_AS_IDENT,
+                          kErrorMessages[PARSE_RESERVED_KEYWORD_AS_IDENT],
+                          name.line, name.col);
+    }
+
+    /* TOK_KW_ASYNC is a soft keyword — accepted as an identifier at v1.0.
+     * The lexer always populates u.str for keyword tokens, so u.str.start
+     * and u.str.len are valid even when type == TOK_KW_ASYNC. */
+    if (name.type != TOK_IDENT && name.type != TOK_KW_ASYNC) {
         return make_error(p, PARSE_EXPECTED_IDENT,
                           kErrorMessages[PARSE_EXPECTED_IDENT],
                           name.line, name.col);
@@ -403,6 +451,23 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
         return parse_throw(p);
     }
 
+    /* at (cond) body [onleave handler]
+     * at sync (cond) body
+     * at async (cond) body */
+    if (t.type == TOK_KW_AT) {
+        return parse_at(p);
+    }
+
+    /* whenever (cond) body [onleave handler] */
+    if (t.type == TOK_KW_WHENEVER) {
+        return parse_whenever(p);
+    }
+
+    /* waituntil (cond) */
+    if (t.type == TOK_KW_WAITUNTIL) {
+        return parse_waituntil(p);
+    }
+
     /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
        mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.
        If neither, put the ident back as the LHS and continue with
@@ -446,6 +511,87 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
                 if (!lhs) return NULL;
                 if (lhs->kind == AST_ERROR) return lhs;
                 if (is_assign) return lhs;
+                /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...).
+                 * Flag as an error so users are guided to the correct form. */
+                if (!p->at_event_cond
+                    && lhs->kind == AST_MEMBER_GET
+                    && ident_equals(lhs->u.member.name_start,
+                                    lhs->u.member.name_len,
+                                    "changed", 7)) {
+                    UToken nxt = peek(p);
+                    if (nxt.type == TOK_BANG) {
+                        return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
+                                          kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
+                                          nxt.line, nxt.col);
+                    }
+                    return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
+                                      kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
+                                      lhs->line, lhs->col);
+                }
+                continue;
+            }
+            /* Postfix `?` — only valid inside at(...) condition context. */
+            if (op.type == TOK_QUESTION) {
+                if (p->at_event_cond) break;  /* let parse_at consume it */
+                consume(p);
+                return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
+                                  kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
+                                  op.line, op.col);
+            }
+            /* Postfix `e!` — desugar to `e.emit([arg])`.  Inline mirror of
+             * the equivalent arm in parse_expression. */
+            if (op.type == TOK_BANG) {
+                consume(p);
+                static const char emit_name_s[] = "emit";
+                UAstNode *member2 = make_node(p, AST_MEMBER_GET, op.line, op.col);
+                if (!member2) return NULL;
+                member2->u.member.recv       = lhs;
+                member2->u.member.name_start = emit_name_s;
+                member2->u.member.name_len   = (int)(sizeof emit_name_s - 1u);
+                member2->u.member.value      = NULL;
+                if (peek(p).type == TOK_LPAREN) {
+                    consume(p);
+                    int arg_count2 = 0;
+                    UAstNode *arg0_2 = NULL;
+                    if (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+                        arg0_2 = parse_inner_tier(p);
+                        if (!arg0_2) return NULL;
+                        if (arg0_2->kind == AST_ERROR) return arg0_2;
+                        arg_count2 = 1;
+                        if (peek(p).type == TOK_COMMA) {
+                            UToken comma2 = consume(p);
+                            return make_error(p, PARSE_EMIT_MULTI_ARG_V1,
+                                              kErrorMessages[PARSE_EMIT_MULTI_ARG_V1],
+                                              comma2.line, comma2.col);
+                        }
+                    }
+                    UToken rp2 = peek(p);
+                    if (rp2.type != TOK_RPAREN) {
+                        return make_error(p, PARSE_EXPECTED_RPAREN,
+                                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                                          rp2.line, rp2.col);
+                    }
+                    consume(p);
+                    UAstNode **args2 = NULL;
+                    if (arg_count2 > 0) {
+                        args2 = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+                        if (!args2) return (UAstNode *)&uparser_oom_sentinel;
+                        args2[0] = arg0_2;
+                    }
+                    UAstNode *call2 = make_node(p, AST_CALL, op.line, op.col);
+                    if (!call2) return NULL;
+                    call2->u.call.callee    = member2;
+                    call2->u.call.args      = args2;
+                    call2->u.call.arg_count = arg_count2;
+                    lhs = call2;
+                } else {
+                    UAstNode *call2 = make_node(p, AST_CALL, op.line, op.col);
+                    if (!call2) return NULL;
+                    call2->u.call.callee    = member2;
+                    call2->u.call.args      = NULL;
+                    call2->u.call.arg_count = 0;
+                    lhs = call2;
+                }
                 continue;
             }
             int prec = infix_prec(op.type);
@@ -642,7 +788,94 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
             if (!left) return NULL;
             if (left->kind == AST_ERROR) return left;
             if (is_assign) break;
+            /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...). */
+            if (!p->at_event_cond
+                && left->kind == AST_MEMBER_GET
+                && ident_equals(left->u.member.name_start,
+                                left->u.member.name_len,
+                                "changed", 7)) {
+                UToken nxt = peek(p);
+                if (nxt.type == TOK_BANG) {
+                    return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
+                                      kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
+                                      nxt.line, nxt.col);
+                }
+                return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
+                                  kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
+                                  left->line, left->col);
+            }
             continue;
+        }
+
+        /* Postfix `e!` — desugar to `e.emit([arg])`.
+           `e!`        → AST_CALL { callee=left, method="emit", args=[] }
+           `e!(p)`     → AST_CALL { callee=left, method="emit", args=[p] }
+           `e!(x,y,z)` → PARSE_EMIT_MULTI_ARG_V1 error */
+        if (op.type == TOK_BANG && min_prec <= 7) {
+            consume(p);  /* consume '!' */
+            static const char emit_name[] = "emit";
+            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
+            if (!member) return NULL;
+            member->u.member.recv       = left;
+            member->u.member.name_start = emit_name;
+            member->u.member.name_len   = (int)(sizeof emit_name - 1u);
+            member->u.member.value      = NULL;
+            if (peek(p).type == TOK_LPAREN) {
+                consume(p);  /* consume '(' */
+                int arg_count = 0;
+                UAstNode *arg0 = NULL;
+                if (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+                    arg0 = parse_inner_tier(p);
+                    if (!arg0) return NULL;
+                    if (arg0->kind == AST_ERROR) return arg0;
+                    arg_count = 1;
+                    if (peek(p).type == TOK_COMMA) {
+                        UToken comma = consume(p);
+                        return make_error(p, PARSE_EMIT_MULTI_ARG_V1,
+                                          kErrorMessages[PARSE_EMIT_MULTI_ARG_V1],
+                                          comma.line, comma.col);
+                    }
+                }
+                UToken rp = peek(p);
+                if (rp.type != TOK_RPAREN) {
+                    return make_error(p, PARSE_EXPECTED_RPAREN,
+                                      kErrorMessages[PARSE_EXPECTED_RPAREN],
+                                      rp.line, rp.col);
+                }
+                consume(p);  /* consume ')' */
+                UAstNode **args = NULL;
+                if (arg_count > 0) {
+                    args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+                    if (!args) return (UAstNode *)&uparser_oom_sentinel;
+                    args[0] = arg0;
+                }
+                UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+                if (!call) return NULL;
+                call->u.call.callee    = member;
+                call->u.call.args      = args;
+                call->u.call.arg_count = arg_count;
+                left = call;
+            } else {
+                /* Bare `e!` — zero-arg emit call. */
+                UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
+                if (!call) return NULL;
+                call->u.call.callee    = member;
+                call->u.call.args      = NULL;
+                call->u.call.arg_count = 0;
+                left = call;
+            }
+            continue;
+        }
+
+        /* Postfix `?` — only valid inside at(...) condition.
+         * When at_event_cond is set, pass through (parse_at will consume it).
+         * Otherwise it is an error. */
+        if (op.type == TOK_QUESTION && min_prec <= 7) {
+            if (p->at_event_cond) break;  /* let parse_at consume it */
+            consume(p);
+            return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
+                              kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
+                              op.line, op.col);
         }
 
         int prec = infix_prec(op.type);
@@ -1124,6 +1357,218 @@ static UAstNode *parse_try(UParser *p) {
     return node;
 }
 
+/* --- parse_at: `at` [`sync`|`async`] `(` cond[?] `)` body [`onleave` handler]
+ *
+ * Postfix `?` inside the parentheses selects the event-subscribe form:
+ *   at (e?) body            → AST_AT_EVENT (sync_flag=false)
+ *   at sync (e?) body       → AST_AT_EVENT (sync_flag=true)
+ * Without `?`, produces AST_WATCHER as before. --- */
+static UAstNode *parse_at(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_AT */
+
+    /* Optional `sync` or `async` modifier. */
+    int mode = UWATCHER_AT;
+    bool is_sync = false;
+    UToken mod = peek(p);
+    if (mod.type == TOK_KW_SYNC) {
+        consume(p);
+        mode = UWATCHER_AT_SYNC;
+        is_sync = true;
+    } else if (mod.type == TOK_KW_ASYNC) {
+        consume(p);
+        /* `at async` is accepted as `at` (redundant modifier); silent at v1.0. */
+        mode = UWATCHER_AT;
+    }
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    /* Enable the at_event_cond context so that `?` in the inner expression
+     * is not immediately flagged as an error — parse_at checks for it after
+     * the expression parse returns. */
+    p->at_event_cond = true;
+    UAstNode *cond = parse_inner_tier(p);
+    p->at_event_cond = false;
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    /* Check for trailing `?` — event-subscribe form. */
+    if (peek(p).type == TOK_QUESTION) {
+        UToken q = consume(p);  /* consume '?' */
+        UToken rp2 = peek(p);
+        if (rp2.type != TOK_RPAREN) {
+            return make_error(p, PARSE_EXPECTED_RPAREN,
+                              kErrorMessages[PARSE_EXPECTED_RPAREN],
+                              rp2.line, rp2.col);
+        }
+        consume(p);
+
+        UAstNode *body = parse_statement_or_expr(p);
+        if (!body) return (UAstNode *)&uparser_oom_sentinel;
+        if (body->kind == AST_ERROR) return body;
+
+        /* Optional `onleave` handler. */
+        UAstNode *onleave = NULL;
+        if (peek(p).type == TOK_KW_ONLEAVE) {
+            consume(p);
+            onleave = parse_statement_or_expr(p);
+            if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+            if (onleave->kind == AST_ERROR) return onleave;
+        }
+
+        /* Spec #4 §4.3–§4.5: disambiguate slot-change form.
+         * at (obj.x.changed?) → AST_AT_SLOT_CHANGE when:
+         *   cond is AST_MEMBER_GET with name=="changed"
+         *   AND cond->recv is also AST_MEMBER_GET (≥3 path segments)
+         * at (obj.changed?)   → AST_AT_EVENT (2 segments, falls through) */
+        if (cond->kind == AST_MEMBER_GET
+            && ident_equals(cond->u.member.name_start,
+                            cond->u.member.name_len,
+                            "changed", 7)
+            && cond->u.member.recv != NULL
+            && cond->u.member.recv->kind == AST_MEMBER_GET) {
+            /* 3+ segments: slot-change form. */
+            UAstNode *slot_node = cond->u.member.recv;  /* the .x MEMBER_GET */
+            UAstNode *node = make_node(p, AST_AT_SLOT_CHANGE, kw.line, kw.col);
+            if (!node) return (UAstNode *)&uparser_oom_sentinel;
+            node->u.at_slot_change.receiver      = slot_node->u.member.recv;
+            node->u.at_slot_change.slot_name     = slot_node->u.member.name_start;
+            node->u.at_slot_change.slot_name_len = (size_t)slot_node->u.member.name_len;
+            node->u.at_slot_change.body          = body;
+            node->u.at_slot_change.onleave       = onleave;
+            node->u.at_slot_change.is_sync       = is_sync;
+            (void)q;
+            return node;
+        }
+
+        /* 2 segments or non-"changed" final segment: event form. */
+        UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
+        if (!node) return (UAstNode *)&uparser_oom_sentinel;
+        node->u.at_event.event_expr = cond;
+        node->u.at_event.body       = body;
+        node->u.at_event.onleave    = onleave;
+        node->u.at_event.is_sync    = is_sync;
+        (void)q;  /* position used for kw */
+        return node;
+    }
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_statement_or_expr(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Optional `onleave` handler — not allowed with `at sync`. */
+    UAstNode *onleave = NULL;
+    if (peek(p).type == TOK_KW_ONLEAVE) {
+        if (mode == UWATCHER_AT_SYNC) {
+            UToken ol = consume(p);
+            return make_error(p, PARSE_UNEXPECTED_TOKEN,
+                              "onleave not allowed with at sync",
+                              ol.line, ol.col);
+        }
+        consume(p);
+        onleave = parse_statement_or_expr(p);
+        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+        if (onleave->kind == AST_ERROR) return onleave;
+    }
+
+    UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.watcher.cond    = cond;
+    node->u.watcher.body    = body;
+    node->u.watcher.onleave = onleave;
+    node->u.watcher.mode    = mode;
+    return node;
+}
+
+/* --- parse_whenever: `whenever` `(` cond `)` body [`onleave` handler] --- */
+static UAstNode *parse_whenever(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_WHENEVER */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_statement_or_expr(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Optional `onleave` handler. */
+    UAstNode *onleave = NULL;
+    if (peek(p).type == TOK_KW_ONLEAVE) {
+        consume(p);
+        onleave = parse_statement_or_expr(p);
+        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+        if (onleave->kind == AST_ERROR) return onleave;
+    }
+
+    UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.watcher.cond    = cond;
+    node->u.watcher.body    = body;
+    node->u.watcher.onleave = onleave;
+    node->u.watcher.mode    = UWATCHER_WHENEVER;
+    return node;
+}
+
+/* --- parse_waituntil: `waituntil` `(` cond `)` --- */
+static UAstNode *parse_waituntil(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_WAITUNTIL */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *node = make_node(p, AST_WAITUNTIL, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.waituntil.cond = cond;
+    return node;
+}
+
 /* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
    Returns a single node (no Nary) if only one inner-tier child exists.
    Trailing `;` or `,` at statement-end is silently dropped.
@@ -1209,6 +1654,7 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;
+    p->at_event_cond = false;
 }
 
 UAstNode *uparse_next_statement(UParser *p) {

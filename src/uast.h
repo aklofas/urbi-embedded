@@ -5,6 +5,7 @@
 #define UAST_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -61,7 +62,22 @@ typedef enum {
     AST_MEMBER_GET = 25,    /* obj.x         — recv + name */
     AST_MEMBER_SET = 26,    /* obj.x = v     — recv + name + value */
     AST_PROP_GET   = 27,    /* obj.x->prop   — recv + prop_name */
-    AST_PROP_SET   = 28     /* obj.x->prop = v — recv + prop_name + value */
+    AST_PROP_SET   = 28,    /* obj.x->prop = v — recv + prop_name + value */
+
+    /* M5 — reactive constructs */
+    AST_WATCHER      = 29,  /* at / at sync / whenever — mode discriminator in
+                             * u.watcher.mode (UWATCHER_AT, UWATCHER_AT_SYNC,
+                             * UWATCHER_WHENEVER); also carries optional onleave.
+                             * spec #2 §3.10. Emits OP_AT_INSTALL / OP_AT_SYNC_INSTALL
+                             * / OP_WHENEVER_INSTALL depending on mode. */
+    AST_WAITUNTIL    = 30,  /* waituntil (cond) — structurally distinct cond-only node.
+                             * spec #2. Emits OP_WAITUNTIL_INSTALL. */
+    AST_AT_EVENT     = 31,  /* at (e?) / at sync (e?) — event-subscribe form.
+                             * spec #3. Distinct from AST_WATCHER because dispatch goes
+                             * through OP_AT_EVENT_INSTALL (=43), not OP_AT_INSTALL. */
+    AST_AT_SLOT_CHANGE = 32 /* at (obj.x.changed?) / sync variant — slot-change subscribe.
+                             * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=45) prefix
+                             * followed by OP_AT_EVENT_INSTALL. */
 } UAstKind;
 
 typedef enum {
@@ -115,7 +131,16 @@ typedef enum {
     PARSE_LAZY_PARAM_DEFAULT,      /* `lazy x = ...` reserved syntax */
 
     /* M3 additions */
-    PARSE_TRY_NEEDS_CATCH_OR_FINALLY  /* `try { }` with neither catch nor finally */
+    PARSE_TRY_NEEDS_CATCH_OR_FINALLY, /* `try { }` with neither catch nor finally */
+
+    /* M5 additions */
+    PARSE_RESERVED_KEYWORD_AS_IDENT,  /* `var at = 1`: hard keyword used as variable name */
+    PARSE_QUESTION_OUTSIDE_AT,        /* postfix `?` is only valid inside at(...) */
+    PARSE_EMIT_MULTI_ARG_V1,          /* `e!(x, y, z)` — multi-arg emit reserved for M6 */
+
+    /* M5 spec #4 additions */
+    PARSE_SLOT_CHANGED_BARE_V1,       /* `obj.x.changed` outside at(?) — use at(obj.x.changed?) */
+    PARSE_SLOT_CHANGED_EMIT_V1        /* `obj.x.changed!` — slot-change event cannot be emitted */
 } UParseError;
 
 /*
@@ -152,6 +177,10 @@ typedef enum {
  *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave=NULL at M3
  *   u.member      — AST_MEMBER_GET, AST_MEMBER_SET: slot read / slot assignment
  *   u.prop        — AST_PROP_GET, AST_PROP_SET: slot-property read / assignment
+ *   u.watcher     — AST_WATCHER:         at/at sync/whenever + optional onleave
+ *   u.waituntil   — AST_WAITUNTIL:       cond-only waituntil
+ *   u.at_event    — AST_AT_EVENT:        at (e?) event-subscribe form
+ *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
  *
  * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
@@ -279,6 +308,31 @@ struct UAstNode {
             int         prop_name_len;
             UAstNode   *value;             /* SET only; NULL for GET */
         } prop;
+        struct {                                            /* AST_WATCHER */
+            UAstNode *cond;
+            UAstNode *body;
+            UAstNode *onleave;             /* nullable */
+            int       mode;               /* UWATCHER_AT / UWATCHER_AT_SYNC /
+                                           * UWATCHER_WHENEVER — int for now;
+                                           * UWatcherMode enum lands in T12 */
+        } watcher;
+        struct {                                            /* AST_WAITUNTIL */
+            UAstNode *cond;
+        } waituntil;
+        struct {                                            /* AST_AT_EVENT */
+            UAstNode *event_expr;          /* the `e` in `at (e?)` */
+            UAstNode *body;
+            UAstNode *onleave;             /* nullable */
+            bool      is_sync;             /* `at sync (e?)` */
+        } at_event;
+        struct {                                            /* AST_AT_SLOT_CHANGE */
+            UAstNode   *receiver;          /* the `obj` in `at (obj.x.changed?)` */
+            const char *slot_name;         /* zero-copy lexeme view */
+            size_t      slot_name_len;
+            UAstNode   *body;
+            UAstNode   *onleave;           /* nullable */
+            bool        is_sync;           /* `at sync (obj.x.changed?)` */
+        } at_slot_change;
     } u;
 };
 

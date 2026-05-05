@@ -1,0 +1,31 @@
+# Milestone: M5
+# Covers: D-event-1 determinism rule (spec #3 §10.2): N subscribers on the
+#         same event receive emission in registration order; M successive emits
+#         maintain that order across all M firings.  Run under all 3 tunable
+#         presets × 100 runs each to assert byte-identical output.
+#
+# defer-to: T59
+#
+# Reason:
+#   The fixture requires:
+#     - String literals (not yet lexed/parsed at M5 baseline)
+#     - Event.new() constructor (requires globals exposure + T59 stdlib binding)
+#     - at (e?) event-subscribe watcher (requires globals access for `e`)
+#     - e!(1) event-emit postfix (requires globals access for `e`)
+#   All of these require the T59 globals-exposure task.  The tier-2 enter/leave
+#   emit hooks (T55), the GC walker amendments (T56), and the ISR drain handler
+#   (T57) are tested via unit tests in test_tag_enter_leave.c, test_event_gc.c,
+#   and test_isr_event_drain.c respectively.
+#
+# Activate at T59 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T59):
+#   var e = Event.new();
+#   var seq = "";
+#   at (e?) function (p) { seq = seq + "A" + p };
+#   at (e?) function (p) { seq = seq + "B" + p };
+#   at (e?) function (p) { seq = seq + "C" + p };
+#   e!(1); e!(2); e!(3);
+#   echo(seq);
+#   --- expected output ---
+#   [00000001] "A1B1C1A2B2C2A3B3C3"

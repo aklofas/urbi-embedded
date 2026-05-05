@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: determinism rule D-cross-2 — slot-change burst with 2 sync subs;
+#         50 sequential obj.x = i writes; subscriber walk order is byte-stable
+#         across 100x3 preset runs; D-slotchange-2 FIFO sub walk confirmed.
+#
+# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+#
+# Reason:
+#   Requires Object.new() T69 stdlib binding and inline subscriber dispatch.
+#   The deferred-slot-change ring (spec #4 §5.4) and sync subscriber walk
+#   (FIFO walk of obj.x.changed_watchers_head) are tested by
+#   test_slot_change_callsites.c and test_slot_change_reentrancy.c.
+#
+#   When active: 50 writes × 2 subs = 100 subscriber firings → 100-line log;
+#   byte-identical across 100 runs under each of the 3 tunable presets.
+#   Verifies D-slotchange-1 (program-order emit) + D-slotchange-2 (FIFO walk).
+#
+# Activate at T69 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T69 + M5-scratch-frame):
+#   var obj = Object.new();
+#   var log = "";
+#   at.sync (obj.x.changed?) Realm.log = Realm.log + "A";
+#   at.sync (obj.x.changed?) Realm.log = Realm.log + "B";
+#   var i = 0;
+#   while (i < 50) { obj.x = i; Realm.i = i + 1 };
+#   log
+#   --- expected output ---
+#   [00000001] "ABABAB...AB"   (100 chars: 50 repetitions of "AB")

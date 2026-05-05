@@ -1,0 +1,25 @@
+# Milestone: M5
+# Covers: e.syncEmit(p) — synchronous event emit; all subscribers run inline
+#         before syncEmit returns; spec #3 §6.2 AT_EVENT_SYNC watcher mode.
+#
+# defer-to: T59 (Event.new() stdlib) + M5-scratch-frame
+#
+# Reason:
+#   syncEmit() is a method on Event objects; requires T59 stdlib binding.
+#   AT_EVENT_SYNC mode (OP_AT_EVENT_SYNC_INSTALL) is wired in the VM but
+#   invoke_body_inline is a stub at M5-stub phase.  The synchronous inline
+#   dispatch path (no coroutine spawn) is exercised by test_event_emit_sync.c
+#   via the test_watcher_fire_hook.
+#
+# Activate when Event.new() + syncEmit method + inline body dispatch wired.
+#
+# Urbiscript source (activate at T59 + M5-scratch-frame):
+#   var e = Event.new();
+#   var order = "";
+#   at (e?) Realm.order = Realm.order + "async";
+#   e.syncEmit(1) | order
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] ""
+#   [00000002] nil
+#   [00000003] "async"

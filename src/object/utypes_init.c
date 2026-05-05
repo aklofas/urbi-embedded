@@ -43,8 +43,12 @@
 #include "object/umoduleinstance.h"
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
+#include "uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
+#include "uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE (spec #4 §3.1) */
+#include "utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
+#include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "uvm.h"
 
 /* === walk_uobject ===
@@ -94,6 +98,13 @@ walk_uobject(struct UVM *vm, void *payload,
                 gc_shade_gray(vm, (UCell *)p);
             }
         }
+    }
+
+    /* Shade the slot-change subscriber chain (spec #4 §3.1).  NULL at alloc;
+     * lazy-populated at first `obj.x.changed?` install (R6).  UChangedNode
+     * embeds UCell as its first member, so the cast to UCell* is well-defined. */
+    if (o->changed_events_head != NULL) {
+        gc_shade_gray(vm, (UCell *)o->changed_events_head);
     }
 }
 
@@ -258,6 +269,103 @@ walk_uprotoinstance(struct UVM *vm, void *payload,
     (void)vm; (void)payload; (void)cb; (void)ctx;
 }
 
+/* === walk_uevent (spec #3 §3.1) ===
+ *
+ * Yields name (UValue payload via cb) and shades each UWatcher in the
+ * at_watchers_head chain (direct UCell* walk — same pattern as walk_ushape
+ * shading UProps* entries).
+ *
+ * waiters_head (UStrand chain) is intentionally NOT walked here: UStrands
+ * are root-walked separately via the realm hierarchy (per M3 row 10 / GC
+ * roots spec §5.3).  Walking them here would double-visit them and could
+ * upset the write-barrier invariant during incremental mark. */
+static void
+walk_uevent(struct UVM *vm, void *payload,
+            UGcRootCallback cb, void *ctx)
+{
+    UEvent *ev = (UEvent *)((UCell *)payload - 1);
+
+    /* name is a UValue payload; route through cb so the mark callback
+     * applies the heap-bearing check and shades the underlying cell if any. */
+    cb(vm, &ev->name, ctx);
+
+    /* Walk the at_watchers_head intrusive list.  UWatcher embeds UCell as
+     * its first member (type_tag at offset 0), so the cast to UCell* is
+     * well-defined (same as the UObject/UShape walkers above). */
+    {
+        UWatcher *w = ev->at_watchers_head;
+        while (w != NULL) {
+            gc_shade_gray(vm, (UCell *)w);
+            w = w->next_in_event;
+        }
+    }
+}
+
+/* === walk_uchanged_node (spec #4 §3.1) ===
+ *
+ * Yields name (USymbol* — interned, never collected; NOT walked here) and
+ * shades event (UEvent*) and next (UChangedNode*) as direct GC-managed cells.
+ * The subscriber list is walked one node at a time: walk_uchanged_node is
+ * called for each node, and each node shades only its own ->next link;
+ * the GC traversal loop visits every grey cell in turn. */
+static void
+walk_uchanged_node(struct UVM *vm, void *payload,
+                   UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
+
+    UChangedNode *n = (UChangedNode *)((UCell *)payload - 1);
+
+    /* name is interned (lives for VM lifetime); no shade needed. */
+
+    if (n->event != NULL) {
+        gc_shade_gray(vm, (UCell *)n->event);
+    }
+    if (n->next != NULL) {
+        gc_shade_gray(vm, (UCell *)n->next);
+    }
+}
+
+/* === walk_utag (T18 — spec #3 §3.4) ===
+ *
+ * Yields name (UValue payload via cb) and shades each UWatcher in the
+ * member_watchers_head chain (direct UCell* walk — same pattern as
+ * walk_uevent above).  Also shades enter_event and leave_event when
+ * non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
+ *
+ * member_strands_head (UCleanupEntry chain) is intentionally NOT walked:
+ * UStrands are root-walked separately via the realm hierarchy (M3 row 10 /
+ * GC roots spec §5.3).  Walking them here would double-visit strands. */
+static void
+walk_utag(struct UVM *vm, void *payload,
+          UGcRootCallback cb, void *ctx)
+{
+    UTag *t = (UTag *)((UCell *)payload - 1);
+
+    /* name is a UValue payload; route through cb so the mark callback
+     * applies the heap-bearing check and shades the underlying cell if any. */
+    cb(vm, &t->name, ctx);
+
+    /* enter_event and leave_event are UEvent* (direct UCell* walk). */
+    if (t->enter_event != NULL) {
+        gc_shade_gray(vm, (UCell *)t->enter_event);
+    }
+    if (t->leave_event != NULL) {
+        gc_shade_gray(vm, (UCell *)t->leave_event);
+    }
+
+    /* Walk the member_watchers_head intrusive list.  UWatcher embeds UCell
+     * as its first member (type_tag at offset 0), so the cast is well-defined
+     * (same as the UObject/UShape walkers above). */
+    {
+        UWatcher *w = t->member_watchers_head;
+        while (w != NULL) {
+            gc_shade_gray(vm, (UCell *)w);
+            w = w->next_in_tag;
+        }
+    }
+}
+
 /* === Static UType descriptors ===
  *
  * payload_size is set to 0 (variable / not pinned at this task) for all
@@ -361,6 +469,33 @@ static const UType type_uproto_instance = {
     .destroy       = NULL,
 };
 
+static const UType type_uevent = {
+    .type_tag      = UTYPE_EVENT,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UEvent",
+    .walk_payload  = walk_uevent,
+    .destroy       = NULL,
+};
+
+static const UType type_uchanged_node = {
+    .type_tag      = UTYPE_CHANGED_NODE,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UChangedNode",
+    .walk_payload  = walk_uchanged_node,
+    .destroy       = NULL,
+};
+
+static const UType type_utag = {
+    .type_tag      = UTYPE_TAG,
+    .flags         = 0u,
+    .payload_size  = 0u,
+    .name          = "UTag",
+    .walk_payload  = walk_utag,
+    .destroy       = NULL,
+};
+
 /* === urbi_object_builtin_types_init ===
  *
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
@@ -380,4 +515,7 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_SLOTHANDLE]      = (UType *)&type_uslothandle;
     vm->type_table[UTYPE_MODULE_INSTANCE] = (UType *)&type_umodule_instance;
     vm->type_table[UTYPE_PROTO_INSTANCE]  = (UType *)&type_uproto_instance;
+    vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
+    vm->type_table[UTYPE_CHANGED_NODE]    = (UType *)&type_uchanged_node;
+    vm->type_table[UTYPE_TAG]             = (UType *)&type_utag;
 }

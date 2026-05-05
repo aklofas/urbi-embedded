@@ -52,6 +52,12 @@ typedef struct URealm {
     /* Namespace: top-level bindings */
     struct UNamespace *bindings; /* name → UValue map; owned */
 
+    /* Global object: M4 UObject that holds the realm's named slot table.
+     * Populated at urbi_realm_create with the 15 v1.0 built-in globals
+     * (spec #5 §4.1).  NULL until realm_create completes the alloc step.
+     * GC-managed via realm_list_walk_roots shading this cell. */
+    struct UObject *global_object; /* UTYPE_OBJECT; owned by GC */
+
     /* Reflective handle (urbiscript-visible Realm.this / Realm.tag).
      * NIL at M3; populated at M4+. */
     UValue       reflective;    /* UVAL_OBJECT at M4+; UVAL_NIL at M3 */

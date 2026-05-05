@@ -30,14 +30,15 @@ UTEST(uobject_uslot_is_exactly_uvalue) {
 
 /* === UObject header width === */
 
-UTEST(uobject_header_is_48_bytes) {
-    /* Pinned by spec §3 (pre-M4 prototype-chain representation design). */
-    UASSERT_EQ((int)sizeof(UObject), 48);
+UTEST(uobject_header_is_56_bytes) {
+    /* UObject grew 48 → 56 B at M5 spec #4 §3.1 (changed_events_head added). */
+    UASSERT_EQ((int)sizeof(UObject), 56);
 }
 
 /* === UObject field offsets ===
  * Field order matters: layout must be exactly cell -> shape -> slots ->
- * protos -> object_id -> lookup_stamp -> flags -> reserved. */
+ * protos -> object_id -> lookup_stamp -> flags -> reserved ->
+ * changed_events_head. */
 
 UTEST(uobject_field_order_matches_spec) {
     /* cell at offset 0. */
@@ -52,6 +53,8 @@ UTEST(uobject_field_order_matches_spec) {
     UASSERT_EQ((int)offsetof(UObject, lookup_stamp), 36);
     UASSERT_EQ((int)offsetof(UObject, flags), 40);
     UASSERT_EQ((int)offsetof(UObject, reserved), 44);
+    /* changed_events_head at 48 (spec #4 §3.1). */
+    UASSERT_EQ((int)offsetof(UObject, changed_events_head), 48);
 }
 
 /* === Slot-flag + atom-family bit patterns === */
@@ -1060,7 +1063,7 @@ UTEST(uobject_clone_null_returns_null) {
 
 void test_uobject_suite(void) {
     utest_run("uobject: USlot == UValue (16 B)", uobject_uslot_is_exactly_uvalue);
-    utest_run("uobject: header is 48 bytes", uobject_header_is_48_bytes);
+    utest_run("uobject: header is 56 bytes", uobject_header_is_56_bytes);
     utest_run("uobject: field order matches spec §3", uobject_field_order_matches_spec);
     utest_run("uobject: atom mask + flag bits distinct", uobject_atom_mask_and_flag_bits_are_distinct);
     utest_run("uobject: atom family values pinned", uobject_atom_family_values_pinned);

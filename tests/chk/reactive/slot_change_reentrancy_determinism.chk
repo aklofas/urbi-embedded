@@ -1,0 +1,29 @@
+# Milestone: M5
+# Covers: D-slotchange-3 determinism rule (spec #4 §7): a sync slot-change
+#         handler that triggers a nested slot-change write degrades to async
+#         (deferred ring); the deferred entry is dispatched at the next
+#         safepoint before watcher_eval_dirty, producing deterministic output.
+#
+# defer-to: T69 (globals exposure)
+#
+# Reason:
+#   The fixture requires:
+#     - var declaration at top level (globals exposure, T69)
+#     - Object.new() constructor (globals + stdlib, T70+)
+#     - at sync (obj.x.changed?) watcher (globals for `obj`)
+#     - at (obj.y.changed?) watcher
+#     - obj.x = N assignment (globals for `obj`)
+#   All require the T69 globals-exposure task.  The underlying deferred-ring
+#   drain and reentrancy degrade are tested in unit/test_slot_change_reentrancy.c.
+#
+# Activate at T69 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T69):
+#   var o = Object.new();
+#   var log = "";
+#   at sync (o.x.changed?) function (v) { o.y = v + 100 };
+#   at (o.y.changed?) function (v) { log = log + "Y" + v };
+#   o.x = 1;
+#   echo(log);
+#   --- expected output ---
+#   [00000001] "Y101"

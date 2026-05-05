@@ -725,12 +725,13 @@ static void lex_minus_then_gt_is_arrow(void) {
     UASSERT_EQ(t2.len, 1);
 }
 
-static void lex_lone_bang_is_error(void) {
+static void lex_lone_bang_is_tok_bang(void) {
+    /* `!` (not followed by `=`) is now TOK_BANG (M5 event-emit postfix). */
     ULexer l;
     ulex_init(&l, "!", 1);
     const UToken t = ulex_next(&l);
-    UASSERT_EQ(t.type, TOK_ERROR);
-    UASSERT_EQ(t.u.err.code, LEX_UNKNOWN_CHAR);
+    UASSERT_EQ(t.type, TOK_BANG);
+    UASSERT_EQ(t.len, 1);
 }
 
 static void lex_recognizes_var_keyword(void) {
@@ -979,7 +980,7 @@ void test_lexer_suite(void) {
     utest_run("lex_dot_token", lex_dot_token);
     utest_run("lex_arrow_token", lex_arrow_token);
     utest_run("lex_minus_then_gt_is_arrow", lex_minus_then_gt_is_arrow);
-    utest_run("lex_lone_bang_is_error", lex_lone_bang_is_error);
+    utest_run("lex_lone_bang_is_tok_bang", lex_lone_bang_is_tok_bang);
     utest_run("lex_recognizes_var_keyword", lex_recognizes_var_keyword);
     utest_run("lex_recognizes_function_keyword", lex_recognizes_function_keyword);
     utest_run("lex_recognizes_closure_keyword", lex_recognizes_closure_keyword);

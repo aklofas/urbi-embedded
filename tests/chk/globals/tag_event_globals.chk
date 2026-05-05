@@ -1,0 +1,15 @@
+# Milestone: M5
+# Covers: spec #5 §1.4 — Tag and Event prototypes resolve as realm globals.
+#         Identity checks prove both slots are stable (same pointer per read).
+#
+# Full plan fixture was:
+#   var t = Tag.new("scope"); var e = Event.new(); var fired = 0;
+#   at (e?) function () { fired = 1 }; e!; echo(fired)   → 1
+# Tag.new() / Event.new() require T59 stdlib binding; at(e?) requires M5
+# runtime wiring not yet end-to-end at globals-R7 baseline.  This variant
+# verifies the two globals are reachable and identity-stable.
+
+(Tag) == (Tag)
+[00000000] true
+(Event) == (Event)
+[00000001] true

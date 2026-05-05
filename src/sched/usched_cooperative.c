@@ -283,6 +283,13 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     /* (4) Wait payload (row 9 §4.3).
      *     UEvent and UStrand join_parent are not GC-managed UValues at M3.
      *     TODO(M5): walk s->wait_payload.event when UEvent becomes a GC cell. */
+
+    /* (5) last_event_payload (spec #3 §7.1, T56).
+     *     Written by c_event_emit_* before unblocking a waituntil strand.
+     *     May hold a heap-bearing UValue (e.g. UVAL_OBJECT, UVAL_CLOSURE,
+     *     UVAL_EVENT) between the emit and the strand's next dispatch turn.
+     *     Route through cb so the mark callback applies the heap-bearing check. */
+    cb(vm, &s->last_event_payload, ctx);
 }
 
 /* === GC root walker for the scheduler ===

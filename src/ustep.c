@@ -35,8 +35,10 @@ urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
          * sched_strand_yield which re-enqueues and increments the count. */
         sched_dequeue_ready_head(vm);
         s->state = USTRAND_STATE_RUNNING;
+        vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
 
         uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);
+        vm->cur_strand = NULL;
         /* Clamp subtraction to avoid unsigned underflow on floating rounding. */
         if (consumed >= vm->step_budget_remaining) {
             vm->step_budget_remaining = 0;

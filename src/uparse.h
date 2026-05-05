@@ -24,6 +24,10 @@ typedef struct {
     UArena *arena;
     UToken peek;
     bool have_peek;
+    /* Set by parse_at while parsing the condition expression inside `at(...)`.
+     * When true, the postfix `?` handler in parse_expression passes through
+     * the token (does not error) so parse_at can detect it after the fact. */
+    bool at_event_cond;
 } UParser;
 
 /* Initialize.  No allocation.  Both lex and arena must outlive p. */

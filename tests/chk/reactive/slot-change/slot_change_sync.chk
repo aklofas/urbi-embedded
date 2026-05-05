@@ -1,0 +1,26 @@
+# Milestone: M5
+# Covers: at.sync (obj.x.changed?) — synchronous slot-change subscriber;
+#         body runs inline before the slot-write statement returns; value
+#         visible to subscriber is the new value just written.
+#
+# defer-to: T69 (Object.new() stdlib) + M5-scratch-frame
+#
+# Reason:
+#   Same blockers as slot_change_basic.chk.  The sync (AT_SYNC) vs async (AT)
+#   mode distinction for slot-change watchers is documented in spec #4 §5.3 and
+#   tested in test_slot_change_reentrancy.c at the C level.
+#
+# Activate when Object.new() + slot-change scripted subscribe + inline dispatch wired.
+#
+# Urbiscript source (activate at T69 + M5-scratch-frame):
+#   var obj = Object.new();
+#   var seen = 0;
+#   at.sync (obj.x.changed?) Realm.seen = obj.x;
+#   obj.x = 7;
+#   seen
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] 0
+#   [00000002] nil
+#   [00000003] 7
+#   [00000004] 7

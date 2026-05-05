@@ -1,0 +1,33 @@
+# Milestone: M5
+# Covers: cross-spec composition: event subscriber writes to a slot that has
+#         a slot-change watcher; chain: e! → slot write → slot-change sub fires.
+#         Tests that event-driven slot writes trigger downstream slot-change
+#         watchers (spec cross-spec §2.1 chaining rule).
+#
+# defer-to: T59 (Event.new()) + T69 (Object.new()) + M5-scratch-frame
+#
+# Reason:
+#   Requires both Event.new() (T59) and Object.new() (T69) stdlib bindings,
+#   plus scratch-frame body dispatch for both the event subscriber body (which
+#   writes obj.x) and the slot-change subscriber body.  The chain correctness
+#   (event emit → slot write → slot-change subscriber) is a composition of
+#   urbi_event_emit_async + OP_SETSLOT + urbi_emit_slot_change_if_subscribed.
+#
+# Activate when both stdlib bindings + body dispatch are wired.
+#
+# Urbiscript source (activate at T59 + T69 + M5-scratch-frame):
+#   var e = Event.new();
+#   var obj = Object.new();
+#   var chain_fired = 0;
+#   at (e?) obj.x = 1;
+#   at (obj.x.changed?) Realm.chain_fired = Realm.chain_fired + 1;
+#   e!;
+#   chain_fired
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] nil
+#   [00000002] 0
+#   [00000003] nil
+#   [00000004] nil
+#   [00000005] nil
+#   [00000006] 1

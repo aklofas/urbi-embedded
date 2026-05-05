@@ -36,12 +36,18 @@
  *   - low 4 bits = the per-slot flag nibble packed into UShape.flags
  *   - URBI_SLOT_FLAG_LOCAL is set only if holder == recv (i.e. the slot
  *     lives on the receiver, not an inherited prototype).
- * UShape.flags packs 4 bits per slot in the v1.0 layout (see uobject.h). */
+ * UShape.flags packs 4 bits per slot in a 32-bit word → valid for indices
+ * 0..7 only (8 * 4 = 32 bits).  Indices >= 8 carry no packed flags at the
+ * v1.0 baseline (a side-table tier for larger objects is deferred to a later
+ * milestone); return 0 for those to avoid undefined-behaviour shifts. */
 static uint8_t
 ic_flags_for_resolved_slot(const UObject *recv, const UObject *holder,
                            uint32_t idx)
 {
-    uint8_t flags = (uint8_t)((holder->shape->flags >> (idx * 4u)) & 0x0Fu);
+    uint8_t flags = 0u;
+    if (idx < 8u) {
+        flags = (uint8_t)((holder->shape->flags >> (idx * 4u)) & 0x0Fu);
+    }
     if (holder == recv) {
         flags |= URBI_SLOT_FLAG_LOCAL;
     }

@@ -4,6 +4,7 @@
 #ifndef UEMIT_H
 #define UEMIT_H
 
+#include <stdarg.h>               /* va_list — emit_diag_warn variadic */
 #include <stdbool.h>
 #include <stddef.h>               /* ptrdiff_t */
 #include <stdint.h>
@@ -15,6 +16,15 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* --- emit-time diagnostic (warn/error) plumbing (T32) --- */
+
+typedef struct {
+    enum { UEMIT_DIAG_WARN = 0, UEMIT_DIAG_ERROR = 1 } level;
+    int         line;
+    int         col;
+    const char *message;    /* allocator-owned copy; freed by emit_diag_free_all */
+} UEmitDiag;
 
 /* --- emit-time errors (distinct from loader errors) --- */
 
@@ -39,8 +49,11 @@ typedef enum {
     EMIT_LAZY_PARAM_ASSIGN,       /* T16: assignment to lazy param */
 
     /* M4 additions */
-    EMIT_TOO_MANY_IC_SITES        /* T15: function exceeds 256 IC sites
+    EMIT_TOO_MANY_IC_SITES,       /* T15: function exceeds 256 IC sites
                                      (pre-M4 GETSLOT/SETSLOT encoding §3.4) */
+
+    /* M5 additions */
+    EMIT_RESERVED_KEYWORD_AS_IDENT /* T4: `var at = 1` — hard keyword as variable name */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */
@@ -63,6 +76,14 @@ typedef struct UEmitter {
                                       (pass-through semantics, spec §4.2) */
     UEmitError    error;           /* sticky: first error latches */
     struct UFuncState *current_fs; /* M2: current compilation function */
+
+    /* T32: warn-level diagnostic buffer.  emit_diag_warn appends here;
+     * never causes emit to fail.  diag_buf is module-allocator-owned and
+     * grows by doubling.  diag_count diagnostics are valid after
+     * uemit_finish; callers may walk diag_buf[0..diag_count-1]. */
+    UEmitDiag   *diag_buf;
+    int          diag_count;
+    int          diag_cap;
 } UEmitter;
 
 /* --- API --- */
@@ -117,6 +138,17 @@ void uemit_emit_loop_back_close(UEmitter *e);
 
 /* Debug helper. */
 const char *uemit_error_name(UEmitError code);
+
+/* T32: Append a warn-level diagnostic to the emitter's diag buffer.
+ * n may be NULL (position will be 0,0).  fmt is a printf-style format
+ * string.  Does not set e->error; emit continues normally.
+ * If the buffer cannot grow (OOM), the diagnostic is silently dropped. */
+void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
+
+/* T32: Free all diagnostic message strings and the diag_buf array itself.
+ * Resets diag_count/diag_cap to 0.  Must be called before the emitter's
+ * associated module is destroyed.  No-op on freestanding builds. */
+void emit_diag_free_all(UEmitter *e);
 
 /* --- M3 row 7 control-transfer opcode encoder helpers ---
  *
@@ -212,7 +244,12 @@ typedef struct {
 /* Block context — stacked per `{` / function-body / loop body. Reserved
  * at T6; populated at T7. */
 typedef struct {
-    int    nactvar_on_enter;         /* nactvar value when block opened */
+    int     nactvar_on_enter;        /* nactvar value when block opened */
+    uint8_t freereg_on_enter;        /* freereg value when block opened;
+                                        used by uemit_close_block to restore
+                                        the temp-zone floor correctly (needed
+                                        when r_global_slot is pre-reserved and
+                                        `freereg != nactvar` invariant is broken). */
     int    first_local_idx;          /* index into actvars[] of first local
                                         declared in this block */
     bool   is_loop;                  /* true for while-body block —
@@ -275,6 +312,48 @@ typedef struct UFuncState {
     uint16_t   ic_next;              /* equals proto->ic_count after close */
     USymbol  **ic_names;             /* lazily allocated via module allocator */
     uint16_t   ic_names_cap;
+
+    /* === M5 T71: realm-global fallback register ===
+     *
+     * When this function references any realm global (identifier that does
+     * not resolve as a local or upvalue), references_global is set and
+     * r_global_slot is assigned a register that will hold realm->global_object
+     * at runtime.  T73 prepends OP_LOAD_REALM_GLOBAL r_global_slot to the
+     * function prologue.  All global OP_GETSLOT(dst, r_global_slot, ic_idx)
+     * instructions in this function route through that single live register.
+     *
+     * r_global_slot is claimed from freereg (same floor as local slots) so
+     * it stays valid across statement boundaries; freereg is bumped to prevent
+     * the temp zone from aliasing it. */
+    bool     references_global;      /* true after first global ident resolved */
+    bool     global_slot_reserved;   /* true once r_global_slot is claimed from
+                                        freereg (may be true even if
+                                        references_global is still false — the
+                                        slot is pre-reserved at function entry to
+                                        prevent if/while temp resets from aliasing
+                                        it when a global ref is first encountered
+                                        inside a branch arm). */
+    uint8_t  r_global_slot;          /* register for realm->global_object */
+
+    /* === M5 T72: chunk-top declared global names ===
+     *
+     * At chunk-top (parent == NULL), `var x = init` does not add `x` to
+     * actvars[] — it writes to the global slot via OP_SETSLOT.  To allow
+     * subsequent `x = value` assignments (AST_ASSIGN) to route to the global
+     * slot rather than raising EMIT_UNRESOLVED_NAME, the canonical name is
+     * stored here at declaration time.  Names are interned pointers (same
+     * intern table as actvars), so pointer equality suffices for lookup.
+     *
+     * Cap matches UFS_MAX_LOCALS (a chunk-top function can't declare more
+     * globals than a nested function can declare locals, by the same reg
+     * budget). */
+    int          n_global_vars;
+    const char  *global_var_names[UFS_MAX_LOCALS];
+    UFuncSig     global_var_sigs[UFS_MAX_LOCALS]; /* parallel to global_var_names[];
+                                                     resolved=true when the init is
+                                                     a literal AST_FUNCTION, enabling
+                                                     T16 lazy-arg wrapping at call sites
+                                                     that reference globals. */
 } UFuncState;
 
 /* Compile-time upvalue cascade. Walks parent FuncStates to find `name`
@@ -294,6 +373,12 @@ int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
  * return distinct indices — every emitted GETSLOT/SETSLOT site gets its
  * own IC slot so per-site monomorphism is independent. */
 int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
+
+/* T31: Test-friend export — see uemit.c for full documentation.
+ * Best-effort compile-time walker: returns true when n contains a direct
+ * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET, AST_PROP_SET).
+ * AST_CALL is treated as opaque (returns false). */
+bool cond_has_direct_side_effect(UAstNode *n);
 
 #ifdef __cplusplus
 }

@@ -60,6 +60,34 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 
 /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
+/* --- spec #2 §5.2: per-VM install-time trace state ---
+ * URBI_WATCHER_READSET_MAX sets the trace_read_set[] capacity.
+ * Default 16; footprint preset (cross-arm/cross-riscv Makefile) overrides to 4.
+ * uwatcher.h carries the same guard — when both headers are included the first
+ * definition wins; both use identical defaults so either order is safe. */
+#ifndef URBI_WATCHER_READSET_MAX
+#  define URBI_WATCHER_READSET_MAX  16
+#endif
+
+/* --- spec #4 §3.5: deferred slot-change ring ---
+ * URBI_DEFERRED_SLOT_CHANGE_RING_SIZE sets the capacity of the per-VM
+ * deferred-emit ring used when a slot-write barrier fires inside a sync
+ * slot-change body (re-entrancy).  Default 64; footprint preset → 16.
+ * The ring is heap-allocated (one calloc at uvm_init), not GC-managed. */
+#ifndef URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
+#  define URBI_DEFERRED_SLOT_CHANGE_RING_SIZE  64
+#endif
+
+/* Entry in the deferred slot-change ring (spec #4 §3.5).
+ * Holds a strong reference to parent/key/new_value only while the entry
+ * is live (head != tail).  Drain logic (R6) clears each slot after firing.
+ * NOT GC-managed — entries are transient. */
+typedef struct UDeferredSlotChange {
+    struct UObject *parent;
+    struct USymbol *key;
+    UValue          new_value;
+} UDeferredSlotChange;
+
 /* --- Scratch frame for watcher condition + onleave evaluation (T34) ---
  *
  * One per VM, allocated at uvm_init and freed at uvm_destroy.
@@ -127,6 +155,17 @@ typedef struct UVM {
     struct UObject *atom_event;
     struct UObject *atom_symbol;
 
+    /* === M5 T53/T54 — native proto objects ===
+     * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
+     *   Allocated at uvm_init by event_native_register.  NULL until then.
+     *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
+     * tag_proto: UObject carrying native getter slots (enter/leave).
+     *   Allocated at uvm_init by tag_native_register.  NULL until then.
+     * Both protos have atom_event / atom_tag as their single prototype respectively,
+     * mirroring the M4 atom hierarchy. */
+    struct UObject *event_proto;
+    struct UObject *tag_proto;
+
     /* === M4 T30 — UModuleInstance registry ===
      * Linked list head of every live UModuleInstance threaded via
      * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
@@ -185,6 +224,13 @@ typedef struct UVM {
      * Stored as a pointer (definition lands at T18).  Zero-init = NULL. */
     struct UEventRing *event_ring;     /* T18: uevent_ring_init(vm) allocates */
 
+    /* --- T57 ISR ring drain handler ---
+     * Optional host callback installed via urbi_register_event_drain.
+     * Called at safepoint (uevent_ring_drain) for each injected entry.
+     * Handler maps event_id to a UEvent* and calls c_event_emit_async.
+     * NULL = no drain handler (ring entries are discarded). */
+    void (*event_drain_handler)(struct UVM *vm, uint32_t event_id, UValue payload);
+
     /* --- Row 10 GC state machine --- */
     uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2; named constant lands at T22 */
     uint8_t  current_white;            /* current white color for tri-color marking */
@@ -221,8 +267,34 @@ typedef struct UVM {
 
     /* --- Row 11 watcher dirty-set + scratch frame --- */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
-    uint8_t  pad_in_eval[3];           /* padding; zeroed */
+    uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
+                                          inline on scratch frame; guards re-entrancy
+                                          in c_event_emit_sync / c_event_waituntil. */
+    uint8_t  pad_in_eval[2];           /* padding; zeroed */
     void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
+
+    /* --- spec #3 §7.1: currently-dispatching strand ---
+     * Set to the running strand by urbi_step before dispatch_loop_until_yield,
+     * cleared after.  Required by c_event_waituntil to locate the caller strand.
+     * NULL when no strand is dispatching (between urbi_step slices). */
+    struct UStrand *cur_strand;
+
+    /* --- spec #2 §5.2 install-time trace state ---
+     * in_watcher_install: set while evaluating cond during watcher install
+     *   to enable OP_GETSLOT read-set tracing.  Mutually exclusive with
+     *   in_watcher_eval (never both set at once; URBI_DEBUG asserts land in R4).
+     * trace_overflow: set when trace_read_set[] is full and a new cell would
+     *   have been recorded.  Install treats overflow as "untrackable — skip IC".
+     * trace_read_set_count: number of valid UCell* entries written into
+     *   trace_read_set[].  Reset to 0 at the start of each install evaluation.
+     * trace_read_set[]: ring buffer of UCell pointers touched during install
+     *   cond evaluation; written by OP_GETSLOT when in_watcher_install is set.
+     *   Array is uninitialized storage; only indices [0, trace_read_set_count)
+     *   are valid.  Sized by URBI_WATCHER_READSET_MAX. */
+    uint8_t   in_watcher_install;
+    uint8_t   trace_overflow;
+    uint16_t  trace_read_set_count;
+    struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
     /* M3-only test hooks for watcher eval/fire (M5 replaces with real
      * urbi_run_closure_on_scratch and spawn_body_coroutine).
@@ -241,9 +313,36 @@ typedef struct UVM {
      * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
+    /* T37 stub test hook for run_closure_on_scratch_frame_with_result.
+     * M5 will replace this with real bytecode dispatch on vm->watcher_scratch_frame.
+     * When non-NULL, install_watcher_runtime calls this instead of the real runner.
+     *   Signature: hook(vm, cond, out_result, out_threw)
+     *   - out_result receives the simulated return value.
+     *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
+     * NULL → run_closure_on_scratch_frame_with_result returns UVAL_NIL, no throw. */
+    void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
+                                     UValue *out_result, int *out_threw);
+
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;
     struct UWatcher *pending_onleave_tail;
+
+    /* --- spec #4 §3.5 slot-change re-entrancy + deferred-emit ring ---
+     * slot_change_reentrancy_warned: one-shot flag; set on first re-entrant
+     *   slot-write during a sync slot-change body; gates URBI_LOG_WARN.
+     * slot_change_ring_full_warned: one-shot flag; set when the deferred ring
+     *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
+     * deferred_slot_changes: heap-allocated ring buffer (cap entries),
+     *   freed in uvm_destroy.  NOT GC-managed — entries live only while
+     *   head != tail; drain logic (R6) clears each slot after firing.
+     * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
+     * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
+    uint8_t                 slot_change_reentrancy_warned;
+    uint8_t                 slot_change_ring_full_warned;
+    UDeferredSlotChange    *deferred_slot_changes;
+    uint16_t                deferred_slot_changes_head;
+    uint16_t                deferred_slot_changes_tail;
+    uint16_t                deferred_slot_changes_cap;
 
     /* --- Row 9 host time hook --- */
     uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
@@ -290,6 +389,14 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void uvm_destroy(UVM *vm);
+
+/* Allocate vm->event_proto + vm->tag_proto and install their native slots.
+ * Must be called after uvm_init.  Separated from uvm_init because unit tests
+ * that check exact post-init cell / intern counts would break otherwise
+ * (same lazy pattern as the atom-family singletons).
+ * Safe to call multiple times — re-entrant calls are no-ops if protos already
+ * allocated. */
+void urbi_native_protos_init(UVM *vm);
 
 /* Return a static string such as "UVM_TYPE_ERROR" for debug. */
 const char *uvm_error_name(UVMError code);

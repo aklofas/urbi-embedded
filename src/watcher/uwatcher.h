@@ -24,6 +24,9 @@ extern "C" {
  * Keep this header dependency-minimal: forward-decl rather than include. */
 struct UVM;
 struct UTag;
+struct URealm;
+struct UStrand;
+struct UEvent;   /* defined in T17; used only as pointer here */
 
 /* === Pool size build flags === */
 
@@ -37,15 +40,20 @@ struct UTag;
 
 /* === Watcher mode constants === */
 
-#define UWATCHER_AT       1   /* at (cond) body — edge-triggered */
-#define UWATCHER_WHENEVER 2   /* whenever (cond) body — level-triggered */
-#define UWATCHER_AT_SYNC  3   /* at (cond) body synchronous variant */
+#define UWATCHER_AT             1   /* at (cond) body — edge-triggered */
+#define UWATCHER_WHENEVER       2   /* whenever (cond) body — level-triggered */
+#define UWATCHER_AT_SYNC        3   /* at (cond) body synchronous variant */
+#define UWATCHER_WAITUNTIL      4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
+#define UWATCHER_AT_EVENT       5   /* at (event) body — fires on Event.emit (spec #3 §3.2) */
+#define UWATCHER_AT_EVENT_SYNC  6   /* at (event) body synchronous variant (spec #3 §3.2) */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
-#define URBI_WATCHER_ACTIVE              0x01u  /* installed and live */
-#define URBI_WATCHER_PENDING_UNREGISTER  0x02u  /* stop requested; drain before free */
-#define URBI_WATCHER_FIRED_DURING_EVAL   0x04u  /* condition fired while eval in progress */
+#define URBI_WATCHER_ACTIVE                    0x01u  /* installed and live */
+#define URBI_WATCHER_PENDING_UNREGISTER        0x02u  /* stop requested; drain before free */
+#define URBI_WATCHER_FIRED_DURING_EVAL         0x04u  /* condition fired while eval in progress */
+#define URBI_WATCHER_PENDING_REFIRE            0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10u  /* body fired at least once since last onleave check (spec #2 §5.1) */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 
@@ -65,12 +73,17 @@ struct UTag;
  *   condition      : 8 B
  *   body           : 8 B
  *   onleave        : 8 B
+ *   realm          : 8 B  (spec #1 §4.1)
+ *   body_strand    : 8 B  (spec #1 §4.1)
+ *   waiter_strand  : 8 B  (spec #2 §5.1)
+ *   next_in_event  : 8 B  (spec #3 §3.2)
+ *   event          : 8 B  (spec #3 §3.2)
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Fixed portion  : 72 B
- *   Total          : 72 + 128 = 200 B + natural padding ≈ 208 B
+ *   Fixed portion  : 112 B
+ *   Total          : 112 + 128 = 240 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 72 + 32 = 104 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 112 + 32 = 144 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 
@@ -80,7 +93,7 @@ typedef struct UWatcher {
     uint8_t   gc_byte;                     /* 1 B  UGC_IS_FIXED set; color bits as usual */
 
     /* === Watcher-private state === */
-    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC */
+    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL / _AT_EVENT / _AT_EVENT_SYNC */
     uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP (M5 dispatch) */
     uint8_t   flags;                       /* 1 B  URBI_WATCHER_ACTIVE / _PENDING_UNREGISTER / _FIRED_DURING_EVAL */
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
@@ -95,6 +108,17 @@ typedef struct UWatcher {
     UClosure     *condition;              /* 8 B  evaluated each watcher_eval_dirty */
     UClosure     *body;                   /* 8 B  spawned per fire (M5) */
     UClosure     *onleave;               /* 8 B  NULL if no onleave clause */
+
+    /* === Body-spawn lifecycle anchors (spec #1 §4.1) === */
+    struct URealm  *realm;              /* 8 B  owning realm; set at install, cleared at unregister */
+    struct UStrand *body_strand;        /* 8 B  non-NULL while body coroutine runs; NULL otherwise */
+
+    /* === waituntil parking (spec #2 §5.1) === */
+    struct UStrand *waiter_strand;      /* 8 B  strand blocked on waituntil(cond); NULL for AT/WHENEVER */
+
+    /* === Event-watcher threading (spec #3 §3.2) === */
+    struct UWatcher *next_in_event;     /* 8 B  UEvent.at_watchers_head chain; NULL for cond watchers */
+    struct UEvent   *event;             /* 8 B  back-pointer for O(1) unregister; NULL for cond watchers */
 
     /* === Edge detection === */
     UValue    last_value_cache;            /* 16 B  prior condition result */
@@ -113,6 +137,13 @@ int  uwatcher_pool_init(struct UVM *vm);
 /* uwatcher_pool_destroy: free the watcher slab.
  * Must be called before urbi_gc_destroy in uvm_destroy. */
 void uwatcher_pool_destroy(struct UVM *vm);
+
+/* uwatcher_pool_alloc: pop one watcher entry from the pool freelist.
+ * Initialises type_tag, gc_byte, flags, and read_set_count to safe defaults.
+ * Returns NULL when the pool is exhausted.
+ * Not ISR-safe.  Caller is responsible for wiring all semantic fields and
+ * inserting the result into the active and tag member lists. */
+struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
 
 /* === Install / unregister (C-internal; not in public urbi headers at M3) ===
  *
@@ -164,11 +195,41 @@ void drain_pending_onleave_queue(struct UVM *vm);
 
 /* === Body spawn (uwatcher_spawn.c) === */
 
-/* spawn_body_coroutine: called by watcher_eval_dirty when a watcher fires.
- * M3 stub: invokes vm->test_watcher_fire_hook if non-NULL; otherwise no-op.
- * M5 implementation: pool-alloc body strand, inherit ambient tag chain,
- * bind w->body as entry closure, call urbi_strand_start. Per spec §6.8. */
+/* do_spawn_body_coroutine: M5 real implementation (spec #1 §5.3 steps 2-6).
+ *   Allocates body strand via urbi_strand_create, attaches owning_tag when
+ *   distinct from realm->tag, arms via urbi_strand_arm_from_closure, wires
+ *   back-pointers, and enqueues via urbi_strand_start.  Three OOM points
+ *   (strand alloc / ambient overflow / stack alloc) all log URBI_LOG_WARN and
+ *   tear down any partial state — watcher remains installed for future fires.
+ *   fire_context is NULL at M5 baseline; spec #2 wires patterns later.
+ *   Exhaust gate arrives in T26. */
+void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
+                               void *fire_context);
+
+/* spawn_body_coroutine: eval-pass entry called by watcher_eval_dirty.
+ * Precondition: w->body != NULL (watcher_eval_dirty only calls this when body
+ * is set; body-less watchers use test_watcher_fire_hook directly in eval).
+ * In URBI_DEBUG builds, asserts: in_watcher_eval == 1, AT/WHENEVER mode,
+ * ACTIVE, no PENDING_UNREGISTER, body and realm non-NULL. */
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+
+/* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
+ * Called when body strand reaches DEAD and PENDING_REFIRE is set.
+ * No in_watcher_eval assert (runs outside eval at strand-DEAD notification).
+ * Not in the public include/urbi/ API; declared here for internal callers
+ * and test code (reachable via this header or an explicit extern declaration). */
+void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
+
+/* === Completion callback (uwatcher_spawn.c) === */
+
+/* urbi_watcher_body_completed: called by the dispatcher's strand-DEAD path
+ * when a watcher body strand finishes execution (spec #1 §6.2).
+ *   - Recovers w from s->watcher_body_owner (DEBUG-asserts non-NULL).
+ *   - Logs URBI_LOG_WARN on UEXEC_THROW; silent for TAG_STOP/CANCEL/OK.
+ *   - Clears both s->watcher_body_owner and w->body_strand atomically.
+ *   - If PENDING_UNREGISTER: clears PENDING_REFIRE and returns (no respawn).
+ *   - Else if PENDING_REFIRE: clears flag and calls respawn_body_coroutine. */
+void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 
 /* === GC root provider (uwatcher_gc.c) === */
 
@@ -176,8 +237,19 @@ void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
  * uvm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
  * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
  * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
- * read-set cells[] (concrete cell types land at M4). */
+ * read-set cells[] (concrete cell types land at M4).
+ * Note (spec #1 §7.1): body_strand and realm are NOT yielded — body strands
+ * are reached via realm->strands_head; realms are host-allocated. */
 void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+
+#ifdef URBI_DEBUG
+/* urbi_watcher_check_invariants: URBI_DEBUG-only bidirectional pointer check.
+ * Validates that every active watcher with body_strand != NULL has:
+ *   1. body_strand->watcher_body_owner == w.
+ *   2. body_strand on w->realm->strands_head.
+ * Called at watcher_eval_dirty entry.  spec #1 §7.2. */
+void   urbi_watcher_check_invariants(struct UVM *vm);
+#endif /* URBI_DEBUG */
 
 #ifdef __cplusplus
 }

@@ -151,11 +151,14 @@ UTEST(pipeline_single_arg_call) {
 }
 
 /* Closure capturing outer local: exercises OP_GETUPVAL (upvalue read) and
-   OP_SETUPVAL (upvalue write) through the pipeline. */
+   OP_SETUPVAL (upvalue write) through the pipeline.
+   Note: chunk-top vars are realm globals under T72 (accessed via GETSLOT/SETSLOT,
+   not captured as upvalues).  The local-upvalue write path requires the outer
+   variable to live inside a function body.  We wrap the pattern accordingly. */
 UTEST(pipeline_closure_upvalue_write) {
     UValue out;
     UASSERT_EQ(UVM_OK, pipeline_eval(
-        "var x = 1 ; (function() { x = 2 })() ; x", &out));
+        "(function() { var x = 1 ; (function() { x = 2 })() ; x })()", &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(2, out.v.i);
 }

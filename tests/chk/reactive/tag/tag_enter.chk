@@ -1,0 +1,28 @@
+# Milestone: M5
+# Covers: at (mytag.enter?) — tier-2 tag-enter event; subscriber fires when
+#         OP_PUSH_TAG executes for `mytag`; lazy-alloc of UTag.enter_event on
+#         first subscription (spec #3 §3.1).
+#
+# defer-to: T55 (tag enter/leave emit hooks) + T59 (Tag.new() stdlib)
+#
+# Reason:
+#   Tag.new() requires T59 stdlib binding.  The tier-2 enter/leave event
+#   lazy-alloc and OP_PUSH_TAG emit path (T55) are tested by
+#   test_tag_enter_leave.c at the C level.  The at (mytag.enter?) subscribe
+#   watcher requires OP_AT_EVENT_INSTALL with a tag-event UEvent source;
+#   the subscriber body requires scratch-frame execution.
+#
+# Activate when Tag.new() + enter-event wiring + body dispatch are complete.
+#
+# Urbiscript source (activate at T55 + T59 + M5-scratch-frame):
+#   var t = Tag.new("scope");
+#   var log = "";
+#   at (t.enter?) Realm.log = Realm.log + "in";
+#   t: { 1 };
+#   log
+#   --- expected output ---
+#   [00000000] nil
+#   [00000001] ""
+#   [00000002] nil
+#   [00000003] 1
+#   [00000004] "in"

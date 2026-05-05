@@ -340,3 +340,41 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
         chain[i]->member_strands_head = e;
     }
 }
+
+/* === spec #1 §5.5: urbi_strand_arm_from_closure ===
+ *
+ * Lifted from the inlined stack-alloc + pc-arming block in fork_spawn_child
+ * (uop_fork.c) so the watcher body-spawn path (T24) can reuse it.
+ *
+ * Callers that need s->module set (e.g. fork_spawn_child) must do so
+ * explicitly after this call returns 0. */
+int
+urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
+{
+    struct UVM *vm = s->vm;
+    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
+    UValue *stack;
+    volatile unsigned char *p;
+    size_t i;
+
+    stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
+    if (!stack) return -1;
+
+    /* Zero the register stack (freestanding-safe volatile byte loop). */
+    p = (volatile unsigned char *)stack;
+    for (i = 0; i < stack_bytes; i++) p[i] = 0;
+
+    s->stack      = stack;
+    s->R          = stack;
+    s->pc         = entry->proto->instructions;
+    s->pc_base    = entry->proto->instructions;
+    s->cur_consts = entry->proto->constants
+                  ? entry->proto->constants
+                  : s->cur_consts;   /* keep existing pool if proto has none */
+    s->frame_count  = 0;
+    s->open_upvals  = NULL;
+    s->closure_list = NULL;
+    s->closed_cells = NULL;
+    s->out_slot     = NULL;
+    return 0;
+}

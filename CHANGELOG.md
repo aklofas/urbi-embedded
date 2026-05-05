@@ -1,5 +1,121 @@
 # Changelog
 
+## v0.5.0-reactive — 2026-05-04
+
+The M5 reactive runtime milestone. Persistent watchers, events, slot-change
+subscriptions, tag enter/leave hooks, and the realm-global identifier
+resolution that anchors them. Bytecode v1.3 → v1.4 hard break.
+
+### Breaking changes
+
+- **Bytecode v1.4**: version byte incremented; loader rejects v1.3 and earlier.
+- **Reserved keywords**: `at`, `whenever`, `waituntil`, `onleave`, `sync` are
+  hard keywords; `async` is a soft keyword (allowed as identifier at v1.0,
+  deprecation warning v1.x). `var at = 1` raises
+  `PARSE_RESERVED_KEYWORD_AS_IDENT`.
+- **gc_byte bit 7** allocated as `UGC_HAS_SLOT_CHANGE_EVENT`; all 8 bits are
+  now claimed. Future additions must multiplex or extend to gc_word.
+
+### Language additions
+
+- `at (cond) body [onleave handler]`, `at sync (cond) body`,
+  `whenever (cond) body`, `waituntil (cond)` — cond watchers with rising/
+  falling edge fire, level-triggered whenever, and one-shot waituntil
+  strand-park.
+- `at (e?) body [onleave]`, `at sync (e?) body [onleave]` — event subscribers
+  via spec #3 `OP_AT_EVENT_INSTALL` / `OP_AT_EVENT_SYNC_INSTALL` dispatch.
+- `at (obj.slot.changed?) body`, `at sync (obj.slot.changed?) body` — slot-
+  change subscribers via spec #4 `OP_GETSLOT_CHANGE_EVENT` lookup-or-create.
+- `at (mytag.enter?) body`, `at (mytag.leave?) body` — tag tier-2 hooks.
+- Postfix `e!` and `e!(p)` for event emission (multi-arg parse error
+  `PARSE_EMIT_MULTI_ARG_V1`); `e.syncEmit(p)` and `Event.waituntil(e)`
+  native methods.
+- Top-level identifiers (`Object`, `Tag`, `Event`, `Integer`, `Float`,
+  `String`, `Bool`, `Nil`, `Void`, `List`, `Dict`, `Symbol`, `Realm`, `nil`,
+  `void`) resolve to a 15-entry static built-in registry per realm.
+- Top-level `var X = …` and `function f() { … }` write to realm-global slots
+  (const-attributed for built-ins).
+
+### New opcodes
+
+- 39 `OP_AT_INSTALL` (cond watcher install).
+- 40 `OP_AT_SYNC_INSTALL` (sync cond watcher install).
+- 41 `OP_WHENEVER_INSTALL` (level-triggered watcher install).
+- 42 `OP_WAITUNTIL_INSTALL` (one-shot strand-park install).
+- 43 `OP_AT_EVENT_INSTALL` (event subscriber install, async).
+- 44 `OP_AT_EVENT_SYNC_INSTALL` (event subscriber install, sync).
+- 45 `OP_GETSLOT_CHANGE_EVENT` (per-object slot-change UEvent lookup-or-create).
+- 46 `OP_LOAD_REALM_GLOBAL` (frame prologue load realm.global_object into
+  reserved register).
+
+(Plan template said opcodes 29-36 — wrong. M3 control-transfer + M4 INVOKE
+already claimed those slots; M5 lands at 39-46.)
+
+### Runtime additions
+
+- `UEvent` (40 B) cell type with `at_watchers_head` (UWatcher chain) and
+  `waiters_head` (UStrand chain) intrusive subscriber lists.
+- `UChangedNode` (32 B host / 16 B 32-bit) cell type for per-UObject slot-
+  change subscriber chain.
+- `UTag` GC-promoted (was M3 host-managed); 48 → 64 B with `enter_event` and
+  `leave_event` lazy-allocated event slots.
+- `UWatcher` 200 → 240 B default (104 → 144 footprint preset); 6 modes
+  total (AT, AT_SYNC, WHENEVER, WAITUNTIL, AT_EVENT, AT_EVENT_SYNC); 4 new
+  flag bits.
+- `UStrand` 256 → 288 B; 2 new wait states (`USTRAND_WAIT_WATCHER=0x32`,
+  `USTRAND_WAIT_EVENT=0x33`); back-pointer to owning watcher; event-waiter
+  fields.
+- `UObject` 48 → 56 B with `changed_events_head` lazy-allocated chain head.
+- `UVM` gains trace fields (16-entry read-set for cond install) + slot-change
+  deferred-emit ring (default 64, footprint 16 entries × 24 B).
+
+### Public C API additions
+
+- `urbi_realm_set_global(realm, name, value)` — install non-const global.
+- `urbi_realm_set_global_const(realm, name, value)` — install const global.
+- `urbi_realm_get_global(realm, name, *out)` — read a realm global.
+- `urbi_register_event_drain(vm, drain_fn)` — host callback for ISR-injected
+  events; drains at safepoint via the M3 SPSC ring.
+
+### Determinism
+
+- `URBI_SCHED_COOPERATIVE × URBI_GC_INCREMENTAL` remains bit-for-bit
+  reproducible. New rules (D-watcher-1/2, D-event-1/2, D-slotchange-1/2/3):
+  watcher install + event subscribe + slot-change install all FIFO over
+  registration order; sync subs run before async; deferred-emit ring drains
+  at safepoint before `watcher_eval_dirty`.
+
+### Gates
+
+- 1124 unit cases / 6272 checks / 0 failed.
+- 148 chk fixtures (was 127 pre-M5).
+- ASan + UBSan + valgrind-fast + valgrind-deep all clean (a pre-existing
+  `test_emit_diag` leak from M5's own T32 was fixed in R8 hardening).
+- 3-preset × 100-run determinism gate green (cross-spec det fixtures
+  deferred-stub at this release; activate post-M6).
+- GC pause within budget; cross-arm + cross-riscv build green.
+
+### Known limitations (deferred to v1.x or M6)
+
+- **Scripted at/whenever/waituntil cond closure is hook-stubbed.** The
+  watcher install path is real, the registry is real, the eval/fire-decision
+  machinery is real — but `run_closure_on_scratch_frame_with_result` is an
+  M5-baseline stub returning UVAL_NIL. C-level unit tests cover the logic
+  via `vm->test_install_cond_hook` and `vm->test_watcher_fire_hook`.
+  Unblocking the scripted .chk fixture path is a 1-2 commit M6 prerequisite.
+- ~48 of the planned 60 reactive .chk fixtures deferred (R8 minimum-viable);
+  full corpus is v1.x.
+- 4 of the planned 5 stress targets deferred.
+- 5th slot-change callsite (namespace_set) deferred to M6.
+- 7 of 8 M4-era prototype-chain fixtures still T38/T39-blocked (atom-method
+  dispatch, class declaration, `.new()` stdlib — M6 territory).
+
+### Notes
+
+- Bytecode v1.4 is a hard break; pre-M5 bytecode files refuse to load.
+- 74 commits on `topic/m5-reactive` since `v0.4.0-objects` follow-up `83bab89`.
+- See `docs/milestones/m5-reactive.md` for the full retrospective.
+
 ## v0.4.0-objects — 2026-05-02
 
 The M4 object model milestone. Introduces a prototype-based object system

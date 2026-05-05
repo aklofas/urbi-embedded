@@ -1,0 +1,31 @@
+# Milestone: M5
+# Covers: D-slotchange-1 (program-order emit) + D-slotchange-2 (FIFO subscriber
+#         walk) determinism rules (spec #4 §7): multiple subscribers on the same
+#         slot-change event receive notification in registration order; M writes
+#         maintain that order across all firings.  Run under all 3 tunable
+#         presets × 100 runs to assert byte-identical output.
+#
+# defer-to: T69 (globals exposure)
+#
+# Reason:
+#   The fixture requires:
+#     - var declaration at top level (globals exposure, T69)
+#     - Object.new() constructor (globals + stdlib, T70+)
+#     - at (obj.x.changed?) event-subscribe watcher (globals for `obj`)
+#     - obj.x = N assignment (globals for `obj`)
+#   All of the above require the T69 globals-exposure task.  The underlying
+#   urbi_emit_slot_change_if_subscribed fast-path + slow-path chain walk are
+#   tested in unit/test_slot_change_emit.c and
+#   unit/test_slot_change_callsites.c.
+#
+# Activate at T69 by replacing the source below with the uncommented version.
+#
+# Urbiscript source (activate at T69):
+#   var o = Object.new();
+#   var seq = "";
+#   at (o.x.changed?) function (v) { seq = seq + "A" + v };
+#   at (o.x.changed?) function (v) { seq = seq + "B" + v };
+#   o.x = 1 | o.x = 2 | o.x = 3;
+#   echo(seq);
+#   --- expected output ---
+#   [00000001] "A1B1A2B2A3B3"

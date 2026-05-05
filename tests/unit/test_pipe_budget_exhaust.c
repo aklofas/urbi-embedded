@@ -32,6 +32,7 @@
 #include "ulex.h"
 #include "uparse.h"
 #include "sched/usched_cooperative.h"
+#include "object/umoduleinstance.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -85,6 +86,7 @@ budget_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
     s->pc_base    = module->instructions;
     s->cur_consts = module->constants;
     s->module     = module;
+    s->module_instance = urbi_module_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;
     s->closure_list = NULL;

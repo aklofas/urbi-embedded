@@ -97,13 +97,22 @@ uevent_ring_drain(struct UVM *vm)
 
     drained = 0u;
     while (rd != w && drained < (uint32_t)URBI_EVENT_RING_DEPTH) {
-        /* Entry at rd is ready to consume.
-           At M3 the watcher machinery (M5) is not yet live.
-           We account for the event by incrementing event_queue_count so
-           that urbi_step() stays in RUNNING (not QUIESCENT) until T34
-           drains the logical queue.  When M5 watcher eval lands, this
-           path is replaced by a real watcher-signal dispatch. */
-        vm->event_queue_count++;
+        UEventRingEntry *e = &r->ring[rd];
+
+        /* T57: if a drain handler is registered, call it with the entry's
+         * event_id and a NIL payload (the raw-bytes ring does not carry
+         * UValues; host handler implements event_id → UEvent* mapping).
+         * Without a drain handler, entries are discarded (M3 behaviour). */
+        if (vm->event_drain_handler) {
+            UValue nil_payload;
+            nil_payload.kind = (uint8_t)UVAL_NIL;
+            nil_payload.v.i  = 0;
+            vm->event_drain_handler(vm, e->event_id, nil_payload);
+        } else {
+            /* M3 compatibility: bump event_queue_count so urbi_step stays
+             * RUNNING until the queue is empty. */
+            vm->event_queue_count++;
+        }
 
         rd = (rd + 1u) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1u);
         drained++;

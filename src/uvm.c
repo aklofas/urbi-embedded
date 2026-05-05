@@ -23,12 +23,18 @@
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
-#include "watcher/uwatcher.h" /* uwatcher_pool_init/destroy (T32) */
+#include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
+#include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
+#include "uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
+#include "uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
+#include "event_native.h"              /* event_native_register (T53) */
+#include "tag_native.h"                /* tag_native_register (T54) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 #include "object/umoduleinstance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
+#include "uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -88,6 +94,10 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->atom_tag     = NULL;
     vm->atom_event   = NULL;
     vm->atom_symbol  = NULL;
+
+    /* M5 T53/T54 native proto objects: NULL until event/tag_native_register. */
+    vm->event_proto = NULL;
+    vm->tag_proto   = NULL;
 
     /* M4 T30 — UModuleInstance registry head: empty until first
      * urbi_module_instance_create. */
@@ -197,6 +207,18 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * find a registered UType for each cell. */
     urbi_object_register_gc_roots(vm);
 
+    /* T53/T54: event_native_register + tag_native_register allocate UObject
+     * proto cells and intern slot-name strings.  They are NOT called here
+     * because existing GC + intern + object-model tests assert on exact cell /
+     * entry counts immediately after uvm_init (the atom singletons themselves
+     * are lazy for the same reason).  Callers that need the native protos must
+     * call urbi_native_protos_init(vm) after uvm_init — or test them via the
+     * typed C helpers (tag_enter_getter / tag_leave_getter) directly.
+     *
+     * The full "call from VM init" wiring will land when the globals-exposure
+     * task (T59) makes Event/Tag resolvable by name, at which point the cell
+     * counts in the affected unit tests will be updated in the same commit. */
+
     vm->handle_table         = NULL;
     vm->handle_table_cap     = 0u;
     vm->handle_table_next_id = 0u;
@@ -209,12 +231,18 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->watcher_pool_high_water = 0u;
     vm->in_watcher_eval        = 0u;
     vm->pad_in_eval[0]         = 0u;
-    vm->pad_in_eval[1]         = 0u;
-    vm->pad_in_eval[2]         = 0u;
+    vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
     vm->watcher_scratch_frame  = NULL;
+    /* spec #2 §5.2 install-time trace state. */
+    vm->in_watcher_install     = 0u;
+    vm->trace_overflow         = 0u;
+    vm->trace_read_set_count   = 0u;
+    /* trace_read_set[] is uninitialized: only read when in_watcher_install is set,
+     * and entries are written before they are read. */
     vm->test_watcher_condition_hook = NULL;
     vm->test_watcher_fire_hook      = NULL;
     vm->test_watcher_onleave_hook   = NULL;
+    vm->test_install_cond_hook      = NULL;
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
@@ -227,6 +255,29 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * NULL; the install API returns NULL on first use, surfacing the failure at the
      * use site rather than at vm_init. The embedded caller should check
      * vm->watcher_pool_base != NULL post-init. */
+
+    /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
+    vm->slot_change_reentrancy_warned = 0u;
+    vm->slot_change_ring_full_warned  = 0u;
+    vm->deferred_slot_changes_head    = 0u;
+    vm->deferred_slot_changes_tail    = 0u;
+    vm->deferred_slot_changes_cap     = 0u;
+    vm->deferred_slot_changes         = NULL;
+    if (vm->alloc_fn) {
+        size_t ring_bytes = (size_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
+                            * sizeof(UDeferredSlotChange);
+        UDeferredSlotChange *ring = (UDeferredSlotChange *)vm->alloc_fn(
+                NULL, ring_bytes, vm->alloc_ud);
+        if (ring != NULL) {
+            /* Zero-fill via volatile byte loop (freestanding: no memset). */
+            volatile unsigned char *p = (volatile unsigned char *)ring;
+            size_t i;
+            for (i = 0; i < ring_bytes; i++) p[i] = 0;
+            vm->deferred_slot_changes     = ring;
+            vm->deferred_slot_changes_cap = (uint16_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE;
+        }
+        /* OOM: leave deferred_slot_changes NULL; drain/enqueue guards against it. */
+    }
 
     /* Scratch frame: one per VM, used by watcher_eval_dirty and (T35)
      * drain_pending_onleave_queue.  Allocated here so M5's real
@@ -247,6 +298,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
+
+    /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
+    vm->event_drain_handler = NULL;
 }
 
 void uvm_destroy(UVM *vm) {
@@ -263,6 +317,12 @@ void uvm_destroy(UVM *vm) {
     if (vm->event_ring && vm->alloc_fn) {
         vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
         vm->event_ring = NULL;
+    }
+
+    /* Free deferred slot-change ring (spec #4 §3.5). */
+    if (vm->deferred_slot_changes != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->deferred_slot_changes, 0, vm->alloc_ud);
+        vm->deferred_slot_changes = NULL;
     }
 
     /* Free any M3 heap fields that T4 itself allocated (none at T4, but
@@ -286,6 +346,36 @@ void uvm_destroy(UVM *vm) {
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The uvm_run adapter cleans up strand.open_upvals before destroy. */
+}
+
+/* urbi_native_protos_init: allocate vm->event_proto + vm->tag_proto and
+ * install their native slots.  Must be called after uvm_init.
+ *
+ * Separated from uvm_init because existing unit tests that assert exact
+ * cell / intern counts immediately post-init would break (atoms are lazy
+ * for the same reason).  The T59 globals-exposure task will wire this into
+ * the vm-create path once the affected tests are updated to account for the
+ * additional cells. */
+void
+urbi_native_protos_init(UVM *vm)
+{
+    event_native_register(vm);
+    tag_native_register(vm);
+}
+
+/* === urbi_register_event_drain (T57 — spec #3 §9) ===
+ *
+ * Install a host callback that is invoked at each safepoint (urbi_step entry)
+ * for every entry drained from the ISR SPSC ring.  The handler maps event_id
+ * to a UEvent* and typically calls c_event_emit_async.  Pass NULL to remove
+ * the handler.  Not ISR-safe: must be called from the same thread as urbi_step.
+ */
+void
+urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    if (vm == NULL) return;
+    vm->event_drain_handler = h;
 }
 
 const char *uvm_error_name(UVMError code) {
@@ -433,6 +523,16 @@ static const char *op_name(uint8_t op) {
         case OP_PUSH_FRAME_GUARD:     return "OP_PUSH_FRAME_GUARD";
         case OP_RESUME:               return "OP_RESUME";
         case OP_LOAD_CATCH_VALUE:     return "OP_LOAD_CATCH_VALUE";
+        case OP_INVOKE:               return "OP_INVOKE";
+        /* M5 reactive runtime stubs */
+        case OP_AT_INSTALL:           return "OP_AT_INSTALL";
+        case OP_AT_SYNC_INSTALL:      return "OP_AT_SYNC_INSTALL";
+        case OP_WHENEVER_INSTALL:     return "OP_WHENEVER_INSTALL";
+        case OP_WAITUNTIL_INSTALL:    return "OP_WAITUNTIL_INSTALL";
+        case OP_AT_EVENT_INSTALL:     return "OP_AT_EVENT_INSTALL";
+        case OP_AT_EVENT_SYNC_INSTALL:return "OP_AT_EVENT_SYNC_INSTALL";
+        case OP_GETSLOT_CHANGE_EVENT: return "OP_GETSLOT_CHANGE_EVENT";
+        case OP_LOAD_REALM_GLOBAL:    return "OP_LOAD_REALM_GLOBAL";
     }
     return "unknown";
 }
@@ -801,6 +901,17 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_PUSH_FRAME_GUARD] = &&label_OP_PUSH_FRAME_GUARD,
         [OP_RESUME]           = &&label_OP_RESUME,
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
+        /* M4 reserve stub — not yet implemented. */
+        [OP_INVOKE]                = &&label_m5_stub,
+        /* M5 reactive runtime — T41 wires AT/WHENEVER install opcodes. */
+        [OP_AT_INSTALL]            = &&label_OP_AT_INSTALL,
+        [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
+        [OP_WHENEVER_INSTALL]      = &&label_OP_WHENEVER_INSTALL,
+        [OP_WAITUNTIL_INSTALL]     = &&label_OP_WAITUNTIL_INSTALL,
+        [OP_AT_EVENT_INSTALL]      = &&label_OP_AT_EVENT_INSTALL,
+        [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
+        [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
+        [OP_LOAD_REALM_GLOBAL]     = &&label_OP_LOAD_REALM_GLOBAL,
     };
 
     DISPATCH();
@@ -1307,6 +1418,29 @@ dispatch:
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
 
+            /* Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
+             * tracing reads, record the receiver's GC cell.
+             * UNLIKELY: this branch is taken only during install-time cond eval
+             * — never on the normal hot path.  Zero overhead when bit is clear. */
+            if (UNLIKELY(vm->in_watcher_install)) {
+                UCell *cell = (UCell *)recv;
+                bool already_present = false;
+                size_t _ti;
+                for (_ti = 0; _ti < (size_t)vm->trace_read_set_count; _ti++) {
+                    if (vm->trace_read_set[_ti] == cell) {
+                        already_present = true;
+                        break;
+                    }
+                }
+                if (!already_present) {
+                    if ((size_t)vm->trace_read_set_count < (size_t)URBI_WATCHER_READSET_MAX) {
+                        vm->trace_read_set[vm->trace_read_set_count++] = cell;
+                    } else {
+                        vm->trace_overflow = 1;
+                    }
+                }
+            }
+
             /* Fast path: linear scan over ic->n entries. */
             for (uint8_t k = 0; k < ic->n; k++) {
                 if (ic->recv_shapes[k]  == recv->shape
@@ -1334,7 +1468,14 @@ dispatch:
             int rc = urbi_slot_get_slow(vm, recv, ic, &v);
             if (rc != 0) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: slot lookup failed");
+                {
+                    UDiagWriter _w;
+                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                    diag_write_cstr(&_w, "TypeError: GETSLOT: slot '");
+                    if (ic->name != NULL)
+                        diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "' not found");
+                }
                 HALT();
             }
             /* Inspect the just-filled IC entry to decide if a getter is
@@ -1410,7 +1551,14 @@ dispatch:
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
                         vm->last_error = UVM_TYPE_ERROR;
-                        vm_format_type_error_msg(vm, "SETSLOT: cannot write to constant slot");
+                        {
+                            UDiagWriter _w;
+                            diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                            diag_write_cstr(&_w, "TypeError: SETSLOT: cannot write to constant slot '");
+                            if (ic->name != NULL)
+                                diag_write_cstr(&_w, (const char *)ic->name);
+                            diag_write_cstr(&_w, "'");
+                        }
                         HALT();
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
@@ -1424,6 +1572,7 @@ dispatch:
                                            (uint32_t)((ic->slots[k] - recv->slots)),
                                            v);
                         *ic->slots[k] = v;
+                        urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
                         slow_path = 0;
                         break;
                     }
@@ -1440,7 +1589,14 @@ dispatch:
             int rc = urbi_slot_set_slow(vm, recv, ic, v);
             if (rc != 0) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: slot write failed (constant, OOM, or resolve overflow)");
+                {
+                    UDiagWriter _w;
+                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                    diag_write_cstr(&_w, "TypeError: SETSLOT: slot write failed for '");
+                    if (ic->name != NULL)
+                        diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "' (constant, OOM, or resolve overflow)");
+                }
                 HALT();
             }
             uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
@@ -1450,6 +1606,7 @@ dispatch:
                 vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
                 HALT();
             }
+            urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }
 
@@ -1555,6 +1712,14 @@ dispatch:
             entry->next_member    = tag->member_strands_head;  /* head-insert */
             entry->strand_back    = s;
             tag->member_strands_head = entry;
+            /* T55: tier-2 enter event hook (spec #3 §8.3).
+             * Fast-path: two loads + branch when no subscribers (typical case).
+             * Zero alloc. Subscribers see the tag already ambient (entry pushed above). */
+            if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
+                UValue nil_val = {0};
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                c_event_emit_sync(s->vm, tag->enter_event, nil_val);
+            }
             NEXT();
         }
 
@@ -1588,6 +1753,15 @@ dispatch:
                     if (*pp == top) {
                         *pp = top->next_member;
                     }
+                }
+                /* T55: tier-2 leave event hook (spec #3 §8.3).
+                 * Fires BEFORE the tier-1 watcher cascade so subscribers see the
+                 * tag still ambient (spec ordering rationale: tier-1 onleave runs last). */
+                if (tag != NULL && tag->leave_event != NULL &&
+                    tag->leave_event->at_watchers_head != NULL) {
+                    UValue nil_val = {0};
+                    nil_val.kind = (uint8_t)UVAL_NIL;
+                    c_event_emit_sync(s->vm, tag->leave_event, nil_val);
                 }
                 /* Watcher cascade: push each watcher registered on this tag to
                  * the pending-onleave queue before cleanup_pop + utag_destroy.
@@ -1655,6 +1829,196 @@ dispatch:
             HALT();
         }
 
+        /* === T41: OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL ===
+         *
+         * ABC-encoded: A = cond_reg, B = body_reg, C = onleave_reg (0xFF = absent).
+         * Routes through install_watcher_runtime with the appropriate UWATCHER_*
+         * mode.  On return the watcher is installed and the strand continues to the
+         * next instruction — at-watchers do not block the installing strand.
+         * Spec #2 §6.3. */
+        CASE(OP_AT_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UClosure *cond    = (UClosure *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
+            NEXT();
+        }
+
+        CASE(OP_AT_SYNC_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            UClosure *cond = (UClosure *)s->R[A].v.p;
+            UClosure *body = (UClosure *)s->R[B].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
+            NEXT();
+        }
+
+        CASE(OP_WHENEVER_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UClosure *cond    = (UClosure *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
+            NEXT();
+        }
+
+        /* === T42: OP_WAITUNTIL_INSTALL — strand-block or pass-through ===
+         *
+         * A-encoded: A = cond_reg.
+         *
+         * Calls install_watcher_runtime which either:
+         *   (a) fast-path: cond was truthy at install → watcher unregistered
+         *       immediately, strand state unchanged (still RUNNING) → NEXT().
+         *   (b) park path: cond was falsy → T40 set s->state = USTRAND_WAIT_WATCHER.
+         *       Here we advance pc past this instruction, decrement
+         *       strand_runnable_count (the strand leaves the runnable accounting),
+         *       and goto exit_strand so the scheduler can pick up another strand.
+         *       The eval-pass wake (T43) will resume the strand on the rising edge.
+         *
+         * Spec #2 §6.3. */
+        CASE(OP_WAITUNTIL_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            UClosure *cond = (UClosure *)s->R[A].v.p;
+            UWatcherInstallResult r = install_watcher_runtime(
+                vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
+            if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
+                /* Strand parked by T40 (cond started false).  Advance pc past
+                 * this instruction so resume lands at the correct next opcode.
+                 * Decrement strand_runnable_count: the strand was RUNNING when
+                 * this opcode dispatched; T40 set state to WAITING without
+                 * going through sched_strand_block, so we do the accounting
+                 * manually here. */
+                s->pc++;
+                if (vm->strand_runnable_count > 0)
+                    vm->strand_runnable_count--;
+                steps_consumed++;
+                goto exit_strand;
+            }
+            /* Fast path (cond was truthy): watcher unregistered; strand RUNNING.
+             * Fall through to next instruction. */
+            NEXT();
+        }
+
+        /* === T47: OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL ===
+         *
+         * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
+         * Routes through install_at_event_runtime — no read-set trace, no
+         * active_watchers_head linkage.  Watcher joins event->at_watchers_head
+         * (FIFO) and owning_tag's member chain.
+         * Spec #3 §6.2. */
+        CASE(OP_AT_EVENT_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UEvent   *e       = (UEvent *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
+            NEXT();
+        }
+
+        CASE(OP_AT_EVENT_SYNC_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UEvent   *e       = (UEvent *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
+            NEXT();
+        }
+
+        /* === T61: OP_GETSLOT_CHANGE_EVENT ===
+         *
+         * ABC: A = dst_reg, B = recv_reg, C = ic_index.
+         * R[A] := the UEvent for (R[B], ic_table[C].name), lazy-created.
+         * Non-object receiver: R[A] := NIL + URBI_LOG_WARN (fail-soft).
+         * Spec #4 §4.1. */
+        CASE(OP_GETSLOT_CHANGE_EVENT) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+
+            if (s->R[B].kind != (uint8_t)UVAL_OBJECT) {
+                if (vm->host_log_fn)
+                    vm->host_log_fn(vm, URBI_LOG_WARN,
+                        "slot-change install on non-object receiver");
+                UValue nil_val;
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                nil_val.v.i  = 0;
+                s->R[A] = nil_val;
+                NEXT();
+            }
+
+            /* Resolve IC table (same pattern as OP_GETSLOT). */
+            UProtoInstance *pi = NULL;
+            if (s->frame_count == 0) {
+                if (s->module_instance != NULL
+                    && s->module_instance->proto_instances != NULL) {
+                    pi = &s->module_instance->proto_instances->entries[0];
+                }
+            } else {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL) pi = cur_cl->proto_inst;
+            }
+            if (pi == NULL || pi->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "GETSLOT_CHANGE_EVENT: no IC table bound");
+                HALT();
+            }
+
+            UObject *obj   = (UObject *)s->R[B].v.p;
+            USymbol *name  = pi->ic_table[C].name;
+            UEvent  *e     = urbi_object_get_or_create_change_event(vm, obj, name);
+            if (e != NULL) {
+                s->R[A] = uvalue_from_event(e);
+            } else {
+                UValue nil_val;
+                nil_val.kind = (uint8_t)UVAL_NIL;
+                nil_val.v.i  = 0;
+                s->R[A] = nil_val;
+            }
+            NEXT();
+        }
+
+        /* M5 spec #5 §6: OP_LOAD_REALM_GLOBAL — loads realm->global_object into R[A].
+         * Emitted as a prologue by the compiler when a function references any
+         * realm global (spec #5 §5.1 + §5.2).  The register R[A] is then used
+         * as the receiver for all OP_GETSLOT / OP_SETSLOT global accesses. */
+        CASE(OP_LOAD_REALM_GLOBAL) {
+            uint8_t A = uinstr_a(*s->pc);
+            URealm *r = s->realm;
+            if (r == NULL || r->global_object == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm,
+                    "OP_LOAD_REALM_GLOBAL: strand has no realm");
+                HALT();
+            }
+            s->R[A].kind = (uint8_t)UVAL_OBJECT;
+            s->R[A].v.p  = r->global_object;
+            NEXT();
+        }
+
+        /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
+         * its entry in the dispatch table (computed-goto) or this switch arm.
+         * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
+#if UVM_USE_COMPUTED_GOTO
+        label_m5_stub:
+#else
+        case OP_INVOKE:
+#endif
+        {
+            URBI_DISPATCH_ASSERT(0 && "M5 opcode stub not yet wired");
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "M5 opcode dispatched before implementation");
+            HALT();
+        }
+
 #if !UVM_USE_COMPUTED_GOTO
         default: {
             /* Unreachable — loader rejects unknown opcodes before uvm_run
@@ -1695,6 +2059,7 @@ safepoint:
     vm->step_budget_remaining--;
     if (vm->gc_pending)           urbi_gc_slice(vm, URBI_GC_SLICE_BUDGET);
     if (vm->pending_onleave_head) drain_pending_onleave_queue(vm);
+    urbi_drain_deferred_slot_changes(vm);   /* spec #4 §5.4: before watcher_eval_dirty */
     if (vm->watcher_dirty_count > 0) watcher_eval_dirty(vm);
     /* Preemption flag reserved for v2; not checked at M3. */
     /* Resume dispatch. */
@@ -1705,6 +2070,16 @@ safepoint:
 #endif
 
 exit_strand:
+    /* Spec #1 §6.1: notify the watcher that its body strand completed.
+     * Called after the unwind/cleanup-stack walker has finished (the safepoint
+     * and halt_error paths both run urbi_unwind before reaching here) but before
+     * the strand object is freed by the scheduler's dead-path cleanup.
+     * urbi_watcher_body_completed clears both s->watcher_body_owner and
+     * w->body_strand atomically and handles PENDING_REFIRE / PENDING_UNREGISTER. */
+    if (s->state == USTRAND_STATE_DEAD && s->watcher_body_owner != NULL) {
+        urbi_watcher_body_completed(vm, s);
+    }
+
     /* Wake any JOIN-blocked parents if this strand just reached DEAD. */
     if (s->state == USTRAND_STATE_DEAD && s->joiners_head != NULL) {
         fork_wake_joiners(s, vm);
@@ -1816,12 +2191,18 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.pc_base    = module->instructions;
     strand.cur_consts = module->constants;
     strand.module     = module;
-    /* M4 follow-up: bind module_instance for OP_GETSLOT/SETSLOT IC dispatch.
-     * urbi_run_chunk already created the UModuleInstance via
-     * urbi_get_or_create_module_instance; uvm_run callers (test_vm.c
-     * pipeline, test_emit.c integration tests) get the binding here too
-     * so OP_CLOSURE can read s->module_instance directly. */
-    strand.module_instance = urbi_get_or_create_module_instance(vm, (UModule *)module);
+    /* M4 follow-up / T72 fix: always create a fresh UModuleInstance for each
+     * uvm_run call.  urbi_get_or_create_module_instance is unsuitable here
+     * because the REPL stack-allocates UModule and reuses the same stack
+     * address across calls; the cache lookup would return a stale instance
+     * with old (freed) ic_names.  Forcing fresh creation ensures ic->name is
+     * populated from the current module's ic_names table.
+     *
+     * urbi_run_chunk pre-creates an instance via get_or_create before calling
+     * uvm_run; that cached instance is shadowed by this fresh one (prepended to
+     * vm->module_instances_head) but both are functionally correct — only this
+     * strand's module_instance is used for IC dispatch during this run. */
+    strand.module_instance = urbi_module_instance_create(vm, (UModule *)module);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.closure_list = NULL;

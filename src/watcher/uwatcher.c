@@ -13,6 +13,7 @@
 #include "utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "umacros.h"  /* URBI_INTERNAL_ASSERT */
+#include "uevent_subscribe.h"   /* uevent_at_watchers_remove */
 
 /* === Internal helpers === */
 
@@ -26,11 +27,11 @@ watcher_pool_zero(void *base, size_t n)
     for (i = 0; i < n; i++) p[i] = 0;
 }
 
-/* pool_alloc: pop one entry from the freelist.
+/* uwatcher_pool_alloc: pop one entry from the freelist.
  * Returns NULL if the pool is exhausted.
  * Initialises the common header and clears payload state. */
-static UWatcher *
-pool_alloc(struct UVM *vm)
+UWatcher *
+uwatcher_pool_alloc(struct UVM *vm)
 {
     UWatcher *w;
     uint16_t i;
@@ -167,10 +168,10 @@ urbi_watcher_install_internal(
 
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Guard: overflow check before pool_alloc to avoid wasting a slot. */
+    /* Guard: overflow check before uwatcher_pool_alloc to avoid wasting a slot. */
     if (read_set_count > (size_t)URBI_WATCHER_READSET_MAX) return NULL;
 
-    w = pool_alloc(vm);
+    w = uwatcher_pool_alloc(vm);
     if (w == NULL) return NULL;
 
     w->mode       = mode;
@@ -258,14 +259,24 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         if (*prev != NULL) *prev = w->next_in_tag;
     }
 
-    /* Unlink from active_watchers_head via pointer-to-pointer walk. */
-    pp = &vm->active_watchers_head;
-    while (*pp != NULL) {
-        if (*pp == w) {
-            *pp = w->next_active;
-            break;
+    /* Unlink from the appropriate watcher list depending on mode.
+     * AT_EVENT / AT_EVENT_SYNC watchers live on event->at_watchers_head,
+     * not on vm->active_watchers_head (spec #3 §6.3). */
+    if (w->mode == UWATCHER_AT_EVENT || w->mode == UWATCHER_AT_EVENT_SYNC) {
+        if (w->event) {
+            uevent_at_watchers_remove(w->event, w);
+            w->event = NULL;
         }
-        pp = &(*pp)->next_active;
+    } else {
+        /* Unlink from active_watchers_head via pointer-to-pointer walk. */
+        pp = &vm->active_watchers_head;
+        while (*pp != NULL) {
+            if (*pp == w) {
+                *pp = w->next_active;
+                break;
+            }
+            pp = &(*pp)->next_active;
+        }
     }
 
     vm->watcher_active_count--;

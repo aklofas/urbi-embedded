@@ -33,6 +33,7 @@ void utest_run(const char *name, void (*fn)(void)) {
 /* Test suite declarations — one per test_*.c file. */
 extern void test_version_suite(void);
 extern void test_lexer_suite(void);
+extern void test_lex_keywords_suite(void);
 extern void test_arena_suite(void);
 extern void test_parser_suite(void);
 extern void test_varint_suite(void);
@@ -84,6 +85,59 @@ extern void test_topology_gen_suite(void);
 extern void test_ugc_object_cells_suite(void);
 extern void test_gc_strand_walker_suite(void);
 extern void test_scheduler_invariant_suite(void);
+extern void test_op_allocation_suite(void);
+extern void test_disasm_suite(void);
+extern void test_gc_byte_suite(void);
+extern void test_ast_alloc_suite(void);
+extern void test_uwatcher_layout_suite(void);
+extern void test_ustrand_layout_suite(void);
+extern void test_uevent_suite(void);
+extern void test_utag_gc_suite(void);
+extern void test_uchanged_node_suite(void);
+extern void test_uvm_trace_fields_suite(void);
+extern void test_uvm_deferred_ring_suite(void);
+extern void test_strand_arm_suite(void);
+extern void test_watcher_spawn_suite(void);
+extern void test_watcher_completed_suite(void);
+extern void test_watcher_lifecycle_suite(void);
+extern void test_watcher_gc_invariants_suite(void);
+extern void test_emit_function_literal_suite(void);
+extern void test_cond_side_effect_suite(void);
+extern void test_emit_diag_suite(void);
+extern void test_emit_watcher_suite(void);
+extern void test_install_skeleton_suite(void);
+extern void test_resolve_owning_tag_suite(void);
+extern void test_install_trace_suite(void);
+extern void test_waituntil_install_suite(void);
+extern void test_at_install_dispatch_suite(void);
+extern void test_at_fire_paths_suite(void);
+extern void test_parse_at_event_suite(void);
+extern void test_parse_emit_postfix_suite(void);
+extern void test_uevent_subscribe_suite(void);
+extern void test_at_event_dispatch_suite(void);
+extern void test_event_emit_async_suite(void);
+extern void test_event_emit_sync_suite(void);
+extern void test_event_waituntil_suite(void);
+extern void test_waituntil_tag_stop_suite(void);
+extern void test_event_native_suite(void);
+extern void test_tag_native_suite(void);
+extern void test_tag_enter_leave_suite(void);
+extern void test_event_gc_suite(void);
+extern void test_isr_event_drain_suite(void);
+extern void test_slot_change_install_suite(void);
+extern void test_op_getslot_change_event_suite(void);
+extern void test_parse_at_slot_change_suite(void);
+extern void test_emit_at_slot_change_suite(void);
+extern void test_slot_change_emit_suite(void);
+extern void test_slot_change_callsites_suite(void);
+extern void test_slot_change_reentrancy_suite(void);
+extern void test_registry_table_suite(void);
+extern void test_realm_populate_suite(void);
+extern void test_emit_global_lookup_suite(void);
+extern void test_emit_global_var_suite(void);
+extern void test_op_load_realm_global_suite(void);
+extern void test_const_global_suite(void);
+extern void test_realm_globals_api_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -93,6 +147,7 @@ struct suite_entry {
 static const struct suite_entry suites[] = {
     {"version",                    test_version_suite},
     {"lexer",                      test_lexer_suite},
+    {"lex_keywords",               test_lex_keywords_suite},
     {"arena",                      test_arena_suite},
     {"parser",                     test_parser_suite},
     {"varint",                     test_varint_suite},
@@ -144,6 +199,59 @@ static const struct suite_entry suites[] = {
     {"ugc_object_cells",           test_ugc_object_cells_suite},
     {"gc_strand_walker",           test_gc_strand_walker_suite},
     {"scheduler_invariant",        test_scheduler_invariant_suite},
+    {"op_allocation",              test_op_allocation_suite},
+    {"disasm",                     test_disasm_suite},
+    {"gc_byte",                    test_gc_byte_suite},
+    {"ast_alloc",                  test_ast_alloc_suite},
+    {"uwatcher_layout",            test_uwatcher_layout_suite},
+    {"ustrand_layout",             test_ustrand_layout_suite},
+    {"uevent",                     test_uevent_suite},
+    {"utag_gc",                    test_utag_gc_suite},
+    {"uchanged_node",              test_uchanged_node_suite},
+    {"uvm_trace_fields",           test_uvm_trace_fields_suite},
+    {"uvm_deferred_ring",          test_uvm_deferred_ring_suite},
+    {"strand_arm",                 test_strand_arm_suite},
+    {"watcher_spawn",              test_watcher_spawn_suite},
+    {"watcher_completed",          test_watcher_completed_suite},
+    {"watcher_lifecycle",          test_watcher_lifecycle_suite},
+    {"watcher_gc_invariants",      test_watcher_gc_invariants_suite},
+    {"emit_function_literal",      test_emit_function_literal_suite},
+    {"cond_side_effect",           test_cond_side_effect_suite},
+    {"emit_diag",                  test_emit_diag_suite},
+    {"emit_watcher",               test_emit_watcher_suite},
+    {"install_skeleton",           test_install_skeleton_suite},
+    {"resolve_owning_tag",         test_resolve_owning_tag_suite},
+    {"install_trace",              test_install_trace_suite},
+    {"waituntil_install",          test_waituntil_install_suite},
+    {"at_install_dispatch",        test_at_install_dispatch_suite},
+    {"at_fire_paths",              test_at_fire_paths_suite},
+    {"parse_at_event",             test_parse_at_event_suite},
+    {"parse_emit_postfix",         test_parse_emit_postfix_suite},
+    {"uevent_subscribe",           test_uevent_subscribe_suite},
+    {"at_event_dispatch",          test_at_event_dispatch_suite},
+    {"event_emit_async",           test_event_emit_async_suite},
+    {"event_emit_sync",            test_event_emit_sync_suite},
+    {"event_waituntil",            test_event_waituntil_suite},
+    {"waituntil_tag_stop",         test_waituntil_tag_stop_suite},
+    {"event_native",               test_event_native_suite},
+    {"tag_native",                 test_tag_native_suite},
+    {"tag_enter_leave",            test_tag_enter_leave_suite},
+    {"event_gc",                   test_event_gc_suite},
+    {"isr_event_drain",            test_isr_event_drain_suite},
+    {"slot_change_install",        test_slot_change_install_suite},
+    {"op_getslot_change_event",    test_op_getslot_change_event_suite},
+    {"parse_at_slot_change",       test_parse_at_slot_change_suite},
+    {"emit_at_slot_change",        test_emit_at_slot_change_suite},
+    {"slot_change_emit",           test_slot_change_emit_suite},
+    {"slot_change_callsites",      test_slot_change_callsites_suite},
+    {"slot_change_reentrancy",     test_slot_change_reentrancy_suite},
+    {"registry_table",            test_registry_table_suite},
+    {"realm_populate",            test_realm_populate_suite},
+    {"emit_global_lookup",        test_emit_global_lookup_suite},
+    {"emit_global_var",           test_emit_global_var_suite},
+    {"op_load_realm_global",      test_op_load_realm_global_suite},
+    {"const_global",              test_const_global_suite},
+    {"realm_globals_api",         test_realm_globals_api_suite},
     /* Add new suites here as test files are added. */
 };
 

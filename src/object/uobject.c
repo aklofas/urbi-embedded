@@ -26,6 +26,7 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
+#include "uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === next_id ===
  *
@@ -73,12 +74,13 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
     if (o->shape == NULL) {
         return NULL;
     }
-    o->slots        = NULL;       /* zero-slot at construction; T15 lands slot transitions */
-    o->protos       = 0u;         /* empty form per spec §4.1 */
-    o->object_id    = next_id(vm);
-    o->lookup_stamp = 0u;
-    o->flags        = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
-    o->reserved     = 0u;
+    o->slots               = NULL;  /* zero-slot at construction; T15 lands slot transitions */
+    o->protos              = 0u;   /* empty form per spec §4.1 */
+    o->object_id           = next_id(vm);
+    o->lookup_stamp        = 0u;
+    o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
+    o->reserved            = 0u;
+    o->changed_events_head = NULL; /* lazy-alloc at first `obj.x.changed?` install (R6) */
     return o;
 }
 
@@ -673,6 +675,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     int32_t existing = urbi_shape_find_slot(obj->shape, name);
     if (existing >= 0) {
         obj->slots[existing] = value;
+        urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
         return 0;
     }
 
@@ -734,6 +737,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     if (obj->flags & URBI_OBJ_FLAG_IS_PROTOTYPE) {
         vm->topology_gen++;
     }
+    urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
     return 0;
 }
 
@@ -1129,6 +1133,10 @@ m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->atom_tag     != NULL) gc_shade_gray(vm, (UCell *)vm->atom_tag);
     if (vm->atom_event   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_event);
     if (vm->atom_symbol  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_symbol);
+
+    /* M5 T53/T54 native proto objects. */
+    if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
+    if (vm->tag_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->tag_proto);
 
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
