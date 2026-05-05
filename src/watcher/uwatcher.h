@@ -213,6 +213,17 @@ void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
  * and test code (reachable via this header or an explicit extern declaration). */
 void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
+/* === Completion callback (uwatcher_spawn.c) === */
+
+/* urbi_watcher_body_completed: called by the dispatcher's strand-DEAD path
+ * when a watcher body strand finishes execution (spec #1 §6.2).
+ *   - Recovers w from s->watcher_body_owner (DEBUG-asserts non-NULL).
+ *   - Logs URBI_LOG_WARN on UEXEC_THROW; silent for TAG_STOP/CANCEL/OK.
+ *   - Clears both s->watcher_body_owner and w->body_strand atomically.
+ *   - If PENDING_UNREGISTER: clears PENDING_REFIRE and returns (no respawn).
+ *   - Else if PENDING_REFIRE: clears flag and calls respawn_body_coroutine. */
+void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
+
 /* === GC root provider (uwatcher_gc.c) === */
 
 /* watcher_table_walk_roots: registered via urbi_gc_register_root_provider at

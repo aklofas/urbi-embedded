@@ -128,3 +128,38 @@ respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
 #endif
     do_spawn_body_coroutine(vm, w, NULL);
 }
+
+/* urbi_watcher_body_completed: strand-DEAD notification (spec #1 §6.2).
+ * Called by the dispatcher when a body strand reaches DEAD state. */
+void
+urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
+{
+#ifdef URBI_DEBUG
+    URBI_ASSERT_NOT_ISR(vm);
+#endif
+    struct UWatcher *w = s->watcher_body_owner;
+#ifdef URBI_DEBUG
+    URBI_INTERNAL_ASSERT(w != NULL);
+    URBI_INTERNAL_ASSERT(w->body_strand == s);
+#endif
+
+    if (s->fatal_status == UEXEC_THROW) {
+        if (vm->host_log_fn)
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "watcher body uncaught throw");
+        /* TODO(M6): include throw value's string repr (Object.toString) */
+    }
+    /* TAG_STOP, CANCEL, UEXEC_OK: silent */
+
+    s->watcher_body_owner = NULL;
+    w->body_strand        = NULL;
+
+    if ((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0) {
+        w->flags &= (uint8_t)~URBI_WATCHER_PENDING_REFIRE;
+        return;
+    }
+    if ((w->flags & URBI_WATCHER_PENDING_REFIRE) != 0) {
+        w->flags &= (uint8_t)~URBI_WATCHER_PENDING_REFIRE;
+        respawn_body_coroutine(vm, w);
+    }
+}
