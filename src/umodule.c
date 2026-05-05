@@ -184,11 +184,10 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
         return ULOAD_BAD_MAGIC;
     }
 
-    /* version byte: 0x13 = v1.3 (16*major + minor); v1.0/v1.1/v1.2 are
-       hard-rejected.  v1.2 → v1.3 is the M4 break (UProto.ic_count + ic_names
-       side table); loading older modules silently would leave IC sites
-       uninitialized.  v1.0 and v1.1 are also rejected for the same M3
-       OP_RETURN dispatch-semantics reason. */
+    /* version byte: 0x14 = v1.4 (16*major + minor); all prior versions are
+       hard-rejected.  v1.3 → v1.4 is the M5 break (reactive opcodes 39-46,
+       gc_byte bit 7, 4 new AST node kinds); loading older modules silently
+       would produce unknown opcodes or misread GC state. */
     if (buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(errmsg, errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",

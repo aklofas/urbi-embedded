@@ -15,10 +15,11 @@ extern "C" {
 /* --- bytecode format version (loader rejects anything other than VERSION_BYTE) ---
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
    v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
-   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table). */
+   v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
+   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds). */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1u
-#define URBI_BYTECODE_VERSION_MINOR  3u
+#define URBI_BYTECODE_VERSION_MINOR  4u
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4u) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
