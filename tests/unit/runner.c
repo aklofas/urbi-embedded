@@ -139,6 +139,7 @@ extern void test_op_load_realm_global_suite(void);
 extern void test_const_global_suite(void);
 extern void test_realm_globals_api_suite(void);
 extern void test_uwatcher_scratch_suite(void);
+extern void test_at_scripted_e2e_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -254,6 +255,7 @@ static const struct suite_entry suites[] = {
     {"const_global",              test_const_global_suite},
     {"realm_globals_api",         test_realm_globals_api_suite},
     {"uwatcher_scratch",          test_uwatcher_scratch_suite},
+    {"at_scripted_e2e",           test_at_scripted_e2e_suite},
     /* Add new suites here as test files are added. */
 };
 
