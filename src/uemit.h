@@ -302,6 +302,21 @@ typedef struct UFuncState {
     uint16_t   ic_next;              /* equals proto->ic_count after close */
     USymbol  **ic_names;             /* lazily allocated via module allocator */
     uint16_t   ic_names_cap;
+
+    /* === M5 T71: realm-global fallback register ===
+     *
+     * When this function references any realm global (identifier that does
+     * not resolve as a local or upvalue), references_global is set and
+     * r_global_slot is assigned a register that will hold realm->global_object
+     * at runtime.  T73 prepends OP_LOAD_REALM_GLOBAL r_global_slot to the
+     * function prologue.  All global OP_GETSLOT(dst, r_global_slot, ic_idx)
+     * instructions in this function route through that single live register.
+     *
+     * r_global_slot is claimed from freereg (same floor as local slots) so
+     * it stays valid across statement boundaries; freereg is bumped to prevent
+     * the temp zone from aliasing it. */
+    bool     references_global;      /* true after first global ident resolved */
+    uint8_t  r_global_slot;          /* register for realm->global_object */
 } UFuncState;
 
 /* Compile-time upvalue cascade. Walks parent FuncStates to find `name`

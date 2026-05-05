@@ -719,9 +719,48 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             return dst;
         }
 
-        /* No globals at v1.0. */
-        e->error = EMIT_UNRESOLVED_NAME;
-        return 0u;
+        /* Realm-global fallback (spec #5 §5.1).
+         * The identifier did not resolve as a local or upvalue; fall through
+         * to the realm's global_object slot table via OP_GETSLOT.
+         *
+         * r_global_slot is reserved the first time a global reference appears
+         * in this function: claim it below the temp zone (freereg == nactvar
+         * between statements, the common case for top-level global reads).
+         * T73 prepends OP_LOAD_REALM_GLOBAL to fill this register at entry. */
+        if (!fs->references_global) {
+            if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            fs->references_global = true;
+            fs->r_global_slot = fs->freereg;
+            fs->freereg++;
+            if (fs->freereg > fs->max_reg_seen)
+                fs->max_reg_seen = fs->freereg;
+            /* Sync the emitter's temp cursor upward — the claimed slot must
+             * not be overwritten by subsequent temp allocations. */
+            if (fs->freereg > e->next_reg) {
+                e->next_reg = fs->freereg;
+                if (e->next_reg > e->max_reg_seen)
+                    e->max_reg_seen = e->next_reg;
+            }
+        }
+        {
+            uint8_t dst = e->next_reg;
+            if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                e->error = EMIT_REG_EXHAUSTED;
+                return 0u;
+            }
+            int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
+            if (ic_idx < 0) return 0u;  /* error already set */
+            emit_instr(e, uinstr_enc_abc(OP_GETSLOT, dst, fs->r_global_slot,
+                                         (uint8_t)ic_idx),
+                       (uint32_t)n->line);
+            e->next_reg++;
+            if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+            if (e->next_reg > fs->max_reg_seen) fs->max_reg_seen = e->next_reg;
+            return dst;
+        }
     }
     case AST_VAR_DECL: {
         if (e->current_fs == NULL || e->vm == NULL) {

@@ -328,8 +328,10 @@ uvm_destroy(&vm);
 }
 
 UTEST(emit_ast_ident_unresolved_name_returns_error) {
-    /* After T10, a bare identifier with no matching local or upvalue
-       returns EMIT_UNRESOLVED_NAME (no globals at v1.0). */
+    /* After T71, a bare identifier with no matching local or upvalue
+       falls through to the realm-global lookup and compiles successfully
+       (emits OP_GETSLOT on the r_global_slot register).
+       EMIT_UNRESOLVED_NAME is no longer raised for bare identifiers. */
     UVM vm;
     UModule module = {0};
     UArena arena;
@@ -339,7 +341,7 @@ UTEST(emit_ast_ident_unresolved_name_returns_error) {
     id.kind = AST_IDENT;
     id.u.ident.start = "ghost";
     id.u.ident.len = 5;
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, emit_single_statement(&module, &arena, &vm, &id));
+    UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &id));
     uarena_destroy(&arena);
     umodule_destroy(&module);
 uvm_destroy(&vm);
@@ -930,11 +932,12 @@ UTEST(emit_var_redeclare_in_same_scope_is_error) {
 }
 
 UTEST(emit_unresolved_name_is_error) {
-    /* "ghost" — bare unresolved identifier -> EMIT_UNRESOLVED_NAME */
+    /* "ghost" — after T71 the realm-global fallback compiles bare
+     * identifiers via OP_GETSLOT; no longer EMIT_UNRESOLVED_NAME. */
     EmitCtx c;
     emit_ctx_init(&c, "ghost");
     UEmitError rc = emit_ctx_run(&c);
-    UASSERT_EQ(EMIT_UNRESOLVED_NAME, rc);
+    UASSERT_EQ(EMIT_OK, rc);
     emit_ctx_destroy(&c);
 }
 
@@ -1548,7 +1551,7 @@ void test_emit_suite(void) {
               emit_ast_unary_neg_5_loadk_then_neg_then_ret);
     utest_run("emit AST_ERROR -> EMIT_AST_ERROR",
               emit_ast_error_returns_emit_ast_error);
-    utest_run("emit AST_IDENT unresolved name -> EMIT_UNRESOLVED_NAME",
+    utest_run("emit AST_IDENT bare ident -> global fallback (T71, no EMIT_UNRESOLVED_NAME)",
               emit_ast_ident_unresolved_name_returns_error);
     utest_run("emit first error latches; subsequent statements short-circuit",
               emit_first_error_latches_and_subsequent_statements_short_circuit);
@@ -1590,7 +1593,7 @@ void test_emit_suite(void) {
               emit_var_then_use_resolves_local);
     utest_run("emit var redeclare in same scope is EMIT_LOCAL_REDECLARE",
               emit_var_redeclare_in_same_scope_is_error);
-    utest_run("emit unresolved name 'ghost' is EMIT_UNRESOLVED_NAME",
+    utest_run("emit bare name 'ghost' -> global fallback (EMIT_OK after T71)",
               emit_unresolved_name_is_error);
     utest_run("emit assign: 'var x = 1; x = 42' emits OP_MOVE to slot 0",
               emit_assign_to_existing_local);
