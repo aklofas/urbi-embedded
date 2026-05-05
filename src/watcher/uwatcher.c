@@ -215,8 +215,19 @@ urbi_watcher_install_internal(
      * ("at fires on transitions; not on initial truthy state").  The install-
      * time eval seeds the cache but does NOT fire the body: a subsequent dirty
      * pass that re-evaluates and finds new == old == truthy will not fire
-     * (no rising edge for AT/AT_SYNC; WHENEVER fires on next dirty pass). */
-    w->last_value_cache = invoke_condition_closure(vm, w);
+     * (no rising edge for AT/AT_SYNC; WHENEVER fires on next dirty pass).
+     *
+     * Low-level bypass path: only seed via hook when set; otherwise nil.
+     * Production watcher installs go through install_watcher_runtime which
+     * calls run_closure_on_scratch_frame_with_result for real bytecode eval.
+     * This function is used by tests that may pass fake closure sentinels
+     * without setting a condition hook. */
+    if (w->condition != NULL && vm->test_watcher_condition_hook != NULL) {
+        w->last_value_cache = vm->test_watcher_condition_hook(vm, w);
+    } else {
+        UValue nil = {0};
+        w->last_value_cache = nil;
+    }
 
     return w;
 }
