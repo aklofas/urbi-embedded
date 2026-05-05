@@ -224,6 +224,13 @@ typedef struct UVM {
      * Stored as a pointer (definition lands at T18).  Zero-init = NULL. */
     struct UEventRing *event_ring;     /* T18: uevent_ring_init(vm) allocates */
 
+    /* --- T57 ISR ring drain handler ---
+     * Optional host callback installed via urbi_register_event_drain.
+     * Called at safepoint (uevent_ring_drain) for each injected entry.
+     * Handler maps event_id to a UEvent* and calls c_event_emit_async.
+     * NULL = no drain handler (ring entries are discarded). */
+    void (*event_drain_handler)(struct UVM *vm, uint32_t event_id, UValue payload);
+
     /* --- Row 10 GC state machine --- */
     uint8_t  gc_phase;                 /* 0 = IDLE per row 10 §6.2; named constant lands at T22 */
     uint8_t  current_white;            /* current white color for tri-color marking */

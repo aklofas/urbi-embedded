@@ -203,6 +203,29 @@ void            urbi_strand_destroy(struct UStrand *s);
 int urbi_inject_event(struct UVM *vm, uint32_t event_id,
                       const void *payload, size_t len);
 
+/* === T57 ISR ring drain handler (M5 / spec #3 §9) ===
+ *
+ * urbi_register_event_drain: install a drain callback invoked at each
+ * safepoint (urbi_step entry) for every entry in the ISR event ring.
+ *
+ * Handler signature:
+ *   void handler(UVM *vm, uint32_t event_id, UValue payload);
+ *
+ *   event_id — the ID passed to urbi_inject_event.
+ *   payload  — NIL at M5 baseline (raw-bytes ring does not carry UValues;
+ *              host implements event_id → UEvent* mapping in the handler).
+ *
+ * The handler runs in main-thread context (at safepoint, not in ISR).
+ * Typical usage: map event_id → UEvent* and call c_event_emit_async(vm, e, p).
+ * Host owns the event_id namespace (spec §9.3).
+ *
+ * Pass NULL to remove a previously registered handler.
+ * Not ISR-safe (must be called from the same thread that drives urbi_step). */
+typedef void (*urbi_event_drain_handler)(struct UVM *vm,
+                                         uint32_t event_id,
+                                         UValue payload);
+void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
+
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
  * URBI_LOG_* — log level constants for host_log_fn callback.

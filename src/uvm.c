@@ -297,6 +297,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
+
+    /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
+    vm->event_drain_handler = NULL;
 }
 
 void uvm_destroy(UVM *vm) {
@@ -357,6 +360,21 @@ urbi_native_protos_init(UVM *vm)
 {
     event_native_register(vm);
     tag_native_register(vm);
+}
+
+/* === urbi_register_event_drain (T57 — spec #3 §9) ===
+ *
+ * Install a host callback that is invoked at each safepoint (urbi_step entry)
+ * for every entry drained from the ISR SPSC ring.  The handler maps event_id
+ * to a UEvent* and typically calls c_event_emit_async.  Pass NULL to remove
+ * the handler.  Not ISR-safe: must be called from the same thread as urbi_step.
+ */
+void
+urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+    if (vm == NULL) return;
+    vm->event_drain_handler = h;
 }
 
 const char *uvm_error_name(UVMError code) {
