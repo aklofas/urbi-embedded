@@ -2177,6 +2177,52 @@ size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
         case OP_SETSLOT:
             ok = dis_printf(buf, cap, &off, "%04zu  SETSLOT (reserved M4)\n", i);
             break;
+        /* M5 reactive runtime — spec #2: at/whenever/waituntil */
+        case OP_AT_INSTALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  AT_INSTALL R%u, R%u, R%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        case OP_AT_SYNC_INSTALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  AT_SYNC_INSTALL R%u, R%u, R%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        case OP_WHENEVER_INSTALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  WHENEVER_INSTALL R%u, R%u, R%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        case OP_WAITUNTIL_INSTALL:
+            /* cond_reg only; B and C are unused (zero). */
+            ok = dis_printf(buf, cap, &off, "%04zu  WAITUNTIL_INSTALL R%u\n",
+                            i, (unsigned)a);
+            break;
+        /* M5 reactive runtime — spec #3: event syncEmit + tag.enter/leave */
+        case OP_AT_EVENT_INSTALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  AT_EVENT_INSTALL R%u, R%u, R%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        case OP_AT_EVENT_SYNC_INSTALL:
+            ok = dis_printf(buf, cap, &off, "%04zu  AT_EVENT_SYNC_INSTALL R%u, R%u, R%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        /* M5 reactive runtime — spec #4: slot-change events */
+        case OP_GETSLOT_CHANGE_EVENT:
+            /* C is a symbol-table index (not a register); display as Kn. */
+            ok = dis_printf(buf, cap, &off, "%04zu  GETSLOT_CHANGE_EVENT R%u, R%u, K%u\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
+        /* M5 reactive runtime — spec #5: globals exposure */
+        case OP_LOAD_REALM_GLOBAL:
+            /* B=sym_id_hi, C=sym_id_lo (16-bit symbol id split into two bytes). */
+            ok = dis_printf(buf, cap, &off, "%04zu  LOAD_REALM_GLOBAL R%u, sym(%u,%u)\n",
+                            i, (unsigned)a,
+                            (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
+            break;
         default:
             ok = dis_printf(buf, cap, &off, "%04zu  %s R%u, R%u, R%u\n",
                             i, opname(op), (unsigned)a,
