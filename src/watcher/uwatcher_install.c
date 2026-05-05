@@ -22,6 +22,8 @@
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER */
 #include "gc/ugc.h"             /* UCell */
 #include "utag.h"               /* UTag, member_watchers_head */
+#include "uevent.h"             /* UEvent */
+#include "uevent_subscribe.h"   /* uevent_at_watchers_append */
 
 /* === resolve_owning_tag (spec #2 §7.2) ===
  *
@@ -239,6 +241,69 @@ install_watcher_runtime(
         /* Park waiter strand until the rising edge fires (T43 wires wake). */
         s->state = USTRAND_WAIT_WATCHER;
     }
+
+    return URBI_INSTALL_OK;
+}
+
+/* === install_at_event_runtime (spec #3 §6.2) ===
+ *
+ * Thinner sibling of install_watcher_runtime for AT_EVENT / AT_EVENT_SYNC.
+ * No read-set trace (events fire on emit, not on slot writes).
+ * No active_watchers_head linkage — only cond watchers walk there.
+ * Watcher joins event->at_watchers_head (FIFO) + owning_tag's member chain.
+ * Pool exhaustion is fail-soft: log a warning and return OOM. */
+
+UWatcherInstallResult
+install_at_event_runtime(
+    struct UVM     *vm,
+    struct UStrand *s,
+    uint8_t         mode,
+    struct UEvent  *e,
+    struct UClosure *body,
+    struct UClosure *onleave)
+{
+    UValue nil = {0};
+    UWatcher *w = uwatcher_pool_alloc(vm);
+    if (!w) {
+        if (vm->host_log_fn)
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "watcher pool exhausted; AT_EVENT install dropped");
+        return URBI_INSTALL_OOM_POOL;
+    }
+
+    w->type_tag         = UTYPE_WATCHER;
+    w->gc_byte          = (uint8_t)(vm->current_white | UGC_IS_FIXED);
+    w->mode             = mode;
+    w->condition        = NULL;  /* no condition closure for event watchers */
+    w->body             = body;
+    w->onleave          = onleave;
+    w->event            = e;
+    w->next_in_event    = NULL;
+    w->next_in_tag      = NULL;
+    w->owning_tag       = resolve_owning_tag(s);
+    w->realm            = s->realm;
+    w->exhaust_policy   = URBI_EXHAUST_QUEUE;
+    w->flags            = URBI_WATCHER_ACTIVE;
+    w->body_strand      = NULL;
+    w->waiter_strand    = NULL;
+    w->last_value_cache = nil;
+    w->read_set_count   = 0;
+
+    uevent_at_watchers_append(e, w);
+
+    if (w->owning_tag) {
+        UWatcher *tail = w->owning_tag->member_watchers_head;
+        if (tail == NULL) {
+            w->owning_tag->member_watchers_head = w;
+        } else {
+            while (tail->next_in_tag != NULL) tail = tail->next_in_tag;
+            tail->next_in_tag = w;
+        }
+    }
+
+    /* AT_EVENT does NOT join active_watchers_head — only cond watchers walk
+     * there.  No watcher_active_count bump needed either; the count tracks
+     * cond-watcher pressure on the dirty-eval loop. */
 
     return URBI_INSTALL_OK;
 }

@@ -22,6 +22,7 @@ extern "C" {
 struct UVM;
 struct UStrand;
 struct UClosure;
+struct UEvent;
 
 /* === UWatcherInstallResult ===
  *
@@ -72,6 +73,19 @@ UWatcherInstallResult install_watcher_runtime(
     struct UClosure *body,
     struct UClosure *onleave,
     struct UStrand  *waiter);
+
+/* install_at_event_runtime: thinner sibling of install_watcher_runtime for
+ * AT_EVENT / AT_EVENT_SYNC opcodes.  No read-set trace (events fire on emit,
+ * not on slot writes); no active_watchers_head linkage.  Watcher joins
+ * event->at_watchers_head + owning_tag's member chain.
+ * Spec #3 §6.2. */
+UWatcherInstallResult install_at_event_runtime(
+    struct UVM     *vm,
+    struct UStrand *s,
+    uint8_t         mode,
+    struct UEvent  *e,
+    struct UClosure *body,
+    struct UClosure *onleave);
 
 #ifdef __cplusplus
 }

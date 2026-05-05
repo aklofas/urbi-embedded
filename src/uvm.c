@@ -24,7 +24,8 @@
 #include "uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
-#include "watcher/uwatcher_install.h"  /* install_watcher_runtime (T41-T42) */
+#include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
+#include "uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
 #include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
@@ -854,8 +855,8 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
         [OP_WHENEVER_INSTALL]      = &&label_OP_WHENEVER_INSTALL,
         [OP_WAITUNTIL_INSTALL]     = &&label_OP_WAITUNTIL_INSTALL,
-        [OP_AT_EVENT_INSTALL]      = &&label_m5_stub,
-        [OP_AT_EVENT_SYNC_INSTALL] = &&label_m5_stub,
+        [OP_AT_EVENT_INSTALL]      = &&label_OP_AT_EVENT_INSTALL,
+        [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_m5_stub,
         [OP_LOAD_REALM_GLOBAL]     = &&label_m5_stub,
     };
@@ -1810,6 +1811,35 @@ dispatch:
             NEXT();
         }
 
+        /* === T47: OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL ===
+         *
+         * ABC-encoded: A = event_reg, B = body_reg, C = onleave_reg (0xFF = absent).
+         * Routes through install_at_event_runtime — no read-set trace, no
+         * active_watchers_head linkage.  Watcher joins event->at_watchers_head
+         * (FIFO) and owning_tag's member chain.
+         * Spec #3 §6.2. */
+        CASE(OP_AT_EVENT_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UEvent   *e       = (UEvent *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
+            NEXT();
+        }
+
+        CASE(OP_AT_EVENT_SYNC_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            uint8_t B = uinstr_b(*s->pc);
+            uint8_t C = uinstr_c(*s->pc);
+            UEvent   *e       = (UEvent *)s->R[A].v.p;
+            UClosure *body    = (UClosure *)s->R[B].v.p;
+            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
+            NEXT();
+        }
+
         /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
          * its entry in the dispatch table (computed-goto) or this switch arm.
          * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
@@ -1817,8 +1847,6 @@ dispatch:
         label_m5_stub:
 #else
         case OP_INVOKE:
-        case OP_AT_EVENT_INSTALL:
-        case OP_AT_EVENT_SYNC_INSTALL:
         case OP_GETSLOT_CHANGE_EVENT:
         case OP_LOAD_REALM_GLOBAL:
 #endif
