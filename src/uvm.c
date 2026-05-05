@@ -433,6 +433,16 @@ static const char *op_name(uint8_t op) {
         case OP_PUSH_FRAME_GUARD:     return "OP_PUSH_FRAME_GUARD";
         case OP_RESUME:               return "OP_RESUME";
         case OP_LOAD_CATCH_VALUE:     return "OP_LOAD_CATCH_VALUE";
+        case OP_INVOKE:               return "OP_INVOKE";
+        /* M5 reactive runtime stubs */
+        case OP_AT_INSTALL:           return "OP_AT_INSTALL";
+        case OP_AT_SYNC_INSTALL:      return "OP_AT_SYNC_INSTALL";
+        case OP_WHENEVER_INSTALL:     return "OP_WHENEVER_INSTALL";
+        case OP_WAITUNTIL_INSTALL:    return "OP_WAITUNTIL_INSTALL";
+        case OP_AT_EVENT_INSTALL:     return "OP_AT_EVENT_INSTALL";
+        case OP_AT_EVENT_SYNC_INSTALL:return "OP_AT_EVENT_SYNC_INSTALL";
+        case OP_GETSLOT_CHANGE_EVENT: return "OP_GETSLOT_CHANGE_EVENT";
+        case OP_LOAD_REALM_GLOBAL:    return "OP_LOAD_REALM_GLOBAL";
     }
     return "unknown";
 }
@@ -801,6 +811,17 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_PUSH_FRAME_GUARD] = &&label_OP_PUSH_FRAME_GUARD,
         [OP_RESUME]           = &&label_OP_RESUME,
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
+        /* M4 reserve stub — not yet implemented. */
+        [OP_INVOKE]                = &&label_m5_stub,
+        /* M5 reactive runtime stubs — individual tasks wire dispatch. */
+        [OP_AT_INSTALL]            = &&label_m5_stub,
+        [OP_AT_SYNC_INSTALL]       = &&label_m5_stub,
+        [OP_WHENEVER_INSTALL]      = &&label_m5_stub,
+        [OP_WAITUNTIL_INSTALL]     = &&label_m5_stub,
+        [OP_AT_EVENT_INSTALL]      = &&label_m5_stub,
+        [OP_AT_EVENT_SYNC_INSTALL] = &&label_m5_stub,
+        [OP_GETSLOT_CHANGE_EVENT]  = &&label_m5_stub,
+        [OP_LOAD_REALM_GLOBAL]     = &&label_m5_stub,
     };
 
     DISPATCH();
@@ -1652,6 +1673,29 @@ dispatch:
             URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP runtime owned by T31");
             vm->last_error = UVM_TYPE_ERROR;
             vm_format_type_error_msg(vm, "OP_TAG_STOP: not yet implemented (T31)");
+            HALT();
+        }
+
+        /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
+         * its entry in the dispatch table (computed-goto) or this switch arm.
+         * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
+#if UVM_USE_COMPUTED_GOTO
+        label_m5_stub:
+#else
+        case OP_INVOKE:
+        case OP_AT_INSTALL:
+        case OP_AT_SYNC_INSTALL:
+        case OP_WHENEVER_INSTALL:
+        case OP_WAITUNTIL_INSTALL:
+        case OP_AT_EVENT_INSTALL:
+        case OP_AT_EVENT_SYNC_INSTALL:
+        case OP_GETSLOT_CHANGE_EVENT:
+        case OP_LOAD_REALM_GLOBAL:
+#endif
+        {
+            URBI_DISPATCH_ASSERT(0 && "M5 opcode stub not yet wired");
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "M5 opcode dispatched before implementation");
             HALT();
         }
 

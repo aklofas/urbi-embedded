@@ -85,6 +85,7 @@ extern void test_topology_gen_suite(void);
 extern void test_ugc_object_cells_suite(void);
 extern void test_gc_strand_walker_suite(void);
 extern void test_scheduler_invariant_suite(void);
+extern void test_op_allocation_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -146,6 +147,7 @@ static const struct suite_entry suites[] = {
     {"ugc_object_cells",           test_ugc_object_cells_suite},
     {"gc_strand_walker",           test_gc_strand_walker_suite},
     {"scheduler_invariant",        test_scheduler_invariant_suite},
+    {"op_allocation",              test_op_allocation_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -157,6 +157,22 @@ typedef enum {
     /* M4 reserves; v1.x backlog implements (collapsed GETSLOT+CALL). */
     OP_INVOKE           = 38,
 
+    /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
+    OP_AT_INSTALL              = 39,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_AT_SYNC_INSTALL         = 40,  /* ABC: same shape as OP_AT_INSTALL        */
+    OP_WHENEVER_INSTALL        = 41,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_WAITUNTIL_INSTALL       = 42,  /* ABC: cond_reg, 0, 0                     */
+
+    /* M5 reactive runtime — pre-M5 spec #3 (event syncEmit + tag.enter/leave) */
+    OP_AT_EVENT_INSTALL        = 43,  /* ABC: event_reg, body_reg, onleave_or_FF */
+    OP_AT_EVENT_SYNC_INSTALL   = 44,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
+
+    /* M5 reactive runtime — pre-M5 spec #4 (slot-change events) */
+    OP_GETSLOT_CHANGE_EVENT    = 45,  /* ABC: dst_reg, recv_reg, name_sym_id     */
+
+    /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
+    OP_LOAD_REALM_GLOBAL       = 46,  /* ABC: dst_reg, sym_id_hi, sym_id_lo      */
+
     OP_MAX
 } UOpcode;
 

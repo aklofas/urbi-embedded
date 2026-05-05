@@ -2006,6 +2006,15 @@ static const char *opname(const UOpcode op) {
     case OP_RESUME:               return "RESUME";
     case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
     case OP_INVOKE:               return "INVOKE";
+    /* M5 reactive runtime stubs */
+    case OP_AT_INSTALL:           return "AT_INSTALL";
+    case OP_AT_SYNC_INSTALL:      return "AT_SYNC_INSTALL";
+    case OP_WHENEVER_INSTALL:     return "WHENEVER_INSTALL";
+    case OP_WAITUNTIL_INSTALL:    return "WAITUNTIL_INSTALL";
+    case OP_AT_EVENT_INSTALL:     return "AT_EVENT_INSTALL";
+    case OP_AT_EVENT_SYNC_INSTALL:return "AT_EVENT_SYNC_INSTALL";
+    case OP_GETSLOT_CHANGE_EVENT: return "GETSLOT_CHANGE_EVENT";
+    case OP_LOAD_REALM_GLOBAL:    return "LOAD_REALM_GLOBAL";
     case OP_MAX:                  break;
     }
     return "OP?";
