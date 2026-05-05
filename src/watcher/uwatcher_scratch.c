@@ -39,6 +39,7 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
                             int             *out_threw)
 {
     UValue nil = {0};   /* kind = UVAL_NIL, payload zeroed */
+    UProtoInstanceArr *scratch_arr = NULL; /* heap buf for synthetic module_instance */
 
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(out_result != NULL);
@@ -79,6 +80,36 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
 
     /* strand.module is intentionally left NULL — see the function docstring
      * for the OP_CLOSURE limitation.  Typical cond closures don't trigger it. */
+
+    /* Synthetic module_instance: OP_GETSLOT at frame_count==0 reads
+     * s->module_instance->proto_instances->entries[0].ic_table.  The scratch
+     * strand runs closure directly at frame_count==0 (not the root chunk), so
+     * entries[0] must expose closure's own IC table.  Allocate a minimal
+     * UProtoInstanceArr (one entry) and a stack-local UModuleInstance shell.
+     * Freed in teardown below; GC does not chase strand.module_instance. */
+    UModuleInstance scratch_mi;
+    {
+        volatile unsigned char *p = (volatile unsigned char *)&scratch_mi;
+        size_t i;
+        for (i = 0; i < sizeof(scratch_mi); i++) p[i] = 0;
+    }
+    if (closure->proto_inst != NULL) {
+        size_t arr_bytes = sizeof(UProtoInstanceArr) + sizeof(UProtoInstance);
+        scratch_arr = (UProtoInstanceArr *)vm->alloc_fn(NULL, arr_bytes, vm->alloc_ud);
+        if (scratch_arr != NULL) {
+            {
+                volatile unsigned char *p = (volatile unsigned char *)scratch_arr;
+                size_t i;
+                for (i = 0; i < arr_bytes; i++) p[i] = 0;
+            }
+            scratch_arr->n = 1;
+            scratch_arr->entries[0].proto    = closure->proto;
+            scratch_arr->entries[0].ic_table = closure->proto_inst->ic_table;
+            scratch_mi.vm               = vm;
+            scratch_mi.proto_instances  = scratch_arr;
+            strand.module_instance      = &scratch_mi;
+        }
+    }
 
     /* Initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
@@ -177,6 +208,13 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
     if (strand.stack != NULL) {
         vm->alloc_fn(strand.stack, 0, vm->alloc_ud);
         strand.stack = NULL;
+    }
+
+    /* Free the synthetic module_instance buffer (paired with the alloc above). */
+    if (scratch_arr != NULL) {
+        strand.module_instance = NULL;
+        vm->alloc_fn(scratch_arr, 0, vm->alloc_ud);
+        scratch_arr = NULL;
     }
 
     ustrand_destroy(&strand, vm);

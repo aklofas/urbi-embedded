@@ -53,34 +53,27 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
 
 /* === run_closure_on_scratch_frame_with_result (spec #2 §7.3 phase 3) ===
  *
- * Evaluate `cond` on the VM scratch frame and return the result value and
- * a throw flag.
- *
- * M5 stub contract (T37):
- *   1. If vm->test_install_cond_hook != NULL: delegate to hook; hook populates
- *      *out_result and *out_threw.
- *   2. Else: *out_result = UVAL_NIL, *out_threw = 0 (graceful degradation;
- *      watcher installed with a real condition closure but no hook simply yields
- *      nil — watcher never fires by edge, fires immediately by level on first pass).
- *
- * M5 proper: replace this stub with real dispatch_loop_until_yield execution
- * on vm->watcher_scratch_frame, capturing the OP_RET value and setting
- * out_threw on any unhandled THROW/TAG_STOP unwind. */
+ * Evaluate `cond` on the VM scratch frame and capture the result value +
+ * a throw flag.  Test hook short-circuits the dispatch path so existing
+ * install-trace tests can inject specific cond results without going
+ * through real bytecode dispatch; otherwise routes to
+ * urbi_run_closure_on_scratch (uwatcher_scratch.c). */
 static void
 run_closure_on_scratch_frame_with_result(struct UVM *vm,
                                          struct UClosure *cond,
                                          UValue *out_result,
                                          int    *out_threw)
 {
-    UValue nil = {0};
-
     if (vm->test_install_cond_hook != NULL) {
         vm->test_install_cond_hook(vm, cond, out_result, out_threw);
         return;
     }
 
-    *out_result = nil;
-    *out_threw  = 0;
+    /* M5-proper path: real bytecode dispatch on a transient scratch-frame
+     * strand (helper in src/watcher/uwatcher_scratch.c).  The OP_GETSLOT
+     * trace probe (armed by install_watcher_runtime via vm->in_watcher_install)
+     * records reads into vm->trace_read_set during this dispatch. */
+    (void)urbi_run_closure_on_scratch(vm, cond, out_result, out_threw);
 }
 
 /* === install_watcher_runtime (spec #2 §7.1) ===
