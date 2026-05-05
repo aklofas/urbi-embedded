@@ -222,6 +222,98 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
     uvm_destroy(&vm);
 }
 
+/* scratch_runner_returns_true_for_truthy_comparison
+ *
+ * Compile "5 > 3", run via urbi_run_closure_on_scratch, and verify
+ * out.kind == UVAL_BOOL with out.v.i == 1.  Models the typical at(cond)
+ * shape where cond is a comparison expression that evaluates to true. */
+UTEST(scratch_runner_returns_true_for_truthy_comparison)
+{
+    UVM    vm;
+    UArena arena;
+    UModule module;
+
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    memset(&module, 0, sizeof(module));
+
+    int ok = compile_source(&vm, &arena, &module, "5 > 3");
+    UASSERT(ok);
+
+    UProto proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
+
+    UClosure cl;
+    memset(&cl, 0, sizeof(cl));
+    cl.proto   = &proto;
+    cl.nupvals = 0;
+
+    UValue out   = {0};
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch(&vm, &cl, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT_EQ(1, (int)out.v.i);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
+/* scratch_runner_returns_false_for_falsy_comparison
+ *
+ * Compile "1 > 3", run via urbi_run_closure_on_scratch, and verify
+ * out.kind == UVAL_BOOL with out.v.i == 0.  Models the typical at(cond)
+ * shape where cond is a comparison expression that evaluates to false. */
+UTEST(scratch_runner_returns_false_for_falsy_comparison)
+{
+    UVM    vm;
+    UArena arena;
+    UModule module;
+
+    uvm_init(&vm, NULL, NULL);
+    uarena_init(&arena, 4096);
+    memset(&module, 0, sizeof(module));
+
+    int ok = compile_source(&vm, &arena, &module, "1 > 3");
+    UASSERT(ok);
+
+    UProto proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
+
+    UClosure cl;
+    memset(&cl, 0, sizeof(cl));
+    cl.proto   = &proto;
+    cl.nupvals = 0;
+
+    UValue out   = {0};
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch(&vm, &cl, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
+    UASSERT_EQ(0, (int)out.v.i);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    uvm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -238,4 +330,8 @@ test_uwatcher_scratch_suite(void)
               scratch_runner_handles_null_closure);
     utest_run("scratch runner returns nil for nil literal",
               scratch_runner_returns_nil_for_nil_literal);
+    utest_run("scratch_runner_returns_true_for_truthy_comparison",
+              scratch_runner_returns_true_for_truthy_comparison);
+    utest_run("scratch_runner_returns_false_for_falsy_comparison",
+              scratch_runner_returns_false_for_falsy_comparison);
 }
