@@ -239,7 +239,12 @@ typedef struct {
 /* Block context — stacked per `{` / function-body / loop body. Reserved
  * at T6; populated at T7. */
 typedef struct {
-    int    nactvar_on_enter;         /* nactvar value when block opened */
+    int     nactvar_on_enter;        /* nactvar value when block opened */
+    uint8_t freereg_on_enter;        /* freereg value when block opened;
+                                        used by uemit_close_block to restore
+                                        the temp-zone floor correctly (needed
+                                        when r_global_slot is pre-reserved and
+                                        `freereg != nactvar` invariant is broken). */
     int    first_local_idx;          /* index into actvars[] of first local
                                         declared in this block */
     bool   is_loop;                  /* true for while-body block —
@@ -316,7 +321,34 @@ typedef struct UFuncState {
      * it stays valid across statement boundaries; freereg is bumped to prevent
      * the temp zone from aliasing it. */
     bool     references_global;      /* true after first global ident resolved */
+    bool     global_slot_reserved;   /* true once r_global_slot is claimed from
+                                        freereg (may be true even if
+                                        references_global is still false — the
+                                        slot is pre-reserved at function entry to
+                                        prevent if/while temp resets from aliasing
+                                        it when a global ref is first encountered
+                                        inside a branch arm). */
     uint8_t  r_global_slot;          /* register for realm->global_object */
+
+    /* === M5 T72: chunk-top declared global names ===
+     *
+     * At chunk-top (parent == NULL), `var x = init` does not add `x` to
+     * actvars[] — it writes to the global slot via OP_SETSLOT.  To allow
+     * subsequent `x = value` assignments (AST_ASSIGN) to route to the global
+     * slot rather than raising EMIT_UNRESOLVED_NAME, the canonical name is
+     * stored here at declaration time.  Names are interned pointers (same
+     * intern table as actvars), so pointer equality suffices for lookup.
+     *
+     * Cap matches UFS_MAX_LOCALS (a chunk-top function can't declare more
+     * globals than a nested function can declare locals, by the same reg
+     * budget). */
+    int          n_global_vars;
+    const char  *global_var_names[UFS_MAX_LOCALS];
+    UFuncSig     global_var_sigs[UFS_MAX_LOCALS]; /* parallel to global_var_names[];
+                                                     resolved=true when the init is
+                                                     a literal AST_FUNCTION, enabling
+                                                     T16 lazy-arg wrapping at call sites
+                                                     that reference globals. */
 } UFuncState;
 
 /* Compile-time upvalue cascade. Walks parent FuncStates to find `name`

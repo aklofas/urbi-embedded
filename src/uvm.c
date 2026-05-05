@@ -911,7 +911,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_AT_EVENT_INSTALL]      = &&label_OP_AT_EVENT_INSTALL,
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
-        [OP_LOAD_REALM_GLOBAL]     = &&label_m5_stub,
+        [OP_LOAD_REALM_GLOBAL]     = &&label_OP_LOAD_REALM_GLOBAL,
     };
 
     DISPATCH();
@@ -1965,6 +1965,24 @@ dispatch:
             NEXT();
         }
 
+        /* M5 spec #5 §6: OP_LOAD_REALM_GLOBAL — loads realm->global_object into R[A].
+         * Emitted as a prologue by the compiler when a function references any
+         * realm global (spec #5 §5.1 + §5.2).  The register R[A] is then used
+         * as the receiver for all OP_GETSLOT / OP_SETSLOT global accesses. */
+        CASE(OP_LOAD_REALM_GLOBAL) {
+            uint8_t A = uinstr_a(*s->pc);
+            URealm *r = s->realm;
+            if (r == NULL || r->global_object == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm,
+                    "OP_LOAD_REALM_GLOBAL: strand has no realm");
+                HALT();
+            }
+            s->R[A].kind = (uint8_t)UVAL_OBJECT;
+            s->R[A].v.p  = r->global_object;
+            NEXT();
+        }
+
         /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
          * its entry in the dispatch table (computed-goto) or this switch arm.
          * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
@@ -1972,7 +1990,6 @@ dispatch:
         label_m5_stub:
 #else
         case OP_INVOKE:
-        case OP_LOAD_REALM_GLOBAL:
 #endif
         {
             URBI_DISPATCH_ASSERT(0 && "M5 opcode stub not yet wired");
@@ -2153,12 +2170,18 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.pc_base    = module->instructions;
     strand.cur_consts = module->constants;
     strand.module     = module;
-    /* M4 follow-up: bind module_instance for OP_GETSLOT/SETSLOT IC dispatch.
-     * urbi_run_chunk already created the UModuleInstance via
-     * urbi_get_or_create_module_instance; uvm_run callers (test_vm.c
-     * pipeline, test_emit.c integration tests) get the binding here too
-     * so OP_CLOSURE can read s->module_instance directly. */
-    strand.module_instance = urbi_get_or_create_module_instance(vm, (UModule *)module);
+    /* M4 follow-up / T72 fix: always create a fresh UModuleInstance for each
+     * uvm_run call.  urbi_get_or_create_module_instance is unsuitable here
+     * because the REPL stack-allocates UModule and reuses the same stack
+     * address across calls; the cache lookup would return a stale instance
+     * with old (freed) ic_names.  Forcing fresh creation ensures ic->name is
+     * populated from the current module's ic_names table.
+     *
+     * urbi_run_chunk pre-creates an instance via get_or_create before calling
+     * uvm_run; that cached instance is shadowed by this fresh one (prepended to
+     * vm->module_instances_head) but both are functionally correct — only this
+     * strand's module_instance is used for IC dispatch during this run. */
+    strand.module_instance = urbi_module_instance_create(vm, (UModule *)module);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.closure_list = NULL;

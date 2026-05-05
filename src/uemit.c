@@ -158,6 +158,29 @@ static void free_reg(UEmitter *e) {
     if (e->next_reg > 0u) e->next_reg--;
 }
 
+/* Minimum register that freereg/next_reg may be reset to when releasing temps.
+ * Normally equals nactvar (frame locals occupy [0, nactvar)).
+ * If a global slot register has been pre-reserved (global_slot_reserved), the
+ * global_slot register sits BELOW the first local: all nactvar locals occupy
+ * [r_global_slot+1 .. r_global_slot+nactvar].  The temp zone then starts at
+ * r_global_slot + nactvar + 1 = nactvar + 1 (when r_global_slot == 0).
+ * More precisely: floor = nactvar + (global_slot_reserved ? 1 : 0).
+ *
+ * This formula holds because:
+ *   - Without pre-reservation: locals occupy [0, nactvar), floor = nactvar.
+ *   - With pre-reservation: r_global_slot is at index `nparams` (just above
+ *     all params), locals follow at nparams+1 .. nparams+nactvar_excluding_params.
+ *     But since params are counted in nactvar, the formula simplifies to
+ *     nactvar + 1 in all cases where r_global_slot is placed at freereg
+ *     (i.e., exactly once, between params and first body local). */
+static uint8_t fs_temp_floor(const UFuncState *fs) {
+    uint8_t floor_val = (uint8_t)fs->nactvar;
+    if (fs->global_slot_reserved) {
+        floor_val = (uint8_t)(fs->nactvar + 1u);
+    }
+    return floor_val;
+}
+
 /* Linear-scan dedup over the integer pool.  Returns existing index if
    a UVAL_INT entry with the same value already exists; otherwise appends
    a new entry and returns its index.  Sets e->error and returns 0 on
@@ -550,6 +573,25 @@ static uint8_t emit_function_literal(UEmitter *e,
     }
     child_proto->nparams = (uint8_t)nparams;
 
+    /* Pre-reserve the realm-global slot register at the current freereg
+     * (right above the last param).  This must happen BEFORE body compilation
+     * so that if/while temp-resets (which use fs_temp_floor) never clobber
+     * the register, even when a global reference first appears inside a
+     * branch arm (where the reset has already moved next_reg below freereg).
+     *
+     * global_slot_reserved = true signals fs_temp_floor to include this
+     * register in the floor, whether or not references_global is set yet.
+     * OP_LOAD_REALM_GLOBAL is still emitted lazily (only if the body actually
+     * reads or writes a global); if the function turns out not to use any
+     * globals, the reserved register is simply unused. */
+    if (child_fs->freereg < (uint8_t)(UFS_MAX_REGS - 1)) {
+        child_fs->r_global_slot = child_fs->freereg;
+        child_fs->global_slot_reserved = true;
+        child_fs->freereg++;
+        if (child_fs->freereg > child_fs->max_reg_seen)
+            child_fs->max_reg_seen = child_fs->freereg;
+    }
+
     /* Sync the flat register cursor to the child's freereg so temps
      * inside the function body are allocated above all param slots. */
     e->next_reg = child_fs->freereg;
@@ -723,27 +765,43 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
          * The identifier did not resolve as a local or upvalue; fall through
          * to the realm's global_object slot table via OP_GETSLOT.
          *
-         * r_global_slot is reserved the first time a global reference appears
-         * in this function: claim it below the temp zone (freereg == nactvar
-         * between statements, the common case for top-level global reads).
-         * T73 prepends OP_LOAD_REALM_GLOBAL to fill this register at entry. */
+         * r_global_slot is claimed at most once per function.  For nested
+         * function bodies it is pre-reserved above the last param in
+         * emit_function_body_impl (global_slot_reserved = true) so that
+         * if/while temp-resets cannot clobber it even if the first global
+         * reference appears inside a branch arm.  For top-level functions it
+         * is claimed lazily here on first use. */
         if (!fs->references_global) {
-            if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
-                e->error = EMIT_REG_EXHAUSTED;
-                return 0u;
+            if (!fs->global_slot_reserved) {
+                /* Top-level lazy path: claim r_global_slot at current freereg. */
+                if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                    e->error = EMIT_REG_EXHAUSTED;
+                    return 0u;
+                }
+                fs->r_global_slot = fs->freereg;
+                fs->global_slot_reserved = true;
+                fs->freereg++;
+                if (fs->freereg > fs->max_reg_seen)
+                    fs->max_reg_seen = fs->freereg;
+                /* Sync the emitter's temp cursor upward — the claimed slot must
+                 * not be overwritten by subsequent temp allocations. */
+                if (fs->freereg > e->next_reg) {
+                    e->next_reg = fs->freereg;
+                    if (e->next_reg > e->max_reg_seen)
+                        e->max_reg_seen = e->next_reg;
+                }
             }
+            /* Mark first actual global read (for nested functions the slot
+             * was pre-reserved but references_global starts false). */
             fs->references_global = true;
-            fs->r_global_slot = fs->freereg;
-            fs->freereg++;
-            if (fs->freereg > fs->max_reg_seen)
-                fs->max_reg_seen = fs->freereg;
-            /* Sync the emitter's temp cursor upward — the claimed slot must
-             * not be overwritten by subsequent temp allocations. */
-            if (fs->freereg > e->next_reg) {
-                e->next_reg = fs->freereg;
-                if (e->next_reg > e->max_reg_seen)
-                    e->max_reg_seen = e->next_reg;
-            }
+            /* Emit OP_LOAD_REALM_GLOBAL inline at the point of first global
+             * reference.  For chunk-top functions this is effectively a
+             * prologue; for nested functions T73 will move this to entry.
+             * The register stays stable (local-zone floor) for the remainder
+             * of the function. */
+            emit_instr(e, uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, fs->r_global_slot,
+                                         0u, 0u),
+                       (uint32_t)n->line);
         }
         {
             uint8_t dst = e->next_reg;
@@ -773,6 +831,93 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         const char *canonical = ustr_intern(e->vm, n->u.var_decl.name_start,
                                             (size_t)n->u.var_decl.name_len);
         if (canonical == NULL) { e->error = EMIT_OOM; return 0u; }
+
+        /* === Chunk-top path (spec #5 §5.2): write to realm global slot ===
+         *
+         * When this function is at chunk-top (no enclosing function), `var x`
+         * declares a realm global rather than a frame local.  Emit:
+         *   OP_SETSLOT  init_reg, r_global_slot, ic_idx
+         * where ic_idx is the IC site for the slot name.
+         *
+         * The T73 prologue fills r_global_slot with realm->global_object at
+         * function entry; the OP_SETSLOT then writes `init_value` into
+         * the correct slot on the global object.
+         *
+         * NOTE: `var` inside a function body (fs->parent != NULL) still
+         * allocates a frame local — the else-branch below handles that. */
+        if (fs->parent == NULL) {
+            /* Reserve r_global_slot on first global use (same as T71).
+             * Uses the same global_slot_reserved / references_global two-flag
+             * protocol as the AST_IDENT global fallback. */
+            if (!fs->references_global) {
+                if (!fs->global_slot_reserved) {
+                    if (fs->freereg >= (uint8_t)(UFS_MAX_REGS - 1)) {
+                        e->error = EMIT_REG_EXHAUSTED;
+                        return 0u;
+                    }
+                    fs->r_global_slot = fs->freereg;
+                    fs->global_slot_reserved = true;
+                    fs->freereg++;
+                    if (fs->freereg > fs->max_reg_seen)
+                        fs->max_reg_seen = fs->freereg;
+                    e->next_reg = fs->freereg;
+                    if (e->next_reg > e->max_reg_seen)
+                        e->max_reg_seen = e->next_reg;
+                }
+                fs->references_global = true;
+                /* Emit OP_LOAD_REALM_GLOBAL inline at first chunk-top global
+                 * use (analogous to T71 path). */
+                emit_instr(e, uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, fs->r_global_slot,
+                                             0u, 0u),
+                           (uint32_t)n->line);
+            }
+
+            /* Emit init expression into a temp register. */
+            uint8_t init_reg = emit_expr(e, n->u.var_decl.init);
+            if (e->error != EMIT_OK) return 0u;
+
+            /* Intern slot name and assign IC index. */
+            int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
+            if (ic_idx < 0) return 0u;
+
+            /* Write value into the global slot. */
+            emit_instr(e, uinstr_enc_abc(OP_SETSLOT, init_reg, fs->r_global_slot,
+                                         (uint8_t)ic_idx),
+                       (uint32_t)n->line);
+
+            /* Track the declared global name so that subsequent AST_ASSIGN
+             * nodes (e.g. `n = n + 1` after `var n = 0` at chunk-top) can
+             * route to the global slot rather than raising EMIT_UNRESOLVED_NAME.
+             * Also record the function signature (global_var_sigs) so that
+             * T16 lazy-arg wrapping works at call sites that reference globals. */
+            if (fs->n_global_vars < UFS_MAX_LOCALS) {
+                int gidx = fs->n_global_vars++;
+                fs->global_var_names[gidx] = canonical;
+                UFuncSig *gsig = &fs->global_var_sigs[gidx];
+                emit_zero(gsig, sizeof(*gsig));
+                if (n->u.var_decl.init->kind == AST_FUNCTION) {
+                    UAstNode *fn = n->u.var_decl.init;
+                    gsig->resolved  = true;
+                    gsig->nparams   = fn->u.func.param_count;
+                    {
+                        int pi;
+                        for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
+                            gsig->param_is_lazy[pi] =
+                                (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                        }
+                    }
+                }
+            }
+
+            /* Return init_reg as the expression value (the REPL displays it).
+             * Do NOT call free_reg here: the caller (NARY separator or
+             * uemit_statement) releases temps via next_reg = freereg reset.
+             * This is consistent with the local var-decl path which absorbs
+             * the temp into the local zone without freeing it. */
+            return init_reg;
+        }
+
+        /* === Normal path: allocate a frame local === */
 
         /* Redeclare check within current block (or whole actvar table). */
         int search_from = (fs->nblocks > 0)
@@ -866,12 +1011,27 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         }
 
         int upvalue_idx = -1;
+        bool is_global_assign = false;
         if (local_slot < 0) {
             upvalue_idx = find_or_install_upvalue(e, fs, canonical,
                                                   n->u.assign.name_len);
             if (upvalue_idx < 0) {
-                e->error = EMIT_UNRESOLVED_NAME;
-                return 0u;
+                /* T72: at chunk-top, check whether this name was declared via
+                 * `var` (stored in global_var_names).  If so, route to the
+                 * global slot via OP_SETSLOT rather than raising an error.
+                 * Names that were never declared still produce EMIT_UNRESOLVED_NAME. */
+                if (fs->parent == NULL && fs->references_global) {
+                    for (int gi = 0; gi < fs->n_global_vars; gi++) {
+                        if (fs->global_var_names[gi] == canonical) {
+                            is_global_assign = true;
+                            break;
+                        }
+                    }
+                }
+                if (!is_global_assign) {
+                    e->error = EMIT_UNRESOLVED_NAME;
+                    return 0u;
+                }
             }
         }
 
@@ -885,6 +1045,34 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             emit_instr(e, uinstr_enc_abc(OP_MOVE, (uint8_t)local_slot,
                                          rhs_reg, 0u),
                        (uint32_t)n->line);
+        } else if (is_global_assign) {
+            /* T72: write to the global slot on the realm object. */
+            int ic_idx = uemit_assign_ic_index(e, (USymbol *)canonical);
+            if (ic_idx < 0) return 0u;
+            emit_instr(e, uinstr_enc_abc(OP_SETSLOT, rhs_reg, fs->r_global_slot,
+                                         (uint8_t)ic_idx),
+                       (uint32_t)n->line);
+            /* T16: if RHS is a literal function, update global_var_sigs so
+             * subsequent calls to this global get correct lazy-arg wrapping. */
+            for (int gi = 0; gi < fs->n_global_vars; gi++) {
+                if (fs->global_var_names[gi] == canonical) {
+                    UFuncSig *gsig = &fs->global_var_sigs[gi];
+                    emit_zero(gsig, sizeof(*gsig));
+                    if (n->u.assign.value->kind == AST_FUNCTION) {
+                        UAstNode *fn = n->u.assign.value;
+                        gsig->resolved = true;
+                        gsig->nparams  = fn->u.func.param_count;
+                        {
+                            int pi;
+                            for (pi = 0; pi < fn->u.func.param_count && pi < 16; pi++) {
+                                gsig->param_is_lazy[pi] =
+                                    (fn->u.func.params[pi]->kind == AST_LAZY_PARAM);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
         } else {
             emit_instr(e, uinstr_enc_abc(OP_SETUPVAL, rhs_reg,
                                          (uint8_t)upvalue_idx, 0u),
@@ -1127,7 +1315,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             }
             if (i < n->u.block.count - 1) {
                 /* Release temps between statements; locals stay. */
-                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
                 e->next_reg = e->current_fs->freereg;
             }
         }
@@ -1188,7 +1376,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* 4. Reset cursor to rd so then-block allocates starting at rd. */
         e->next_reg = rd;
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
 
         /* 5. Compile then-block. */
@@ -1213,7 +1401,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* 8. Reset cursor to rd for else/nil arm. */
         e->next_reg = rd;
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
 
         /* 9. Compile else-block or emit LOADNIL. */
@@ -1279,7 +1467,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
 
         /* Free cond temp; locals beneath rx stay. */
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         e->next_reg = e->current_fs->freereg;
 
         /* 4. Body — open block as is_loop=true (different from AST_BLOCK
@@ -1299,7 +1487,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                     return 0u;
                 }
                 /* Release temps between body statements; locals stay. */
-                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
                 e->next_reg = e->current_fs->freereg;
             }
 
@@ -1351,7 +1539,8 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* T16: Look up callee's function signature when the callee is a
          * statically-visible local declared with a function literal.
-         * Used below to decide whether to wrap each arg as a lazy thunk. */
+         * Used below to decide whether to wrap each arg as a lazy thunk.
+         * T72 extension: also check global_var_sigs for chunk-top globals. */
         UFuncSig *call_sig = NULL;
         if (n->u.call.callee->kind == AST_IDENT && e->vm != NULL) {
             const char *cn = ustr_intern(e->vm,
@@ -1359,12 +1548,24 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                                          (size_t)n->u.call.callee->u.ident.len);
             if (cn != NULL) {
                 UFuncState *fs = e->current_fs;
+                /* Local lookup first. */
                 for (int i = fs->nactvar - 1; i >= 0; i--) {
                     if (fs->actvars[i].name == cn) {
                         if (fs->actvar_sigs[i].resolved) {
                             call_sig = &fs->actvar_sigs[i];
                         }
                         break;
+                    }
+                }
+                /* T72: global lookup (chunk-top functions not in actvars). */
+                if (call_sig == NULL && fs->parent == NULL) {
+                    for (int gi = 0; gi < fs->n_global_vars; gi++) {
+                        if (fs->global_var_names[gi] == cn) {
+                            if (fs->global_var_sigs[gi].resolved) {
+                                call_sig = &fs->global_var_sigs[gi];
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -1568,7 +1769,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* Body */
             e->next_reg = rd;
-            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             emit_expr(e, n->u.try_stmt.body);
             if (e->error != EMIT_OK) return 0u;
@@ -1594,7 +1795,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             {
                 const char *cv_name = NULL;
                 int catch_reg;
-                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
                 e->next_reg = e->current_fs->freereg;
 
                 if (n->u.try_stmt.catch_var_start != NULL && e->vm != NULL) {
@@ -1627,7 +1828,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                 /* Un-declare the catch variable by restoring nactvar. */
                 if (cv_name != NULL && e->current_fs->nactvar > 0) {
                     e->current_fs->nactvar--;
-                    e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                    e->current_fs->freereg = fs_temp_floor(e->current_fs);
                     e->next_reg = e->current_fs->freereg;
                 }
             }
@@ -1659,7 +1860,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* Finally body */
             e->next_reg = rd;
-            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             if (!uemit_open_block(e, false)) return 0u;
             emit_expr(e, n->u.try_stmt.finally_body);
@@ -1684,7 +1885,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* Body */
             e->next_reg = rd;
-            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             emit_expr(e, n->u.try_stmt.body);
             if (e->error != EMIT_OK) return 0u;
@@ -1708,7 +1909,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             /* Catch handler: declare var, emit OP_LOAD_CATCH_VALUE, emit body */
             {
                 const char *cv_name = NULL;
-                e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                e->current_fs->freereg = fs_temp_floor(e->current_fs);
                 e->next_reg = e->current_fs->freereg;
 
                 if (n->u.try_stmt.catch_var_start != NULL && e->vm != NULL) {
@@ -1737,7 +1938,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                 /* Un-declare catch var */
                 if (cv_name != NULL && e->current_fs->nactvar > 0) {
                     e->current_fs->nactvar--;
-                    e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+                    e->current_fs->freereg = fs_temp_floor(e->current_fs);
                     e->next_reg = e->current_fs->freereg;
                 }
             }
@@ -1758,7 +1959,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* Body */
             e->next_reg = rd;
-            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             emit_expr(e, n->u.try_stmt.body);
             if (e->error != EMIT_OK) return 0u;
@@ -1781,7 +1982,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
             /* Finally body */
             e->next_reg = rd;
-            e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
             if (!uemit_open_block(e, false)) return 0u;
             emit_expr(e, n->u.try_stmt.finally_body);
@@ -1801,7 +2002,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Emit nil into rd for the "value" of the try expression. */
         e->next_reg = rd;
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u),
                    (uint32_t)n->line);
@@ -1868,7 +2069,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Emit body. */
         uint8_t rd = e->next_reg;
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         if (!uemit_open_block(e, false)) return 0u;
         uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
@@ -1905,7 +2106,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Return a nil register as the tag-prefix's value. */
         e->next_reg = rd;
-        e->current_fs->freereg = (uint8_t)e->current_fs->nactvar;
+        e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
         e->next_reg = rd + 1u;
@@ -3016,8 +3217,9 @@ bool uemit_open_block(UEmitter *e, bool is_loop) {
         return false;
     }
     UBlockCtx *blk = &fs->blocks[fs->nblocks++];
-    blk->nactvar_on_enter = fs->nactvar;
-    blk->first_local_idx = fs->nactvar;
+    blk->nactvar_on_enter  = fs->nactvar;
+    blk->freereg_on_enter  = fs->freereg;
+    blk->first_local_idx   = fs->nactvar;
     blk->is_loop = is_loop;
     blk->has_captured = false;
     blk->break_chain = -1;
@@ -3042,11 +3244,10 @@ bool uemit_close_block(UEmitter *e) {
     }
 
     /* Pop actvars back to entry snapshot; restore freereg.
-     * After block exit, freereg falls back to first_local_idx (locals
-     * are gone; temps above had already been freed at statement
-     * boundaries). */
+     * Restore from the snapshot saved at open time: this correctly handles
+     * the case where r_global_slot was pre-reserved (freereg != nactvar). */
     fs->nactvar = blk->nactvar_on_enter;
-    fs->freereg = (uint8_t)fs->nactvar;
+    fs->freereg = blk->freereg_on_enter;
     fs->nblocks--;
     return true;
 }
