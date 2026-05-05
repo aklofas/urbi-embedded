@@ -274,14 +274,19 @@ $(STRESS_BUILDDIR)/gc_pause_time: tests/stress/gc_pause_time.c $(LIB) | $(STRESS
 $(STRESS_BUILDDIR)/gc_barrier_throughput: tests/stress/gc_barrier_throughput.c $(LIB) | $(STRESS_BUILDDIR)
 	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
 
+$(STRESS_BUILDDIR)/stress_event_emit_loop: tests/stress/stress_event_emit_loop.c $(LIB) | $(STRESS_BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -o $@
+
 test-stress: $(STRESS_BUILDDIR)/gc_long_running \
              $(STRESS_BUILDDIR)/gc_many_cycles \
              $(STRESS_BUILDDIR)/gc_pause_time \
-             $(STRESS_BUILDDIR)/gc_barrier_throughput
+             $(STRESS_BUILDDIR)/gc_barrier_throughput \
+             $(STRESS_BUILDDIR)/stress_event_emit_loop
 	$(STRESS_BUILDDIR)/gc_long_running
 	$(STRESS_BUILDDIR)/gc_many_cycles
 	$(STRESS_BUILDDIR)/gc_pause_time
 	$(STRESS_BUILDDIR)/gc_barrier_throughput
+	$(STRESS_BUILDDIR)/stress_event_emit_loop
 
 # --- GC pause-time regression gate (<1 ms per slice) --------------------
 #
