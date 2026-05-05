@@ -64,6 +64,20 @@ _Static_assert(sizeof(UChangedNode) == 32,
                "UChangedNode must be 32 bytes on 64-bit (spec #4 §3.1)");
 #endif
 
+/* === urbi_object_get_or_create_change_event (spec #4 §6.3) ===
+ *
+ * Walk obj->changed_events_head by USymbol pointer identity.
+ * On miss: GC-alloc a UChangedNode + UEvent, prepend, set UGC_HAS_SLOT_CHANGE_EVENT,
+ * and manually gc_shade_gray when the parent is BLACK.
+ * OOM on either alloc returns NULL (fail-soft). Idempotent. */
+struct UObject;
+struct UVM;
+struct UEvent;
+
+struct UEvent *urbi_object_get_or_create_change_event(struct UVM    *vm,
+                                                       struct UObject *obj,
+                                                       struct USymbol *name);
+
 #ifdef __cplusplus
 }
 #endif
