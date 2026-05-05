@@ -5,6 +5,7 @@
 #include "uintern.h"
 #include "uvarint.h"
 #include "ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */
+#include "watcher/uwatcher.h"  /* UWATCHER_AT / _AT_SYNC / _WHENEVER — AST_WATCHER emit */
 
 #include <limits.h>
 #include <stdarg.h>
@@ -1938,6 +1939,101 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         }
         free_reg(e);              /* release the src temp; result in recv_reg */
         return recv_reg;
+    }
+    case AST_WATCHER: {
+        /* T33: at (cond) body [onleave] / at sync (cond) body /
+         *      whenever (cond) body [onleave]
+         *
+         * Build cond/body/onleave closures via emit_function_literal (T30),
+         * then emit the appropriate install opcode (ABC-encoded).
+         * Side-effect check on cond per spec #2 §9.1. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        UAstNode *cond_ast    = n->u.watcher.cond;
+        UAstNode *body_ast    = n->u.watcher.body;
+        UAstNode *onleave_ast = n->u.watcher.onleave;  /* NULL if absent */
+        int       mode        = n->u.watcher.mode;
+
+        /* Compile-time best-effort cond side-effect warn (spec #2 Q7b). */
+        if (cond_has_direct_side_effect(cond_ast)) {
+            emit_diag_warn(e, cond_ast,
+                           "watcher condition has direct write/assignment; "
+                           "may cause feedback loop at runtime");
+        }
+
+        uint8_t cond_reg = emit_function_literal(e, NULL, 0,
+                                                 cond_ast, /*as_expression=*/true);
+        if (e->error != EMIT_OK) return 0u;
+
+        uint8_t body_reg = (body_ast != NULL)
+            ? emit_function_literal(e, NULL, 0, body_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        uint8_t onleave_reg = (onleave_ast != NULL)
+            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
+            : 0xFFu;
+        if (e->error != EMIT_OK) return 0u;
+
+        UOpcode op;
+        switch (mode) {
+            case UWATCHER_AT:       op = OP_AT_INSTALL;       break;
+            case UWATCHER_AT_SYNC:  op = OP_AT_SYNC_INSTALL;  break;
+            case UWATCHER_WHENEVER: op = OP_WHENEVER_INSTALL; break;
+            default:                op = OP_AT_INSTALL;       break;
+        }
+        emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, onleave_reg),
+                   (uint32_t)n->line);
+
+        /* Release temporary closure regs — watcher install is a statement. */
+        if (onleave_ast != NULL) free_reg(e);
+        if (body_ast    != NULL) free_reg(e);
+        free_reg(e);  /* cond_reg */
+
+        /* Return a nil register as the install expression's value. */
+        uint8_t rd = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+        return rd;
+    }
+    case AST_WAITUNTIL: {
+        /* T33: waituntil (cond) — one-shot strand-block primitive.
+         * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=42).
+         * Side-effect check per spec #2 §9.2. */
+        if (e->current_fs == NULL || e->vm == NULL) {
+            e->error = EMIT_UNSUPPORTED_AST;
+            return 0u;
+        }
+
+        UAstNode *cond_ast = n->u.waituntil.cond;
+
+        if (cond_has_direct_side_effect(cond_ast)) {
+            emit_diag_warn(e, cond_ast,
+                           "watcher condition has direct write/assignment; "
+                           "may cause feedback loop at runtime");
+        }
+
+        uint8_t cond_reg = emit_function_literal(e, NULL, 0,
+                                                 cond_ast, /*as_expression=*/true);
+        if (e->error != EMIT_OK) return 0u;
+
+        emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0u, 0u),
+                   (uint32_t)n->line);
+        free_reg(e);  /* cond_reg */
+
+        uint8_t rd = e->next_reg;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+        e->next_reg++;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+        return rd;
     }
     case AST_LOCAL_REF:
     case AST_PARAM:

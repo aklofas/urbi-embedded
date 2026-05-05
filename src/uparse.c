@@ -2,6 +2,7 @@
 /* Streaming Pratt parser implementation. */
 
 #include "uparse.h"
+#include "watcher/uwatcher.h"
 #include <stddef.h>
 
 /* --- Static error-message table.  Indices must match UParseError. --- */
@@ -159,6 +160,9 @@ static UAstNode *parse_return(UParser *p);
 static UAstNode *parse_try(UParser *p);
 static UAstNode *parse_throw(UParser *p);
 static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
+static UAstNode *parse_at(UParser *p);
+static UAstNode *parse_whenever(UParser *p);
+static UAstNode *parse_waituntil(UParser *p);
 static bool at_statement_end(UParser *p);
 
 /* Return the left-binding precedence of an infix token, or 0 if not
@@ -417,6 +421,23 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
     /* throw expr */
     if (t.type == TOK_KW_THROW) {
         return parse_throw(p);
+    }
+
+    /* at (cond) body [onleave handler]
+     * at sync (cond) body
+     * at async (cond) body */
+    if (t.type == TOK_KW_AT) {
+        return parse_at(p);
+    }
+
+    /* whenever (cond) body [onleave handler] */
+    if (t.type == TOK_KW_WHENEVER) {
+        return parse_whenever(p);
+    }
+
+    /* waituntil (cond) */
+    if (t.type == TOK_KW_WAITUNTIL) {
+        return parse_waituntil(p);
     }
 
     /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
@@ -1137,6 +1158,146 @@ static UAstNode *parse_try(UParser *p) {
     node->u.try_stmt.catch_var_len   = catch_var_len;
     node->u.try_stmt.catch_body      = catch_body;
     node->u.try_stmt.finally_body    = finally_body;
+    return node;
+}
+
+/* --- parse_at: `at` [`sync`|`async`] `(` cond `)` body [`onleave` handler] --- */
+static UAstNode *parse_at(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_AT */
+
+    /* Optional `sync` or `async` modifier. */
+    int mode = UWATCHER_AT;
+    UToken mod = peek(p);
+    if (mod.type == TOK_KW_SYNC) {
+        consume(p);
+        mode = UWATCHER_AT_SYNC;
+    } else if (mod.type == TOK_KW_ASYNC) {
+        consume(p);
+        /* `at async` is accepted as `at` (redundant modifier); silent at v1.0. */
+        mode = UWATCHER_AT;
+    }
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_statement_or_expr(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Optional `onleave` handler — not allowed with `at sync`. */
+    UAstNode *onleave = NULL;
+    if (peek(p).type == TOK_KW_ONLEAVE) {
+        if (mode == UWATCHER_AT_SYNC) {
+            UToken ol = consume(p);
+            return make_error(p, PARSE_UNEXPECTED_TOKEN,
+                              "onleave not allowed with at sync",
+                              ol.line, ol.col);
+        }
+        consume(p);
+        onleave = parse_statement_or_expr(p);
+        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+        if (onleave->kind == AST_ERROR) return onleave;
+    }
+
+    UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.watcher.cond    = cond;
+    node->u.watcher.body    = body;
+    node->u.watcher.onleave = onleave;
+    node->u.watcher.mode    = mode;
+    return node;
+}
+
+/* --- parse_whenever: `whenever` `(` cond `)` body [`onleave` handler] --- */
+static UAstNode *parse_whenever(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_WHENEVER */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_statement_or_expr(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Optional `onleave` handler. */
+    UAstNode *onleave = NULL;
+    if (peek(p).type == TOK_KW_ONLEAVE) {
+        consume(p);
+        onleave = parse_statement_or_expr(p);
+        if (!onleave) return (UAstNode *)&uparser_oom_sentinel;
+        if (onleave->kind == AST_ERROR) return onleave;
+    }
+
+    UAstNode *node = make_node(p, AST_WATCHER, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.watcher.cond    = cond;
+    node->u.watcher.body    = body;
+    node->u.watcher.onleave = onleave;
+    node->u.watcher.mode    = UWATCHER_WHENEVER;
+    return node;
+}
+
+/* --- parse_waituntil: `waituntil` `(` cond `)` --- */
+static UAstNode *parse_waituntil(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_WAITUNTIL */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *cond = parse_inner_tier(p);
+    if (!cond) return (UAstNode *)&uparser_oom_sentinel;
+    if (cond->kind == AST_ERROR) return cond;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *node = make_node(p, AST_WAITUNTIL, kw.line, kw.col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.waituntil.cond = cond;
     return node;
 }
 
