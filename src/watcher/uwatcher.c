@@ -8,6 +8,7 @@
 
 #include "uwatcher.h"
 #include "uvm.h"
+#include "uclosure.h"  /* UClosure full definition — proto field + URBI_WATCHER_OWNS_* free path */
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
 #include "utag.h"           /* UTag, member_watchers_head */
@@ -77,12 +78,48 @@ uwatcher_pool_alloc(struct UVM *vm)
 }
 
 /* pool_free: push one entry back onto the freelist.
- * Decrements in_use counter; does NOT touch high_water. */
+ * Decrements in_use counter; does NOT touch high_water.
+ * If URBI_WATCHER_OWNS_CLOSURES is set, frees condition/body/onleave closures
+ * before recycling the slot.  Only install_watcher_runtime sets this flag,
+ * when it unlinks the closures from the strand's pre-GC closure_list so
+ * uvm_run's post-run cleanup loop cannot free them prematurely. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
     URBI_INTERNAL_ASSERT(w != NULL);
     URBI_INTERNAL_ASSERT(vm->watcher_pool_in_use > 0);
+
+    /* Free owned closures (and their detached protos) acquired via
+     * install_watcher_runtime / install_at_event_runtime. */
+    if ((w->flags & URBI_WATCHER_OWNS_COND) && w->condition != NULL) {
+        if (w->condition->proto != NULL) {
+            /* Proto was detached from module->nested[] by strand_closure_unlink;
+             * free its sub-buffers then the struct itself. */
+            umodule_proto_destroy_buffers(w->condition->proto,
+                                          vm->alloc_fn, vm->alloc_ud);
+            vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
+        }
+        vm->alloc_fn(w->condition, 0, vm->alloc_ud);
+        w->condition = NULL;
+    }
+    if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
+        if (w->body->proto != NULL) {
+            umodule_proto_destroy_buffers(w->body->proto,
+                                          vm->alloc_fn, vm->alloc_ud);
+            vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
+        }
+        vm->alloc_fn(w->body, 0, vm->alloc_ud);
+        w->body = NULL;
+    }
+    if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
+        if (w->onleave->proto != NULL) {
+            umodule_proto_destroy_buffers(w->onleave->proto,
+                                          vm->alloc_fn, vm->alloc_ud);
+            vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
+        }
+        vm->alloc_fn(w->onleave, 0, vm->alloc_ud);
+        w->onleave = NULL;
+    }
 
     w->next_active             = vm->watcher_pool_freelist;
     vm->watcher_pool_freelist  = w;
@@ -133,6 +170,38 @@ uwatcher_pool_destroy(struct UVM *vm)
 
     if (vm->watcher_pool_base == NULL) return;
     if (vm->alloc_fn == NULL) return;
+
+    /* Free owned closures (and their detached protos) for any watchers
+     * that are still active.  pool_free recycles them onto the freelist,
+     * which is fine — we free the whole slab below anyway.  Without this
+     * step, any watcher that holds URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE
+     * leaks those closures and protos when the slab is freed.
+     *
+     * urbi_tag_stop (called from urbi_realm_destroy during urealm_teardown_all,
+     * which runs before uwatcher_pool_destroy) moves watchers from
+     * active_watchers_head onto pending_onleave_head via
+     * pending_onleave_queue_push.  Both lists must be drained here to release
+     * all owned closures. */
+    while (vm->active_watchers_head != NULL) {
+        UWatcher *w = vm->active_watchers_head;
+        vm->active_watchers_head = w->next_active;
+        vm->watcher_active_count = vm->watcher_active_count > 0
+                                   ? vm->watcher_active_count - 1u : 0u;
+        pool_free(vm, w);
+    }
+    /* Drain watchers that were moved to the pending-onleave queue by
+     * urbi_tag_stop / pending_onleave_queue_push.  These have already been
+     * unlinked from active_watchers_head and owning_tag->member_watchers_head,
+     * but still hold owned closures (OWNS_COND / OWNS_BODY / OWNS_ONLEAVE
+     * flags are unchanged by the push).  pool_free frees those closures. */
+    while (vm->pending_onleave_head != NULL) {
+        UWatcher *w = vm->pending_onleave_head;
+        vm->pending_onleave_head = w->next_active;
+        vm->watcher_active_count = vm->watcher_active_count > 0
+                                   ? vm->watcher_active_count - 1u : 0u;
+        pool_free(vm, w);
+    }
+    vm->pending_onleave_tail = NULL;
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
 

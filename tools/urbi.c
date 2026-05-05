@@ -342,6 +342,17 @@ static int run_interactive(UVM *vm) {
         if (compile_source(buf, final_len, "<stdin>", vm, &module, &arena, err, sizeof err)) {
             UValue out;
             UVMError vrc = uvm_run(vm, &module, &out);
+            /* Drain any body strands spawned by watcher eval during this
+             * run.  uvm_run only drives its own transient strand; spawned
+             * body strands accumulate in vm->ready_head and need urbi_step
+             * to execute.  Stop when no runnable strands remain (cap at
+             * 1000 iterations to prevent infinite spin with persistent
+             * watchers). */
+            {
+                int drain;
+                for (drain = 0; drain < 1000 && vm->strand_runnable_count > 0; drain++)
+                    urbi_step(vm, 1000, NULL);
+            }
             if (vrc == UVM_OK) {
                 /* See run_expression for the 64-byte rationale; M2
                    strings may silently truncate here too. */

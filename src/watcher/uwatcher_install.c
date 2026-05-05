@@ -14,6 +14,7 @@
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
+#include "uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
 #include "uvalue.h"             /* uvalue_truthy (T40) */
 #include "ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
@@ -24,6 +25,51 @@
 #include "utag.h"               /* UTag, member_watchers_head */
 #include "uevent.h"             /* UEvent */
 #include "uevent_subscribe.h"   /* uevent_at_watchers_append */
+
+/* === strand_closure_unlink ===
+ *
+ * Remove `cl` from `s->closure_list` (pointer-to-pointer walk) AND detach
+ * `cl->proto` from `s->module->nested[]` (by nulling that slot) so that
+ * umodule_destroy does not free the proto when the install run ends.
+ *
+ * Returns 1 if `cl` was found and removed (it was heap-allocated by OP_CLOSURE
+ * and both the closure and its proto are now owned by the watcher); returns 0
+ * otherwise (NULL pointer, test sentinel, or already unlinked).
+ *
+ * Called by install_watcher_runtime / install_at_event_runtime to transfer
+ * ownership of condition/body/onleave closures from the strand's pre-GC
+ * free-list to the watcher.  After a successful unlink:
+ *   - uvm_run's closure cleanup loop will not free `cl`
+ *   - umodule_destroy will not free `cl->proto` or its sub-buffers
+ *   - pool_free must free both proto (+ sub-buffers) and the closure */
+static int
+strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
+{
+    struct UClosure **pp;
+    size_t k;
+    if (cl == NULL) return 0;
+    pp = &s->closure_list;
+    while (*pp != NULL) {
+        if (*pp == cl) {
+            *pp = cl->next_alloc;
+            cl->next_alloc = NULL;
+            /* Detach proto from module->nested[] so umodule_destroy skips it.
+             * cl->proto == module->nested[k] for some k; null it out.
+             * Graceful if not found (e.g. proto is the root chunk, not nested). */
+            if (s->module != NULL && cl->proto != NULL) {
+                for (k = 0; k < s->module->nested_count; k++) {
+                    if (s->module->nested[k] == cl->proto) {
+                        s->module->nested[k] = NULL;
+                        break;
+                    }
+                }
+            }
+            return 1;   /* found and removed */
+        }
+        pp = &(*pp)->next_alloc;
+    }
+    return 0;   /* not found — test sentinel or already unlinked */
+}
 
 /* === resolve_owning_tag (spec #2 §7.2) ===
  *
@@ -178,6 +224,16 @@ install_watcher_runtime(
     w->last_value_cache = cond_value;
     w->body_strand      = NULL;
 
+    /* Ownership transfer: unlink cond/body/onleave from s->closure_list so
+     * uvm_run's post-run cleanup loop does not free them.  Only closures that
+     * were heap-allocated by OP_CLOSURE will be found on the list; test
+     * sentinels ((UClosure *)1 etc.) are not on the list and are not freed.
+     * Per-closure ownership bits track which were actually unlinked so
+     * pool_free knows exactly which to free on unregister. */
+    if (strand_closure_unlink(s, cond))    w->flags |= URBI_WATCHER_OWNS_COND;
+    if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
+    if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;
+
     /* Phase 5d (spec #2 §7.6): copy read-set cells + mark bit-6.
      * UGC_HAS_WATCHER_OBSERVER (bit 6) on each cell causes the slot-write
      * barrier to bump vm->watcher_dirty_count on any write to that cell. */
@@ -281,6 +337,10 @@ install_at_event_runtime(
     w->waiter_strand    = NULL;
     w->last_value_cache = nil;
     w->read_set_count   = 0;
+
+    /* Ownership transfer: same pattern as install_watcher_runtime. */
+    if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
+    if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;
 
     uevent_at_watchers_append(e, w);
 
