@@ -116,6 +116,7 @@ extern void test_parse_emit_postfix_suite(void);
 extern void test_uevent_subscribe_suite(void);
 extern void test_at_event_dispatch_suite(void);
 extern void test_event_emit_async_suite(void);
+extern void test_event_emit_sync_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -208,6 +209,7 @@ static const struct suite_entry suites[] = {
     {"uevent_subscribe",           test_uevent_subscribe_suite},
     {"at_event_dispatch",          test_at_event_dispatch_suite},
     {"event_emit_async",           test_event_emit_async_suite},
+    {"event_emit_sync",            test_event_emit_sync_suite},
     /* Add new suites here as test files are added. */
 };
 

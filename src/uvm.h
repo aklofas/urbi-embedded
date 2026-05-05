@@ -249,7 +249,10 @@ typedef struct UVM {
 
     /* --- Row 11 watcher dirty-set + scratch frame --- */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
-    uint8_t  pad_in_eval[3];           /* padding; zeroed */
+    uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
+                                          inline on scratch frame; guards re-entrancy
+                                          in c_event_emit_sync / c_event_waituntil. */
+    uint8_t  pad_in_eval[2];           /* padding; zeroed */
     void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
 
     /* --- spec #2 §5.2 install-time trace state ---
