@@ -69,6 +69,25 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 #  define URBI_WATCHER_READSET_MAX  16
 #endif
 
+/* --- spec #4 §3.5: deferred slot-change ring ---
+ * URBI_DEFERRED_SLOT_CHANGE_RING_SIZE sets the capacity of the per-VM
+ * deferred-emit ring used when a slot-write barrier fires inside a sync
+ * slot-change body (re-entrancy).  Default 64; footprint preset → 16.
+ * The ring is heap-allocated (one calloc at uvm_init), not GC-managed. */
+#ifndef URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
+#  define URBI_DEFERRED_SLOT_CHANGE_RING_SIZE  64
+#endif
+
+/* Entry in the deferred slot-change ring (spec #4 §3.5).
+ * Holds a strong reference to parent/key/new_value only while the entry
+ * is live (head != tail).  Drain logic (R6) clears each slot after firing.
+ * NOT GC-managed — entries are transient. */
+typedef struct UDeferredSlotChange {
+    struct UObject *parent;
+    struct USymbol *key;
+    UValue          new_value;
+} UDeferredSlotChange;
+
 /* --- Scratch frame for watcher condition + onleave evaluation (T34) ---
  *
  * One per VM, allocated at uvm_init and freed at uvm_destroy.
@@ -270,6 +289,20 @@ typedef struct UVM {
     /* --- Row 11 pending on-leave queue --- */
     struct UWatcher *pending_onleave_head;
     struct UWatcher *pending_onleave_tail;
+
+    /* --- spec #4 §3.5 slot-change re-entrancy + deferred-emit ring ---
+     * slot_change_reentrancy_warned: one-shot flag; set on first re-entrant
+     *   slot-write during a sync slot-change body; gates URBI_LOG_WARN.
+     * deferred_slot_changes: heap-allocated ring buffer (cap entries),
+     *   freed in uvm_destroy.  NOT GC-managed — entries live only while
+     *   head != tail; drain logic (R6) clears each slot after firing.
+     * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
+     * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
+    uint8_t                 slot_change_reentrancy_warned;
+    UDeferredSlotChange    *deferred_slot_changes;
+    uint16_t                deferred_slot_changes_head;
+    uint16_t                deferred_slot_changes_tail;
+    uint16_t                deferred_slot_changes_cap;
 
     /* --- Row 9 host time hook --- */
     uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */

@@ -234,6 +234,28 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * use site rather than at vm_init. The embedded caller should check
      * vm->watcher_pool_base != NULL post-init. */
 
+    /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
+    vm->slot_change_reentrancy_warned = 0u;
+    vm->deferred_slot_changes_head    = 0u;
+    vm->deferred_slot_changes_tail    = 0u;
+    vm->deferred_slot_changes_cap     = 0u;
+    vm->deferred_slot_changes         = NULL;
+    if (vm->alloc_fn) {
+        size_t ring_bytes = (size_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
+                            * sizeof(UDeferredSlotChange);
+        UDeferredSlotChange *ring = (UDeferredSlotChange *)vm->alloc_fn(
+                NULL, ring_bytes, vm->alloc_ud);
+        if (ring != NULL) {
+            /* Zero-fill via volatile byte loop (freestanding: no memset). */
+            volatile unsigned char *p = (volatile unsigned char *)ring;
+            size_t i;
+            for (i = 0; i < ring_bytes; i++) p[i] = 0;
+            vm->deferred_slot_changes     = ring;
+            vm->deferred_slot_changes_cap = (uint16_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE;
+        }
+        /* OOM: leave deferred_slot_changes NULL; drain/enqueue guards against it. */
+    }
+
     /* Scratch frame: one per VM, used by watcher_eval_dirty and (T35)
      * drain_pending_onleave_queue.  Allocated here so M5's real
      * urbi_run_closure_on_scratch can use it without a layout change.
@@ -269,6 +291,12 @@ void uvm_destroy(UVM *vm) {
     if (vm->event_ring && vm->alloc_fn) {
         vm->alloc_fn(vm->event_ring, 0, vm->alloc_ud);
         vm->event_ring = NULL;
+    }
+
+    /* Free deferred slot-change ring (spec #4 §3.5). */
+    if (vm->deferred_slot_changes != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->deferred_slot_changes, 0, vm->alloc_ud);
+        vm->deferred_slot_changes = NULL;
     }
 
     /* Free any M3 heap fields that T4 itself allocated (none at T4, but
