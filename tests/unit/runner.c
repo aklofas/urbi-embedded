@@ -132,6 +132,7 @@ extern void test_slot_change_emit_suite(void);
 extern void test_slot_change_callsites_suite(void);
 extern void test_slot_change_reentrancy_suite(void);
 extern void test_registry_table_suite(void);
+extern void test_realm_populate_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -240,6 +241,7 @@ static const struct suite_entry suites[] = {
     {"slot_change_callsites",      test_slot_change_callsites_suite},
     {"slot_change_reentrancy",     test_slot_change_reentrancy_suite},
     {"registry_table",            test_registry_table_suite},
+    {"realm_populate",            test_realm_populate_suite},
     /* Add new suites here as test files are added. */
 };
 

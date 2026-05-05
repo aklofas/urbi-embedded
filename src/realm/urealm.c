@@ -22,6 +22,8 @@
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
+#include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
+#include "urealm_globals.h"    /* urbi_populate_realm_globals */
 
 /* === Zero-fill helper === */
 
@@ -75,15 +77,36 @@ urbi_realm_create(struct UVM *vm)
         return NULL;
     }
 
+    /* Global object: fresh empty UObject to hold the realm's named slots.
+     * Pre-M5 spec #5 §4.1 step 2.  Allocated as root-atom family
+     * (URBI_ATOM_OBJECT) so it inherits nothing by default. */
+    r->global_object = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+    if (r->global_object == NULL) {
+        unamespace_destroy(vm, r->bindings);
+        utag_destroy(vm, r->tag);
+        vm->alloc_fn(r, 0, vm->alloc_ud);
+        return NULL;
+    }
+
     /* user_data: stays NULL (caller may set after create). */
 
-    /* Link at head of VM's realm list. */
+    /* Link at head of VM's realm list BEFORE populate so that
+     * urbi_realm_destroy can safely unlink on populate failure. */
     r->prev_in_vm = NULL;
     r->next_in_vm = vm->realms_head;
     if (vm->realms_head != NULL) {
         vm->realms_head->prev_in_vm = r;
     }
     vm->realms_head = r;
+
+    /* Populate the global object with the 15 built-in globals.
+     * On failure, destroy (which unlinks + cleans up) and return NULL.
+     * Partial population is acceptable per spec #5 §4.7 — the realm is
+     * destroyed by the caller-side NULL check. */
+    if (urbi_populate_realm_globals(vm, r) != URBI_OK) {
+        urbi_realm_destroy(vm, r);
+        return NULL;
+    }
 
     return r;
 }
@@ -152,6 +175,11 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     /* Step 3: Free namespace. */
     unamespace_destroy(vm, realm->bindings);
     realm->bindings = NULL;
+
+    /* Step 3b: Drop global_object pointer (GC manages the cell).
+     * The GC will reclaim the UObject at the next sweep pass once
+     * the realm-root-provider no longer shades it. */
+    realm->global_object = NULL;
 
     /* Step 4: reflective — zero it (GC owns the object if non-nil at M4+). */
     realm->reflective.kind = UVAL_NIL;
@@ -285,7 +313,12 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
         /* 2. namespace bindings. */
         unamespace_walk_roots(r->bindings, cb, vm, ctx);
 
-        /* 3. tag — GC-managed at M5 T18; shade so the UTag walker runs. */
+        /* 3. global_object — GC-managed UObject; shade so slot walker runs. */
+        if (r->global_object != NULL) {
+            gc_shade_gray(vm, (UCell *)r->global_object);
+        }
+
+        /* 4. tag — GC-managed at M5 T18; shade so the UTag walker runs. */
         if (r->tag != NULL) {
             gc_shade_gray(vm, (UCell *)r->tag);
         }

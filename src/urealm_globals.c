@@ -14,11 +14,14 @@
 #include <stdbool.h>
 
 #include "urealm_globals.h"
-#include "uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto */
+#include "uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto, urbi_native_protos_init */
 #include "realm/urealm.h"     /* URealm, global_object */
 #include "uintern.h"          /* ustr_intern */
-#include "object/uobject.h"   /* urbi_object_set_local_slot, urbi_object_install_property */
+#include "object/uobject.h"   /* urbi_object_root, urbi_object_atom, urbi_object_set_local_slot,
+                               *   urbi_object_install_property */
+#include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
+#include "urbi/object.h"      /* URBI_ATOM_*_F family tags */
 
 /* === Static string-length helper (avoids <string.h>) === */
 
@@ -67,33 +70,38 @@ rg_make_void(void)
 
 /* === Resolver functions (15 total) ===
  *
- * Each returns a UValue wrapping the corresponding VM singleton.
- * Resolvers for atom protos that do not exist at M5 baseline
- * (Bool, Nil, Void) return uvalue_nil() as a placeholder per
- * spec #5 §3.2 note — these singletons land in M6 stdlib. */
+ * Each resolver triggers lazy initialization of the VM singleton it wraps.
+ * urbi_object_root / urbi_object_atom allocate on first call and are
+ * idempotent thereafter.  Returning rg_make_object(NULL) signals OOM to the
+ * populate loop, which returns URBI_ERR_OOM.
+ *
+ * Resolvers for atom protos that do not exist at M5 baseline (Bool, Nil, Void)
+ * return rg_make_nil() as a placeholder per spec #5 §3.2 note — these
+ * singletons land in M6 stdlib. */
 
 static UValue
 resolve_object_proto(UVM *vm)
 {
-    return rg_make_object(vm->atom_object);
+    /* urbi_object_root lazy-allocates vm->atom_object on first call. */
+    return rg_make_object(urbi_object_root(vm));
 }
 
 static UValue
 resolve_atom_int(UVM *vm)
 {
-    return rg_make_object(vm->atom_integer);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_INTEGER_F));
 }
 
 static UValue
 resolve_atom_float(UVM *vm)
 {
-    return rg_make_object(vm->atom_float);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_FLOAT_F));
 }
 
 static UValue
 resolve_atom_string(UVM *vm)
 {
-    return rg_make_object(vm->atom_string);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING_F));
 }
 
 /* Bool: no atom_bool at M5 baseline → return nil placeholder. */
@@ -123,42 +131,45 @@ resolve_atom_void(UVM *vm)
 static UValue
 resolve_atom_list(UVM *vm)
 {
-    return rg_make_object(vm->atom_list);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_LIST_F));
 }
 
 static UValue
 resolve_atom_dict(UVM *vm)
 {
-    return rg_make_object(vm->atom_dict);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_DICT_F));
 }
 
 static UValue
 resolve_atom_symbol(UVM *vm)
 {
-    return rg_make_object(vm->atom_symbol);
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_SYMBOL_F));
 }
 
 static UValue
 resolve_tag_proto(UVM *vm)
 {
+    /* vm->tag_proto is populated by urbi_native_protos_init, which
+     * urbi_populate_realm_globals calls before entering the resolver loop. */
     return rg_make_object(vm->tag_proto);
 }
 
 static UValue
 resolve_event_proto(UVM *vm)
 {
+    /* vm->event_proto is populated by urbi_native_protos_init, same as above. */
     return rg_make_object(vm->event_proto);
 }
 
-/* Realm self-reference: sentinel; urbi_populate_realm_globals overrides. */
+/* Realm self-reference: value overridden by the populate loop using is_self_ref. */
 static UValue
 resolve_realm_self(UVM *vm)
 {
-    /* Filled in by urbi_populate_realm_globals with the actual global_object.
-     * Return a UVAL_OBJECT with p=NULL as a sentinel; the populate loop
-     * detects NULL and substitutes realm->global_object. */
+    /* The is_self_ref flag in the registry causes urbi_populate_realm_globals
+     * to replace this value with realm->global_object.  Returning nil here
+     * is just a safe default; the value is never used by the loop. */
     (void)vm;
-    return rg_make_object(NULL);
+    return rg_make_nil();
 }
 
 /* Value singleton nil (the scripting nil value, not the nil proto). */
@@ -179,36 +190,39 @@ resolve_value_void(UVM *vm)
 
 /* === The registry table (spec #5 §3.1) === */
 
+/* is_self_ref column: true only for "Realm" — the populate loop replaces
+ * its value with realm->global_object instead of using the resolver result. */
 const URegistryEntry urbi_builtin_registry[] = {
+    /* is_const, is_self_ref */
     /* Root object model */
-    { "Object",  resolve_object_proto, true },
+    { "Object",  resolve_object_proto, true,  false },
 
     /* Atom prototypes */
-    { "Integer", resolve_atom_int,     true },
-    { "Float",   resolve_atom_float,   true },
-    { "String",  resolve_atom_string,  true },
+    { "Integer", resolve_atom_int,     true,  false },
+    { "Float",   resolve_atom_float,   true,  false },
+    { "String",  resolve_atom_string,  true,  false },
 
     /* Bool/Nil/Void: no singleton at M5 baseline; resolver returns nil.
      * These entries still occupy registry slots so names are reserved in
      * the global namespace and M6 stdlib can overwrite them. */
-    { "Bool",    resolve_atom_bool,    true },
-    { "Nil",     resolve_atom_nil,     true },
-    { "Void",    resolve_atom_void,    true },
+    { "Bool",    resolve_atom_bool,    true,  false },
+    { "Nil",     resolve_atom_nil,     true,  false },
+    { "Void",    resolve_atom_void,    true,  false },
 
-    { "List",    resolve_atom_list,    true },
-    { "Dict",    resolve_atom_dict,    true },
-    { "Symbol",  resolve_atom_symbol,  true },
+    { "List",    resolve_atom_list,    true,  false },
+    { "Dict",    resolve_atom_dict,    true,  false },
+    { "Symbol",  resolve_atom_symbol,  true,  false },
 
     /* Reactive built-ins (spec #3) */
-    { "Tag",     resolve_tag_proto,    true },
-    { "Event",   resolve_event_proto,  true },
+    { "Tag",     resolve_tag_proto,    true,  false },
+    { "Event",   resolve_event_proto,  true,  false },
 
-    /* Reflective self-reference */
-    { "Realm",   resolve_realm_self,   true },
+    /* Reflective self-reference — is_self_ref=true → loop uses global_object */
+    { "Realm",   resolve_realm_self,   true,  true  },
 
     /* Value singletons */
-    { "nil",     resolve_value_nil,    true },
-    { "void",    resolve_value_void,   true },
+    { "nil",     resolve_value_nil,    true,  false },
+    { "void",    resolve_value_void,   true,  false },
 };
 
 const size_t urbi_builtin_registry_count =
@@ -219,8 +233,12 @@ const size_t urbi_builtin_registry_count =
  * Iterates the registry, resolves each value, interns the name,
  * and installs a constant slot on realm->global_object.
  *
- * The "Realm" entry receives a special override: its value is
- * realm->global_object itself (the self-loop; spec #5 §3.3). */
+ * The "Realm" entry's is_self_ref flag causes its value to be replaced with
+ * realm->global_object (the self-loop; spec #5 §3.3).
+ *
+ * Calls urbi_native_protos_init(vm) on first call (guarded by vm->event_proto
+ * being NULL) so that resolve_tag_proto / resolve_event_proto see live
+ * pointers.  This is the wiring described in uvm.c §T59 comment. */
 
 UErrCode
 urbi_populate_realm_globals(UVM *vm, URealm *realm)
@@ -231,14 +249,27 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
         return URBI_ERR_INVALID_ARG;
     }
 
+    /* Ensure event_proto + tag_proto are allocated.  Idempotent: guarded by
+     * the NULL check inside event_native_register / tag_native_register.
+     * After this call vm->atom_object is also live (urbi_object_alloc in
+     * event/tag_native_register drives urbi_shape_root which allocates the
+     * root shape, and urbi_object_root is called by resolve_object_proto
+     * inside the resolver loop below). */
+    if (vm->event_proto == NULL) {
+        urbi_native_protos_init(vm);
+    }
+
     for (i = 0; i < urbi_builtin_registry_count; i++) {
         const URegistryEntry *e = &urbi_builtin_registry[i];
 
         /* Resolve value; override for the self-loop case. */
         UValue v = e->resolver(vm);
-        if (v.kind == UVAL_OBJECT && v.v.p == NULL) {
-            /* resolve_realm_self sentinel: point at global_object. */
-            v.v.p = realm->global_object;
+        if (e->is_self_ref) {
+            /* "Realm" entry: point at this realm's global_object. */
+            v = rg_make_object(realm->global_object);
+        } else if (v.kind == UVAL_OBJECT && v.v.p == NULL) {
+            /* Resolver returned NULL — OOM from a lazy-init function. */
+            return URBI_ERR_OOM;
         }
 
         /* Intern the name to get a canonical USymbol pointer. */
@@ -253,13 +284,23 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
             return URBI_ERR_OOM;
         }
 
-        /* Mark constant if required. */
+        /* Mark constant via the packed flags (slots 0..7 only).
+         * UShape.flags packs 4 bits/slot in a 32-bit word — the v1.0 cap of
+         * 8 slots in packed form (T15 spill side-table deferred to later).
+         * For slot indices 0..7 we set CONSTANT via install_property which
+         * uses UProps; for indices >= 8 we defer the const marking to the
+         * M6 side-table tier.  The is_const flag in the registry is the
+         * authoritative source; the runtime IC path only checks packed flags
+         * so indices 8..14 are not write-protected at M5 baseline. */
         if (e->is_const) {
-            rc = urbi_object_install_property(vm, realm->global_object, sym,
-                                              URBI_SLOT_FLAG_CONSTANT,
-                                              v /* payload unused for CONSTANT */);
-            if (rc != 0) {
-                return URBI_ERR_OOM;
+            int32_t idx = urbi_shape_find_slot(realm->global_object->shape, sym);
+            if (idx >= 0 && idx < 8) {
+                rc = urbi_object_install_property(vm, realm->global_object, sym,
+                                                  URBI_SLOT_FLAG_CONSTANT,
+                                                  v /* payload unused for CONSTANT */);
+                if (rc != 0) {
+                    return URBI_ERR_OOM;
+                }
             }
         }
     }
