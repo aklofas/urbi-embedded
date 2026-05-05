@@ -853,7 +853,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_AT_INSTALL]            = &&label_OP_AT_INSTALL,
         [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
         [OP_WHENEVER_INSTALL]      = &&label_OP_WHENEVER_INSTALL,
-        [OP_WAITUNTIL_INSTALL]     = &&label_m5_stub,
+        [OP_WAITUNTIL_INSTALL]     = &&label_OP_WAITUNTIL_INSTALL,
         [OP_AT_EVENT_INSTALL]      = &&label_m5_stub,
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_m5_stub,
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_m5_stub,
@@ -1773,6 +1773,43 @@ dispatch:
             NEXT();
         }
 
+        /* === T42: OP_WAITUNTIL_INSTALL — strand-block or pass-through ===
+         *
+         * A-encoded: A = cond_reg.
+         *
+         * Calls install_watcher_runtime which either:
+         *   (a) fast-path: cond was truthy at install → watcher unregistered
+         *       immediately, strand state unchanged (still RUNNING) → NEXT().
+         *   (b) park path: cond was falsy → T40 set s->state = USTRAND_WAIT_WATCHER.
+         *       Here we advance pc past this instruction, decrement
+         *       strand_runnable_count (the strand leaves the runnable accounting),
+         *       and goto exit_strand so the scheduler can pick up another strand.
+         *       The eval-pass wake (T43) will resume the strand on the rising edge.
+         *
+         * Spec #2 §6.3. */
+        CASE(OP_WAITUNTIL_INSTALL) {
+            uint8_t A = uinstr_a(*s->pc);
+            UClosure *cond = (UClosure *)s->R[A].v.p;
+            UWatcherInstallResult r = install_watcher_runtime(
+                vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
+            if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
+                /* Strand parked by T40 (cond started false).  Advance pc past
+                 * this instruction so resume lands at the correct next opcode.
+                 * Decrement strand_runnable_count: the strand was RUNNING when
+                 * this opcode dispatched; T40 set state to WAITING without
+                 * going through sched_strand_block, so we do the accounting
+                 * manually here. */
+                s->pc++;
+                if (vm->strand_runnable_count > 0)
+                    vm->strand_runnable_count--;
+                steps_consumed++;
+                goto exit_strand;
+            }
+            /* Fast path (cond was truthy): watcher unregistered; strand RUNNING.
+             * Fall through to next instruction. */
+            NEXT();
+        }
+
         /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
          * its entry in the dispatch table (computed-goto) or this switch arm.
          * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
@@ -1780,7 +1817,6 @@ dispatch:
         label_m5_stub:
 #else
         case OP_INVOKE:
-        case OP_WAITUNTIL_INSTALL:
         case OP_AT_EVENT_INSTALL:
         case OP_AT_EVENT_SYNC_INSTALL:
         case OP_GETSLOT_CHANGE_EVENT:

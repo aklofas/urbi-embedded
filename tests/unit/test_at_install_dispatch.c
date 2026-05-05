@@ -143,6 +143,53 @@ UTEST(at_sync_install_runs_to_completion)
 }
 
 /* ===================================================================
+ * Cond hook helpers for T42
+ * =================================================================== */
+
+/* hook_cond_true: simulates a cond closure returning bool-true. */
+static void
+hook_cond_true(struct UVM *vm, struct UClosure *cond,
+               UValue *out_result, int *out_threw)
+{
+    (void)vm; (void)cond;
+    out_result->kind = (uint8_t)UVAL_BOOL;
+    out_result->v.i  = 1;
+    *out_threw = 0;
+}
+
+/* ===================================================================
+ * T42 test case: OP_WAITUNTIL_INSTALL immediate-wake
+ * =================================================================== */
+
+/* 4. waituntil_does_not_yield_when_cond_true
+ *
+ * Install a waituntil with a hook that returns truthy.  The T40 fast-path
+ * must unregister the watcher immediately, leaving the strand RUNNING.
+ * uvm_run returns UVM_OK; active_watchers_head is NULL (watcher freed). */
+UTEST(waituntil_does_not_yield_when_cond_true)
+{
+    PipeCtx ctx;
+    /* Compile "var x = 0; waituntil (x)" — the hook will override the
+     * cond evaluation to return truthy regardless of x's actual value. */
+    int rc = compile_source(&ctx, "var x = 0; waituntil (x)");
+    UASSERT_EQ(0, rc);
+
+    /* Install hook before run: cond always true → immediate-wake path. */
+    ctx.vm.test_install_cond_hook = hook_cond_true;
+
+    UValue out;
+    UVMError vm_rc = uvm_run(&ctx.vm, &ctx.module, &out);
+
+    ctx.vm.test_install_cond_hook = NULL;
+
+    UASSERT_EQ(UVM_OK, (int)vm_rc);
+    /* Watcher unregistered immediately — no watcher survives. */
+    UASSERT(ctx.vm.active_watchers_head == NULL);
+
+    pipeline_ctx_destroy(&ctx);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -156,5 +203,6 @@ test_at_install_dispatch_suite(void)
               whenever_install_runs_to_completion);
     utest_run("at_sync_install_runs_to_completion",
               at_sync_install_runs_to_completion);
-    /* T42 case (waituntil_does_not_yield_when_cond_true) added in T42 commit. */
+    utest_run("waituntil_does_not_yield_when_cond_true",
+              waituntil_does_not_yield_when_cond_true);
 }
