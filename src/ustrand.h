@@ -35,6 +35,7 @@ extern "C" {
 #define USTRAND_REASON_EVENT   0x02u
 #define USTRAND_REASON_JOIN    0x03u
 #define USTRAND_REASON_HOST    0x04u  /* RESERVED v1.x/v2 */
+#define USTRAND_REASON_WATCHER 0x02u  /* same sub-code as EVENT; context disambiguates */
 
 /* Composite values stored in strand->state. */
 #define USTRAND_STATE_DORMANT         (USTRAND_DORMANT)
@@ -46,6 +47,10 @@ extern "C" {
 #define USTRAND_STATE_WAITING_EVENT   (USTRAND_WAITING | USTRAND_REASON_EVENT)
 #define USTRAND_STATE_WAITING_JOIN    (USTRAND_WAITING | USTRAND_REASON_JOIN)
 #define USTRAND_STATE_WAITING_HOST    (USTRAND_WAITING | USTRAND_REASON_HOST)
+
+/* spec #2 §7.7 — waituntil(cond) strand parked awaiting edge fire.
+   0x32 = USTRAND_WAITING (0x30) | USTRAND_REASON_WATCHER (0x02). */
+#define USTRAND_WAIT_WATCHER          0x32u
 
 /* Helper macros — take a pointer to UStrand. */
 #define USTRAND_IS_WAITING(s)  (((s)->state & USTRAND_STATE_MASK) == USTRAND_WAITING)
@@ -76,6 +81,7 @@ struct URealm;           /* urealm.h — forward-decl for strand lifecycle conte
 struct UModule;          /* umodule.h — forward-decl for strand execution context */
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
 struct UModuleInstance;  /* object/umoduleinstance.h — M4 follow-up: per-(vm,module) IC tier */
+struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 
 /* === UStrand struct (M3 baseline) ===
    T20 and T29 add lifecycle operations; T9 wires the unwind walker;
@@ -148,6 +154,12 @@ struct UStrand {
         struct UEvent      *event;
         UStrand            *join_parent;   /* set by OP_JOIN_WAIT: child we are waiting on */
     } wait_payload;
+
+    /* --- Watcher body ownership (spec #1 §4.2) ---
+     * Non-NULL iff this strand was spawned as a watcher body strand.
+     * The scheduler's strand-completion path calls urbi_watcher_body_completed
+     * with O(1) lookup via this back-pointer. NULL for all other strands. */
+    struct UWatcher        *watcher_body_owner;
 
     /* --- Join-blocker list (OP_FORK_JOIN / OP_JOIN_WAIT) ---
      * Singly-linked list of strands that are JOIN-blocked on THIS strand.
