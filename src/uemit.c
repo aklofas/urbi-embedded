@@ -385,6 +385,49 @@ static uint8_t emit_function_literal(UEmitter *e,
                                      UAstNode  *body,
                                      bool       as_expression);
 
+/* T31: Best-effort compile-time check — returns true when `n` contains a
+ * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET,
+ * AST_PROP_SET).  Used to warn when a watcher condition silently mutates
+ * state.  AST_CALL is treated as opaque (returns false) to avoid false
+ * positives on read-only methods.  Recurses through compound nodes;
+ * the parser already caps nesting so stack overflow is not a concern.
+ * Exported for unit tests via uemit.h test-friend section. */
+bool cond_has_direct_side_effect(UAstNode *n) {
+    if (n == NULL) return false;
+    switch (n->kind) {
+        case AST_ASSIGN:
+        case AST_VAR_DECL:
+        case AST_MEMBER_SET:
+        case AST_PROP_SET:
+            return true;
+        case AST_NARY: {
+            int i;
+            for (i = 0; i < n->u.nary.count; i++)
+                if (cond_has_direct_side_effect(n->u.nary.children[i])) return true;
+            return false;
+        }
+        case AST_BIN_SEP:
+            return cond_has_direct_side_effect(n->u.bin_sep.lhs)
+                || cond_has_direct_side_effect(n->u.bin_sep.rhs);
+        case AST_BINARY:
+            return cond_has_direct_side_effect(n->u.binary.lhs)
+                || cond_has_direct_side_effect(n->u.binary.rhs);
+        case AST_UNARY:
+            return cond_has_direct_side_effect(n->u.unary.operand);
+        case AST_COMPARE:
+            return cond_has_direct_side_effect(n->u.cmp.lhs)
+                || cond_has_direct_side_effect(n->u.cmp.rhs);
+        case AST_BLOCK: {
+            int i;
+            for (i = 0; i < n->u.block.count; i++)
+                if (cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
+            return false;
+        }
+        case AST_CALL:   return false;  /* opaque — best-effort only */
+        default:         return false;
+    }
+}
+
 /* T16: Compile `expr` as a zero-arg closure (lazy thunk).
  * Builds a synthetic AST_FUNCTION wrapping `expr` in a single-statement
  * body, then recurses into the AST_FUNCTION emit arm.  The result register

@@ -298,6 +298,12 @@ int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
  * own IC slot so per-site monomorphism is independent. */
 int uemit_assign_ic_index(struct UEmitter *e, USymbol *name);
 
+/* T31: Test-friend export — see uemit.c for full documentation.
+ * Best-effort compile-time walker: returns true when n contains a direct
+ * write (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET, AST_PROP_SET).
+ * AST_CALL is treated as opaque (returns false). */
+bool cond_has_direct_side_effect(UAstNode *n);
+
 #ifdef __cplusplus
 }
 #endif
