@@ -136,7 +136,11 @@ typedef enum {
     /* M5 additions */
     PARSE_RESERVED_KEYWORD_AS_IDENT,  /* `var at = 1`: hard keyword used as variable name */
     PARSE_QUESTION_OUTSIDE_AT,        /* postfix `?` is only valid inside at(...) */
-    PARSE_EMIT_MULTI_ARG_V1           /* `e!(x, y, z)` — multi-arg emit reserved for M6 */
+    PARSE_EMIT_MULTI_ARG_V1,          /* `e!(x, y, z)` — multi-arg emit reserved for M6 */
+
+    /* M5 spec #4 additions */
+    PARSE_SLOT_CHANGED_BARE_V1,       /* `obj.x.changed` outside at(?) — use at(obj.x.changed?) */
+    PARSE_SLOT_CHANGED_EMIT_V1        /* `obj.x.changed!` — slot-change event cannot be emitted */
 } UParseError;
 
 /*

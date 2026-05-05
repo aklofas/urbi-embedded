@@ -5,6 +5,17 @@
 #include "watcher/uwatcher.h"
 #include <stddef.h>
 
+/* Local string helper — compare an (unterminated) lexeme against a literal.
+ * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */
+static int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
+    if (len != lit_len) return 0;
+    int i;
+    for (i = 0; i < len; i++) {
+        if (bytes[i] != literal[i]) return 0;
+    }
+    return 1;
+}
+
 /* --- Static error-message table.  Indices must match UParseError. --- */
 
 static const char * const kErrorMessages[] = {
@@ -29,7 +40,9 @@ static const char * const kErrorMessages[] = {
     "'try' requires at least one of 'catch' or 'finally'",
     "reserved keyword used as variable name (M5 reactive runtime); rename the variable",
     "postfix '?' is only valid inside at(...); use 'at (e?) body' for event-subscribe",
-    "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg"
+    "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg",
+    "bare '.changed' outside at(...) is a slot-change event; use: at (obj.x.changed?) body",
+    "slot-change event cannot be emitted; use slot assignment to trigger subscribers"
 };
 
 static const char * const kErrorNames[] = {
@@ -54,7 +67,9 @@ static const char * const kErrorNames[] = {
     "PARSE_TRY_NEEDS_CATCH_OR_FINALLY",
     "PARSE_RESERVED_KEYWORD_AS_IDENT",
     "PARSE_QUESTION_OUTSIDE_AT",
-    "PARSE_EMIT_MULTI_ARG_V1"
+    "PARSE_EMIT_MULTI_ARG_V1",
+    "PARSE_SLOT_CHANGED_BARE_V1",
+    "PARSE_SLOT_CHANGED_EMIT_V1"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -496,6 +511,23 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
                 if (!lhs) return NULL;
                 if (lhs->kind == AST_ERROR) return lhs;
                 if (is_assign) return lhs;
+                /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...).
+                 * Flag as an error so users are guided to the correct form. */
+                if (!p->at_event_cond
+                    && lhs->kind == AST_MEMBER_GET
+                    && ident_equals(lhs->u.member.name_start,
+                                    lhs->u.member.name_len,
+                                    "changed", 7)) {
+                    UToken nxt = peek(p);
+                    if (nxt.type == TOK_BANG) {
+                        return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
+                                          kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
+                                          nxt.line, nxt.col);
+                    }
+                    return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
+                                      kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
+                                      lhs->line, lhs->col);
+                }
                 continue;
             }
             /* Postfix `?` — only valid inside at(...) condition context. */
@@ -756,6 +788,22 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
             if (!left) return NULL;
             if (left->kind == AST_ERROR) return left;
             if (is_assign) break;
+            /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...). */
+            if (!p->at_event_cond
+                && left->kind == AST_MEMBER_GET
+                && ident_equals(left->u.member.name_start,
+                                left->u.member.name_len,
+                                "changed", 7)) {
+                UToken nxt = peek(p);
+                if (nxt.type == TOK_BANG) {
+                    return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
+                                      kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
+                                      nxt.line, nxt.col);
+                }
+                return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
+                                  kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
+                                  left->line, left->col);
+            }
             continue;
         }
 
@@ -1373,6 +1421,32 @@ static UAstNode *parse_at(UParser *p) {
             if (onleave->kind == AST_ERROR) return onleave;
         }
 
+        /* Spec #4 §4.3–§4.5: disambiguate slot-change form.
+         * at (obj.x.changed?) → AST_AT_SLOT_CHANGE when:
+         *   cond is AST_MEMBER_GET with name=="changed"
+         *   AND cond->recv is also AST_MEMBER_GET (≥3 path segments)
+         * at (obj.changed?)   → AST_AT_EVENT (2 segments, falls through) */
+        if (cond->kind == AST_MEMBER_GET
+            && ident_equals(cond->u.member.name_start,
+                            cond->u.member.name_len,
+                            "changed", 7)
+            && cond->u.member.recv != NULL
+            && cond->u.member.recv->kind == AST_MEMBER_GET) {
+            /* 3+ segments: slot-change form. */
+            UAstNode *slot_node = cond->u.member.recv;  /* the .x MEMBER_GET */
+            UAstNode *node = make_node(p, AST_AT_SLOT_CHANGE, kw.line, kw.col);
+            if (!node) return (UAstNode *)&uparser_oom_sentinel;
+            node->u.at_slot_change.receiver      = slot_node->u.member.recv;
+            node->u.at_slot_change.slot_name     = slot_node->u.member.name_start;
+            node->u.at_slot_change.slot_name_len = (size_t)slot_node->u.member.name_len;
+            node->u.at_slot_change.body          = body;
+            node->u.at_slot_change.onleave       = onleave;
+            node->u.at_slot_change.is_sync       = is_sync;
+            (void)q;
+            return node;
+        }
+
+        /* 2 segments or non-"changed" final segment: event form. */
         UAstNode *node = make_node(p, AST_AT_EVENT, kw.line, kw.col);
         if (!node) return (UAstNode *)&uparser_oom_sentinel;
         node->u.at_event.event_expr = cond;
