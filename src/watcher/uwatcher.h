@@ -39,16 +39,18 @@ struct UStrand;
 
 /* === Watcher mode constants === */
 
-#define UWATCHER_AT       1   /* at (cond) body — edge-triggered */
-#define UWATCHER_WHENEVER 2   /* whenever (cond) body — level-triggered */
-#define UWATCHER_AT_SYNC  3   /* at (cond) body synchronous variant */
+#define UWATCHER_AT        1   /* at (cond) body — edge-triggered */
+#define UWATCHER_WHENEVER  2   /* whenever (cond) body — level-triggered */
+#define UWATCHER_AT_SYNC   3   /* at (cond) body synchronous variant */
+#define UWATCHER_WAITUNTIL 4   /* waituntil(cond) — blocks caller until edge (spec #2 §5.1) */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
-#define URBI_WATCHER_ACTIVE              0x01u  /* installed and live */
-#define URBI_WATCHER_PENDING_UNREGISTER  0x02u  /* stop requested; drain before free */
-#define URBI_WATCHER_FIRED_DURING_EVAL   0x04u  /* condition fired while eval in progress */
-#define URBI_WATCHER_PENDING_REFIRE      0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+#define URBI_WATCHER_ACTIVE                    0x01u  /* installed and live */
+#define URBI_WATCHER_PENDING_UNREGISTER        0x02u  /* stop requested; drain before free */
+#define URBI_WATCHER_FIRED_DURING_EVAL         0x04u  /* condition fired while eval in progress */
+#define URBI_WATCHER_PENDING_REFIRE            0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10u  /* body fired at least once since last onleave check (spec #2 §5.1) */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 
@@ -70,12 +72,13 @@ struct UStrand;
  *   onleave        : 8 B
  *   realm          : 8 B  (spec #1 §4.1)
  *   body_strand    : 8 B  (spec #1 §4.1)
+ *   waiter_strand  : 8 B  (spec #2 §5.1)
  *   last_value_cache : 16 B  (UValue = kind(4)+pad(4)+union(8))
  *   cells[]        : 16 × 8 B = 128 B
- *   Fixed portion  : 88 B
- *   Total          : 88 + 128 = 216 B
+ *   Fixed portion  : 96 B
+ *   Total          : 96 + 128 = 224 B
  *
- * At footprint preset (URBI_WATCHER_READSET_MAX=4): 88 + 32 = 120 B.
+ * At footprint preset (URBI_WATCHER_READSET_MAX=4): 96 + 32 = 128 B.
  * The fixed array (not flexible member) means sizeof(UWatcher) depends
  * on the macro — intended, per §5.1 size-budget table. */
 
@@ -85,7 +88,7 @@ typedef struct UWatcher {
     uint8_t   gc_byte;                     /* 1 B  UGC_IS_FIXED set; color bits as usual */
 
     /* === Watcher-private state === */
-    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC */
+    uint8_t   mode;                        /* 1 B  UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL */
     uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP (M5 dispatch) */
     uint8_t   flags;                       /* 1 B  URBI_WATCHER_ACTIVE / _PENDING_UNREGISTER / _FIRED_DURING_EVAL */
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
@@ -104,6 +107,9 @@ typedef struct UWatcher {
     /* === Body-spawn lifecycle anchors (spec #1 §4.1) === */
     struct URealm  *realm;              /* 8 B  owning realm; set at install, cleared at unregister */
     struct UStrand *body_strand;        /* 8 B  non-NULL while body coroutine runs; NULL otherwise */
+
+    /* === waituntil parking (spec #2 §5.1) === */
+    struct UStrand *waiter_strand;      /* 8 B  strand blocked on waituntil(cond); NULL for AT/WHENEVER */
 
     /* === Edge detection === */
     UValue    last_value_cache;            /* 16 B  prior condition result */
