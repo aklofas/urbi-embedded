@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] — v0.5.0-reactive
+
+### Added
+
+- *(M5 sub-systems land throughout the topic branch; this section gets re-flowed
+  into the canonical 6-bullet release-notes structure at T88.)*
+
+### Changed
+
+### Fixed
+
+### Notes
+
 ## v0.4.0-objects — 2026-05-02
 
 The M4 object model milestone. Introduces a prototype-based object system
