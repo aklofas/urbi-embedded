@@ -14,13 +14,24 @@
  *   4. install_returns_oom_pool_when_exhausted:
  *      With pool drained, install returns URBI_INSTALL_OOM_POOL.
  *   5. install_initializes_watcher_fields:
- *      After a successful install, watcher fields match the install arguments. */
+ *      After a successful install, watcher fields match the install arguments.
+ *
+ * T39 cases (spec #2 §7.6):
+ *   6. install_marks_observed_cells_with_bit6:
+ *      Cells in trace_read_set gain UGC_HAS_WATCHER_OBSERVER after install.
+ *   7. install_appends_watcher_to_active_and_tag_lists:
+ *      Watcher is tail-appended to both vm->active_watchers_head and
+ *      owning_tag->member_watchers_head. */
 
 #include "utest.h"
 #include "uvm.h"
 #include "ustrand.h"
 #include "watcher/uwatcher.h"          /* UWATCHER_AT, uwatcher_pool_alloc */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
+#include "gc/ugc.h"                    /* UCell */
+#include "gc/ugc_incremental.h"        /* UGC_HAS_WATCHER_OBSERVER */
+#include "utag.h"                      /* UTag, member_watchers_head */
+#include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "urbi/urbi.h"                 /* URBI_LOG_WARN */
 
 #include <string.h>
@@ -233,6 +244,104 @@ UTEST(install_initializes_watcher_fields)
 }
 
 /* ===================================================================
+ * T39 helpers
+ * =================================================================== */
+
+/* g_t39_cell: a stack UCell that the cond hook plants into trace_read_set[].
+ * Declared at file scope so the hook and the test can both see it. */
+static UCell g_t39_cell;
+
+/* hook_plant_one_cell: cond hook that simulates one OP_GETSLOT read.
+ * Plants &g_t39_cell into trace_read_set[0] and sets count=1. */
+static void
+hook_plant_one_cell(struct UVM *vm, struct UClosure *cond,
+                    UValue *out_result, int *out_threw)
+{
+    UValue nil = {0};
+    (void)cond;
+    g_t39_cell.gc_byte = 0;  /* clear bit-6 before install */
+    vm->trace_read_set[0] = &g_t39_cell;
+    vm->trace_read_set_count = 1;
+    *out_result = nil;
+    *out_threw  = 0;
+}
+
+/* ===================================================================
+ * T39 test cases
+ * =================================================================== */
+
+/* 6. install_marks_observed_cells_with_bit6
+ *
+ * A cond that reads one cell must cause install to set UGC_HAS_WATCHER_OBSERVER
+ * (bit 6) on that cell. */
+UTEST(install_marks_observed_cells_with_bit6)
+{
+    UVM    vm;
+    UStrand s;
+
+    uvm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
+    reset_log(&vm);
+
+    g_t39_cell.gc_byte = 0;
+    vm.test_install_cond_hook = hook_plant_one_cell;
+
+    UWatcherInstallResult r = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_OK, (int)r);
+    UASSERT(g_t39_cell.gc_byte & UGC_HAS_WATCHER_OBSERVER);
+
+    vm.test_install_cond_hook = NULL;
+    /* Clean up: unregister installed watcher. */
+    if (vm.active_watchers_head != NULL)
+        urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
+
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* 7. install_appends_watcher_to_active_and_tag_lists
+ *
+ * After install, the watcher must appear in vm->active_watchers_head and
+ * in owning_tag->member_watchers_head (which equals realm->tag here). */
+UTEST(install_appends_watcher_to_active_and_tag_lists)
+{
+    UVM    vm;
+    UStrand s;
+
+    uvm_init(&vm, NULL, NULL);
+
+    /* Create a realm (gives us a non-NULL realm->tag for owning_tag). */
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    ustrand_init(&s, &vm);
+    s.realm = r;  /* wire realm so resolve_owning_tag falls through to realm->tag */
+
+    reset_log(&vm);
+
+    UWatcherInstallResult res = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_OK, (int)res);
+
+    /* Watcher must be in the active list. */
+    UWatcher *w = vm.active_watchers_head;
+    UASSERT(w != NULL);
+
+    /* owning_tag is realm->tag; watcher must be in tag's member list. */
+    UASSERT(w->owning_tag == r->tag);
+    UASSERT(r->tag->member_watchers_head == w);
+
+    /* Cleanup. */
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    ustrand_destroy(&s, &vm);
+    uvm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -250,4 +359,8 @@ test_install_skeleton_suite(void)
               install_returns_oom_pool_when_exhausted);
     utest_run("install_initializes_watcher_fields",
               install_initializes_watcher_fields);
+    utest_run("install_marks_observed_cells_with_bit6",
+              install_marks_observed_cells_with_bit6);
+    utest_run("install_appends_watcher_to_active_and_tag_lists",
+              install_appends_watcher_to_active_and_tag_lists);
 }

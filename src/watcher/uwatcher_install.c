@@ -181,8 +181,17 @@ install_watcher_runtime(
     w->last_value_cache = cond_value;
     w->body_strand      = NULL;
 
-    /* Phase 5d (read-set copy + bit-6 mark): T39.
-     * cells[] populated and UGC_HAS_WATCHER_OBSERVER set per cell in T39. */
+    /* Phase 5d (spec #2 §7.6): copy read-set cells + mark bit-6.
+     * UGC_HAS_WATCHER_OBSERVER (bit 6) on each cell causes the slot-write
+     * barrier to bump vm->watcher_dirty_count on any write to that cell. */
+    {
+        size_t ri;
+        for (ri = 0; ri < (size_t)vm->trace_read_set_count; ri++) {
+            UCell *c = vm->trace_read_set[ri];
+            c->gc_byte |= UGC_HAS_WATCHER_OBSERVER;
+            w->cells[ri] = c;
+        }
+    }
 
     /* Phase 5e (spec #2 §7.6): tail-append to active and tag member lists.
      * Tail-append preserves FIFO registration order (row 12 §3.2 contract). */
