@@ -112,6 +112,7 @@ extern void test_waituntil_install_suite(void);
 extern void test_at_install_dispatch_suite(void);
 extern void test_at_fire_paths_suite(void);
 extern void test_parse_at_event_suite(void);
+extern void test_parse_emit_postfix_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -200,6 +201,7 @@ static const struct suite_entry suites[] = {
     {"at_install_dispatch",        test_at_install_dispatch_suite},
     {"at_fire_paths",              test_at_fire_paths_suite},
     {"parse_at_event",             test_parse_at_event_suite},
+    {"parse_emit_postfix",         test_parse_emit_postfix_suite},
     /* Add new suites here as test files are added. */
 };
 
