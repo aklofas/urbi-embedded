@@ -1,6 +1,96 @@
 # Changelog
 
-## Unreleased — Cond-closure scratch-frame unstub (v0.5.1 candidate)
+## Unreleased
+
+## v0.5.2-scratch-frame-followup — 2026-05-05
+
+Closes the four scratch-frame stub sites left hook-stubbed at
+`v0.5.1-cond-unstub` (AT_SYNC body inline, falling-edge onleave inline,
+drain-time onleave during tag-stop cascade, event sync-emit subscriber
+body), plus a tidy baseline fix at `src/uchanged_emit.c:108` and a
+bundled emit-time bug fix surfaced during execution.  All four wires
+route through the v0.5.1 helper `urbi_run_closure_on_scratch` (or a
+new payload variant added here for the event sync-emit body's
+R[0]-payload contract).  Activates `at_onleave.chk` as a live
+conformance fixture using the integer-counter pattern (M5 lacks
+string-literal lex; deferred to backlog).
+
+### Added
+
+- `urbi_run_closure_on_scratch_with_payload` variant
+  (`src/watcher/uwatcher.h`, `src/watcher/uwatcher_scratch.c`) —
+  same shape as `urbi_run_closure_on_scratch` but writes a `payload`
+  UValue into the closure's R[0] before dispatch.  Used by AT_EVENT_SYNC
+  subscriber bodies to receive the emit payload as their first argument.
+  Both public functions share a static `run_on_scratch_core` so the
+  no-payload path is a thin shim.
+- 4 new end-to-end unit tests exercising the wired paths through the
+  production install + dispatch path with no test hooks:
+  `tests/unit/test_at_sync_scripted.c`,
+  `tests/unit/test_tag_stop_onleave_scripted.c`,
+  `tests/unit/test_event_sync_emit_scripted.c`, plus 2 cases added to
+  `tests/unit/test_uwatcher_scratch.c` for the payload variant.
+- 3 regression tests for the AST_AT_EVENT emit register-allocation
+  desync (`tests/unit/test_parse_at_event.c`,
+  `tests/unit/test_emit_at_slot_change.c`) — each disassembles the
+  install opcode and asserts `event_reg != body_reg`.
+- Activated `tests/chk/reactive/at/at_onleave.chk` as a live
+  conformance fixture covering the falling-edge onleave path
+  (`URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE` guard).
+
+### Fixed
+
+- **AT_SYNC body inline dispatch** (`invoke_body_inline`,
+  `src/watcher/uwatcher_eval.c`): replaced the M5 stub fall-through
+  with a call to `urbi_run_closure_on_scratch`.  Throws are
+  suppressed (eval pass cannot propagate per spec §6.4).  Test hook
+  short-circuit preserved.
+- **Falling-edge onleave dispatch** (`invoke_onleave_inline`,
+  `src/watcher/uwatcher_eval.c`): same swap; onleave fires through
+  real bytecode dispatch on falling edge after a prior body fire.
+- **Drain-time onleave dispatch** (`run_watcher_onleave`,
+  `src/watcher/uwatcher_drain.c`): tag-stop cascade now runs each
+  member watcher's onleave handler through real bytecode dispatch
+  via `urbi_run_closure_on_scratch`.
+- **Event sync-emit subscriber dispatch** (`run_event_body_on_scratch`,
+  `src/uevent_emit.c`): AT_EVENT_SYNC subscribers now run through
+  real bytecode dispatch via `urbi_run_closure_on_scratch_with_payload`.
+  Payload UValue arrives at the closure's R[0].  The `vm->in_watcher_scratch`
+  re-entry guard at the top of the wrapper preserves the existing
+  degrade-to-async-with-warn behaviour for nested sync emits.
+- **AST_AT_EVENT emit register-allocation desync** (`src/uemit.c`):
+  `emit_expr` for AST_IDENT global-fallback and AST_MEMBER_GET only
+  bumped `e->next_reg` and not `e->current_fs->freereg`, so AST_AT_EVENT's
+  subsequent `emit_function_literal` could allocate `body_reg` on top
+  of `event_reg`.  OP_CLOSURE then clobbered the event pointer at
+  runtime, and OP_AT_EVENT_SYNC_INSTALL tripped `R[A] == R[B]` under
+  URBI_DEBUG asserts.  AST_WATCHER and AST_WAITUNTIL avoided this
+  by wrapping cond in a closure (which routes through `emit_function_literal`
+  symmetrically).  Fix syncs `freereg` to `next_reg` after `emit_expr`
+  for the event expression at TWO sibling sites: AST_AT_EVENT (sync +
+  async event install) and AT_SLOT_CHANGE (`obj.x.changed?` install).
+  Affects scripted `at sync (X?) Y`, `at (X?) Y`, and
+  `at sync (obj.x.changed?) Y` whenever the event_expr is non-trivial.
+- **`make tidy` baseline failure** (`src/uchanged_emit.c:108`): clang-tidy
+  under `-warnings-as-errors` flagged the `(UValue){0, {0}}` brace-init
+  for missing `v` union initialiser.  Fixed via designated-init using
+  the existing block-scoped `UValue nil = {0}` idiom (matches 14 other
+  sites).  Pre-existing M5 baseline; failed identically on
+  `v0.5.0-reactive` (`4faf5bc`) and `v0.5.1-cond-unstub` (`a1e8683`).
+
+### Numbers
+
+- 1139 unit cases / 6383 checks / 0 failed (was 1131 / 6314 at
+  `v0.5.1-cond-unstub`).
+- 148 `.chk` fixtures pass; `at_onleave.chk` activated as a live
+  conformance fixture (joining `at_rising_edge.chk` and
+  `whenever_level.chk` from v0.5.1).
+- All `make releasetest` gates green: host + URBI_DEBUG + ASan +
+  UBSan + valgrind (memcheck full leak-check) + determinism (3-preset
+  × 100-run) + cross-arm + cross-riscv + tidy + docs-check + coverage
+  (85% line) + GC stress + URBI_GC_NONE compile smoke.
+
+## v0.5.1-cond-unstub — 2026-05-05
 
 The M5 reactive runtime shipped with the scripted cond closure
 hook-stubbed: scripted `at (cond) body`, `whenever (cond) body`, and
