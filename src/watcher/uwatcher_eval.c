@@ -54,9 +54,9 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
 /* === invoke_body_inline ===
  *
  * Run w->body synchronously on the VM scratch frame (AT_SYNC mode).
- * M5 stub: delegates to vm->test_watcher_fire_hook when non-NULL.
- * M5 proper: replace with real dispatch_loop_until_yield execution on
- * vm->watcher_scratch_frame.
+ * Test hook short-circuits the dispatch path; otherwise routes to
+ * urbi_run_closure_on_scratch.  Throws are suppressed (watcher does
+ * not propagate per spec §6.4 no-yield contract).
  *
  * Preconditions (URBI_DEBUG asserted):
  *   - vm->in_watcher_eval == 1 (we are inside watcher_eval_dirty).
@@ -71,12 +71,21 @@ invoke_body_inline(struct UVM *vm, struct UWatcher *w)
     URBI_INTERNAL_ASSERT(w->body != NULL);
 #endif
 
-    /* M5 stub: fire hook observes the inline body execution in tests.
-     * M5 proper: run_closure_on_scratch_frame(vm, w->body) here. */
     if (vm->test_watcher_fire_hook != NULL) {
         vm->test_watcher_fire_hook(vm, w);
+        return;
     }
-    /* If no hook and no real execution: silent no-op (graceful degradation). */
+
+    /* Real bytecode dispatch on the scratch frame.  Body runs synchronously;
+     * throws are suppressed (watcher does not propagate per spec §6.4 — eval
+     * pass cannot raise to its caller). */
+    UValue out = {0};
+    int    threw = 0;
+    (void)urbi_run_closure_on_scratch(vm, w->body, &out, &threw);
+    if (threw && vm->host_log_fn) {
+        vm->host_log_fn(vm, URBI_LOG_WARN,
+            "at sync(cond) body threw; suppressed");
+    }
 }
 
 /* === invoke_onleave_inline ===
