@@ -39,6 +39,14 @@ create_member_strand(URealm *r)
     return urbi_strand_create(r, NULL);
 }
 
+/* No-op onleave hook: prevents run_watcher_onleave from dispatching the
+ * (UClosure *)1 sentinel through real bytecode. */
+static void
+onleave_drain_noop(struct UVM *vm, struct UWatcher *w)
+{
+    (void)vm; (void)w;
+}
+
 /* === Test cases === */
 
 /* 1. tag_stop_deposits_on_member_strands
@@ -305,8 +313,10 @@ UTEST(realm_destroy_drain_ordering)
 
     uvm_init(&vm, NULL, NULL);
 
-    /* Use a custom test hook to capture onleave invocation. */
-    vm.test_watcher_onleave_hook = NULL;  /* no hook needed; we observe state */
+    /* Install a no-op onleave hook so drain doesn't dereference the
+     * (UClosure *)1 sentinel.  The test observes drain state, not onleave
+     * effects, so hook semantics don't matter. */
+    vm.test_watcher_onleave_hook = onleave_drain_noop;
 
     UWatcher *w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, NULL, NULL,

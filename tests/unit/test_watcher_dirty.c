@@ -798,7 +798,9 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     /* pending queue walker contributes at minimum: onleave(1) + last_value_cache(1) = 2. */
     UASSERT(count_pending >= 2);
 
-    /* Drain to clean up. */
+    /* Drain to clean up.  Install a no-op onleave hook so run_watcher_onleave
+     * doesn't dispatch the (UClosure *)1 sentinel through real bytecode. */
+    vm.test_watcher_onleave_hook = onleave_hook_count;
     drain_pending_onleave_queue(&vm);
 
     uvm_destroy(&vm);

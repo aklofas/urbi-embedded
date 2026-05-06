@@ -13,10 +13,10 @@
  *   - invoke_condition_closure                  (eval path, uwatcher_eval.c)
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
+ *   - run_watcher_onleave                       (drain onleave, uwatcher_drain.c)
  *
- * Out of scope (follow-up): watcher drain onleave (uwatcher_drain.c),
- * event sync-emit body (uevent_emit.c).  Both can wire to this same
- * helper as small replacements at their respective call sites.
+ * Out of scope (follow-up): event sync-emit body (uevent_emit.c).  Can wire
+ * to this same helper as a small replacement at its call site.
  *
  * **Limitation:** strand.module is left NULL.  The dispatch loop dereferences
  * s->module in OP_CLOSURE (nested function literal) and in some type-error
