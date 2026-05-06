@@ -10,9 +10,11 @@
  *
  * Construction approach (per plan simplified path):
  *   - Event.new() and scripted `at sync (e?) body` install are not yet
- *     wirable end-to-end at v0.5.1 (T59 Event stdlib defer + an emit-time
- *     register-allocation desync between AST_AT_EVENT's event_expr and
- *     emit_function_literal that would land its own follow-up patch).
+ *     wirable end-to-end (T59 Event stdlib defer at v0.5.1; the original
+ *     v0.5.1 retrospective also flagged an AST_AT_EVENT register-allocation
+ *     desync, fixed in v0.5.2 — see tests/unit/test_parse_at_event.c
+ *     emit_at_event_global_member_event_expr_disjoint_regs for the
+ *     regression test, so only the Event.new() defer still applies).
  *   - Instead: compile a one-arg body closure from urbiscript
  *     (`function(p) { Realm.received = p }`), retrieve the resulting
  *     UClosure value from urbi_run_chunk's return slot, construct a UEvent

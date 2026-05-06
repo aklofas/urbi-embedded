@@ -2300,6 +2300,17 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         uint8_t event_reg = emit_expr(e, event_ast);
         if (e->error != EMIT_OK) return 0u;
 
+        /* Sync freereg up to next_reg before allocating the body closure.
+         * AST_IDENT global-fallback (line ~824) and the chains it feeds
+         * (AST_MEMBER_GET et al.) bump only e->next_reg, leaving freereg
+         * stale.  emit_function_literal allocates body_reg from freereg,
+         * so without this sync body_reg can land on top of event_reg —
+         * OP_CLOSURE then clobbers the event pointer at runtime.
+         * AST_WATCHER avoids this by routing cond through
+         * emit_function_literal symmetrically. */
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+
         /* Body closure: 1 param (payload). */
         UAstNode payload_param;
         emit_zero(&payload_param, sizeof payload_param);
@@ -2374,6 +2385,14 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         emit_instr(e, uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT,
                                      event_reg, recv_reg, (uint8_t)ic_idx),
                    (uint32_t)n->line);
+
+        /* Sync freereg up to next_reg before allocating the body closure
+         * (mirrors AST_AT_EVENT).  AST_IDENT global-fallback feeding
+         * recv_ast bumps next_reg only, leaving freereg stale, so
+         * emit_function_literal can otherwise allocate body_reg on top
+         * of event_reg. */
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
 
         /* Body closure: 1 param (payload value on event fire). */
         UAstNode payload_param;
