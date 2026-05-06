@@ -15,7 +15,7 @@
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
  *   - run_watcher_onleave                       (drain onleave, uwatcher_drain.c)
- *   - event sync-emit subscriber dispatch       (payload variant, uevent_emit.c)
+ *   - run_event_body_on_scratch                 (event sync-emit body, uevent_emit.c)
  *
  * **Limitation:** strand.module is left NULL.  The dispatch loop dereferences
  * s->module in OP_CLOSURE (nested function literal) and in some type-error
@@ -81,15 +81,16 @@ run_on_scratch_core(struct UVM       *vm,
     if (urbi_strand_arm_from_closure(&strand, closure) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, URBI_LOG_WARN,
-                "urbi_run_closure_on_scratch: register-stack OOM");
+                "run_on_scratch_core: register-stack OOM");
         }
         return -1;
     }
 
     /* Payload init: write to R[0] after the register stack exists but before
      * dispatch.  AT_EVENT_SYNC subscribers receive the emit payload as their
-     * first argument here. */
-    if (initial_r0 != NULL && strand.R != NULL) {
+     * first argument here.  strand.R is guaranteed non-NULL by a successful
+     * urbi_strand_arm_from_closure return, so no defensive NULL check needed. */
+    if (initial_r0 != NULL) {
         strand.R[0] = *initial_r0;
     }
 
@@ -161,11 +162,13 @@ run_on_scratch_core(struct UVM       *vm,
     } else {
         /* RUNNING with budget exhausted, READY (yield), or WAITING (block).
          * The latter two violate the §6.4 no-yield contract; treat as
-         * cond-throw so install/eval can fail-soft. */
+         * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
+         * because the same core also handles AT_SYNC bodies, onleave handlers,
+         * and event sync-emit bodies — not just cond closures. */
         *out_threw = 1;
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, URBI_LOG_WARN,
-                "urbi_run_closure_on_scratch: cond exceeded budget or yielded");
+                "scratch-frame body exceeded budget or yielded");
         }
     }
 
