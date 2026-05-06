@@ -5,13 +5,11 @@
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
  *
- * M3 architectural notes:
- *   invoke_condition_closure: calls vm->test_watcher_condition_hook if
- *     non-NULL; otherwise returns UVAL_NIL.  M5 will wire real bytecode
- *     execution via urbi_run_closure_on_scratch (spec §6.4 + §6.8).
- *   spawn_body_coroutine: lives in uwatcher_spawn.c (Row 11).
- *     M3 stub delegates to vm->test_watcher_fire_hook if non-NULL; otherwise
- *     no-op.  M5 owns the real strand-pool spawn path. */
+ * Architectural notes:
+ *   invoke_condition_closure: test hook short-circuits; otherwise routes to
+ *     urbi_run_closure_on_scratch (spec §6.4 + §6.8).  Eval-time throws
+ *     fail-soft as nil.
+ *   spawn_body_coroutine: lives in uwatcher_spawn.c (Row 11). */
 
 #include "uwatcher.h"
 #include "uvm.h"
@@ -22,14 +20,14 @@
 
 /* === invoke_condition_closure ===
  *
- * Evaluate watcher w's condition and return the result.
+ * Evaluate watcher w's condition and return the result.  Test hook short-
+ * circuits the dispatch path so existing fire-path tests can inject
+ * specific values; otherwise routes to urbi_run_closure_on_scratch
+ * (uwatcher_scratch.c).  Eval-time throws fail-soft as nil — watcher does
+ * not fire this pass; caller (watcher_eval_dirty) does not propagate.
  *
- * Per spec §6.4 M3-stub contract:
- *   1. If w->condition == NULL: return UVAL_NIL.
- *   2. Else if vm->test_watcher_condition_hook != NULL: delegate to hook.
- *   3. Else: return UVAL_NIL (graceful degradation; watcher installed with a
- *      real condition closure but no test hook simply yields nil — never fires
- *      by edge semantics, and only fires by level if the hook returns truthy). */
+ * Returns UVAL_NIL when w->condition is NULL (no-condition watchers fire
+ * on dirty-mark only, not on cond eval). */
 UValue
 invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
 {
@@ -43,7 +41,14 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
         return vm->test_watcher_condition_hook(vm, w);
     }
 
-    return nil;
+    /* M5-proper path: real bytecode dispatch on the scratch frame.
+     * Eval-time throws fail-soft as nil — watcher does not fire this
+     * pass; caller (watcher_eval_dirty) does not propagate. */
+    UValue out = {0};
+    int    threw = 0;
+    (void)urbi_run_closure_on_scratch(vm, w->condition, &out, &threw);
+    if (threw) return nil;
+    return out;
 }
 
 /* === invoke_body_inline ===

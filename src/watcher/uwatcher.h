@@ -54,6 +54,12 @@ struct UEvent;   /* defined in T17; used only as pointer here */
 #define URBI_WATCHER_FIRED_DURING_EVAL         0x04u  /* condition fired while eval in progress */
 #define URBI_WATCHER_PENDING_REFIRE            0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
 #define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10u  /* body fired at least once since last onleave check (spec #2 §5.1) */
+/* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime when a
+ * heap closure was unlinked from strand.closure_list.  pool_free frees each owned closure.
+ * Only set when strand_closure_unlink confirms the closure was on the heap list. */
+#define URBI_WATCHER_OWNS_COND                 0x20u  /* condition was unlinked from closure_list; pool_free must free it */
+#define URBI_WATCHER_OWNS_BODY                 0x40u  /* body was unlinked; pool_free must free it */
+#define URBI_WATCHER_OWNS_ONLEAVE              0x80u  /* onleave was unlinked; pool_free must free it */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 
@@ -153,7 +159,17 @@ struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
  *
  * T33 completes:
  *   - read_set wiring (cells[] + bit-6 UGC_HAS_WATCHER_OBSERVER)
- *   - member_watchers_head insertion in owning_tag */
+ *   - member_watchers_head insertion in owning_tag
+ *
+ * **Test-only seam:** `urbi_watcher_install_internal` is the low-level pool
+ * + wiring path used by unit tests (`tests/unit/test_watcher_*.c` etc.).  It
+ * does NOT run real bytecode dispatch on the condition closure — install-
+ * time seeding short-circuits via `test_watcher_condition_hook` when set,
+ * else seeds nil.  Production install goes through
+ * `install_watcher_runtime` (uwatcher_install.c), which uses the real
+ * scratch-frame helper.  Tests passing fake `(UClosure *)1` sentinels MUST
+ * also set `test_watcher_condition_hook` before any subsequent eval, since
+ * eval *does* dispatch real bytecode now (post-T8). */
 
 struct UWatcher *urbi_watcher_install_internal(
     struct UVM       *vm,
@@ -170,8 +186,12 @@ void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 /* === Eval pass (T34) === */
 
 /* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
- * At M3, uses vm->test_watcher_condition_hook if non-NULL; otherwise returns
- * UVAL_NIL (graceful degradation — M5 wires real bytecode execution here).
+ * Routes to `vm->test_watcher_condition_hook` if set (existing fire-path
+ * tests inject specific values); otherwise dispatches real bytecode via
+ * `urbi_run_closure_on_scratch` (uwatcher_scratch.c).  Eval-time throws
+ * fail-soft as nil — the watcher does not fire this pass and the caller
+ * (watcher_eval_dirty, which is void) cannot propagate.  Returns nil when
+ * `w->condition == NULL` (no-condition watchers fire on dirty-mark only).
  * Per spec §6.4. */
 UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
 
@@ -250,6 +270,44 @@ void   watcher_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
  * Called at watcher_eval_dirty entry.  spec #1 §7.2. */
 void   urbi_watcher_check_invariants(struct UVM *vm);
 #endif /* URBI_DEBUG */
+
+/* Default 4096 dispatch ops — generous for typical conds (`x > 5`,
+ * `obj.slot != nil`).  Override at compile time for footprint targets:
+ *   -DURBI_SCRATCH_BUDGET_OPS=512
+ * Conds that exhaust the budget log a warn, set out_threw=1, and return 0
+ * (caller treats as cond-throw → install fails or eval skips fire). */
+#ifndef URBI_SCRATCH_BUDGET_OPS
+#  define URBI_SCRATCH_BUDGET_OPS 4096
+#endif
+
+/* === urbi_run_closure_on_scratch (spec #2 §6.4 + §7.3 phase 3) ===
+ *
+ * Run `closure` to OP_RET on a transient scratch-frame strand and capture
+ * the return value.  Used by:
+ *   - run_closure_on_scratch_frame_with_result (install-time cond eval)
+ *   - invoke_condition_closure                  (eval-time cond)
+ *
+ * The transient strand is allocated on the C stack (mirroring uvm_run's
+ * pattern), threaded onto vm->global_realm->strands_head for the duration
+ * of the call so the GC walker visits its register window, then unlinked
+ * and torn down before return.  Bounded by URBI_SCRATCH_BUDGET_OPS dispatch
+ * ops; cond closures must not OP_YIELD or block (spec §6.4 no-yield contract
+ * — yield/block trips a debug-mode assertion and degrades to nil + warn).
+ *
+ * `closure` may be NULL: returns 0 immediately with *out_result=UVAL_NIL,
+ * *out_threw=0 (matches the prior stub contract for watchers installed
+ * without a condition).
+ *
+ * Return value: 0 on clean OP_RET, NULL closure, budget exhaustion, or
+ * cond throw; -1 only on register-stack OOM (transient setup fail).
+ * *out_result holds the OP_RET value (UVAL_NIL on OOM, NULL closure,
+ * cond throw, or budget exhaustion).  *out_threw is set to 1 on unhandled
+ * THROW / TAG_STOP unwind or budget exhaustion, 0 otherwise.  Callers must
+ * pass non-NULL out pointers. */
+int urbi_run_closure_on_scratch(struct UVM      *vm,
+                                struct UClosure *closure,
+                                UValue          *out_result,
+                                int             *out_threw);
 
 #ifdef __cplusplus
 }

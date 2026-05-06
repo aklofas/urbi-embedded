@@ -232,6 +232,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->in_watcher_eval        = 0u;
     vm->pad_in_eval[0]         = 0u;
     vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
+    vm->in_watcher_scratch     = 0u;   /* spec #3 §5.4: missing from M5 init — fix */
     vm->watcher_scratch_frame  = NULL;
     /* spec #2 §5.2 install-time trace state. */
     vm->in_watcher_install     = 0u;
@@ -1390,13 +1391,20 @@ dispatch:
             uint8_t  ic_index = uinstr_c(i);
 
             /* Resolve IC table:
-             *   frame_count == 0 (top-level / root chunk):
+             *   frame_count == 0, entry_closure has proto_inst (watcher body strand
+             *     or fork child starting from a nested closure):
+             *       use s->entry_closure->proto_inst directly — the entry closure
+             *       IS the executing context and owns its own IC table.
+             *   frame_count == 0, no entry_closure or no proto_inst (uvm_run transient
+             *     executing root-chunk code):
              *       use s->module_instance->proto_instances->entries[0]
              *   frame_count > 0 (nested call):
              *       use frames[top].closure->proto_inst (set by OP_CLOSURE) */
             UProtoInstance *pi = NULL;
             if (s->frame_count == 0) {
-                if (s->module_instance != NULL
+                if (s->entry_closure != NULL && s->entry_closure->proto_inst != NULL) {
+                    pi = s->entry_closure->proto_inst;
+                } else if (s->module_instance != NULL
                     && s->module_instance->proto_instances != NULL) {
                     pi = &s->module_instance->proto_instances->entries[0];
                 }
@@ -1509,14 +1517,16 @@ dispatch:
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve IC table:
-             *   frame_count == 0 (top-level / root chunk):
-             *       use s->module_instance->proto_instances->entries[0]
-             *   frame_count > 0 (nested call):
-             *       use frames[top].closure->proto_inst (set by OP_CLOSURE) */
+            /* Resolve IC table (mirrors OP_GETSLOT logic):
+             *   frame_count == 0 with entry_closure->proto_inst: use that
+             *     (watcher body strand / fork child from nested closure).
+             *   frame_count == 0 without: use entries[0] (uvm_run root chunk).
+             *   frame_count > 0: use frames[top].closure->proto_inst. */
             UProtoInstance *pi = NULL;
             if (s->frame_count == 0) {
-                if (s->module_instance != NULL
+                if (s->entry_closure != NULL && s->entry_closure->proto_inst != NULL) {
+                    pi = s->entry_closure->proto_inst;
+                } else if (s->module_instance != NULL
                     && s->module_instance->proto_instances != NULL) {
                     pi = &s->module_instance->proto_instances->entries[0];
                 }
@@ -1606,6 +1616,15 @@ dispatch:
                 vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
                 HALT();
             }
+            /* Fire the write barrier on the slow path so watchers whose
+             * read-set includes recv see the write.  Mirrors the fast-path
+             * urbi_gc_slot_write call above (line 1571).  The actual store
+             * was already performed inside urbi_slot_set_slow; calling the
+             * barrier after the store is correct because observer_dirty only
+             * bumps watcher_dirty_count and watcher_eval_dirty runs at the
+             * next safepoint, not inline here.  Slot index 0 is passed as a
+             * conservative sentinel — observer_dirty ignores the key at M5. */
+            urbi_gc_slot_write(vm, (UCell *)recv, 0u, v);
             urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }
@@ -2209,6 +2228,17 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.closed_cells = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */
     strand.state      = USTRAND_STATE_RUNNING;
+    /* Arm the per-strand instruction budget via sched_strand_init so the
+     * safepoint budget check does not immediately yield.  The transient
+     * strand is zero-initialised above, leaving instruction_budget_remaining=0;
+     * without this the first safepoint (OP_CALL, backward JMP, or non-top
+     * OP_RET) exits before reaching watcher_eval_dirty.  uvm_run re-enters on
+     * yield so forward-progress is correct, but watcher_eval_dirty never fires
+     * (the exit happens before the hook).  sched_strand_init was previously
+     * skipped for transients; calling it here also zero-initialises the
+     * scheduler list pointers (already zero from the volatile loop above,
+     * so this is idempotent for all fields other than the budget). */
+    sched_strand_init(&strand, NULL);
 
     /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as

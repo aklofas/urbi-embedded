@@ -1,5 +1,130 @@
 # Changelog
 
+## Unreleased — Cond-closure scratch-frame unstub (v0.5.1 candidate)
+
+The M5 reactive runtime shipped with the scripted cond closure
+hook-stubbed: scripted `at (cond) body`, `whenever (cond) body`, and
+`waituntil (cond)` could not fire end-to-end because the install-time
+and eval-time cond evaluation paths returned `UVAL_NIL` unless test
+hooks were set.  This patch wires both paths to a new shared scratch-
+frame runner, fixes the cascade of latent issues that surfaced once
+real cond closures actually executed, and activates the first two
+reactive `.chk` fixtures.
+
+### Added
+
+- New helper `urbi_run_closure_on_scratch` (`src/watcher/uwatcher_scratch.c`)
+  — synthesizes a transient `UStrand` on the C stack, arms it from the
+  closure via `urbi_strand_arm_from_closure`, runs `dispatch_loop_until_yield`
+  with `URBI_SCRATCH_BUDGET_OPS` (default 4096) bound, and captures the
+  `OP_RET` value plus a throw flag.  Mirrors `uvm_run`'s transient-strand
+  pattern but scoped to single-closure cond eval with bounded budget +
+  no-yield contract.
+- Public macro `URBI_SCRATCH_BUDGET_OPS` (default 4096) — override at
+  compile time for footprint targets.
+- 5 unit tests in `tests/unit/test_uwatcher_scratch.c` covering integer
+  return, throw detection, NULL-closure handling, nil-literal cond, and
+  bool comparison conds.
+- 1 integration test in `tests/unit/test_at_scripted_e2e.c` proving
+  scripted `at (Realm.x > 5) body` fires through real dispatch with no
+  test hooks.
+- Activated `tests/chk/reactive/at/at_rising_edge.chk` and
+  `tests/chk/reactive/at/whenever_level.chk` — first two live reactive
+  conformance fixtures (the other 10 reactive fixtures remain deferred
+  pending body-inline / onleave-inline / event-sync-emit unstubs or
+  `Event.new()` / `Object.new()` stdlib at M6).
+
+### Fixed
+
+- **Install-time cond eval** (`run_closure_on_scratch_frame_with_result`,
+  `src/watcher/uwatcher_install.c`): replaced the M5 stub fall-through
+  with a call to `urbi_run_closure_on_scratch`.  Test hook short-circuit
+  preserved so existing install-trace tests continue to inject specific
+  cond results without going through real bytecode dispatch.
+- **Eval-time cond eval** (`invoke_condition_closure`,
+  `src/watcher/uwatcher_eval.c`): same swap; eval-time throws fail-soft
+  as nil per the existing contract (caller `watcher_eval_dirty` is void
+  and cannot propagate).
+- **Closure ownership transfer at install** (`uwatcher_install.c`):
+  `install_watcher_runtime` now calls `strand_closure_unlink` to move
+  cond / body / onleave closures from the strand's `closure_list` to
+  the watcher.  New `URBI_WATCHER_OWNS_COND` / `_BODY` / `_ONLEAVE`
+  flag bits drive `pool_free`'s closure release.  Without this,
+  `uvm_run`'s post-run cleanup freed the watcher's closures while
+  still in use.
+- **Body strand IC table wiring** (`uwatcher_spawn.c`):
+  `do_spawn_body_coroutine` now wires `body->module_instance` by
+  walking `vm->module_instances_head` to find the owning instance via
+  pointer-range comparison on `proto_inst`.  Required because
+  `urbi_strand_arm_from_closure` (the M3 helper) doesn't set
+  `module_instance`, and OP_GETSLOT/SETSLOT at `frame_count==0` reads
+  through it.  See backlog: `UClosure.owning_mi` field is the cleaner
+  long-term shape (set at OP_CLOSURE — eliminates the pointer walk).
+- **OP_GETSLOT/SETSLOT entry_closure fallback at frame_count==0**
+  (`src/uvm.c`): the IC table is now resolved from
+  `s->entry_closure->proto_inst->ic_table` when available, falling back
+  to `s->module_instance->proto_instances->entries[0].ic_table`.  The
+  former is the correct (non-root-chunk) IC table for body strands
+  spawned from nested closures.
+- **OP_SETSLOT slow-path write barrier** (`src/uvm.c`): the slow path
+  through `urbi_slot_set_slow` now calls `urbi_gc_slot_write` (with
+  conservative slot index 0 sentinel — observer_dirty ignores the key
+  at M5; real index needed at M6).  Without this, COW writes never
+  bumped `watcher_dirty_count` so watchers with read-sets that include
+  slow-path receivers never fired.
+- **`sched_strand_init` for `uvm_run` transient strand** (`src/uvm.c`):
+  arms `instruction_budget_remaining` so the first safepoint hit
+  inside the transient run actually crosses the dirty-walk path.
+  Without this, the transient strand yielded at first safepoint with
+  budget=0 and `watcher_eval_dirty` was missed.
+- **REPL drain loop** (`tools/urbi.c`): the REPL now drains spawned
+  body strands via `urbi_step` after each `uvm_run`.  Without this,
+  body strands queued during a REPL line never executed before the
+  next line ran.  Embedders driving `urbi_step` directly are
+  unaffected — this only changes the REPL's host-driver shape.
+- **`pending_onleave_head` drain at `pool_destroy`** (`uwatcher.c`):
+  `urbi_tag_stop` (called from `urealm_teardown_all`) moves watchers
+  from `active_watchers_head` to `pending_onleave_head`.  The pre-T12
+  `pool_destroy` only drained the active list — pending entries with
+  `OWNS_*` flags would have leaked their owned closures.  Now both
+  lists are drained.
+- **`vm->in_watcher_scratch` zero-init** (`src/uvm.c`): the field was
+  declared in M5 (spec #3 §5.4) but missing from the `uvm_init`
+  initialiser block.  Stack-allocated UVMs in tests left it
+  uninitialised; valgrind flagged the read at `uevent_emit.c:140` and
+  `uchanged_emit.c:36`.  Pre-existing M5 latent bug; surfaced when the
+  cond-unstub work raised valgrind coverage.
+
+### Deferred (separate follow-up patch)
+
+The same `urbi_run_closure_on_scratch` primitive can wire four more
+sites that are still hook-stubbed at this release.  Each is a 5-10 LOC
+patch reusing the helper:
+
+- `invoke_body_inline` (`src/watcher/uwatcher_eval.c`) — AT_SYNC body
+  inline execution.
+- `invoke_onleave_inline` (`src/watcher/uwatcher_eval.c`) — onleave
+  handler on falling edge.
+- Drain-time onleave (`src/watcher/uwatcher_drain.c`) — onleave during
+  tag-stop cascade.
+- Event sync-emit body (`src/uevent_emit.c`) — sync subscribers run
+  inline on emit.
+
+These are tracked as M6 prerequisites or `v0.5.2-scratch-frame-followup`
+candidates.  Backlog also tracks two clean-up items:
+
+- `UClosure.owning_mi` field set at OP_CLOSURE — replaces the pointer-
+  range walk in `uwatcher_spawn.c` with a direct field read.
+- Real slot index in slow-path `urbi_gc_slot_write` calls — needed at
+  M6 when observer_dirty starts using the key.
+
+### Numbers
+
+- 1131 unit cases / 6314 checks / 0 failed (was 1124 / 6272 at v0.5.0).
+- 148 chk fixtures pass; 2 reactive fixtures activated as live
+  conformance tests (at_rising_edge, whenever_level).
+- ASan + UBSan + valgrind-fast clean.
+
 ## v0.5.0-reactive — 2026-05-04
 
 The M5 reactive runtime milestone. Persistent watchers, events, slot-change

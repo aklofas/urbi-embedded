@@ -29,9 +29,11 @@
 #include "watcher/uwatcher.h"
 #include "ustrand.h"
 #include "uvm.h"
-#include "realm/urealm.h"  /* URealm — needed for w->realm->tag comparison */
-#include "urbi/urbi.h"     /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
-#include "umacros.h"       /* URBI_INTERNAL_ASSERT */
+#include "uclosure.h"              /* UClosure full definition — proto_inst field access */
+#include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */
+#include "object/umoduleinstance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
+#include "urbi/urbi.h"             /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
+#include "umacros.h"               /* URBI_INTERNAL_ASSERT */
 
 void
 do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
@@ -83,6 +85,37 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
             vm->host_log_fn(vm, URBI_LOG_WARN,
                 "watcher body spawn: out of memory (stack alloc)");
         return;
+    }
+
+    /* Step 4b: wire module_instance so OP_GETSLOT/SETSLOT at frame_count==0
+     * can resolve the IC table for the body closure.
+     *
+     * The body closure was created by OP_CLOSURE during the watcher-install
+     * script run, at which point OP_CLOSURE set cl->proto_inst to point at
+     * an entry inside the installing script's UProtoInstanceArr.  That array
+     * lives in a UModuleInstance on vm->module_instances_head (permanent for
+     * the VM's lifetime).  Walk the list to find the owning UModuleInstance
+     * by pointer-range comparison, then set body->module_instance to it.
+     *
+     * OP_GETSLOT at frame_count==0 reads
+     *   s->module_instance->proto_instances->entries[0]
+     * which is the root-chunk IC table for the body's module — correct for
+     * any body closure that uses globals (Realm.x, Realm.fired, etc.). */
+    if (w->body->proto_inst != NULL) {
+        UModuleInstance *mi;
+        for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
+            UProtoInstanceArr *arr = mi->proto_instances;
+            if (arr == NULL || arr->n == 0) continue;
+            /* Check if w->body->proto_inst falls within arr->entries[0..n-1].
+             * Both pointers are within the same GC-managed bulk allocation
+             * so pointer comparison is valid. */
+            UProtoInstance *first = &arr->entries[0];
+            UProtoInstance *last  = &arr->entries[arr->n - 1u];
+            if (w->body->proto_inst >= first && w->body->proto_inst <= last) {
+                body->module_instance = mi;
+                break;
+            }
+        }
     }
 
     /* Step 5: wire back-pointers. */

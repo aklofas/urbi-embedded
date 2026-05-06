@@ -1,29 +1,25 @@
 # Milestone: M5
-# Covers: at (cond) body — rising-edge fire; body runs once when condition
-#         transitions false→true; does not re-fire if condition stays true.
+# Covers: at (cond) body — rising-edge fire; body runs once when cond
+#         transitions false→true; does not re-fire on same-direction writes.
 #
-# defer-to: M5-scratch-frame
+# Activated 2026-05-05 as part of cond-closure unstub.
+# Cond evaluation goes through urbi_run_closure_on_scratch
+# (src/watcher/uwatcher_scratch.c); body fires through the M5-baseline
+# spawn_body_coroutine path.  The REPL drains spawned body strands with
+# urbi_step after each uvm_run so the counter is updated before the next
+# line executes.
 #
-# Reason:
-#   invoke_condition_closure and run_closure_on_scratch_frame_with_result are
-#   M5-stub functions (uwatcher_eval.c / uwatcher_install.c); both return
-#   UVAL_NIL unless the test_watcher_condition_hook or test_install_cond_hook
-#   is set.  End-to-end script-level condition evaluation and body dispatch
-#   require the scratch-frame execution path to be wired (M5 proper).
-#   Rising/falling edge logic is exercised by test_at_fire_paths.c T43 unit
-#   tests using those hooks.
-#
-# Activate when scratch-frame execution is wired by replacing the source below.
-#
-# Urbiscript source (activate at M5 scratch-frame):
-#   var x = 0;
-#   var fired = 0;
-#   at (x > 5) Realm.fired = Realm.fired + 1;
-#   Realm.x = 10;
-#   fired
-#   --- expected output ---
-#   [00000000] 0
-#   [00000001] 0
-#   [00000002] nil
-#   [00000003] 10
-#   [00000004] 1
+# The nested function pattern (trigger()) is required: watcher_eval_dirty
+# fires at non-top-frame OP_RET safepoints, which a nested call provides.
+# A bare top-level assignment does not trigger the safepoint path.
+
+var x = 0;
+var fired = 0;
+at (Realm.x > 5) Realm.fired = Realm.fired + 1;
+var trigger = function() { Realm.x = 10 }; trigger();
+Realm.fired
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 10
+[00000000] 1

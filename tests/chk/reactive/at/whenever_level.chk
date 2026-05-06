@@ -1,28 +1,23 @@
 # Milestone: M5
 # Covers: whenever (cond) body — level-trigger semantics; body fires on every
-#         eval pass where condition is truthy, not just on rising edge; contrast
-#         with at() which fires only on false→true transition.
+#         eval pass where condition is truthy, not just on rising edge.
 #
-# defer-to: M5-scratch-frame
-#
-# Reason:
-#   whenever uses UWATCHER_WHENEVER mode; watcher_eval_dirty (uwatcher_eval.c)
-#   calls spawn_body_coroutine whenever the condition is truthy (not just rising).
-#   spawn_body_coroutine is a stub at M5 (requires urbi_strand_create + the step
-#   driver to run the body coroutine).  The distinction between AT and WHENEVER
-#   level semantics is verified in test_at_fire_paths.c.
-#
-# Activate when scratch-frame + coroutine spawn is wired.
-#
-# Urbiscript source (activate at M5 scratch-frame):
-#   var cnt = 0;
-#   var trigger = 1;
-#   whenever (trigger > 0) Realm.cnt = Realm.cnt + 1;
-#   Realm.trigger = 0;
-#   cnt
-#   --- expected output ---
-#   [00000000] 0
-#   [00000001] 1
-#   [00000002] nil
-#   [00000003] 0
-#   [00000004] 1
+# Activated 2026-05-05 as part of cond-closure unstub.
+# Uses two separate trigger functions so there are two safepoints (one per
+# non-top-frame OP_RET) while Realm.x > 5 is truthy.  whenever fires at each
+# safepoint visit where cond is truthy (fired = 3); at would fire only on the
+# false→true transition (fired = 1).  Confirms UWATCHER_WHENEVER level-trigger
+# path in watcher_eval_dirty (uwatcher_eval.c).
+
+var x = 0;
+var fired = 0;
+whenever (Realm.x > 5) Realm.fired = Realm.fired + 1;
+var t1 = function() { Realm.x = 10 }; t1();
+var t2 = function() { Realm.x = 11 }; t2();
+Realm.fired
+[00000000] 0
+[00000000] 0
+[00000000] nil
+[00000000] 10
+[00000000] 11
+[00000000] 3
