@@ -309,6 +309,24 @@ int urbi_run_closure_on_scratch(struct UVM      *vm,
                                 UValue          *out_result,
                                 int             *out_threw);
 
+/* === urbi_run_closure_on_scratch_with_payload (spec #3 §5.3) ===
+ *
+ * Same as urbi_run_closure_on_scratch but writes `payload` into the
+ * closure's R[0] before dispatch.  Used by event sync-emit subscribers
+ * (uevent_emit.c) — AT_EVENT_SYNC bodies receive the emit payload as
+ * their first argument.
+ *
+ * NULL closure handled identically to the no-payload variant
+ * (returns 0, *out_result = nil, *out_threw = 0).
+ *
+ * Same return-value semantics: 0 on clean OP_RET / NULL closure /
+ * budget exhaustion / throw; -1 only on register-stack OOM. */
+int urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
+                                             struct UClosure *closure,
+                                             UValue           payload,
+                                             UValue          *out_result,
+                                             int             *out_threw);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* urbi_run_closure_on_scratch — shared scratch-frame closure runner.
+/* urbi_run_closure_on_scratch[_with_payload] — shared scratch-frame closure runner.
  *
- * Spec ref: #2 §6.4 + §7.3 phase 3.  Mirrors uvm_run's transient-strand
- * pattern (src/uvm.c:2112) but scoped to single-closure cond evaluation
- * with bounded dispatch budget and no-yield contract.
+ * Spec ref: #2 §6.4 + §7.3 phase 3 (no-payload variant);
+ *           #3 §5.3            (payload variant).
+ * Mirrors uvm_run's transient-strand pattern (src/uvm.c:2112) but scoped to
+ * single-closure evaluation with bounded dispatch budget and no-yield contract.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -14,9 +15,7 @@
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
  *   - run_watcher_onleave                       (drain onleave, uwatcher_drain.c)
- *
- * Out of scope (follow-up): event sync-emit body (uevent_emit.c).  Can wire
- * to this same helper as a small replacement at its call site.
+ *   - event sync-emit subscriber dispatch       (payload variant, uevent_emit.c)
  *
  * **Limitation:** strand.module is left NULL.  The dispatch loop dereferences
  * s->module in OP_CLOSURE (nested function literal) and in some type-error
@@ -34,11 +33,18 @@
 #include "urbi/urbi.h"
 #include "umacros.h"
 
-int
-urbi_run_closure_on_scratch(struct UVM      *vm,
-                            struct UClosure *closure,
-                            UValue          *out_result,
-                            int             *out_threw)
+/* === run_on_scratch_core (file-static) ===
+ *
+ * Shared implementation for both no-payload and payload variants.
+ * If `initial_r0` is non-NULL, writes `*initial_r0` to strand.R[0] after
+ * arm but before dispatch.  All other behaviour is identical to the
+ * documented contract on urbi_run_closure_on_scratch. */
+static int
+run_on_scratch_core(struct UVM       *vm,
+                    struct UClosure  *closure,
+                    const UValue     *initial_r0,
+                    UValue           *out_result,
+                    int              *out_threw)
 {
     UValue nil = {0};   /* kind = UVAL_NIL, payload zeroed */
     UProtoInstanceArr *scratch_arr = NULL; /* heap buf for synthetic module_instance */
@@ -78,6 +84,13 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
                 "urbi_run_closure_on_scratch: register-stack OOM");
         }
         return -1;
+    }
+
+    /* Payload init: write to R[0] after the register stack exists but before
+     * dispatch.  AT_EVENT_SYNC subscribers receive the emit payload as their
+     * first argument here. */
+    if (initial_r0 != NULL && strand.R != NULL) {
+        strand.R[0] = *initial_r0;
     }
 
     /* strand.module is intentionally left NULL — see the function docstring
@@ -221,4 +234,23 @@ urbi_run_closure_on_scratch(struct UVM      *vm,
 
     ustrand_destroy(&strand, vm);
     return 0;
+}
+
+int
+urbi_run_closure_on_scratch(struct UVM      *vm,
+                            struct UClosure *closure,
+                            UValue          *out_result,
+                            int             *out_threw)
+{
+    return run_on_scratch_core(vm, closure, NULL, out_result, out_threw);
+}
+
+int
+urbi_run_closure_on_scratch_with_payload(struct UVM      *vm,
+                                         struct UClosure *closure,
+                                         UValue           payload,
+                                         UValue          *out_result,
+                                         int             *out_threw)
+{
+    return run_on_scratch_core(vm, closure, &payload, out_result, out_threw);
 }
