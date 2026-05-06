@@ -104,8 +104,11 @@ urbi_drain_deferred_slot_changes(UVM *vm)
 
         /* Clear the slot before advancing (ring entries should not hold
          * stale pointers past their useful lifetime). */
-        vm->deferred_slot_changes[vm->deferred_slot_changes_head] =
-            (UDeferredSlotChange){ NULL, NULL, {0, {0}} };
+        {
+            UValue nil = {0};
+            vm->deferred_slot_changes[vm->deferred_slot_changes_head] =
+                (UDeferredSlotChange){ .parent = NULL, .key = NULL, .new_value = nil };
+        }
 
         vm->deferred_slot_changes_head =
             (uint16_t)((vm->deferred_slot_changes_head + 1u)

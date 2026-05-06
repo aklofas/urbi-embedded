@@ -198,6 +198,80 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
     at_event_cleanup(&module, &arena, &vm);
 }
 
+/* Regression: when event_expr routes through AST_IDENT global-fallback or
+ * AST_MEMBER_GET, those arms only bump e->next_reg without bumping
+ * fs->freereg.  AST_AT_EVENT's subsequent emit_function_literal then
+ * allocates body_reg from the stale freereg, colliding with event_reg.
+ * OP_CLOSURE clobbers the event pointer at runtime; the install opcode
+ * trips R[A] == R[B] (type confusion: closure interpreted as event).
+ *
+ * The fix syncs freereg to next_reg after emit_expr for the event
+ * expression.  AST_WATCHER does not have this bug because cond is wrapped
+ * in a closure (which routes through emit_function_literal symmetrically).
+ *
+ * This test compiles `at sync (Realm.evt?) body_val` and asserts the
+ * emitted OP_AT_EVENT_SYNC_INSTALL has distinct event/body registers.
+ * Pre-fix: event_reg == body_reg.  Post-fix: event_reg < body_reg. */
+UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
+    UModule  module = {0};
+    UArena   arena;
+    UVM      vm;
+    UEmitter e;
+
+    UEmitError rc = at_event_compile(
+        "var body_val = 0; at sync (Realm.evt?) body_val",
+        &module, &arena, &vm, &e);
+    UASSERT_EQ(EMIT_OK, rc);
+
+    /* Find the OP_AT_EVENT_SYNC_INSTALL instruction and confirm its
+     * A (event_reg) and B (body_reg) operands are different. */
+    bool found = false;
+    size_t i;
+    for (i = 0; i < module.instr_count; i++) {
+        uint32_t inst = module.instructions[i];
+        if (uinstr_op(inst) == OP_AT_EVENT_SYNC_INSTALL) {
+            uint8_t a = uinstr_a(inst);
+            uint8_t b = uinstr_b(inst);
+            UASSERT(a != b);  /* event_reg must not collide with body_reg */
+            found = true;
+            break;
+        }
+    }
+    UASSERT(found);
+
+    at_event_cleanup(&module, &arena, &vm);
+}
+
+/* Sibling check for the async install path (OP_AT_EVENT_INSTALL): same
+ * desync risk because the emit handler is symmetric in event_expr. */
+UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
+    UModule  module = {0};
+    UArena   arena;
+    UVM      vm;
+    UEmitter e;
+
+    UEmitError rc = at_event_compile(
+        "var body_val = 0; at (Realm.evt?) body_val",
+        &module, &arena, &vm, &e);
+    UASSERT_EQ(EMIT_OK, rc);
+
+    bool found = false;
+    size_t i;
+    for (i = 0; i < module.instr_count; i++) {
+        uint32_t inst = module.instructions[i];
+        if (uinstr_op(inst) == OP_AT_EVENT_INSTALL) {
+            uint8_t a = uinstr_a(inst);
+            uint8_t b = uinstr_b(inst);
+            UASSERT(a != b);
+            found = true;
+            break;
+        }
+    }
+    UASSERT(found);
+
+    at_event_cleanup(&module, &arena, &vm);
+}
+
 /* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
@@ -221,4 +295,8 @@ void test_parse_at_event_suite(void) {
               emit_at_event_produces_OP_AT_EVENT_INSTALL);
     utest_run("emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL",
               emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL);
+    utest_run("emit_at_event_global_member_event_expr_disjoint_regs",
+              emit_at_event_global_member_event_expr_disjoint_regs);
+    utest_run("emit_at_event_async_global_member_event_expr_disjoint_regs",
+              emit_at_event_async_global_member_event_expr_disjoint_regs);
 }

@@ -314,6 +314,84 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
     uvm_destroy(&vm);
 }
 
+/* scratch_runner_with_payload_writes_r0
+ *
+ * Hand-rolled proto with a single OP_RET R0, 0, 0 instruction.  After
+ * urbi_strand_arm_from_closure zeroes the register stack, the payload
+ * variant must write the supplied UValue into R[0]; OP_RET R0 then
+ * returns it via out_slot.
+ *
+ * The hand-rolled approach (rather than urbiscript source compiled
+ * through the emitter) is the only reliable way to test that the payload
+ * lands at R[0] specifically — the emitter is free to allocate temporary
+ * registers however it likes for source like "x" or "42". */
+UTEST(scratch_runner_with_payload_writes_r0)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* One-instruction proto: OP_RET R0, 0, 0. */
+    uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+
+    UProto proto;
+    memset(&proto, 0, sizeof(proto));
+    proto.instructions = instrs;
+    proto.instr_count  = 1;
+
+    UClosure cl;
+    memset(&cl, 0, sizeof(cl));
+    cl.proto   = &proto;
+    cl.nupvals = 0;
+
+    UValue payload = {0};
+    payload.kind = (uint8_t)UVAL_INT;
+    payload.v.i  = 1234;
+
+    UValue out   = {0};
+    int    threw = 0;
+    int    rc    = urbi_run_closure_on_scratch_with_payload(
+                       &vm, &cl, payload, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(1234, (int)out.v.i);
+
+    uvm_destroy(&vm);
+}
+
+/* scratch_runner_with_payload_handles_null_closure
+ *
+ * The payload-variant must mirror the no-payload variant's NULL-closure
+ * contract: return 0, *out_result = nil, *out_threw = 0.  The supplied
+ * payload is harmlessly ignored (nothing dereferences it before the
+ * NULL-closure early-return). */
+UTEST(scratch_runner_with_payload_handles_null_closure)
+{
+    UVM vm;
+    uvm_init(&vm, NULL, NULL);
+
+    /* Pre-poison the out params to confirm the helper overwrites them. */
+    UValue out;
+    out.kind  = (uint8_t)UVAL_INT;
+    out.v.i   = 999;
+    int threw = 1;
+
+    UValue payload = {0};
+    payload.kind = (uint8_t)UVAL_INT;
+    payload.v.i  = 7;
+
+    int rc = urbi_run_closure_on_scratch_with_payload(
+                 &vm, NULL, payload, &out, &threw);
+
+    UASSERT_EQ(0, rc);
+    UASSERT_EQ(0, threw);
+    UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
+
+    uvm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -334,4 +412,8 @@ test_uwatcher_scratch_suite(void)
               scratch_runner_returns_true_for_truthy_comparison);
     utest_run("scratch_runner_returns_false_for_falsy_comparison",
               scratch_runner_returns_false_for_falsy_comparison);
+    utest_run("scratch_runner_with_payload_writes_r0",
+              scratch_runner_with_payload_writes_r0);
+    utest_run("scratch_runner_with_payload_handles_null_closure",
+              scratch_runner_with_payload_handles_null_closure);
 }

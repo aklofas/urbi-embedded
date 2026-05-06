@@ -96,26 +96,28 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
  * Run w->body synchronously on the watcher scratch frame with R[0] = payload.
  * Sets in_watcher_scratch for the duration; logs + suppresses throws.
  *
- * At M5 baseline the real scratch runner (urbi_run_closure_on_scratch) is not
- * yet wired — the R5 pass installs it.  The function correctly sets + clears
- * in_watcher_scratch, so the degrade-to-async guard in c_event_emit_sync works
- * even before R5 lands.  Body execution is a no-op until R5. */
+ * Throws cannot propagate from a sync emit — spec §5.4 contract is fail-soft
+ * and warn (the emit caller is unaware of subscriber bodies and cannot
+ * meaningfully handle their exceptions). */
 static void
 run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
 {
-    (void)w;
-    (void)payload;
-
     /* Guard: never re-enter scratch execution from within scratch. */
     if (vm->in_watcher_scratch) return;
 
     vm->in_watcher_scratch = 1;
 
-    /* R5 will replace this no-op body with real bytecode dispatch:
-     *   1. Setup vm->watcher_scratch_frame with w->body + R[0]=payload.
-     *   2. Run until return/throw.
-     *   3. On UEXEC_THROW: log URBI_LOG_WARN "at sync(e?) body threw; suppressed".
-     *   4. Clear frame state. */
+    /* Real bytecode dispatch on the scratch frame with R[0] = payload.
+     * Throws are suppressed (sync emit caller cannot propagate; spec
+     * §5.4 contract is fail-soft + warn). */
+    UValue out = {0};
+    int    threw = 0;
+    (void)urbi_run_closure_on_scratch_with_payload(vm, w->body, payload,
+                                                    &out, &threw);
+    if (threw && vm->host_log_fn) {
+        vm->host_log_fn(vm, URBI_LOG_WARN,
+            "at sync(e?) body threw; suppressed");
+    }
 
     vm->in_watcher_scratch = 0;
 }

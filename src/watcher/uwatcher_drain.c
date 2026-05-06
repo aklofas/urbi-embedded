@@ -20,13 +20,13 @@
  * gone from the system.  This keeps quiescence accounting simple: a watcher on
  * the pending queue still counts as "active" until drained.
  *
- * run_watcher_onleave M3 stub
- * ---------------------------
- * At M3 there is no real bytecode execution path for watcher onleave closures.
- * The stub mirrors invoke_condition_closure (T34): if vm->test_watcher_onleave_hook
- * is non-NULL it delegates to the hook; otherwise it is a graceful no-op.
- * M5 will replace the no-op branch with a real urbi_run_closure_on_scratch call
- * that borrows vm->watcher_scratch_frame per spec §6.5.
+ * run_watcher_onleave
+ * -------------------
+ * Routes through urbi_run_closure_on_scratch (uwatcher_scratch.c) for real
+ * bytecode dispatch on the scratch frame.  Test hook short-circuits the
+ * dispatch path so existing fire-path tests can inject behavior without
+ * going through real bytecode.  Throws are suppressed (drain path cannot
+ * propagate; the watcher is being torn down).
  *
  * Drain ordering contract
  * -----------------------
@@ -43,7 +43,10 @@
 
 /* === run_watcher_onleave — file-scope static ===
  *
- * Execute w->onleave (M3 stub via test hook; real impl deferred to M5).
+ * Execute w->onleave on the VM scratch frame via real bytecode dispatch.
+ * Test hook short-circuits the dispatch path; otherwise routes to
+ * urbi_run_closure_on_scratch (uwatcher_scratch.c).  Throws are suppressed
+ * (drain path cannot propagate; the watcher is being torn down).
  * Precondition: w->onleave != NULL (caller must check).
  * run_watcher_onleave inherits the ISR-safety guarantee from drain's guard —
  * no separate URBI_ASSERT_NOT_ISR needed here. */
@@ -57,10 +60,16 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
         vm->test_watcher_onleave_hook(vm, w);
         return;
     }
-    /* M5: real urbi_run_closure_on_scratch call borrows vm->watcher_scratch_frame.
-     * At M3 no bytecode path exists for watcher onleave — graceful no-op. */
-    (void)vm;
-    (void)w;
+
+    /* Real bytecode dispatch on the scratch frame.  Throws are suppressed
+     * (drain path cannot propagate; the watcher is being torn down). */
+    UValue out = {0};
+    int    threw = 0;
+    (void)urbi_run_closure_on_scratch(vm, w->onleave, &out, &threw);
+    if (threw && vm->host_log_fn) {
+        vm->host_log_fn(vm, URBI_LOG_WARN,
+            "tag-stop drain onleave threw; suppressed");
+    }
 }
 
 /* === pending_onleave_queue_push ===

@@ -132,6 +132,45 @@ UTEST(emit_at_sync_slot_change_uses_sync_install_op)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 3: regression — at (Realm.x.changed?) body  (receiver via global
+ *         fallback) must not produce event_reg == body_reg in the
+ *         OP_AT_EVENT_INSTALL.  Same desync class as the AST_AT_EVENT
+ *         sibling: AST_IDENT global-fallback bumps next_reg only, leaving
+ *         freereg stale; emit_function_literal then allocates body_reg
+ *         on top of event_reg.
+ * ----------------------------------------------------------------------- */
+
+UTEST(emit_at_slot_change_global_receiver_disjoint_regs)
+{
+    UModule  module = {0};
+    UArena   arena;
+    UVM      vm;
+    UEmitter e;
+
+    UEmitError rc = slot_change_compile(
+        "var body = 0; at (Realm.x.changed?) body",
+        &module, &arena, &vm, &e);
+
+    UASSERT_EQ(EMIT_OK, rc);
+
+    bool found = false;
+    size_t i;
+    for (i = 0; i < module.instr_count; i++) {
+        uint32_t inst = module.instructions[i];
+        if (uinstr_op(inst) == OP_AT_EVENT_INSTALL) {
+            uint8_t a = uinstr_a(inst);
+            uint8_t b = uinstr_b(inst);
+            UASSERT(a != b);  /* event_reg must not collide with body_reg */
+            found = true;
+            break;
+        }
+    }
+    UASSERT(found);
+
+    slot_change_cleanup(&module, &arena, &vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -143,4 +182,6 @@ test_emit_at_slot_change_suite(void)
               emit_at_slot_change_emits_getslot_then_at_event_install);
     utest_run("emit_at_sync_slot_change_uses_sync_install_op",
               emit_at_sync_slot_change_uses_sync_install_op);
+    utest_run("emit_at_slot_change_global_receiver_disjoint_regs",
+              emit_at_slot_change_global_receiver_disjoint_regs);
 }
