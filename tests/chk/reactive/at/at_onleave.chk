@@ -1,29 +1,28 @@
-# Milestone: M5
-# Covers: at (cond) body onleave cleanup — onleave fires on falling edge after
-#         body has fired on rising edge; BODY_FIRED_SINCE_ONLEAVE guard prevents
-#         onleave without a preceding body fire.
+# Milestone: M5 (v0.5.2)
+# Covers: at (cond) body onleave handler — falling-edge fire of onleave after
+#         body has fired at least once.  The URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE
+#         flag guards onleave so it never fires without a preceding body fire.
 #
-# defer-to: M5-scratch-frame
+# Activated 2026-05-05 as part of v0.5.2 scratch-frame follow-up (T3).
+# invoke_onleave_inline now routes through urbi_run_closure_on_scratch
+# (src/watcher/uwatcher_scratch.c) for real bytecode dispatch on the
+# falling edge.  The integer counter pattern (n += 1 on rise, n += 10
+# on fall) matches at_rising_edge.chk; M5 lacks string-literal lex so
+# "updown" string assembly is deferred to a later milestone.
 #
-# Reason:
-#   invoke_onleave_inline is a M5-stub (uwatcher_eval.c); it is a no-op unless
-#   test_watcher_onleave_hook is set.  The at_with_onleave_fires_on_falling_edge
-#   unit test (test_at_fire_paths.c T43) exercises this via hook.  The RAII
-#   cleanup pattern requires scratch-frame execution to run onleave closures.
-#
-# Activate when scratch-frame execution is wired.
-#
-# Urbiscript source (activate at M5 scratch-frame):
-#   var x = 0;
-#   var log = "";
-#   at (x > 5) Realm.log = Realm.log + "up" onleave Realm.log = Realm.log + "down";
-#   Realm.x = 10;
-#   Realm.x = 0;
-#   log
-#   --- expected output ---
-#   [00000000] 0
-#   [00000001] ""
-#   [00000002] nil
-#   [00000003] 10
-#   [00000004] 0
-#   [00000005] "updown"
+# The nested function pattern (trigger_up/trigger_down) is required:
+# watcher_eval_dirty fires at non-top-frame OP_RET safepoints, which a
+# nested call provides.  See at_rising_edge.chk for the safepoint detail.
+
+var x = 0;
+var n = 0;
+at (Realm.x > 5) Realm.n = Realm.n + 1 onleave Realm.n = Realm.n + 10;
+var trigger_up = function() { Realm.x = 10 }; trigger_up();
+var trigger_down = function() { Realm.x = 0 }; trigger_down();
+Realm.n
+[00000000] 0
+[00000014] 0
+[00000014] nil
+[00000014] 10
+[00000014] 0
+[00000014] 11
