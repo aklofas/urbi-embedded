@@ -14,7 +14,7 @@ static size_t module_wire_size(const UModule *c) {
 
     /* metadata */
     n += 1u;                                          /* max_reg */
-    src_len = (c->source_name != NULL) ? emit_strlen(c->source_name) : 0u;
+    src_len = (c->source_name != NULL) ? urbi_strlen(c->source_name) : 0u;
     n += uvarint_size_u((uint64_t)src_len);
     n += src_len;
 
@@ -76,7 +76,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
 
     /* --- metadata --- */
     buf[off++] = module->max_reg;
-    src_len = (module->source_name != NULL) ? emit_strlen(module->source_name) : 0u;
+    src_len = (module->source_name != NULL) ? urbi_strlen(module->source_name) : 0u;
     off = uvarint_write_u(buf, off, (uint64_t)src_len);
     if (src_len > 0u) {
         emit_memcpy(buf + off, module->source_name, src_len);

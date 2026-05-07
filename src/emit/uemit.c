@@ -28,7 +28,7 @@ static UProto *current_proto(const UEmitter *e) {
    back to the stdlib wrapper), so no NULL guard on `alloc` is needed. */
 static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
-    size_t len = emit_strlen(src);
+    size_t len = urbi_strlen(src);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     char *copy = (char *)alloc(NULL, len + 1u, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }

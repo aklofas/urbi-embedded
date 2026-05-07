@@ -43,9 +43,9 @@ static inline void urbi_zero(void *const dst, const size_t n) {
 }
 
 /* urbi_strlen — freestanding strlen (no <string.h>).
- * Consolidates per-file strlen helpers (rg_strlen in urealm_globals.c,
- * emit_strlen in uemit_internal.h) into a single shared helper.
- * REALM-022. */
+ * Consolidates per-file strlen helpers (rg_strlen in urealm_globals.c
+ * at v0.5.4; emit_strlen in uemit_internal.h at v0.5.5) into a single
+ * shared helper.  REALM-022. */
 static inline size_t urbi_strlen(const char *s) {
     size_t n = 0;
     while (s[n] != '\0') n++;

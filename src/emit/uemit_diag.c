@@ -37,7 +37,7 @@ void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...) {
     va_end(ap);
 
     /* Copy the message string using the module allocator. */
-    size_t msg_len = emit_strlen(buf);
+    size_t msg_len = urbi_strlen(buf);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     char *msg = (char *)alloc(NULL, msg_len + 1u, e->module->alloc_ud);
     if (msg == NULL) return;  /* OOM — drop silently */

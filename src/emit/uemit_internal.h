@@ -33,13 +33,6 @@ static inline void emit_memmove_right(void *dst, const void *src, size_t n) {
     while (i > 0u) { i--; pd[i] = ps[i]; }
 }
 
-/* Local strlen replacement (byte-loop).  Freestanding-safe. */
-static inline size_t emit_strlen(const char *s) {
-    size_t n = 0u;
-    while (s[n] != '\0') n++;
-    return n;
-}
-
 /* --- Module allocator helper --- */
 
 #if __STDC_HOSTED__
