@@ -3,11 +3,13 @@
    Extracted here so that both ustrand.h and uvm.h can include this
    header without circularity.
 
-   IMPORTANT: This header uses UValue but does NOT include umodule.h or
-   uvalue.h to avoid circular dependencies (uvalue.h → umodule.h → uframe.h
-   → uvalue.h).  Includers must ensure UValue is in scope before including
-   this header.  In practice every translation unit includes umodule.h first,
-   which defines UValue, so this is satisfied automatically.
+   UValue dependency: this header uses UValue but cannot include
+   src/value/uvalue.h directly because the include chain
+   uvalue.h → umodule.h → uframe.h would form a cycle.
+   Includers must ensure UValue is in scope before including this header.
+   In practice every translation unit includes umodule.h first (which
+   defines UValue and then includes uframe.h), so this is satisfied
+   automatically.
 
    T6 migration: UCallFrame and UUpvalCell moved from umodule.h to uframe.h.
    UVM_MAX_FRAMES and UVM_STACK_CAP moved from uvm.h to uframe.h.
@@ -20,9 +22,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* UValue is required by this header; includers must pull it in via umodule.h
-   before including uframe.h.  The circular-include constraint prevents us
-   from including umodule.h or uvalue.h here. */
+/* UValue is required by this header.  See include-cycle note in the file
+   banner above; includers must pull it in via src/module/umodule.h. */
 
 #ifdef __cplusplus
 extern "C" {
