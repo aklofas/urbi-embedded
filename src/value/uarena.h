@@ -25,6 +25,13 @@ typedef void  (*UFreeFn)(void *ptr, void *ud);
  * Three init modes (see uarena_init / _ex / _static below); the common
  * operations (alloc, reset, destroy) work across all modes.  All fields
  * are touched only by uarena.c — callers MUST NOT write to them.
+ *
+ * Thread-safety (FOUND-012, v0.5.5): UArena is single-threaded; no internal
+ * locking.  Caller must serialize access — concurrent uarena_alloc / _reset
+ * / _destroy on the same arena from multiple threads is undefined.  In the
+ * v1.0 compiler front-end this is satisfied by the cooperative scheduler
+ * (one parser/emitter at a time per VM); embedders that drive parsing from
+ * multiple host threads must add their own mutex.
  */
 typedef struct {
     UArenaChunk *head;      /* current chunk — allocations go here */

@@ -28,6 +28,17 @@ struct UVM;
  *
  * Thread-safety: NOT thread-safe. Single-threaded per VM at v1.0.
  *
+ * Lifetime invariants (FOUND-044, v0.5.5):
+ *   - Intern pointers are NOT cross-VM-stable.  Two distinct UVMs each own
+ *     their own intern table; pointers from one MUST NOT be passed to
+ *     another, and pointer-equality between VMs has no meaning.
+ *   - Do NOT store interned pointers in serialized state (bytecode caches,
+ *     persisted snapshots, on-disk module manifests).  They are valid only
+ *     for the address-space of the originating VM and only until that VM
+ *     is destroyed.  Re-intern from raw bytes on every load.
+ *   - Intern-table teardown happens at urbi_vm_destroy via uintern_destroy
+ *     below; every previously returned pointer is invalid after that call.
+ *
  * Implementation: open-addressing hash, FNV-1a, grow-by-2 at load > 0.7.
  * Allocates via vm->alloc_fn. */
 const char *ustr_intern(struct UVM *vm, const char *bytes, size_t nbytes);
@@ -42,14 +53,16 @@ size_t uintern_count(struct UVM *vm);
 
 /* GC root provider for the intern table (row 10 §5.5).
  *
- * At M3 baseline, interned strings are stored as raw `const char *` inside
- * UInternStr allocations — they are NOT GC-managed UValues.  This walker is
- * a no-op stub until M4 migrates strings to UString GC cells.
+ * No-op by design through v1.0 (FOUND-024, v0.5.5).  Interned strings are
+ * stored as raw `const char *` inside UInternStr allocations — they are NOT
+ * GC-managed UValues, and the intern table itself owns each UInternStr block
+ * directly (freed at uintern_destroy).  Strong ownership by the table means
+ * the GC has nothing to keep alive on its behalf.
  *
- * TODO(M4): when UString becomes a GC cell type, walk each live UInternStr as
- * a UValue root so the GC keeps interned strings alive across collection cycles.
- * Until then, intern strings live until uintern_destroy (strong ownership via
- * the UInternTable allocation — no GC involvement needed). */
+ * The function is registered as a root provider so the provider-slot dispatch
+ * path stays symmetric with the other GC subsystems; the body deliberately
+ * reports zero roots.  See uintern.c for the full disposition note + the
+ * v1.x upgrade path (string→UString GC cell migration). */
 void intern_table_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 #ifdef __cplusplus

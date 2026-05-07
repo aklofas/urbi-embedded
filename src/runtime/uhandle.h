@@ -6,7 +6,19 @@
  * slot reuse via free-list is deferred to v1.x.
  *
  * host_handle_walk_roots is registered as a GC root provider by urbi_vm_init
- * (T26 wired the call; T27 provides the real implementation). */
+ * (T26 wired the call; T27 provides the real implementation).
+ *
+ * Allocator contract (FOUND-003, v0.5.5): grow uses vm->alloc_fn with the
+ * (ptr != NULL, nbytes > 0) realloc form — the canonical contract is the
+ * UVMAllocFn typedef in <urbi/types.h>.  Required behaviour:
+ *   - On success, return a buffer of the new size; the existing prefix
+ *     (the old capacity worth of UValue slots) is preserved bit-identically.
+ *   - On OOM, return NULL AND leave the original buffer intact and valid.
+ *     uhandle_create propagates the OOM as URBI_HANDLE_INVALID; the table
+ *     stays at the old capacity and can continue serving requests up to it.
+ * Allocators that move/free the original on OOM (non-conforming) will
+ * corrupt the live handle table.  Hosted-build wrappers around stdlib
+ * realloc are conforming on all v1.0 targets. */
 
 #ifndef UHANDLE_H
 #define UHANDLE_H

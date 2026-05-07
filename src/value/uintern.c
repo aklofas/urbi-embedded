@@ -8,7 +8,17 @@
  *   UInternStr    - per-string allocation: length-prefixed bytes + NUL
  *     hash, len, bytes[len+1]
  *
- * No unintern at v1.0. All UInternStr blocks freed at uintern_destroy. */
+ * No unintern at v1.0. All UInternStr blocks freed at uintern_destroy.
+ *
+ * U-prefix on file-private types (UInternStr / UInternTable):
+ *   These types are file-private (not exported in the public header) but
+ *   carry the U prefix for historical reasons — at M3 they straddled the
+ *   uintern.c / uvm.h boundary as cross-TU types, then v0.5.3 layout
+ *   relocated their definitions here as the public surface narrowed to
+ *   `vm->intern_table` (void *) + the four functions in uintern.h.  The
+ *   prefix is retained to keep the type-name search path stable across
+ *   the v0.5.x cleanup ramp; renaming would touch every grep history hit
+ *   without functional benefit (FOUND-021, v0.5.5). */
 
 #include "value/uintern.h"
 
@@ -57,8 +67,10 @@ static void *vm_alloc(UVM *vm, void *ptr, size_t nbytes) {
     if (vm->alloc_fn != NULL) {
         return vm->alloc_fn(ptr, nbytes, vm->alloc_ud);
     }
-    /* Hosted-fallback only: caller should have wired alloc_fn at urbi_vm_init.
-     * Returning NULL forces propagation as OOM. */
+    /* Defensive guard: alloc_fn is required and is wired by urbi_vm_init.
+     * No hosted fallback exists in freestanding builds; if alloc_fn is NULL
+     * the caller skipped initialisation.  Returning NULL forces propagation
+     * as OOM rather than crashing on a NULL function-pointer call. */
     return NULL;
 }
 
@@ -195,23 +207,26 @@ size_t uintern_count(UVM *vm) {
  *
  * GC root provider for the intern table (row 10 §5.5).
  *
- * At M3 baseline, interned strings are stored as raw `const char *` pointers
- * inside UInternStr heap allocations — they are NOT GC-managed UValues.  The
- * intern table itself owns the UInternStr blocks (freed at uintern_destroy),
- * so there are no GC roots to report here.
+ * No-op by design through v1.0.  Interned strings are stored as raw
+ * `const char *` pointers inside UInternStr heap allocations — they are
+ * NOT GC-managed UValues, and the intern table owns the UInternStr blocks
+ * directly (freed at uintern_destroy via vm->alloc_fn).  Strong ownership
+ * by the table means the GC has nothing to keep alive on its behalf, so
+ * this walker reports zero roots and does no work.
  *
- * This function is registered as a root provider so the provider slot exists
- * and the dispatch path is exercised.  The body stays empty until M4 migrates
- * strings to UString GC cells, at which point each live UInternStr entry becomes
- * a UValue root that must be reported to the callback.
+ * The function is registered as a root provider only so that the provider
+ * slot in vm->gc is occupied and the dispatch path is exercised, keeping
+ * the M4-shipped GC root-provider API symmetric across all subsystems.
  *
- * TODO(M4): for each occupied, non-tombstone entry in the intern table, wrap
- * e->bytes as a UString UValue and call cb(vm, &v, ctx).  This keeps interned
- * strings alive across collection cycles once strings are GC-managed. */
+ * If a future revision migrates strings to a UString GC cell type, this
+ * walker would iterate occupied non-tombstone entries and report each as
+ * a UValue root via cb — at which point intern lifetime would track the
+ * GC cycle rather than the table allocation.  Filed under v1.x backlog
+ * (FOUND-024 disposition, v0.5.5: no-op-by-design at v1.0). */
 void
 intern_table_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
-    /* M3 baseline: no GC-managed strings; nothing to walk. */
+    /* No-op by design — see banner above. */
     (void)vm;
     (void)cb;
     (void)ctx;
