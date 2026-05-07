@@ -45,6 +45,28 @@ uevent_waiter_unregister(struct UStrand *s)
     /* last_event_payload stays NIL — caller resumes with NIL on cancellation. */
 }
 
+/* === wake_event_waiters (file-static) ===
+ *
+ * Walk e->waiters_head FIFO, deposit payload into each strand's
+ * last_event_payload, clear the wait fields, and transition to RUNNABLE.
+ * Shared by c_event_emit_async and c_event_emit_sync. */
+static void
+wake_event_waiters(struct UVM *vm, struct UEvent *e, UValue payload)
+{
+    struct UStrand *s  = e->waiters_head;
+    struct UStrand *ns;
+    (void)vm;  /* reserved: preemptive-scheduler upgrade will use vm */
+    while (s) {
+        ns = s->next_event_waiter;
+        s->last_event_payload = payload;
+        s->wait_event_target  = NULL;
+        s->next_event_waiter  = NULL;
+        sched_strand_make_runnable(s);
+        s = ns;
+    }
+    e->waiters_head = NULL;
+}
+
 /* === c_event_emit_async (spec #3 §5.2) ===
  *
  * Fan out payload to all subscribers in FIFO registration order.
@@ -59,8 +81,6 @@ void
 c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
-    struct UStrand  *s;
-    struct UStrand  *ns;
 
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -75,20 +95,8 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
         w = next;
     }
 
-    /* Walk waiters_head FIFO: deposit payload + wake each waiter. */
-    s = e->waiters_head;
-    while (s) {
-        ns = s->next_event_waiter;
-        s->last_event_payload = payload;
-        s->wait_event_target  = NULL;
-        s->next_event_waiter  = NULL;
-        /* sched_strand_make_runnable sets state = USTRAND_STATE_READY and
-         * increments strand_runnable_count.  The strand was in USTRAND_WAIT_EVENT
-         * (WAITING) — not on the run-queue — so no double-enqueue risk. */
-        sched_strand_make_runnable(s);
-        s = ns;
-    }
-    e->waiters_head = NULL;
+    /* Wake all waiters_head FIFO: deposit payload + transition to RUNNABLE. */
+    wake_event_waiters(vm, e, payload);
 }
 
 /* === run_event_body_on_scratch (file-static, spec #3 §5.3) ===
@@ -134,8 +142,6 @@ void
 c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
-    struct UStrand  *s;
-    struct UStrand  *ns;
 
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -160,16 +166,7 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
     }
 
     /* Wake waiters — identical to async path. */
-    s = e->waiters_head;
-    while (s) {
-        ns = s->next_event_waiter;
-        s->last_event_payload = payload;
-        s->wait_event_target  = NULL;
-        s->next_event_waiter  = NULL;
-        sched_strand_make_runnable(s);
-        s = ns;
-    }
-    e->waiters_head = NULL;
+    wake_event_waiters(vm, e, payload);
 }
 
 /* === c_event_waituntil (spec #3 §7.1) ===

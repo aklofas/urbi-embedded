@@ -79,9 +79,14 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
 #endif
 
 /* Entry in the deferred slot-change ring (spec #4 §3.5).
- * Holds a strong reference to parent/key/new_value only while the entry
- * is live (head != tail).  Drain logic (R6) clears each slot after firing.
- * NOT GC-managed — entries are transient. */
+ *
+ * Pointer lifetime: the per-entry parent pointer is *weak* across GC
+ * boundaries.  Safety relies on the cooperative-scheduling invariant that
+ * no GC cycle runs between defer and drain — the ring drains at every
+ * safepoint, before watcher-eval.  A v1.x preemptive scheduler MUST
+ * upgrade these to strong refs (visit them from the GC root walk).
+ * NOT GC-managed — entries are transient; drain logic clears each slot
+ * after firing. */
 typedef struct UDeferredSlotChange {
     struct UObject *parent;
     struct USymbol *key;
