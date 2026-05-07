@@ -2,12 +2,13 @@
 /* Streaming Pratt parser implementation. */
 
 #include "parse/uparse.h"
+#include "parse/uparse_internal.h"
 #include "watcher/uwatcher.h"
 #include <stddef.h>
 
 /* Local string helper — compare an (unterminated) lexeme against a literal.
  * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */
-static int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
+int ident_equals(const char *bytes, int len, const char *literal, int lit_len) {
     if (len != lit_len) return 0;
     int i;
     for (i = 0; i < len; i++) {
@@ -84,7 +85,7 @@ static const char * const kErrorNames[] = {
  * is safe because the sentinel is never mutated by anyone — its
  * contents are inspected only via the const-correct read path
  * (kind == AST_ERROR && u.err.code == PARSE_OOM). */
-static const UAstNode uparser_oom_sentinel = {
+const UAstNode uparser_oom_sentinel = {
     AST_ERROR,
     0,
     0,
@@ -93,7 +94,7 @@ static const UAstNode uparser_oom_sentinel = {
 
 /* --- ULexer lookahead helpers. --- */
 
-static UToken peek(UParser *p) {
+UToken peek(UParser *p) {
     if (!p->have_peek) {
         p->peek = ulex_next(p->lex);
         p->have_peek = true;
@@ -101,7 +102,7 @@ static UToken peek(UParser *p) {
     return p->peek;
 }
 
-static UToken consume(UParser *p) {
+UToken consume(UParser *p) {
     UToken t = peek(p);
     p->have_peek = false;
     return t;
@@ -109,7 +110,7 @@ static UToken consume(UParser *p) {
 
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
-static UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
+UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
     UAstNode *n = uarena_alloc(p->arena, sizeof *n);
     if (!n) return NULL;
     n->kind = k;
@@ -118,14 +119,14 @@ static UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
     return n;
 }
 
-static UAstNode *make_int(UParser *p, int64_t v, int line, int col) {
+UAstNode *make_int(UParser *p, int64_t v, int line, int col) {
     UAstNode *n = make_node(p, AST_INT, line, col);
     if (!n) return NULL;
     n->u.i = v;
     return n;
 }
 
-static UAstNode *make_ident(UParser *p, const char *start, int len, int line, int col) {
+UAstNode *make_ident(UParser *p, const char *start, int len, int line, int col) {
     UAstNode *n = make_node(p, AST_IDENT, line, col);
     if (!n) return NULL;
     n->u.ident.start = start;
@@ -133,8 +134,8 @@ static UAstNode *make_ident(UParser *p, const char *start, int len, int line, in
     return n;
 }
 
-static UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
-                           int line, int col) {
+UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
+                     int line, int col) {
     UAstNode *n = make_node(p, AST_UNARY, line, col);
     if (!n) return NULL;
     n->u.unary.op = op;
@@ -142,8 +143,8 @@ static UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
     return n;
 }
 
-static UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
-                            int line, int col) {
+UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
+                      int line, int col) {
     UAstNode *n = make_node(p, AST_BINARY, line, col);
     if (!n) return NULL;
     n->u.binary.op = op;
@@ -152,8 +153,8 @@ static UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNod
     return n;
 }
 
-static UAstNode *make_error(UParser *p, UParseError code, const char *msg,
-                           int line, int col) {
+UAstNode *make_error(UParser *p, UParseError code, const char *msg,
+                     int line, int col) {
     UAstNode *n = make_node(p, AST_ERROR, line, col);
     if (!n) return NULL;
     n->u.err.code = (int)code;
@@ -161,28 +162,7 @@ static UAstNode *make_error(UParser *p, UParseError code, const char *msg,
     return n;
 }
 
-/* --- Forward declarations for mutual recursion. --- */
-
-static UAstNode *parse_expression(UParser *p, int min_prec);
-static UAstNode *parse_prefix(UParser *p);
-static UAstNode *parse_atom(UParser *p);
-static UAstNode *parse_call_args(UParser *p, UAstNode *callee);
-static UAstNode *parse_member_access(UParser *p, UAstNode *recv, bool *out_is_assign);
-static UAstNode *parse_inner_tier(UParser *p);
-static UAstNode *parse_outer_tier(UParser *p);
-static UAstNode *parse_statement_or_expr(UParser *p);
-static UAstNode *parse_block(UParser *p);
-static UAstNode *parse_if(UParser *p);
-static UAstNode *parse_while(UParser *p);
-static UAstNode *parse_function(UParser *p);
-static UAstNode *parse_return(UParser *p);
-static UAstNode *parse_try(UParser *p);
-static UAstNode *parse_throw(UParser *p);
-static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
-static UAstNode *parse_at(UParser *p);
-static UAstNode *parse_whenever(UParser *p);
-static UAstNode *parse_waituntil(UParser *p);
-static bool at_statement_end(UParser *p);
+/* Forward declarations for mutual recursion — see uparse_internal.h. */
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
@@ -191,7 +171,7 @@ static bool at_statement_end(UParser *p);
      4 = relational (<, <=, >, >=)
      5 = additive (+, -)
      6 = multiplicative (*, /) */
-static int infix_prec(UTokenType t) {
+int infix_prec(UTokenType t) {
     switch (t) {
     case TOK_EQEQ:
     case TOK_NEQ:   return 3;
@@ -207,7 +187,7 @@ static int infix_prec(UTokenType t) {
     }
 }
 
-static UAstBinaryOp infix_binop(UTokenType t) {
+UAstBinaryOp infix_binop(UTokenType t) {
     switch (t) {
     case TOK_PLUS:  return BOP_ADD;
     case TOK_MINUS: return BOP_SUB;
@@ -218,13 +198,13 @@ static UAstBinaryOp infix_binop(UTokenType t) {
 }
 
 /* True when t is a comparison operator token. */
-static bool is_compare_token(UTokenType t) {
+bool is_compare_token(UTokenType t) {
     return t == TOK_EQEQ || t == TOK_NEQ
         || t == TOK_LT   || t == TOK_LE
         || t == TOK_GT   || t == TOK_GE;
 }
 
-static UAstCompareOp compare_op(UTokenType t) {
+UAstCompareOp compare_op(UTokenType t) {
     switch (t) {
     case TOK_EQEQ: return CMP_EQ;
     case TOK_NEQ:  return CMP_NEQ;
@@ -236,9 +216,9 @@ static UAstCompareOp compare_op(UTokenType t) {
     }
 }
 
-static UAstNode *make_compare(UParser *p, UAstCompareOp op,
-                              UAstNode *lhs, UAstNode *rhs,
-                              int line, int col) {
+UAstNode *make_compare(UParser *p, UAstCompareOp op,
+                       UAstNode *lhs, UAstNode *rhs,
+                       int line, int col) {
     UAstNode *n = make_node(p, AST_COMPARE, line, col);
     if (!n) return NULL;
     n->u.cmp.op  = op;
@@ -247,20 +227,20 @@ static UAstNode *make_compare(UParser *p, UAstCompareOp op,
     return n;
 }
 
-static UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
+UAstNode *make_bool_node(UParser *p, bool value, int line, int col) {
     UAstNode *n = make_node(p, AST_BOOL, line, col);
     if (!n) return NULL;
     n->u.b = value;
     return n;
 }
 
-static UAstNode *make_nil_node(UParser *p, int line, int col) {
+UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
 /* --- parse_prefix: unary +/- /! then atom.  Unary '+' is a no-op. --- */
 
-static UAstNode *parse_prefix(UParser *p) {
+UAstNode *parse_prefix(UParser *p) {
     UToken t = peek(p);
     if (t.type == TOK_PLUS) {
         consume(p);
@@ -287,7 +267,7 @@ static UAstNode *parse_prefix(UParser *p) {
 
 /* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error. --- */
 
-static UAstNode *parse_atom(UParser *p) {
+UAstNode *parse_atom(UParser *p) {
     UToken t = peek(p);
     switch (t.type) {
     case TOK_INT:
@@ -351,7 +331,7 @@ static UAstNode *parse_atom(UParser *p) {
 
 /* --- parse_var_decl: `var x = expr` --- */
 
-static UAstNode *parse_var_decl(UParser *p) {
+UAstNode *parse_var_decl(UParser *p) {
     UToken kw = consume(p);          /* consume TOK_KW_VAR */
     UToken name = peek(p);
 
@@ -397,7 +377,7 @@ static UAstNode *parse_var_decl(UParser *p) {
 
 /* --- parse_assign: `x = expr` — IDENT already consumed as `name`. --- */
 
-static UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
+UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; consume it. */
     consume(p);
 
@@ -418,7 +398,7 @@ static UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
    | / & separators). Used as the child-entry point for both
    uparse_next_statement and the outer-tier loop. --- */
 
-static UAstNode *parse_statement_or_expr(UParser *p) {
+UAstNode *parse_statement_or_expr(UParser *p) {
     UToken t = peek(p);
 
     /* while (cond) { body } */
@@ -639,7 +619,7 @@ static UAstNode *parse_statement_or_expr(UParser *p) {
 /* --- parse_call_args: parse `(` arg, arg, ... `)` after a callee expression.
    Returns an AST_CALL node. callee is already parsed. --- */
 
-static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
+UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
     UToken lparen = consume(p);  /* consume '(' */
 
     int cap = 4;
@@ -705,7 +685,7 @@ static UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
 
    Returns the new node, or an AST_ERROR / OOM sentinel on failure. --- */
 
-static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
+UAstNode *parse_member_access(UParser *p, UAstNode *recv,
                                      bool *out_is_assign) {
     UToken op = consume(p);  /* TOK_DOT or TOK_ARROW */
     *out_is_assign = false;
@@ -762,7 +742,7 @@ static UAstNode *parse_member_access(UParser *p, UAstNode *recv,
 
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
-static UAstNode *parse_expression(UParser *p, int min_prec) {
+UAstNode *parse_expression(UParser *p, int min_prec) {
     UAstNode *left = parse_prefix(p);
     if (!left) return NULL;
     if (left->kind == AST_ERROR) return left;
@@ -905,7 +885,7 @@ static UAstNode *parse_expression(UParser *p, int min_prec) {
    end-of-block, end-of-paren, EOF, or the REPL-boundary '|'.
    Used by the trailing-drop rules for outer-tier ';'/','  and
    inner-tier '|'/'&'. */
-static bool at_statement_end(UParser *p) {
+bool at_statement_end(UParser *p) {
     UTokenType t = peek(p).type;
     return t == TOK_EOF || t == TOK_RBRACE || t == TOK_RPAREN
         || t == TOK_PIPE;
@@ -915,7 +895,7 @@ static bool at_statement_end(UParser *p) {
    binops at equal precedence (left-associative).
    Trailing `|` at statement-end is silently dropped.
    Trailing `&` at statement-end is a parse error (PARSE_TRAILING_AMP). */
-static UAstNode *parse_inner_tier(UParser *p) {
+UAstNode *parse_inner_tier(UParser *p) {
     UAstNode *lhs = parse_expression(p, 0);
     if (!lhs) return NULL;
     if (lhs->kind == AST_ERROR) return lhs;
@@ -959,7 +939,7 @@ static UAstNode *parse_inner_tier(UParser *p) {
    Each statement inside is a full outer-tier parse (including `;` chains).
    Statements are separated by `;` or `|`; a missing separator ends the block.
    Used by if/else; T13 (while) and T14 (function) will reuse this. --- */
-static UAstNode *parse_block(UParser *p) {
+UAstNode *parse_block(UParser *p) {
     UToken lbrace = peek(p);
     if (lbrace.type != TOK_LBRACE) {
         return make_error(p, PARSE_EXPECTED_LBRACE,
@@ -1021,7 +1001,7 @@ static UAstNode *parse_block(UParser *p) {
 }
 
 /* --- parse_while: `while` `(` cond `)` body-block --- */
-static UAstNode *parse_while(UParser *p) {
+UAstNode *parse_while(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WHILE */
 
     UToken lp = peek(p);
@@ -1056,7 +1036,7 @@ static UAstNode *parse_while(UParser *p) {
 }
 
 /* --- parse_if: `if` `(` cond `)` then-block [`else` else-block] --- */
-static UAstNode *parse_if(UParser *p) {
+UAstNode *parse_if(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_IF */
 
     UToken lp = peek(p);
@@ -1101,7 +1081,7 @@ static UAstNode *parse_if(UParser *p) {
 
 /* --- parse_function: `function` [`name`] `(` params `)` `{` body `}` --- */
 
-static UAstNode *parse_function(UParser *p) {
+UAstNode *parse_function(UParser *p) {
     UToken kw = consume(p);   /* consume TOK_KW_FUNCTION */
 
     /* Detect bare-function forms and reject them.
@@ -1215,7 +1195,7 @@ static UAstNode *parse_function(UParser *p) {
 
 /* --- parse_return: `return [expr]` --- */
 
-static UAstNode *parse_return(UParser *p) {
+UAstNode *parse_return(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_RETURN */
 
     /* Determine whether a return value follows.  Stop at any statement-ending
@@ -1244,7 +1224,7 @@ static UAstNode *parse_return(UParser *p) {
 
 /* --- parse_throw: `throw expr` --- */
 
-static UAstNode *parse_throw(UParser *p) {
+UAstNode *parse_throw(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_THROW */
 
     UAstNode *value = parse_inner_tier(p);
@@ -1262,7 +1242,7 @@ static UAstNode *parse_throw(UParser *p) {
    Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name), body = AST_BLOCK.
    onleave is always NULL at M3 (M5 wires on-leave syntax). --- */
 
-static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
+UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
     consume(p);  /* consume ':' */
 
     UAstNode *body = parse_block(p);
@@ -1284,7 +1264,7 @@ static UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
 /* --- parse_try: `try { body } [catch (e) { handler }] [finally { cleanup }]`
    Both catch and finally are optional, but at least one must be present. --- */
 
-static UAstNode *parse_try(UParser *p) {
+UAstNode *parse_try(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_TRY */
 
     UAstNode *body = parse_block(p);
@@ -1363,7 +1343,7 @@ static UAstNode *parse_try(UParser *p) {
  *   at (e?) body            → AST_AT_EVENT (sync_flag=false)
  *   at sync (e?) body       → AST_AT_EVENT (sync_flag=true)
  * Without `?`, produces AST_WATCHER as before. --- */
-static UAstNode *parse_at(UParser *p) {
+UAstNode *parse_at(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_AT */
 
     /* Optional `sync` or `async` modifier. */
@@ -1494,7 +1474,7 @@ static UAstNode *parse_at(UParser *p) {
 }
 
 /* --- parse_whenever: `whenever` `(` cond `)` body [`onleave` handler] --- */
-static UAstNode *parse_whenever(UParser *p) {
+UAstNode *parse_whenever(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WHENEVER */
 
     UToken lp = peek(p);
@@ -1540,7 +1520,7 @@ static UAstNode *parse_whenever(UParser *p) {
 }
 
 /* --- parse_waituntil: `waituntil` `(` cond `)` --- */
-static UAstNode *parse_waituntil(UParser *p) {
+UAstNode *parse_waituntil(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WAITUNTIL */
 
     UToken lp = peek(p);
@@ -1573,7 +1553,7 @@ static UAstNode *parse_waituntil(UParser *p) {
    Returns a single node (no Nary) if only one inner-tier child exists.
    Trailing `;` or `,` at statement-end is silently dropped.
    Mixing `;` and `,` in the same outer-tier group is an error. */
-static UAstNode *parse_outer_tier(UParser *p) {
+UAstNode *parse_outer_tier(UParser *p) {
     UAstNode *first = parse_statement_or_expr(p);
     if (!first) return NULL;
     if (first->kind == AST_ERROR) return first;
@@ -1639,7 +1619,7 @@ static UAstNode *parse_outer_tier(UParser *p) {
 
 /* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
    TOK_PIPE, consume it so the next statement starts clean. */
-static void sync_to_statement_boundary(UParser *p) {
+void sync_to_statement_boundary(UParser *p) {
     for (;;) {
         UToken t = peek(p);
         if (t.type == TOK_PIPE) { consume(p); return; }
