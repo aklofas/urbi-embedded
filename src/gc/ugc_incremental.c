@@ -76,8 +76,19 @@ typedef struct UAllCellsNode {
     struct UAllCellsNode *next_gray;  /* T24: gray work-list link; NULL when not on gray queue */
 } UAllCellsNode;
 
-/* Accessor: recover the sidecar head from vm->all_cells_head (which stores
- * UAllCellsNode* cast to UCell*).  All internal traversals use this. */
+/* === Sidecar accessor convention (GC-019) ===
+ *
+ * Each `gc_<role>` accessor below recovers the embedded UAllCellsNode
+ * sidecar stored in the corresponding UCell* field of the UVM struct
+ * (all_cells_head, gray_work_head, sweep_cursor, sweep_cursor_prev).
+ *
+ * The cast convention is identical across all six (one-line cast through
+ * `void *` to satisfy strict-aliasing).  The functions are kept as
+ * separate inlines for type safety — a single parameterized helper would
+ * defeat the type-safety value the audit cited.  See the T27 comment
+ * threads above for what changes when the sidecar layout collapses
+ * (each accessor body switches to a direct UCell* cast; signatures are
+ * load-bearing across the file and stay). */
 static UAllCellsNode *gc_node_head(UVM *vm) {
     return (UAllCellsNode *)(void *)vm->all_cells_head;
 }
