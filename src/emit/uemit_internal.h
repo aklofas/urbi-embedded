@@ -66,6 +66,11 @@ static inline UModuleAllocFn emit_alloc_for(const UModule *c) {
 
 /* --- Forward decls for cross-TU functions (extract-driven; added T6-T13) --- */
 
+/* Core instruction emitters (defined in uemit.c).
+ * Promoted to non-static so that extracted TUs (uemit_unwind.c, etc.)
+ * can emit instructions without pulling uemit.c's internal statics. */
+void emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
+
 /* Diag-emit funnel (defined in uemit_diag.c). */
 void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 void emit_diag_free_all(UEmitter *e);
