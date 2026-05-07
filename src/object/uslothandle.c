@@ -12,7 +12,7 @@
 #include "vm/uvm.h"
 #include "urbi/gc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
-#include "uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
+#include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === urbi_object_get_slot ===
  *

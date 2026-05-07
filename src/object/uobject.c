@@ -26,7 +26,7 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
-#include "uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
+#include "changed/uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === next_id ===
  *

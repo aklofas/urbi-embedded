@@ -20,7 +20,7 @@
 
 #include "vm/uvm.h"
 #include "object/uobject.h"       /* urbi_object_alloc */
-#include "uchanged_node.h"        /* urbi_object_get_or_create_change_event */
+#include "changed/uchanged_node.h"        /* urbi_object_get_or_create_change_event */
 #include "event/uevent_native.h"         /* uvalue_from_event, uvalue_is_event, uvalue_as_event */
 #include "value/uintern.h"              /* ustr_intern */
 #include "module/umodule.h"              /* USymbol */

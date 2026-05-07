@@ -11,7 +11,7 @@
  * urbi_drain_deferred_slot_changes — drain the per-VM deferred ring.
  *   Called at every safepoint BEFORE watcher_eval_dirty per spec §5.4. */
 
-#include "uchanged_node.h"      /* UChangedNode, urbi_emit_slot_change_slow,
+#include "changed/uchanged_node.h"      /* UChangedNode, urbi_emit_slot_change_slow,
                                    urbi_drain_deferred_slot_changes */
 #include "object/uobject.h"     /* UObject, struct UObject */
 #include "event/uevent_emit.h"        /* c_event_emit_sync */

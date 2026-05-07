@@ -26,7 +26,7 @@
 #include "sched/ustrand.h"                   /* ustrand_init/destroy */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "object/uobject.h"            /* urbi_object_alloc */
-#include "uchanged_node.h"             /* urbi_object_get_or_create_change_event,
+#include "changed/uchanged_node.h"             /* urbi_object_get_or_create_change_event,
                                           urbi_defer_slot_change,
                                           urbi_drain_deferred_slot_changes,
                                           urbi_emit_slot_change_if_subscribed */

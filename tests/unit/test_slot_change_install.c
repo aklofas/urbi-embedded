@@ -10,7 +10,7 @@
 #include "utest.h"
 
 #include "object/uobject.h"       /* UObject, urbi_object_alloc */
-#include "uchanged_node.h"        /* UChangedNode, urbi_object_get_or_create_change_event */
+#include "changed/uchanged_node.h"        /* UChangedNode, urbi_object_get_or_create_change_event */
 #include "gc/ugc_incremental.h"   /* UGC_HAS_SLOT_CHANGE_EVENT */
 #include "value/uintern.h"              /* ustr_intern → USymbol* */
 #include "module/umodule.h"              /* USymbol typedef */
