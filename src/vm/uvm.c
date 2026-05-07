@@ -31,7 +31,8 @@
 #include "event/uevent_native.h"              /* event_native_register (T53) */
 #include "tag/utag_native.h"                /* tag_native_register (T54) */
 #include "vm/uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
-#include "vm/uvm_arith.h" /* arith_add/sub/mul/div/neg + helpers (T16) */
+#include "vm/uvm_arith.h"    /* arith_add/sub/mul/div/neg + helpers (T16) */
+#include "vm/uvm_internal.h" /* diag / closure cross-TU decls (T15) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
@@ -368,7 +369,7 @@ const char *uvm_error_name(UVMError code) {
 /* --- Diagnostic infrastructure. --- */
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
-static const char *kind_name(uint8_t kind) {
+const char *kind_name(uint8_t kind) {
     switch (kind) {
         case UVAL_NIL:   return "Nil";
         case UVAL_INT:   return "Integer";
@@ -380,7 +381,7 @@ static const char *kind_name(uint8_t kind) {
 }
 
 /* Map UOpcode to its mnemonic name for diagnostic messages. */
-static const char *op_name(uint8_t op) {
+const char *op_name(uint8_t op) {
     switch (op) {
         case OP_LOADK:          return "OP_LOADK";
         case OP_MOVE:           return "OP_MOVE";
@@ -435,16 +436,7 @@ static const char *op_name(uint8_t op) {
     return "unknown";
 }
 
-/* Fixed-buffer diagnostic writer. Truncates with "..." when the buffer
-   fills. Freestanding: no snprintf, no <stdio.h>. */
-typedef struct UDiagWriter {
-    char   *buf;
-    size_t  cap;   /* buffer capacity */
-    size_t  used;  /* bytes written so far (excluding trailing NUL) */
-    bool    truncated;
-} UDiagWriter;
-
-static void diag_init(UDiagWriter *w, char *buf, size_t cap) {
+void diag_init(UDiagWriter *w, char *buf, size_t cap) {
     w->buf = buf;
     w->cap = cap;
     w->used = 0;
@@ -452,7 +444,7 @@ static void diag_init(UDiagWriter *w, char *buf, size_t cap) {
     if (cap > 0) buf[0] = '\0';
 }
 
-static void diag_write_cstr(UDiagWriter *w, const char *s) {
+void diag_write_cstr(UDiagWriter *w, const char *s) {
     if (w->truncated) return;
     while (*s) {
         /* Leave 4 bytes for "..." + NUL. */
@@ -473,7 +465,7 @@ static void diag_write_cstr(UDiagWriter *w, const char *s) {
 }
 
 /* Write an unsigned integer in decimal. */
-static void diag_write_u32(UDiagWriter *w, uint32_t n) {
+void diag_write_u32(UDiagWriter *w, uint32_t n) {
     char tmp[12];
     size_t i = 0;
     if (n == 0) {
@@ -491,14 +483,14 @@ static void diag_write_u32(UDiagWriter *w, uint32_t n) {
     }
 }
 
-static void diag_write_size(UDiagWriter *w, size_t n) {
+void diag_write_size(UDiagWriter *w, size_t n) {
     /* size_t is at most 64 bits on our targets; fits in u32 for any
        realistic frame size or pc. Cap for safety. */
     if (n > UINT32_MAX) n = UINT32_MAX;
     diag_write_u32(w, (uint32_t)n);
 }
 
-static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
+void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
     diag_write_cstr(w, kind_name(kind));
 }
 
@@ -506,7 +498,7 @@ static void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
    index 0, summing deltas; abs_lines entries (triggered by INT8_MIN
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
-static uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
+uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
     if (module->line_deltas == NULL) return 0;
     if (pc >= module->instr_count) return 0;
     uint32_t line = 0;
@@ -534,7 +526,7 @@ static uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-static void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
+void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
     uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
         diag_write_cstr(w, "instr ");
@@ -554,8 +546,8 @@ static void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) 
 
 /* Binary-op TypeError: two operand kinds reported.
    Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
-static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
-                                        uint8_t op, uint8_t b_kind, uint8_t c_kind) {
+void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
+                                 uint8_t op, uint8_t b_kind, uint8_t c_kind) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_prefix(&w, module, pc);
@@ -569,7 +561,7 @@ static void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t p
 }
 
 /* Unary-op TypeError: one operand kind reported. */
-static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
+void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
                                        uint8_t op, uint8_t b_kind) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
@@ -582,103 +574,12 @@ static void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc
 }
 
 /* Format: "out of memory allocating register frame (<N> bytes requested)" */
-static void vm_format_oom(UVM *vm, size_t nbytes) {
+void vm_format_oom(UVM *vm, size_t nbytes) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "out of memory allocating register frame (");
     diag_write_size(&w, nbytes);
     diag_write_cstr(&w, " bytes requested)");
-}
-
-/* --- Closure + upvalue allocation helpers. --- */
-
-/* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
- * Uses the VM's allocator.  Threads the new closure into *list_head so
- * the caller can free every closure at end-of-run (pre-GC bookkeeping).
- *
- * M4: UClosure embeds UCell at offset 0.  The cell header is initialised
- * here (type_tag = UTYPE_CLOSURE, gc_byte = vm->current_white) so that
- * urbi_gc_upvalue_write may safely cast UClosure* → UCell* and read a
- * valid color for the barrier check.  The closure is NOT enrolled on
- * vm->all_cells_head — lifetime stays with the strand's closure_list
- * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
- * as a follow-up M4 task; it requires enrolling the transient uvm_run
- * strand as a GC root before closures stored in registers can survive
- * a mid-dispatch collection cycle.
- *
- * Returns NULL on OOM. */
-static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
-                                  UClosure **list_head) {
-    uint8_t nup = proto->nupvals;
-    /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
-    size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
-    size_t nbytes = sizeof(UClosure) + extra;
-    UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
-    if (cl == NULL) return NULL;
-    urbi_zero(cl, nbytes);
-    /* Cell header (M4): well-formed for barrier safety even though the
-     * closure is not on vm->all_cells_head at this commit. */
-    cl->cell.type_tag = UTYPE_CLOSURE;
-    cl->cell.gc_byte  = vm->current_white;
-    cl->proto      = proto;
-    cl->nupvals    = nup;
-    cl->next_alloc = *list_head;
-    *list_head     = cl;
-    return cl;
-}
-
-/* Find or create an open UUpvalCell for &R[slot].
- * Cells are kept in the strand's open_upvals list, sorted by stack address
- * (descending: newest captures at the front). */
-static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
-    /* Scan existing open cells. */
-    UUpvalCell *cell = s->open_upvals;
-    while (cell != NULL) {
-        if (cell->u.stack_ptr == slot) return cell;
-        cell = cell->next;
-    }
-    /* Create a new open cell. */
-    cell = (UUpvalCell *)vm->alloc_fn(NULL, sizeof(UUpvalCell), vm->alloc_ud);
-    if (cell == NULL) return NULL;
-    urbi_zero(cell, sizeof(UUpvalCell));
-    cell->on_heap    = false;
-    cell->u.stack_ptr = slot;
-    cell->next       = s->open_upvals;
-    s->open_upvals   = cell;
-    return cell;
-}
-
-/* Heapify all open cells whose stack address is >= threshold.
- * Removed cells are appended to *closed_list (for per-run bulk free at halt).
- * Called by OP_CLOSE, OP_RET, and urbi_unwind.
- * Declared non-static (exported via uvm.h) for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, UValue *threshold,
-                       UUpvalCell **closed_list) {
-    UUpvalCell **link = &s->open_upvals;
-    while (*link != NULL) {
-        UUpvalCell *cell = *link;
-        if (cell->u.stack_ptr >= threshold) {
-            cell->u.value = *cell->u.stack_ptr;
-            cell->on_heap  = true;
-            *link = cell->next;
-            /* Thread into closed_list using the now-free next pointer. */
-            cell->next = *closed_list;
-            *closed_list = cell;
-        } else {
-            link = &cell->next;
-        }
-    }
-}
-
-/* Free all open upvalue cells remaining on a strand. */
-static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
-    UUpvalCell *cell = s->open_upvals;
-    while (cell != NULL) {
-        UUpvalCell *next = cell->next;
-        vm->alloc_fn(cell, 0, vm->alloc_ud);
-        cell = next;
-    }
-    s->open_upvals = NULL;
 }
 
 /* --- Dispatch macros.
@@ -719,7 +620,7 @@ static void vm_free_open_upvalues(UVM *vm, UStrand *s) {
 
 /* Generic unsupported-opcode error message.  Used by placeholder arms
  * that will be replaced by real implementations in later tasks. */
-static void vm_format_type_error_msg(UVM *vm, const char *msg) {
+void vm_format_type_error_msg(UVM *vm, const char *msg) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
     diag_write_cstr(&w, "TypeError: ");
