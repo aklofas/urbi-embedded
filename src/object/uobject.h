@@ -221,16 +221,16 @@ void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
  *   UObject *p;
  *   UPROTOS_FOREACH(obj, p) { ... visit p ... }
  *
- * Identifier-naming note: the for-loop scope already isolates __upf_ctx_local,
+ * Identifier-naming note: the for-loop scope already isolates upf_ctx_local,
  * so a fixed name is sufficient — no __LINE__ token-paste gymnastics required. */
-struct __upf_ctx {
+struct upf_ctx {
     uintptr_t  raw;       /* copy of obj->protos at iteration start */
     UProtos   *up;        /* non-NULL only in heap case */
     uint32_t   i;         /* 0..up->n in heap; 0/1 in single; unused in empty */
 };
 
-static inline struct __upf_ctx __upf_init(const UObject *obj) {
-    struct __upf_ctx c;
+static inline struct upf_ctx upf_init(const UObject *obj) {
+    struct upf_ctx c;
     c.raw = obj->protos;
     c.up  = NULL;
     c.i   = 0U;
@@ -240,7 +240,7 @@ static inline struct __upf_ctx __upf_init(const UObject *obj) {
     return c;
 }
 
-static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
+static inline int upf_next(struct upf_ctx *c, UObject **out) {
     if (c->up != NULL) {
         if (c->i >= c->up->n) return 0;
         *out = c->up->items[c->i++];
@@ -256,8 +256,8 @@ static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
 }
 
 #define UPROTOS_FOREACH(obj, p_var)                                     \
-    for (struct __upf_ctx __upf_ctx_local = __upf_init((obj));          \
-         __upf_next(&__upf_ctx_local, &(p_var));                        \
+    for (struct upf_ctx upf_ctx_local = upf_init((obj));                \
+         upf_next(&upf_ctx_local, &(p_var));                            \
         )
 
 /* === T12: cycle-safe DFS lookup primitive ===

@@ -152,7 +152,7 @@ UTEST(walk_roots_t26_mark_roots_phase_transition)
 /* ===== T36: M4 root provider keeps atom singletons + root_shape alive =====
  *
  * Verifies that after the manual urbi_pin calls were removed (T36), the
- * registered m4_object_roots_walker is the load-bearing reachability path:
+ * registered object_roots_walker is the load-bearing reachability path:
  * a full GC cycle does NOT reclaim atom_object / atom_integer / root_shape.
  *
  * Mechanism: peek into vm->all_cells_head's sidecar list (private layout

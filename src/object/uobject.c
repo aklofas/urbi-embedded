@@ -6,7 +6,7 @@
  *
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
  * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root
- * provider (m4_object_roots_walker, registered via urbi_object_register_gc_roots
+ * provider (object_roots_walker, registered via urbi_object_register_gc_roots
  * in urbi_vm_init) keeps the singletons alive across GC cycles by shading each
  * non-NULL vm->atom_* field directly during MARK_ROOTS.
  *
@@ -122,7 +122,7 @@ urbi_object_root(struct UVM *vm)
     /* protos already 0 (empty form) from urbi_object_alloc. */
     vm->atom_object = o;
 
-    /* T36: m4_object_roots_walker (registered via urbi_object_register_gc_roots
+    /* T36: object_roots_walker (registered via urbi_object_register_gc_roots
      * in urbi_vm_init) keeps this singleton alive across collection cycles by
      * shading vm->atom_object directly during MARK_ROOTS.  No explicit pin
      * needed — replaces the synthetic UVAL_CLOSURE wrapper trick used pre-T36. */
@@ -195,7 +195,7 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
     urbi_object_set_protos_single(vm, o, root);
     *slot = o;
 
-    /* T36: kept alive by m4_object_roots_walker (see urbi_object_root). */
+    /* T36: kept alive by object_roots_walker (see urbi_object_root). */
     return o;
 }
 
@@ -250,7 +250,7 @@ urbi_object_clone(UVM *vm, UObject *parent)
  * caches) keep the receiver shapes / slot pointers / uprops cached entries
  * reachable through walk_uprotoinstance (T22+ wiring lands on cache fill). */
 static void
-m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
+object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
 
@@ -281,5 +281,5 @@ m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 void
 urbi_object_register_gc_roots(struct UVM *vm)
 {
-    urbi_gc_register_root_provider(vm, m4_object_roots_walker);
+    urbi_gc_register_root_provider(vm, object_roots_walker);
 }

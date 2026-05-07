@@ -987,7 +987,7 @@ UTEST(vm_create_zero_init_m3_fields) {
     /* GC root provider registry — 6 providers registered at urbi_vm_init:
      * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
      * host_handle_walk_roots, watcher_table_walk_roots, plus T36's
-     * m4_object_roots_walker (atom singletons + root_shape + module_instances). */
+     * object_roots_walker (atom singletons + root_shape + module_instances). */
     UASSERT_EQ(6U, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */
     UASSERT(vm.realms_head  == NULL);
