@@ -4,6 +4,7 @@
 #include "lex/ulex.h"
 
 #include <limits.h>
+#include <string.h>
 
 static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
@@ -175,6 +176,24 @@ static int is_ident_cont(const char c) {
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
+typedef struct {
+    const char *suffix;
+    int         sufflen;
+    int64_t     mul;  /* positive: value *= mul; negative: value /= -mul */
+} UDurationSuffix;
+
+/* Longer suffixes first so "ms" / "us" / "ns" match before bare "m" (LEX-008). */
+static const UDurationSuffix kDurationSuffixes[] = {
+    { "ms", 2,          1000LL },
+    { "us", 2,             1LL },
+    { "ns", 2,        -1000LL },   /* division: value /= 1000 */
+    { "s",  1,       1000000LL },
+    { "m",  1,      60000000LL },
+    { "h",  1,    3600000000LL },
+    { "d",  1,   86400000000LL },
+    { NULL, 0,             0LL },
+};
+
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
 static UToken scan_decimal(ULexer *lex) {
@@ -251,46 +270,16 @@ static UToken scan_decimal(ULexer *lex) {
     t.col = start_col;
 
     /* Check for duration suffix and convert to microseconds. */
-    if (lex->cur + 1 < lex->end && lex->cur[0] == 'm' && lex->cur[1] == 's' &&
-        (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "ms" → multiply by 1000 to get microseconds */
-        lex->cur += 2;
-        value *= 1000;
-    }
-    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'u' && lex->cur[1] == 's' &&
-             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "us" → already in microseconds */
-        lex->cur += 2;
-    }
-    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'n' && lex->cur[1] == 's' &&
-             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "ns" → divide by 1000 (with truncation) to get microseconds */
-        lex->cur += 2;
-        value /= 1000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 's' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "s" → multiply by 1,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'm' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "m" → multiply by 60,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 60LL * 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'h' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "h" → multiply by 3,600,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 3600LL * 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'd' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "d" → multiply by 86,400,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 86400LL * 1000000;
+    for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
+        if (lex->cur + e->sufflen > lex->end) continue;
+        if (memcmp(lex->cur, e->suffix, (size_t)e->sufflen) != 0) continue;
+        /* Boundary: next char must not be ident-cont. */
+        if (lex->cur + e->sufflen < lex->end &&
+            is_ident_cont(lex->cur[e->sufflen])) continue;
+        lex->cur += e->sufflen;
+        if (e->mul >= 0) value *= e->mul;
+        else             value /= -e->mul;
+        break;
     }
 
     /* Update token length if a suffix was consumed. */
