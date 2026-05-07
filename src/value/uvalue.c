@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UValue formatter — hosted-only (snprintf + <stdio.h>). */
+/* UValue semantic helpers + formatter (formatter: hosted-only). */
 
 #include "value/uvalue.h"
+#include "gc/ugc.h"
+#include "vm/uvm.h"
+#include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
+#include "runtime/umacros.h"    /* URBI_INTERNAL_ASSERT */
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 
@@ -71,24 +75,51 @@ UValCmpResult uvalue_lt(const UValue *a, const UValue *b, bool *out) {
 }
 
 UValCmpResult uvalue_le(const UValue *a, const UValue *b, bool *out) {
-    if (a == NULL || b == NULL) return UVAL_CMP_TYPE_ERROR;
-    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_INT) {
-        *out = a->v.i <= b->v.i;
-        return UVAL_CMP_OK;
+    bool lt = false;
+    UValCmpResult r = uvalue_lt(a, b, &lt);
+    if (r != UVAL_CMP_OK) return r;
+    *out = lt || uvalue_equal(a, b);
+    return UVAL_CMP_OK;
+}
+
+/* --- Host type registration (folded from utype.c — FOUND-020) ---
+ * urbi_register_type is declared in ugc.h (row 10 §7). */
+
+uint8_t
+urbi_register_type(UVM *vm, const UType *type)
+{
+    URBI_ASSERT_NOT_ISR(vm);
+
+    uint8_t tag = type->type_tag;
+
+    if (tag == 0u) {
+        /* Auto-assign next free host slot. */
+        URBI_INTERNAL_ASSERT(
+            vm->host_type_count < (uint8_t)(UTYPE_HOST_MAX - UTYPE_HOST_BASE + 1u));
+        tag = (uint8_t)(UTYPE_HOST_BASE + vm->host_type_count);
+        vm->host_type_count++;
+    } else if (tag >= UTYPE_HOST_BASE /* && tag <= UTYPE_HOST_MAX */) {
+        /* Host-allocated explicit tag — use as-is. */
+    } else {
+        /* Tags 1..(UTYPE_HOST_BASE-1) are reserved for built-in types and
+         * must not be registered via this API.
+         * M4 NOTE: built-in types (UTYPE_OBJECT/CLOSURE/STRING/etc., tags 1..63)
+         * cannot be registered through urbi_register_type — they must write
+         * vm->type_table[tag] directly via an internal init function
+         * (e.g., builtin_types_init(vm) called from uvm_init). This guard exists
+         * to catch accidental host misuse of those slots.
+         * URBI_INTERNAL_ASSERT fires in URBI_DEBUG builds; returns 0 in release. */
+        URBI_INTERNAL_ASSERT(0);
+        return 0u;
     }
-    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_FLOAT) {
-        *out = a->v.f <= b->v.f;
-        return UVAL_CMP_OK;
-    }
-    if (a->kind == (uint8_t)UVAL_INT && b->kind == (uint8_t)UVAL_FLOAT) {
-        *out = (double)a->v.i <= b->v.f;
-        return UVAL_CMP_OK;
-    }
-    if (a->kind == (uint8_t)UVAL_FLOAT && b->kind == (uint8_t)UVAL_INT) {
-        *out = a->v.f <= (double)b->v.i;
-        return UVAL_CMP_OK;
-    }
-    return UVAL_CMP_TYPE_ERROR;
+
+    /* Detect collision: explicit-tag must point at a free slot.  Auto-assign
+     * doesn't bump host_type_count past explicit registrations, so mixing the
+     * two patterns can collide.  Catch in URBI_DEBUG. */
+    URBI_INTERNAL_ASSERT(vm->type_table[tag] == NULL);
+
+    vm->type_table[tag] = (UType *)type;
+    return tag;
 }
 
 #if __STDC_HOSTED__

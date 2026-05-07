@@ -10,7 +10,7 @@
  * All allocation goes through vm->alloc_fn.
  *
  * Used by:
- *   - run_closure_on_scratch_frame_with_result (install path, uwatcher_install.c)
+ *   - install_watcher_runtime (install path cond eval, uwatcher_install.c)
  *   - invoke_condition_closure                  (eval path, uwatcher_eval.c)
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
@@ -67,11 +67,7 @@ run_on_scratch_core(struct UVM       *vm,
 
     /* Allocate a transient strand on the C stack.  Mirrors uvm_run. */
     UStrand strand;
-    {
-        volatile unsigned char *p = (volatile unsigned char *)&strand;
-        size_t i;
-        for (i = 0; i < sizeof(strand); i++) p[i] = 0;
-    }
+    urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
     strand.is_transient_strand = 1u;  /* guards reject OP_FORK_DETACH/JOIN */
@@ -104,20 +100,12 @@ run_on_scratch_core(struct UVM       *vm,
      * UProtoInstanceArr (one entry) and a stack-local UModuleInstance shell.
      * Freed in teardown below; GC does not chase strand.module_instance. */
     UModuleInstance scratch_mi;
-    {
-        volatile unsigned char *p = (volatile unsigned char *)&scratch_mi;
-        size_t i;
-        for (i = 0; i < sizeof(scratch_mi); i++) p[i] = 0;
-    }
+    urbi_zero(&scratch_mi, sizeof(scratch_mi));
     if (closure->proto_inst != NULL) {
         size_t arr_bytes = sizeof(UProtoInstanceArr) + sizeof(UProtoInstance);
         scratch_arr = (UProtoInstanceArr *)vm->alloc_fn(NULL, arr_bytes, vm->alloc_ud);
         if (scratch_arr != NULL) {
-            {
-                volatile unsigned char *p = (volatile unsigned char *)scratch_arr;
-                size_t i;
-                for (i = 0; i < arr_bytes; i++) p[i] = 0;
-            }
+            urbi_zero(scratch_arr, arr_bytes);
             scratch_arr->n = 1;
             scratch_arr->entries[0].proto    = closure->proto;
             scratch_arr->entries[0].ic_table = closure->proto_inst->ic_table;

@@ -1,0 +1,3 @@
+# arm-none-eabi cross build — liburbi.a size (text+data+bss)
+   text	   data	    bss	    dec	    hex	filename
+  55650	      0	      0	  55650	(TOTAL liburbi.a)

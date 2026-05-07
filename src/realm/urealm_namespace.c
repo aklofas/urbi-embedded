@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
+#include "runtime/umacros.h"
 #include "vm/uvm.h"
 
 /* === Internal entry layout === */
@@ -42,16 +43,6 @@ struct UNamespace {
 /* Initial capacity — must be > 0. */
 #define NS_INITIAL_CAP 16u
 
-/* === Zero-fill helper === */
-
-static void
-ns_zero(void *dst, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)dst;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
-
 /* === unamespace_create === */
 
 struct UNamespace *
@@ -66,7 +57,7 @@ unamespace_create(struct UVM *vm)
     ns = (struct UNamespace *)vm->alloc_fn(NULL, sizeof(struct UNamespace),
                                            vm->alloc_ud);
     if (ns == NULL) return NULL;
-    ns_zero(ns, sizeof(struct UNamespace));
+    urbi_zero(ns, sizeof(struct UNamespace));
 
     entry_bytes = (size_t)NS_INITIAL_CAP * sizeof(UNsEntry);
     entries = (UNsEntry *)vm->alloc_fn(NULL, entry_bytes, vm->alloc_ud);
@@ -74,7 +65,7 @@ unamespace_create(struct UVM *vm)
         vm->alloc_fn(ns, 0, vm->alloc_ud);
         return NULL;
     }
-    ns_zero(entries, entry_bytes);
+    urbi_zero(entries, entry_bytes);
 
     ns->entries = entries;
     ns->count   = 0;
@@ -136,7 +127,7 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
         {
             size_t old_bytes = (size_t)ns->cap * sizeof(UNsEntry);
             size_t extra     = new_bytes - old_bytes;
-            ns_zero((unsigned char *)new_entries + old_bytes, extra);
+            urbi_zero((unsigned char *)new_entries + old_bytes, extra);
         }
         ns->entries = new_entries;
         ns->cap     = (uint32_t)new_cap;

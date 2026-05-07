@@ -5,6 +5,13 @@
 
 #include <limits.h>
 
+/* Local byte-compare.  Replaces memcmp so ulex.c compiles without
+ * <string.h> under -ffreestanding (cross-arm / cross-riscv targets). */
+static int lex_memeq(const char *a, const char *b, int n) {
+    for (int i = 0; i < n; i++) { if (a[i] != b[i]) return 0; }
+    return 1;
+}
+
 static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
@@ -39,11 +46,16 @@ static const char * const ERR_MSG[] = {
     "integer literal exceeds INT64_MAX"
 };
 
-static UToken make_error(const ULexError code, const int line, const int col, const int len) {
+static UToken make_tok_base(const UTokenType type, const int line, const int col) {
     UToken t = {0};
-    t.type = TOK_ERROR;
+    t.type = type;
     t.line = line;
-    t.col = col;
+    t.col  = col;
+    return t;
+}
+
+static UToken make_error(const ULexError code, const int line, const int col, const int len) {
+    UToken t = make_tok_base(TOK_ERROR, line, col);
     t.len = len;
     t.u.err.code = code;
     t.u.err.message = ERR_MSG[code];
@@ -52,10 +64,7 @@ static UToken make_error(const ULexError code, const int line, const int col, co
 
 static UToken make_tok(const ULexer *l, const UTokenType type,
                      const char *start, const int len) {
-    UToken t = {0};
-    t.type = type;
-    t.line = l->line;
-    t.col = (int)(start - l->line_start) + 1;
+    UToken t = make_tok_base(type, l->line, (int)(start - l->line_start) + 1);
     t.len = len;
     return t;
 }
@@ -74,6 +83,55 @@ static int acc_digit(int64_t *acc, const int digit, const int base) {
     if (*acc > (INT64_MAX - digit) / base) return 0;
     *acc = *acc * base + digit;
     return 1;
+}
+
+/* Return value for accumulate_digits: ok==1 means *value is valid;
+   ok==0 means err carries the error token. */
+typedef struct { int ok; int64_t value; UToken err; } UDigitAccResult;
+
+/* Consume underscore-separated digits in the given base starting at lex->cur.
+   Returns success with the accumulated value, or an error token (adjacent
+   underscores, trailing underscore, or overflow).  lex->cur is advanced past
+   all consumed digits and underscores regardless of outcome. */
+static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
+                                         const int start_line,
+                                         const int start_col, const int base) {
+    UDigitAccResult r = {1, 0, {0}};
+    char prev = 0;
+    while (lex->cur < lex->end) {
+        const char c = *lex->cur;
+        if (c == '_') {
+            if (prev == '_') {
+                const int len = (int)(lex->cur - start) + 1;
+                r.ok  = 0;
+                r.err = make_error(LEX_ADJACENT_UNDERSCORES, start_line, start_col, len);
+                return r;
+            }
+            prev = '_';
+            lex->cur++;
+            continue;
+        }
+        const int d = digit_value(c, base);
+        if (d < 0) break;
+        if (!acc_digit(&r.value, d, base)) {
+            while (lex->cur < lex->end &&
+                   (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
+                lex->cur++;
+            }
+            const int len = (int)(lex->cur - start);
+            r.ok  = 0;
+            r.err = make_error(LEX_INT_OVERFLOW, start_line, start_col, len);
+            return r;
+        }
+        prev = c;
+        lex->cur++;
+    }
+    if (prev == '_') {
+        const int len = (int)(lex->cur - start);
+        r.ok  = 0;
+        r.err = make_error(LEX_TRAILING_UNDERSCORE, start_line, start_col, len);
+    }
+    return r;
 }
 
 /* Scan a radix-prefixed integer. lex->cur points at the first char after
@@ -118,47 +176,12 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
                           start_line, start_col, 2);
     }
 
-    int64_t value = 0;
-    char prev = 0;
-    while (lex->cur < lex->end) {
-        const char c = *lex->cur;
-        if (c == '_') {
-            if (prev == '_') {
-                const int len = (int)(lex->cur - start) + 1;
-                return make_error(LEX_ADJACENT_UNDERSCORES,
-                                  start_line, start_col, len);
-            }
-            prev = '_';
-            lex->cur++;
-            continue;
-        }
-        const int d = digit_value(c, base);
-        if (d < 0) break;
-        if (!acc_digit(&value, d, base)) {
-            while (lex->cur < lex->end &&
-                   (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
-                lex->cur++;
-            }
-            const int len = (int)(lex->cur - start);
-            return make_error(LEX_INT_OVERFLOW,
-                              start_line, start_col, len);
-        }
-        prev = c;
-        lex->cur++;
-    }
+    const UDigitAccResult r = accumulate_digits(lex, start, start_line, start_col, base);
+    if (!r.ok) return r.err;
 
-    if (prev == '_') {
-        const int len = (int)(lex->cur - start);
-        return make_error(LEX_TRAILING_UNDERSCORE,
-                          start_line, start_col, len);
-    }
-
-    UToken t = {0};
-    t.type = TOK_INT;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
-    t.u.i = value;
+    t.u.i = r.value;
     return t;
 }
 
@@ -174,6 +197,24 @@ static int is_ident_start(const char c) {
 static int is_ident_cont(const char c) {
     return is_ident_start(c) || (c >= '0' && c <= '9');
 }
+
+typedef struct {
+    const char *suffix;
+    int         sufflen;
+    int64_t     mul;  /* positive: value *= mul; negative: value /= -mul */
+} UDurationSuffix;
+
+/* Longer suffixes first so "ms" / "us" / "ns" match before bare "m" (LEX-008). */
+static const UDurationSuffix kDurationSuffixes[] = {
+    { "ms", 2,          1000LL },
+    { "us", 2,             1LL },
+    { "ns", 2,        -1000LL },   /* division: value /= 1000 */
+    { "s",  1,       1000000LL },
+    { "m",  1,      60000000LL },
+    { "h",  1,    3600000000LL },
+    { "d",  1,   86400000000LL },
+    { NULL, 0,             0LL },
+};
 
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
@@ -210,87 +251,23 @@ static UToken scan_decimal(ULexer *lex) {
         }
     }
 
-    int64_t value = 0;
-    char prev = 0;
-    while (lex->cur < lex->end) {
-        const char c = *lex->cur;
-        if (c == '_') {
-            if (prev == '_') {
-                const int len = (int)(lex->cur - start) + 1;
-                return make_error(LEX_ADJACENT_UNDERSCORES,
-                                  start_line, start_col, len);
-            }
-            prev = '_';
-            lex->cur++;
-            continue;
-        }
-        const int d = digit_value(c, 10);
-        if (d < 0) break;
-        if (!acc_digit(&value, d, 10)) {
-            while (lex->cur < lex->end &&
-                   (digit_value(*lex->cur, 10) >= 0 || *lex->cur == '_')) {
-                lex->cur++;
-            }
-            const int len = (int)(lex->cur - start);
-            return make_error(LEX_INT_OVERFLOW,
-                              start_line, start_col, len);
-        }
-        prev = c;
-        lex->cur++;
-    }
+    const UDigitAccResult dr = accumulate_digits(lex, start, start_line, start_col, 10);
+    if (!dr.ok) return dr.err;
+    int64_t value = dr.value;
 
-    if (prev == '_') {
-        const int len = (int)(lex->cur - start);
-        return make_error(LEX_TRAILING_UNDERSCORE,
-                          start_line, start_col, len);
-    }
-
-    UToken t = {0};
-    t.type = TOK_INT;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(TOK_INT, start_line, start_col);
 
     /* Check for duration suffix and convert to microseconds. */
-    if (lex->cur + 1 < lex->end && lex->cur[0] == 'm' && lex->cur[1] == 's' &&
-        (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "ms" → multiply by 1000 to get microseconds */
-        lex->cur += 2;
-        value *= 1000;
-    }
-    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'u' && lex->cur[1] == 's' &&
-             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "us" → already in microseconds */
-        lex->cur += 2;
-    }
-    else if (lex->cur + 1 < lex->end && lex->cur[0] == 'n' && lex->cur[1] == 's' &&
-             (lex->cur + 2 >= lex->end || !is_ident_cont(lex->cur[2]))) {
-        /* "ns" → divide by 1000 (with truncation) to get microseconds */
-        lex->cur += 2;
-        value /= 1000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 's' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "s" → multiply by 1,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'm' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "m" → multiply by 60,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 60LL * 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'h' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "h" → multiply by 3,600,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 3600LL * 1000000;
-    }
-    else if (lex->cur < lex->end && lex->cur[0] == 'd' &&
-             (lex->cur + 1 >= lex->end || !is_ident_cont(lex->cur[1]))) {
-        /* "d" → multiply by 86,400,000,000 to get microseconds */
-        lex->cur += 1;
-        value *= 86400LL * 1000000;
+    for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
+        if (lex->cur + e->sufflen > lex->end) continue;
+        if (!lex_memeq(lex->cur, e->suffix, e->sufflen)) continue;
+        /* Boundary: next char must not be ident-cont. */
+        if (lex->cur + e->sufflen < lex->end &&
+            is_ident_cont(lex->cur[e->sufflen])) continue;
+        lex->cur += e->sufflen;
+        if (e->mul >= 0) value *= e->mul;
+        else             value /= -e->mul;
+        break;
     }
 
     /* Update token length if a suffix was consumed. */
@@ -356,10 +333,7 @@ static UToken scan_ident(ULexer *lex) {
     const int len = (int)(lex->cur - start);
     const UTokenType kw_type = keyword_lookup(start, len);
 
-    UToken t = {0};
-    t.type = kw_type;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(kw_type, start_line, start_col);
     t.len = len;
     /* Populate u.str for both keywords and identifiers; useful for
      * downstream diagnostics that need to quote the lexeme. */
@@ -377,11 +351,7 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
 }
 
 static UToken make_eof(const ULexer *l) {
-    UToken t = {0};
-    t.type = TOK_EOF;
-    t.line = l->line;
-    t.col = (int)(l->cur - l->line_start) + 1;
-    return t;
+    return make_tok_base(TOK_EOF, l->line, (int)(l->cur - l->line_start) + 1);
 }
 
 typedef struct {
@@ -449,6 +419,15 @@ static UTriviaResult skip_trivia(ULexer *l) {
     return r;
 }
 
+/* Purely single-char punctuation tokens — 0 (TOK_EOF) means "not here". */
+static const UTokenType kPunctTable[256] = {
+    ['+'] = TOK_PLUS,   ['*'] = TOK_STAR,    ['/'] = TOK_SLASH,
+    ['('] = TOK_LPAREN, [')'] = TOK_RPAREN,
+    ['|'] = TOK_PIPE,   [';'] = TOK_SEMI,    [','] = TOK_COMMA,
+    ['&'] = TOK_AMP,    ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
+    [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
+};
+
 UToken ulex_next(ULexer *lex) {
     UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
@@ -460,27 +439,22 @@ UToken ulex_next(ULexer *lex) {
 
     const char *start = lex->cur;
     const char c = *lex->cur;
+
+    /* Fast path: purely single-char punctuation. */
+    {
+        const UTokenType pt = kPunctTable[(unsigned char)c];
+        if (pt != 0) { lex->cur++; return make_tok(lex, pt, start, 1); }
+    }
+
+    /* Multi-char tokens and the default fall-through. */
     switch (c) {
-    case '+': lex->cur++; return make_tok(lex, TOK_PLUS,   start, 1);
     case '-':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
             lex->cur += 2;
             return make_tok(lex, TOK_ARROW, start, 2);
         }
         lex->cur++;
-        return make_tok(lex, TOK_MINUS,  start, 1);
-    case '*': lex->cur++; return make_tok(lex, TOK_STAR,   start, 1);
-    case '/': lex->cur++; return make_tok(lex, TOK_SLASH,  start, 1);
-    case '(': lex->cur++; return make_tok(lex, TOK_LPAREN, start, 1);
-    case ')': lex->cur++; return make_tok(lex, TOK_RPAREN, start, 1);
-    case '|': lex->cur++; return make_tok(lex, TOK_PIPE,   start, 1);
-    case ';': lex->cur++; return make_tok(lex, TOK_SEMI,   start, 1);
-    case ',': lex->cur++; return make_tok(lex, TOK_COMMA,  start, 1);
-    case '&': lex->cur++; return make_tok(lex, TOK_AMP,    start, 1);
-    case '{': lex->cur++; return make_tok(lex, TOK_LBRACE, start, 1);
-    case '}': lex->cur++; return make_tok(lex, TOK_RBRACE, start, 1);
-    case ':': lex->cur++; return make_tok(lex, TOK_COLON,  start, 1);
-    case '.': lex->cur++; return make_tok(lex, TOK_DOT,    start, 1);
+        return make_tok(lex, TOK_MINUS, start, 1);
     case '=':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
@@ -495,9 +469,6 @@ UToken ulex_next(ULexer *lex) {
         }
         lex->cur++;
         return make_tok(lex, TOK_BANG, start, 1);
-    case '?':
-        lex->cur++;
-        return make_tok(lex, TOK_QUESTION, start, 1);
     case '<':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;

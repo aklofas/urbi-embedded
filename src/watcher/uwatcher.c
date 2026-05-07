@@ -16,18 +16,6 @@
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
 
-/* === Internal helpers === */
-
-/* watcher_pool_zero: volatile byte loop — mirrors arena_zero/strand_zero pattern.
- * Never optimised away by the compiler (volatile write barrier). */
-static void
-watcher_pool_zero(void *base, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)base;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
-
 /* uwatcher_pool_alloc: pop one entry from the freelist.
  * Returns NULL if the pool is exhausted.
  * Initialises the common header and clears payload state. */
@@ -126,6 +114,22 @@ pool_free(struct UVM *vm, UWatcher *w)
     vm->watcher_pool_in_use--;
 }
 
+/* drain_watcher_list: pop every watcher from *head (linked via next_active),
+ * decrement watcher_active_count, and return each slot to the freelist via
+ * pool_free.  Used by uwatcher_pool_destroy to drain both the active list
+ * and the pending-onleave list with identical logic. */
+static void
+drain_watcher_list(struct UVM *vm, UWatcher **head)
+{
+    while (*head != NULL) {
+        UWatcher *w = *head;
+        *head = w->next_active;
+        vm->watcher_active_count = vm->watcher_active_count > 0
+                                   ? vm->watcher_active_count - 1u : 0u;
+        pool_free(vm, w);
+    }
+}
+
 /* === Pool lifecycle === */
 
 int
@@ -143,7 +147,7 @@ uwatcher_pool_init(struct UVM *vm)
     if (slab == NULL) return -1;
 
     /* Zero the entire slab (freestanding: no memset). */
-    watcher_pool_zero(slab, slab_bytes);
+    urbi_zero(slab, slab_bytes);
 
     /* Thread freelist: each slot's next_active points to the next slot;
      * the last slot terminates with NULL. */
@@ -182,25 +186,13 @@ uwatcher_pool_destroy(struct UVM *vm)
      * active_watchers_head onto pending_onleave_head via
      * pending_onleave_queue_push.  Both lists must be drained here to release
      * all owned closures. */
-    while (vm->active_watchers_head != NULL) {
-        UWatcher *w = vm->active_watchers_head;
-        vm->active_watchers_head = w->next_active;
-        vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
-        pool_free(vm, w);
-    }
+    drain_watcher_list(vm, &vm->active_watchers_head);
     /* Drain watchers that were moved to the pending-onleave queue by
      * urbi_tag_stop / pending_onleave_queue_push.  These have already been
      * unlinked from active_watchers_head and owning_tag->member_watchers_head,
      * but still hold owned closures (OWNS_COND / OWNS_BODY / OWNS_ONLEAVE
      * flags are unchanged by the push).  pool_free frees those closures. */
-    while (vm->pending_onleave_head != NULL) {
-        UWatcher *w = vm->pending_onleave_head;
-        vm->pending_onleave_head = w->next_active;
-        vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
-        pool_free(vm, w);
-    }
+    drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);

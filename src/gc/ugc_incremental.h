@@ -128,6 +128,15 @@ struct UClosure;
 #  endif
 #endif
 
+/* === urbi_gc_set_color — replace only the color bits of gc_byte (GC-028) ===
+ *
+ * Replaces the two color bits (bits [1:0]) of cell->gc_byte with `color`
+ * while preserving all other flag bits (HAS_FINALIZER, IS_PINNED, etc.).
+ * Use UGC_COLOR_WHITE0/WHITE1/GRAY/BLACK as the color argument. */
+static inline void urbi_gc_set_color(UCell *c, uint8_t color) {
+    c->gc_byte = (uint8_t)((c->gc_byte & (uint8_t)~UGC_COLOR_MASK) | color);
+}
+
 /* === gc_shade_gray — mark a cell gray and push onto the worklist ===
  * T23/T24: defined in ugc_incremental.c */
 void gc_shade_gray(struct UVM *vm, UCell *cell);

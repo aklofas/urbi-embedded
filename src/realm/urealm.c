@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
+#include "runtime/umacros.h"
 #include "tag/utag.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
@@ -25,22 +26,15 @@
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
 
-/* === Zero-fill helper === */
-
-static void
-realm_zero(void *dst, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)dst;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
-
 /* === urbi_realm_create ===
  *
  * Allocates a fresh URealm, assigns a unique ID, creates an empty namespace,
  * links to vm->realms_head, and returns it.
  *
- * Returns NULL on OOM. */
+ * Returns NULL on OOM.
+ *
+ * Cleanup ladder (REALM-009, REALM-021): each goto label undoes exactly the
+ * allocations that succeeded before it, in reverse order. */
 
 URealm *
 urbi_realm_create(struct UVM *vm)
@@ -52,41 +46,29 @@ urbi_realm_create(struct UVM *vm)
 
     r = (URealm *)vm->alloc_fn(NULL, sizeof(URealm), vm->alloc_ud);
     if (r == NULL) return NULL;
-    realm_zero(r, sizeof(URealm));
+    urbi_zero(r, sizeof(URealm));
 
     r->vm    = vm;
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */
     r->flags = 0;
 
-    /* tag: root cleanup boundary for all strands in this realm. */
-    r->tag = utag_create(vm);
-    if (r->tag == NULL) {
-        vm->alloc_fn(r, 0, vm->alloc_ud);
-        return NULL;
-    }
-
     /* reflective: UVAL_NIL at M3; populated at M4+. */
     r->reflective.kind = UVAL_NIL;
     r->reflective.v.i  = 0;
 
+    /* tag: root cleanup boundary for all strands in this realm. */
+    r->tag = utag_create(vm);
+    if (r->tag == NULL) goto fail_tag;
+
     /* Namespace. */
     r->bindings = unamespace_create(vm);
-    if (r->bindings == NULL) {
-        utag_destroy(vm, r->tag);
-        vm->alloc_fn(r, 0, vm->alloc_ud);
-        return NULL;
-    }
+    if (r->bindings == NULL) goto fail_bindings;
 
     /* Global object: fresh empty UObject to hold the realm's named slots.
      * Pre-M5 spec #5 §4.1 step 2.  Allocated as root-atom family
      * (URBI_ATOM_OBJECT) so it inherits nothing by default. */
     r->global_object = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
-    if (r->global_object == NULL) {
-        unamespace_destroy(vm, r->bindings);
-        utag_destroy(vm, r->tag);
-        vm->alloc_fn(r, 0, vm->alloc_ud);
-        return NULL;
-    }
+    if (r->global_object == NULL) goto fail_global_object;
 
     /* user_data: stays NULL (caller may set after create). */
 
@@ -109,6 +91,14 @@ urbi_realm_create(struct UVM *vm)
     }
 
     return r;
+
+fail_global_object:
+    unamespace_destroy(vm, r->bindings);
+fail_bindings:
+    utag_destroy(vm, r->tag);
+fail_tag:
+    vm->alloc_fn(r, 0, vm->alloc_ud);
+    return NULL;
 }
 
 /* === urbi_realm_destroy ===

@@ -2,6 +2,7 @@
 /* UArena allocator implementation. */
 
 #include "value/uarena.h"
+#include "runtime/umacros.h"
 #include <stdint.h>
 
 #if __STDC_HOSTED__
@@ -34,17 +35,6 @@ static unsigned char *chunk_payload(UArenaChunk *c) {
     uintptr_t misalign = base % ARENA_ALIGN;
     if (misalign) base += ARENA_ALIGN - misalign;
     return (unsigned char *)base;
-}
-
-/* --- Local zero-fill.  Replaces memset so the arena compiles without a
-       hosted <string.h>.  volatile prevents GCC/Clang from recognizing the
-       loop and lowering it back to a memset libcall under -Os.  Called with
-       small (typically 16-64 byte) aligned ranges so the byte loop is not a
-       meaningful hot path. --- */
-
-static void arena_zero(void *const dst, const size_t n) {
-    volatile unsigned char *const p = (volatile unsigned char *)dst;
-    for (size_t i = 0; i < n; i++) p[i] = 0;
 }
 
 /* --- stdlib default allocator pair (hosted only). --- */
@@ -160,7 +150,7 @@ void *uarena_alloc(UArena *a, size_t nbytes) {
 
     unsigned char *p = chunk_payload(c) + c->used;
     c->used += need;
-    arena_zero(p, need);
+    urbi_zero(p, need);
     return p;
 }
 

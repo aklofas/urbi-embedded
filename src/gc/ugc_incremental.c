@@ -118,13 +118,6 @@ static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
     vm->sweep_cursor_prev = (UCell *)(void *)node;
 }
 
-/* Zero a region without memset — keeps this TU freestanding. */
-static void gc_zero(void *p, size_t n) {
-    volatile unsigned char *b = (volatile unsigned char *)p;
-    size_t i;
-    for (i = 0u; i < n; i++) b[i] = 0u;
-}
-
 /* === Static helpers for gray work-list and all-cells traversal ===
  *
  * find_sidecar_for_cell: linear scan of the all-cells sidecar list to find
@@ -194,6 +187,43 @@ walk_vm_globals(UVM *vm, UGcRootCallback cb, void *ctx)
     /* No VM-level UValue globals exist at M3. */
 }
 
+/* === drain_gray: shared gray work-list drainer (GC-027) ===
+ *
+ * Pops cells from the gray work-list, walks their payload (if any), and
+ * paints each cell black.  Stops when the gray list empties or when
+ * `consumed` reaches `budget` (pass SIZE_MAX to drain completely).
+ *
+ * Returns bytes of work consumed.  The gray list state in vm is updated
+ * in-place; callers check gc_gray_head(vm) == NULL to detect completion. */
+static size_t
+drain_gray(UVM *vm, size_t budget)
+{
+    size_t consumed = 0u;
+    while (gc_gray_head(vm) != NULL && consumed < budget) {
+        /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
+        UAllCellsNode *node = gc_gray_head(vm);
+        UCell *cell = node->cell;
+
+        /* Pop from gray work-list. */
+        gc_set_gray_head(vm, node->next_gray);
+        node->next_gray = NULL;
+
+        /* Walk payload if a type walker is registered. */
+        const UType *t = vm->type_table[cell->type_tag];
+        if (t != NULL && t->walk_payload != NULL) {
+            /* Payload starts immediately after UCell header.
+             * At M3 no concrete types exist, so this is unreachable in practice. */
+            t->walk_payload(vm, (void *)(cell + 1), mark_root_callback, vm);
+        }
+
+        /* Paint cell black — fully scanned. */
+        urbi_gc_set_color(cell, UGC_COLOR_BLACK);
+
+        consumed += node->size;
+    }
+    return consumed;
+}
+
 /* === gc_mark_roots_step ===
  *
  * MARK_ROOTS phase: enumerate all roots (VM globals + registered providers),
@@ -233,30 +263,7 @@ gc_mark_roots_step(UVM *vm)
 static size_t
 gc_mark_incremental_step(UVM *vm, size_t budget)
 {
-    size_t consumed = 0u;
-
-    while (gc_gray_head(vm) != NULL && consumed < budget) {
-        /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
-        UAllCellsNode *node = gc_gray_head(vm);
-        UCell *cell = node->cell;
-
-        /* Pop from gray work-list. */
-        gc_set_gray_head(vm, node->next_gray);
-        node->next_gray = NULL;
-
-        /* Walk payload if a type walker is registered. */
-        const UType *t = vm->type_table[cell->type_tag];
-        if (t != NULL && t->walk_payload != NULL) {
-            /* Payload starts immediately after UCell header.
-             * At M3 no concrete types exist, so this is unreachable in practice. */
-            t->walk_payload(vm, (void *)(cell + 1), mark_root_callback, vm);
-        }
-
-        /* Paint cell black — fully scanned. */
-        cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_BLACK);
-
-        consumed += node->size;
-    }
+    size_t consumed = drain_gray(vm, budget);
 
     if (gc_gray_head(vm) == NULL) {
         vm->gc_phase = GC_PHASE_ATOMIC_FINISH;
@@ -288,23 +295,7 @@ gc_atomic_finish_step(UVM *vm)
     /* Drain residual gray work-list (fully in-slice — bounded by remaining
      * gray set after MARK_INCREMENTAL, which converges because no mutator
      * runs during ATOMIC_FINISH). */
-    size_t consumed = 0u;
-    while (gc_gray_head(vm) != NULL) {
-        /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
-        UAllCellsNode *node = gc_gray_head(vm);
-        UCell *cell = node->cell;
-
-        gc_set_gray_head(vm, node->next_gray);
-        node->next_gray = NULL;
-
-        const UType *t = vm->type_table[cell->type_tag];
-        if (t != NULL && t->walk_payload != NULL) {
-            t->walk_payload(vm, (void *)(cell + 1), mark_root_callback, vm);
-        }
-
-        cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_BLACK);
-        consumed += node->size;
-    }
+    size_t consumed = drain_gray(vm, (size_t)-1u);
 
     /* Gray work-list should be fully drained before SWEEP. */
     URBI_INTERNAL_ASSERT(gc_gray_head(vm) == NULL);
@@ -404,7 +395,7 @@ gc_sweep_step(UVM *vm, size_t budget)
          * registered it as reachable), it must not be freed.  Re-paint it
          * to current_white so it survives further cycles too. */
         if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0u) {
-            cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | vm->current_white);
+            urbi_gc_set_color(cell, vm->current_white);
             surviving += cur->size;
             consumed  += cur->size;
             prev = cur;
@@ -442,7 +433,7 @@ gc_sweep_step(UVM *vm, size_t budget)
 
         } else {
             /* Live cell (marked black): re-paint to current_white. */
-            cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | vm->current_white);
+            urbi_gc_set_color(cell, vm->current_white);
             surviving += cur->size;
             consumed  += cur->size;
             prev = cur;
@@ -569,7 +560,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     if (UNLIKELY(cell == NULL)) return NULL;
 
     /* Zero-init the cell (no memset — freestanding). */
-    gc_zero(cell, size);
+    urbi_zero(cell, size);
 
     /* Allocate the sidecar node. */
     UAllCellsNode *node = (UAllCellsNode *)vm->alloc_fn(
@@ -627,7 +618,7 @@ gc_shade_gray(UVM *vm, UCell *cell)
     if (color == UGC_COLOR_GRAY || color == UGC_COLOR_BLACK) return;
 
     /* Paint gray. */
-    cell->gc_byte = (uint8_t)((cell->gc_byte & ~UGC_COLOR_MASK) | UGC_COLOR_GRAY);
+    urbi_gc_set_color(cell, UGC_COLOR_GRAY);
 
     /* Find sidecar — O(N) at T24.
      * T27: replace with back-pointer lookup once sidecar disappears. */

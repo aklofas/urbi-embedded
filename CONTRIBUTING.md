@@ -51,6 +51,22 @@ The file is gitignored — regenerate it after changing `CFLAGS`/`CPPFLAGS` or a
 
 See `docs/STYLE.md` for the full style guide — naming, memory model, const-correctness, initialization, error handling, headers, tests, and comment conventions. Mechanical rules are enforced by `.editorconfig`, `.clang-tidy`, and the Makefile's warning flags.
 
+## Per-file LOC-cap exceptions
+
+The default soft cap is 1000 LOC per `.c` source file (enforced by
+`make test-loc-cap`).  Files listed below are exempted with rationale.
+
+- `loc-cap-exception:src/vm/uvm.c` — opcode dispatch loop. The body of
+  `dispatch_loop_until_yield` (computed-goto dispatch + ~47 inline opcode
+  handlers + safepoint / exit-strand / halt-error labels) is intentionally
+  inlined in a single TU for cache locality of the dispatch table and to
+  let the compiler keep the entire instruction-stream state machine in
+  registers across opcodes.  Decomposing into per-opcode helpers would
+  defeat the threading optimization that gives the VM ~10x dispatch-loop
+  throughput on hosted builds and ~3x on Cortex-M7.  This exception is
+  permitted by `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-design.md`
+  §3.3 ("generated dispatch tables, opcode trampolines").
+
 ## License
 
 BSD-3-Clause.

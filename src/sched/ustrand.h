@@ -234,7 +234,11 @@ _Static_assert(sizeof(struct UStrand) == 2880,
    ustrand_destroy frees the cleanup stack using vm->alloc_fn.  The same vm
    pointer used for init must be passed to destroy. */
 
-void ustrand_init(UStrand *s, struct UVM *vm);
+/* CHSTR-010: returns 0 on success, -1 if the cleanup-stack allocation fails.
+ * Existing callers that discard the return value are valid C; urbi_strand_create
+ * checks it.  int is used rather than URBIError to avoid pulling urbi/urbi.h
+ * into ustrand.h's include chain (circular dependency risk). */
+int  ustrand_init(UStrand *s, struct UVM *vm);
 void ustrand_destroy(UStrand *s, struct UVM *vm);
 
 /* === T29: ambient-tag inheritance helpers ===
@@ -260,6 +264,35 @@ size_t urbi_strand_capture_ambient_chain(struct UStrand *parent,
 void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
                                        struct UTag   **chain,
                                        size_t          chain_count);
+
+/* === CHSTR-044: register-stack lifecycle triplet ===
+ *
+ * Centralises the alloc / zero / free lifecycle for the per-strand
+ * UValue register stack so each lifecycle stage has a single owner.
+ *
+ * urbi_strand_register_stack_alloc: allocate a UVM_STACK_CAP-slot stack
+ *   using vm->alloc_fn; wire s->stack and s->R.
+ *   Returns 0 on success, -1 on OOM (s->stack remains NULL).
+ *
+ * urbi_strand_register_stack_zero: zero the allocated stack contents.
+ *   Must be called after alloc and before first dispatch.
+ *
+ * urbi_strand_register_stack_free: free and null the stack via vm->alloc_fn.
+ *   No-op when s->stack is already NULL (idempotent). */
+int  urbi_strand_register_stack_alloc(struct UStrand *s, struct UVM *vm);
+void urbi_strand_register_stack_zero(struct UStrand *s);
+void urbi_strand_register_stack_free(struct UStrand *s, struct UVM *vm);
+
+/* === CHSTR-022: urbi_strand_arm_init ===
+ *
+ * Convenience composite: calls urbi_strand_register_stack_alloc then
+ * urbi_strand_register_stack_zero.  Common foundation shared by
+ * urbi_strand_arm_from_closure (closure-based arming) and uvm_run
+ * (module-level direct arming).  Each caller wires pc/pc_base/cur_consts/
+ * out_slot/state afterward.
+ *
+ * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
+int urbi_strand_arm_init(struct UStrand *s);
 
 /* === spec #1 §5.5: urbi_strand_arm_from_closure ===
  *

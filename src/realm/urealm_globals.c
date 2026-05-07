@@ -14,6 +14,7 @@
 #include <stdbool.h>
 
 #include "realm/urealm_globals.h"
+#include "runtime/umacros.h"  /* urbi_strlen */
 #include "vm/uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto, urbi_native_protos_init */
 #include "realm/urealm.h"     /* URealm, global_object */
 #include "value/uintern.h"          /* ustr_intern */
@@ -22,16 +23,6 @@
 #include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_*_F family tags */
-
-/* === Static string-length helper (avoids <string.h>) === */
-
-static size_t
-rg_strlen(const char *s)
-{
-    size_t n = 0;
-    while (s[n]) n++;
-    return n;
-}
 
 /* === Zero-fill helper for UValue padding bytes === */
 
@@ -104,25 +95,11 @@ resolve_atom_string(UVM *vm)
     return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING_F));
 }
 
-/* Bool: no atom_bool at M5 baseline → return nil placeholder. */
+/* Bool/Nil/Void protos: no singletons at M5 baseline → nil placeholder.
+ * All three use the same resolver (REALM-018); M6 stdlib will replace each
+ * slot with the real atom prototype when it lands. */
 static UValue
-resolve_atom_bool(UVM *vm)
-{
-    (void)vm;
-    return rg_make_nil();
-}
-
-/* Nil proto: no atom_nil at M5 baseline → return nil placeholder. */
-static UValue
-resolve_atom_nil(UVM *vm)
-{
-    (void)vm;
-    return rg_make_nil();
-}
-
-/* Void proto: no atom_void at M5 baseline → return nil placeholder. */
-static UValue
-resolve_atom_void(UVM *vm)
+resolve_nil_placeholder(UVM *vm)
 {
     (void)vm;
     return rg_make_nil();
@@ -205,9 +182,9 @@ const URegistryEntry urbi_builtin_registry[] = {
     /* Bool/Nil/Void: no singleton at M5 baseline; resolver returns nil.
      * These entries still occupy registry slots so names are reserved in
      * the global namespace and M6 stdlib can overwrite them. */
-    { "Bool",    resolve_atom_bool,    true,  false },
-    { "Nil",     resolve_atom_nil,     true,  false },
-    { "Void",    resolve_atom_void,    true,  false },
+    { "Bool",    resolve_nil_placeholder, true,  false },
+    { "Nil",     resolve_nil_placeholder, true,  false },
+    { "Void",    resolve_nil_placeholder, true,  false },
 
     { "List",    resolve_atom_list,    true,  false },
     { "Dict",    resolve_atom_dict,    true,  false },
@@ -262,7 +239,12 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     for (i = 0; i < urbi_builtin_registry_count; i++) {
         const URegistryEntry *e = &urbi_builtin_registry[i];
 
-        /* Resolve value; override for the self-loop case. */
+        /* Resolve value; override for the self-loop case (REALM-028).
+         * When is_self_ref is set (only the "Realm" entry), the resolver
+         * return value is intentionally discarded — the slot must point at
+         * realm->global_object for the spec §3.3 self-loop.  The resolver
+         * is still called to keep the loop uniform; its nil return is a
+         * harmless default that is never used by the slot install below. */
         UValue v = e->resolver(vm);
         if (e->is_self_ref) {
             /* "Realm" entry: point at this realm's global_object. */
@@ -273,7 +255,7 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
         }
 
         /* Intern the name to get a canonical USymbol pointer. */
-        USymbol *sym = (USymbol *)ustr_intern(vm, e->name, rg_strlen(e->name));
+        USymbol *sym = (USymbol *)ustr_intern(vm, e->name, urbi_strlen(e->name));
         if (sym == NULL) {
             return URBI_ERR_OOM;
         }
@@ -312,7 +294,8 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
  *
  * Three thin wrappers over ustr_intern + urbi_object_set_local_slot /
  * urbi_object_install_property / urbi_object_resolve_slot.  The
- * implementations reuse rg_strlen for the freestanding (no <string.h>) discipline. */
+ * implementations use urbi_strlen (from runtime/umacros.h) for the
+ * freestanding (no <string.h>) discipline. */
 
 int
 urbi_realm_set_global(UVM *vm, URealm *realm,

@@ -18,17 +18,9 @@
 #include <stddef.h>
 
 #include "runtime/ucleanup.h"
+#include "runtime/umacros.h"
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
-
-/* Zero-fill n bytes at dst without memset.
-   volatile prevents the compiler from recognizing the loop and lowering it
-   to a memset libcall under -Os (same pattern as arena_zero in uarena.c). */
-static void cleanup_zero(void *dst, size_t n) {
-    volatile unsigned char *p = (volatile unsigned char *)dst;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
 
 UCleanupEntry *
 strand_cleanup_push(struct UStrand *s) {
@@ -69,7 +61,7 @@ strand_cleanup_stack_init(struct UStrand *s, struct UVM *vm, uint16_t cap) {
         s->cleanup_top   = NULL;
         return -1;
     }
-    cleanup_zero(base, nbytes);
+    urbi_zero(base, nbytes);
     s->cleanup_base  = base;
     s->cleanup_cap   = cap;
     s->cleanup_depth = 0;

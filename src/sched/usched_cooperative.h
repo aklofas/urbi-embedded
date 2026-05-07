@@ -66,6 +66,11 @@ void sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
  * T16 urbi_step driver calls this before each dispatch_loop_until_yield. */
 void sched_dequeue_ready_head(UVM *vm);
 
+/* CHSTR-031: decrement host_call_pending_count if s had a cross-strand stop
+ * deposited.  Called by ustrand_destroy so the bookkeeping lives in the
+ * scheduler rather than the strand teardown code. */
+void sched_strand_account_destroy(UVM *vm, UStrand *s);
+
 #ifdef __cplusplus
 }
 #endif

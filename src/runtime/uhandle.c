@@ -4,19 +4,11 @@
  * through vm->alloc_fn.  Zero-init uses a byte loop. */
 
 #include "runtime/uhandle.h"
+#include "runtime/umacros.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
 
 #define INITIAL_CAP  16u
-
-/* Byte-zero a region — replaces memset for freestanding compliance. */
-static void
-handle_zero_bytes(void *dst, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)dst;
-    size_t i;
-    for (i = 0u; i < n; i++) p[i] = 0u;
-}
 
 /* Grow the handle table.  Returns 0 on success, -1 on OOM. */
 static int
@@ -30,7 +22,7 @@ handle_table_grow(UVM *vm)
                                            vm->alloc_ud);
     if (grown == NULL) return -1;
     /* Zero-init the newly added slots. */
-    handle_zero_bytes(&grown[old_cap], (new_cap - old_cap) * sizeof(UValue));
+    urbi_zero(&grown[old_cap], (new_cap - old_cap) * sizeof(UValue));
     vm->handle_table     = grown;
     vm->handle_table_cap = new_cap;
     return 0;

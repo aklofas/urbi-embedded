@@ -216,6 +216,25 @@ sched_quiescent(UVM *vm)
         && vm->host_call_pending_count == 0;
 }
 
+/* === CHSTR-031: sched_strand_account_destroy ===
+ *
+ * Decrement host_call_pending_count if s had a cross-strand stop deposited.
+ * Called by ustrand_destroy so that scheduler-level bookkeeping for cross-
+ * strand stop liveness stays in the scheduler, not in strand teardown code. */
+
+void
+sched_strand_account_destroy(UVM *vm, UStrand *s)
+{
+    /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
+       decrement the host_call_pending_count so sched_quiescent converges
+       once all tagged strands have been destroyed. */
+    if (s->cross_strand_stop_pending != 0) {
+        if (vm->host_call_pending_count > 0)
+            vm->host_call_pending_count--;
+        s->cross_strand_stop_pending = 0u;
+    }
+}
+
 /* === T16 step-driver helper === */
 
 void
