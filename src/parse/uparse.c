@@ -152,6 +152,19 @@ UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
     return n;
 }
 
+/* make_error: build a UParseError record from an error code + line/col.
+ *
+ * msg parameter convention:
+ *   - NULL → look up message text from kErrorMessages[code].  Used by
+ *            error sites that report a bare code with no contextual prose.
+ *   - non-NULL → use the caller-provided message verbatim.  Used by
+ *            error sites that need to interpolate context not encoded in
+ *            the bare error code (e.g. "expected ')' after ',' at column 17").
+ *
+ * Call-site convention is inconsistent across parse TUs: some pass NULL,
+ * others pass kErrorMessages[code] explicitly even when the value is
+ * the same.  Both patterns are supported and produce identical output;
+ * standardization across the parse subsystem is a Wave 6 cleanup target. */
 UAstNode *make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col) {
     UAstNode *n = make_node(p, AST_ERROR, line, col);
