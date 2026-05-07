@@ -6,7 +6,7 @@
 #include "vm/uvm_internal.h"
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "runtime/uclosure.h"        /* UClosure, UUpvalCell */
-#include "sched/ustrand.h"           /* UStrand, ustrand_destroy, USTRAND_IS_WAITING */
+#include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
 #include "object/umodule_instance.h" /* urbi_module_instance_create */
@@ -57,16 +57,16 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.is_transient_strand = 1u;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
-     * first allocation failure → UVM_OOM with diagnostic before cleanup init). */
-    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
-    strand.stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
-    if (strand.stack == NULL) {
+     * first allocation failure → UVM_OOM with diagnostic before cleanup init).
+     * CHSTR-022: delegates alloc+zero to urbi_strand_arm_init; the manual
+     * error path is preserved here because uvm_run needs to set last_error
+     * before returning (urbi_strand_arm_init returns -1 without diagnostics). */
+    if (urbi_strand_arm_init(&strand) != 0) {
         vm->last_error = UVM_OOM;
-        vm_format_oom(vm, stack_bytes);
+        vm_format_oom(vm, UVM_STACK_CAP * sizeof(UValue));
         ustrand_destroy(&strand, vm);
         return UVM_OOM;
     }
-    urbi_zero(strand.stack, stack_bytes);
 
     /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */

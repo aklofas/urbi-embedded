@@ -9,7 +9,7 @@
  * blocks until the module OP_RETs, returns URBI_OK on success.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
- * String helpers are implemented as byte loops below (same pattern as uemit.c). */
+ * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
 
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
@@ -22,21 +22,13 @@
 #include "parse/uparse.h"
 #include "value/uvalue.h"
 #include "object/umodule_instance.h"
+#include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include <stddef.h>    /* size_t */
 
-/* Freestanding-safe byte-copy: copy at most (cap-1) bytes from src into dst,
- * always NUL-terminates dst when cap > 0.  Mirrors the pattern in uemit.c. */
-static void
-chunk_strncpy(char *dst, const char *src, size_t cap)
-{
-    if (cap == 0) return;
-    size_t i = 0;
-    while (i < cap - 1u && src[i] != '\0') {
-        dst[i] = src[i];
-        i++;
-    }
-    dst[i] = '\0';
-}
+#if __STDC_HOSTED__
+#  include <stdio.h>  /* snprintf: used in urbi_repl_eval to format "src:line:col: msg" */
+#endif
+
 
 /* ---------------------------------------------------------------------------
  * urbi_run_chunk
@@ -120,7 +112,11 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    /* CHSTR-003: use explicit zero-init via urbi_zero rather than = {0} to
+     * document that the module must be fully zero-initialised before uemit_init
+     * populates every field.  urbi_zero is the canonical pattern for this. */
+    UModule module;
+    urbi_zero(&module, sizeof(module));
 
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
@@ -129,9 +125,14 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     uparse_init(&p, &lex, &arena);
 
     bool has_error = false;
+    const char *parse_errmsg = NULL;  /* static message from AST_ERROR node */
+    int  parse_err_line = 0, parse_err_col = 0;
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
+            parse_errmsg    = node->u.err.message;
+            parse_err_line  = node->line;
+            parse_err_col   = node->col;
             has_error = true;
             break;
         }
@@ -152,7 +153,17 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     if (has_error) {
         if (out_buf && out_buf_size > 0) {
-            chunk_strncpy(out_buf, "compile error", out_buf_size);
+#if __STDC_HOSTED__
+            if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
+                /* Full format "stdin:line:col: message" matches compile_source. */
+                snprintf(out_buf, out_buf_size, "<stdin>:%d:%d: %s",
+                         parse_err_line, parse_err_col, parse_errmsg);
+            } else
+#endif
+            {
+                const char *msg = parse_errmsg ? parse_errmsg : "compile error";
+                urbi_strncpy_truncating(out_buf, out_buf_size, msg);
+            }
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);
@@ -163,10 +174,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UValue result = {0};
     int run_rc = urbi_run_chunk(vm, realm, &module, &result);
 
+    /* API-009: drain any body strands spawned by watcher eval during this run.
+     * uvm_run (inside urbi_run_chunk) only drives its own transient strand;
+     * spawned body strands accumulate in vm->ready_head and need urbi_step
+     * to execute.  Cap at URBI_REPL_DRAIN_BUDGET iterations to prevent
+     * infinite spin with persistent watchers. */
+#ifndef URBI_REPL_DRAIN_BUDGET
+#  define URBI_REPL_DRAIN_BUDGET 1000
+#endif
+    {
+        int drain;
+        for (drain = 0; drain < URBI_REPL_DRAIN_BUDGET && vm->strand_runnable_count > 0; drain++)
+            urbi_step(vm, 1000, NULL);
+    }
+
     if (run_rc != URBI_OK) {
         /* Copy vm->last_errmsg into out_buf; it was populated by uvm_run. */
         if (out_buf && out_buf_size > 0) {
-            chunk_strncpy(out_buf, vm->last_errmsg, out_buf_size);
+            urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);

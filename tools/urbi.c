@@ -336,37 +336,20 @@ static int run_interactive(UVM *vm) {
             final_len   = ll + 2;
         }
 
-        UArena arena;
-        UModule module;
-        char err[256] = {0};
-        if (compile_source(buf, final_len, "<stdin>", vm, &module, &arena, err, sizeof err)) {
-            UValue out;
-            UVMError vrc = uvm_run(vm, &module, &out);
-            /* Drain any body strands spawned by watcher eval during this
-             * run.  uvm_run only drives its own transient strand; spawned
-             * body strands accumulate in vm->ready_head and need urbi_step
-             * to execute.  Stop when no runnable strands remain (cap at
-             * 1000 iterations to prevent infinite spin with persistent
-             * watchers). */
-            {
-                int drain;
-                for (drain = 0; drain < 1000 && vm->strand_runnable_count > 0; drain++)
-                    urbi_step(vm, 1000, NULL);
-            }
-            if (vrc == UVM_OK) {
-                /* See run_expression for the 64-byte rationale; M2
-                   strings may silently truncate here too. */
-                char fmt[64];
-                uvalue_format(&out, fmt, sizeof fmt);
-                printf("[%08u] %s\n", ms_since_start(), fmt);
-            } else {
-                const char *msg = vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)";
-                printf("[%08u] !!! %s\n", ms_since_start(), msg);
-            }
-            umodule_destroy(&module);
-            uarena_destroy(&arena);
+        /* Use urbi_repl_eval: compiles, runs, drains spawned strands, and
+         * formats the result.  The drain workaround previously inlined here
+         * is now inside urbi_repl_eval (API-009).
+         * 512 bytes: large enough for all parse-error messages (longest is
+         * ~200 chars for the 'closure' retirement message + line/col prefix). */
+        char result_buf[512] = {0};
+        int eval_rc = urbi_repl_eval(vm, NULL, buf, final_len,
+                                     result_buf, sizeof result_buf);
+        if (eval_rc == URBI_OK) {
+            printf("[%08u] %s\n", ms_since_start(), result_buf);
         } else {
-            printf("[%08u] !!! %s\n", ms_since_start(), err);
+            const char *msg = result_buf[0] ? result_buf
+                            : (vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
+            printf("[%08u] !!! %s\n", ms_since_start(), msg);
         }
         fflush(stdout);
 

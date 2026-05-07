@@ -261,6 +261,16 @@ void   urbi_strand_attach_ambient_tags(struct UStrand *new_s,
                                        struct UTag   **chain,
                                        size_t          chain_count);
 
+/* === CHSTR-022: urbi_strand_arm_init ===
+ *
+ * Allocate and zero the register stack for `s` and wire s->stack and s->R.
+ * Common foundation shared by urbi_strand_arm_from_closure (closure-based
+ * arming) and uvm_run (module-level direct arming).  Each caller is
+ * responsible for wiring pc/pc_base/cur_consts/out_slot/state afterward.
+ *
+ * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
+int urbi_strand_arm_init(struct UStrand *s);
+
 /* === spec #1 §5.5: urbi_strand_arm_from_closure ===
  *
  * Allocate a register stack for `s` and wire up the execution-state fields

@@ -52,4 +52,19 @@ static inline size_t urbi_strlen(const char *s) {
     return n;
 }
 
+/* urbi_strncpy_truncating — freestanding bounded string copy.
+ * Copies at most (cap - 1) bytes from src into dst and always NUL-terminates
+ * dst when cap > 0.  No-op when cap == 0.  Consolidates per-file strncpy
+ * helpers (chunk_strncpy in uchunk.c) into a single shared helper.
+ * CHSTR-020. */
+static inline void urbi_strncpy_truncating(char *dst, size_t cap, const char *src) {
+    size_t n = 0;
+    if (cap == 0) return;
+    while (n + 1u < cap && src[n] != '\0') {
+        dst[n] = src[n];
+        n++;
+    }
+    dst[n] = '\0';
+}
+
 #endif /* UMACROS_H */

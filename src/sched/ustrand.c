@@ -331,15 +331,15 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
     }
 }
 
-/* === spec #1 §5.5: urbi_strand_arm_from_closure ===
+/* === CHSTR-022: urbi_strand_arm_init ===
  *
- * Lifted from the inlined stack-alloc + pc-arming block in fork_spawn_child
- * (uop_fork.c) so the watcher body-spawn path (T24) can reuse it.
+ * Common foundation for strand register-stack setup: allocate and zero the
+ * stack, wire s->stack and s->R.  Shared by urbi_strand_arm_from_closure
+ * (closure-based arming) and uvm_run (module-level direct arming).
  *
- * Callers that need s->module set (e.g. fork_spawn_child) must do so
- * explicitly after this call returns 0. */
+ * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
 int
-urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
+urbi_strand_arm_init(UStrand *s)
 {
     struct UVM *vm = s->vm;
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
@@ -348,11 +348,27 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
     stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
     if (!stack) return -1;
 
-    /* Zero the register stack (freestanding-safe volatile byte loop). */
     urbi_zero(stack, stack_bytes);
 
-    s->stack      = stack;
-    s->R          = stack;
+    s->stack = stack;
+    s->R     = stack;
+    return 0;
+}
+
+/* === spec #1 §5.5: urbi_strand_arm_from_closure ===
+ *
+ * Lifted from the inlined stack-alloc + pc-arming block in fork_spawn_child
+ * (uop_fork.c) so the watcher body-spawn path (T24) can reuse it.
+ * Delegates stack alloc+zero to urbi_strand_arm_init (CHSTR-022); wires
+ * pc/pc_base/cur_consts and clears exec-state fields from entry.
+ *
+ * Callers that need s->module set (e.g. fork_spawn_child) must do so
+ * explicitly after this call returns 0. */
+int
+urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
+{
+    if (urbi_strand_arm_init(s) != 0) return -1;
+
     s->pc         = entry->proto->instructions;
     s->pc_base    = entry->proto->instructions;
     s->cur_consts = entry->proto->constants

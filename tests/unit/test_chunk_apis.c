@@ -157,12 +157,15 @@ UTEST(repl_eval_compile_error_path)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    char buf[64];
+    char buf[128];
     buf[0] = '\0';
     int rc = urbi_repl_eval(&vm, NULL, "1+", 2, buf, sizeof(buf));
 
     UASSERT_EQ(rc, URBI_ERR_COMPILE);
-    UASSERT_EQ(0, strcmp(buf, "compile error"));
+    /* urbi_repl_eval now emits the parser's diagnostic in "<stdin>:line:col: msg"
+     * format (hosted builds) rather than the generic "compile error" string.
+     * "1+" leaves a parse hole — expected expression at col 3 or similar. */
+    UASSERT(buf[0] != '\0');  /* some diagnostic was written */
 
     uvm_destroy(&vm);
 }
