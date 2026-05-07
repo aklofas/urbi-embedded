@@ -11,6 +11,7 @@
 #endif
 
 #include "vm/uvm.h"
+#include "runtime/umacros.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"
@@ -270,9 +271,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
                 NULL, ring_bytes, vm->alloc_ud);
         if (ring != NULL) {
             /* Zero-fill via volatile byte loop (freestanding: no memset). */
-            volatile unsigned char *p = (volatile unsigned char *)ring;
-            size_t i;
-            for (i = 0; i < ring_bytes; i++) p[i] = 0;
+            urbi_zero(ring, ring_bytes);
             vm->deferred_slot_changes     = ring;
             vm->deferred_slot_changes_cap = (uint16_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE;
         }
@@ -670,15 +669,6 @@ static void vm_format_oom(UVM *vm, size_t nbytes) {
     diag_write_cstr(&w, " bytes requested)");
 }
 
-/* --- Local zero-fill. Volatile byte pointer prevents GCC/Clang from
-       recognizing the loop and lowering it to a memset libcall under
-       -Os, which would break freestanding builds.
-       Matches uarena.c's arena_zero pattern precisely. --- */
-static void vm_zero(void *const dst, const size_t n) {
-    volatile unsigned char *const p = (volatile unsigned char *)dst;
-    for (size_t i = 0; i < n; i++) p[i] = 0;
-}
-
 /* --- Closure + upvalue allocation helpers. --- */
 
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
@@ -704,7 +694,7 @@ static UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
     size_t nbytes = sizeof(UClosure) + extra;
     UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
     if (cl == NULL) return NULL;
-    vm_zero(cl, nbytes);
+    urbi_zero(cl, nbytes);
     /* Cell header (M4): well-formed for barrier safety even though the
      * closure is not on vm->all_cells_head at this commit. */
     cl->cell.type_tag = UTYPE_CLOSURE;
@@ -729,7 +719,7 @@ static UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
     /* Create a new open cell. */
     cell = (UUpvalCell *)vm->alloc_fn(NULL, sizeof(UUpvalCell), vm->alloc_ud);
     if (cell == NULL) return NULL;
-    vm_zero(cell, sizeof(UUpvalCell));
+    urbi_zero(cell, sizeof(UUpvalCell));
     cell->on_heap    = false;
     cell->u.stack_ptr = slot;
     cell->next       = s->open_upvals;
@@ -2138,12 +2128,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
        M2 contract that the first allocation failure returns OOM for the
        register stack, not the cleanup stack. */
     UStrand strand;
-    {
-        volatile unsigned char *p = (volatile unsigned char *)&strand;
-        size_t n = sizeof(strand);
-        size_t i;
-        for (i = 0; i < n; i++) p[i] = 0;
-    }
+    urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
     strand.is_transient_strand = 1u;  /* T33: discriminator for OP_FORK_* guards */
@@ -2158,7 +2143,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         ustrand_destroy(&strand, vm);
         return UVM_OOM;
     }
-    vm_zero(strand.stack, stack_bytes);
+    urbi_zero(strand.stack, stack_bytes);
 
     /* T10: initialise the cleanup stack so OP_TRY_BEGIN can push entries.
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */

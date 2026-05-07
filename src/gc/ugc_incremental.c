@@ -118,13 +118,6 @@ static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
     vm->sweep_cursor_prev = (UCell *)(void *)node;
 }
 
-/* Zero a region without memset — keeps this TU freestanding. */
-static void gc_zero(void *p, size_t n) {
-    volatile unsigned char *b = (volatile unsigned char *)p;
-    size_t i;
-    for (i = 0u; i < n; i++) b[i] = 0u;
-}
-
 /* === Static helpers for gray work-list and all-cells traversal ===
  *
  * find_sidecar_for_cell: linear scan of the all-cells sidecar list to find
@@ -569,7 +562,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     if (UNLIKELY(cell == NULL)) return NULL;
 
     /* Zero-init the cell (no memset — freestanding). */
-    gc_zero(cell, size);
+    urbi_zero(cell, size);
 
     /* Allocate the sidecar node. */
     UAllCellsNode *node = (UAllCellsNode *)vm->alloc_fn(

@@ -14,19 +14,9 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 
-/* Zero a UStrand without memset — keeps the translation unit freestanding.
-   Uses a volatile byte loop (same pattern as arena_zero in uarena.c) so the
-   compiler cannot lower it back to a memset libcall under -Os. */
-static void strand_zero(UStrand *s) {
-    volatile unsigned char *p = (volatile unsigned char *)s;
-    size_t n = sizeof(*s);
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
-
 void
 ustrand_init(UStrand *s, struct UVM *vm) {
-    strand_zero(s);
+    urbi_zero(s, sizeof(*s));
     s->vm    = vm;
     s->state = USTRAND_STATE_DORMANT;
     /* Pre-allocate the cleanup stack using the VM's pluggable allocator.
@@ -354,15 +344,12 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
     struct UVM *vm = s->vm;
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
     UValue *stack;
-    volatile unsigned char *p;
-    size_t i;
 
     stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
     if (!stack) return -1;
 
     /* Zero the register stack (freestanding-safe volatile byte loop). */
-    p = (volatile unsigned char *)stack;
-    for (i = 0; i < stack_bytes; i++) p[i] = 0;
+    urbi_zero(stack, stack_bytes);
 
     s->stack      = stack;
     s->R          = stack;

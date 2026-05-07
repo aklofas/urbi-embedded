@@ -2,6 +2,7 @@
 /* Bytecode emitter. */
 
 #include "emit/uemit.h"
+#include "runtime/umacros.h"
 #include "value/uintern.h"
 #include "value/uvarint.h"
 #include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */
@@ -13,14 +14,6 @@
 #if __STDC_HOSTED__
 #  include <stdio.h>              /* vsnprintf — emit_diag_warn message formatting */
 #endif
-
-/* Local zero-fill.  Replaces memset so uemit.c compiles without a hosted
-   <string.h>.  volatile prevents GCC/Clang from recognizing the loop and
-   lowering it back to a memset libcall under -Os.  Same pattern as uarena.c. */
-static void emit_zero(void *const dst, const size_t n) {
-    volatile unsigned char *const p = (volatile unsigned char *)dst;
-    for (size_t i = 0; i < n; i++) p[i] = 0u;
-}
 
 /* Local byte-copy.  Replaces memcpy so the serializer compiles without
    a hosted <string.h>.  Same pattern as module_memcpy in umodule.c. */
@@ -521,7 +514,7 @@ static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
     stmts_arr[0] = expr;
 
     UAstNode body_node;
-    emit_zero(&body_node, sizeof(body_node));
+    urbi_zero(&body_node, sizeof(body_node));
     body_node.kind             = AST_BLOCK;
     body_node.line             = expr->line;
     body_node.col              = expr->col;
@@ -529,7 +522,7 @@ static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
     body_node.u.block.count   = 1;
 
     UAstNode fn_node;
-    emit_zero(&fn_node, sizeof(fn_node));
+    urbi_zero(&fn_node, sizeof(fn_node));
     fn_node.kind              = AST_FUNCTION;
     fn_node.line              = expr->line;
     fn_node.col               = expr->col;
@@ -898,7 +891,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
                 int gidx = fs->n_global_vars++;
                 fs->global_var_names[gidx] = canonical;
                 UFuncSig *gsig = &fs->global_var_sigs[gidx];
-                emit_zero(gsig, sizeof(*gsig));
+                urbi_zero(gsig, sizeof(*gsig));
                 if (n->u.var_decl.init->kind == AST_FUNCTION) {
                     UAstNode *fn = n->u.var_decl.init;
                     gsig->resolved  = true;
@@ -1061,7 +1054,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
             for (int gi = 0; gi < fs->n_global_vars; gi++) {
                 if (fs->global_var_names[gi] == canonical) {
                     UFuncSig *gsig = &fs->global_var_sigs[gi];
-                    emit_zero(gsig, sizeof(*gsig));
+                    urbi_zero(gsig, sizeof(*gsig));
                     if (n->u.assign.value->kind == AST_FUNCTION) {
                         UAstNode *fn = n->u.assign.value;
                         gsig->resolved = true;
@@ -2313,7 +2306,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Body closure: 1 param (payload). */
         UAstNode payload_param;
-        emit_zero(&payload_param, sizeof payload_param);
+        urbi_zero(&payload_param, sizeof payload_param);
         payload_param.kind              = AST_PARAM;
         payload_param.line              = body_ast ? body_ast->line : n->line;
         payload_param.col               = 1;
@@ -2396,7 +2389,7 @@ static uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 
         /* Body closure: 1 param (payload value on event fire). */
         UAstNode payload_param;
-        emit_zero(&payload_param, sizeof payload_param);
+        urbi_zero(&payload_param, sizeof payload_param);
         payload_param.kind               = AST_PARAM;
         payload_param.line               = body_ast ? body_ast->line : n->line;
         payload_param.col                = 1;
@@ -2515,7 +2508,7 @@ void emit_diag_free_all(UEmitter *e) {
 
 void uemit_init(UEmitter *e, UModule *module, UArena *arena,
                 struct UVM *vm, const char *source_name) {
-    emit_zero(e, sizeof(*e));
+    urbi_zero(e, sizeof(*e));
     e->module = module;
     e->arena = arena;
     e->vm = vm;
@@ -3092,7 +3085,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
         return NULL;
     }
     /* zero-init via byte-loop — UFuncState is POD */
-    emit_zero(fs, sizeof(UFuncState));
+    urbi_zero(fs, sizeof(UFuncState));
     fs->parent = parent;
     fs->target_proto = NULL;            /* T14 wires nested-proto bufs */
 

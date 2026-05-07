@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
+#include "runtime/umacros.h"
 #include "tag/utag.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
@@ -24,16 +25,6 @@
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
-
-/* === Zero-fill helper === */
-
-static void
-realm_zero(void *dst, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)dst;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
 
 /* === urbi_realm_create ===
  *
@@ -52,7 +43,7 @@ urbi_realm_create(struct UVM *vm)
 
     r = (URealm *)vm->alloc_fn(NULL, sizeof(URealm), vm->alloc_ud);
     if (r == NULL) return NULL;
-    realm_zero(r, sizeof(URealm));
+    urbi_zero(r, sizeof(URealm));
 
     r->vm    = vm;
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */

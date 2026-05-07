@@ -2,17 +2,10 @@
 /* Bytecode UModule deserializer + verifier + destroy.  Freestanding. */
 
 #include "module/umodule.h"
+#include "runtime/umacros.h"
 #include "value/uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
-
-/* Local zero-fill.  Replaces memset so umodule.c compiles without a hosted
-   <string.h>.  volatile prevents GCC/Clang from recognizing the loop and
-   lowering it back to a memset libcall under -Os.  Same pattern as uarena.c. */
-static void module_zero(void *const dst, const size_t n) {
-    volatile unsigned char *const p = (volatile unsigned char *)dst;
-    for (size_t i = 0; i < n; i++) p[i] = 0;
-}
 
 /* Local byte-compare.  Replaces memcmp so umodule.c compiles without
    <string.h> under -ffreestanding. */
@@ -131,7 +124,7 @@ void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
     if (proto->ic_names     != NULL) alloc(proto->ic_names,     0, alloc_ud);
     /* Zero the proto struct but do not free proto itself (owned by nested[]). */
-    module_zero(proto, sizeof(*proto));
+    urbi_zero(proto, sizeof(*proto));
 }
 
 UProto *umodule_alloc_nested_proto(UModule *module) {
@@ -151,7 +144,7 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
     /* Allocate the UProto struct itself. */
     UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
     if (proto == NULL) return NULL;
-    module_zero(proto, sizeof(*proto));
+    urbi_zero(proto, sizeof(*proto));
     proto->alloc_fn = module->alloc_fn;
     proto->alloc_ud = module->alloc_ud;
 
@@ -493,7 +486,7 @@ void umodule_destroy(UModule *module) {
     }
     /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
        alloc_ud are all reset; caller must re-init before re-use). */
-    module_zero(module, sizeof(*module));
+    urbi_zero(module, sizeof(*module));
 }
 
 const char *umodule_load_error_name(UModuleLoadError code) {

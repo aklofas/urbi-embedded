@@ -16,18 +16,6 @@
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
 
-/* === Internal helpers === */
-
-/* watcher_pool_zero: volatile byte loop — mirrors arena_zero/strand_zero pattern.
- * Never optimised away by the compiler (volatile write barrier). */
-static void
-watcher_pool_zero(void *base, size_t n)
-{
-    volatile unsigned char *p = (volatile unsigned char *)base;
-    size_t i;
-    for (i = 0; i < n; i++) p[i] = 0;
-}
-
 /* uwatcher_pool_alloc: pop one entry from the freelist.
  * Returns NULL if the pool is exhausted.
  * Initialises the common header and clears payload state. */
@@ -143,7 +131,7 @@ uwatcher_pool_init(struct UVM *vm)
     if (slab == NULL) return -1;
 
     /* Zero the entire slab (freestanding: no memset). */
-    watcher_pool_zero(slab, slab_bytes);
+    urbi_zero(slab, slab_bytes);
 
     /* Thread freelist: each slot's next_active points to the next slot;
      * the last slot terminates with NULL. */
