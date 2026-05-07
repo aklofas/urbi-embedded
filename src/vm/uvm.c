@@ -159,8 +159,6 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_PUSH_FRAME_GUARD] = &&label_OP_PUSH_FRAME_GUARD,
         [OP_RESUME]           = &&label_OP_RESUME,
         [OP_LOAD_CATCH_VALUE] = &&label_OP_LOAD_CATCH_VALUE,
-        /* M4 reserve stub — not yet implemented. */
-        [OP_INVOKE]                = &&label_m5_stub,
         /* M5 reactive runtime — T41 wires AT/WHENEVER install opcodes. */
         [OP_AT_INSTALL]            = &&label_OP_AT_INSTALL,
         [OP_AT_SYNC_INSTALL]       = &&label_OP_AT_SYNC_INSTALL,
@@ -1252,21 +1250,6 @@ dispatch:
             s->R[A].kind = (uint8_t)UVAL_OBJECT;
             s->R[A].v.p  = r->global_object;
             NEXT();
-        }
-
-        /* M5 reactive-runtime stubs.  Each individual subsystem task replaces
-         * its entry in the dispatch table (computed-goto) or this switch arm.
-         * OP_INVOKE is the M4 reserve that also lands here until v1.x. */
-#if UVM_USE_COMPUTED_GOTO
-        label_m5_stub:
-#else
-        case OP_INVOKE:
-#endif
-        {
-            URBI_DISPATCH_ASSERT(0 && "M5 opcode stub not yet wired");
-            vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "M5 opcode dispatched before implementation");
-            HALT();
         }
 
 #if !UVM_USE_COMPUTED_GOTO

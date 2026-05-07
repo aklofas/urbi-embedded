@@ -363,7 +363,6 @@ static const char *opname(const UOpcode op) {
     case OP_PUSH_FRAME_GUARD:     return "PUSH_FRAME_GUARD";
     case OP_RESUME:               return "RESUME";
     case OP_LOAD_CATCH_VALUE:     return "LOAD_CATCH_VALUE";
-    case OP_INVOKE:               return "INVOKE";
     /* M5 reactive runtime stubs */
     case OP_AT_INSTALL:           return "AT_INSTALL";
     case OP_AT_SYNC_INSTALL:      return "AT_SYNC_INSTALL";
@@ -383,8 +382,8 @@ static const char *opname(const UOpcode op) {
  * NULL entries fall through to the generic R%u, R%u, R%u fallback in
  * uemit_disassemble.  Opcodes not listed in the original switch (MOVE,
  * ADD, SUB, MUL, DIV, THROW, TAG_STOP, TRY_BEGIN, TRY_END, PUSH_TAG,
- * POP_TAG, PUSH_FRAME_GUARD, RESUME, LOAD_CATCH_VALUE, INVOKE) keep the
- * generic three-register format from the original default arm. */
+ * POP_TAG, PUSH_FRAME_GUARD, RESUME, LOAD_CATCH_VALUE) keep the generic
+ * three-register format from the original default arm. */
 static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 0  OP_LOADK              */ fmt_loadk,
     /* 1  OP_MOVE               */ NULL,
@@ -424,7 +423,7 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 35 OP_PUSH_FRAME_GUARD   */ NULL,
     /* 36 OP_RESUME             */ NULL,
     /* 37 OP_LOAD_CATCH_VALUE   */ NULL,
-    /* 38 OP_INVOKE             */ NULL,
+    /* 38 (retired OP_INVOKE)   */ NULL,
     /* 39 OP_AT_INSTALL         */ fmt_at_install,
     /* 40 OP_AT_SYNC_INSTALL    */ fmt_at_sync_install,
     /* 41 OP_WHENEVER_INSTALL   */ fmt_whenever_install,

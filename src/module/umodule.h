@@ -191,8 +191,10 @@ typedef enum {
      * so that the catch variable `e` receives the thrown value. */
     OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
 
-    /* M4 reserves; v1.x backlog implements (collapsed GETSLOT+CALL). */
-    OP_INVOKE           = 38,
+    /* Slot 38 was OP_INVOKE (M4 reserve for collapsed GETSLOT+CALL).
+     * Retired at v0.5.6 T16: never emitted by M4 / M5 / pre-Wave-4.  The
+     * gap is collapsed at T17, which renumbers M5 reactive opcodes 39-46
+     * down to 38-45 and shrinks OP_MAX from 47 to 46. */
 
     /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
     OP_AT_INSTALL              = 39,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
