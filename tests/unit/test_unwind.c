@@ -18,7 +18,7 @@
 
 #include "utest.h"
 #include "runtime/uunwind.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
 #include "umodule.h"

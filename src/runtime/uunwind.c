@@ -24,7 +24,7 @@
  * proves insufficient at URBI_CLEANUP_MAX=16. */
 
 #include "runtime/uunwind.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "runtime/uframe.h"       /* UCallFrame */
 #include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */

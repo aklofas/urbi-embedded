@@ -23,7 +23,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 
 #include <stddef.h>
 #include <stdlib.h>

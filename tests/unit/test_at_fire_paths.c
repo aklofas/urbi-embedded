@@ -36,7 +36,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"        /* USTRAND_WAIT_WATCHER, USTRAND_STATE_READY */
+#include "sched/ustrand.h"        /* USTRAND_WAIT_WATCHER, USTRAND_STATE_READY */
 #include "watcher/uwatcher.h"
 #include "sched/usched_cooperative.h"  /* sched_strand_block */
 #include "urbi/urbi.h"

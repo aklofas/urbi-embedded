@@ -18,7 +18,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"

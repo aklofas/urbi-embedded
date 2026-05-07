@@ -15,7 +15,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"            /* USTRAND_WAIT_WATCHER, USTRAND_IS_WAITING */
+#include "sched/ustrand.h"            /* USTRAND_WAIT_WATCHER, USTRAND_IS_WAITING */
 #include "watcher/uwatcher.h"   /* UWATCHER_WAITUNTIL, urbi_watcher_unregister_internal */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */

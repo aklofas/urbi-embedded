@@ -18,7 +18,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "urbi/urbi.h"
 #include "umodule.h"
 #include "value/uarena.h"

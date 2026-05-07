@@ -43,7 +43,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "uevent.h"

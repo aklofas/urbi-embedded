@@ -9,7 +9,7 @@
 
 #include "utag.h"
 #include "runtime/ucleanup.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "gc/ugc.h"       /* UTYPE_TAG */
 #include "urbi/gc.h"      /* urbi_gc_alloc */

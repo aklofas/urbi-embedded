@@ -51,7 +51,7 @@ struct UVM;
 struct UStrand;
 struct UTag;
 
-#include "ustrand.h"  /* UExecStatus, UValue — needed by return types below */
+#include "sched/ustrand.h"  /* UExecStatus, UValue — needed by return types below */
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.

@@ -7,7 +7,7 @@
  *   - sizeof(UStrand) >= 264 (M3 256 B baseline + 8 B new pointer field). */
 
 #include "utest.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 
 static void ustrand_spec1_field(void)
 {

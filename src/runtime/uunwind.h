@@ -10,7 +10,7 @@
 #ifndef UUNWIND_H
 #define UUNWIND_H
 
-#include "ustrand.h"  /* UStrand */
+#include "sched/ustrand.h"  /* UStrand */
 
 #ifdef __cplusplus
 extern "C" {

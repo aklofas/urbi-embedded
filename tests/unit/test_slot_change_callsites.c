@@ -24,7 +24,7 @@
 #include <string.h>
 
 #include "vm/uvm.h"
-#include "ustrand.h"                   /* ustrand_init/destroy */
+#include "sched/ustrand.h"                   /* ustrand_init/destroy */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "object/uobject.h"            /* urbi_object_alloc, urbi_object_set_local_slot */
 #include "object/uslothandle.h"        /* urbi_object_get_slot, urbi_slothandle_write_value */

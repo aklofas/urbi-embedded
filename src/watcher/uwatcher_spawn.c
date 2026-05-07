@@ -27,7 +27,7 @@
  *   Static in production builds; tests reach it via extern declaration. */
 
 #include "watcher/uwatcher.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"              /* UClosure full definition — proto_inst field access */
 #include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */

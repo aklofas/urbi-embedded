@@ -9,7 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 
 #ifdef __cplusplus

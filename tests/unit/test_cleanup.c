@@ -3,7 +3,7 @@
 
 #include "utest.h"
 #include "runtime/ucleanup.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)

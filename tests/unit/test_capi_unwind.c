@@ -15,7 +15,7 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
 #include "umodule.h"

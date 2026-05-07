@@ -30,7 +30,7 @@
 #include "uevent.h"
 #include "object/uobject.h"
 #include "value/uintern.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/uunwind.h"
 #include "umodule.h"
 #include "urbi/urbi.h"

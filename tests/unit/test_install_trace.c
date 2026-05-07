@@ -19,7 +19,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
 #include "value/uintern.h"                        /* ustr_intern */
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,

@@ -4,7 +4,7 @@
    T29 adds urbi_strand_attach_ambient_tags + urbi_strand_capture_ambient_chain.
    Cleanup-stack wiring: T3 (this file). */
 
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uclosure.h"
 #include "utag.h"

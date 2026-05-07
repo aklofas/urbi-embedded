@@ -14,7 +14,7 @@
 #include "vm/uvm.h"
 #include "gc/ugc.h"
 #ifdef URBI_DEBUG
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT */
 #endif

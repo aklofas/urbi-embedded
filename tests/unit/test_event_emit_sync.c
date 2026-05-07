@@ -22,7 +22,7 @@
 #include "uevent_emit.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "umodule.h"

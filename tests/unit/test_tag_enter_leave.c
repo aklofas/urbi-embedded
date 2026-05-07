@@ -34,7 +34,7 @@
 #include "tag_native.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "realm/urealm.h"

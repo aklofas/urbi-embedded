@@ -25,7 +25,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "watcher/uwatcher.h"          /* UWATCHER_AT, uwatcher_pool_alloc */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
 #include "gc/ugc.h"                    /* UCell */

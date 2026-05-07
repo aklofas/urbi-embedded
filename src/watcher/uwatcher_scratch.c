@@ -27,7 +27,7 @@
 #include "watcher/uwatcher.h"
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
@@ -74,7 +74,7 @@ run_on_scratch_core(struct UVM       *vm,
     }
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_uvm_run_transient = 1u;  /* guards reject OP_FORK_DETACH/JOIN */
+    strand.is_transient_strand = 1u;  /* guards reject OP_FORK_DETACH/JOIN */
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
      * cur_consts / frame_count from closure->proto.  Returns -1 on OOM. */

@@ -3,7 +3,7 @@
    Strand C API lifecycle: create/start/spawn/destroy (T20). */
 
 #include "utest.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "vm/uvm.h"

@@ -7,7 +7,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "sched/usched_cooperative.h"

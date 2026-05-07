@@ -131,13 +131,15 @@ struct UStrand {
                                                            a strand that already processed its TAG_STOP
                                                            do not re-increment (counter tracks lifetime
                                                            cross-strand-affected strands). */
-    uint8_t                 is_uvm_run_transient;       /* T33 (pre-M4 GC strand-walker §5.1):
-                                                           set by uvm_run's stack-local transient
-                                                           strand so OP_FORK_DETACH / OP_FORK_JOIN
-                                                           can still reject forks here even though
-                                                           realm now points at vm->global_realm.
-                                                           Always 0 for urbi_strand_create-managed
-                                                           strands (heap-allocated). */
+    uint8_t                 is_transient_strand;       /* Set on stack-local transient strands
+                                                           (synthesized for in-process eval such as
+                                                           uvm_run and urbi_run_closure_on_scratch)
+                                                           so OP_FORK_DETACH / OP_FORK_JOIN reject
+                                                           forks even though realm now points at
+                                                           vm->global_realm.  Always 0 for
+                                                           urbi_strand_create-managed strands
+                                                           (heap-allocated).  See pre-M4 GC
+                                                           strand-walker §5.1. */
     uint8_t                 state_pad[1];               /* was [3], then [2] — shrunk by 1 again */
     uint16_t                instruction_budget_remaining;
     uint16_t                budget_pad;

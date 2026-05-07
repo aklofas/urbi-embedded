@@ -13,7 +13,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "utag.h"
 #include "watcher/uwatcher.h"

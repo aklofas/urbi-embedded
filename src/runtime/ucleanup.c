@@ -18,7 +18,7 @@
 #include <stddef.h>
 
 #include "runtime/ucleanup.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "vm/uvm.h"
 
 /* Zero-fill n bytes at dst without memset.

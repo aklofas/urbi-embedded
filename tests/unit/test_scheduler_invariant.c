@@ -15,7 +15,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_start / urbi_strand_destroy */

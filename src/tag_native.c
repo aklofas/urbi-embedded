@@ -38,7 +38,7 @@
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */
-#include "ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
+#include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
 
 /* === Lazy-alloc getter helpers === */
 

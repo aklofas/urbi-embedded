@@ -13,7 +13,7 @@
 #include "watcher/uwatcher_install.h"
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "vm/uvm.h"                /* UVM, URBI_LOG_WARN */
-#include "ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
+#include "sched/ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
 #include "runtime/uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
 #include "value/uvalue.h"             /* uvalue_truthy (T40) */
 #include "runtime/ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */

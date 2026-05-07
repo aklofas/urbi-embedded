@@ -13,7 +13,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "value/uintern.h"
 #include "value/uvalue.h"
 #include "sched/usched_cooperative.h"
@@ -1332,8 +1332,8 @@ dispatch:
              * spawned children.  T33 routes the transient onto
              * vm->global_realm->strands_head for GC-walker visibility, so
              * realm == NULL no longer discriminates; the dedicated flag
-             * is_uvm_run_transient does. */
-            if (s->is_uvm_run_transient) {
+             * is_transient_strand does. */
+            if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
@@ -1347,7 +1347,7 @@ dispatch:
             /* `&` separator LHS: spawn child closure, store handle in R[B].
              * A = closure_reg, B = child_handle_reg.
              * Same uvm_run-transient guard as OP_FORK_DETACH; see note above. */
-            if (s->is_uvm_run_transient) {
+            if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)");
                 HALT();
@@ -2169,7 +2169,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     }
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_uvm_run_transient = 1u;  /* T33: discriminator for OP_FORK_* guards */
+    strand.is_transient_strand = 1u;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init). */

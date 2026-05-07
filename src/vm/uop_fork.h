@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ustrand.h"   /* UStrand */
+#include "sched/ustrand.h"   /* UStrand */
 #include "vm/uvm.h"       /* UVM, dispatch_loop_until_yield */
 
 #ifdef __cplusplus

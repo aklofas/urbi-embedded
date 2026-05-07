@@ -17,7 +17,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "runtime/ucleanup.h"          /* strand_cleanup_push/pop, UCLEANUP_TAG_SCOPE, UCLEANUP_TRY_FRAME */
 #include "utag.h"              /* UTag, utag_create */
 #include "realm/urealm.h"      /* urbi_realm_create/destroy */
