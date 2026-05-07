@@ -85,7 +85,7 @@ pool_free(struct UVM *vm, UWatcher *w)
         if (w->condition->proto != NULL) {
             /* Proto was detached from module->nested[] by strand_closure_unlink;
              * free its sub-buffers then the struct itself. */
-            umodule_proto_destroy_buffers(w->condition->proto,
+            umodule_destroy_proto_buffers(w->condition->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
         }
@@ -94,7 +94,7 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
         if (w->body->proto != NULL) {
-            umodule_proto_destroy_buffers(w->body->proto,
+            umodule_destroy_proto_buffers(w->body->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
         }
@@ -103,7 +103,7 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
         if (w->onleave->proto != NULL) {
-            umodule_proto_destroy_buffers(w->onleave->proto,
+            umodule_destroy_proto_buffers(w->onleave->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
         }

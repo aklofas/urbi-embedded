@@ -243,7 +243,7 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
 }
 
 UTEST(uproto_destroy_frees_ic_names) {
-    /* M4 v1.3: umodule_proto_destroy_buffers must free the ic_names array.
+    /* M4 v1.3: umodule_destroy_proto_buffers must free the ic_names array.
        Allocate via stdlib so destroy (alloc_fn == NULL → stdlib_alloc) frees it. */
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
@@ -254,7 +254,7 @@ UTEST(uproto_destroy_frees_ic_names) {
     UASSERT(p->ic_names != NULL);
     p->ic_names[0] = NULL;
     p->ic_names[1] = NULL;
-    /* umodule_destroy frees nested protos via umodule_proto_destroy_buffers. */
+    /* umodule_destroy frees nested protos via umodule_destroy_proto_buffers. */
     umodule_destroy(&m);
     /* If we reach here without leaking under ASan, ic_names was freed. */
 }

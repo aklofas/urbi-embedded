@@ -1,5 +1,26 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Bytecode UModule — the front-end / back-end interface.  Freestanding. */
+/* Bytecode UModule — the front-end / back-end interface.  Freestanding.
+ *
+ * --- Inline-cache (IC) mirror layout ---
+ * The pair (ic_count + ic_names) appears in three places, each owned by a
+ * different layer.  All three are kept in sync because populating the per-VM
+ * runtime IC tables (UProtoInstance) needs the names from the proto, and the
+ * proto needs to be encoded into the bytecode wire format that the loader
+ * decodes back into UProto / UModule:
+ *
+ *   1. UProto.ic_count      / UProto.ic_names      — per nested function
+ *      (this header).  Populated by uemit at compile time, persisted in
+ *      bytecode v1.3+, freed by umodule_destroy_proto_buffers.
+ *   2. UModule.ic_count     / UModule.ic_names     — for the root chunk
+ *      (this header).  Mirrors UProto's layout because the root chunk is
+ *      not modeled as a UProto on disk; freed in umodule_destroy.
+ *   3. UProtoInstance.ic_count + UIC entries[]     — runtime IC table per
+ *      (vm, proto) pair (object/umoduleinstance.h).  Sized from #1 / #2 at
+ *      module-instance creation; UIC.name is copied from ic_names.
+ *
+ * Mirror discipline: any change to UProto/UModule's IC field naming or
+ * layout must be applied to all three sites and to the wire-format
+ * encoder/decoder in uemit.c / umodule.c. */
 
 #ifndef UMODULE_H
 #define UMODULE_H
@@ -16,7 +37,13 @@ extern "C" {
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
    v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
    v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
-   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds). */
+   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds).
+
+   Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
+   a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
+   forward/backward compatibility.  Older modules silently loading would
+   produce unknown opcodes, misread GC state, or wrongly-sized IC tables.
+   Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
 #define URBI_BYTECODE_VERSION_MINOR  4U
@@ -64,7 +91,9 @@ extern "C" {
  *   UVAL_HOST_FN — M5: native host function slot; UHostFn cast to void*.
  *                  Used by uevent_native_register / utag_native_register.
  *                  NOT heap-bearing — function pointers are not GC cells.
- *   11-15 reserved; loader rejects > UVAL_STR in constant pools at v1.0. */
+ *   Kinds 0-10 in use at v0.5.5; kinds 11-15 reserved for future extension.
+ *   In v0.5.5 bytecode constant pools, the loader rejects any kind >
+ *   UVAL_STR (kinds 5-10 are runtime-only and never appear on disk). */
 #include "urbi/types.h"
 
 /* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
@@ -245,7 +274,7 @@ typedef struct UProto {
     uint16_t       ic_count;
     /* Parallel array, length == ic_count; set at emit time and consumed at
      * module-instance load to populate UIC.name for each IC site.  Owned by
-     * the proto's allocator; freed in umodule_proto_destroy_buffers. */
+     * the proto's allocator; freed in umodule_destroy_proto_buffers. */
     USymbol      **ic_names;
 
     /* Allocator hook inherited from the owning module. */
@@ -261,9 +290,17 @@ typedef struct UProto {
  * include "uclosure.h" explicitly. */
 typedef struct UClosure UClosure;
 
-/* --- UModule struct --- */
+/* --- UModule struct ---
+ *
+ * Field-ownership convention: fields above the SERIALIZED/RUNTIME divider are
+ * persisted to bytecode on emit and re-populated by umodule_deserialize.
+ * Fields below the divider are runtime/transient — set by the emitter or
+ * loader caller, never written to disk.  Emit/deserialize do not touch
+ * runtime fields; they are the caller's responsibility to initialize. */
 
 typedef struct UModule {
+    /* === Serialized fields (bytecode wire format v1.4) ============= */
+
     uint32_t  *instructions;
     size_t     instr_count;
     size_t     instr_cap;
@@ -300,13 +337,18 @@ typedef struct UModule {
     uint16_t       ic_count;
     USymbol      **ic_names;     /* parallel array; len == ic_count; allocator-owned */
 
-    /* M2 addition — per pre-m2-multi-vm-audit-design.md.
-     * Set by uemit_init at compile time; zero on freshly-deserialized
-     * modules. Used only for optional debug-assert paths in v1.0;
-     * cross-VM module use is UB but not dynamically checked. */
+    /* === Runtime / transient fields (NOT serialized) =============== */
+
+    /* origin_vm [runtime-only]: per pre-m2-multi-vm-audit-design.md.
+     * Set by uemit_init at compile time; remains NULL on freshly-deserialized
+     * modules.  Used only for optional debug-assert paths; cross-VM module
+     * use is UB but not dynamically checked.  Never persisted. */
     struct UVM *origin_vm;
 
-    /* allocator hook; NULL -> use stdlib realloc (hosted builds only) */
+    /* alloc_fn / alloc_ud [runtime-only]: pluggable allocator hook for owned
+     * buffers.  Caller sets these BEFORE umodule_deserialize / uemit_init.
+     * NULL alloc_fn → stdlib realloc (hosted builds only).  Never persisted;
+     * loader/emitter use them to grow + free struct-internal buffers. */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;
 } UModule;
@@ -329,12 +371,20 @@ typedef enum {
 
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
- * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module. */
+ * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module.
+ *
+ * Watcher-detach interaction: condition/body/onleave protos for installed
+ * at/whenever/waituntil watchers are created here, then later detached from
+ * module->nested[] by strand_closure_unlink (src/watcher/uwatcher_install.c).
+ * After detach, the corresponding nested[k] slot becomes NULL and ownership
+ * transfers to the watcher (freed via pool_free on watcher recycle).
+ * umodule_destroy is robust to NULL slots in nested[].  See also MOD-015. */
 UProto *umodule_alloc_nested_proto(UModule *module);
 
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
- * (it is owned by the module's nested[] array). */
-void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
+ * (it is owned by the module's nested[] array, or by a watcher pool slot
+ * after strand_closure_unlink has detached it). */
+void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud);
 
 /* --- API --- */

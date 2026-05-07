@@ -103,7 +103,7 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* --- Proto helpers --- */
 
-void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
+void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
     if (proto == NULL || alloc == NULL) return;
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
@@ -306,10 +306,13 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
             d->off += 4;
 #endif
         } else {
-            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload at M1.
-               M1 should not encounter these in produced bytecode, but the
-               loader must not crash if hand-crafted. */
-            set_errmsg(d->errmsg, d->errcap, "constant kind %u not yet decodable at M1",
+            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload encoder/decoder
+               implemented in v0.5.5.  The emitter never produces these in
+               constant pools (BOOL is OP_LOADBOOL immediate, NIL is
+               OP_LOADNIL, STR is M6 stdlib).  Hand-crafted bytecode that
+               smuggles them in is rejected via ULOAD_CORRUPT_TAG so the
+               loader does not crash on the missing payload read. */
+            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in v0.5.5 constant pools",
                        (unsigned)kind);
             return ULOAD_CORRUPT_TAG;
         }
@@ -502,7 +505,15 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
             }
         }
     }
-    /* Last instruction must be OP_RET. */
+    /* Last instruction must be OP_RET.
+     *
+     * v1.x relaxation note: this strict trailing-OP_RET requirement assumes
+     * the emitter always closes a chunk with an explicit return.  If a
+     * future bytecode revision allows fall-through-to-end semantics (e.g. an
+     * implicit RET, or a tail-call that elides RET), this check will need
+     * to widen to "ends in OP_RET, OP_TAILCALL, or any unconditional
+     * terminator".  At v0.5.5 every chunk uemit produces ends in OP_RET, so
+     * the strict form catches truncated/corrupt bytecode early. */
     if (d->module->instr_count > 0U) {
         uint32_t last = d->module->instructions[d->module->instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {
@@ -517,6 +528,12 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
 
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap) {
+    /* errmsg/errcap contract: the (NULL, 0) pair suppresses diagnostics; any
+     * other shape — including (non-NULL, 0) — is silently accepted as
+     * "diagnostics off".  set_errmsg internally no-ops on errcap == 0 so
+     * passing a non-NULL buffer with zero capacity is harmless rather than
+     * a contract violation.  Callers that require a populated errmsg must
+     * supply errcap >= 1. */
     if (module == NULL || buf == NULL) {
         set_errmsg(errmsg, errcap, "null module or buffer");
         return ULOAD_TRUNCATED;
@@ -543,17 +560,40 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     return ULOAD_OK;
 }
 
+/* Destroy ordering (MOD-005):
+ *   1. Resolve allocator BEFORE any frees — alloc_fn/alloc_ud are still
+ *      live in the struct at this point and must remain readable for the
+ *      entire free walk below.
+ *   2. Walk nested[] and free each non-NULL UProto's sub-buffers + the
+ *      UProto struct itself.  NULL slots in nested[] are by design (see
+ *      MOD-015 below); skip them silently.
+ *   3. Free the nested[] array, root-chunk buffers, source_name, and
+ *      ic_names — all read directly from `module->...` because nothing
+ *      has been zeroed yet.
+ *   4. ONLY THEN zero the struct.  After step 4 the struct is fully wiped:
+ *      source_name, alloc_fn, alloc_ud are all reset; the caller must
+ *      re-init before reuse.
+ *
+ * MOD-015 — nested[k] may be NULL by design:
+ *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
+ *   from module->nested[] when its UClosure is captured by a watcher
+ *   (transferring ownership from the module to the watcher pool).  After
+ *   detach, nested[k] reads NULL.  This is the expected steady-state for any
+ *   chunk that installed reactive watchers — umodule_destroy must skip NULL
+ *   slots without freeing them, since the watcher's pool_free now owns
+ *   that proto and will free it on watcher recycle. */
 void umodule_destroy(UModule *module) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
-        /* Free nested proto buffers and the proto structs themselves. */
+        /* Free nested proto buffers and the proto structs themselves.
+         * NULL entries (watcher-detached, see MOD-015) are skipped. */
         if (module->nested != NULL) {
             size_t i;
             for (i = 0; i < module->nested_count; i++) {
                 UProto *p = module->nested[i];
                 if (p != NULL) {
-                    umodule_proto_destroy_buffers(p, alloc, module->alloc_ud);
+                    umodule_destroy_proto_buffers(p, alloc, module->alloc_ud);
                     alloc(p, 0, module->alloc_ud);
                 }
             }
@@ -566,8 +606,8 @@ void umodule_destroy(UModule *module) {
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
         if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
     }
-    /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
-       alloc_ud are all reset; caller must re-init before re-use). */
+    /* Zero the entire struct AFTER all frees complete.  No field is read
+     * after this point. */
     urbi_zero(module, sizeof(*module));
 }
 
