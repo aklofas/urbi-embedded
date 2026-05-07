@@ -40,6 +40,25 @@
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
 
+/* === throw_oom_for_tag_event ===
+ *
+ * Shared OOM-throw path for tag_enter_getter / tag_leave_getter.
+ * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OUT_OF_MEMORY.
+ * Returns a NIL UValue for use as the getter's return value on failure. */
+static UValue
+throw_oom_for_tag_event(struct UVM *vm)
+{
+    if (vm->cur_strand != NULL) {
+        UValue err;
+        err.kind = (uint8_t)UVAL_INT;
+        err.v.i  = (int64_t)URBI_ERR_OUT_OF_MEMORY;
+        urbi_throw(vm->cur_strand, err);
+    }
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+    return nil;
+}
+
 /* === Lazy-alloc getter helpers === */
 
 UValue
@@ -47,18 +66,7 @@ tag_enter_getter(struct UVM *vm, struct UTag *tag)
 {
     if (tag->enter_event == NULL) {
         UEvent *e = urbi_event_create(vm);
-        if (e == NULL) {
-            /* OOM: vm->cur_strand may be NULL at C-test time; guard. */
-            if (vm->cur_strand != NULL) {
-                UValue err;
-                err.kind = (uint8_t)UVAL_INT;
-                err.v.i  = (int64_t)URBI_ERR_OUT_OF_MEMORY;
-                urbi_throw(vm->cur_strand, err);
-            }
-            UValue nil = {0};
-            nil.kind = (uint8_t)UVAL_NIL;
-            return nil;
-        }
+        if (e == NULL) return throw_oom_for_tag_event(vm);
         tag->enter_event = e;
     }
     return uvalue_from_event(tag->enter_event);
@@ -69,17 +77,7 @@ tag_leave_getter(struct UVM *vm, struct UTag *tag)
 {
     if (tag->leave_event == NULL) {
         UEvent *e = urbi_event_create(vm);
-        if (e == NULL) {
-            if (vm->cur_strand != NULL) {
-                UValue err;
-                err.kind = (uint8_t)UVAL_INT;
-                err.v.i  = (int64_t)URBI_ERR_OUT_OF_MEMORY;
-                urbi_throw(vm->cur_strand, err);
-            }
-            UValue nil = {0};
-            nil.kind = (uint8_t)UVAL_NIL;
-            return nil;
-        }
+        if (e == NULL) return throw_oom_for_tag_event(vm);
         tag->leave_event = e;
     }
     return uvalue_from_event(tag->leave_event);
