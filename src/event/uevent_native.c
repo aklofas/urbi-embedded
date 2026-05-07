@@ -27,17 +27,9 @@
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_local_slot */
 #include "urbi/urbi.h"         /* UErrCode, URBI_ERR_* */
 #include "urbi/gc.h"           /* gc_shade_gray (write barrier in set_local_slot) */
+#include "runtime/umacros.h"   /* urbi_zero */
 
 #include <stddef.h>  /* size_t */
-
-/* Freestanding-safe strlen substitute (avoids <string.h> dependency). */
-static size_t
-enative_strlen(const char *s)
-{
-    size_t n = 0;
-    while (s[n] != '\0') n++;
-    return n;
-}
 
 /* === uvalue_from_event / uvalue_as_event ===
  *
@@ -50,9 +42,8 @@ UValue
 uvalue_from_event(UEvent *e)
 {
     UValue v;
+    urbi_zero(&v, sizeof(v));
     v.kind  = (uint8_t)UVAL_EVENT;
-    v._pad[0] = 0; v._pad[1] = 0; v._pad[2] = 0;
-    v._pad[3] = 0; v._pad[4] = 0; v._pad[5] = 0; v._pad[6] = 0;
     v.v.p   = (void *)e;
     return v;
 }
@@ -69,6 +60,23 @@ uvalue_is_event(UValue v)
     return v.kind == (uint8_t)UVAL_EVENT;
 }
 
+/* === native_event_optional_payload ===
+ *
+ * Extract the optional payload from a native method argument list.
+ * Used by urbi_native_event_emit and urbi_native_event_sync_emit.
+ * Returns argv[1] when present, or a NIL UValue when argc < 2. */
+static UValue
+native_event_optional_payload(int argc, UValue *argv)
+{
+    if (argc > 1) {
+        return argv[1];
+    }
+    UValue nil;
+    urbi_zero(&nil, sizeof(nil));
+    nil.kind = (uint8_t)UVAL_NIL;
+    return nil;
+}
+
 /* === urbi_register_fn ===
  *
  * Install a UVAL_HOST_FN slot named `name` on `proto`.
@@ -81,17 +89,20 @@ int
 urbi_register_fn(struct UVM *vm, struct UObject *proto,
                  const char *name, UHostFn fn)
 {
+    size_t n;
     if (vm == NULL || proto == NULL || fn == NULL || name == NULL) {
         return -1;
     }
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, enative_strlen(name));
+    /* Freestanding-safe strlen: avoid <string.h> dependency. */
+    n = 0;
+    while (name[n] != '\0') n++;
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, n);
     if (sym == NULL) {
         return -1;
     }
     UValue v;
+    urbi_zero(&v, sizeof(v));
     v.kind  = (uint8_t)UVAL_HOST_FN;
-    v._pad[0] = 0; v._pad[1] = 0; v._pad[2] = 0;
-    v._pad[3] = 0; v._pad[4] = 0; v._pad[5] = 0; v._pad[6] = 0;
     v.v.p   = (void *)(uintptr_t)fn;  /* store function pointer as void* */
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
@@ -125,14 +136,7 @@ urbi_native_event_emit(struct UStrand *s, int argc, UValue *argv)
 {
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
-    UValue payload;
-    if (argc > 1) {
-        payload = argv[1];
-    } else {
-        payload.kind = (uint8_t)UVAL_NIL;
-        payload.v.i  = 0;
-    }
-    c_event_emit_async(vm, e, payload);
+    c_event_emit_async(vm, e, native_event_optional_payload(argc, argv));
     UValue nil = {0};
     nil.kind = (uint8_t)UVAL_NIL;
     return nil;
@@ -146,14 +150,7 @@ urbi_native_event_sync_emit(struct UStrand *s, int argc, UValue *argv)
 {
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
-    UValue payload;
-    if (argc > 1) {
-        payload = argv[1];
-    } else {
-        payload.kind = (uint8_t)UVAL_NIL;
-        payload.v.i  = 0;
-    }
-    c_event_emit_sync(vm, e, payload);
+    c_event_emit_sync(vm, e, native_event_optional_payload(argc, argv));
     UValue nil = {0};
     nil.kind = (uint8_t)UVAL_NIL;
     return nil;
@@ -176,8 +173,9 @@ urbi_native_event_waituntil(struct UStrand *s, int argc, UValue *argv)
  *
  * Allocate vm->event_proto as a UObject in the URBI_ATOM_EVENT family,
  * then install the four native slots.  Called from uvm_init after the
- * type-table setup and atom-proto walk are in place. */
-void
+ * type-table setup and atom-proto walk are in place.
+ * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails. */
+UVMError
 event_native_register(struct UVM *vm)
 {
     /* Allocate the event proto object.  Use URBI_ATOM_EVENT as the family
@@ -186,7 +184,7 @@ event_native_register(struct UVM *vm)
      * (atom_event set_protos_single happens separately at M6 stdlib). */
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_EVENT);
     if (proto == NULL) {
-        return;   /* OOM: leave event_proto NULL; tests guard against it */
+        return UVM_OOM;
     }
     vm->event_proto = proto;
 
@@ -194,4 +192,5 @@ event_native_register(struct UVM *vm)
     urbi_register_fn(vm, proto, "emit",      urbi_native_event_emit);
     urbi_register_fn(vm, proto, "syncEmit",  urbi_native_event_sync_emit);
     urbi_register_fn(vm, proto, "waituntil", urbi_native_event_waituntil);
+    return UVM_OK;
 }

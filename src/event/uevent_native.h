@@ -6,6 +6,7 @@
 
 #include "module/umodule.h"        /* UValue, UVAL_EVENT */
 #include "urbi/urbi.h"      /* UHostFn */
+#include "vm/uvm.h"         /* UVMError */
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -38,8 +39,9 @@ int urbi_register_fn(struct UVM *vm, struct UObject *proto,
 /* === event_native_register ===
  *
  * Allocate vm->event_proto and install the four native method slots.
- * Called from uvm_init after the M4 object-model setup completes. */
-void event_native_register(struct UVM *vm);
+ * Called from uvm_init after the M4 object-model setup completes.
+ * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails. */
+UVMError event_native_register(struct UVM *vm);
 
 #ifdef __cplusplus
 }

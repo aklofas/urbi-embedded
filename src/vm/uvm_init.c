@@ -327,7 +327,14 @@ void uvm_destroy(UVM *vm) {
 void
 urbi_native_protos_init(UVM *vm)
 {
-    event_native_register(vm);
+    /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
+     * tag_native_register OOM is handled identically via its void signature
+     * (leaves tag_proto NULL; guards in callers check for NULL). */
+    UVMError err = event_native_register(vm);
+    if (err != UVM_OK) {
+        vm->last_error = err;
+        return;
+    }
     tag_native_register(vm);
 }
 
