@@ -119,6 +119,76 @@ Instruction encoding is described in [internals/opcodes.md](opcodes.md).
 | `n_abs_lines` | uvarint           | count of absolute-line checkpoint records |
 | checkpoints   | pairs of uvarints | `(pc, line)` per record                   |
 
+### IC name table (root chunk)
+
+Mirrors UModule.ic_count + ic_names.  At v1.5 the loader stores raw
+strings in a transient `ic_name_strs` array; module-instance create
+interns each into a USymbol via the receiving VM.
+
+| Field           | Encoding | Notes                                |
+|---|---|---|
+| `n_ic_names`    | uvarint  | count of root-chunk IC sites        |
+| name records    | see below | one per IC site, in OP_GETSLOT order |
+
+Each name record:
+
+| Field        | Encoding | Notes                                       |
+|---|---|---|
+| `name_len`   | uvarint  | UTF-8 byte length of the IC name           |
+| `name_bytes` | raw      | UTF-8, not NUL-terminated on wire           |
+
+A v1.5 module emitted by the in-tree emitter has
+`n_ic_names == ic_count` of the root chunk; loader rejects mismatch
+with `ULOAD_CORRUPT`.
+
+### Nested protos
+
+After the root chunk's IC name table, the wire format encodes the
+`nested[]` UProto array.  Each nested proto is a function definition
+referenced by `OP_CLOSURE Bx`.
+
+| Field           | Encoding | Notes                                |
+|---|---|---|
+| `n_nested`      | uvarint  | count of nested protos              |
+| proto records   | see below | one per proto, in nested[] order   |
+
+Each proto record:
+
+| Field            | Encoding   | Notes                                  |
+|---|---|---|
+| `max_reg`        | 1 byte     | proto's register window                |
+| `nupvals`        | 1 byte     | count of upvalues captured             |
+| `nparams`        | 1 byte     | count of formal parameters             |
+| `n_constants`    | uvarint    | per-proto constant count               |
+| constant records | see Constants section above | same encoding |
+| `n_instructions` | uvarint    | per-proto instruction count            |
+| alignment pad    | 0-3 bytes  | zero bytes to 4-byte boundary          |
+| instruction stream | raw      | `n_instructions × 4` bytes             |
+| `n_deltas`       | uvarint    | must equal `n_instructions`            |
+| delta stream     | raw int8   | one byte per instruction               |
+| `n_abs_lines`    | uvarint    | absolute-line checkpoint count         |
+| checkpoints      | pairs of uvarints | `(pc, line)` per record         |
+| `n_ic_names`     | uvarint    | per-proto IC site count               |
+| ic name records  | see IC name table | same encoding                  |
+
+The proto's `instructions` stream is verified the same way as the root
+chunk: the opcode-shape walk at `decode_verify` runs once per nested
+proto with that proto's `max_reg`, `const_count`, `instr_count`, and
+`nested_count` (note: nested protos may themselves reference further
+nested protos via `OP_CLOSURE`, but at v1.5 the in-tree emitter does
+not emit deeply-nested closures; see backlog "v1.x: deeply-nested
+closure verification").
+
+### Migration from v1.4
+
+A v1.4 module loaded into a v1.5 build is rejected with
+`ULOAD_UNSUPPORTED_VERSION` (exact-match policy retained from v1.0).
+No live-system upgrade tooling exists at v0.5.6; rebuild from source.
+
+A future v1.x revision may relax this; see
+`docs/urbi-embedded-design-risks.md` row "v1.x: live-system bytecode
+upgrade tooling" for the planning sketch.
+
 ---
 
 ## Synclines: Delta Encoding
