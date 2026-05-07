@@ -31,6 +31,7 @@
 #include "event/uevent_native.h"              /* event_native_register (T53) */
 #include "tag/utag_native.h"                /* tag_native_register (T54) */
 #include "vm/uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
+#include "vm/uvm_arith.h" /* arith_add/sub/mul/div/neg + helpers (T16) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
@@ -362,86 +363,6 @@ const char *uvm_error_name(UVMError code) {
         case UVM_OOM:        return "UVM_OOM";
     }
     return "UVM_UNKNOWN";
-}
-
-/* --- Arithmetic helpers.
-       Each returns UVM_OK with result written into *a, or UVM_TYPE_ERROR
-       leaving *a untouched. Integer overflow uses the unsigned-cast
-       trick for portable two's-complement wrap (defined behavior; UBSan
-       clean). Float promotion follows LANG-CONVENTIONS §1.3. --- */
-
-/* Convenience: promote an Int/Float UValue to the target Float type. */
-static double uvalue_to_double(const UValue *v) {
-    return v->kind == UVAL_INT ? (double)v->v.i : (double)v->v.f;
-}
-
-static void uvalue_set_float(UValue *a, const double val) {
-    a->kind = UVAL_FLOAT;
-#if URBI_FLOAT_TYPE == 8
-    a->v.f = val;
-#else
-    a->v.f = (float)val;
-#endif
-}
-
-static bool is_number(const UValue *v) {
-    return v->kind == UVAL_INT || v->kind == UVAL_FLOAT;
-}
-
-static UVMError arith_add(UValue *a, const UValue *b, const UValue *c) {
-    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
-        a->kind = UVAL_INT;
-        a->v.i = (int64_t)((uint64_t)b->v.i + (uint64_t)c->v.i);
-        return UVM_OK;
-    }
-    uvalue_set_float(a, uvalue_to_double(b) + uvalue_to_double(c));
-    return UVM_OK;
-}
-
-static UVMError arith_sub(UValue *a, const UValue *b, const UValue *c) {
-    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
-        a->kind = UVAL_INT;
-        a->v.i = (int64_t)((uint64_t)b->v.i - (uint64_t)c->v.i);
-        return UVM_OK;
-    }
-    uvalue_set_float(a, uvalue_to_double(b) - uvalue_to_double(c));
-    return UVM_OK;
-}
-
-static UVMError arith_mul(UValue *a, const UValue *b, const UValue *c) {
-    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    if (b->kind == UVAL_INT && c->kind == UVAL_INT) {
-        a->kind = UVAL_INT;
-        a->v.i = (int64_t)((uint64_t)b->v.i * (uint64_t)c->v.i);
-        return UVM_OK;
-    }
-    uvalue_set_float(a, uvalue_to_double(b) * uvalue_to_double(c));
-    return UVM_OK;
-}
-
-static UVMError arith_div(UValue *a, const UValue *b, const UValue *c) {
-    if (!is_number(b) || !is_number(c)) return UVM_TYPE_ERROR;
-    /* DIV always produces Float per LANG-CONVENTIONS §1.3. IEEE 754
-       handles div-by-zero and 0/0 naturally — +Inf for positive/0,
-       -Inf for negative/0, NaN for 0/0. */
-    uvalue_set_float(a, uvalue_to_double(b) / uvalue_to_double(c));
-    return UVM_OK;
-}
-
-static UVMError arith_neg(UValue *a, const UValue *b) {
-    if (!is_number(b)) return UVM_TYPE_ERROR;
-    if (b->kind == UVAL_INT) {
-        a->kind = UVAL_INT;
-        /* (int64_t)(-(uint64_t)v) wraps INT64_MIN to INT64_MIN.
-           Defined behavior; UBSan clean. */
-        a->v.i = (int64_t)(-(uint64_t)b->v.i);
-        return UVM_OK;
-    }
-    /* Float negation; IEEE 754 flips the sign bit, defined for NaN/Inf. */
-    uvalue_set_float(a, -uvalue_to_double(b));
-    return UVM_OK;
 }
 
 /* --- Diagnostic infrastructure. --- */
