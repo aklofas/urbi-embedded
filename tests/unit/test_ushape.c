@@ -12,7 +12,7 @@
 #include "object/ushape.h"
 #include "object/uobject.h"   /* USlot / UObject layout neighbours */
 #include "value/uintern.h"          /* ustr_intern */
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"          /* UTYPE_SHAPE */
 
 #include <stddef.h>

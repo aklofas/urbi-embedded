@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "value/uvalue.h"   /* UValue, UValKind */
-#include "uvm.h"      /* UVM, UGcRootCallback */
+#include "vm/uvm.h"      /* UVM, UGcRootCallback */
 
 #ifdef __cplusplus
 extern "C" {

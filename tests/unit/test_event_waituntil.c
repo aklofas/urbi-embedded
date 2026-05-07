@@ -22,7 +22,7 @@
 #include "uevent.h"
 #include "uevent_emit.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* URBI_LOG_WARN */
 

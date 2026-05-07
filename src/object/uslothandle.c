@@ -9,7 +9,7 @@
 #include "object/uslothandle.h"
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
 #include "uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */

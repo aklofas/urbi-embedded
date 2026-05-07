@@ -8,7 +8,7 @@
 #include "emit/uemit.h"
 #include "value/uintern.h"
 #include "umodule.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 /* Expose find_or_install_upvalue for cascade tests. */
 int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,

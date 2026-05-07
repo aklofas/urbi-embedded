@@ -8,7 +8,7 @@
 #include "gc/ugc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"   /* UGC_HAS_SLOT_CHANGE_EVENT, UGC_COLOR_BLACK,
                                    * UGC_COLOR_MASK, gc_shade_gray, UNLIKELY */
-#include "uvm.h"                  /* UVM, host_log_fn */
+#include "vm/uvm.h"                  /* UVM, host_log_fn */
 #include "urbi/urbi.h"            /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 
 /* USymbol is just an interned const char* — the typedef lives in umodule.h

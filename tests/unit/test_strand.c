@@ -6,7 +6,7 @@
 #include "ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include <stdlib.h>
 

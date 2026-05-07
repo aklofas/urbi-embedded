@@ -14,7 +14,7 @@
  *      TAG_STOP and CANCEL → no log emitted; both pointers cleared. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"

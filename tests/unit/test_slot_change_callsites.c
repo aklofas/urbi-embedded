@@ -23,7 +23,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"                   /* ustrand_init/destroy */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "object/uobject.h"            /* urbi_object_alloc, urbi_object_set_local_slot */

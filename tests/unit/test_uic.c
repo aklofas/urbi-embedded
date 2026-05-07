@@ -19,7 +19,7 @@
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
 #include "value/uintern.h"
 #include "umodule.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"
 #include "parse/uast.h"

@@ -13,7 +13,7 @@
 #include "uevent.h"
 #include "uevent_subscribe.h"
 #include "watcher/uwatcher.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 

@@ -10,7 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #ifdef __cplusplus
 extern "C" {

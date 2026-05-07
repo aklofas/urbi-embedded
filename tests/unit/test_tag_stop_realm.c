@@ -11,7 +11,7 @@
  *  6. tag_stop_decrement_on_strand_destroy: counter falls as strands are destroyed. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "runtime/ucleanup.h"

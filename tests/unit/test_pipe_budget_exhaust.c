@@ -21,7 +21,7 @@
  * "tunable_pin" approach tested in test_determinism_tunable_pin.c). */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"

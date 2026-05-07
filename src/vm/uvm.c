@@ -10,7 +10,7 @@
 #  define UVM_HAVE_CLOCK_GETTIME 1
 #endif
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
@@ -29,7 +29,7 @@
 #include "uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
 #include "event_native.h"              /* event_native_register (T53) */
 #include "tag_native.h"                /* tag_native_register (T54) */
-#include "uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
+#include "vm/uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */

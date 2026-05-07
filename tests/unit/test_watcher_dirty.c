@@ -4,7 +4,7 @@
  * Row 11. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "gc/ugc.h"            /* UTYPE_OBJECT */
 #include "urbi/gc.h"       /* urbi_gc_alloc */

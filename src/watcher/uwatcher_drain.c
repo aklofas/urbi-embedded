@@ -36,7 +36,7 @@
  * watcher_eval_dirty in the same safepoint tick.  Per spec §6.5. */
 
 #include "uwatcher.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */

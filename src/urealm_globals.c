@@ -14,7 +14,7 @@
 #include <stdbool.h>
 
 #include "urealm_globals.h"
-#include "uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto, urbi_native_protos_init */
+#include "vm/uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto, urbi_native_protos_init */
 #include "realm/urealm.h"     /* URealm, global_object */
 #include "value/uintern.h"          /* ustr_intern */
 #include "object/uobject.h"   /* urbi_object_root, urbi_object_atom, urbi_object_set_local_slot,

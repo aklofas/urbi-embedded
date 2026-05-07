@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 /* === Internal entry layout === */
 

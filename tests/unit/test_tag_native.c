@@ -23,7 +23,7 @@
 
 #include "utest.h"
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "tag_native.h"
 #include "event_native.h"
 #include "utag.h"

@@ -21,7 +21,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"

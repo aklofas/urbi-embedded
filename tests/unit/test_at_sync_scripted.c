@@ -22,7 +22,7 @@
 #include "lex/ulex.h"
 #include "umodule.h"
 #include "parse/uparse.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "watcher/uwatcher.h"

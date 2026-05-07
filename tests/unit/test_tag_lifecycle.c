@@ -3,7 +3,7 @@
  * Extended at T30: OP_PUSH_TAG/POP_TAG member-list bookkeeping. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "runtime/ucleanup.h"

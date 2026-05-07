@@ -7,7 +7,7 @@
  * Zero-fill uses a volatile byte loop — no memset dependency. */
 
 #include "uwatcher.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "runtime/uclosure.h"  /* UClosure full definition — proto field + URBI_WATCHER_OWNS_* free path */
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */

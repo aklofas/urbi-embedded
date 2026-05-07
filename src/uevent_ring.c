@@ -4,7 +4,7 @@
    Acquire/release ordering via GCC/Clang __atomic_* builtins. */
 
 #include "uevent_ring.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"  /* URBI_ERR_EVENT_* error codes */
 
 /* Byte-copy helper: replaces memcpy.  No hosted headers in src/. */

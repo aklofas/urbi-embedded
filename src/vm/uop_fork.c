@@ -22,7 +22,7 @@
  * No <stdlib.h>, <string.h>, or <assert.h> — use URBI_INTERNAL_ASSERT.
  */
 
-#include "uop_fork.h"
+#include "vm/uop_fork.h"
 #include "umodule.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure (fwd), UProto */
 #include "runtime/uclosure.h"    /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
@@ -30,7 +30,7 @@
 #include "runtime/ucleanup.h"    /* URBI_CLEANUP_MAX */
 #include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
-#include "uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
+#include "vm/uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
 #include "runtime/uframe.h"      /* UVM_STACK_CAP (also in uvm.h → uframe.h) */
 
 /* ===================================================================

@@ -22,7 +22,7 @@
  */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"

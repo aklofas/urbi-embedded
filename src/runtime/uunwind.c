@@ -28,7 +28,7 @@
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "runtime/uframe.h"       /* UCallFrame */
 #include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
-#include "uvm.h"          /* dispatch_loop_until_yield */
+#include "vm/uvm.h"          /* dispatch_loop_until_yield */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */

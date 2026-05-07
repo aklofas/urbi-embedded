@@ -6,7 +6,7 @@
    backward-branch yield, and nested call frames. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"

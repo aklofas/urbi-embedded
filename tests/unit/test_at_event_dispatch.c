@@ -22,7 +22,7 @@
 #include "uevent.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 
 #include <stddef.h>

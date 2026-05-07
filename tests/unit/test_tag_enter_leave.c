@@ -27,7 +27,7 @@
 
 #include "utest.h"
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "utag.h"
 #include "uevent.h"
 #include "uevent_emit.h"

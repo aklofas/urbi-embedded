@@ -31,7 +31,7 @@
 
 #include "tag_native.h"
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "utag.h"              /* UTag, tag->enter_event / leave_event */
 #include "uevent.h"            /* UEvent, urbi_event_create */
 #include "event_native.h"      /* uvalue_from_event, urbi_register_fn */

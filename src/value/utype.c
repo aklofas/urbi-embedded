@@ -5,7 +5,7 @@
  * ugc_incremental.c is replaced here with the real implementation. */
 
 #include "gc/ugc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
 

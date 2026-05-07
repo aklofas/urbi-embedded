@@ -4,7 +4,7 @@
 #include "uevent_emit.h"
 #include "uevent.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */

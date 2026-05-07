@@ -6,7 +6,7 @@
 #include "urbi/gc.h"
 #include "gc/ugc_incremental.h"
 #include "runtime/uclosure.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include <stddef.h>
 #include <stdlib.h>
 

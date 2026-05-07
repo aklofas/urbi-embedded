@@ -35,7 +35,7 @@
  *      must not crash (BODY_FIRED_SINCE_ONLEAVE guard prevents call). */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"        /* USTRAND_WAIT_WATCHER, USTRAND_STATE_READY */
 #include "watcher/uwatcher.h"
 #include "sched/usched_cooperative.h"  /* sched_strand_block */

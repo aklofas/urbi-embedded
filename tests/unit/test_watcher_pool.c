@@ -3,7 +3,7 @@
  * Row 11 / T32. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED */

@@ -18,7 +18,7 @@
 
 #include "utest.h"
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "event_native.h"
 #include "uevent.h"
 #include "object/uobject.h"

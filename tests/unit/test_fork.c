@@ -9,7 +9,7 @@
  */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "urbi/urbi.h"
@@ -20,7 +20,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "value/uvalue.h"
-#include "uop_fork.h"
+#include "vm/uop_fork.h"
 #include "sched/usched_cooperative.h"
 
 #include <string.h>

@@ -21,7 +21,7 @@
 #include "uevent.h"
 #include "uevent_emit.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "utag.h"
 #include "runtime/uunwind.h"

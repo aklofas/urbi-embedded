@@ -37,7 +37,7 @@
  */
 
 #include "usched_cooperative.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
 #include <stdbool.h>

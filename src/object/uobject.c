@@ -21,7 +21,7 @@
 #include "object/ushape.h"
 #include "object/umoduleinstance.h"  /* T36: walk module_instances_head */
 #include "value/uintern.h"      /* T40: ustr_intern("fallback", ...) */
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"

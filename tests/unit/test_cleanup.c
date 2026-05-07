@@ -4,7 +4,7 @@
 #include "utest.h"
 #include "runtime/ucleanup.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 

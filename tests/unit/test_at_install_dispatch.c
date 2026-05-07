@@ -27,7 +27,7 @@
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, urbi_watcher_unregister_internal */
 
 #include <string.h>

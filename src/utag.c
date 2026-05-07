@@ -10,7 +10,7 @@
 #include "utag.h"
 #include "runtime/ucleanup.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "gc/ugc.h"       /* UTYPE_TAG */
 #include "urbi/gc.h"      /* urbi_gc_alloc */
 #include "urbi/urbi.h"    /* URBI_ASSERT_NOT_ISR */

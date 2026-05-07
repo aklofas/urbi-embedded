@@ -36,7 +36,7 @@
 #include "object/ushape.h"
 #include "value/uintern.h"
 #include "umodule.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>

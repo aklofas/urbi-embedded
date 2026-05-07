@@ -20,7 +20,7 @@
 #include "runtime/uunwind.h"
 #include "ustrand.h"
 #include "runtime/ucleanup.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "umodule.h"
 
 #include <stdlib.h>

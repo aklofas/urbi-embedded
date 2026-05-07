@@ -14,7 +14,7 @@
  * remain on the list until urbi_realm_destroy reclaims them. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"

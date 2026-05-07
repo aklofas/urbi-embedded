@@ -21,7 +21,7 @@
 #include "parse/uparse.h"
 #include "urbi/urbi.h"
 #include "value/uvalue.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include "linenoise.h"
 

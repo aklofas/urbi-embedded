@@ -14,7 +14,7 @@
  *      (vm->active_watchers_head non-NULL; waiter_strand == s). */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"            /* USTRAND_WAIT_WATCHER, USTRAND_IS_WAITING */
 #include "watcher/uwatcher.h"   /* UWATCHER_WAITUNTIL, urbi_watcher_unregister_internal */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */

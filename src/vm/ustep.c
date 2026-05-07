@@ -3,7 +3,7 @@
    Freestanding-safe: only <stdbool.h> and <stdint.h>. */
 
 #include "urbi/urbi.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "uevent_ring.h"

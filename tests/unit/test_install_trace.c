@@ -18,7 +18,7 @@
  *      trace_overflow=0, trace_read_set_count=0 before returning the stub OK. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
 #include "value/uintern.h"                        /* ustr_intern */

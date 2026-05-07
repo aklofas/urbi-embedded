@@ -19,7 +19,7 @@
 
 #include "object/ushape.h"
 #include "object/uobject.h"   /* URBI_SLOT_FLAG_* bits */
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_SHAPE_MAP, UTYPE_PROPS_TABLE */
 
 /* === Transition-cache helpers (file-private) === */

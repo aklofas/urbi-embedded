@@ -21,7 +21,7 @@
 #include "object/ushape.h"
 #include "value/uintern.h"      /* ustr_intern → USymbol* */
 #include "umodule.h"      /* UValue */
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/object.h"
 
 #include <stdint.h>

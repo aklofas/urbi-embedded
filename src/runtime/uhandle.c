@@ -4,7 +4,7 @@
  * through vm->alloc_fn.  Zero-init uses a byte loop. */
 
 #include "runtime/uhandle.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
 
 #define INITIAL_CAP  16u

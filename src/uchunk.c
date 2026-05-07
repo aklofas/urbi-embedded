@@ -13,7 +13,7 @@
 
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "umodule.h"
 #include "value/uarena.h"
 #include "parse/uast.h"

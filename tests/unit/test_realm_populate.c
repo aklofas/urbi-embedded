@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "urealm_globals.h"
 #include "value/uintern.h"

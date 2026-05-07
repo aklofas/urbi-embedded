@@ -6,7 +6,7 @@
  * Allocation uses urbi_gc_alloc (GC-managed from birth). */
 
 #include "uevent.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"   /* urbi_gc_alloc, UTYPE_EVENT */
 
 /* === urbi_event_create ===

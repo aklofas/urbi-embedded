@@ -4,7 +4,7 @@
    and NULL-handler removal. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "uevent_ring.h"
 #include "urbi/urbi.h"
 #include <stdint.h>

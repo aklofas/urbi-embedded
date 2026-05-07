@@ -16,7 +16,7 @@
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <string.h>
 

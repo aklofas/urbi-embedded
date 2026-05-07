@@ -13,7 +13,7 @@
 #include "utag.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>

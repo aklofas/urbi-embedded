@@ -22,7 +22,7 @@
 #include "lex/ulex.h"
 #include "umodule.h"
 #include "parse/uparse.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* UWATCHER_AT */
 
 #define UTEST(name) static void name(void)

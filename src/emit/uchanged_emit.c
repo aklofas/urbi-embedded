@@ -15,7 +15,7 @@
                                    urbi_drain_deferred_slot_changes */
 #include "object/uobject.h"     /* UObject, struct UObject */
 #include "uevent_emit.h"        /* c_event_emit_sync */
-#include "uvm.h"                /* UVM, UDeferredSlotChange */
+#include "vm/uvm.h"                /* UVM, UDeferredSlotChange */
 #include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
 

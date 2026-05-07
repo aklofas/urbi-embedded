@@ -21,7 +21,7 @@
  *      respawn_body_coroutine with in_watcher_eval=0 succeeds. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"       /* UClosure, UProto */

@@ -18,7 +18,7 @@
 
 #include "urealm.h"
 #include "utag.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */

@@ -25,7 +25,7 @@
  * UClosure with the owning module reference — out of scope for this patch. */
 
 #include "watcher/uwatcher.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
 #include "runtime/ucleanup.h"

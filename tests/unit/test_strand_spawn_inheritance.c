@@ -10,7 +10,7 @@
  *  6.  spawned_strand_inherits_ambient_chain: end-to-end single-realm smoke. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "runtime/ucleanup.h"

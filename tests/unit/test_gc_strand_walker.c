@@ -18,7 +18,7 @@
  *      run and unlinked again before uvm_run returns. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"

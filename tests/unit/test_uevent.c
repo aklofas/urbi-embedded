@@ -13,7 +13,7 @@
 
 #include "uevent.h"
 #include "gc/ugc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>

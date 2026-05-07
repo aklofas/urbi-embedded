@@ -28,7 +28,7 @@
 
 #include "watcher/uwatcher.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "runtime/uclosure.h"              /* UClosure full definition — proto_inst field access */
 #include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */
 #include "object/umoduleinstance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */

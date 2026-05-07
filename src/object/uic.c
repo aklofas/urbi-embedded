@@ -27,7 +27,7 @@
 #include "object/uic.h"
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>

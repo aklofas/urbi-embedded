@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "ustrand.h"   /* UStrand */
-#include "uvm.h"       /* UVM, dispatch_loop_until_yield */
+#include "vm/uvm.h"       /* UVM, dispatch_loop_until_yield */
 
 #ifdef __cplusplus
 extern "C" {

@@ -49,7 +49,7 @@
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
-#include "uvm.h"
+#include "vm/uvm.h"
 
 /* === walk_uobject ===
  *

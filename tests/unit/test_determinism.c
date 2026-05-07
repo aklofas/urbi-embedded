@@ -9,7 +9,7 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <string.h>
 

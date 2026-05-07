@@ -10,7 +10,7 @@
  * End-to-end scripted-at coverage lives in test_at_scripted_e2e.c (T9). */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "value/uarena.h"

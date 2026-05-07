@@ -11,7 +11,7 @@
  *      call urbi_watcher_check_invariants again.  Must not abort. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"

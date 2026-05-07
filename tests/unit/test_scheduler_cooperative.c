@@ -4,7 +4,7 @@
 
 #include "utest.h"
 #include "sched/usched_cooperative.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "ustrand.h"
 
 #define UTEST(name) static void name(void)

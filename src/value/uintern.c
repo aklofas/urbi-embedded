@@ -15,7 +15,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #define INTERN_INITIAL_CAP    16U     /* power of two */
 #define INTERN_LOAD_NUM       7U      /* grow when count*10 > cap*7 */

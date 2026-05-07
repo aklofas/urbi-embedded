@@ -20,7 +20,7 @@
 
 #include "utest.h"
 #include "realm/urealm.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "value/uintern.h"
 
 #include <stdlib.h>

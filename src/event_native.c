@@ -20,7 +20,7 @@
 
 #include "event_native.h"
 
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "value/uintern.h"           /* ustr_intern */
 #include "uevent.h"            /* UEvent, urbi_event_create */
 #include "uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */

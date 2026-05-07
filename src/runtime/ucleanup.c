@@ -19,7 +19,7 @@
 
 #include "runtime/ucleanup.h"
 #include "ustrand.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 /* Zero-fill n bytes at dst without memset.
    volatile prevents the compiler from recognizing the loop and lowering it

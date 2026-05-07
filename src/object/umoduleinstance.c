@@ -6,7 +6,7 @@
 #include "object/umoduleinstance.h"
 
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
-#include "uvm.h"              /* UVM (for the typed pointer) */
+#include "vm/uvm.h"              /* UVM (for the typed pointer) */
 
 #include <stddef.h>
 #include <stdint.h>

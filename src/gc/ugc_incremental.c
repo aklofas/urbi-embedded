@@ -52,7 +52,7 @@
 
 #include "ugc_incremental.h"
 #include "urbi/gc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 

@@ -7,7 +7,7 @@
  *   - URBI_WATCHER_READSET_MAX is defined and >= 4. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 static void uvm_trace_fields_zero_at_create(void)
 {
