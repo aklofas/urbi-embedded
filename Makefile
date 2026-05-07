@@ -521,6 +521,7 @@ coverage: coverage-tools
 	gcovr --root . \
 	      --object-directory build/host-coverage \
 	      --filter 'src/' \
+	      --merge-mode-functions=merge-use-line-min \
 	      --txt \
 	      --html-details build/host-coverage/report.html
 	@echo ""
