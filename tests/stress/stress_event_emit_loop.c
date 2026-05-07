@@ -14,15 +14,15 @@
  * Foundation for the spec'd 5 stress targets (R8 §3); remaining 4 (slot-change
  * churn, watcher cycles, OOM injection, tag cascade) deferred to v1.x. */
 
-#include "uevent.h"
-#include "uevent_emit.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "uclosure.h"
-#include "ustrand.h"
+#include "runtime/uclosure.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
-#include "umodule.h"
-#include "uvm.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
 
 #include <stdio.h>
 #include <string.h>

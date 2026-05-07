@@ -10,7 +10,7 @@
  * T28. */
 
 #include "urbi/gc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include <stdio.h>
 #include <stdlib.h>
 

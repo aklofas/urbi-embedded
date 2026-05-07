@@ -18,10 +18,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "uarena.h"
-#include "uast.h"
-#include "ulex.h"
-#include "uparse.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ULexer lex;

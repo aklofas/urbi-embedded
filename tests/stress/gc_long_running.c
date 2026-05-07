@@ -11,7 +11,7 @@
  * invoked by `make test-stress` and `make releasetest`. */
 
 #include "urbi/gc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include <stdio.h>
 #include <stdlib.h>
 

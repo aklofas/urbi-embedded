@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ulex.h"
+#include "lex/ulex.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     ULexer lex;
