@@ -2,7 +2,7 @@
 
 #include "utest.h"
 
-#include "umodule.h"
+#include "module/umodule.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"

@@ -3,7 +3,7 @@
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "value/uintern.h"
 #include "runtime/umacros.h"
 #include "object/uic.h"

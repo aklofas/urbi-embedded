@@ -7,7 +7,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"

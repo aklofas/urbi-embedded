@@ -21,7 +21,7 @@
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
-#include "umodule.h"
+#include "module/umodule.h"
 
 #include <stdlib.h>
 #include <string.h>

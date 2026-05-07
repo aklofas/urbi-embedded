@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode UModule deserializer + verifier + destroy.  Freestanding. */
 
-#include "umodule.h"
+#include "module/umodule.h"
 #include "value/uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */

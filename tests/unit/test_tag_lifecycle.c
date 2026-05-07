@@ -10,7 +10,7 @@
 #include "utag.h"
 #include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
-#include "umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
+#include "module/umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
 #include "sched/usched_cooperative.h"
 
 #include <stdlib.h>

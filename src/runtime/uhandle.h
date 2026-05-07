@@ -12,7 +12,7 @@
 #define UHANDLE_H
 
 #include <stdint.h>
-#include "umodule.h"   /* UValue */
+#include "module/umodule.h"   /* UValue */
 #include "gc/ugc.h"       /* UGcRootCallback */
 
 struct UVM;

@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #include "gc/ugc.h"       /* UCell, UTYPE_WATCHER */
-#include "umodule.h"   /* UValue, UClosure */
+#include "module/umodule.h"   /* UValue, UClosure */
 
 #ifdef __cplusplus
 extern "C" {

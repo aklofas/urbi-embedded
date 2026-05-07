@@ -17,7 +17,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"       /* urbi_realm_create / urbi_realm_destroy */

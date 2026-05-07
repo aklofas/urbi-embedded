@@ -18,7 +18,7 @@
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */
 
 #include <stdlib.h>

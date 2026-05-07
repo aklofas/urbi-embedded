@@ -8,7 +8,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "runtime/uclosure.h"
 #include "sched/usched_cooperative.h"
 #include "runtime/ucleanup.h"

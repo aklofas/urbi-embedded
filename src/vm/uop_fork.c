@@ -23,7 +23,7 @@
  */
 
 #include "vm/uop_fork.h"
-#include "umodule.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure (fwd), UProto */
+#include "module/umodule.h"     /* uinstr_a, uinstr_b, UOpcode, UClosure (fwd), UProto */
 #include "runtime/uclosure.h"    /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"     /* UStrand, urbi_strand_create, urbi_strand_start, ... */
 #include "sched/usched_cooperative.h"  /* sched_strand_block, sched_strand_make_runnable */

@@ -23,7 +23,7 @@
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_destroy */
-#include "umodule.h"
+#include "module/umodule.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"

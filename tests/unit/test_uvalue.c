@@ -3,7 +3,7 @@
 
 #include "utest.h"
 
-#include "umodule.h"
+#include "module/umodule.h"
 #include "value/uvalue.h"
 
 #include <math.h>

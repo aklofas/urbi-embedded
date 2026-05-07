@@ -10,7 +10,7 @@
 #include "urbi/gc.h"       /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
 #include "utag.h"           /* utag_create / utag_destroy */
-#include "umodule.h"        /* UVAL_BOOL, UVAL_NIL */
+#include "module/umodule.h"        /* UVAL_BOOL, UVAL_NIL */
 #include "urbi/urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */

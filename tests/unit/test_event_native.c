@@ -24,7 +24,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
-#include "umodule.h"
+#include "module/umodule.h"
 
 #include <stddef.h>
 #include <stdint.h>

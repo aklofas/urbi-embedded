@@ -12,7 +12,7 @@
 
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

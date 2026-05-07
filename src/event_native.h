@@ -4,7 +4,7 @@
 #ifndef EVENT_NATIVE_H
 #define EVENT_NATIVE_H
 
-#include "umodule.h"        /* UValue, UVAL_EVENT */
+#include "module/umodule.h"        /* UValue, UVAL_EVENT */
 #include "urbi/urbi.h"      /* UHostFn */
 #include <stdint.h>
 

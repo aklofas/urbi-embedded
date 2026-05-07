@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "umodule.h"   /* UValue */
+#include "module/umodule.h"   /* UValue */
 #include "urbi/urbi.h" /* UErrCode */
 
 #ifdef __cplusplus

@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "umodule.h"   /* UValue typedef — needed by callback signatures */
+#include "module/umodule.h"   /* UValue typedef — needed by callback signatures */
 
 /* === Build-flag values === */
 

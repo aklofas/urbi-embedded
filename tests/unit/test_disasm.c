@@ -13,7 +13,7 @@
 #include <string.h>
 
 #include "emit/uemit.h"
-#include "umodule.h"
+#include "module/umodule.h"
 
 #define UTEST(name) static void name(void)
 

@@ -38,7 +38,7 @@
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "sched/ustrand.h"
-#include "umodule.h"
+#include "module/umodule.h"
 #include "runtime/uclosure.h"
 #include "realm/urealm.h"
 #include "gc/ugc.h"

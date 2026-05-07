@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "umodule.h"                       /* UProto + forward typedef `UClosure` + UUpvalCell */
+#include "module/umodule.h"                       /* UProto + forward typedef `UClosure` + UUpvalCell */
 #include "gc/ugc.h"                        /* UCell (2 B) */
 #include "object/umoduleinstance.h"        /* UProtoInstance — M4: IC table per nested proto */
 
