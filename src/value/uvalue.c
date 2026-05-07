@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UValue formatter — hosted-only (snprintf + <stdio.h>). */
 
-#include "uvalue.h"
+#include "value/uvalue.h"
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 

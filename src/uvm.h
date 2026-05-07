@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "umodule.h"  /* UModule, UValue, UValKind, UOpcode */
-#include "uvalue.h"   /* UValue — needed for handle_table field */
+#include "value/uvalue.h"   /* UValue — needed for handle_table field */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 #include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
 

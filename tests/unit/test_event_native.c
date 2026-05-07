@@ -22,7 +22,7 @@
 #include "event_native.h"
 #include "uevent.h"
 #include "object/uobject.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "ustrand.h"
 #include "umodule.h"
 

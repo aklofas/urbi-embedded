@@ -5,9 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uemit.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)

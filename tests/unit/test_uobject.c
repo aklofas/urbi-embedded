@@ -10,7 +10,7 @@
 #include "object/uobject.h"
 #include "object/ushape.h"  /* UShape — T26 set_local_slot tests */
 #include "umodule.h"   /* UValue */
-#include "uintern.h"   /* ustr_intern — T26 set_local_slot tests */
+#include "value/uintern.h"   /* ustr_intern — T26 set_local_slot tests */
 #include "uvm.h"
 #include "urbi/gc.h"       /* urbi_gc_alloc — T9 heap UProtos */
 #include "urbi/object.h"   /* T8 public API */

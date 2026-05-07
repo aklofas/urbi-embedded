@@ -2,7 +2,7 @@
 
 #include "utest.h"
 
-#include "uvarint.h"
+#include "value/uvarint.h"
 
 #include <stdint.h>
 #include <stddef.h>

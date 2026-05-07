@@ -12,7 +12,7 @@
 #include "object/uobject.h"       /* UObject, urbi_object_alloc */
 #include "uchanged_node.h"        /* UChangedNode, urbi_object_get_or_create_change_event */
 #include "gc/ugc_incremental.h"   /* UGC_HAS_SLOT_CHANGE_EVENT */
-#include "uintern.h"              /* ustr_intern → USymbol* */
+#include "value/uintern.h"              /* ustr_intern → USymbol* */
 #include "umodule.h"              /* USymbol typedef */
 #include "uvm.h"
 #include "urbi/object.h"          /* URBI_ATOM_OBJECT */

@@ -4,7 +4,7 @@
 #include "uvm.h"
 #include "realm/urealm.h"
 #include "umodule.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "umacros.h"
 #include "object/uic.h"
 #include "object/umoduleinstance.h"

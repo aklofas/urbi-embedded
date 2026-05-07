@@ -29,7 +29,7 @@
 #include "utag.h"
 #include "uevent.h"
 #include "object/uobject.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "ustrand.h"
 #include "uunwind.h"
 #include "umodule.h"

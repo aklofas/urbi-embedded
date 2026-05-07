@@ -32,7 +32,7 @@
                                           urbi_emit_slot_change_if_subscribed */
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
 #include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
-#include "uintern.h"                   /* ustr_intern */
+#include "value/uintern.h"                   /* ustr_intern */
 #include "umodule.h"                   /* USymbol, UClosure, UProto */
 #include "uclosure.h"                  /* UClosure layout */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */

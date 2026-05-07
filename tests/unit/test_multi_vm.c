@@ -5,10 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "ulex.h"
 #include "umodule.h"
 #include "uparse.h"

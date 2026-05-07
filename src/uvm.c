@@ -14,8 +14,8 @@
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
-#include "uintern.h"
-#include "uvalue.h"
+#include "value/uintern.h"
+#include "value/uvalue.h"
 #include "sched/usched_cooperative.h"
 #include "uunwind.h"
 #include "realm/urealm.h"

@@ -2,7 +2,7 @@
 /* Bytecode UModule deserializer + verifier + destroy.  Freestanding. */
 
 #include "umodule.h"
-#include "uvarint.h"
+#include "value/uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 

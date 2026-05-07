@@ -10,7 +10,7 @@
 
 #include "utest.h"
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "umodule.h"
 #include "uemit.h"

@@ -21,7 +21,7 @@
 #include "uvm.h"
 #include "ustrand.h"
 #include "umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
-#include "uintern.h"                        /* ustr_intern */
+#include "value/uintern.h"                        /* ustr_intern */
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
 #include "object/uic.h"                     /* UIC */

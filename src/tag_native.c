@@ -35,7 +35,7 @@
 #include "utag.h"              /* UTag, tag->enter_event / leave_event */
 #include "uevent.h"            /* UEvent, urbi_event_create */
 #include "event_native.h"      /* uvalue_from_event, urbi_register_fn */
-#include "uintern.h"           /* ustr_intern */
+#include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */
 #include "ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */

@@ -15,12 +15,12 @@
 #include "realm/urealm.h"
 #include "uvm.h"
 #include "umodule.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
-#include "uvalue.h"
+#include "value/uvalue.h"
 #include "object/umoduleinstance.h"
 #include <stddef.h>    /* size_t */
 

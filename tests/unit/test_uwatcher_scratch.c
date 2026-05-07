@@ -13,7 +13,7 @@
 #include "uvm.h"
 #include "umodule.h"
 #include "uclosure.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"

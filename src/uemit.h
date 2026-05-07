@@ -9,7 +9,7 @@
 #include <stddef.h>               /* ptrdiff_t */
 #include <stdint.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "umodule.h"
 

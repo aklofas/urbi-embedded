@@ -21,7 +21,7 @@
  *      WAITING), uvm_run returns UVM_OK, and active_watchers_head is NULL. */
 
 #include "utest.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "umodule.h"
 #include "uemit.h"

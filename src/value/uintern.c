@@ -10,7 +10,7 @@
  *
  * No unintern at v1.0. All UInternStr blocks freed at uintern_destroy. */
 
-#include "uintern.h"
+#include "value/uintern.h"
 
 #include <stdint.h>
 #include <stddef.h>

@@ -4,9 +4,9 @@
 
 #include <stdio.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uemit.h"
-#include "uintern.h"
+#include "value/uintern.h"
 #include "umodule.h"
 #include "uvm.h"
 

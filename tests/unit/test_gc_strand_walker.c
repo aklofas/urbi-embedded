@@ -24,12 +24,12 @@
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_destroy */
 #include "umodule.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"
 #include "uast.h"
-#include "uvalue.h"
+#include "value/uvalue.h"
 
 #include <string.h>
 #include <stdint.h>

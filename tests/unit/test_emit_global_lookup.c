@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
 #include "ulex.h"

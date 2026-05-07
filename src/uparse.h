@@ -6,7 +6,7 @@
 
 #include <stdbool.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "ulex.h"
 

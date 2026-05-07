@@ -17,11 +17,11 @@
 #include "object/uobject.h"
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
-#include "uintern.h"
+#include "value/uintern.h"
 #include "umodule.h"
 #include "uvm.h"
 #include "realm/urealm.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
 #include "ulex.h"

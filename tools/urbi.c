@@ -13,14 +13,14 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "umodule.h"
 #include "uparse.h"
 #include "urbi/urbi.h"
-#include "uvalue.h"
+#include "value/uvalue.h"
 #include "uvm.h"
 
 #include "linenoise.h"

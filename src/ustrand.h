@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 #include <stddef.h>   /* size_t */
-#include "uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
+#include "value/uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
 #include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 
 #ifdef __cplusplus

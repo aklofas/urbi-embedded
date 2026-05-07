@@ -15,7 +15,7 @@
 #include "uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
 #include "uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
-#include "uvalue.h"             /* uvalue_truthy (T40) */
+#include "value/uvalue.h"             /* uvalue_truthy (T40) */
 #include "ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */

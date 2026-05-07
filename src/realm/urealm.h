@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "uvalue.h"   /* UValue, UValKind */
+#include "value/uvalue.h"   /* UValue, UValKind */
 #include "uvm.h"      /* UVM, UGcRootCallback */
 
 #ifdef __cplusplus

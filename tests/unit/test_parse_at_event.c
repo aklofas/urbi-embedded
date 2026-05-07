@@ -9,7 +9,7 @@
 
 #include <string.h>
 
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
 #include "ulex.h"

@@ -4,7 +4,7 @@
 
 #include "uvm.h"
 #include "umodule.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include "uast.h"
 #include "uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"

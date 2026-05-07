@@ -21,7 +21,7 @@
 #include "event_native.h"
 
 #include "uvm.h"
-#include "uintern.h"           /* ustr_intern */
+#include "value/uintern.h"           /* ustr_intern */
 #include "uevent.h"            /* UEvent, urbi_event_create */
 #include "uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_local_slot */
