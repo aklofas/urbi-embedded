@@ -11,6 +11,37 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* init_ic_slice — zero-fill an IC table slice carved from ic_cursor.
+ * Fills pi->ic_table with ic_count entries sourced from ic_names (may be
+ * NULL), advances *cursor by ic_count, and sets pi->proto = proto.
+ * When ic_count == 0, pi->ic_table is set to NULL and *cursor is unchanged. */
+static void
+init_ic_slice(UProtoInstance *pi, UProto *proto,
+              uint16_t ic_count, USymbol **ic_names,
+              UIC **cursor)
+{
+    pi->proto = proto;
+    if (ic_count == 0u) {
+        pi->ic_table = NULL;
+        return;
+    }
+    pi->ic_table = *cursor;
+    for (uint16_t k = 0u; k < ic_count; k++) {
+        UIC *ic = &(*cursor)[k];
+        ic->name           = (ic_names != NULL) ? ic_names[k] : NULL;
+        ic->n              = 0u;
+        ic->replace_cursor = 0u;
+        for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
+            ic->recv_shapes[e]  = NULL;
+            ic->topology_gen[e] = 0u;
+            ic->slots[e]        = NULL;
+            ic->uprops[e]       = NULL;
+            ic->flags[e]        = 0u;
+        }
+    }
+    *cursor += ic_count;
+}
+
 UModuleInstance *
 urbi_module_instance_create(struct UVM *vm, UModule *m)
 {
@@ -69,58 +100,18 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
 
     /* entries[0]: root chunk.  ic_table populated from UModule's ic_count /
      * ic_names side table (M4 follow-up — root chunk now carries IC sites
-     * for top-level GETSLOT/SETSLOT). */
-    arr->entries[0].proto = NULL;
-    if (m->ic_count == 0u) {
-        arr->entries[0].ic_table = NULL;
-    } else {
-        arr->entries[0].ic_table = ic_cursor;
-        for (uint16_t k = 0u; k < m->ic_count; k++) {
-            UIC *ic = &ic_cursor[k];
-            ic->name           = (m->ic_names != NULL) ? m->ic_names[k] : NULL;
-            ic->n              = 0u;
-            ic->replace_cursor = 0u;
-            for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
-                ic->recv_shapes[e]  = NULL;
-                ic->topology_gen[e] = 0u;
-                ic->slots[e]        = NULL;
-                ic->uprops[e]       = NULL;
-                ic->flags[e]        = 0u;
-            }
-        }
-        ic_cursor += m->ic_count;
-    }
+     * for top-level GETSLOT/SETSLOT).  proto = NULL for the root chunk. */
+    init_ic_slice(&arr->entries[0], NULL,
+                  m->ic_count, m->ic_names, &ic_cursor);
 
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
-     * slice of the trailing IC region; zero-fill every entry so an unfilled
-     * site has topology_gen == 0 (the "unfilled" sentinel per pre-M4
-     * topology-generation spec §3.1; vm->topology_gen init=1 guarantees no
-     * live shape ever has gen 0). */
+     * slice of the trailing IC region; unfilled sites have topology_gen == 0
+     * (the sentinel per pre-M4 topology-generation spec §3.1). */
     for (uint16_t i = 0u; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
-        UProtoInstance *pi = &arr->entries[i + 1u];
-        pi->proto = p;
-
-        if (p == NULL || p->ic_count == 0u) {
-            pi->ic_table = NULL;
-            continue;
-        }
-
-        pi->ic_table = ic_cursor;
-        for (uint16_t k = 0u; k < p->ic_count; k++) {
-            UIC *ic = &ic_cursor[k];
-            ic->name           = (p->ic_names != NULL) ? p->ic_names[k] : NULL;
-            ic->n              = 0u;
-            ic->replace_cursor = 0u;
-            for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
-                ic->recv_shapes[e]  = NULL;
-                ic->topology_gen[e] = 0u;
-                ic->slots[e]        = NULL;
-                ic->uprops[e]       = NULL;
-                ic->flags[e]        = 0u;
-            }
-        }
-        ic_cursor += p->ic_count;
+        uint16_t   pc = (p != NULL) ? p->ic_count : 0u;
+        USymbol  **pn = (p != NULL) ? p->ic_names : NULL;
+        init_ic_slice(&arr->entries[i + 1u], p, pc, pn, &ic_cursor);
     }
 
     /* Publish the bulk pointer last so a partial-init mi never hands a

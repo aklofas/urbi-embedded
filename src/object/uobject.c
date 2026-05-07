@@ -137,52 +137,32 @@ urbi_object_root(struct UVM *vm)
  * UPROTOS_FOREACH per pre-M4 prototype-chain spec §4.1).
  *
  * Returns NULL on OOM or invalid family tag. */
+
+/* Table entry: per-family vm field offset.  URBIAtomFamilyTag values 0-8
+ * are numerically identical to URBIAtomFamily 0-8, so the table is indexed
+ * directly by family.  offsetof is used to avoid assuming struct-member
+ * ordering beyond what is documented in uvm.h §M4 atom-family singletons. */
+static const size_t kAtomFieldOffset[] = {
+    [URBI_ATOM_OBJECT_F]  = offsetof(UVM, atom_object),
+    [URBI_ATOM_INTEGER_F] = offsetof(UVM, atom_integer),
+    [URBI_ATOM_FLOAT_F]   = offsetof(UVM, atom_float),
+    [URBI_ATOM_STRING_F]  = offsetof(UVM, atom_string),
+    [URBI_ATOM_LIST_F]    = offsetof(UVM, atom_list),
+    [URBI_ATOM_DICT_F]    = offsetof(UVM, atom_dict),
+    [URBI_ATOM_TAG_F]     = offsetof(UVM, atom_tag),
+    [URBI_ATOM_EVENT_F]   = offsetof(UVM, atom_event),
+    [URBI_ATOM_SYMBOL_F]  = offsetof(UVM, atom_symbol),
+};
+#define KATOM_TABLE_COUNT ((int)(sizeof(kAtomFieldOffset) / sizeof(kAtomFieldOffset[0])))
+
 UObject *
 urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
 {
-    UObject **slot;
-    URBIAtomFamily internal_family;
-
-    switch (family) {
-        case URBI_ATOM_OBJECT_F:
-            slot = &vm->atom_object;
-            internal_family = URBI_ATOM_OBJECT;
-            break;
-        case URBI_ATOM_INTEGER_F:
-            slot = &vm->atom_integer;
-            internal_family = URBI_ATOM_INTEGER;
-            break;
-        case URBI_ATOM_FLOAT_F:
-            slot = &vm->atom_float;
-            internal_family = URBI_ATOM_FLOAT;
-            break;
-        case URBI_ATOM_STRING_F:
-            slot = &vm->atom_string;
-            internal_family = URBI_ATOM_STRING;
-            break;
-        case URBI_ATOM_LIST_F:
-            slot = &vm->atom_list;
-            internal_family = URBI_ATOM_LIST;
-            break;
-        case URBI_ATOM_DICT_F:
-            slot = &vm->atom_dict;
-            internal_family = URBI_ATOM_DICT;
-            break;
-        case URBI_ATOM_TAG_F:
-            slot = &vm->atom_tag;
-            internal_family = URBI_ATOM_TAG;
-            break;
-        case URBI_ATOM_EVENT_F:
-            slot = &vm->atom_event;
-            internal_family = URBI_ATOM_EVENT;
-            break;
-        case URBI_ATOM_SYMBOL_F:
-            slot = &vm->atom_symbol;
-            internal_family = URBI_ATOM_SYMBOL;
-            break;
-        default:
-            return NULL;
+    if ((int)family < 0 || (int)family >= KATOM_TABLE_COUNT) {
+        return NULL;
     }
+
+    UObject **slot = (UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[family]);
 
     if (*slot != NULL) {
         return *slot;
@@ -190,8 +170,7 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
 
     /* For URBI_ATOM_OBJECT_F, route through urbi_object_root so the
      * allocate-and-pin path is identical to a direct urbi_object_root call.
-     * urbi_object_root sets vm->atom_object and pins; we then return the
-     * cached value via *slot on the next call. */
+     * urbi_object_root sets vm->atom_object; we return via *slot on next call. */
     if (family == URBI_ATOM_OBJECT_F) {
         return urbi_object_root(vm);
     }
@@ -203,7 +182,9 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
         return NULL;
     }
 
-    UObject *o = urbi_object_alloc(vm, internal_family);
+    /* internal_family == (URBIAtomFamily)family; the two enums are numerically
+     * identical per include/urbi/object.h §_F suffix design note. */
+    UObject *o = urbi_object_alloc(vm, (URBIAtomFamily)family);
     if (o == NULL) {
         return NULL;
     }
@@ -273,16 +254,13 @@ m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
 
-    /* Atom-family singletons. */
-    if (vm->atom_object  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_object);
-    if (vm->atom_integer != NULL) gc_shade_gray(vm, (UCell *)vm->atom_integer);
-    if (vm->atom_float   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_float);
-    if (vm->atom_string  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_string);
-    if (vm->atom_list    != NULL) gc_shade_gray(vm, (UCell *)vm->atom_list);
-    if (vm->atom_dict    != NULL) gc_shade_gray(vm, (UCell *)vm->atom_dict);
-    if (vm->atom_tag     != NULL) gc_shade_gray(vm, (UCell *)vm->atom_tag);
-    if (vm->atom_event   != NULL) gc_shade_gray(vm, (UCell *)vm->atom_event);
-    if (vm->atom_symbol  != NULL) gc_shade_gray(vm, (UCell *)vm->atom_symbol);
+    /* Atom-family singletons — loop over the shared kAtomFieldOffset table. */
+    for (int i = 0; i < KATOM_TABLE_COUNT; i++) {
+        UObject *a = *(UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[i]);
+        if (a != NULL) {
+            gc_shade_gray(vm, (UCell *)a);
+        }
+    }
 
     /* M5 T53/T54 native proto objects. */
     if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
