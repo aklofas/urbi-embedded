@@ -142,7 +142,7 @@ uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
          LOADBOOL rb, 0, 0     ; rb = false
     */
     emit_instr(e, uinstr_enc_abc(op, a_bit, b_reg, c_reg), (uint32_t)n->line);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768U + 1U)), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, (uint16_t)UEMIT_JMP_FALLTHROUGH_BIAS), (uint32_t)n->line);
     emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 1U, 1U), (uint32_t)n->line);
     emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, rb, 0U, 0U), (uint32_t)n->line);
 

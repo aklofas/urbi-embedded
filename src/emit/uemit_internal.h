@@ -122,7 +122,13 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 /* --- Sentinels and biases shared across emit TUs --- */
 
 #define UEMIT_NO_OPERAND      ((uint8_t)0xFFU)   /* "no body / no onleave" — replaces inline 0xFFU (EMIT-023) */
-#define UEMIT_JMP_BIAS        32768              /* used by emit_stmt + emit_expr (EMIT-024) */
+/* JMP offset encoding: signed 16-bit offsets are stored as Bx with a
+ * +0x8000 bias (UEMIT_JMP_BIAS) so 0x0000 means "jump back 0x8000",
+ * 0x8000 means "no offset", 0xFFFF means "jump forward 0x7FFF".
+ * UEMIT_JMP_FALLTHROUGH_BIAS encodes "+1 instr" — used by comparison
+ * sites that always fall through to a single skip-over JMP. */
+#define UEMIT_JMP_BIAS                32768U
+#define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---

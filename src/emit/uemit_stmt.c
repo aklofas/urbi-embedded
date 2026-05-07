@@ -279,7 +279,7 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
 
     /* 3. JMP placeholder to else/nil target (patched later). */
     int jmp_to_else = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
 
     /* 4. Reset cursor to rd so then-block allocates starting at rd. */
     e->next_reg = rd;
@@ -296,14 +296,14 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
 
     /* 6. JMP past else/nil-load to end (patched later). */
     int jmp_to_end = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
 
     /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
     {
         int alt_target = (int)emit_instr_count(e);
         int alt_offset = alt_target - (jmp_to_else + 1);
         emit_patch_instr(e, jmp_to_else,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + alt_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + alt_offset)));
     }
 
     /* 8. Reset cursor to rd for else/nil arm. */
@@ -329,7 +329,7 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
         int end_target = (int)emit_instr_count(e);
         int end_offset = end_target - (jmp_to_end + 1);
         emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + end_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + end_offset)));
     }
 
     /* Advance past rd so callers can free it as a temp if needed. */
@@ -373,7 +373,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 
     /* 3. JMP placeholder to exit (patched later). */
     int jmp_to_exit = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
 
     /* Free cond temp; locals beneath rx stay. */
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
@@ -407,7 +407,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         {
             int back_offset = loop_start - ((int)emit_instr_count(e) + 1);
             emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
-                                         (uint16_t)(32768 + back_offset)),
+                                         (uint16_t)(UEMIT_JMP_BIAS + back_offset)),
                        (uint32_t)n->line);
         }
 
@@ -421,7 +421,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         int exit_target = (int)emit_instr_count(e);
         int exit_offset = exit_target - (jmp_to_exit + 1);
         emit_patch_instr(e, jmp_to_exit,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + exit_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + exit_offset)));
     }
 
     /* while-loop is a statement; it doesn't produce a value.

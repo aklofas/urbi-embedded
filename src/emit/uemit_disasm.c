@@ -90,7 +90,7 @@ static bool fmt_jmp(char *buf, size_t cap, size_t *off,
                     size_t *ip, uint32_t ins, const UModule *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  JMP %d\n",
-                      *ip, (int)uinstr_bx(ins) - 32768);
+                      *ip, (int)uinstr_bx(ins) - (int)UEMIT_JMP_BIAS);
 }
 
 static bool fmt_loadnil(char *buf, size_t cap, size_t *off,

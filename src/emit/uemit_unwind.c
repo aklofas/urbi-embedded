@@ -160,7 +160,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* JMP past catch */
         int jmp_past_catch_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch inner_try_begin handler_pc → catch handler */
@@ -180,7 +180,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             int past_catch_target = (int)emit_instr_count(e);
             int off = past_catch_target - (jmp_past_catch_pc + 1);
             emit_patch_instr(e, jmp_past_catch_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
         }
 
         /* OP_TRY_END (outer) */
@@ -189,7 +189,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* JMP past finally */
         int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch outer_try_begin handler_pc → finally handler */
@@ -216,7 +216,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             int past_finally_target = (int)emit_instr_count(e);
             int off = past_finally_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
         }
 
     } else if (has_catch) {
@@ -237,7 +237,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* JMP past handler */
         int jmp_past_handler_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → catch handler */
@@ -257,7 +257,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             int past_target = (int)emit_instr_count(e);
             int off = past_target - (jmp_past_handler_pc + 1);
             emit_patch_instr(e, jmp_past_handler_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
         }
 
     } else {
@@ -278,7 +278,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* JMP past finally (normal exit path) */
         int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
         if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → finally handler */
@@ -305,7 +305,7 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
             int past_target = (int)emit_instr_count(e);
             int off = past_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
         }
     }
 
@@ -423,7 +423,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
 
     /* Emit OP_JMP past the (empty) onleave handler block. */
     int jmp_past_handler_pc = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, UEMIT_JMP_BIAS), (uint32_t)n->line);
     if (e->error != EMIT_OK) return 0U;
 
     /* Onleave handler block starts here.
@@ -441,7 +441,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
         int past_handler_target = (int)emit_instr_count(e);
         int off = past_handler_target - (jmp_past_handler_pc + 1);
         emit_patch_instr(e, jmp_past_handler_pc,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
     }
 
     /* Return a nil register as the tag-prefix's value. */
