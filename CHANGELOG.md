@@ -58,9 +58,9 @@ Last opportunity to settle public API before M6 grows the surface.
 - Bytecode byte-identical against `tests/golden/v0.5.3-bytecode-hashes.txt`
   (148 fixture hashes; the v0.5.3 baseline is the operative gate, not a
   fresh capture — no codegen changes in this wave).
-- All `make releasetest` gates green: host + ASan + UBSan + valgrind-fast
-  + tidy + docs-check + coverage 85% + GC stress + URBI_GC_NONE smoke +
-  3-preset × 100-run determinism + cross-arm + cross-riscv + LOC-cap.
+- All `make releasetest` gates green: host, ASan, UBSan, valgrind-fast,
+  tidy, docs-check, coverage 85%, GC stress, URBI_GC_NONE smoke,
+  3-preset × 100-run determinism, cross-arm, cross-riscv, LOC-cap.
 
 ## v0.5.4-decompose — 2026-05-06
 
