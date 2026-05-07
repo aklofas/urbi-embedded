@@ -189,7 +189,7 @@ UValue
 c_event_waituntil(struct UVM *vm, struct UEvent *e)
 {
     struct UStrand *s;
-    UValue payload;
+    UValue payload = {0};   /* EMITR-007: file convention is `{0}` for NIL. */
 
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -198,8 +198,6 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
         if (vm->host_log_fn)
             vm->host_log_fn(vm, URBI_LOG_WARN,
                 "waituntil from scratch context — undefined; returning NIL");
-        payload.kind = UVAL_NIL;
-        payload.v.i  = 0;
         return payload;
     }
 
@@ -208,8 +206,7 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     /* Initialise wait fields. */
     s->next_event_waiter  = NULL;
     s->wait_event_target  = e;
-    s->last_event_payload.kind = UVAL_NIL;
-    s->last_event_payload.v.i  = 0;
+    s->last_event_payload  = payload;   /* NIL via the file-level convention */
 
     /* Tail-append to waiters_head. */
     if (!e->waiters_head) {
@@ -233,11 +230,18 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
         vm->strand_runnable_count--;
     s->state = USTRAND_WAIT_EVENT;
 
-    /* Return last_event_payload (NIL at park time; meaningful value is
-     * deposited by c_event_emit_* on wake and read by the T53 opcode
-     * handler after the strand resumes at the next dispatch slice). */
+    /* EMITR-002: this return value is *always* NIL.  c_event_waituntil parks
+     * the strand and returns to the caller (the T53 opcode dispatcher); it
+     * does not block.  s->last_event_payload was just initialised to NIL
+     * above (just before the tail-append) and no emit can have run between
+     * then and here under the cooperative scheduler, so the value read
+     * back is NIL by construction.  The meaningful payload is deposited
+     * by c_event_emit_* into s->last_event_payload on wake and is consumed
+     * by the T53 opcode handler after the strand resumes at the next
+     * dispatch slice — not via this return value.  The read-then-clear
+     * here is defence in depth against a future scheduler that might let
+     * an emit fire before the park completes. */
     payload = s->last_event_payload;
-    s->last_event_payload.kind = UVAL_NIL;
-    s->last_event_payload.v.i  = 0;
+    s->last_event_payload = (UValue){0};   /* EMITR-007: file convention */
     return payload;
 }

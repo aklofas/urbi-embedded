@@ -57,7 +57,27 @@ typedef struct UTag {
     uint8_t  flags;                     /* UTAG_FLAG_FROZEN / UTAG_FLAG_STOPPED */
     uint8_t  pad1[3];
 
-    /* --- membership lists (row 11 §3) --- */
+    /* --- membership lists (row 11 §3) ---
+     *
+     * TAGCH-014: the two _head fields look symmetric but are not — element
+     * type and ownership differ:
+     *
+     *   member_strands_head: chains UCleanupEntry instances (one per strand
+     *     that opened a TAG_SCOPE for this tag).  The cleanup entries are
+     *     owned by their strand's cleanup stack — the tag holds a back-ref
+     *     only.  Threading via UCleanupEntry.next_member.  Strand-driven
+     *     mutation: push at scope-enter, splice at scope-leave.
+     *
+     *   member_watchers_head: chains UWatcher structs directly (no per-link
+     *     entry node).  Watchers are owned by their realm (via w->realm),
+     *     not by this tag — the tag is one of two intrusive lists they sit
+     *     on (the other is vm->active_watchers_head).  Threading via
+     *     UWatcher.next_in_tag.  Watcher-driven mutation: head-insert at
+     *     install, splice at unregister.
+     *
+     * The shared "member_*_head" naming reflects "things scoped to this
+     * tag" but DO NOT confuse the chains for shared structure: separate
+     * link fields, separate element types, separate mutation paths. */
     struct UCleanupEntry *member_strands_head;  /* TAG_SCOPE entries, via next_member */
     struct UWatcher      *member_watchers_head; /* watchers, via UWatcher.next_in_tag */
 

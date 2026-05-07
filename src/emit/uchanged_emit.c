@@ -54,10 +54,12 @@ urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
         }
     }
 
-    /* Bit 7 is set but no chain entry matches `key`.  This is a programming
-     * error (bit 7 must only be set when at least one UChangedNode exists for
-     * the object; individual keys may not match if the subscriber was for a
-     * different slot — that is normal and we silently return). */
+    /* Bit 7 (UGC_HAS_SLOT_CHANGE_EVENT) is set but no chain entry matches
+     * `key`.  This is the normal "subscriber on a different slot" case:
+     * bit 7 is per-object, not per-slot, so a slot-change emit for any slot
+     * on a subscribed object reaches here, but only one slot's UChangedNode
+     * needs to match.  Silently return; the unmatched slot has no
+     * subscribers. */
 }
 
 /* === urbi_defer_slot_change (spec #4 §5.3) ===

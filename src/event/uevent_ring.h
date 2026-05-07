@@ -4,7 +4,15 @@
    Freestanding-safe: no hosted headers.
 
    Power-of-2 depth required for bitmask modulo.
-   URBI_EVENT_RING_DEPTH default is 256; M4 footprint builds override to 32. */
+   URBI_EVENT_RING_DEPTH default is 256; M4 footprint builds override to 32.
+
+   Naming convention (EVENT-014):
+     Public host-callable: `urbi_inject_event` (declared in <urbi/urbi.h>).
+     Subsystem-internal:   `uevent_ring_*` (declared in this header).
+
+   The public face is intentionally a single function; internals split for
+   VM-side draining (uevent_ring_drain), bookkeeping (uevent_ring_init),
+   pending-check (uevent_ring_has_pending), etc. */
 
 #ifndef UEVENT_RING_H
 #define UEVENT_RING_H
