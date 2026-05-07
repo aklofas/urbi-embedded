@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* install_watcher_runtime: high-level entry point for OP_AT_INSTALL,
  * OP_WHENEVER_INSTALL, and OP_WAITUNTIL_INSTALL dispatchers.
- * Spec #2 §7.1–§7.2.
+ * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
+ * docs/milestones/m5-reactive.md).
  *
- * The install path is split across T34–T39:
- *   T34: skeleton + re-entry guard (this file).
- *   T35: resolve_owning_tag (cleanup-stack walk).
- *   T36–T39: trace eval, alloc, read-set wire, and list insert. */
+ * Implementation phases live inline in install_watcher_runtime
+ * (uwatcher_install.c): re-entry guard, resolve_owning_tag, trace probe arm,
+ * cond eval on scratch frame, pool alloc, read-set wire, list insert. */
 
 #ifndef UWATCHER_INSTALL_H
 #define UWATCHER_INSTALL_H
@@ -52,7 +52,8 @@ typedef enum {
  *
  * Parameters:
  *   vm      — owning VM.
- *   s       — installing strand (ambient tag scope walked here for T35).
+ *   s       — installing strand (ambient tag scope walked here via
+ *              resolve_owning_tag).
  *   mode    — UWATCHER_AT / UWATCHER_WHENEVER / UWATCHER_WAITUNTIL.
  *   cond    — condition closure; non-NULL for AT/WHENEVER; NULL for WAITUNTIL.
  *   body    — body closure; non-NULL for AT/WHENEVER; NULL for WAITUNTIL.

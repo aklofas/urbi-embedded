@@ -77,7 +77,7 @@ run_on_scratch_core(struct UVM       *vm,
     if (urbi_strand_arm_from_closure(&strand, closure) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, URBI_LOG_WARN,
-                "run_on_scratch_core: register-stack OOM");
+                "scratch-frame arm: register-stack OOM");
         }
         return -1;
     }
@@ -120,7 +120,7 @@ run_on_scratch_core(struct UVM       *vm,
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* Thread onto global_realm->strands_head so the GC walker sees the
-     * strand's register window (mirrors urbi_vm_run T33 dance). */
+     * strand's register window (mirrors urbi_vm_run's transient-strand dance). */
     {
         URealm *gr = urbi_realm_global(vm);
         if (gr != NULL) {

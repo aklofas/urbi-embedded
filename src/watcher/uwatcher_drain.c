@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher pending-onleave queue: push helper, run_watcher_onleave stub,
+/* Watcher pending-onleave queue: push helper, run_watcher_onleave,
  * drain_pending_onleave_queue.
- * Row 11.
+ * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.

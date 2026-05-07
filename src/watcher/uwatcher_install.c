@@ -1,21 +1,24 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* install_watcher_runtime: high-level watcher install entry point.
- * Spec #2 §7.1–§7.2.
+ * Spec #2 §7.1–§7.2 (reactive runtime landed in M5; see
+ * docs/milestones/m5-reactive.md).
  *
- * T34: skeleton — re-entry guard + result enum.
- * T35: resolve_owning_tag — cleanup-stack walk.
- * T36: OP_GETSLOT trace probe arm (phase 2+3).
- * T37: run cond on scratch frame + overflow/fault routing (phase 3+4).
- * T38: pool alloc + initialize watcher fields (spec #2 §7.4–§7.5).
- * T39: read-set copy + bit-6 mark + linked-list insertion (spec #2 §7.6).
- * T40: WAITUNTIL strand-block or immediate-wake fast path (spec #2 §7.7). */
+ * The install path runs as a single linear sequence within
+ * install_watcher_runtime:
+ *   - re-entry guard + result enum (UWatcherInstallResult).
+ *   - resolve_owning_tag — cleanup-stack walk.
+ *   - OP_GETSLOT trace probe arm (spec §7.3 phase 2).
+ *   - run cond on scratch frame + overflow/fault routing (spec §7.3 phases 3–4).
+ *   - pool alloc + initialize watcher fields (spec §7.4–§7.5).
+ *   - read-set copy + bit-6 mark + linked-list insertion (spec §7.6).
+ *   - WAITUNTIL strand-block or immediate-wake fast path (spec §7.7). */
 
 #include "watcher/uwatcher_install.h"
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "vm/uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "sched/ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
 #include "runtime/uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
-#include "value/uvalue.h"             /* uvalue_truthy (T40) */
+#include "value/uvalue.h"             /* uvalue_truthy (WAITUNTIL fast-path test) */
 #include "runtime/ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
@@ -99,11 +102,14 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
 
 /* === install_watcher_runtime (spec #2 §7.1) ===
  *
- * T34 skeleton: re-entry guard only.
- * T35: resolve_owning_tag — cleanup-stack walk.
- * T36: phase 2 trace arm.
- * T37: phase 3 cond run + phase 4 overflow/fault routing.
- * T38–T39: pool alloc + linked-list insert. */
+ * High-level watcher install entry point.  Phases (in body order):
+ *   1. Re-entry guard.
+ *   2. resolve_owning_tag — cleanup-stack walk.
+ *   3. Phase 2 (spec §7.3): OP_GETSLOT trace-probe arm.
+ *   4. Phase 3 (spec §7.3): cond run on scratch frame + phase-4
+ *      overflow/fault routing.
+ *   5. Phases 5a–5e (spec §7.4–§7.6): pool alloc + linked-list insert.
+ *   6. WAITUNTIL strand-block or immediate-wake fast path (spec §7.7). */
 
 UWatcherInstallResult
 install_watcher_runtime(
@@ -228,7 +234,8 @@ install_watcher_runtime(
     }
 
     /* Phase 5e (spec #2 §7.6): tail-append to active and tag member lists.
-     * Tail-append preserves FIFO registration order (row 12 §3.2 contract). */
+     * Tail-append preserves FIFO registration order (per the determinism
+     * contract — install order must equal eval order). */
     w->next_active = NULL;
     if (vm->active_watchers_head == NULL) {
         vm->active_watchers_head = w;
@@ -259,8 +266,9 @@ install_watcher_runtime(
      *
      * Otherwise, park the waiter strand by transitioning it to WAITING with
      * USTRAND_WAIT_WATCHER reason (0x32).  The OP_WAITUNTIL_INSTALL dispatcher
-     * (T42) observes the WAITING state and yields to the scheduler.  The
-     * eval-pass wake (T43) will resume the strand when the rising edge fires. */
+     * observes the WAITING state and yields to the scheduler; the watcher
+     * eval pass (watcher_eval_dirty) wakes the strand by calling
+     * sched_strand_make_runnable when the rising edge fires. */
     if (mode == UWATCHER_WAITUNTIL) {
         if (uvalue_truthy(&cond_value)) {
             /* Immediate wake: unregister the just-installed watcher and let
@@ -268,7 +276,8 @@ install_watcher_runtime(
             urbi_watcher_unregister_internal(vm, w);
             return URBI_INSTALL_OK;
         }
-        /* Park waiter strand until the rising edge fires (T43 wires wake). */
+        /* Park waiter strand until the rising edge fires; watcher_eval_dirty
+         * wakes it via sched_strand_make_runnable. */
         s->state = USTRAND_WAIT_WATCHER;
     }
 
