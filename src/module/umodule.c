@@ -518,6 +518,14 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
     return ULOAD_OK;
 }
 
+/* OP_JMP Bx range note:
+ *   Bx is a 16-bit unsigned field treated as signed with bias 32768
+ *   (effective range -32768..+32767).  The verifier intentionally does
+ *   NOT range-check Bx because the legitimate range depends on pc — a
+ *   target pc' = pc + signed(Bx) - 32768 must satisfy
+ *   0 <= pc' <= instr_count.  Per-instruction bounds checks would force
+ *   the verifier to know absolute PC; we defer to runtime dispatch
+ *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
 static UModuleLoadError decode_verify(MDecCtx *d) {
     size_t vi;
     for (vi = 0; vi < d->module->instr_count; vi++) {

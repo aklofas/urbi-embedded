@@ -1478,6 +1478,55 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     umodule_destroy(&c);
 }
 
+UTEST(verify_rejects_op_closure_bx_above_nested_count) {
+    /* OP_CLOSURE Bx must be < nested_count.  At v0.5.5 nested_count is 0
+     * (root-only modules); a hand-rolled OP_CLOSURE with Bx=0 should
+     * therefore reject with ULOAD_CORRUPT.  Pre-T4/T5 verifier accepted
+     * this silently; runtime would index past nested[] and read garbage. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_CLOSURE, /*A=*/0, /*Bx=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
+    /* OP_JMP Bx is signed-with-32768-bias; verifier intentionally does
+     * NOT range-check Bx.  Build a module with OP_JMP Bx=0 (offset
+     * -32768) followed by OP_RET; verifier accepts even though the
+     * jump target is "out of range" — runtime surfaces the issue at
+     * dispatch, not at load. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_JMP, /*A=*/0, /*Bx=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1601,4 +1650,8 @@ void test_module_suite(void) {
               verify_rejects_op_getupval_a_above_max_reg);
     utest_run("verify accepts OP_AT_INSTALL with no-onleave 0xFF sentinel",
               verify_accepts_at_install_with_no_onleave_sentinel);
+    utest_run("verify rejects OP_CLOSURE Bx >= nested_count",
+              verify_rejects_op_closure_bx_above_nested_count);
+    utest_run("verify accepts OP_JMP with arbitrary Bx",
+              verify_accepts_op_jmp_with_arbitrary_bx);
 }
