@@ -21,18 +21,18 @@
  * "tunable_pin" approach tested in test_determinism_tunable_pin.c). */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "urbi/urbi.h"
-#include "umodule.h"
-#include "uarena.h"
-#include "uast.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "uparse.h"
+#include "module/umodule.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 #include "sched/usched_cooperative.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #include <string.h>
 #include <stdint.h>

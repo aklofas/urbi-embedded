@@ -24,13 +24,13 @@
  *      owning_tag->member_watchers_head. */
 
 #include "utest.h"
-#include "uvm.h"
-#include "ustrand.h"
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
 #include "watcher/uwatcher.h"          /* UWATCHER_AT, uwatcher_pool_alloc */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
 #include "gc/ugc.h"                    /* UCell */
 #include "gc/ugc_incremental.h"        /* UGC_HAS_WATCHER_OBSERVER */
-#include "utag.h"                      /* UTag, member_watchers_head */
+#include "tag/utag.h"                      /* UTag, member_watchers_head */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "urbi/urbi.h"                 /* URBI_LOG_WARN */
 

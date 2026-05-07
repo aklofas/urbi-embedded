@@ -9,8 +9,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "uvalue.h"   /* UValue, UValKind */
-#include "uvm.h"      /* UVM, UGcRootCallback */
+#include "value/uvalue.h"   /* UValue, UValKind */
+#include "vm/uvm.h"      /* UVM, UGcRootCallback */
 
 #ifdef __cplusplus
 extern "C" {

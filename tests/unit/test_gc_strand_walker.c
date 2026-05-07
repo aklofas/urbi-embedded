@@ -18,18 +18,18 @@
  *      run and unlinked again before uvm_run returns. */
 
 #include "utest.h"
-#include "uvm.h"
-#include "ustrand.h"
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_destroy */
-#include "umodule.h"
-#include "uarena.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "uparse.h"
-#include "uast.h"
-#include "uvalue.h"
+#include "module/umodule.h"
+#include "value/uarena.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
+#include "parse/uast.h"
+#include "value/uvalue.h"
 
 #include <string.h>
 #include <stdint.h>

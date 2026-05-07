@@ -52,9 +52,9 @@
 
 #include "ugc_incremental.h"
 #include "urbi/gc.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"
-#include "umacros.h"
+#include "runtime/umacros.h"
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */

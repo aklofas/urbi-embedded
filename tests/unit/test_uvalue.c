@@ -3,8 +3,8 @@
 
 #include "utest.h"
 
-#include "umodule.h"
-#include "uvalue.h"
+#include "module/umodule.h"
+#include "value/uvalue.h"
 
 #include <math.h>
 #include <stdint.h>

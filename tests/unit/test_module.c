@@ -2,10 +2,10 @@
 
 #include "utest.h"
 
-#include "umodule.h"
-#include "uvm.h"
-#include "uarena.h"
-#include "uemit.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
+#include "value/uarena.h"
+#include "emit/uemit.h"
 #include <stdlib.h>
 #include <string.h>
 

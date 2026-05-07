@@ -13,13 +13,13 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "uarena.h"
-#include "uast.h"
-#include "uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
-#include "ulex.h"
-#include "umodule.h"
-#include "uparse.h"
-#include "uvm.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
+#include "lex/ulex.h"
+#include "module/umodule.h"
+#include "parse/uparse.h"
+#include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 

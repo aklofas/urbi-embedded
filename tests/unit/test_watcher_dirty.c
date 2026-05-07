@@ -4,13 +4,13 @@
  * Row 11. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "gc/ugc.h"            /* UTYPE_OBJECT */
 #include "urbi/gc.h"       /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
-#include "utag.h"           /* utag_create / utag_destroy */
-#include "umodule.h"        /* UVAL_BOOL, UVAL_NIL */
+#include "tag/utag.h"           /* utag_create / utag_destroy */
+#include "module/umodule.h"        /* UVAL_BOOL, UVAL_NIL */
 #include "urbi/urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
 
 #include <stdlib.h>   /* realloc / free — test-side only; NOT in src/ */
@@ -458,15 +458,10 @@ UTEST(watcher_install_seeds_last_value_cache)
     uvm_destroy(&vm);
 }
 
-/* 14. watcher_scratch_frame_allocated_at_init:
- *     Verify vm.watcher_scratch_frame is non-NULL after uvm_init. */
-UTEST(watcher_scratch_frame_allocated_at_init)
-{
-    UVM vm;
-    uvm_init(&vm, NULL, NULL);
-    UASSERT(vm.watcher_scratch_frame != NULL);
-    uvm_destroy(&vm);
-}
+/* (former case 14 — watcher_scratch_frame_allocated_at_init — removed by
+ * WATCH-022 in Wave-1 cleanup.  The UScratchFrame heap allocation it
+ * defended is gone; v0.5.1-cond-unstub routed scratch frames onto the
+ * C stack via urbi_run_closure_on_scratch.) */
 
 /* ===================================================================
  * T35 test cases: pending_onleave_queue drain + run_watcher_onleave
@@ -974,8 +969,8 @@ test_watcher_dirty_suite(void)
               watcher_eval_skips_pending_unregister);
     utest_run("watcher_install_seeds_last_value_cache",
               watcher_install_seeds_last_value_cache);
-    utest_run("watcher_scratch_frame_allocated_at_init",
-              watcher_scratch_frame_allocated_at_init);
+    /* (case 14 watcher_scratch_frame_allocated_at_init removed in Wave 1
+     * v0.5.3-layout per WATCH-022 — defended a now-dead allocation.) */
     /* T35 cases */
     utest_run("pending_onleave_push_sets_flag_and_unlinks_from_active",
               pending_onleave_push_sets_flag_and_unlinks_from_active);

@@ -4,11 +4,11 @@
 
 #include <stdio.h>
 
-#include "uarena.h"
-#include "uemit.h"
-#include "uintern.h"
-#include "umodule.h"
-#include "uvm.h"
+#include "value/uarena.h"
+#include "emit/uemit.h"
+#include "value/uintern.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
 
 /* Expose find_or_install_upvalue for cascade tests. */
 int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,

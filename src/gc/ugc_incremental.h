@@ -19,25 +19,33 @@
 #include "ugc.h"
 
 /* Forward declarations for pointer types used in barrier signatures.
- * Full definitions live in ustrand.h / uframe.h / umodule.h. */
+ * Full definitions live in src/sched/ustrand.h / src/runtime/uframe.h /
+ * src/module/umodule.h. */
 struct UVM;
 struct UStrand;
 struct UClosure;
 
 /* === gc_byte bit layout (row 10 §3.1) ===
  *
- * Bits [1:0] — tri-color marking:
- *   WHITE0 / WHITE1 — dead or unvisited (which white is "current" rotates each cycle)
- *   GRAY            — discovered, children not yet scanned
- *   BLACK           — fully scanned in current cycle
- * Bit 2  — has finalizer (mirrors UType.flags & TYPE_HAS_FINALIZER for hot-path)
- * Bit 3  — weak reference (RESERVED v1.x; always 0 at M3)
- * Bit 4  — pinned (exempt from sweep)
- * Bit 5  — fixed / pool-managed (never freed by GC sweep)
- * Bit 6  — has watcher observer (read-set membership; row 10/11 boundary)
- * Bit 7  — has slot-change event subscriber (spec #4 §3.4; post-store hook fires
- *           if any slot on this UObject has a slot-change subscriber).
- *           After this allocation, all 8 gc_byte bits are claimed. */
+ * All 8 bits of gc_byte are claimed; their owners are:
+ *
+ * Bits [1:0] — tri-color marking color (UGC_COLOR_MASK):
+ *   WHITE0 (0x00) — dead or unvisited; "current dead" when == current_white
+ *   WHITE1 (0x01) — dead or unvisited; alternate white (rotates each cycle)
+ *   GRAY   (0x02) — discovered, children not yet scanned
+ *   BLACK  (0x03) — fully scanned in current cycle
+ * Bit 2  — UGC_HAS_FINALIZER: mirrors UType.flags & TYPE_HAS_FINALIZER for
+ *           the hot-path sweep check; avoids a type_table dereference.
+ * Bit 3  — UGC_IS_WEAK: RESERVED for v1.x weak-reference support (backlog).
+ *           Always 0 at v0.5.x; do not set.
+ * Bit 4  — UGC_IS_PINNED: cell is exempt from sweep (host-pinned value).
+ * Bit 5  — UGC_IS_FIXED: pool-managed cell; never freed by GC sweep.
+ * Bit 6  — UGC_HAS_WATCHER_OBSERVER: object has at least one watcher in the
+ *           read-set; triggers observer_dirty() in urbi_gc_slot_write().
+ *           Maintained at row 10/11 boundary (T33).
+ * Bit 7  — UGC_HAS_SLOT_CHANGE_EVENT: at least one slot on this UObject has
+ *           a slot-change subscriber (spec #4 §3.4); post-store hook in
+ *           urbi_gc_slot_write() fires the deferred emit ring. */
 
 #define UGC_COLOR_MASK            0x03
 #define   UGC_COLOR_WHITE0          0x00
@@ -46,15 +54,15 @@ struct UClosure;
 #define   UGC_COLOR_BLACK           0x03
 
 #define UGC_HAS_FINALIZER         0x04
-#define UGC_IS_WEAK               0x08    /* RESERVED v1.x */
+#define UGC_IS_WEAK               0x08    /* RESERVED: v1.x weak-reference support (not implemented at v0.5.x) */
 #define UGC_IS_PINNED             0x10
 #define UGC_IS_FIXED              0x20    /* pool-managed; never swept */
 #define UGC_HAS_WATCHER_OBSERVER  0x40    /* row 10/11 boundary; T33 maintains */
-#define UGC_HAS_SLOT_CHANGE_EVENT 0x80   /* spec #4 §3.4: post-store hook fires
-                                          * if any slot on this UObject has a
-                                          * slot-change subscriber. After this
-                                          * allocation, all 8 gc_byte bits are
-                                          * claimed. */
+#define UGC_HAS_SLOT_CHANGE_EVENT 0x80   /* spec #4 §3.4: at least one slot on
+                                          * this UObject has a slot-change
+                                          * subscriber; post-store hook in
+                                          * urbi_gc_slot_write fires the
+                                          * deferred emit ring. */
 
 /* === Two-white scheme (row 10 §3.2) ===
  *

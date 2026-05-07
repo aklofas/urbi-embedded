@@ -9,14 +9,14 @@
 
 #include "utest.h"
 
-#include "uarena.h"
-#include "uast.h"
-#include "umodule.h"
-#include "uclosure.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "uparse.h"
-#include "uvm.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "module/umodule.h"
+#include "runtime/uclosure.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
+#include "vm/uvm.h"
 
 #include <string.h>
 

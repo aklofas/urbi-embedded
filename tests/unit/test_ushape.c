@@ -11,8 +11,8 @@
 
 #include "object/ushape.h"
 #include "object/uobject.h"   /* USlot / UObject layout neighbours */
-#include "uintern.h"          /* ustr_intern */
-#include "uvm.h"
+#include "value/uintern.h"          /* ustr_intern */
+#include "vm/uvm.h"
 #include "urbi/gc.h"          /* UTYPE_SHAPE */
 
 #include <stddef.h>

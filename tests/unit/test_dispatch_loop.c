@@ -6,12 +6,12 @@
    backward-branch yield, and nested call frames. */
 
 #include "utest.h"
-#include "uvm.h"
-#include "ustrand.h"
-#include "umodule.h"
-#include "uclosure.h"
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
+#include "module/umodule.h"
+#include "runtime/uclosure.h"
 #include "sched/usched_cooperative.h"
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 
 #include <stdlib.h>
 #include <string.h>

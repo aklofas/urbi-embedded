@@ -5,9 +5,9 @@
 
 #include <stddef.h>
 
-#include "urealm_globals.h"
-#include "uvm.h"
-#include "umodule.h"
+#include "realm/urealm_globals.h"
+#include "vm/uvm.h"
+#include "module/umodule.h"
 
 #define UTEST(name) static void name(void)
 

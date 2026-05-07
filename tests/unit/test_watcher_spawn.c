@@ -21,12 +21,12 @@
  *      respawn_body_coroutine with in_watcher_eval=0 succeeds. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
-#include "umodule.h"       /* UClosure, UProto */
-#include "uclosure.h"
-#include "uframe.h"        /* UVM_STACK_CAP */
+#include "sched/ustrand.h"
+#include "module/umodule.h"       /* UClosure, UProto */
+#include "runtime/uclosure.h"
+#include "runtime/uframe.h"        /* UVM_STACK_CAP */
 #include "watcher/uwatcher.h"
 #include "urbi/urbi.h"     /* URBI_LOG_WARN */
 

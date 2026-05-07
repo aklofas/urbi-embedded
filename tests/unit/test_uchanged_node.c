@@ -9,9 +9,9 @@
 #include "utest.h"
 
 #include "object/uobject.h"   /* UObject, urbi_object_alloc */
-#include "uchanged_node.h"    /* UChangedNode, UTYPE_CHANGED_NODE */
+#include "changed/uchanged_node.h"    /* UChangedNode, UTYPE_CHANGED_NODE */
 #include "gc/ugc.h"           /* UTYPE_CHANGED_NODE */
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>

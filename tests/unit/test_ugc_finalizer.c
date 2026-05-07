@@ -5,7 +5,7 @@
 #include "utest.h"
 #include "urbi/gc.h"
 #include "gc/ugc_incremental.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 

@@ -2,10 +2,10 @@
 /* Unit tests for the streaming Pratt parser. */
 
 #include "utest.h"
-#include "uarena.h"
-#include "uast.h"
-#include "ulex.h"
-#include "uparse.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>

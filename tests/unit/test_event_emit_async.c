@@ -16,15 +16,15 @@
 
 #include "utest.h"
 
-#include "uevent.h"
-#include "uevent_emit.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "ustrand.h"
-#include "uvm.h"
+#include "sched/ustrand.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "umodule.h"
-#include "uclosure.h"
+#include "module/umodule.h"
+#include "runtime/uclosure.h"
 
 #include <stddef.h>
 #include <stdlib.h>

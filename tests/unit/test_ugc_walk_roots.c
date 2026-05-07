@@ -20,7 +20,7 @@
  * TODO(M5): add a test that walks a realm binding set to a non-nil value. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "urbi/gc.h"
 #include "urbi/object.h"            /* T36: urbi_object_root, urbi_object_atom */
 #include "object/uobject.h"         /* T36: UObject, URBI_ATOM_INTEGER */

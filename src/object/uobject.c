@@ -19,14 +19,14 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "object/umoduleinstance.h"  /* T36: walk module_instances_head */
-#include "uintern.h"      /* T40: ustr_intern("fallback", ...) */
-#include "uvm.h"
+#include "object/umodule_instance.h"  /* T36: walk module_instances_head */
+#include "value/uintern.h"      /* T40: ustr_intern("fallback", ...) */
+#include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (T10), urbi_gc_walk_all_cells (T12) */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic + URBI_OK / UErrCode */
-#include "uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
+#include "changed/uchanged_node.h"  /* urbi_emit_slot_change_if_subscribed (T65) */
 
 /* === next_id ===
  *

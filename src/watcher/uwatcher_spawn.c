@@ -27,13 +27,13 @@
  *   Static in production builds; tests reach it via extern declaration. */
 
 #include "watcher/uwatcher.h"
-#include "ustrand.h"
-#include "uvm.h"
-#include "uclosure.h"              /* UClosure full definition — proto_inst field access */
+#include "sched/ustrand.h"
+#include "vm/uvm.h"
+#include "runtime/uclosure.h"              /* UClosure full definition — proto_inst field access */
 #include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */
-#include "object/umoduleinstance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
+#include "object/umodule_instance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
 #include "urbi/urbi.h"             /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
-#include "umacros.h"               /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"               /* URBI_INTERNAL_ASSERT */
 
 void
 do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)

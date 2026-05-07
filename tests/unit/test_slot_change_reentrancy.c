@@ -22,19 +22,19 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "uvm.h"
-#include "ustrand.h"                   /* ustrand_init/destroy */
+#include "vm/uvm.h"
+#include "sched/ustrand.h"                   /* ustrand_init/destroy */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "object/uobject.h"            /* urbi_object_alloc */
-#include "uchanged_node.h"             /* urbi_object_get_or_create_change_event,
+#include "changed/uchanged_node.h"             /* urbi_object_get_or_create_change_event,
                                           urbi_defer_slot_change,
                                           urbi_drain_deferred_slot_changes,
                                           urbi_emit_slot_change_if_subscribed */
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
 #include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
-#include "uintern.h"                   /* ustr_intern */
-#include "umodule.h"                   /* USymbol, UClosure, UProto */
-#include "uclosure.h"                  /* UClosure layout */
+#include "value/uintern.h"                   /* ustr_intern */
+#include "module/umodule.h"                   /* USymbol, UClosure, UProto */
+#include "runtime/uclosure.h"                  /* UClosure layout */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */
 
 #define UTEST(name) static void name(void)

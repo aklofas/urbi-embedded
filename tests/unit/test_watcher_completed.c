@@ -14,12 +14,12 @@
  *      TAG_STOP and CANCEL → no log emitted; both pointers cleared. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
-#include "umodule.h"
-#include "uclosure.h"
-#include "uframe.h"
+#include "sched/ustrand.h"
+#include "module/umodule.h"
+#include "runtime/uclosure.h"
+#include "runtime/uframe.h"
 #include "watcher/uwatcher.h"
 #include "urbi/urbi.h"
 

@@ -1,17 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* URBI_GC_NONE — spec-only at M3, ships v2 (REVIVAL §2.2 lock).
+/* URBI_GC_NONE — zero-overhead GC stub configuration.
  *
- * This header exists ONLY to satisfy the strategy-router include path so the
- * URBI_GC_NONE compile-smoke build (test-gc-none-build target) can verify the
- * strategy interface contract holds at the header level.  Real heap-freeze
- * impl lands at v2.
+ * URBI_GC_NONE is a compile-only configuration providing zero-overhead GC
+ * stubs; gated by `make test-gc-none-build` smoke build (in releasetest).
+ * Functional GC for embedded targets is URBI_GC_INCREMENTAL
+ * (see ugc_incremental.{c,h}).
  *
- * All barriers are no-ops (no GC tracking).  All allocator ops are declared
- * as no-op stubs; linking against a real URBI_GC_NONE library is deferred
- * to v2.  See docs/superpowers/specs/ Row 10 §2.1 for the freeze strategy.
+ * This header satisfies the strategy-router include path so that the
+ * URBI_GC_NONE compile-smoke build can verify the strategy interface contract
+ * holds at the header level.  A real heap-freeze allocator (fixed arena, no
+ * sweep, destroy on uvm_destroy) is deferred to v2.
  *
- * TODO(v2): implement real freeze-allocator in src/ugc_none.c (allocates from
- * a fixed arena; no sweep; destroy called at uvm_destroy).
+ * All barriers are no-op static inlines.  All allocator ops are declared as
+ * no-op stubs; linking against a real URBI_GC_NONE library is deferred to v2.
+ * See docs/superpowers/specs/ Row 10 §2.1 for the freeze strategy.
  */
 
 #ifndef UGC_NONE_H

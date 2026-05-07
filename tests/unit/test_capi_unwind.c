@@ -15,11 +15,11 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "ustrand.h"
-#include "ucleanup.h"
-#include "uvm.h"
-#include "umodule.h"
-#include "utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */
+#include "sched/ustrand.h"
+#include "runtime/ucleanup.h"
+#include "vm/uvm.h"
+#include "module/umodule.h"
+#include "tag/utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */
 
 #include <stdlib.h>
 #include <string.h>

@@ -18,14 +18,14 @@
  *      trace_overflow=0, trace_read_set_count=0 before returning the stub OK. */
 
 #include "utest.h"
-#include "uvm.h"
-#include "ustrand.h"
-#include "umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
-#include "uintern.h"                        /* ustr_intern */
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
+#include "module/umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
+#include "value/uintern.h"                        /* ustr_intern */
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
 #include "object/uic.h"                     /* UIC */
-#include "object/umoduleinstance.h"         /* urbi_module_instance_create,
+#include "object/umodule_instance.h"         /* urbi_module_instance_create,
                                                UModuleInstance, UProtoInstance */
 #include "sched/usched_cooperative.h"       /* sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */

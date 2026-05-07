@@ -9,18 +9,18 @@
  */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "urbi/urbi.h"
-#include "umodule.h"
-#include "uarena.h"
-#include "uast.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "uparse.h"
-#include "uvalue.h"
-#include "uop_fork.h"
+#include "module/umodule.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
+#include "value/uvalue.h"
+#include "vm/uop_fork.h"
 #include "sched/usched_cooperative.h"
 
 #include <string.h>

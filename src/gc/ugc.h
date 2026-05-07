@@ -17,12 +17,12 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "umodule.h"   /* UValue typedef — needed by callback signatures */
+#include "module/umodule.h"   /* UValue typedef — needed by callback signatures */
 
 /* === Build-flag values === */
 
 #define URBI_GC_INCREMENTAL    1   /* Ships M3 (default) */
-#define URBI_GC_NONE           2   /* Spec-only at M3, ships v2 */
+#define URBI_GC_NONE           2   /* Compile-smoke only (see ugc_none.h); real impl deferred to v2 */
 #define URBI_GC_GENERATIONAL   3   /* RESERVED — v1.x */
 #define URBI_GC_ARENA_PER_TAG  4   /* RESERVED — v1.x design / v2 ship */
 
@@ -30,8 +30,9 @@
 #  define URBI_GC URBI_GC_INCREMENTAL
 #endif
 
-/* Forward declarations — defined in uvm.h / ustrand.h / uframe.h.
- * Referenced only as pointers here to avoid circular includes. */
+/* Forward declarations — defined in src/vm/uvm.h / src/sched/ustrand.h /
+ * src/runtime/uframe.h.  Referenced only as pointers here to avoid circular
+ * includes. */
 struct UVM;
 
 /* === GC root provider callbacks ===
@@ -109,7 +110,23 @@ typedef struct UType {
 #define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
 #define UTYPE_EVENT            18   /* M5 — UEvent reactive cell (spec #3 §3.1) */
 #define UTYPE_CHANGED_NODE     19   /* M5 — UChangedNode slot-change subscriber (spec #4 §3.1) */
-#define UTYPE_HOST_BASE  64  /* host-registered types start here */
+/* Tags 20-63 are RESERVED for future runtime expansion (v1.x/v2.0 GC cell
+ * types such as UString heap cells, UArray, UDict, UWeakRef, UFiber, etc.).
+ * Do not assign host types here; use the host range below.
+ *
+ * Runtime tags claimed so far (1-19):
+ *   1  UTYPE_OBJECT            9  UTYPE_PROTOS
+ *   2  UTYPE_CLOSURE          10  UTYPE_SHAPE
+ *   3  UTYPE_STRING           11  UTYPE_PROPS
+ *   4  UTYPE_ARRAY            12  UTYPE_SLOTHANDLE
+ *   5  UTYPE_TAG              13  UTYPE_MODULE_INSTANCE
+ *   6  UTYPE_WATCHER          14  UTYPE_PROTO_INSTANCE
+ *   7  UTYPE_COROUTINE        15  UTYPE_SHAPE_MAP
+ *   8  UTYPE_NAMESPACE        16  UTYPE_PROPS_TABLE
+ *                             17  UTYPE_SLOT_ARRAY
+ *                             18  UTYPE_EVENT
+ *                             19  UTYPE_CHANGED_NODE */
+#define UTYPE_HOST_BASE  64  /* host-registered types start here (64-255) */
 #define UTYPE_HOST_MAX   255
 
 /* === Non-inline GC C API ===
@@ -117,14 +134,34 @@ typedef struct UType {
  * force_full, bytes_allocated_inline, and the three barrier surfaces) are
  * declared in urbi/gc.h via the strategy header. */
 
-/* Register a built-in or host type descriptor with the VM.
- * Returns the assigned type_tag on success (always == type->type_tag).
- * Returns 0 on error (tag already occupied, or host-type table full). */
+/* Register a host type descriptor with the VM.
+ * Precondition: type->type_tag must be 0 (auto-assign) or >= UTYPE_HOST_BASE (64).
+ *   Tags 1..(UTYPE_HOST_BASE-1) are reserved for built-in runtime types;
+ *   passing one of those tags triggers URBI_INTERNAL_ASSERT in debug builds
+ *   and returns 0 in release builds.
+ * Returns the assigned type_tag on success (== type->type_tag for explicit
+ * tags; next auto-slot for tag == 0).
+ * Returns 0 on error (tag conflict, runtime-reserved tag, or table full).
+ * See src/value/utype.c for the implementation. */
 uint8_t urbi_register_type(struct UVM *vm, const UType *type);
 
 /* Trigger a full synchronous GC collection (all phases in one call).
  * Intended for testing and shutdown; not for production use on MCUs. */
 void   urbi_gc_collect(struct UVM *vm);
+
+/* Declared in urbi/gc.h (strategy-router header) — reproduced here for
+ * subsystems that include ugc.h directly:
+ *
+ * void urbi_gc_destroy(struct UVM *vm);
+ *
+ * Ordering constraint: must be called AFTER all subsystems that hold
+ * GC-managed cells have been torn down.  At M5 the required order is:
+ *   1. urealm_teardown_all()  — releases Realm bindings (GC-managed values)
+ *   2. uwatcher_pool_destroy() — frees the watcher pool slab before GC
+ *   3. urbi_gc_destroy()      — frees all remaining GC cells + sidecar list
+ * Remaining VM infrastructure (event ring, sched queues, deferred
+ * slot-change ring, handle table) does NOT own GC cells and is freed
+ * after urbi_gc_destroy in uvm_destroy.  See src/vm/uvm.c:uvm_destroy. */
 
 /* Pause / resume incremental GC slices.  While paused, urbi_gc_slice() is a
  * no-op.  urbi_gc_collect() still works (explicit override). */

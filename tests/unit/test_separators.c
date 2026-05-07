@@ -2,10 +2,10 @@
 /* Unit tests for two-tier separator parsing (';'/',' outer, '|'/'&' inner). */
 
 #include "utest.h"
-#include "uarena.h"
-#include "uast.h"
-#include "ulex.h"
-#include "uparse.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 #include <string.h>
 
 #define UTEST(name) static void name(void)

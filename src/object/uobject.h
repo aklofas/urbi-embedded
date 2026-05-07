@@ -21,7 +21,7 @@
 
 #include <stdint.h>
 
-#include "umodule.h"   /* UValue (16 B) + USymbol forward-typedef */
+#include "module/umodule.h"   /* UValue (16 B) + USymbol forward-typedef */
 #include "gc/ugc.h"    /* UCell (2 B) */
 
 /* USymbol is forward-declared in umodule.h.  Real definition lives in

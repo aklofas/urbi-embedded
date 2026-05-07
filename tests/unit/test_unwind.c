@@ -17,11 +17,11 @@
  * 13. THROW propagates through TAG_SCOPE (M3 stub passthrough) (T13). */
 
 #include "utest.h"
-#include "uunwind.h"
-#include "ustrand.h"
-#include "ucleanup.h"
-#include "uvm.h"
-#include "umodule.h"
+#include "runtime/uunwind.h"
+#include "sched/ustrand.h"
+#include "runtime/ucleanup.h"
+#include "vm/uvm.h"
+#include "module/umodule.h"
 
 #include <stdlib.h>
 #include <string.h>

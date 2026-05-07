@@ -10,8 +10,8 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "uvm.h"
-#include "ustrand.h"
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>

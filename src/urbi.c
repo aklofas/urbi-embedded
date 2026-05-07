@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "urbi/urbi.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "umodule.h"
-#include "uintern.h"
-#include "umacros.h"
+#include "module/umodule.h"
+#include "value/uintern.h"
+#include "runtime/umacros.h"
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>

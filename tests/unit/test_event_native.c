@@ -18,13 +18,13 @@
 
 #include "utest.h"
 
-#include "uvm.h"
-#include "event_native.h"
-#include "uevent.h"
+#include "vm/uvm.h"
+#include "event/uevent_native.h"
+#include "event/uevent.h"
 #include "object/uobject.h"
-#include "uintern.h"
-#include "ustrand.h"
-#include "umodule.h"
+#include "value/uintern.h"
+#include "sched/ustrand.h"
+#include "module/umodule.h"
 
 #include <stddef.h>
 #include <stdint.h>

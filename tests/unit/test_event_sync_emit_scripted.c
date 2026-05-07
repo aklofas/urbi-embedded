@@ -34,20 +34,20 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "uarena.h"
-#include "uast.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "umodule.h"
-#include "uparse.h"
-#include "uvm.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "module/umodule.h"
+#include "parse/uparse.h"
+#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "uevent.h"
-#include "uevent_emit.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
 
 #define UTEST(name) static void name(void)
 

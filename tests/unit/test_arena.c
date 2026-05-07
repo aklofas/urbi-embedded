@@ -2,7 +2,7 @@
 /* Unit tests for the compiler arena allocator. */
 
 #include "utest.h"
-#include "uarena.h"
+#include "value/uarena.h"
 #include <stdint.h>
 
 #define UTEST(name) static void name(void)

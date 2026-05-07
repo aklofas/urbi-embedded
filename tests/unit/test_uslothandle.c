@@ -19,9 +19,9 @@
 #include "object/uobject.h"
 #include "object/uslothandle.h"
 #include "object/ushape.h"
-#include "uintern.h"      /* ustr_intern → USymbol* */
-#include "umodule.h"      /* UValue */
-#include "uvm.h"
+#include "value/uintern.h"      /* ustr_intern → USymbol* */
+#include "module/umodule.h"      /* UValue */
+#include "vm/uvm.h"
 #include "urbi/object.h"
 
 #include <stdint.h>

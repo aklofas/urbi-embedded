@@ -11,12 +11,12 @@
  *    cell types (M4 owns those — UClosure/UNamespace/UString embed UCell). */
 
 #include "uwatcher.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 #include "gc/ugc.h"
 #ifdef URBI_DEBUG
-#include "ustrand.h"
+#include "sched/ustrand.h"
 #include "realm/urealm.h"
-#include "umacros.h"   /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT */
 #endif
 
 void

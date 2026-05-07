@@ -5,10 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "uarena.h"
-#include "uemit.h"
-#include "uintern.h"
-#include "uvm.h"
+#include "value/uarena.h"
+#include "emit/uemit.h"
+#include "value/uintern.h"
+#include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 
@@ -854,8 +854,8 @@ uvm_destroy(&vm);
 
 /* --- var-decl + local resolution emit tests (T10) --- */
 
-#include "ulex.h"
-#include "uparse.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 
 /* Helper context used by all T10 emit tests: parse source + emit. */
 typedef struct {

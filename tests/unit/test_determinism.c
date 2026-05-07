@@ -9,7 +9,7 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 #include <string.h>
 
@@ -29,9 +29,9 @@ UTEST(determinism_checksum_smoke)
 #ifdef URBI_DEBUG
 
 #include "realm/urealm.h"
-#include "umodule.h"      /* UValue, UValKind */
+#include "module/umodule.h"      /* UValue, UValKind */
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #include <stdlib.h>  /* malloc */
 

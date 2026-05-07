@@ -88,8 +88,38 @@ void urbi_unpin(struct UVM *vm, UValue v);
 #endif
 
 /* Non-inline op forward declarations (defined in ugc_incremental.c at T23): */
+
+/* Allocate a new GC-managed cell of the given size and type_tag.
+ * The cell is born at the current white color per spec §3.5.
+ * Increments gc_debt and sets gc_pending if debt turns positive and GC is
+ * not paused.  Does NOT advance the collector (no slice is run here).
+ * Returns NULL on OOM. */
 UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
+
+/* Advance the incremental GC by approximately byte_budget bytes of work.
+ * Called from the dispatcher when gc_pending != 0 (cooperative safepoints).
+ *
+ * Termination behavior per phase:
+ *   IDLE            — returns immediately if nothing to collect; starts a
+ *                     new cycle (→ MARK_ROOTS) and falls through if debt > 0.
+ *   MARK_ROOTS      — runs one full root-scan step; returns once complete
+ *                     (ignores remaining budget for this phase).
+ *   MARK_INCREMENTAL — drains the gray work-list up to the remaining budget;
+ *                      transitions to ATOMIC_FINISH when work-list is empty.
+ *   ATOMIC_FINISH   — runs one bounded stop-the-world re-scan step; returns
+ *                     once complete (ignores remaining budget for this phase).
+ *   SWEEP           — walks all-cells list up to the remaining budget; returns
+ *                     early (→ IDLE) once the cycle completes.
+ *
+ * Step budget: incremental work is bounded so that any single
+ * urbi_gc_slice() call returns within ~1ms on the host CI runner.
+ * Verified by `make test-gc-pause` CI gate.  See M3 retrospective at
+ * docs/milestones/m3-concurrency.md (workspace-root) for the
+ * end-to-end pause-time history.
+ *
+ * ISR note: NOT ISR-safe — allocates/frees memory and modifies VM state. */
 void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
+
 void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
 void   urbi_gc_init(struct UVM *vm);

@@ -12,8 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "uemit.h"
-#include "umodule.h"
+#include "emit/uemit.h"
+#include "module/umodule.h"
 
 #define UTEST(name) static void name(void)
 

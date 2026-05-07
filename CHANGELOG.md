@@ -2,6 +2,155 @@
 
 ## Unreleased
 
+## v0.5.3-layout — 2026-05-06
+
+Wave 1 of the v0.5.x pre-M6 cleanup ramp: pure mechanical layout
+reorganization.  Every `.c`/`.h` under `src/` (except `urbi.c`) moves
+into a per-subsystem folder; three filename renames; layout-flagged
+doc + comment fixes; six `_Static_assert` layout pins; dead-code
+removal of the orphaned `UScratchFrame` heap allocation.  No
+behavioral change.  Bytecode-byte-identical to v0.5.2 — every
+`.chk` fixture passes unchanged.  Binary footprint within 0.1 % of
+v0.5.2 across host / arm-cortex-m7 / riscv-rv32imc.
+
+### Layout
+
+- Every source under `src/` (except the entrypoint `urbi.c`) moved
+  into a per-subsystem folder.  Top-level `src/` now holds only
+  `urbi.c` and subsystem directories.
+- New folders: `lex/`, `parse/`, `emit/`, `vm/`, `event/`, `tag/`,
+  `changed/`, `module/`, `value/`, `runtime/` — alongside the
+  pre-existing `gc/`, `sched/`, `watcher/`, `realm/`, `object/`.
+- `ustrand.{c,h}` joins the `sched/` folder (strand is the unit of
+  scheduled execution).
+- `urealm_globals.{c,h}` moves into `realm/` — closes REALM-012
+  (the file was orphaned at `src/` top level while every other
+  realm file lived under `src/realm/`).
+- `uchunk.c` joins `module/` (chunks become modules at runtime).
+- `uast.h` moves into `parse/` (co-located with the parser that
+  produces it).
+- `umacros.h` moves into `runtime/`; the audit verdict was "earns
+  its keep, relocate not retire" (closes API-031, INC-002).
+
+### Renames
+
+- `src/event_native.{c,h}` → `src/event/uevent_native.{c,h}` —
+  picks up the project `u` prefix (closes EVENT-012).
+- `src/tag_native.{c,h}` → `src/tag/utag_native.{c,h}` (closes
+  TAGCH-015).
+- `src/object/umoduleinstance.{c,h}` → `src/object/umodule_instance.{c,h}`
+  — snake-case for compound filenames (closes OBJ-022).
+- File-private field `UStrand::is_uvm_run_transient` →
+  `is_transient_strand` — the name no longer embeds the
+  implementation function `uvm_run`; docstring rewritten to
+  describe both transient strand sources (`uvm_run` and
+  `urbi_run_closure_on_scratch`).  Closes CHSTR-023.
+
+Function symbol names inside the renamed files (e.g.,
+`event_native_register`, `walk_umoduleinstance`) stay unchanged —
+symbol renames belong to wave-3-naming.
+
+### Hygiene
+
+- `_Static_assert` layout pins for `UStrand` (2880 B), `UWatcher`
+  (240 B), and `UTag` (56 B) — the three v0.5.x runtime cell types
+  that lacked compile-time size pins.  `UEvent` (40 B), `UObject`
+  (56 B), `UChangedNode` (32 B) already had asserts.  All six are
+  guarded on `__SIZEOF_POINTER__ == 8` so 32-bit cross targets
+  build clean.  Closes CHSTR-041.
+- Removed dead `UScratchFrame` heap allocation (~280 B / VM saved
+  at runtime).  The v0.5.1-cond-unstub patch routed scratch frames
+  onto the C stack via `urbi_run_closure_on_scratch`; the heap
+  slot on UVM was orphaned.  Removed the struct definition,
+  `vm->watcher_scratch_frame` field, init allocation, destroy
+  free, and the defensive test
+  `watcher_scratch_frame_allocated_at_init`.  The OOM-counter
+  test `vm_oom_first_alloc_fails_second_would_succeed` adjusts
+  its target from alloc #5 to alloc #4 to match the new init
+  sequence.  Closes WATCH-022.
+- `is_ident_cont` forward-decl in `src/lex/ulex.c` removed; the
+  function reordered above its first caller.  Closes LEX-022.
+
+### Documentation
+
+- `gc/` header docstrings refreshed: `gc_byte` bit allocations
+  enumerated bit-by-bit; `UTYPE_HOST_BASE = 64` claimed/reserved
+  ID gap documented; `urbi_register_type` host-only contract
+  stated; `urbi_gc_slice` per-phase termination documented;
+  `urbi_gc_alloc` ATOMIC_FINISH role narrowed to match
+  implementation; 1ms pause-time budget cited near
+  `urbi_gc_slice`; `UGC_IS_WEAK` reservation note clarified;
+  `ugc_none.h` "spec-only at M3" replaced with current
+  `URBI_GC_NONE` compile-smoke description; stale path
+  references updated to new subsystem prefixes.  Closes GC-014,
+  GC-022, GC-026, GC-029, GC-031, GC-032, GC-033, GC-035, GC-036,
+  GC-039.
+- `runtime/uframe.h` indirect-`UValue`-dependency note rewritten
+  to acknowledge the actual `uvalue.h → umodule.h → uframe.h`
+  include cycle (the cycle prevents the obvious "just include
+  `value/uvalue.h` here" fix).  Closes FOUND-006, FOUND-022.
+- Public-header `include/urbi/urbi.h` `#include` paths adjusted
+  to new subsystem-prefixed form (`sched/ustrand.h`); docstring
+  updated to cite `sched/ustrand.h` and `vm/uvm.h`.
+  `URBI_ASSERT_NOT_ISR` docblock now states why the macro lives
+  in the public header (embedder-facing assertion surface) and
+  acknowledges the `isr_check_fn` internal-field dependency for
+  wave-3-naming follow-up.  `umacros.h` docstring clarifies that
+  `URBI_ASSERT_NOT_ISR` is in the public header.  Path-only
+  mechanical close for API-012, API-018, API-027, INC-003,
+  GC-012; the deeper "public should not include internal" cleanup
+  is a wave-3-naming carry-forward.
+
+### Build
+
+- Makefile `SRC` discovery extended with wildcards for the 10 new
+  subsystem folders.
+
+### Verification
+
+- 1138 unit cases / 6382 checks / 0 failed (was 1139 / 6383 at
+  v0.5.2; the −1 case + −1 assertion are the now-removed
+  `UScratchFrame` defensive test).
+- 148 / 148 `.chk` fixtures pass.
+- ASan + UBSan + valgrind-fast + valgrind-deep clean across the
+  full suite.
+- Coverage 85 % (line); GC stress targets all PASS; GC pause max
+  2.7 µs (target 1 ms — 370 × margin); barrier throughput 40 M
+  ops/sec; event-emit throughput 11.8 M ops/sec.
+- `make tidy` + `make docs-check` clean.
+- `URBI_GC_NONE` compile smoke PASS.
+- `make test-determinism` (3-preset × 100-run) PASS.
+- Cross-arm + cross-riscv builds green.
+- Binary footprint deltas vs v0.5.2 baseline:
+  - host-x86_64:    `liburbi.a` text 135 973 B → 135 910 B  (−63 B, −0.05 %)
+  - arm-cortex-m7:  `liburbi.a` text  55 710 B →  55 650 B  (−60 B, −0.11 %)
+  - riscv-rv32imc:  `liburbi.a` text  69 774 B →  69 712 B  (−62 B, −0.09 %)
+  All deltas trace to the removed `UScratchFrame` allocation
+  paths; well within the cleanup-design §4.2 ±5 % gate.
+- Bytecode output byte-identical to v0.5.2 across all 148
+  fixtures (no codegen change in this wave).
+- `git log --follow` traces every moved file back to its v0.5.2
+  history (rename detection threshold satisfied for all 58
+  file-rename entries across the 17 file-move/rename commits;
+  similarity ≥ 94 %).
+
+### Wave-1 audit IDs closed (28)
+
+API-012, API-018, API-027, API-031, CHSTR-023, CHSTR-041, EVENT-012,
+FOUND-006, FOUND-022, GC-012, GC-014, GC-022, GC-026, GC-029, GC-031,
+GC-032, GC-033, GC-035, GC-036, GC-039, INC-002, INC-003, INC-004,
+INC-005, LEX-022, OBJ-022, REALM-012, TAGCH-015, WATCH-022.
+
+Carries forward to wave-3-naming: the deeper "public header should
+not include internal types" hygiene (API-012/018/027 + INC-003 +
+GC-012 in their structural form, beyond the path-fix mechanical
+close landed here).
+
+See `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-audit-findings.md`
+for full audit context.
+
+---
+
 ## v0.5.2-scratch-frame-followup — 2026-05-05
 
 Closes the four scratch-frame stub sites left hook-stubbed at

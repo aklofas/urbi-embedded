@@ -12,10 +12,10 @@
  *   spawn_body_coroutine: lives in uwatcher_spawn.c (Row 11). */
 
 #include "uwatcher.h"
-#include "uvm.h"
-#include "uvalue.h"        /* uvalue_truthy */
+#include "vm/uvm.h"
+#include "value/uvalue.h"        /* uvalue_truthy */
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
-#include "umacros.h" /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
 #include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
 
 /* === invoke_condition_closure ===

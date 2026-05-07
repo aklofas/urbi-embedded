@@ -8,7 +8,7 @@
  *   - slot_change_reentrancy_warned is 0 at create. */
 
 #include "utest.h"
-#include "uvm.h"
+#include "vm/uvm.h"
 
 static void uvm_deferred_slot_change_ring_alloc(void)
 {

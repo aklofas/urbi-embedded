@@ -43,7 +43,8 @@ typedef enum {
  *
  * These functions allow host C code to inject unwind events into strands
  * and inspect their state.  They operate on struct UStrand / struct UTag /
- * struct UVM — forward-declared here; definitions live in ustrand.h / uvm.h.
+ * struct UVM — forward-declared here; definitions live in sched/ustrand.h
+ * and vm/uvm.h.
  *
  * Thread safety: none at M3 — these are not ISR-safe.  The ISR-safe event
  * ring (urbi_inject_event) is added at T18. */
@@ -51,7 +52,7 @@ struct UVM;
 struct UStrand;
 struct UTag;
 
-#include "ustrand.h"  /* UExecStatus, UValue — needed by return types below */
+#include "sched/ustrand.h"  /* UExecStatus, UValue — needed by return types below */
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.
@@ -302,7 +303,15 @@ URBI_NORETURN void urbi_panic(const char *msg);
 #endif
 
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not
- * called from ISR context.  vm must be a pointer to a live UVM. */
+ * called from ISR context.  vm must be a pointer to a live UVM.
+ *
+ * Lives in this public header (rather than src/runtime/umacros.h) because
+ * the macro is part of the embedder-facing assertion surface — host C code
+ * can sprinkle it across its own bridges if it wants debug-build catches
+ * for ISR-unsafe entry points.  The macro touches vm->isr_check_fn, an
+ * internal field; this dependency is acknowledged here and tracked for
+ * wave-3-naming hygiene cleanup (API-012, API-018, API-027, INC-003,
+ * GC-012 in their structural form). */
 #ifdef URBI_DEBUG
 #  define URBI_ASSERT_NOT_ISR(vm) \
        do { if ((vm)->isr_check_fn && (vm)->isr_check_fn()) \

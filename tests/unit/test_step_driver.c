@@ -6,8 +6,8 @@
 
 #include "utest.h"
 #include "sched/usched_cooperative.h"
-#include "uvm.h"
-#include "ustrand.h"
+#include "vm/uvm.h"
+#include "sched/ustrand.h"
 #include <stdint.h>
 
 #define UTEST(name) static void name(void)

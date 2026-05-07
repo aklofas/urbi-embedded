@@ -13,19 +13,19 @@
 #include "utest.h"
 
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
-#include "uintern.h"
-#include "umodule.h"
-#include "uvm.h"
+#include "value/uintern.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "uarena.h"
-#include "uast.h"
-#include "uemit.h"
-#include "ulex.h"
-#include "uparse.h"
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 
 #include <stddef.h>
 #include <stdint.h>

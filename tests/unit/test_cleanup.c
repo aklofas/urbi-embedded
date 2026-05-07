@@ -2,9 +2,9 @@
 /* Unit tests: UCleanupEntry struct layout, push/pop LIFO semantics, overflow. */
 
 #include "utest.h"
-#include "ucleanup.h"
-#include "ustrand.h"
-#include "uvm.h"
+#include "runtime/ucleanup.h"
+#include "sched/ustrand.h"
+#include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 

@@ -18,13 +18,13 @@
 
 #include "utest.h"
 
-#include "uevent.h"
-#include "uevent_emit.h"
-#include "ustrand.h"
-#include "uvm.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
+#include "sched/ustrand.h"
+#include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "utag.h"
-#include "uunwind.h"
+#include "tag/utag.h"
+#include "runtime/uunwind.h"
 #include "urbi/urbi.h"
 
 #include <stddef.h>

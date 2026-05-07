@@ -31,12 +31,12 @@
 #include "utest.h"
 
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "uintern.h"
-#include "umodule.h"
-#include "uvm.h"
+#include "value/uintern.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
 
 #include <stddef.h>
 #include <stdint.h>
