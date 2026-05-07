@@ -1527,6 +1527,121 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
     umodule_destroy(&c);
 }
 
+/* Helper: build a serialized 2-instruction module with the given test
+ * instruction first and OP_RET as the second instruction.  Returns the
+ * total serialized length and writes into buf.  buf must be >= 80 bytes. */
+static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
+                                     uint8_t max_reg,
+                                     uint32_t test_instr) {
+    UASSERT(bufcap >= 80U);
+    size_t off = write_good_header_to(buf);
+    buf[off++] = max_reg;
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    buf[off++] = (uint8_t)(test_instr         & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 8)  & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 24) & 0xFFU);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    return off;
+}
+
+#define ENC_ABC(op, a, b, c) \
+    ((uint32_t)(op) | ((uint32_t)(a) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 24))
+#define ENC_ABX(op, a, bx) \
+    ((uint32_t)(op) | ((uint32_t)(a) << 8) | ((uint32_t)(bx) << 16))
+
+UTEST(verify_rejects_arith_c_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, /*max_reg=*/0,
+                                        ENC_ABC(OP_ADD, 0, 0, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_neg_b_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_NEG, 0, 99, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_test_a_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_TEST, 99, 0, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_eq_b_above_max_reg) {
+    /* OP_EQ A=0 (bool flag), B=99 (register), C=0 — B is the register, reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_EQ, 0, 99, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_setupval_a_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_SETUPVAL, 99, 0, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
+    /* base=0, count=2, max_reg=0 — base+count=2 > max_reg+1=1, reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_PUSH_FRAME_GUARD, 0, 2, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
+    /* instr_count=2; handler PC must be < 2.  Use Bx=99 to overshoot. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_TRY_BEGIN, 0, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
+    /* A[3:0] = tag_reg = 1; max_reg = 0 — reject on UOPK_IMM_REG_NIBBLE. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_PUSH_TAG, 0x01, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
+    /* PUSH_TAG Bx=99 with instr_count=2 — UBXK_HANDLER_PC reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_PUSH_TAG, 0x00, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1654,4 +1769,22 @@ void test_module_suite(void) {
               verify_rejects_op_closure_bx_above_nested_count);
     utest_run("verify accepts OP_JMP with arbitrary Bx",
               verify_accepts_op_jmp_with_arbitrary_bx);
+    utest_run("verify rejects OP_ADD C > max_reg",
+              verify_rejects_arith_c_above_max_reg);
+    utest_run("verify rejects OP_NEG B > max_reg",
+              verify_rejects_neg_b_above_max_reg);
+    utest_run("verify rejects OP_TEST A > max_reg",
+              verify_rejects_test_a_above_max_reg);
+    utest_run("verify rejects OP_EQ B > max_reg",
+              verify_rejects_eq_b_above_max_reg);
+    utest_run("verify rejects OP_SETUPVAL A > max_reg",
+              verify_rejects_setupval_a_above_max_reg);
+    utest_run("verify rejects OP_PUSH_FRAME_GUARD base+count overflow",
+              verify_rejects_push_frame_guard_base_plus_count_overflow);
+    utest_run("verify rejects OP_TRY_BEGIN handler PC >= instr_count",
+              verify_rejects_try_begin_handler_pc_above_instr_count);
+    utest_run("verify rejects OP_PUSH_TAG low nibble > max_reg",
+              verify_rejects_push_tag_low_nibble_above_max_reg);
+    utest_run("verify rejects OP_PUSH_TAG handler PC >= instr_count",
+              verify_rejects_push_tag_handler_pc_above_instr_count);
 }
