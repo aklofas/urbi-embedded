@@ -194,9 +194,8 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     vm_free_open_upvalues(vm, &strand);
     strand.open_upvals = NULL;  /* null before ustrand_destroy to avoid double-free */
 
-    /* Free the register stack. */
-    vm->alloc_fn(strand.stack, 0, vm->alloc_ud);
-    strand.stack = NULL;
+    /* CHSTR-044: free register stack via triplet helper. */
+    urbi_strand_register_stack_free(&strand, vm);
 
     /* T33: unlink the transient from global_realm->strands_head before
      * ustrand_destroy.  The stack-local UStrand is about to leave scope; if

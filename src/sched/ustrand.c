@@ -14,23 +14,23 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 
-void
+int
 ustrand_init(UStrand *s, struct UVM *vm) {
     urbi_zero(s, sizeof(*s));
     s->vm    = vm;
     s->state = USTRAND_STATE_DORMANT;
     /* Pre-allocate the cleanup stack using the VM's pluggable allocator.
-       On allocation failure cleanup_base stays NULL (detectable by caller).
-       Frame-stack / register-window / lex-env init is deferred to urbi_step
-       or a future urbi_strand_arm helper; the strand is a valid DORMANT
-       without it. */
+     * CHSTR-010: propagate OOM (return -1) instead of silently discarding.
+     * Frame-stack / register-window / lex-env init is deferred to urbi_step
+     * or urbi_strand_arm_from_closure; the strand is a valid DORMANT without it. */
     if (vm != NULL) {
-        (void)strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX);
-        /* Failure leaves strand in malformed DORMANT (cleanup_base == NULL).
-           Caller checks via s->cleanup_base == NULL if needed. */
+        if (strand_cleanup_stack_init(s, vm, URBI_CLEANUP_MAX) != 0) {
+            return -1;
+        }
     }
     /* When vm is NULL the strand has no cleanup stack; callers that omit vm
        must call strand_cleanup_stack_init explicitly before use. */
+    return 0;
 }
 
 /* strand_unlink_from_tags
@@ -71,15 +71,61 @@ strand_unlink_from_tags(UStrand *s)
     }
 }
 
+/* === CHSTR-029: release_strand_resource_chain ===
+ *
+ * Free the three allocation chains owned by a strand: closure_list,
+ * closed_cells, and open_upvals.  Centralises the near-identical free loops
+ * that previously appeared in ustrand_destroy.
+ *
+ * closure_list: skips any closure that equals vm->last_return_closure (the
+ * caller-owned return value kept alive between uvm_run calls).
+ *
+ * uvm_run pre-frees these chains itself (before calling ustrand_destroy) to
+ * avoid the skip-logic for last_return_closure; by the time ustrand_destroy
+ * is called from that path the three pointers are NULL and these loops are
+ * no-ops. */
+static void
+release_strand_resource_chain(UVM *vm, UStrand *s)
+{
+    UClosure  *cl;
+    UUpvalCell *cell;
+
+    /* Closure list (pre-GC closure bookkeeping). */
+    cl = s->closure_list;
+    s->closure_list = NULL;
+    while (cl != NULL) {
+        UClosure *next = cl->next_alloc;
+        if (cl != vm->last_return_closure)
+            vm->alloc_fn(cl, 0, vm->alloc_ud);
+        cl = next;
+    }
+
+    /* Heapified upvalue cells. */
+    cell = s->closed_cells;
+    s->closed_cells = NULL;
+    while (cell != NULL) {
+        UUpvalCell *next = cell->next;
+        vm->alloc_fn(cell, 0, vm->alloc_ud);
+        cell = next;
+    }
+
+    /* Open upvalue cells (not closed before strand death). */
+    cell = s->open_upvals;
+    s->open_upvals = NULL;
+    while (cell != NULL) {
+        UUpvalCell *next = cell->next;
+        vm->alloc_fn(cell, 0, vm->alloc_ud);
+        cell = next;
+    }
+}
+
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
-    /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
-       decrement the host_call_pending_count before cleanup so sched_quiescent
-       converges once all tagged strands have been destroyed. */
-    if (s->cross_strand_stop_pending != 0 && vm != NULL) {
-        vm->host_call_pending_count--;
-        s->cross_strand_stop_pending = 0u;
-    }
+    /* CHSTR-031: cross-strand stop counter management moved to scheduler.
+     * sched_strand_account_destroy handles the host_call_pending_count
+     * bookkeeping for strands that had a cross-strand stop deposited. */
+    if (vm != NULL)
+        sched_strand_account_destroy(vm, s);
 
     /* Unlink all TAG_SCOPE entries from their owning tags before freeing
        the cleanup stack.  This maintains the §3.4 membership invariant
@@ -91,61 +137,15 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
         strand_cleanup_stack_destroy(s, vm);
     }
 
-    /* T38: free the register stack if it was allocated (e.g. for fork-spawned
-     * child strands armed by fork_spawn_child, or for test-arm paths in
-     * fork_run_to_quiescent).  uvm_run frees its own transient strand's stack
-     * before calling ustrand_destroy, so double-free is not a risk there. */
-    if (vm != NULL && s->stack != NULL) {
-        vm->alloc_fn(s->stack, 0, vm->alloc_ud);
-        s->stack = NULL;
-    }
+    /* CHSTR-044: register-stack free via urbi_strand_register_stack_free.
+     * uvm_run frees its own transient strand's stack before calling
+     * ustrand_destroy, so double-free is not a risk there (stack is NULL). */
+    if (vm != NULL)
+        urbi_strand_register_stack_free(s, vm);
 
-    /* T38: free all closures allocated in this strand's lifetime
-     * (pre-GC bookkeeping via closure_list → next_alloc chain).
-     * uvm_run handles its own closure cleanup before calling ustrand_destroy,
-     * so by the time we arrive here the list is either NULL (uvm_run path)
-     * or populated (realm-managed strand path).  Skip any closure that
-     * equals vm->last_return_closure (the caller-owned return value kept
-     * alive between uvm_run calls) — not applicable to realm strands (which
-     * never set last_return_closure), but the check is cheap and safe. */
-    if (vm != NULL && s->closure_list != NULL) {
-        UClosure *cl = s->closure_list;
-        s->closure_list = NULL;
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            if (cl != vm->last_return_closure) {
-                vm->alloc_fn(cl, 0, vm->alloc_ud);
-            }
-            cl = next;
-        }
-    }
-
-    /* T38: free all heapified upvalue cells allocated in this strand's
-     * lifetime (closed_cells → next chain).  uvm_run handles its own
-     * cell cleanup before calling ustrand_destroy; realm-managed strands
-     * need this path. */
-    if (vm != NULL && s->closed_cells != NULL) {
-        UUpvalCell *cell = s->closed_cells;
-        s->closed_cells = NULL;
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
-            cell = next;
-        }
-    }
-
-    /* T38: free any open upvalue cells still on this strand (cells whose
-     * stack address is still live on our stack).  These are cells that were
-     * not heapified by OP_CLOSE before strand death. */
-    if (vm != NULL && s->open_upvals != NULL) {
-        UUpvalCell *cell = s->open_upvals;
-        s->open_upvals = NULL;
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
-            cell = next;
-        }
-    }
+    /* CHSTR-029: three resource chains consolidated into one helper. */
+    if (vm != NULL)
+        release_strand_resource_chain(vm, s);
 }
 
 /* === T20: Strand C API (create / start / spawn / destroy) ===
@@ -165,7 +165,11 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
     UStrand *s = (UStrand *)vm->alloc_fn(NULL, sizeof(UStrand), vm->alloc_ud);
     if (!s) return NULL;
 
-    ustrand_init(s, vm);
+    /* CHSTR-010: check OOM from ustrand_init (cleanup-stack alloc failure). */
+    if (ustrand_init(s, vm) != 0) {
+        vm->alloc_fn(s, 0, vm->alloc_ud);
+        return NULL;
+    }
     s->realm         = realm;
     s->entry_closure = entry;
 
@@ -331,27 +335,49 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
     }
 }
 
+/* === CHSTR-044: register-stack lifecycle triplet ===
+ *
+ * Three-stage lifecycle for the per-strand UValue register stack.
+ * Centralises alloc / zero / free so each stage has one owner. */
+
+int
+urbi_strand_register_stack_alloc(UStrand *s, struct UVM *vm)
+{
+    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
+    UValue *stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
+    if (!stack) return -1;
+    s->stack = stack;
+    s->R     = stack;
+    return 0;
+}
+
+void
+urbi_strand_register_stack_zero(UStrand *s)
+{
+    urbi_zero(s->stack, UVM_STACK_CAP * sizeof(UValue));
+}
+
+void
+urbi_strand_register_stack_free(UStrand *s, struct UVM *vm)
+{
+    if (s->stack == NULL) return;
+    vm->alloc_fn(s->stack, 0, vm->alloc_ud);
+    s->stack = NULL;
+    s->R     = NULL;
+}
+
 /* === CHSTR-022: urbi_strand_arm_init ===
  *
- * Common foundation for strand register-stack setup: allocate and zero the
- * stack, wire s->stack and s->R.  Shared by urbi_strand_arm_from_closure
- * (closure-based arming) and uvm_run (module-level direct arming).
+ * Convenience composite: alloc + zero the register stack and wire s->R.
+ * Shared by urbi_strand_arm_from_closure and uvm_run; each caller wires
+ * pc/pc_base/cur_consts/out_slot/state afterward.
  *
  * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
 int
 urbi_strand_arm_init(UStrand *s)
 {
-    struct UVM *vm = s->vm;
-    const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
-    UValue *stack;
-
-    stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
-    if (!stack) return -1;
-
-    urbi_zero(stack, stack_bytes);
-
-    s->stack = stack;
-    s->R     = stack;
+    if (urbi_strand_register_stack_alloc(s, s->vm) != 0) return -1;
+    urbi_strand_register_stack_zero(s);
     return 0;
 }
 
