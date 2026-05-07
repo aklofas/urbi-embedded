@@ -9,47 +9,51 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Compute serialized byte size of a single UProto.
- * Must match write_proto byte-for-byte. */
-static size_t proto_wire_size(const UProto *p) {
+/* Compute serialized byte size of a single UProto starting at absolute
+ * offset `start_off`.  Returns the number of bytes the proto occupies
+ * from start_off onward.  The starting-offset parameter is required
+ * because the 4-byte instruction-stream alignment pad depends on the
+ * proto's absolute position in the stream — alignment relative to a
+ * local 0 would diverge from write_proto's runtime offset. */
+static size_t proto_wire_size(const UProto *p, size_t start_off) {
     size_t i;
-    size_t n = 0;
+    size_t off = start_off;
 
-    n += 1U;                                          /* max_reg */
-    n += 1U;                                          /* nupvals */
-    n += 1U;                                          /* nparams */
+    off += 1U;                                          /* max_reg */
+    off += 1U;                                          /* nupvals */
+    off += 1U;                                          /* nparams */
 
-    n += uvarint_size_u((uint64_t)p->const_count);
+    off += uvarint_size_u((uint64_t)p->const_count);
     for (i = 0U; i < p->const_count; i++) {
-        n += 1U;
+        off += 1U;
         if (p->constants[i].kind == (uint8_t)UVAL_INT) {
-            n += uvarint_size_zz(p->constants[i].v.i);
+            off += uvarint_size_zz(p->constants[i].v.i);
         } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
-            n += (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
+            off += (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
         }
     }
 
-    n += uvarint_size_u((uint64_t)p->instr_count);
-    while ((n & 3U) != 0U) n++;
-    n += p->instr_count * 4U;
+    off += uvarint_size_u((uint64_t)p->instr_count);
+    while ((off & 3U) != 0U) off++;                     /* aligns absolute offset */
+    off += p->instr_count * 4U;
 
-    n += uvarint_size_u((uint64_t)p->instr_count);    /* n_deltas == n_instr */
-    n += p->instr_count;
-    n += uvarint_size_u((uint64_t)p->abs_line_count);
+    off += uvarint_size_u((uint64_t)p->instr_count);    /* n_deltas == n_instr */
+    off += p->instr_count;
+    off += uvarint_size_u((uint64_t)p->abs_line_count);
     for (i = 0U; i < p->abs_line_count; i++) {
-        n += uvarint_size_u((uint64_t)p->abs_lines[i].pc);
-        n += uvarint_size_u((uint64_t)p->abs_lines[i].line);
+        off += uvarint_size_u((uint64_t)p->abs_lines[i].pc);
+        off += uvarint_size_u((uint64_t)p->abs_lines[i].line);
     }
 
-    n += uvarint_size_u((uint64_t)p->ic_count);
+    off += uvarint_size_u((uint64_t)p->ic_count);
     for (uint16_t k = 0; k < p->ic_count; k++) {
         const char *name = (p->ic_name_strs != NULL) ? p->ic_name_strs[k] : "";
         size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
-        n += uvarint_size_u((uint64_t)nlen);
-        n += nlen;
+        off += uvarint_size_u((uint64_t)nlen);
+        off += nlen;
     }
 
-    return n;
+    return off - start_off;
 }
 
 /* Write per-proto IC names (count + N length-prefixed UTF-8 strings). */
@@ -168,7 +172,7 @@ static size_t module_wire_size(const UModule *c) {
     n += uvarint_size_u((uint64_t)c->nested_count);
     for (i = 0U; i < c->nested_count; i++) {
         if (c->nested[i] != NULL) {
-            n += proto_wire_size(c->nested[i]);
+            n += proto_wire_size(c->nested[i], n);
         } else {
             /* watcher-detached slot: serialize as max_reg=0, nupvals=0,
              * nparams=0, all counts = 0 (a "stub" proto record).  Loader

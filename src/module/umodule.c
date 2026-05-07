@@ -736,9 +736,11 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
  *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
 /* Walk one block of instructions (root chunk OR a nested proto) against
    the opcode-shape table, applying per-block bounds (max_reg /
-   const_count / instr_count / nested_count).  Pass nested_count=0 for
-   protos that themselves have no nested[] (the in-tree v1.5 emitter does
-   not emit deeply-nested closures). */
+   const_count / instr_count / nested_count).  Callers pass the
+   root-level nested_count for both root and per-proto walks since the
+   v1.5 emitter allocates all function literals as flat siblings under
+   the root UModule's nested[] (an OP_CLOSURE inside a nested proto
+   refers to a sibling slot in the same root array). */
 static UModuleLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
@@ -850,10 +852,13 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
     if (rc != ULOAD_OK) return rc;
 
     /* Verify each nested proto's instruction stream against its own
-       bounds.  At v1.5 the in-tree emitter does not emit deeply-nested
-       closures, so per-proto nested_count is always 0; we still pass it
-       through so the OP_CLOSURE Bx check rejects any hand-crafted blob
-       that smuggles a non-zero index. */
+       bounds.  v1.5 in-tree emitter allocates all function literals as
+       flat siblings under the root UModule's nested[]; an OP_CLOSURE
+       inside a nested proto refers to a sibling slot in the same
+       root nested[] array.  Per-proto nested_count for verify purposes
+       is therefore the root-level nested_count.  v1.x deeply-nested
+       closures may need a per-proto nested_count if/when the emitter
+       starts allocating child arrays. */
     for (size_t pi = 0; pi < d->module->nested_count; pi++) {
         UProto *p = d->module->nested[pi];
         if (p == NULL) continue;  /* watcher-detached slot or stub */
@@ -861,7 +866,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
                                p->max_reg,
                                p->const_count,
                                p->instr_count,
-                               0U,  /* no per-proto nested[] at v1.5 */
+                               d->module->nested_count,
                                p->instructions);
         if (rc != ULOAD_OK) return rc;
     }

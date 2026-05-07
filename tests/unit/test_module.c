@@ -6,6 +6,8 @@
 #include "vm/uvm.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -854,6 +856,77 @@ UTEST(roundtrip_ast_unary_neg_5) {
     neg.kind = AST_UNARY; neg.u.unary.op = UOP_NEG; neg.u.unary.operand = &operand;
     neg.line = 1;
     roundtrip_ast(&neg, "a/b/c.u");
+}
+
+/* T12+T13 follow-up regression test: round-trip of a module with one
+ * (or more) nested function literal protos.  Pre-fix proto_wire_size
+ * disagreed with write_proto on instruction-pad alignment (C1); pre-fix
+ * decode_verify per-proto walks passed nested_count=0 and rejected
+ * legitimate OP_CLOSURE Bx in nested protos (C2).  The source produces
+ * two nested protos: nested[0] is the outer function, nested[1] is the
+ * inner one; the outer's body contains `OP_CLOSURE Bx=1` referring to
+ * nested[1] in the SAME root-level nested[] array (the v1.5 emitter
+ * allocates all function literals as flat siblings).  Post-fix the
+ * round-trip succeeds and decode_verify accepts the bytecode. */
+UTEST(roundtrip_module_with_nested_closure_proto) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Two-level closure: the outer function body holds `function() {x+y}`
+     * which in turn captures x and y as upvalues.  Same source pattern as
+     * test_emit.c::disassemble_closure_with_prelude — known to produce
+     * nested_count >= 2. */
+    const char *src = "function() { var x = 1; var y = 2; function() { x + y } }";
+
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+
+    UArena arena;
+    uarena_init(&arena, 0);
+
+    UModule a = {0};
+    UEmitter e;
+    uemit_init(&e, &a, &arena, &vm, "test");
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        UASSERT(node->kind != AST_ERROR);
+        UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
+    }
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+    UASSERT(a.nested_count >= (size_t)2);
+
+    /* Two-pass serialize: query size, then write.  The contract is
+     * that the wrote count equals the queried size (C1 violates this). */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    /* Deserialize buf -> b and verify shape preservation (C2 makes
+     * decode_verify reject the bytecode). */
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ(a.nested_count, b.nested_count);
+    UASSERT(b.nested[0] != NULL);
+    UASSERT(b.nested[1] != NULL);
+    UASSERT(b.nested[0]->instr_count > (size_t)0);
+    UASSERT(b.nested[1]->instr_count > (size_t)0);
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
 }
 
 /* --- Serializer tests (Task 14) --- */
@@ -1789,6 +1862,8 @@ void test_module_suite(void) {
               roundtrip_ast_binary_1_plus_2);
     utest_run("roundtrip AST_UNARY -5 emit-serialize-deserialize",
               roundtrip_ast_unary_neg_5);
+    utest_run("roundtrip module with nested closure proto",
+              roundtrip_module_with_nested_closure_proto);
     utest_run("destroy NULL module is a no-op",
               destroy_null_module_is_noop);
     utest_run("module load error name covers all codes",
