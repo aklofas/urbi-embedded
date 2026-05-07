@@ -5,9 +5,11 @@
 #include "module/umodule.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
+#include "value/uintern.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
+#include "object/umodule_instance.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -927,6 +929,197 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     umodule_destroy(&b);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
+}
+
+/* T15 (a): Round-trip a module that emits an IC site (OP_GETSLOT) and
+ * verify the v1.5 ic_name_strs survive serialize+deserialize, then
+ * exercise the T14 lazy-intern path by calling
+ * urbi_module_instance_create on the deserialized module — which on
+ * input has ic_name_strs populated but ic_names == NULL.  After
+ * instance create, ic_names must be a fully populated USymbol** array
+ * that resolves to the same canonical pointer as a direct
+ * ustr_intern() of the same byte content.
+ *
+ * Source `Object` produces a bare global ref at chunk-top, which T71's
+ * realm-global fallback compiles to OP_GETSLOT — adding one root-chunk
+ * IC site whose name is "Object". */
+UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
+    UVM vm_a;
+    urbi_vm_init(&vm_a, NULL, NULL);
+
+    const char *src = "Object";
+
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uarena_init(&arena, 0);
+
+    UModule a = {0};
+    UEmitter e;
+    uemit_init(&e, &a, &arena, &vm_a, "test_ic");
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        UASSERT(node->kind != AST_ERROR);
+        UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
+    }
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    /* Sanity: emitter populated the root-chunk ic_count + ic_name_strs. */
+    UASSERT(a.ic_count >= (uint16_t)1U);
+    UASSERT(a.ic_name_strs != NULL);
+    UASSERT(a.ic_name_strs[0] != NULL);
+
+    /* Round-trip. */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((unsigned)a.ic_count, (unsigned)b.ic_count);
+    UASSERT(b.ic_name_strs != NULL);
+    UASSERT_EQ(0, strcmp(a.ic_name_strs[0], b.ic_name_strs[0]));
+
+    /* Pre-condition for the T14 lazy-intern path: the deserialized
+     * module has no ic_names yet.  Loader cannot intern (no VM in
+     * scope at decode time). */
+    UASSERT_EQ((void *)NULL, (void *)b.ic_names);
+
+    /* Drive the lazy-intern.  Use a fresh VM to confirm the helper
+     * interns into the receiving VM, not the originating one. */
+    UVM vm_b;
+    urbi_vm_init(&vm_b, NULL, NULL);
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
+    UASSERT(mi != NULL);
+
+    /* Post-condition: ic_names is now populated; each entry equals the
+     * canonical interned pointer for the matching ic_name_strs entry. */
+    UASSERT(b.ic_names != NULL);
+    for (uint16_t k = 0; k < b.ic_count; k++) {
+        const char *name = b.ic_name_strs[k];
+        size_t nlen = strlen(name);
+        const char *canon = ustr_intern(&vm_b, name, nlen);
+        UASSERT_EQ((const void *)canon, (const void *)b.ic_names[k]);
+    }
+
+    /* Idempotency: a second call must not re-allocate.  The helper's
+     * fast path returns immediately when ic_names is already populated. */
+    USymbol **before = b.ic_names;
+    UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
+    UASSERT(mi2 != NULL);
+    UASSERT_EQ((void *)before, (void *)b.ic_names);
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
+}
+
+/* T15 (b): Pin that the v1.5 wire format preserves UVAL_FLOAT
+ * constants in nested-proto constant pools.  The lex+parse+emit
+ * pipeline at v0.5.6 only produces UVAL_INT constants (no AST_FLOAT
+ * yet — see test_emit.c::serialize_module_with_float_constant_round_trips
+ * for the existing manual-build pattern used here too).  Hand-build
+ * a module with one nested proto whose constant pool holds a single
+ * UVAL_FLOAT, round-trip, and assert the FLOAT survives. */
+UTEST(roundtrip_preserves_nested_proto_float_constant) {
+    UModule a = {0};
+    UProto *p = umodule_alloc_nested_proto(&a);
+    UASSERT(p != NULL);
+
+    /* One UVAL_FLOAT in the nested proto's constant pool. */
+    p->constants = (UValue *)malloc(sizeof(UValue));
+    UASSERT(p->constants != NULL);
+    p->const_cap   = 1;
+    p->const_count = 1;
+    p->constants[0].kind = (uint8_t)UVAL_FLOAT;
+    {
+        int q;
+        for (q = 0; q < 7; q++) p->constants[0]._pad[q] = 0;
+    }
+#if URBI_FLOAT_TYPE == 8
+    p->constants[0].v.f = 2.718281828;
+#else
+    p->constants[0].v.f = 2.718f;
+#endif
+
+    /* Minimum viable proto body: one OP_RET + one syncline checkpoint.
+     * write_proto requires line_deltas[i] for each instruction and
+     * accepts INT8_MIN as the abs-line-checkpoint sentinel. */
+    p->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(p->instructions != NULL);
+    p->instr_cap = 1;
+    p->instr_count = 1;
+    p->instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    p->line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(p->line_deltas != NULL);
+    p->line_deltas[0] = (int8_t)-128;       /* INT8_MIN: abs-line sentinel */
+    p->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(p->abs_lines != NULL);
+    p->abs_line_cap   = 1;
+    p->abs_line_count = 1;
+    p->abs_lines[0].pc   = 0;
+    p->abs_lines[0].line = 1;
+    p->max_reg = 0;
+
+    /* Likewise, the root chunk needs at least one OP_RET. */
+    a.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(a.instructions != NULL);
+    a.instr_cap = 1;
+    a.instr_count = 1;
+    a.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    a.line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(a.line_deltas != NULL);
+    a.line_deltas[0] = (int8_t)-128;
+    a.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(a.abs_lines != NULL);
+    a.abs_line_cap   = 1;
+    a.abs_line_count = 1;
+    a.abs_lines[0].pc   = 0;
+    a.abs_lines[0].line = 1;
+    a.max_reg = 0;
+
+    /* Round-trip. */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ(a.nested_count, b.nested_count);
+    UASSERT(b.nested[0] != NULL);
+    UASSERT_EQ(p->const_count, b.nested[0]->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, b.nested[0]->constants[0].kind);
+#if URBI_FLOAT_TYPE == 8
+    UASSERT(b.nested[0]->constants[0].v.f == 2.718281828);
+#else
+    UASSERT(b.nested[0]->constants[0].v.f == 2.718f);
+#endif
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
 }
 
 /* --- Serializer tests (Task 14) --- */
@@ -1864,6 +2057,10 @@ void test_module_suite(void) {
               roundtrip_ast_unary_neg_5);
     utest_run("roundtrip module with nested closure proto",
               roundtrip_module_with_nested_closure_proto);
+    utest_run("roundtrip module with IC sites lazy-interns ic_name_strs",
+              roundtrip_module_with_ic_sites_lazy_interns);
+    utest_run("roundtrip preserves nested-proto FLOAT constant",
+              roundtrip_preserves_nested_proto_float_constant);
     utest_run("destroy NULL module is a no-op",
               destroy_null_module_is_noop);
     utest_run("module load error name covers all codes",
