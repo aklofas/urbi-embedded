@@ -73,9 +73,13 @@ typedef struct UTag {
 
 /* Layout pin (Wave-1 v0.5.3 audit CHSTR-041 + sibling): UTag is 56 B at
  * v0.5.x default layout (M5 GC-promoted from the M3 host-managed form).
- * Adding fields requires deliberate update of this assert. */
+ * Adding fields requires deliberate update of this assert.  Guarded on
+ * pointer width to avoid a hard failure on 32-bit cross targets,
+ * matching the UEvent / UObject pattern. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 _Static_assert(sizeof(UTag) == 56,
-               "UTag size pin (M5 GC-promoted layout)");
+               "UTag size pin on 64-bit (M5 GC-promoted layout)");
+#endif
 
 /* === UTag lifecycle API ===
  *
