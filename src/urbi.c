@@ -48,10 +48,10 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
 
 /* urbi_set_callback_watchdog_mode: select WARN or ASSERT on slow callback. */
 void
-urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode)
+urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)
 {
     if (!vm) return;
-    vm->callback_watchdog_mode = mode;
+    vm->callback_watchdog_mode = (uint8_t)mode;
 }
 
 /* urbi_call_host_with_watchdog: URBI_DEBUG build implementation.

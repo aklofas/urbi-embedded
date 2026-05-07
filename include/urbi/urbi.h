@@ -247,8 +247,13 @@ typedef enum {
     URBI_LOG_ERROR = 3
 } ULogLevel;
 
-#define URBI_WATCHDOG_WARN   0
-#define URBI_WATCHDOG_ASSERT 1
+/* UWatchdogMode: response to slow host-callback timing in URBI_DEBUG builds.
+ * Promoted from #defines to a typedef enum at v0.5.5 (T10) to match the
+ * sibling ULogLevel idiom; numeric values pinned (0 = WARN, 1 = ASSERT). */
+typedef enum {
+    URBI_WATCHDOG_WARN   = 0,
+    URBI_WATCHDOG_ASSERT = 1
+} UWatchdogMode;
 
 /* UHostFn: signature for host-implemented native functions called by OP_CALL.
  * M5 wires this into the call-dispatch path; M3 defines the typedef for the
@@ -320,9 +325,9 @@ UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
 void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void));
 
 /* urbi_set_callback_watchdog_mode: set the watchdog response mode.
- * mode: URBI_WATCHDOG_WARN (0) — log warning via host_log_fn.
- *       URBI_WATCHDOG_ASSERT (1) — call urbi_panic on threshold exceeded. */
-void urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode);
+ * URBI_WATCHDOG_WARN — log warning via host_log_fn.
+ * URBI_WATCHDOG_ASSERT — call urbi_panic on threshold exceeded. */
+void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 
 /* === M4 module-instance C API (T16) ===
  *
