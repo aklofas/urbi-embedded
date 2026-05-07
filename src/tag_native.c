@@ -33,8 +33,8 @@
 
 #include "vm/uvm.h"
 #include "utag.h"              /* UTag, tag->enter_event / leave_event */
-#include "uevent.h"            /* UEvent, urbi_event_create */
-#include "event_native.h"      /* uvalue_from_event, urbi_register_fn */
+#include "event/uevent.h"            /* UEvent, urbi_event_create */
+#include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */

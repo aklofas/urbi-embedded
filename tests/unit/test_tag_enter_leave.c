@@ -29,8 +29,8 @@
 
 #include "vm/uvm.h"
 #include "utag.h"
-#include "uevent.h"
-#include "uevent_emit.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
 #include "tag_native.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"

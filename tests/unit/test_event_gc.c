@@ -32,7 +32,7 @@
 #include "utest.h"
 
 #include "vm/uvm.h"
-#include "uevent.h"
+#include "event/uevent.h"
 #include "utag.h"
 #include "tag_native.h"
 #include "watcher/uwatcher.h"

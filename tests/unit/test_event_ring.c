@@ -4,7 +4,7 @@
    and the Linux-only multi-threaded fuzz path. */
 
 #include "utest.h"
-#include "uevent_ring.h"
+#include "event/uevent_ring.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include <stdint.h>

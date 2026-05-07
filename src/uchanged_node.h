@@ -28,7 +28,7 @@
 
 #include "gc/ugc.h"              /* UCell, UTYPE_CHANGED_NODE */
 #include "gc/ugc_incremental.h"  /* UGC_HAS_SLOT_CHANGE_EVENT, LIKELY, UNLIKELY */
-#include "uevent.h"              /* UEvent forward-compatible include */
+#include "event/uevent.h"              /* UEvent forward-compatible include */
 #include "module/umodule.h"             /* UValue, USymbol */
 
 #ifdef __cplusplus

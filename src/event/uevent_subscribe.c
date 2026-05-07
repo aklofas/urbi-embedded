@@ -8,8 +8,8 @@
  *
  * These are internal helpers; not part of the public include/urbi/ API. */
 
-#include "uevent_subscribe.h"
-#include "uevent.h"
+#include "event/uevent_subscribe.h"
+#include "event/uevent.h"
 #include "watcher/uwatcher.h"  /* UWatcher, next_in_event */
 
 void

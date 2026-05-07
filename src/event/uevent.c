@@ -5,7 +5,7 @@
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * Allocation uses urbi_gc_alloc (GC-managed from birth). */
 
-#include "uevent.h"
+#include "event/uevent.h"
 #include "vm/uvm.h"
 #include "urbi/gc.h"   /* urbi_gc_alloc, UTYPE_EVENT */
 

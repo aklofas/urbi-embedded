@@ -6,7 +6,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
-#include "uevent_ring.h"
+#include "event/uevent_ring.h"
 
 UStepResult
 urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)

@@ -3,7 +3,7 @@
  * Spec #4 §6.3. */
 
 #include "uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE */
-#include "uevent.h"               /* UEvent, urbi_event_create */
+#include "event/uevent.h"               /* UEvent, urbi_event_create */
 #include "object/uobject.h"       /* UObject */
 #include "gc/ugc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"   /* UGC_HAS_SLOT_CHANGE_EVENT, UGC_COLOR_BLACK,

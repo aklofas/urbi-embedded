@@ -14,7 +14,7 @@
 #include "utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
-#include "uevent_subscribe.h"   /* uevent_at_watchers_remove */
+#include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
 
 /* === Internal helpers === */
 

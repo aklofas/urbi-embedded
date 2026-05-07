@@ -18,12 +18,12 @@
  * and moving it to a shared header would pull uevent_emit.h + uintern.h
  * into every consumer of urbi.h.  Factor out at M6 if a third caller appears. */
 
-#include "event_native.h"
+#include "event/uevent_native.h"
 
 #include "vm/uvm.h"
 #include "value/uintern.h"           /* ustr_intern */
-#include "uevent.h"            /* UEvent, urbi_event_create */
-#include "uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */
+#include "event/uevent.h"            /* UEvent, urbi_event_create */
+#include "event/uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_set_local_slot */
 #include "urbi/urbi.h"         /* UErrCode, URBI_ERR_* */
 #include "urbi/gc.h"           /* gc_shade_gray (write barrier in set_local_slot) */

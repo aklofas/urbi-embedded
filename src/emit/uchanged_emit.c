@@ -14,7 +14,7 @@
 #include "uchanged_node.h"      /* UChangedNode, urbi_emit_slot_change_slow,
                                    urbi_drain_deferred_slot_changes */
 #include "object/uobject.h"     /* UObject, struct UObject */
-#include "uevent_emit.h"        /* c_event_emit_sync */
+#include "event/uevent_emit.h"        /* c_event_emit_sync */
 #include "vm/uvm.h"                /* UVM, UDeferredSlotChange */
 #include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */

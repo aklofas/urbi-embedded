@@ -11,7 +11,7 @@
 
 #include "utest.h"
 
-#include "uevent.h"
+#include "event/uevent.h"
 #include "gc/ugc.h"
 #include "vm/uvm.h"
 

@@ -19,15 +19,15 @@
 #include "sched/usched_cooperative.h"
 #include "runtime/uunwind.h"
 #include "realm/urealm.h"
-#include "uevent_ring.h"
+#include "event/uevent_ring.h"
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
 #include "runtime/uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
-#include "uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
-#include "uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
-#include "event_native.h"              /* event_native_register (T53) */
+#include "event/uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
+#include "event/uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
+#include "event/uevent_native.h"              /* event_native_register (T53) */
 #include "tag_native.h"                /* tag_native_register (T54) */
 #include "vm/uop_fork.h" /* op_fork_detach/join/wait + fork_wake_joiners (T38) */
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */

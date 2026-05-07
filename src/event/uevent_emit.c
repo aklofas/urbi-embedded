@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Event emit primitives — async + sync + waituntil (spec #3 §5.2-§5.4, §7.1). */
 
-#include "uevent_emit.h"
-#include "uevent.h"
+#include "event/uevent_emit.h"
+#include "event/uevent.h"
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */

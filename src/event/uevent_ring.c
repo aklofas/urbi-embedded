@@ -3,7 +3,7 @@
    Freestanding-safe: no <string.h>, <stdlib.h>, or any hosted header.
    Acquire/release ordering via GCC/Clang __atomic_* builtins. */
 
-#include "uevent_ring.h"
+#include "event/uevent_ring.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* URBI_ERR_EVENT_* error codes */
 

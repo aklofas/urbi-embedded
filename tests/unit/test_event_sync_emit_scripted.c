@@ -46,8 +46,8 @@
 #include "sched/ustrand.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
-#include "uevent.h"
-#include "uevent_emit.h"
+#include "event/uevent.h"
+#include "event/uevent_emit.h"
 
 #define UTEST(name) static void name(void)
 

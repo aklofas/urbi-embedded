@@ -23,8 +23,8 @@
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER */
 #include "gc/ugc.h"             /* UCell */
 #include "utag.h"               /* UTag, member_watchers_head */
-#include "uevent.h"             /* UEvent */
-#include "uevent_subscribe.h"   /* uevent_at_watchers_append */
+#include "event/uevent.h"             /* UEvent */
+#include "event/uevent_subscribe.h"   /* uevent_at_watchers_append */
 
 /* === strand_closure_unlink ===
  *

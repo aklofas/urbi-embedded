@@ -10,8 +10,8 @@
 
 #include "utest.h"
 
-#include "uevent.h"
-#include "uevent_subscribe.h"
+#include "event/uevent.h"
+#include "event/uevent_subscribe.h"
 #include "watcher/uwatcher.h"
 #include "vm/uvm.h"
 
