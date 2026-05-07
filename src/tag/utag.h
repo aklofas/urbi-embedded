@@ -114,7 +114,7 @@ _Static_assert(sizeof(UTag) == 56,
  *   NULL-safe.  Not ISR-safe. */
 
 UTag *utag_create(struct UVM *vm);
-void  utag_destroy(struct UVM *vm, UTag *tag);
+void  utag_destroy(struct UVM *vm, const UTag *tag);
 
 /* === Ambient-tag lookup (C-internal) ===
  *

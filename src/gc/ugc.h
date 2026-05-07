@@ -168,9 +168,9 @@ void   urbi_gc_collect(struct UVM *vm);
 void   urbi_gc_pause(struct UVM *vm, bool paused);
 
 /* Query GC accounting (reads directly from vm fields; no locks). */
-size_t urbi_gc_bytes_allocated(struct UVM *vm);
-size_t urbi_gc_live_bytes(struct UVM *vm);
-size_t urbi_gc_threshold(struct UVM *vm);
-uint8_t urbi_gc_phase(struct UVM *vm);
+size_t urbi_gc_bytes_allocated(const struct UVM *vm);
+size_t urbi_gc_live_bytes(const struct UVM *vm);
+size_t urbi_gc_threshold(const struct UVM *vm);
+uint8_t urbi_gc_phase(const struct UVM *vm);
 
 #endif /* UGC_H */

@@ -147,7 +147,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
  *    0 — success or silent no-op (slot wasn't present)
  *   -1 — OOM (transition or USlotArray allocation failed) */
 int
-urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
+urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
         return -1;
@@ -220,7 +220,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
  * UProps in-place. */
 
 int
-urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                              uint8_t flag_bit, UValue value)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -234,7 +234,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
     /* Allocate a fresh UProps if the slot doesn't have one yet, or copy
      * the existing one (immutability — the existing UProps may be shared
      * with another shape; see USlot/UProps spec §5.1). */
-    UProps *existing = (obj->shape->props_table != NULL)
+    const UProps *existing = (obj->shape->props_table != NULL)
                        ? obj->shape->props_table[idx]
                        : NULL;
     UProps *fresh = uprops_alloc(vm);
@@ -311,7 +311,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
 }
 
 int
-urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
                             uint8_t flag_bit)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -323,7 +323,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
     }
 
     /* If the slot has no UProps, nothing to remove. */
-    UProps *existing = (obj->shape->props_table != NULL)
+    const UProps *existing = (obj->shape->props_table != NULL)
                        ? obj->shape->props_table[idx]
                        : NULL;
     if (existing == NULL) {
@@ -380,7 +380,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
 }
 
 int
-urbi_object_set_property_value(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
                                uint8_t flag_bit, UValue value)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -423,7 +423,7 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, USymbol *name,
  * promoted to a heap-allocated stack in v1.x).  Stack overflow returns -1
  * so the caller can surface a diagnostic. */
 int
-urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
+urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
                          UObject **out_holder, uint32_t *out_index)
 {
     if (vm == NULL || recv == NULL || name == NULL

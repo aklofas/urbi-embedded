@@ -54,7 +54,7 @@ void sched_strand_destroy(UStrand *s);
 
 /* Pick the head of the ready queue; returns NULL if queue is empty. */
 static inline UStrand *
-sched_pick_next(UVM *vm) {
+sched_pick_next(const UVM *vm) {
     return vm->ready_head;
 }
 
@@ -66,7 +66,7 @@ void sched_strand_unblock(UStrand *s);
 
 /* Timer / quiescence queries */
 uint64_t sched_earliest_wake_us(UVM *vm);
-bool     sched_quiescent(UVM *vm);
+bool     sched_quiescent(const UVM *vm);
 
 /* Consume n opcodes from a strand's instruction budget, flooring at 0. */
 static inline void

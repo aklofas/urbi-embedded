@@ -44,7 +44,7 @@ lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * -1, so this branch is never taken yet — obj->slots may be NULL.
      * T13 lands the real find; T26 lands slot-array growth that makes
      * obj->slots non-NULL once the first slot transitions in. */
-    UShape *s = obj->shape;
+    const UShape *s = obj->shape;
     int32_t idx = urbi_shape_find_slot(s, name);
     if (idx >= 0) {
         *out = obj->slots[idx];

@@ -160,14 +160,14 @@ uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
-uint8_t emit_int_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_bool_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_nil_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_noop_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_int_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_compare_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_ident_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_assign_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_nary_arm(UEmitter *e, UAstNode *n);

@@ -137,7 +137,7 @@ uint8_t emit_function_literal(UEmitter *e,
     {
         int pi;
         for (pi = 0; pi < nparams; pi++) {
-            UAstNode *pn = params[pi];
+            const UAstNode *pn = params[pi];
             const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
                                             (size_t)pn->u.param.name_len);
             if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0U; }

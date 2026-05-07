@@ -70,7 +70,7 @@ ic_uprops_for_resolved_slot(const UObject *holder, uint32_t idx)
  * resolved slot information.  Advances replace_cursor and grows ic->n until
  * the cache is full. */
 static void
-ic_fill_at_cursor(UIC *ic, UVM *vm, const UObject *recv,
+ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
                   UObject *holder, uint32_t idx, UProps *up, uint8_t flags)
 {
     uint8_t k = ic->replace_cursor;

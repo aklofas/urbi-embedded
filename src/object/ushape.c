@@ -306,7 +306,7 @@ int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
 #define URBI_SHAPE_REMOVE_DEPTH_CAP  256U
 
 UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
-                                          USymbol *name)
+                                          const USymbol *name)
 {
     if (vm == NULL || parent == NULL || name == NULL) {
         return NULL;

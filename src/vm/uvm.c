@@ -118,7 +118,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
 #if UVM_USE_COMPUTED_GOTO
     /* Dispatch table keyed by opcode.  All opcodes populated; loader
        validates opcode is in [0, OP_MAX) before urbi_vm_run is called. */
-    static void *dispatch_table[OP_MAX] = {
+    static const void *const dispatch_table[OP_MAX] = {
         [OP_LOADK]      = &&label_OP_LOADK,
         [OP_MOVE]       = &&label_OP_MOVE,
         [OP_ADD]        = &&label_OP_ADD,

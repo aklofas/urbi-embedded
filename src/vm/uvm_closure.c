@@ -74,7 +74,7 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
  * Called by OP_CLOSE, OP_RET, and urbi_unwind.
  * Declared in uvm.h for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, UValue *threshold,
+void vm_close_upvalues(UStrand *s, const UValue *threshold,
                        UUpvalCell **closed_list) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {

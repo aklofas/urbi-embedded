@@ -387,7 +387,7 @@ const char *uvm_error_name(UVMError code);
 /* Heapify all open upvalue cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list.
  * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
-void vm_close_upvalues(struct UStrand *s, UValue *threshold,
+void vm_close_upvalues(struct UStrand *s, const UValue *threshold,
                        UUpvalCell **closed_list);
 
 #ifdef __cplusplus

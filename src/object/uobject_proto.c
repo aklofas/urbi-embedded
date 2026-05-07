@@ -151,7 +151,7 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
 }
 
 int
-urbi_object_remove_proto(struct UVM *vm, UObject *obj, UObject *proto)
+urbi_object_remove_proto(struct UVM *vm, UObject *obj, const UObject *proto)
 {
     if (vm == NULL || obj == NULL || proto == NULL) {
         return URBI_ERR_INVALID_ARG;

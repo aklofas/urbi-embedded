@@ -344,7 +344,7 @@ urbi_realm_get_global(UVM *vm, URealm *realm,
             name == NULL || out_value == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    const USymbol *sym = (const USymbol *)ustr_intern(vm, name, name_len);
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }

@@ -208,7 +208,7 @@ uvalue_as_cell(UValue v)
  * call to ugc_incremental.c where uvm.h is fully included.
  *
  * Defined in ugc_incremental.c (T25). */
-bool uvalue_is_heap_white(struct UVM *vm, UValue v);
+bool uvalue_is_heap_white(const struct UVM *vm, UValue v);
 
 /* === Three inline barrier surfaces ===
  *
@@ -295,7 +295,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
 static inline void
 urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure, uint8_t up_idx, UValue child)
 {
-    UCell *parent = (UCell *)closure;
+    const UCell *parent = (const UCell *)closure;
     uint8_t parent_gc = parent->gc_byte;
 
     /* GC barrier: forward Dijkstra — same logic as slot_write.

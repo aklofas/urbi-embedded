@@ -111,8 +111,8 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
             /* Check if w->body->proto_inst falls within arr->entries[0..n-1].
              * Both pointers are within the same GC-managed bulk allocation
              * so pointer comparison is valid. */
-            UProtoInstance *first = &arr->entries[0];
-            UProtoInstance *last  = &arr->entries[arr->n - 1U];
+            const UProtoInstance *first = &arr->entries[0];
+            const UProtoInstance *last  = &arr->entries[arr->n - 1U];
             if (w->body->proto_inst >= first && w->body->proto_inst <= last) {
                 body->module_instance = mi;
                 break;

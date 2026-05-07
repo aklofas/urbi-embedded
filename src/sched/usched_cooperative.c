@@ -214,7 +214,7 @@ sched_earliest_wake_us(UVM *vm)
 }
 
 bool
-sched_quiescent(UVM *vm)
+sched_quiescent(const UVM *vm)
 {
     /* Per row 8 §3 Rule X: 5 counters AND'd zero.
        strand_suspended_count is excluded (always 0 at M3). */

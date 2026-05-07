@@ -305,7 +305,7 @@ void urbi_object_lookup_id_force_wrap(struct UVM *vm);
  *
  * Bumps vm->lookup_id on entry; honours the wrap protocol that
  * urbi_object_lookup uses (force_wrap when the next id would be 0). */
-int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, USymbol *name,
+int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, const USymbol *name,
                              UObject **out_holder, uint32_t *out_index);
 
 /* === T26: install a local slot on a receiver ===
@@ -347,7 +347,7 @@ int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
  * (the slot may have moved to a different index in the new shape).
  *
  * Returns 0 on success or no-op, -1 on OOM. */
-int urbi_object_remove_slot(struct UVM *vm, UObject *obj, USymbol *name);
+int urbi_object_remove_slot(struct UVM *vm, UObject *obj, const USymbol *name);
 
 /* === T28: install / remove / mutate a slot property ===
  *
@@ -368,12 +368,12 @@ int urbi_object_remove_slot(struct UVM *vm, UObject *obj, USymbol *name);
  *   oset field (no shape transition).  Bumps topology_gen because cached
  *   IC uprops[] pointer is stale (next dispatch must re-fetch). */
 int urbi_object_install_property   (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit,
+                                    const USymbol *name, uint8_t flag_bit,
                                     UValue value);
 int urbi_object_remove_property    (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit);
+                                    const USymbol *name, uint8_t flag_bit);
 int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit,
+                                    const USymbol *name, uint8_t flag_bit,
                                     UValue value);
 
 /* === T36: GC root provider for atom singletons + module instances ===

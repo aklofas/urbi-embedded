@@ -140,7 +140,7 @@ static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
  *
  * Returns NULL if not found (shouldn't happen in correct use). */
 static UAllCellsNode *
-find_sidecar_for_cell(UVM *vm, UCell *target)
+find_sidecar_for_cell(UVM *vm, const UCell *target)
 {
     UAllCellsNode *node = gc_node_head(vm);
     while (node != NULL) {
@@ -387,7 +387,7 @@ gc_sweep_step(UVM *vm, size_t budget)
      * unlinked and thus absent from the list. */
     {
         UAllCellsNode *scan = gc_node_head(vm);
-        UAllCellsNode *stop = gc_sweep_node(vm);
+        const UAllCellsNode *stop = gc_sweep_node(vm);
         while (scan != NULL && scan != stop) {
             /* All nodes before sweep_cursor have already been processed
              * (survived and re-painted).  Accumulate their sizes. */
@@ -797,7 +797,7 @@ urbi_gc_register_root_provider(UVM *vm, UGcRootProviderFn provider)
 }
 
 size_t
-urbi_gc_bytes_allocated_inline(UVM *vm)
+urbi_gc_bytes_allocated_inline(const UVM *vm)
 {
     return vm->gc_total_allocated;
 }
@@ -833,25 +833,25 @@ urbi_gc_pause(UVM *vm, bool paused)
  * URBI_ASSERT_NOT_ISR is omitted — they are test/diagnostic accessors. */
 
 size_t
-urbi_gc_bytes_allocated(UVM *vm)
+urbi_gc_bytes_allocated(const UVM *vm)
 {
     return vm->gc_total_allocated;
 }
 
 size_t
-urbi_gc_live_bytes(UVM *vm)
+urbi_gc_live_bytes(const UVM *vm)
 {
     return vm->gc_live_bytes;
 }
 
 size_t
-urbi_gc_threshold(UVM *vm)
+urbi_gc_threshold(const UVM *vm)
 {
     return vm->gc_threshold;
 }
 
 uint8_t
-urbi_gc_phase(UVM *vm)
+urbi_gc_phase(const UVM *vm)
 {
     return vm->gc_phase;
 }
@@ -899,10 +899,10 @@ urbi_unpin(UVM *vm, UValue v)
  * uvalue_is_heap and uvalue_as_cell are static inline in ugc_incremental.h;
  * this function uses them directly. */
 bool
-uvalue_is_heap_white(UVM *vm, UValue v)
+uvalue_is_heap_white(const UVM *vm, UValue v)
 {
     if (!uvalue_is_heap(v)) return false;
-    UCell *c = uvalue_as_cell(v);
+    const UCell *c = uvalue_as_cell(v);
     if (c == NULL) return false;
     return (c->gc_byte & UGC_COLOR_MASK) == vm->current_white;
 }

@@ -33,7 +33,7 @@
 
 /* --- AST_INT --- */
 
-uint8_t emit_int_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_int_arm(UEmitter *e, const UAstNode *n) {
     const uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
     const uint16_t k = add_const_int(e, n->u.i);
@@ -44,7 +44,7 @@ uint8_t emit_int_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_BOOL --- */
 
-uint8_t emit_bool_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n) {
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
     emit_instr(e, uinstr_enc_abc(OP_LOADBOOL, r, n->u.b ? 1U : 0U, 0U),
@@ -54,7 +54,7 @@ uint8_t emit_bool_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_NIL --- */
 
-uint8_t emit_nil_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n) {
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
@@ -64,7 +64,7 @@ uint8_t emit_nil_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_NOOP --- */
 
-uint8_t emit_noop_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n) {
     /* No-op: load nil as the value. */
     uint8_t r = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
@@ -157,7 +157,7 @@ uint8_t emit_compare_arm(UEmitter *e, UAstNode *n) {
 
 /* --- AST_IDENT --- */
 
-uint8_t emit_ident_arm(UEmitter *e, UAstNode *n) {
+uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n) {
     if (e->vm == NULL || e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;

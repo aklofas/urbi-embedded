@@ -68,7 +68,7 @@ utag_create(struct UVM *vm)
  * handle unlinking). */
 
 void
-utag_destroy(struct UVM *vm, UTag *tag)
+utag_destroy(struct UVM *vm, const UTag *tag)
 {
     if (tag == NULL) return;
     if (vm == NULL) return;
