@@ -24,7 +24,7 @@
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "umodule.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "uvm.h"

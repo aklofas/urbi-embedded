@@ -11,7 +11,7 @@
 #include <string.h>
 
 #include "parse/uast.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 
 #define UTEST(name) static void name(void)
 

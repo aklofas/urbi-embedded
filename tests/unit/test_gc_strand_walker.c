@@ -25,7 +25,7 @@
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_destroy */
 #include "umodule.h"
 #include "value/uarena.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "parse/uast.h"

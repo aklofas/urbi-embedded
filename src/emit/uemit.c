@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode emitter. */
 
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "value/uintern.h"
 #include "value/uvarint.h"
 #include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */

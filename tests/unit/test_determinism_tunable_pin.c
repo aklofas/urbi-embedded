@@ -23,7 +23,7 @@
 #include "umodule.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "sched/usched_cooperative.h"

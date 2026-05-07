@@ -7,7 +7,7 @@
 
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "value/uintern.h"
 #include "lex/ulex.h"
 #include "umodule.h"

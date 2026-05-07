@@ -14,7 +14,7 @@
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "value/uarena.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "watcher/uwatcher.h"

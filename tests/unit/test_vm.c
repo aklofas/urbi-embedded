@@ -7,7 +7,7 @@
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "runtime/uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include <stdlib.h>

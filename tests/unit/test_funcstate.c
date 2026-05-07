@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #include "value/uarena.h"
-#include "uemit.h"
+#include "emit/uemit.h"
 #include "value/uintern.h"
 #include "umodule.h"
 #include "uvm.h"
