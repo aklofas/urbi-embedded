@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uvm_arith.h — VM arithmetic primitives, inlined into the dispatch loop.
- * Consumed by src/vm/*.c. */
+ * Consumed by src/vm/ translation units. */
 
 #ifndef UVM_ARITH_H
 #define UVM_ARITH_H

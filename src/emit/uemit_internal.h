@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uemit_internal.h — private inter-TU API for the emit subsystem.
  *
- * Consumed only by src/emit/*.c.  Public emit API is in src/emit/uemit.h.
+ * Consumed only by src/emit/ TUs.  Public emit API is in src/emit/uemit.h.
  * Created v0.5.4-decompose; do NOT include from outside src/emit/. */
 
 #ifndef UEMIT_INTERNAL_H

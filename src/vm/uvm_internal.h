@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uvm_internal.h — private inter-TU API for the vm subsystem.
- * Consumed only by src/vm/*.c. */
+ * Consumed only by src/vm/ translation units. */
 
 #ifndef UVM_INTERNAL_H
 #define UVM_INTERNAL_H

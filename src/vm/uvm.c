@@ -6,6 +6,7 @@
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "sched/ustrand.h"
+#include "sched/usched_cooperative.h" /* sched_strand_yield */
 #include "value/uvalue.h"
 #include "runtime/uunwind.h"
 #include "realm/urealm.h"            /* URealm — OP_LOAD_REALM_GLOBAL */
