@@ -88,29 +88,6 @@ typedef struct UDeferredSlotChange {
     UValue          new_value;
 } UDeferredSlotChange;
 
-/* --- Scratch frame for watcher condition + onleave evaluation (T34) ---
- *
- * One per VM, allocated at uvm_init and freed at uvm_destroy.
- * Used by watcher_eval_dirty (§6.2) and drain_pending_onleave_queue (§6.5):
- * both run at safepoints which are serialized, so the single frame is safe.
- *
- * M5 owns the real urbi_run_closure_on_scratch that executes bytecode here.
- * At M3, invoke_condition_closure uses the test_watcher_condition_hook instead.
- * The struct is allocated now so M5 can wire real execution without a layout change.
- *
- * Override URBI_SCRATCH_FRAME_REGS for footprint-constrained builds:
- *   default 16 registers → ~280 B per VM (16 × 16 B UValue + 8+2+16 header). */
-#ifndef URBI_SCRATCH_FRAME_REGS
-#  define URBI_SCRATCH_FRAME_REGS  16
-#endif
-
-typedef struct UScratchFrame {
-    struct UClosure *closure;                      /* current condition/body being evaluated */
-    UValue           registers[URBI_SCRATCH_FRAME_REGS];
-    uint16_t         register_top;
-    UValue           result;                       /* return value after M5 execution */
-} UScratchFrame;   /* ~280 B at default URBI_SCRATCH_FRAME_REGS=16 */
-
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -265,13 +242,12 @@ typedef struct UVM {
     uint16_t         watcher_pool_in_use;
     uint16_t         watcher_pool_high_water;
 
-    /* --- Row 11 watcher dirty-set + scratch frame --- */
+    /* --- Row 11 watcher dirty-set --- */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
                                           inline on scratch frame; guards re-entrancy
                                           in c_event_emit_sync / c_event_waituntil. */
     uint8_t  pad_in_eval[2];           /* padding; zeroed */
-    void    *watcher_scratch_frame;    /* UScratchFrame ~280 B; T34 allocates */
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
      * Set to the running strand by urbi_step before dispatch_loop_until_yield,
@@ -313,13 +289,16 @@ typedef struct UVM {
      * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* T37 stub test hook for run_closure_on_scratch_frame_with_result.
-     * M5 will replace this with real bytecode dispatch on vm->watcher_scratch_frame.
-     * When non-NULL, install_watcher_runtime calls this instead of the real runner.
+    /* M3-only stub test hook for run_closure_on_scratch_frame_with_result.
+     * v0.5.1-cond-unstub ships the real urbi_run_closure_on_scratch
+     * (src/watcher/uwatcher_scratch.c) which dispatches on a stack-local
+     * transient strand (not the now-removed UScratchFrame heap allocation).
+     * When non-NULL, install_watcher_runtime calls this hook instead of the
+     * real runner — used by C-level unit tests.
      *   Signature: hook(vm, cond, out_result, out_threw)
      *   - out_result receives the simulated return value.
      *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
-     * NULL → run_closure_on_scratch_frame_with_result returns UVAL_NIL, no throw. */
+     * NULL → run_closure_on_scratch_frame_with_result calls the real path. */
     void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
                                      UValue *out_result, int *out_threw);
 

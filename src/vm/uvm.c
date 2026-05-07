@@ -232,8 +232,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->in_watcher_eval        = 0u;
     vm->pad_in_eval[0]         = 0u;
     vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
-    vm->in_watcher_scratch     = 0u;   /* spec #3 §5.4: missing from M5 init — fix */
-    vm->watcher_scratch_frame  = NULL;
+    vm->in_watcher_scratch     = 0u;   /* spec #3 §5.4: re-entrancy guard for sync emit */
     /* spec #2 §5.2 install-time trace state. */
     vm->in_watcher_install     = 0u;
     vm->trace_overflow         = 0u;
@@ -280,23 +279,6 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         /* OOM: leave deferred_slot_changes NULL; drain/enqueue guards against it. */
     }
 
-    /* Scratch frame: one per VM, used by watcher_eval_dirty and (T35)
-     * drain_pending_onleave_queue.  Allocated here so M5's real
-     * urbi_run_closure_on_scratch can use it without a layout change.
-     * Freed by uvm_destroy (already wired at T32; see comment there).
-     * OOM: leave NULL and continue — matches event_ring + pool pattern.
-     * Note: vm->alloc_fn is always non-NULL here due to lines 62-66 substitution. */
-    {
-        void *sf = vm->alloc_fn(NULL, sizeof(UScratchFrame), vm->alloc_ud);
-        if (sf != NULL) {
-            /* Zero-fill via volatile byte loop (freestanding: no memset). */
-            volatile unsigned char *p = (volatile unsigned char *)sf;
-            size_t i;
-            for (i = 0; i < sizeof(UScratchFrame); i++) p[i] = 0;
-        }
-        vm->watcher_scratch_frame = sf;
-    }
-
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
 
@@ -326,16 +308,11 @@ void uvm_destroy(UVM *vm) {
         vm->deferred_slot_changes = NULL;
     }
 
-    /* Free any M3 heap fields that T4 itself allocated (none at T4, but
-     * handle_table and watcher_scratch_frame may be set by callers; free
-     * them via the VM allocator so freestanding builds use the right hook). */
+    /* Free heap fields owned by the embedder-callable VM lifecycle.
+     * handle_table is allocated lazily on first use; free here if non-NULL. */
     if (vm->handle_table != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->handle_table, 0, vm->alloc_ud);
         vm->handle_table = NULL;
-    }
-    if (vm->watcher_scratch_frame != NULL && vm->alloc_fn != NULL) {
-        vm->alloc_fn(vm->watcher_scratch_frame, 0, vm->alloc_ud);
-        vm->watcher_scratch_frame = NULL;
     }
 
     /* M2 baseline teardown. */
