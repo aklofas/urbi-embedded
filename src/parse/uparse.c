@@ -331,6 +331,22 @@ UAstNode *parse_atom(UParser *p) {
 /* parse_var_decl / parse_assign_from_ident / parse_statement_or_expr moved to
    uparse_stmt.c (PARSE-021 #4). */
 
+/* --- arena_grow_node_array: double a UAstNode* arena array when full.
+   Called when count == cap.  Allocates a new block of cap*2 entries from the
+   arena, copies the existing entries, and updates *arr and *cap.
+   Returns true on success, false on arena OOM (caller should return the
+   uparser_oom_sentinel). */
+bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count) {
+    int new_cap = (*cap) * 2;
+    UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
+                                                   (size_t)new_cap * sizeof(UAstNode *));
+    if (!bigger) return false;
+    for (int i = 0; i < count; i++) bigger[i] = (*arr)[i];
+    *arr = bigger;
+    *cap = new_cap;
+    return true;
+}
+
 /* --- parse_call_args: parse `(` arg, arg, ... `)` after a callee expression.
    Returns an AST_CALL node. callee is already parsed. --- */
 
@@ -349,14 +365,8 @@ UAstNode *parse_call_args(UParser *p, UAstNode *callee) {
         if (arg->kind == AST_ERROR) return arg;
 
         if (count == cap) {
-            int new_cap = cap * 2;
-            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
-                                                           (size_t)new_cap * sizeof(UAstNode *));
-            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
-            int i;
-            for (i = 0; i < count; i++) bigger[i] = args[i];
-            args = bigger;
-            cap = new_cap;
+            if (!arena_grow_node_array(p, &args, &cap, count))
+                return (UAstNode *)&uparser_oom_sentinel;
         }
         args[count++] = arg;
 

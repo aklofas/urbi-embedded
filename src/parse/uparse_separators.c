@@ -92,13 +92,8 @@ UAstNode *parse_outer_tier(UParser *p) {
         if (child->kind == AST_ERROR) return child;
 
         if (count == cap) {
-            int new_cap = cap * 2;
-            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
-                                                           (size_t)new_cap * sizeof(UAstNode *));
-            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
-            for (int i = 0; i < count; i++) bigger[i] = children[i];
-            children = bigger;
-            cap = new_cap;
+            if (!arena_grow_node_array(p, &children, &cap, count))
+                return (UAstNode *)&uparser_oom_sentinel;
         }
         children[count++] = child;
 

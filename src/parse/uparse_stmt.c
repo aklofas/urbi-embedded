@@ -240,13 +240,8 @@ UAstNode *parse_block(UParser *p) {
         if (s->kind == AST_ERROR) return s;
 
         if (count == cap) {
-            int new_cap = cap * 2;
-            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
-                                                           (size_t)new_cap * sizeof(UAstNode *));
-            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
-            for (int i = 0; i < count; i++) bigger[i] = stmts[i];
-            stmts = bigger;
-            cap = new_cap;
+            if (!arena_grow_node_array(p, &stmts, &cap, count))
+                return (UAstNode *)&uparser_oom_sentinel;
         }
         stmts[count++] = s;
 
@@ -438,14 +433,8 @@ UAstNode *parse_function(UParser *p) {
         pn->u.param.name_len   = name.u.str.len;
 
         if (count == cap) {
-            int new_cap = cap * 2;
-            UAstNode **bigger = (UAstNode **)uarena_alloc(p->arena,
-                                                           (size_t)new_cap * sizeof(UAstNode *));
-            if (!bigger) return (UAstNode *)&uparser_oom_sentinel;
-            int i;
-            for (i = 0; i < count; i++) bigger[i] = params[i];
-            params = bigger;
-            cap = new_cap;
+            if (!arena_grow_node_array(p, &params, &cap, count))
+                return (UAstNode *)&uparser_oom_sentinel;
         }
         params[count++] = pn;
 

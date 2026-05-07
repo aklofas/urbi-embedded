@@ -36,6 +36,9 @@ UAstNode *make_nil_node(UParser *p, int line, int col);
 UAstNode *make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col);
 
+/* --- Arena-array growth helper (defined in uparse.c residual). --- */
+bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);
+
 /* --- Expression parser (defined in uparse.c residual). --- */
 UAstNode *parse_expression(UParser *p, int min_prec);
 UAstNode *parse_prefix(UParser *p);
