@@ -9,6 +9,10 @@
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
 #include "value/uvalue.h"      /* UValue */
+#include "module/umodule.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
  * Uses the VM's allocator.  Threads the new closure into *list_head so

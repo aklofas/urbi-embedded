@@ -4,6 +4,10 @@
 #include "parse/uparse_internal.h"
 #include "watcher/uwatcher.h"
 #include <stddef.h>
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "parse/uparse.h"
+#include "value/uarena.h"
 
 /* --- desugar_postfix_emit: common helper for postfix `e!` desugar.
  *

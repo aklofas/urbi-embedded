@@ -11,6 +11,7 @@
 #include "gc/ugc_incremental.h" /* gc_shade_gray */
 #include "gc/ugc.h"            /* UTYPE_PROTOS */
 #include "urbi/urbi.h"         /* URBI_OK / URBI_ERR_INVALID_ARG */
+#include <stddef.h>
 
 /* Cap on the number of distinct prototypes a single setProtos call may
  * install (after dedup).  Stays in sync with the plan's stack-array sizing;

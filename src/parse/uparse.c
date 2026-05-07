@@ -4,6 +4,10 @@
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
 #include <stddef.h>
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stdint.h>
 
 /* Local string helper — compare an (unterminated) lexeme against a literal.
  * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */

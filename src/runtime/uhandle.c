@@ -7,6 +7,9 @@
 #include "runtime/umacros.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
+#include "gc/ugc.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #define INITIAL_CAP  16U
 

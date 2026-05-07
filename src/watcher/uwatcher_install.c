@@ -28,6 +28,8 @@
 #include "tag/utag.h"               /* UTag, member_watchers_head */
 #include "event/uevent.h"             /* UEvent */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_append */
+#include <stddef.h>
+#include <stdint.h>
 
 /* === strand_closure_unlink ===
  *

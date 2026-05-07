@@ -15,6 +15,7 @@
 #include "uwatcher.h"
 #include "vm/uvm.h"
 #include "gc/ugc.h"
+#include <stddef.h>
 #ifdef URBI_DEBUG
 #include "sched/ustrand.h"
 #include "realm/urealm.h"

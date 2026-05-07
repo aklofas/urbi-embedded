@@ -11,6 +11,8 @@
 #include "value/uintern.h"       /* ustr_intern (fallback retry) */
 #include "gc/ugc_incremental.h"  /* urbi_gc_walk_all_cells */
 #include "gc/ugc.h"              /* UTYPE_OBJECT */
+#include "module/umodule.h"
+#include <stddef.h>
 
 /* === T12: cycle-safe DFS lookup ===
  *

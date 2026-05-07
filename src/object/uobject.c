@@ -25,6 +25,8 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic */
+#include "gc/ugc.h"
+#include <stddef.h>
 
 /* === next_id ===
  *

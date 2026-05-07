@@ -8,6 +8,7 @@
 #include "runtime/umacros.h"
 #include "object/uic.h"
 #include "object/umodule_instance.h"
+#include <stdint.h>
 
 #if __STDC_HOSTED__
 #  include <stdio.h>

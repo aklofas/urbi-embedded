@@ -10,6 +10,11 @@
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
 #include "object/umodule_instance.h" /* urbi_module_instance_create */
+#include "module/umodule.h"
+#include "runtime/ucleanup.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* --- urbi_vm_run: thin adapter that wraps dispatch_loop_until_yield.
    Preserves the M2 public API contract:

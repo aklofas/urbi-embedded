@@ -6,6 +6,7 @@
 #include "value/uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
+#include <stdint.h>
 
 /* Local byte-copy.  Replaces memcpy so umodule.c compiles without
    <string.h> under -ffreestanding. */

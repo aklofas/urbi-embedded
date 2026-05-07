@@ -4,6 +4,10 @@
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stddef.h>
 
 /* --- parse_var_decl: `var x = expr` --- */
 

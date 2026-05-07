@@ -5,6 +5,8 @@
 #include "runtime/umacros.h"
 
 #include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /* Length of a radix prefix ("0x", "0b", "0o").  Used by scan_radix to size
    the EMPTY_RADIX error span; LEX_RADIX_PREFIX_LEN + 1 sizes the MALFORMED

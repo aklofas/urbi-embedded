@@ -4,6 +4,10 @@
 
 #include "uemit_internal.h"
 #include "value/uvarint.h"
+#include "module/umodule.h"
+#include "runtime/umacros.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* Compute total serialized byte count.  Must match the write path
    in umodule_serialize byte-for-byte. */

@@ -35,6 +35,8 @@
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 #include "event/uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */
+#include <stddef.h>
+#include <stdint.h>
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */

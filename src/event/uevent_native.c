@@ -31,6 +31,8 @@
 #include "runtime/umacros.h"   /* urbi_zero */
 
 #include <stddef.h>  /* size_t */
+#include "module/umodule.h"
+#include <stdint.h>
 
 /* === uvalue_from_event / uvalue_as_event ===
  *

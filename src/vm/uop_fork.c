@@ -32,6 +32,8 @@
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "vm/uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
 #include "runtime/uframe.h"      /* UVM_STACK_CAP (also in uvm.h → uframe.h) */
+#include <stddef.h>
+#include <stdint.h>
 
 /* ===================================================================
  * Internal helpers

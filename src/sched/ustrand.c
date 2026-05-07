@@ -13,6 +13,10 @@
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
+#include "module/umodule.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 int
 ustrand_init(UStrand *s, struct UVM *vm) {

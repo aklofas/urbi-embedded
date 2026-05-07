@@ -21,6 +21,8 @@
 #include "object/uobject.h"   /* URBI_SLOT_FLAG_* bits */
 #include "vm/uvm.h"
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_SHAPE_MAP, UTYPE_PROPS_TABLE */
+#include "gc/ugc.h"
+#include "module/umodule.h"
 
 /* === Transition-cache helpers (file-private) === */
 

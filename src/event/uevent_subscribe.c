@@ -11,6 +11,7 @@
 #include "event/uevent_subscribe.h"
 #include "event/uevent.h"
 #include "watcher/uwatcher.h"  /* UWatcher, next_in_event */
+#include <stddef.h>
 
 void
 uevent_at_watchers_append(UEvent *e, UWatcher *w)

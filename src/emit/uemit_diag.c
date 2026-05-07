@@ -3,6 +3,10 @@
  * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #9). */
 
 #include "uemit_internal.h"
+#include "emit/uemit.h"
+#include "module/umodule.h"
+#include "parse/uast.h"
+#include "runtime/umacros.h"
 
 #if __STDC_HOSTED__
 #  include <stdarg.h>

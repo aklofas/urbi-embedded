@@ -15,6 +15,7 @@
 #include "urbi/gc.h"      /* urbi_gc_alloc */
 #include "urbi/urbi.h"    /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"
+#include <stddef.h>
 
 /* === utag_create ===
  *

@@ -7,6 +7,8 @@
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "event/uevent_ring.h"
+#include <stddef.h>
+#include <stdint.h>
 
 UStepResult
 urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)

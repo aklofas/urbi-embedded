@@ -15,6 +15,9 @@
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
+#include "module/umodule.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* uwatcher_pool_alloc: pop one entry from the freelist.
  * Returns NULL if the pool is exhausted.

@@ -42,6 +42,9 @@
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
 #include <stdbool.h>
 #include <stdint.h>
+#include "gc/ugc.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
 
 /* Maximum instruction budget assigned to a strand on sched_strand_init.
    Can be overridden at compile time (e.g. -DURBI_STRAND_BUDGET_MAX=500). */

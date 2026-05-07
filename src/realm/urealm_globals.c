@@ -23,6 +23,8 @@
 #include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
+#include "module/umodule.h"
+#include <stdint.h>
 
 /* === Zero-fill helper for UValue padding bytes === */
 

@@ -39,6 +39,8 @@
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
+#include <stddef.h>
+#include <stdint.h>
 
 /* === throw_oom_for_tag_event ===
  *

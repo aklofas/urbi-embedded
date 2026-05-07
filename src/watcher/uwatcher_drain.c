@@ -40,6 +40,7 @@
 #include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
+#include <stddef.h>
 
 /* === run_watcher_onleave — file-scope static ===
  *

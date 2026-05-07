@@ -19,6 +19,12 @@
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
 #include "watcher/uwatcher.h"     /* UWATCHER_AT / _AT_SYNC / _WHENEVER */
+#include "emit/uemit.h"
+#include "module/umodule.h"
+#include "parse/uast.h"
+#include "runtime/umacros.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* =========================================================================
  * AST_MEMBER_GET — obj.x → OP_GETSLOT

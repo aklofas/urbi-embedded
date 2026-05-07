@@ -17,6 +17,8 @@
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
 #include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
+#include <stddef.h>
+#include <stdint.h>
 
 /* === invoke_condition_closure ===
  *

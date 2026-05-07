@@ -10,6 +10,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "gc/ugc.h"
+#include "module/umodule.h"
+#include "object/uic.h"
 
 /* init_ic_slice — zero-fill an IC table slice carved from ic_cursor.
  * Fills pi->ic_table with ic_count entries sourced from ic_names (may be

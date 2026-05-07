@@ -34,6 +34,8 @@
 #include "object/umodule_instance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
 #include "urbi/urbi.h"             /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"               /* URBI_INTERNAL_ASSERT */
+#include <stddef.h>
+#include <stdint.h>
 
 void
 do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)

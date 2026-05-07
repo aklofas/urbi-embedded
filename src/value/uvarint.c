@@ -2,6 +2,7 @@
 /* LEB128 varint codec.  Freestanding; see uvarint.h. */
 
 #include "value/uvarint.h"
+#include <stdint.h>
 
 /* --- Encode --- */
 

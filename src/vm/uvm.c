@@ -23,6 +23,14 @@
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 #include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
+#include "gc/ugc.h"
+#include "gc/ugc_incremental.h"
+#include "module/umodule.h"
+#include "object/umodule_instance.h"
+#include "runtime/ucleanup.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* --- Dispatch macros.
        Under GCC/Clang with computed-goto support (and without

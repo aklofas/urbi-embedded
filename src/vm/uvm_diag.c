@@ -6,6 +6,8 @@
 #include "vm/uvm_internal.h"   /* UDiagWriter typedef + forward decls */
 #include "module/umodule.h"    /* UModule, UOpcode */
 #include "value/uvalue.h"      /* UValKind, UVAL_* */
+#include <stddef.h>
+#include <stdint.h>
 
 /* Map UValKind to a human-readable name for diagnostic messages. */
 const char *kind_name(uint8_t kind) {

@@ -8,6 +8,8 @@
 #include "event/uevent.h"
 #include "vm/uvm.h"
 #include "urbi/gc.h"   /* urbi_gc_alloc, UTYPE_EVENT */
+#include "gc/ugc.h"
+#include <stddef.h>
 
 /* === urbi_event_create ===
  *
