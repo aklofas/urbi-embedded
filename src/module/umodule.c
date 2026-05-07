@@ -499,17 +499,13 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
             /* Runtime-checked at OP_GETUPVAL/OP_SETUPVAL dispatch (UClosure
              * carries the upvalue array length).  No static range. */
             return ULOAD_OK;
-        case UOPK_NUP_PRELUDE:
-            /* OP_CLOSURE B/C carry NUP+upvalue-descriptor encoding handled
-             * inline at the OP_CLOSURE arm below.  Treated as UNUSED here
-             * because the descriptor walk is per-instruction, not per-byte. */
-            return ULOAD_OK;
         case UOPK_FRAME_REG_BASE:
             /* OP_PUSH_FRAME_GUARD A is base register; <= max_reg. */
             if (value > d->module->max_reg) {
                 set_errmsg(d->errmsg, d->errcap,
-                           "frame guard base=%u > max_reg=%u at pc %zu",
-                           (unsigned)value, (unsigned)d->module->max_reg, pc);
+                           "%s frame guard base=%u > max_reg=%u at pc %zu (op=%u)",
+                           which, (unsigned)value, (unsigned)d->module->max_reg,
+                           pc, (unsigned)op);
                 return ULOAD_CORRUPT;
             }
             return ULOAD_OK;

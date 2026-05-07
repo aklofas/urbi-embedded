@@ -1455,6 +1455,29 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
     umodule_destroy(&c);
 }
 
+UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
+    /* Pre-fix the OP_AT_INSTALL row marked C as a register; encoding the
+     * 0xFF no-onleave sentinel as C tripped the register check.  Post-fix
+     * (T4 follow-up) C is UOPK_UNUSED and the sentinel verifies clean. */
+    uint8_t buf[80] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 2;          /* max_reg = 2 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_AT_INSTALL, /*A=*/0, /*B=*/1, /*C=*/0xFFU);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1576,4 +1599,6 @@ void test_module_suite(void) {
               verify_rejects_op_loadbool_b_greater_than_one);
     utest_run("verify rejects OP_GETUPVAL A > max_reg",
               verify_rejects_op_getupval_a_above_max_reg);
+    utest_run("verify accepts OP_AT_INSTALL with no-onleave 0xFF sentinel",
+              verify_accepts_at_install_with_no_onleave_sentinel);
 }

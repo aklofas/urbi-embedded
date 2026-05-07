@@ -193,7 +193,9 @@ typedef enum {
     OP_GETSLOT_CHANGE_EVENT    = 45,  /* ABC: dst_reg, recv_reg, name_sym_id     */
 
     /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
-    OP_LOAD_REALM_GLOBAL       = 46,  /* ABC: dst_reg, sym_id_hi, sym_id_lo      */
+    OP_LOAD_REALM_GLOBAL       = 46,  /* A: dst_reg; B,C reserved (sym_id wire
+                                         extension lands at v1.5 alongside a
+                                         concrete realm symbol-table layout) */
 
     OP_MAX
 } UOpcode;

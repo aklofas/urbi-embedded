@@ -18,11 +18,6 @@
  *                        must be <= max_reg AND <= 15
  *   UOPK_UPVAL_IDX     : upvalue index; runtime-checked, no static range
  *                        (UClosure carries the upvalue array length)
- *   UOPK_NUP_PRELUDE   : OP_CLOSURE has NUP "pseudo-instructions" of
- *                        upvalue descriptors immediately following; the
- *                        verifier skips them (next NUP slots are descriptors,
- *                        not opcodes).  NUP is read from the proto being
- *                        instantiated (Bx index into nested[]).
  *   UOPK_FRAME_REG_BASE: OP_PUSH_FRAME_GUARD A is base register; <= max_reg
  *   UOPK_FRAME_REG_COUNT: OP_PUSH_FRAME_GUARD B is count; A+B <= max_reg+1
  *
@@ -60,7 +55,6 @@ typedef enum {
     UOPK_IMM_FLAGS,
     UOPK_IMM_REG_NIBBLE,
     UOPK_UPVAL_IDX,
-    UOPK_NUP_PRELUDE,
     UOPK_FRAME_REG_BASE,
     UOPK_FRAME_REG_COUNT
 } UOperandKind;

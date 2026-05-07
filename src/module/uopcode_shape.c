@@ -20,7 +20,11 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_LOADVOID] = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
     [OP_GETUPVAL] = { UOPF_ABC, UOPK_REG,        UOPK_UPVAL_IDX, UOPK_UNUSED, UBXK_UNUSED },
     [OP_SETUPVAL] = { UOPF_ABC, UOPK_REG,        UOPK_UPVAL_IDX, UOPK_UNUSED, UBXK_UNUSED },
-    [OP_CLOSURE]  = { UOPF_ABX, UOPK_REG,        UOPK_NUP_PRELUDE, UOPK_NUP_PRELUDE, UBXK_NESTED_INDEX },
+    /* OP_CLOSURE: at v1.5 the NUP upvalue-descriptor pseudo-instructions
+     * following the OP_CLOSURE are not verified at load time — runtime
+     * dispatch consumes them.  v1.x backlog: extend the verifier to walk
+     * the prelude. */
+    [OP_CLOSURE]  = { UOPF_ABX, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_NESTED_INDEX },
     [OP_CLOSE]    = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
     [OP_CALL]     = { UOPF_ABC, UOPK_REG,        UOPK_REG,       UOPK_REG,    UBXK_UNUSED },
     [OP_JMP]      = { UOPF_ABX, UOPK_UNUSED,     UOPK_UNUSED,    UOPK_UNUSED, UBXK_JUMP_SIGNED },
@@ -52,13 +56,21 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_RESUME]             = { UOPF_ABC, UOPK_REG,                UOPK_UNUSED,        UOPK_UNUSED, UBXK_UNUSED },
     [OP_LOAD_CATCH_VALUE]   = { UOPF_ABC, UOPK_REG,                UOPK_UNUSED,        UOPK_UNUSED, UBXK_UNUSED },
 
-    /* M5 reactive 38-45 (v1.5 renumber per T17; v1.4 was 39-46) */
-    [OP_AT_INSTALL]            = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
-    [OP_AT_SYNC_INSTALL]       = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
-    [OP_WHENEVER_INSTALL]      = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
+    /* M5 reactive 38-45 (v1.5 renumber per T17; v1.4 was 39-46).
+     * Install ops: C carries either an onleave-closure register OR the
+     * 0xFF "no onleave" sentinel; UOPK_UNUSED so the verifier accepts
+     * arbitrary byte values (runtime decodes the sentinel at dispatch).
+     * OP_GETSLOT_CHANGE_EVENT C is the IC site index, matching
+     * OP_GETSLOT / OP_SETSLOT. */
+    [OP_AT_INSTALL]            = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+    [OP_AT_SYNC_INSTALL]       = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+    [OP_WHENEVER_INSTALL]      = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
     [OP_WAITUNTIL_INSTALL]     = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
-    [OP_AT_EVENT_INSTALL]      = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
-    [OP_AT_EVENT_SYNC_INSTALL] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
-    [OP_GETSLOT_CHANGE_EVENT]  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_REG, UBXK_UNUSED },
-    [OP_LOAD_REALM_GLOBAL]     = { UOPF_ABX, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_SYMBOL_ID },
+    [OP_AT_EVENT_INSTALL]      = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+    [OP_AT_EVENT_SYNC_INSTALL] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+    [OP_GETSLOT_CHANGE_EVENT]  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
+    /* OP_LOAD_REALM_GLOBAL at v1.4: emitter writes ABC with B=C=0; only A
+     * (dst_reg) is consumed by the VM.  The forward-looking ABX/sym_id
+     * shape lands at v1.5 alongside the encoder change in T17/T18. */
+    [OP_LOAD_REALM_GLOBAL]     = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
 };
