@@ -93,9 +93,8 @@ static bool module_grow(UModule *c, void **data, size_t *cap,
    Delegate to uvarint.{c,h} and translate UVarintError into UModuleLoadError so
    existing call sites continue to return/compare against ULOAD_* values. */
 
-static UModuleLoadError module_decode_varint_u(const uint8_t *buf, size_t size,
-                                             uint64_t *v, size_t *consumed) {
-    switch (uvarint_decode_u(buf, size, v, consumed)) {
+static UModuleLoadError varint_error_to_module_error(UVarintError ve) {
+    switch (ve) {
         case UVARINT_OK:        return ULOAD_OK;
         case UVARINT_TRUNCATED: return ULOAD_TRUNCATED;
         case UVARINT_OVERSIZE:  return ULOAD_CORRUPT_VARINT;
@@ -103,14 +102,14 @@ static UModuleLoadError module_decode_varint_u(const uint8_t *buf, size_t size,
     return ULOAD_CORRUPT;  /* unreachable under -Wswitch-enum */
 }
 
+static UModuleLoadError module_decode_varint_u(const uint8_t *buf, size_t size,
+                                             uint64_t *v, size_t *consumed) {
+    return varint_error_to_module_error(uvarint_decode_u(buf, size, v, consumed));
+}
+
 static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
                                               int64_t *v, size_t *consumed) {
-    switch (uvarint_decode_zz(buf, size, v, consumed)) {
-        case UVARINT_OK:        return ULOAD_OK;
-        case UVARINT_TRUNCATED: return ULOAD_TRUNCATED;
-        case UVARINT_OVERSIZE:  return ULOAD_CORRUPT_VARINT;
-    }
-    return ULOAD_CORRUPT;  /* unreachable under -Wswitch-enum */
+    return varint_error_to_module_error(uvarint_decode_zz(buf, size, v, consumed));
 }
 
 /* --- Proto helpers --- */
