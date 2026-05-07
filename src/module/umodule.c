@@ -290,8 +290,8 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
         }
         uint8_t kind = d->buf[d->off++];
         if (kind > (uint8_t)UVAL_STR) {
-            set_errmsg(d->errmsg, d->errcap, "constant kind %u not yet decodable at M1",
-                       (unsigned)kind);
+            set_errmsg(d->errmsg, d->errcap, "constant kind %u out of range (max %u)",
+                       (unsigned)kind, (unsigned)UVAL_STR);
             return ULOAD_CORRUPT_TAG;
         }
         d->module->constants[d->module->const_count].kind = kind;
@@ -324,12 +324,12 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
 #endif
         } else {
             /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload encoder/decoder
-               implemented in v0.5.5.  The emitter never produces these in
+               implemented in v0.5.6.  The emitter never produces these in
                constant pools (BOOL is OP_LOADBOOL immediate, NIL is
                OP_LOADNIL, STR is M6 stdlib).  Hand-crafted bytecode that
                smuggles them in is rejected via ULOAD_CORRUPT_TAG so the
                loader does not crash on the missing payload read. */
-            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in v0.5.5 constant pools",
+            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in v0.5.6 constant pools",
                        (unsigned)kind);
             return ULOAD_CORRUPT_TAG;
         }

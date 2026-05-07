@@ -406,11 +406,33 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 
 /* --- API --- */
 
-/* Populate module from buf.  module must be zero-initialized before call;
-   if module->alloc_fn is NULL on entry, the stdlib realloc is used
-   (hosted builds only).  errmsg/errcap receive a human-readable
-   diagnostic on failure; pass (NULL, 0) to suppress.
-   On error the module is left empty (destroy is safe but a no-op). */
+/* Populate `module` from `buf`.  `module` MUST be zero-initialized before
+ * call.  If `module->alloc_fn` is NULL on entry, the stdlib `realloc` is
+ * used (hosted builds only); freestanding callers MUST set `alloc_fn`
+ * before calling.
+ *
+ * `errmsg` / `errcap` receive a human-readable diagnostic on failure.
+ * Pass `(NULL, 0)` to suppress.  A non-NULL `errmsg` with `errcap == 0`
+ * is silently treated as suppression.
+ *
+ * Error semantics:
+ *   - On success returns ULOAD_OK; `module` is fully populated.
+ *   - On any failure returns a non-OK code; `module` may hold PARTIAL
+ *     buffers from the section that completed before the failure.
+ *     `umodule_destroy(module)` is safe in EITHER case and is the
+ *     correct cleanup path even after a failed deserialize.
+ *
+ * Coverage at v1.5:
+ *   - Header (24 bytes), metadata (max_reg, source_name), constants
+ *     (UVAL_INT + UVAL_FLOAT only — see decode_constants comments),
+ *     instructions (LE uint32 stream), syncline tables, nested[] proto
+ *     section + per-proto + root-chunk ic_name_strs.
+ *   - Verifier walks every instruction against the opcode-shape table
+ *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
+ *     range-checked per UBxKind, last instruction must be OP_RET.
+ *   - ic_names interning is deferred to urbi_module_instance_create
+ *     (see object/umoduleinstance.h); deserialize itself does not need
+ *     a VM. */
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
