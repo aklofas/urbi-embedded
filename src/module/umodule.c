@@ -7,17 +7,6 @@
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 
-/* Local byte-compare.  Replaces memcmp so umodule.c compiles without
-   <string.h> under -ffreestanding. */
-static int module_memcmp(const void *a, const void *b, size_t n) {
-    const unsigned char *pa = (const unsigned char *)a;
-    const unsigned char *pb = (const unsigned char *)b;
-    for (size_t i = 0; i < n; i++) {
-        if (pa[i] != pb[i]) return (int)pa[i] - (int)pb[i];
-    }
-    return 0;
-}
-
 /* Local byte-copy.  Replaces memcpy so umodule.c compiles without
    <string.h> under -ffreestanding. */
 static void module_memcpy(void *dst, const void *src, size_t n) {
@@ -190,7 +179,7 @@ static UModuleLoadError decode_header(MDecCtx *d) {
     }
     /* buf[5] = flags; no flag bits defined at v1.0, ignored for forward-compat */
     /* canary bytes at offsets 6-11 */
-    if (module_memcmp(d->buf + 6, kCanary, sizeof kCanary) != 0) {
+    if (!urbi_memeq(d->buf + 6, kCanary, sizeof kCanary)) {
         set_errmsg(d->errmsg, d->errcap,
                    "corrupt canary bytes (possible FTP/Windows paste translation)");
         return ULOAD_BAD_MAGIC;

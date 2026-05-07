@@ -2,15 +2,9 @@
 /* ULexer. */
 
 #include "lex/ulex.h"
+#include "runtime/umacros.h"
 
 #include <limits.h>
-
-/* Local byte-compare.  Replaces memcmp so ulex.c compiles without
- * <string.h> under -ffreestanding (cross-arm / cross-riscv targets). */
-static int lex_memeq(const char *a, const char *b, int n) {
-    for (int i = 0; i < n; i++) { if (a[i] != b[i]) return 0; }
-    return 1;
-}
 
 static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
@@ -260,7 +254,7 @@ static UToken scan_decimal(ULexer *lex) {
     /* Check for duration suffix and convert to microseconds. */
     for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
         if (lex->cur + e->sufflen > lex->end) continue;
-        if (!lex_memeq(lex->cur, e->suffix, e->sufflen)) continue;
+        if (!urbi_memeq(lex->cur, e->suffix, e->sufflen)) continue;
         /* Boundary: next char must not be ident-cont. */
         if (lex->cur + e->sufflen < lex->end &&
             is_ident_cont(lex->cur[e->sufflen])) continue;
