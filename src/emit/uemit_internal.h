@@ -128,9 +128,27 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
  * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
  * can use them without implicit-declaration warnings. */
 
+/* Bump the register-allocator cursor and track high-water mark.
+ * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
+ * all 256 slots are consumed (cursor at 255 before call). */
+static inline uint8_t alloc_reg(UEmitter *e) {
+    if (e->next_reg == 255u) { e->error = EMIT_REG_EXHAUSTED; return 0u; }
+    uint8_t r = e->next_reg++;
+    if (r > e->max_reg_seen) e->max_reg_seen = r;
+    return r;
+}
+
 /* Release the most-recently-allocated register (stack discipline). */
 static inline void free_reg(UEmitter *e) {
     if (e->next_reg > 0u) e->next_reg--;
 }
+
+/* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
+ * Called from emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
+uint8_t emit_if_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_while_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_call_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_return_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
 
 #endif /* UEMIT_INTERNAL_H */
