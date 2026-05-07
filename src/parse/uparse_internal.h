@@ -11,6 +11,9 @@
 /* --- OOM sentinel (defined in uparse.c residual). --- */
 extern const UAstNode uparser_oom_sentinel;
 
+/* --- Error-message table (defined in uparse.c residual). --- */
+extern const char * const kErrorMessages[];
+
 /* --- Token helpers (defined in uparse.c residual). --- */
 UToken peek(UParser *p);
 UToken consume(UParser *p);
@@ -61,7 +64,7 @@ UAstNode *parse_return(UParser *p);
 UAstNode *parse_throw(UParser *p);
 UAstNode *parse_try(UParser *p);
 
-/* --- Reactive parser (defined in uparse.c residual until uparse_react.c). --- */
+/* --- Reactive parser (defined in uparse_react.c). --- */
 UAstNode *parse_at(UParser *p);
 UAstNode *parse_whenever(UParser *p);
 UAstNode *parse_waituntil(UParser *p);
