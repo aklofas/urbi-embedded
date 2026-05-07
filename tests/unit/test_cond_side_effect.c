@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#include "uast.h"
+#include "parse/uast.h"
 #include "uemit.h"
 
 #define UTEST(name) static void name(void)

@@ -3,9 +3,9 @@
 
 #include "utest.h"
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "lex/ulex.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include <string.h>
 
 #define UTEST(name) static void name(void)

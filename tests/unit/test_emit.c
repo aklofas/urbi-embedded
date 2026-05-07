@@ -855,7 +855,7 @@ uvm_destroy(&vm);
 /* --- var-decl + local resolution emit tests (T10) --- */
 
 #include "lex/ulex.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 
 /* Helper context used by all T10 emit tests: parse source + emit. */
 typedef struct {

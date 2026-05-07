@@ -16,7 +16,7 @@
 #include "value/uarena.h"
 #include "uemit.h"
 #include "lex/ulex.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "watcher/uwatcher.h"
 
 #include <stddef.h>

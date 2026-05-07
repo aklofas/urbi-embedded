@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Streaming Pratt parser implementation. */
 
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "watcher/uwatcher.h"
 #include <stddef.h>
 

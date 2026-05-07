@@ -14,11 +14,11 @@
 #include <unistd.h>
 
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "uemit.h"
 #include "lex/ulex.h"
 #include "umodule.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "urbi/urbi.h"
 #include "value/uvalue.h"
 #include "uvm.h"

@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "umodule.h"
 
 #ifdef __cplusplus

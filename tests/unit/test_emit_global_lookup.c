@@ -14,11 +14,11 @@
 #include <string.h>
 
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
 #include "lex/ulex.h"
 #include "umodule.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)

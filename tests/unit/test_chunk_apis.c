@@ -9,10 +9,10 @@
 #include "uvm.h"
 #include "umodule.h"
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "uemit.h"
 #include "lex/ulex.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "value/uvalue.h"
 #include <string.h>
 #include <stddef.h>

@@ -8,7 +8,7 @@
  */
 
 #include "utest.h"
-#include "uast.h"
+#include "parse/uast.h"
 
 static void ast_watcher_distinct(void) {
     UASSERT(AST_WATCHER != AST_WAITUNTIL);

@@ -6,12 +6,12 @@
 #include <string.h>
 
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "uemit.h"
 #include "value/uintern.h"
 #include "lex/ulex.h"
 #include "umodule.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)

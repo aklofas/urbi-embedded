@@ -27,8 +27,8 @@
 #include "value/uarena.h"
 #include "uemit.h"
 #include "lex/ulex.h"
-#include "uparse.h"
-#include "uast.h"
+#include "parse/uparse.h"
+#include "parse/uast.h"
 #include "value/uvalue.h"
 
 #include <string.h>

@@ -7,7 +7,7 @@
 #include <stdbool.h>
 
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "lex/ulex.h"
 
 #ifdef __cplusplus

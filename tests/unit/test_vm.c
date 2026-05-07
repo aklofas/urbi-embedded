@@ -5,11 +5,11 @@
 #include "uvm.h"
 #include "umodule.h"
 #include "value/uarena.h"
-#include "uast.h"
+#include "parse/uast.h"
 #include "runtime/uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"
 #include "lex/ulex.h"
-#include "uparse.h"
+#include "parse/uparse.h"
 #include <stdlib.h>
 #include <string.h>
 
