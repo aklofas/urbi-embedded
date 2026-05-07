@@ -388,46 +388,48 @@ UAstNode *parse_if(UParser *p) {
     return node;
 }
 
+/* Returns an AST_ERROR node if the parser sees a syntactic shape that v1.0
+ * rejects (bare `function {` or `function name {` without parens), otherwise
+ * NULL.  As a side effect, when an IDENT follows `function` the name token is
+ * consumed and discarded (named-function name handling deferred to T15). */
+static UAstNode *reject_bare_function_forms(UParser *p) {
+    UToken next = peek(p);
+    if (next.type == TOK_LBRACE) {
+        return make_error(p, PARSE_BARE_FUNCTION,
+                          "bare 'function { body }' is retired at v1.0; "
+                          "use 'function() { body }' (add empty parens). "
+                          "Per REVIVAL §14 L13: legacy bare functions ambiguously meant "
+                          "either 0-arg or no-formals — v1.0 requires explicit parens",
+                          next.line, next.col);
+    }
+    if (next.type == TOK_IDENT) {
+        /* Peek ahead: consume ident, check if next is '{' (bare named form)
+         * or '(' (good: named function with parens — T15 wires named funcs).
+         * For T14 we only support anonymous `function(...)`. If there's an
+         * IDENT followed by LBRACE, reject as bare. If IDENT followed by
+         * LPAREN, we just parse as anonymous (name is ignored for now). */
+        UToken name_tok = consume(p);
+        if (peek(p).type == TOK_LBRACE) {
+            return make_error(p, PARSE_BARE_FUNCTION,
+                              "bare 'function name { body }' is retired at v1.0; "
+                              "use 'function name() { body }' (add empty parens). "
+                              "Per REVIVAL §14 L13",
+                              name_tok.line, name_tok.col);
+        }
+        /* IDENT followed by '(' — treat as named function (name stored but
+         * not yet used by emit at T14; T15 will wire named-function emit). */
+        (void)name_tok;
+    }
+    return NULL;
+}
+
 /* --- parse_function: `function` [`name`] `(` params `)` `{` body `}` --- */
 
 UAstNode *parse_function(UParser *p) {
     UToken kw = consume(p);   /* consume TOK_KW_FUNCTION */
 
-    /* Detect bare-function forms and reject them.
-       `function {`    → bare anonymous (no parens)
-       `function name {` → bare named (no parens after name)
-       Both are retired at v1.0. */
-    {
-        UToken next = peek(p);
-        if (next.type == TOK_LBRACE) {
-            return make_error(p, PARSE_BARE_FUNCTION,
-                              "bare 'function { body }' is retired at v1.0; "
-                              "use 'function() { body }' (add empty parens). "
-                              "Per REVIVAL §14 L13: legacy bare functions ambiguously meant "
-                              "either 0-arg or no-formals — v1.0 requires explicit parens",
-                              next.line, next.col);
-        }
-        if (next.type == TOK_IDENT) {
-            /* Peek ahead: consume ident, check if next is '{' (bare named form)
-             * or '(' (good: named function with parens — T15 wires named funcs).
-             * For T14 we only support anonymous `function(...)`. If there's an
-             * IDENT followed by LBRACE, reject as bare. If IDENT followed by
-             * LPAREN, we just parse as anonymous (name is ignored for now). */
-            UToken name_tok = consume(p);
-            if (peek(p).type == TOK_LBRACE) {
-                return make_error(p, PARSE_BARE_FUNCTION,
-                                  "bare 'function name { body }' is retired at v1.0; "
-                                  "use 'function name() { body }' (add empty parens). "
-                                  "Per REVIVAL §14 L13",
-                                  name_tok.line, name_tok.col);
-            }
-            /* IDENT followed by '(' — treat as named function (name stored but
-             * not yet used by emit at T14; T15 will wire named-function emit). */
-            /* Fall through to parse the param list. */
-            /* Note: name_tok is consumed; we don't store it at T14. */
-            (void)name_tok;
-        }
-    }
+    UAstNode *err = reject_bare_function_forms(p);
+    if (err) return err;
 
     if (peek(p).type != TOK_LPAREN) {
         return make_error(p, PARSE_EXPECTED_LPAREN,
