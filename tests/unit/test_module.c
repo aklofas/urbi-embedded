@@ -832,10 +832,11 @@ UTEST(roundtrip_ast_unary_neg_5) {
 /* --- Serializer tests (Task 14) --- */
 
 UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
-    /* Empty module (no statements): 24-byte header + 6 body bytes.
+    /* Empty module (no statements): 24-byte header + 8 body bytes.
        Body = max_reg(1) + src_len varint 0(1) + n_const varint 0(1)
             + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
-            + n_abs varint 0(1) = 6 bytes.  Total = 30. */
+            + n_abs varint 0(1) + ic_count varint 0(1) + nested_count
+            varint 0(1) = 8 bytes.  Total = 32. */
     UModule module = {0};
     UArena arena;
     UEmitter e;
@@ -845,14 +846,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 
     /* Size query (buf == NULL) */
     ptrdiff_t n = umodule_serialize(&module, NULL, 0);
-    UASSERT_EQ((ptrdiff_t)30, n);
+    UASSERT_EQ((ptrdiff_t)32, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
     ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
-    UASSERT_EQ((ptrdiff_t)30, written);
+    UASSERT_EQ((ptrdiff_t)32, written);
 
     /* Header field checks */
     UASSERT_EQ((uint8_t)'U', buf[0]);
