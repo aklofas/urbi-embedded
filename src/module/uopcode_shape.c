@@ -69,8 +69,9 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_AT_EVENT_INSTALL]      = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
     [OP_AT_EVENT_SYNC_INSTALL] = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
     [OP_GETSLOT_CHANGE_EVENT]  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
-    /* OP_LOAD_REALM_GLOBAL at v1.4: emitter writes ABC with B=C=0; only A
+    /* OP_LOAD_REALM_GLOBAL at v1.5: emitter writes ABC with B=C=0; only A
      * (dst_reg) is consumed by the VM.  The forward-looking ABX/sym_id
-     * shape lands at v1.5 alongside the encoder change in T17/T18. */
+     * shape extension is deferred — needs a concrete realm symbol-table
+     * layout (see backlog). */
     [OP_LOAD_REALM_GLOBAL]     = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
 };

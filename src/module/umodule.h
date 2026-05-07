@@ -37,7 +37,11 @@ extern "C" {
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
    v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
    v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
-   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds).
+   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
+   v1.5 = 0x15 (v0.5.6 Wave 4 — wire-format completion: nested protos + per-proto
+                + root ic_name_strs, header reserved bytes 16-23 strictly zero,
+                opcode-shape table verifier, OP_INVOKE retired, M5 reactive
+                opcodes renumbered 39-46 -> 38-45).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -46,7 +50,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  4U
+#define URBI_BYTECODE_VERSION_MINOR  5U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -211,8 +215,9 @@ typedef enum {
 
     /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
     OP_LOAD_REALM_GLOBAL       = 45,  /* A: dst_reg; B,C reserved (sym_id wire
-                                         extension lands at v1.5 alongside a
-                                         concrete realm symbol-table layout) */
+                                         extension deferred — needs concrete
+                                         realm symbol-table layout, see
+                                         backlog) */
 
     OP_MAX
 } UOpcode;
@@ -324,7 +329,7 @@ typedef struct UClosure UClosure;
  * runtime fields; they are the caller's responsibility to initialize. */
 
 typedef struct UModule {
-    /* === Serialized fields (bytecode wire format v1.4) ============= */
+    /* === Serialized fields (bytecode wire format v1.5) ============= */
 
     uint32_t  *instructions;
     size_t     instr_count;

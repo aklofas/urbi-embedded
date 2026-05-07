@@ -174,9 +174,12 @@ static UModuleLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "bad magic (expected \"URBI\")");
         return ULOAD_BAD_MAGIC;
     }
-    /* version byte: 0x14 = v1.4 (16*major + minor); all prior versions are
-       hard-rejected.  v1.3 → v1.4 is the M5 break (reactive opcodes 39-46,
-       gc_byte bit 7, 4 new AST node kinds); loading older modules silently
+    /* version byte: 0x15 = v1.5 (16*major + minor); all prior versions are
+       hard-rejected.  v1.4 → v1.5 is the v0.5.6 Wave 4 break (wire-format
+       completion at T10-T15: nested protos + per-proto + root ic_name_strs,
+       header reserved bytes 16-23 strictly enforced as zero, opcode-shape
+       table replaces the M1 verifier, OP_INVOKE retired and M5 reactive
+       opcodes renumbered 39-46 -> 38-45).  Loading older modules silently
        would produce unknown opcodes or misread GC state. */
     if (d->buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(d->errmsg, d->errcap,
