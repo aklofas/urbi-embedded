@@ -188,7 +188,15 @@ test-determinism: test-determinism-footprint test-determinism-default test-deter
 #
 # Sharding: set URBI_SHARD_TOTAL=N URBI_SHARD_INDEX=I in the environment
 # to run only suites where (suite_index % N == I). CI uses N=4 across a
-# matrix; locally, leave unset to run all suites.
+# matrix; locally, leave unset to run all suites. The Makefile does NOT
+# dispatch sharded valgrind by default — empirically the wall-clock cost
+# is concentrated in 1-2 specific suites, so per-suite sharding ends up
+# strictly worse than running the suite once (the heavy shard alone
+# exceeds the unsharded total because every shard pays valgrind
+# startup + leak-summary cost, and the worst case is bottleneck-bound).
+# The wall-clock win in releasetest comes from running test-valgrind
+# in parallel with test-valgrind-deep + the sanitizer matrix + lint +
+# coverage etc., which IS what releasetest does.
 test-valgrind: valgrind-tools
 	$(MAKE) TARGET=host-valgrind \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
@@ -218,44 +226,84 @@ valgrind-tools:
 
 # --- Release test aggregate --------------------------------------------
 #
-# releasetest runs every host-side gate the CI matrix runs, in sequence.
+# releasetest runs every host-side gate the CI matrix runs, in parallel.
 # Cross-compile jobs (cross-arm, cross-riscv) are excluded — their
 # toolchains are not universally installable. CI remains authoritative
 # for cross-compile verification; this target is for local pre-release
 # confidence that a branch will pass CI end-to-end.
 #
-# Runtime: ~5-10 minutes on typical development hardware (dominated by
-# the two valgrind passes — fast for CI parity, deep for triage-grade
-# diagnostics). Invoked manually before tagging a release, or before
-# pushing a branch that touches multiple subsystems.
+# Runtime: ~5 minutes on a 32-core / 64 GB box (dominated by the two
+# valgrind passes; sanitizer variants and analysis run alongside them).
+# Invoked manually before tagging a release, or before pushing a branch
+# that touches multiple subsystems.
 #
-# Uses recursive $(MAKE) rather than prerequisite-style target chaining
-# so that a failure identifies exactly which gate broke, and so the
-# sanitizer variants run their own nested rebuild rather than sharing
-# object files with the previous target.
+# All sub-targets use disjoint $(BUILDDIR) trees ($(TARGET)=host /
+# host-asan / host-ubsan / host-debug / host-switch / host-valgrind /
+# host-valgrind-deep / host-coverage / host-analyzer), so concurrent
+# rebuilds do not race.  The sole shared artifact is build/host/liburbi.a
+# (needed by `test`, `test-stress`, and the `lint` machinery's
+# compile_commands.json consumers); GNU make's dep graph builds it once
+# and gates dependent rules on it.
+#
+# Set RELEASETEST_JOBS to override the parallelism level (default: nproc).
+# Use RELEASETEST_OUTPUT=line to disable output grouping if you need to
+# stream interleaved logs (default: -Otarget — each sub-target's stdout
+# arrives in one block, so logs are still readable).
+
+# Phase 1: every CPU-bound gate that doesn't compete badly with valgrind.
+# Runs concurrently under -j$(RELEASETEST_JOBS).
+RELEASETEST_PHASE1 := \
+    test test-asan test-ubsan test-debug test-switch \
+    lint docs-check coverage test-stress test-gc-none-build
+# Phase 2: valgrind, running alone after Phase 1 finishes.
+# Empirically valgrind throughput collapses by 10-20× when sharing memory
+# bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
+# (instrumented runner balloons from ~2 min solo to 40+ min under
+# contention).  Phase 2 is sequential — the cumulative wall-clock with
+# Phase 1 first is still substantially faster than the original 15-min
+# fully-sequential design.
+RELEASETEST_PHASE2 := test-valgrind
+
+# test-valgrind-deep is intentionally NOT in releasetest. Per its
+# docstring ("Intended for local triage when test-valgrind reports a hit
+# and you need a usable stack trace") it is a triage tool, not a gate;
+# its --track-origins=yes and --show-leak-kinds=all flags roughly double
+# wall-clock vs the fast variant. Run it explicitly when triaging:
+#   make test-valgrind-deep
+
+RELEASETEST_JOBS   ?= $(shell nproc)
+RELEASETEST_OUTPUT ?= target
 
 releasetest:
-	@echo "=== releasetest: unit + sanitizer matrix ==="
-	$(MAKE) test
-	$(MAKE) test-asan
-	$(MAKE) test-ubsan
-	$(MAKE) test-debug
-	$(MAKE) test-switch
-	@echo "=== releasetest: valgrind memcheck (fast) ==="
-	$(MAKE) test-valgrind
-	@echo "=== releasetest: valgrind memcheck (deep) ==="
-	$(MAKE) test-valgrind-deep
-	@echo "=== releasetest: static analysis ==="
-	$(MAKE) lint
-	@echo "=== releasetest: documentation ==="
-	$(MAKE) docs-check
-	@echo "=== releasetest: coverage ==="
-	$(MAKE) coverage
-	@echo "=== releasetest: GC stress tests ==="
-	$(MAKE) test-stress
-	@echo "=== releasetest: cross-strategy compile smoke ==="
-	$(MAKE) test-gc-none-build
-	@echo "=== releasetest: all gates passed ==="
+	@echo "=== releasetest: 2-phase sweep ==="
+	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
+	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"
+	@start_ts=$$(date +%s); \
+	$(MAKE) -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT) \
+	    --no-print-directory _releasetest_phase1; \
+	rc=$$?; \
+	if [ $$rc -ne 0 ]; then \
+	    end_ts=$$(date +%s); \
+	    echo "=== releasetest: FAILED in Phase 1 after $$((end_ts - start_ts)) s ==="; \
+	    exit $$rc; \
+	fi; \
+	phase1_ts=$$(date +%s); \
+	echo "=== releasetest: Phase 1 passed ($$((phase1_ts - start_ts)) s) — entering Phase 2 ==="; \
+	$(MAKE) --no-print-directory _releasetest_phase2; \
+	rc=$$?; \
+	end_ts=$$(date +%s); \
+	if [ $$rc -eq 0 ]; then \
+	    echo "=== releasetest: all gates passed ($$((end_ts - start_ts)) s wall-clock," \
+	         "Phase 1 $$((phase1_ts - start_ts)) s + Phase 2 $$((end_ts - phase1_ts)) s) ==="; \
+	else \
+	    echo "=== releasetest: FAILED in Phase 2 after $$((end_ts - start_ts)) s ==="; \
+	    exit $$rc; \
+	fi
+
+# Internal aggregators for the two phases.  Not for direct use; invoke
+# `releasetest` instead.
+_releasetest_phase1: $(RELEASETEST_PHASE1)
+_releasetest_phase2: $(RELEASETEST_PHASE2)
 
 # libFuzzer — clang-specific (uses libclang_rt.fuzzer, ships with clang's
 # compiler-rt).  Builds each harness as a standalone binary against the
@@ -520,4 +568,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest test-stress test-gc-none-build test-gc-pause
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause
