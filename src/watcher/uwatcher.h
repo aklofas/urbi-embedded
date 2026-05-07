@@ -133,6 +133,13 @@ typedef struct UWatcher {
     UCell    *cells[URBI_WATCHER_READSET_MAX]; /* 8 × cap B */
 } UWatcher;
 
+/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041 + sibling): UWatcher size is
+ * 240 B at the default URBI_WATCHER_READSET_MAX (16); any change to the
+ * read-set cap or to the leading fields must update this assert
+ * deliberately. */
+_Static_assert(sizeof(UWatcher) == 240,
+               "UWatcher size pin (default URBI_WATCHER_READSET_MAX=16)");
+
 /* === Pool lifecycle === */
 
 /* uwatcher_pool_init: allocate the watcher slab and thread the freelist.

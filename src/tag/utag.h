@@ -71,6 +71,12 @@ typedef struct UTag {
     UValue   name;                      /* UVAL_NIL at M5; populated at M6 */
 } UTag;
 
+/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041 + sibling): UTag is 56 B at
+ * v0.5.x default layout (M5 GC-promoted from the M3 host-managed form).
+ * Adding fields requires deliberate update of this assert. */
+_Static_assert(sizeof(UTag) == 56,
+               "UTag size pin (M5 GC-promoted layout)");
+
 /* === UTag lifecycle API ===
  *
  * utag_create: allocate and zero-initialize a UTag via urbi_gc_alloc.

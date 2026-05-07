@@ -212,6 +212,14 @@ struct UStrand {
     UValue                 *out_slot;       /* adapter-set: OP_RET at top-frame writes here */
 };
 
+/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041): the bulk of UStrand's size
+ * is the embedded frames[UVM_MAX_FRAMES] call-frame array (64 × ~40 B);
+ * any change to that or the surrounding fields must update this assert
+ * deliberately.  Default + footprint presets share this size — preset
+ * tunables change runtime budgets, not struct layout. */
+_Static_assert(sizeof(struct UStrand) == 2880,
+               "UStrand size pin (CHSTR-041)");
+
 /* === Lifecycle functions (stubs; full impl across T20 + T29) ===
 
    ustrand_init zeros the strand, sets DORMANT state, and pre-allocates the
