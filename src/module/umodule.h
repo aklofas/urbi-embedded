@@ -49,6 +49,21 @@ extern "C" {
 #define URBI_BYTECODE_VERSION_MINOR  4U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
+/* --- Header canary bytes (offsets 6-11) ---
+ *
+ * The 6-byte sequence detects FTP/Windows-paste corruption on transfer.
+ * `\x19\x93` is binary noise; `\r\n` is munged to `\n` by FTP ASCII
+ * mode; `\x1A\n` is the DOS EOF + LF.  Any text-mode mangling of the
+ * file produces a canary mismatch, returned as ULOAD_BAD_MAGIC.
+ *
+ * Defined as a static-const-array initializer in the header so both
+ * the serializer (uemit_serialize.c) and deserializer (umodule.c)
+ * consume the same constant rather than duplicating the byte sequence. */
+#define URBI_BYTECODE_CANARY_LEN 6U
+static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
+    0x19U, 0x93U, '\r', '\n', 0x1AU, '\n'
+};
+
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
 
 #ifndef URBI_INT_WIDTH

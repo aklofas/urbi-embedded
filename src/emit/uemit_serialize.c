@@ -66,9 +66,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
     buf[4] = (uint8_t)URBI_BYTECODE_VERSION_BYTE;  /* version v1.4 */
     buf[5] = 0x00U;              /* flags: none defined */
-    buf[6]  = 0x19U; buf[7]  = 0x93U;   /* canary bytes 0-1 */
-    buf[8]  = '\r';  buf[9]  = '\n';    /* canary bytes 2-3 */
-    buf[10] = 0x1AU; buf[11] = '\n';   /* canary bytes 4-5 */
+    emit_memcpy(buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN);
     buf[12] = (uint8_t)URBI_INT_WIDTH;
     buf[13] = (uint8_t)URBI_FLOAT_TYPE;
     buf[14] = (uint8_t)URBI_INSTR_WIDTH;

@@ -17,8 +17,7 @@ static void module_memcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) pd[i] = ps[i];
 }
 
-/* Canonical canary bytes — docs/internals/bytecode-format.md §Header. */
-static const uint8_t kCanary[6] = { 0x19, 0x93, '\r', '\n', 0x1A, '\n' };
+/* Canary constant lives in module/umodule.h as URBI_BYTECODE_CANARY (MOD-029). */
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -181,7 +180,7 @@ static UModuleLoadError decode_header(MDecCtx *d) {
     }
     /* buf[5] = flags; no flag bits defined at v1.0, ignored for forward-compat */
     /* canary bytes at offsets 6-11 */
-    if (!urbi_memeq(d->buf + 6, kCanary, sizeof kCanary)) {
+    if (!urbi_memeq(d->buf + 6, URBI_BYTECODE_CANARY, URBI_BYTECODE_CANARY_LEN)) {
         set_errmsg(d->errmsg, d->errcap,
                    "corrupt canary bytes (possible FTP/Windows paste translation)");
         return ULOAD_BAD_MAGIC;
