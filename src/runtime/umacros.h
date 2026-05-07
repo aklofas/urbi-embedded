@@ -20,4 +20,26 @@
 #  define URBI_INTERNAL_ASSERT(cond) ((void)0)
 #endif
 
+/* urbi_zero — freestanding-discipline byte-zero with `volatile` to defeat
+ * dead-store elimination on caller-provided memory.  Single source of truth
+ * for the per-subsystem `*_zero` helpers retired during v0.5.4-decompose
+ * (FOUND-030 + CHSTR-021 + REALM-020 + MOD-021 + WATCH-027).
+ *
+ * Contract: writes exactly `n` bytes of `0` starting at `p`.  Caller-provided
+ * memory must be at least `n` bytes; this helper does NOT bound-check.
+ *
+ * Why volatile: in freestanding builds we cannot assume `memset` is
+ * available (no libc) AND we must guarantee zeroing of caller buffers that
+ * the compiler might otherwise optimize away (e.g., zeroing a UStrand
+ * scratch frame on the C stack just before a call to `setjmp`-style unwind).
+ */
+#include <stddef.h>
+
+static inline void urbi_zero(void *const dst, const size_t n) {
+    volatile unsigned char *const p = (volatile unsigned char *)dst;
+    for (size_t i = 0; i < n; ++i) {
+        p[i] = 0;
+    }
+}
+
 #endif /* UMACROS_H */
