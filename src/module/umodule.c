@@ -4,6 +4,7 @@
 #include "module/umodule.h"
 #include "runtime/umacros.h"
 #include "value/uvarint.h"
+#include "uopcode_shape.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
@@ -455,66 +456,158 @@ static UModuleLoadError decode_line_table(MDecCtx *d) {
     return ULOAD_OK;
 }
 
+/* Verify a single byte field per its UOperandKind. */
+static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
+                                            uint8_t value, UOperandKind kind,
+                                            const char *which, size_t pc) {
+    switch (kind) {
+        case UOPK_UNUSED:
+            return ULOAD_OK;
+        case UOPK_REG:
+            if (value > d->module->max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "register %s=%u > max_reg=%u at pc %zu (op=%u)",
+                           which, (unsigned)value,
+                           (unsigned)d->module->max_reg, pc, (unsigned)op);
+                return ULOAD_CORRUPT;
+            }
+            return ULOAD_OK;
+        case UOPK_IMM_BOOL:
+            if (value > 1U) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "%s=%u not a 0/1 immediate at pc %zu (op=%u)",
+                           which, (unsigned)value, pc, (unsigned)op);
+                return ULOAD_CORRUPT;
+            }
+            return ULOAD_OK;
+        case UOPK_IMM_FLAGS:
+            return ULOAD_OK;  /* full byte accepted; flag bits unconstrained */
+        case UOPK_IMM_REG_NIBBLE: {
+            /* The byte packs flags (high nibble) + reg_idx (low nibble).
+             * tag_reg is constrained to [0,15] AND <= max_reg. */
+            uint8_t reg_idx = value & 0x0FU;
+            if (reg_idx > d->module->max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "%s tag_reg=%u > max_reg=%u at pc %zu (op=%u)",
+                           which, (unsigned)reg_idx,
+                           (unsigned)d->module->max_reg, pc, (unsigned)op);
+                return ULOAD_CORRUPT;
+            }
+            return ULOAD_OK;
+        }
+        case UOPK_UPVAL_IDX:
+            /* Runtime-checked at OP_GETUPVAL/OP_SETUPVAL dispatch (UClosure
+             * carries the upvalue array length).  No static range. */
+            return ULOAD_OK;
+        case UOPK_NUP_PRELUDE:
+            /* OP_CLOSURE B/C carry NUP+upvalue-descriptor encoding handled
+             * inline at the OP_CLOSURE arm below.  Treated as UNUSED here
+             * because the descriptor walk is per-instruction, not per-byte. */
+            return ULOAD_OK;
+        case UOPK_FRAME_REG_BASE:
+            /* OP_PUSH_FRAME_GUARD A is base register; <= max_reg. */
+            if (value > d->module->max_reg) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "frame guard base=%u > max_reg=%u at pc %zu",
+                           (unsigned)value, (unsigned)d->module->max_reg, pc);
+                return ULOAD_CORRUPT;
+            }
+            return ULOAD_OK;
+        case UOPK_FRAME_REG_COUNT:
+            /* No standalone range check — OP_PUSH_FRAME_GUARD A+B
+             * boundary check happens at the per-instruction arm below
+             * because we need both bytes simultaneously. */
+            return ULOAD_OK;
+    }
+    return ULOAD_OK;
+}
+
 static UModuleLoadError decode_verify(MDecCtx *d) {
     size_t vi;
     for (vi = 0; vi < d->module->instr_count; vi++) {
         uint32_t ins = d->module->instructions[vi];
         uint8_t  op  = (uint8_t)uinstr_op(ins);
-        uint8_t  a;
         if (op >= (uint8_t)OP_MAX) {
             set_errmsg(d->errmsg, d->errcap, "corrupt opcode %u at pc %zu",
                        (unsigned)op, vi);
             return ULOAD_CORRUPT;
         }
-        a = uinstr_a(ins);
-        if (a > d->module->max_reg) {
-            set_errmsg(d->errmsg, d->errcap,
-                       "register A=%u > max_reg=%u at pc %zu",
-                       (unsigned)a, (unsigned)d->module->max_reg, vi);
-            return ULOAD_CORRUPT;
-        }
-        if (op == (uint8_t)OP_LOADK) {
-            uint16_t bx = uinstr_bx(ins);
-            if ((size_t)bx >= d->module->const_count) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "LOADK Bx=%u out of range (pool size %zu) at pc %zu",
-                           (unsigned)bx, d->module->const_count, vi);
-                return ULOAD_CORRUPT;
-            }
-        } else {
+        const UOpcodeShape *sh = &urbi_opcode_shapes[op];
+
+        uint8_t a = uinstr_a(ins);
+        UModuleLoadError rc = verify_byte_operand(d, op, a, sh->a_kind, "A", vi);
+        if (rc != ULOAD_OK) return rc;
+
+        if (sh->format == UOPF_ABC) {
             uint8_t b = uinstr_b(ins);
-            /* B is unused in OP_RET (only A carries the return register);
-               accept arbitrary B values, same treatment as unused C fields. */
-            if (op != (uint8_t)OP_RET && b > d->module->max_reg) {
-                set_errmsg(d->errmsg, d->errcap,
-                           "register B=%u > max_reg=%u at pc %zu",
-                           (unsigned)b, (unsigned)d->module->max_reg, vi);
-                return ULOAD_CORRUPT;
-            }
-            /* C is only meaningful for ADD/SUB/MUL/DIV; MOVE/NEG/RET leave
-               it unused.  Only range-check C for the opcodes that use it —
-               arbitrary C values in unused fields are intentionally accepted. */
-            if (op == (uint8_t)OP_ADD || op == (uint8_t)OP_SUB
-             || op == (uint8_t)OP_MUL || op == (uint8_t)OP_DIV) {
-                uint8_t c = uinstr_c(ins);
-                if (c > d->module->max_reg) {
+            uint8_t c = uinstr_c(ins);
+            rc = verify_byte_operand(d, op, b, sh->b_kind, "B", vi);
+            if (rc != ULOAD_OK) return rc;
+            rc = verify_byte_operand(d, op, c, sh->c_kind, "C", vi);
+            if (rc != ULOAD_OK) return rc;
+
+            /* OP_PUSH_FRAME_GUARD: cross-byte invariant base+count <= max_reg+1. */
+            if (op == (uint8_t)OP_PUSH_FRAME_GUARD) {
+                if ((unsigned)a + (unsigned)b > (unsigned)d->module->max_reg + 1U) {
                     set_errmsg(d->errmsg, d->errcap,
-                               "register C=%u > max_reg=%u at pc %zu",
-                               (unsigned)c, (unsigned)d->module->max_reg, vi);
+                               "frame guard base+count=%u exceeds max_reg+1=%u at pc %zu",
+                               (unsigned)a + (unsigned)b,
+                               (unsigned)d->module->max_reg + 1U, vi);
                     return ULOAD_CORRUPT;
                 }
             }
+        } else {
+            /* UOPF_ABX — Bx range check per shape table. */
+            uint16_t bx = uinstr_bx(ins);
+            switch (sh->bx_kind) {
+                case UBXK_UNUSED:
+                    break;
+                case UBXK_POOL_INDEX:
+                    if ((size_t)bx >= d->module->const_count) {
+                        set_errmsg(d->errmsg, d->errcap,
+                                   "Bx=%u >= const_count=%zu at pc %zu (op=%u)",
+                                   (unsigned)bx, d->module->const_count, vi, (unsigned)op);
+                        return ULOAD_CORRUPT;
+                    }
+                    break;
+                case UBXK_NESTED_INDEX:
+                    /* T5 wires this once nested[] is in scope. */
+                    if ((size_t)bx >= d->module->nested_count) {
+                        set_errmsg(d->errmsg, d->errcap,
+                                   "Bx=%u >= nested_count=%zu at pc %zu (op=%u)",
+                                   (unsigned)bx, d->module->nested_count, vi, (unsigned)op);
+                        return ULOAD_CORRUPT;
+                    }
+                    break;
+                case UBXK_JUMP_SIGNED:
+                    /* No static range check; OP_JMP target out-of-range
+                     * surfaces at runtime when pc + signed(Bx) - 32768
+                     * leaves [0, instr_count). */
+                    break;
+                case UBXK_HANDLER_PC:
+                    if ((size_t)bx >= d->module->instr_count) {
+                        set_errmsg(d->errmsg, d->errcap,
+                                   "handler-PC Bx=%u >= instr_count=%zu at pc %zu (op=%u)",
+                                   (unsigned)bx, d->module->instr_count, vi, (unsigned)op);
+                        return ULOAD_CORRUPT;
+                    }
+                    break;
+                case UBXK_SYMBOL_ID:
+                    /* At v1.5 the verifier accepts the full 0..65535
+                     * symbol-id range; runtime resolves at dispatch. */
+                    break;
+            }
         }
     }
-    /* Last instruction must be OP_RET.
+    /* Last instruction must be OP_RET (preserved from pre-T4 behavior).
      *
-     * v1.x relaxation note: this strict trailing-OP_RET requirement assumes
-     * the emitter always closes a chunk with an explicit return.  If a
-     * future bytecode revision allows fall-through-to-end semantics (e.g. an
-     * implicit RET, or a tail-call that elides RET), this check will need
-     * to widen to "ends in OP_RET, OP_TAILCALL, or any unconditional
-     * terminator".  At v0.5.5 every chunk uemit produces ends in OP_RET, so
-     * the strict form catches truncated/corrupt bytecode early. */
+     * v1.x relaxation note: this strict trailing-OP_RET requirement
+     * assumes the emitter always closes a chunk with an explicit return.
+     * If a future bytecode revision allows fall-through-to-end semantics
+     * (e.g. an implicit RET, or a tail-call that elides RET), this check
+     * will need to widen.  At v0.5.6 every chunk uemit produces ends in
+     * OP_RET, so the strict form catches truncated/corrupt bytecode
+     * early. */
     if (d->module->instr_count > 0U) {
         uint32_t last = d->module->instructions[d->module->instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {

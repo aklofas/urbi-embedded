@@ -1327,6 +1327,134 @@ UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
     umodule_destroy(&m);
 }
 
+/* --- T4 verifier resync regression tests (MOD-009) --- */
+
+/* Helper: write a 24-byte good header into buf and return next offset. */
+static size_t write_good_header_to(uint8_t *buf) {
+    build_good_header(buf);
+    return 24U;
+}
+
+/* Helper: write one ABC-shape uint32 instruction (LE) starting at *off. */
+static void write_instr_abc(uint8_t *buf, size_t *off, UOpcode op,
+                            uint8_t a, uint8_t b, uint8_t c) {
+    uint32_t ins = (uint32_t)op
+                 | ((uint32_t)a << 8)
+                 | ((uint32_t)b << 16)
+                 | ((uint32_t)c << 24);
+    buf[(*off)++] = (uint8_t)(ins         & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 8)  & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 16) & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 24) & 0xFFU);
+}
+
+/* Helper: write one ABx-shape uint32 instruction (LE) starting at *off. */
+static void write_instr_abx(uint8_t *buf, size_t *off, UOpcode op,
+                            uint8_t a, uint16_t bx) {
+    uint32_t ins = (uint32_t)op
+                 | ((uint32_t)a << 8)
+                 | ((uint32_t)bx << 16);
+    buf[(*off)++] = (uint8_t)(ins         & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 8)  & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 16) & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 24) & 0xFFU);
+}
+
+UTEST(verify_accepts_loadbool_b_as_immediate) {
+    /* Build a 2-instruction module: OP_LOADBOOL R[0] := true; OP_RET R[0].
+     * OP_LOADBOOL encodes B=1 as the boolean-true IMMEDIATE.  Pre-T4
+     * verifier rejects with "register B=1 > max_reg=0" because B is
+     * checked as a register without consulting opcode shape.  Post-T4
+     * the shape table flags B as UOPK_IMM_BOOL and the verifier accepts. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;  /* 4-byte align */
+    write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/1, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET,      /*A=*/0, /*B=*/0, /*C=*/0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;  /* two zero deltas */
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
+    /* OP_PUSH_TAG A[7:4] = flags nibble, A[3:0] = tag_reg nibble.
+     * tag_reg=0 + flags=0xF gives A=0xF0.  Pre-T4 verifier reads A as
+     * a single register and rejects A=240 > max_reg=0; post-T4 the
+     * shape's UOPK_IMM_REG_NIBBLE only checks the low nibble. */
+    uint8_t buf[80] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_PUSH_TAG, /*A=*/0xF0, /*Bx=*/0);
+    /* Bx=0 is a valid handler PC at instr_count=2 (Bx<2 acceptable). */
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
+    /* OP_LOADBOOL with B=2 is malformed: B is the 0/1 boolean
+     * immediate.  Post-T4 verifier rejects via UOPK_IMM_BOOL. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/2, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_op_getupval_a_above_max_reg) {
+    /* OP_GETUPVAL R[A] := upvalue[B] — A is destination register;
+     * must be <= max_reg.  A=99 with max_reg=0 should reject as a
+     * register-A overflow per UOPK_REG. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_GETUPVAL, /*A=*/99, /*B=*/0, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1440,4 +1568,12 @@ void test_module_suite(void) {
               deserialize_module_grow_reuses_existing_cap);
     utest_run("umodule_init zeroes ic_count and ic_names",
               umodule_init_zeroes_ic_count_and_ic_names);
+    utest_run("verify accepts OP_LOADBOOL B as immediate",
+              verify_accepts_loadbool_b_as_immediate);
+    utest_run("verify accepts OP_PUSH_TAG A packs flags and reg nibble",
+              verify_accepts_push_tag_a_packs_flags_and_reg_nibble);
+    utest_run("verify rejects OP_LOADBOOL B > 1",
+              verify_rejects_op_loadbool_b_greater_than_one);
+    utest_run("verify rejects OP_GETUPVAL A > max_reg",
+              verify_rejects_op_getupval_a_above_max_reg);
 }
