@@ -24,7 +24,7 @@
 #include "uvm.h"
 #include "realm/urealm.h"
 #include "utag.h"
-#include "uunwind.h"
+#include "runtime/uunwind.h"
 #include "urbi/urbi.h"
 
 #include <stddef.h>

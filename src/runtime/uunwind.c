@@ -23,15 +23,15 @@
  * TODO T20: evaluate non-recursive cleanup executor if Cortex-M stack budget
  * proves insufficient at URBI_CLEANUP_MAX=16. */
 
-#include "uunwind.h"
+#include "runtime/uunwind.h"
 #include "ustrand.h"
-#include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
-#include "uframe.h"       /* UCallFrame */
-#include "ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
+#include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uframe.h"       /* UCallFrame */
+#include "runtime/ucleanup.h"     /* UCleanupEntry, UCleanupKind, FLAG_* */
 #include "uvm.h"          /* dispatch_loop_until_yield */
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
-#include "umacros.h"      /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
 #include "utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 #include "uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */

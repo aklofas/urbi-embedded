@@ -5,7 +5,7 @@
 #include "realm/urealm.h"
 #include "umodule.h"
 #include "value/uintern.h"
-#include "umacros.h"
+#include "runtime/umacros.h"
 #include "object/uic.h"
 #include "object/umoduleinstance.h"
 

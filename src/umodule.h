@@ -87,7 +87,7 @@ typedef struct {
 /* UUpvalCell, UCallFrame, UVM_MAX_FRAMES, UVM_STACK_CAP — placed here so
    UValue is in scope when uframe.h is processed (uframe.h uses UValue but
    cannot include umodule.h/uvalue.h to avoid a circular dependency). */
-#include "uframe.h"
+#include "runtime/uframe.h"
 
 /* --- opcode set (M1 reserves slots 0-7; 8-255 reserved for M2+) --- */
 

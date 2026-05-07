@@ -18,8 +18,8 @@
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"
-#include "uclosure.h"
-#include "uframe.h"
+#include "runtime/uclosure.h"
+#include "runtime/uframe.h"
 #include "watcher/uwatcher.h"
 #include "urbi/urbi.h"
 

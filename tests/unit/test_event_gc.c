@@ -39,7 +39,7 @@
 #include "watcher/uwatcher_install.h"
 #include "ustrand.h"
 #include "umodule.h"
-#include "uclosure.h"
+#include "runtime/uclosure.h"
 #include "realm/urealm.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"

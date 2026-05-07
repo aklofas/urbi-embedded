@@ -26,12 +26,12 @@
 
 #include "watcher/uwatcher.h"
 #include "uvm.h"
-#include "uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"   /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
-#include "umacros.h"
+#include "runtime/umacros.h"
 
 /* === run_on_scratch_core (file-static) ===
  *

@@ -9,9 +9,9 @@
 #include "uvm.h"
 #include "ustrand.h"
 #include "umodule.h"
-#include "uclosure.h"
+#include "runtime/uclosure.h"
 #include "sched/usched_cooperative.h"
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 
 #include <stdlib.h>
 #include <string.h>

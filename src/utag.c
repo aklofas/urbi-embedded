@@ -8,13 +8,13 @@
  * Assertions use URBI_INTERNAL_ASSERT from umacros.h. */
 
 #include "utag.h"
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 #include "ustrand.h"
 #include "uvm.h"
 #include "gc/ugc.h"       /* UTYPE_TAG */
 #include "urbi/gc.h"      /* urbi_gc_alloc */
 #include "urbi/urbi.h"    /* URBI_ASSERT_NOT_ISR */
-#include "umacros.h"
+#include "runtime/umacros.h"
 
 /* === utag_create ===
  *

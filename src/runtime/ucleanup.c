@@ -17,7 +17,7 @@
 
 #include <stddef.h>
 
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 #include "ustrand.h"
 #include "uvm.h"
 

@@ -31,7 +31,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "ustrand.h"
-#include "uunwind.h"
+#include "runtime/uunwind.h"
 #include "umodule.h"
 #include "urbi/urbi.h"
 

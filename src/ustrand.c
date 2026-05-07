@@ -5,14 +5,14 @@
    Cleanup-stack wiring: T3 (this file). */
 
 #include "ustrand.h"
-#include "ucleanup.h"
-#include "uclosure.h"
+#include "runtime/ucleanup.h"
+#include "runtime/uclosure.h"
 #include "utag.h"
 #include "uvm.h"
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"
-#include "umacros.h"
+#include "runtime/umacros.h"
 
 /* Zero a UStrand without memset — keeps the translation unit freestanding.
    Uses a volatile byte loop (same pattern as arena_zero in uarena.c) so the

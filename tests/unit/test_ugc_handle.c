@@ -6,7 +6,7 @@
 #include "utest.h"
 #include "urbi/gc.h"
 #include "gc/ugc_incremental.h"
-#include "uhandle.h"
+#include "runtime/uhandle.h"
 #include "uvm.h"
 
 #define UTEST(name) static void name(void)

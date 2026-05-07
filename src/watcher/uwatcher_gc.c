@@ -16,7 +16,7 @@
 #ifdef URBI_DEBUG
 #include "ustrand.h"
 #include "realm/urealm.h"
-#include "umacros.h"   /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT */
 #endif
 
 void

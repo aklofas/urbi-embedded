@@ -16,7 +16,7 @@
 #include "utest.h"
 #include "urbi/urbi.h"
 #include "ustrand.h"
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 #include "uvm.h"
 #include "umodule.h"
 #include "utag.h"    /* UTag — needed for urbi_tag_stop real impl (T31) */

@@ -11,8 +11,8 @@
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"
-#include "uclosure.h"
-#include "uframe.h"   /* UVM_STACK_CAP */
+#include "runtime/uclosure.h"
+#include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
 
 #include <stdint.h>

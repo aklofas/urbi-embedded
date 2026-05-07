@@ -3,7 +3,7 @@
  * Freestanding-strict: no <stdlib.h> / <string.h>.  All allocation goes
  * through vm->alloc_fn.  Zero-init uses a byte loop. */
 
-#include "uhandle.h"
+#include "runtime/uhandle.h"
 #include "uvm.h"
 #include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
 

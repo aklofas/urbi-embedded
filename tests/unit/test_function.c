@@ -12,7 +12,7 @@
 #include "value/uarena.h"
 #include "uast.h"
 #include "umodule.h"
-#include "uclosure.h"
+#include "runtime/uclosure.h"
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"

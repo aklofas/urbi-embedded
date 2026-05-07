@@ -25,8 +25,8 @@
 #include "realm/urealm.h"
 #include "ustrand.h"
 #include "umodule.h"       /* UClosure, UProto */
-#include "uclosure.h"
-#include "uframe.h"        /* UVM_STACK_CAP */
+#include "runtime/uclosure.h"
+#include "runtime/uframe.h"        /* UVM_STACK_CAP */
 #include "watcher/uwatcher.h"
 #include "urbi/urbi.h"     /* URBI_LOG_WARN */
 

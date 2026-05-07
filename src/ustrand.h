@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>   /* size_t */
 #include "value/uvalue.h"   /* pulls in umodule.h which defines UValue — must come before uframe.h */
-#include "uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
+#include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,7 +74,7 @@ typedef enum {
 /* === Cleanup-stack type (T3) ===
    ucleanup.h defines UCleanupEntry and the stack init/destroy ops. */
 
-#include "ucleanup.h"
+#include "runtime/ucleanup.h"
 
 /* === Forward declarations for types that land in later tasks. === */
 

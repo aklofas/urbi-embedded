@@ -6,7 +6,7 @@
 #include "umodule.h"
 #include "value/uarena.h"
 #include "uast.h"
-#include "uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
+#include "runtime/uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"
 #include "ulex.h"
 #include "uparse.h"

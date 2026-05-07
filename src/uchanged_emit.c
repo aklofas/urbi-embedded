@@ -16,7 +16,7 @@
 #include "object/uobject.h"     /* UObject, struct UObject */
 #include "uevent_emit.h"        /* c_event_emit_sync */
 #include "uvm.h"                /* UVM, UDeferredSlotChange */
-#include "umacros.h"            /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
 
 /* === urbi_emit_slot_change_slow (spec #4 §5.1) ===

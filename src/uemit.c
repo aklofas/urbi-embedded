@@ -4,7 +4,7 @@
 #include "uemit.h"
 #include "value/uintern.h"
 #include "value/uvarint.h"
-#include "ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */
+#include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY — AST_TRY emit */
 #include "watcher/uwatcher.h"  /* UWATCHER_AT / _AT_SYNC / _WHENEVER — AST_WATCHER emit */
 
 #include <limits.h>

@@ -12,16 +12,16 @@
 
 #include "uvm.h"
 #include "urbi/urbi.h"    /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
-#include "uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
+#include "runtime/uclosure.h"     /* UClosure full definition (M4: embeds UCell) */
 #include "ustrand.h"
 #include "value/uintern.h"
 #include "value/uvalue.h"
 #include "sched/usched_cooperative.h"
-#include "uunwind.h"
+#include "runtime/uunwind.h"
 #include "realm/urealm.h"
 #include "uevent_ring.h"
 #include "urbi/gc.h" /* urbi_gc_slice + URBI_GC_SLICE_BUDGET */
-#include "uhandle.h" /* host_handle_walk_roots (T27) */
+#include "runtime/uhandle.h" /* host_handle_walk_roots (T27) */
 #include "utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h"          /* uwatcher_pool_init/destroy (T32) */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */

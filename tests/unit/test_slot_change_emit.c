@@ -30,7 +30,7 @@
 #include "gc/ugc_incremental.h"        /* UGC_HAS_SLOT_CHANGE_EVENT */
 #include "value/uintern.h"                   /* ustr_intern */
 #include "umodule.h"                   /* USymbol, UClosure, UProto */
-#include "uclosure.h"                  /* UClosure layout */
+#include "runtime/uclosure.h"                  /* UClosure layout */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */
 
 #define UTEST(name) static void name(void)

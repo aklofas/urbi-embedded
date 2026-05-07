@@ -15,7 +15,7 @@
 #include "uvm.h"
 #include "value/uvalue.h"        /* uvalue_truthy */
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
-#include "umacros.h" /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
 #include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
 
 /* === invoke_condition_closure ===

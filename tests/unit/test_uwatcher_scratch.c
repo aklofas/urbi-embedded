@@ -12,7 +12,7 @@
 #include "utest.h"
 #include "uvm.h"
 #include "umodule.h"
-#include "uclosure.h"
+#include "runtime/uclosure.h"
 #include "value/uarena.h"
 #include "uemit.h"
 #include "ulex.h"

@@ -24,7 +24,7 @@
 #include "uvm.h"
 #include "realm/urealm.h"
 #include "umodule.h"
-#include "uclosure.h"
+#include "runtime/uclosure.h"
 
 #include <stddef.h>
 #include <stdlib.h>

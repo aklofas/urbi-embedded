@@ -14,12 +14,12 @@
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
-#include "uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
+#include "runtime/uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
 #include "value/uvalue.h"             /* uvalue_truthy (T40) */
-#include "ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
+#include "runtime/ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
-#include "umacros.h"            /* URBI_INTERNAL_ASSERT */
+#include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER */
 #include "gc/ugc.h"             /* UCell */
 #include "utag.h"               /* UTag, member_watchers_head */
