@@ -40,11 +40,16 @@ static const char * const ERR_MSG[] = {
     "integer literal exceeds INT64_MAX"
 };
 
-static UToken make_error(const ULexError code, const int line, const int col, const int len) {
+static UToken make_tok_base(const UTokenType type, const int line, const int col) {
     UToken t = {0};
-    t.type = TOK_ERROR;
+    t.type = type;
     t.line = line;
-    t.col = col;
+    t.col  = col;
+    return t;
+}
+
+static UToken make_error(const ULexError code, const int line, const int col, const int len) {
+    UToken t = make_tok_base(TOK_ERROR, line, col);
     t.len = len;
     t.u.err.code = code;
     t.u.err.message = ERR_MSG[code];
@@ -53,10 +58,7 @@ static UToken make_error(const ULexError code, const int line, const int col, co
 
 static UToken make_tok(const ULexer *l, const UTokenType type,
                      const char *start, const int len) {
-    UToken t = {0};
-    t.type = type;
-    t.line = l->line;
-    t.col = (int)(start - l->line_start) + 1;
+    UToken t = make_tok_base(type, l->line, (int)(start - l->line_start) + 1);
     t.len = len;
     return t;
 }
@@ -75,6 +77,55 @@ static int acc_digit(int64_t *acc, const int digit, const int base) {
     if (*acc > (INT64_MAX - digit) / base) return 0;
     *acc = *acc * base + digit;
     return 1;
+}
+
+/* Return value for accumulate_digits: ok==1 means *value is valid;
+   ok==0 means err carries the error token. */
+typedef struct { int ok; int64_t value; UToken err; } UDigitAccResult;
+
+/* Consume underscore-separated digits in the given base starting at lex->cur.
+   Returns success with the accumulated value, or an error token (adjacent
+   underscores, trailing underscore, or overflow).  lex->cur is advanced past
+   all consumed digits and underscores regardless of outcome. */
+static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
+                                         const int start_line,
+                                         const int start_col, const int base) {
+    UDigitAccResult r = {1, 0, {0}};
+    char prev = 0;
+    while (lex->cur < lex->end) {
+        const char c = *lex->cur;
+        if (c == '_') {
+            if (prev == '_') {
+                const int len = (int)(lex->cur - start) + 1;
+                r.ok  = 0;
+                r.err = make_error(LEX_ADJACENT_UNDERSCORES, start_line, start_col, len);
+                return r;
+            }
+            prev = '_';
+            lex->cur++;
+            continue;
+        }
+        const int d = digit_value(c, base);
+        if (d < 0) break;
+        if (!acc_digit(&r.value, d, base)) {
+            while (lex->cur < lex->end &&
+                   (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
+                lex->cur++;
+            }
+            const int len = (int)(lex->cur - start);
+            r.ok  = 0;
+            r.err = make_error(LEX_INT_OVERFLOW, start_line, start_col, len);
+            return r;
+        }
+        prev = c;
+        lex->cur++;
+    }
+    if (prev == '_') {
+        const int len = (int)(lex->cur - start);
+        r.ok  = 0;
+        r.err = make_error(LEX_TRAILING_UNDERSCORE, start_line, start_col, len);
+    }
+    return r;
 }
 
 /* Scan a radix-prefixed integer. lex->cur points at the first char after
@@ -119,47 +170,12 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
                           start_line, start_col, 2);
     }
 
-    int64_t value = 0;
-    char prev = 0;
-    while (lex->cur < lex->end) {
-        const char c = *lex->cur;
-        if (c == '_') {
-            if (prev == '_') {
-                const int len = (int)(lex->cur - start) + 1;
-                return make_error(LEX_ADJACENT_UNDERSCORES,
-                                  start_line, start_col, len);
-            }
-            prev = '_';
-            lex->cur++;
-            continue;
-        }
-        const int d = digit_value(c, base);
-        if (d < 0) break;
-        if (!acc_digit(&value, d, base)) {
-            while (lex->cur < lex->end &&
-                   (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
-                lex->cur++;
-            }
-            const int len = (int)(lex->cur - start);
-            return make_error(LEX_INT_OVERFLOW,
-                              start_line, start_col, len);
-        }
-        prev = c;
-        lex->cur++;
-    }
+    const UDigitAccResult r = accumulate_digits(lex, start, start_line, start_col, base);
+    if (!r.ok) return r.err;
 
-    if (prev == '_') {
-        const int len = (int)(lex->cur - start);
-        return make_error(LEX_TRAILING_UNDERSCORE,
-                          start_line, start_col, len);
-    }
-
-    UToken t = {0};
-    t.type = TOK_INT;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
-    t.u.i = value;
+    t.u.i = r.value;
     return t;
 }
 
@@ -229,45 +245,11 @@ static UToken scan_decimal(ULexer *lex) {
         }
     }
 
-    int64_t value = 0;
-    char prev = 0;
-    while (lex->cur < lex->end) {
-        const char c = *lex->cur;
-        if (c == '_') {
-            if (prev == '_') {
-                const int len = (int)(lex->cur - start) + 1;
-                return make_error(LEX_ADJACENT_UNDERSCORES,
-                                  start_line, start_col, len);
-            }
-            prev = '_';
-            lex->cur++;
-            continue;
-        }
-        const int d = digit_value(c, 10);
-        if (d < 0) break;
-        if (!acc_digit(&value, d, 10)) {
-            while (lex->cur < lex->end &&
-                   (digit_value(*lex->cur, 10) >= 0 || *lex->cur == '_')) {
-                lex->cur++;
-            }
-            const int len = (int)(lex->cur - start);
-            return make_error(LEX_INT_OVERFLOW,
-                              start_line, start_col, len);
-        }
-        prev = c;
-        lex->cur++;
-    }
+    const UDigitAccResult dr = accumulate_digits(lex, start, start_line, start_col, 10);
+    if (!dr.ok) return dr.err;
+    int64_t value = dr.value;
 
-    if (prev == '_') {
-        const int len = (int)(lex->cur - start);
-        return make_error(LEX_TRAILING_UNDERSCORE,
-                          start_line, start_col, len);
-    }
-
-    UToken t = {0};
-    t.type = TOK_INT;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(TOK_INT, start_line, start_col);
 
     /* Check for duration suffix and convert to microseconds. */
     for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
@@ -345,10 +327,7 @@ static UToken scan_ident(ULexer *lex) {
     const int len = (int)(lex->cur - start);
     const UTokenType kw_type = keyword_lookup(start, len);
 
-    UToken t = {0};
-    t.type = kw_type;
-    t.line = start_line;
-    t.col = start_col;
+    UToken t = make_tok_base(kw_type, start_line, start_col);
     t.len = len;
     /* Populate u.str for both keywords and identifiers; useful for
      * downstream diagnostics that need to quote the lexeme. */
@@ -366,11 +345,7 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
 }
 
 static UToken make_eof(const ULexer *l) {
-    UToken t = {0};
-    t.type = TOK_EOF;
-    t.line = l->line;
-    t.col = (int)(l->cur - l->line_start) + 1;
-    return t;
+    return make_tok_base(TOK_EOF, l->line, (int)(l->cur - l->line_start) + 1);
 }
 
 typedef struct {
