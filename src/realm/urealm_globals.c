@@ -239,7 +239,12 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     for (i = 0; i < urbi_builtin_registry_count; i++) {
         const URegistryEntry *e = &urbi_builtin_registry[i];
 
-        /* Resolve value; override for the self-loop case. */
+        /* Resolve value; override for the self-loop case (REALM-028).
+         * When is_self_ref is set (only the "Realm" entry), the resolver
+         * return value is intentionally discarded — the slot must point at
+         * realm->global_object for the spec §3.3 self-loop.  The resolver
+         * is still called to keep the loop uniform; its nil return is a
+         * harmless default that is never used by the slot install below. */
         UValue v = e->resolver(vm);
         if (e->is_self_ref) {
             /* "Realm" entry: point at this realm's global_object. */
