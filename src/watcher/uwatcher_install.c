@@ -97,31 +97,6 @@ struct UTag *resolve_owning_tag(struct UStrand *s)
     return s->realm->tag;
 }
 
-/* === run_closure_on_scratch_frame_with_result (spec #2 §7.3 phase 3) ===
- *
- * Evaluate `cond` on the VM scratch frame and capture the result value +
- * a throw flag.  Test hook short-circuits the dispatch path so existing
- * install-trace tests can inject specific cond results without going
- * through real bytecode dispatch; otherwise routes to
- * urbi_run_closure_on_scratch (uwatcher_scratch.c). */
-static void
-run_closure_on_scratch_frame_with_result(struct UVM *vm,
-                                         struct UClosure *cond,
-                                         UValue *out_result,
-                                         int    *out_threw)
-{
-    if (vm->test_install_cond_hook != NULL) {
-        vm->test_install_cond_hook(vm, cond, out_result, out_threw);
-        return;
-    }
-
-    /* M5-proper path: real bytecode dispatch on a transient scratch-frame
-     * strand (helper in src/watcher/uwatcher_scratch.c).  The OP_GETSLOT
-     * trace probe (armed by install_watcher_runtime via vm->in_watcher_install)
-     * records reads into vm->trace_read_set during this dispatch. */
-    (void)urbi_run_closure_on_scratch(vm, cond, out_result, out_threw);
-}
-
 /* === install_watcher_runtime (spec #2 §7.1) ===
  *
  * T34 skeleton: re-entry guard only.
@@ -167,10 +142,16 @@ install_watcher_runtime(
     vm->trace_read_set_count = 0;
 
     /* Phase 3 (spec #2 §7.3): run cond on scratch frame.
-     * The OP_GETSLOT probe (installed in T36) records reads into
-     * vm->trace_read_set while in_watcher_install is set. */
-    (void)run_closure_on_scratch_frame_with_result(vm, cond,
-                                                   &cond_value, &cond_threw);
+     * Test hook short-circuits the dispatch path so install-trace tests can
+     * inject specific cond results; otherwise routes to
+     * urbi_run_closure_on_scratch (uwatcher_scratch.c).  The OP_GETSLOT
+     * probe (armed above via in_watcher_install) records reads into
+     * vm->trace_read_set during this dispatch. */
+    if (vm->test_install_cond_hook != NULL) {
+        vm->test_install_cond_hook(vm, cond, &cond_value, &cond_threw);
+    } else {
+        (void)urbi_run_closure_on_scratch(vm, cond, &cond_value, &cond_threw);
+    }
     vm->in_watcher_install = 0;
 
     /* Phase 4 (spec #2 §7.3): check overflow and cond-throw. */

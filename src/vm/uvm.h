@@ -289,16 +289,14 @@ typedef struct UVM {
      * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* M3-only stub test hook for run_closure_on_scratch_frame_with_result.
-     * v0.5.1-cond-unstub ships the real urbi_run_closure_on_scratch
-     * (src/watcher/uwatcher_scratch.c) which dispatches on a stack-local
-     * transient strand (not the now-removed UScratchFrame heap allocation).
+    /* Install-time cond-eval test hook.
      * When non-NULL, install_watcher_runtime calls this hook instead of the
-     * real runner — used by C-level unit tests.
+     * real urbi_run_closure_on_scratch (uwatcher_scratch.c) — used by C-level
+     * unit tests that inject specific cond results or simulate cond-throws.
      *   Signature: hook(vm, cond, out_result, out_threw)
      *   - out_result receives the simulated return value.
      *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
-     * NULL → run_closure_on_scratch_frame_with_result calls the real path. */
+     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch. */
     void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
                                      UValue *out_result, int *out_threw);
 

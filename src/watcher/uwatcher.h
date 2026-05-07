@@ -294,8 +294,8 @@ void   urbi_watcher_check_invariants(struct UVM *vm);
  *
  * Run `closure` to OP_RET on a transient scratch-frame strand and capture
  * the return value.  Used by:
- *   - run_closure_on_scratch_frame_with_result (install-time cond eval)
- *   - invoke_condition_closure                  (eval-time cond)
+ *   - install_watcher_runtime (install-time cond eval, uwatcher_install.c)
+ *   - invoke_condition_closure (eval-time cond)
  *
  * The transient strand is allocated on the C stack (mirroring uvm_run's
  * pattern), threaded onto vm->global_realm->strands_head for the duration

@@ -10,7 +10,7 @@
  * All allocation goes through vm->alloc_fn.
  *
  * Used by:
- *   - run_closure_on_scratch_frame_with_result (install path, uwatcher_install.c)
+ *   - install_watcher_runtime (install path cond eval, uwatcher_install.c)
  *   - invoke_condition_closure                  (eval path, uwatcher_eval.c)
  *   - invoke_body_inline                        (AT_SYNC body, uwatcher_eval.c)
  *   - invoke_onleave_inline                     (falling-edge onleave, uwatcher_eval.c)
