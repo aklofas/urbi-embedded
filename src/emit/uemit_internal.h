@@ -75,6 +75,14 @@ void   emit_patch_instr(UEmitter *e, int pc, uint32_t new_instr);
 size_t emit_instr_count(const UEmitter *e);
 uint8_t fs_temp_floor(const UFuncState *fs);
 
+/* Buffer-growth helpers (defined in uemit.c).
+ * Promoted from static so uemit_funcstate.c can call them cross-TU. */
+bool emit_grow(UModule *c, void **data, size_t *cap,
+               size_t new_cap, size_t elem_size);
+bool proto_grow(UModule *module, UProto *proto,
+                void **data, size_t *cap,
+                size_t new_cap, size_t elem_size);
+
 /* Main expression walker (defined in uemit.c); called recursively by
  * arm helpers in extracted TUs. */
 uint8_t emit_expr(UEmitter *e, UAstNode *n);
