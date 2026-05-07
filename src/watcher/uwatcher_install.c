@@ -20,7 +20,7 @@
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
 #include "runtime/umacros.h"            /* URBI_INTERNAL_ASSERT */
-#include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER */
+#include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
 #include "gc/ugc.h"             /* UCell */
 #include "tag/utag.h"               /* UTag, member_watchers_head */
 #include "event/uevent.h"             /* UEvent */
@@ -301,8 +301,7 @@ install_at_event_runtime(
         return URBI_INSTALL_OOM_POOL;
     }
 
-    w->type_tag         = UTYPE_WATCHER;
-    w->gc_byte          = (uint8_t)(vm->current_white | UGC_IS_FIXED);
+    /* type_tag and gc_byte are set by uwatcher_pool_alloc — no re-init needed. */
     w->mode             = mode;
     w->condition        = NULL;  /* no condition closure for event watchers */
     w->body             = body;

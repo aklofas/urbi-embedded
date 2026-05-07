@@ -114,6 +114,22 @@ pool_free(struct UVM *vm, UWatcher *w)
     vm->watcher_pool_in_use--;
 }
 
+/* drain_watcher_list: pop every watcher from *head (linked via next_active),
+ * decrement watcher_active_count, and return each slot to the freelist via
+ * pool_free.  Used by uwatcher_pool_destroy to drain both the active list
+ * and the pending-onleave list with identical logic. */
+static void
+drain_watcher_list(struct UVM *vm, UWatcher **head)
+{
+    while (*head != NULL) {
+        UWatcher *w = *head;
+        *head = w->next_active;
+        vm->watcher_active_count = vm->watcher_active_count > 0
+                                   ? vm->watcher_active_count - 1u : 0u;
+        pool_free(vm, w);
+    }
+}
+
 /* === Pool lifecycle === */
 
 int
@@ -170,25 +186,13 @@ uwatcher_pool_destroy(struct UVM *vm)
      * active_watchers_head onto pending_onleave_head via
      * pending_onleave_queue_push.  Both lists must be drained here to release
      * all owned closures. */
-    while (vm->active_watchers_head != NULL) {
-        UWatcher *w = vm->active_watchers_head;
-        vm->active_watchers_head = w->next_active;
-        vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
-        pool_free(vm, w);
-    }
+    drain_watcher_list(vm, &vm->active_watchers_head);
     /* Drain watchers that were moved to the pending-onleave queue by
      * urbi_tag_stop / pending_onleave_queue_push.  These have already been
      * unlinked from active_watchers_head and owning_tag->member_watchers_head,
      * but still hold owned closures (OWNS_COND / OWNS_BODY / OWNS_ONLEAVE
      * flags are unchanged by the push).  pool_free frees those closures. */
-    while (vm->pending_onleave_head != NULL) {
-        UWatcher *w = vm->pending_onleave_head;
-        vm->pending_onleave_head = w->next_active;
-        vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
-        pool_free(vm, w);
-    }
+    drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
