@@ -192,25 +192,25 @@ typedef enum {
     OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
 
     /* Slot 38 was OP_INVOKE (M4 reserve for collapsed GETSLOT+CALL).
-     * Retired at v0.5.6 T16: never emitted by M4 / M5 / pre-Wave-4.  The
-     * gap is collapsed at T17, which renumbers M5 reactive opcodes 39-46
-     * down to 38-45 and shrinks OP_MAX from 47 to 46. */
+     * Retired at v0.5.6 T16; the gap was collapsed at v0.5.6 T17 by
+     * renumbering M5 reactive opcodes 39-46 down to 38-45.  Opcode space
+     * is now contiguous 0-45; OP_MAX = 46. */
 
     /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
-    OP_AT_INSTALL              = 39,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_AT_SYNC_INSTALL         = 40,  /* ABC: same shape as OP_AT_INSTALL        */
-    OP_WHENEVER_INSTALL        = 41,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_WAITUNTIL_INSTALL       = 42,  /* ABC: cond_reg, 0, 0                     */
+    OP_AT_INSTALL              = 38,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_AT_SYNC_INSTALL         = 39,  /* ABC: same shape as OP_AT_INSTALL        */
+    OP_WHENEVER_INSTALL        = 40,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_WAITUNTIL_INSTALL       = 41,  /* ABC: cond_reg, 0, 0                     */
 
     /* M5 reactive runtime — pre-M5 spec #3 (event syncEmit + tag.enter/leave) */
-    OP_AT_EVENT_INSTALL        = 43,  /* ABC: event_reg, body_reg, onleave_or_FF */
-    OP_AT_EVENT_SYNC_INSTALL   = 44,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
+    OP_AT_EVENT_INSTALL        = 42,  /* ABC: event_reg, body_reg, onleave_or_FF */
+    OP_AT_EVENT_SYNC_INSTALL   = 43,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
 
     /* M5 reactive runtime — pre-M5 spec #4 (slot-change events) */
-    OP_GETSLOT_CHANGE_EVENT    = 45,  /* ABC: dst_reg, recv_reg, name_sym_id     */
+    OP_GETSLOT_CHANGE_EVENT    = 44,  /* ABC: dst_reg, recv_reg, name_sym_id     */
 
     /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
-    OP_LOAD_REALM_GLOBAL       = 46,  /* A: dst_reg; B,C reserved (sym_id wire
+    OP_LOAD_REALM_GLOBAL       = 45,  /* A: dst_reg; B,C reserved (sym_id wire
                                          extension lands at v1.5 alongside a
                                          concrete realm symbol-table layout) */
 

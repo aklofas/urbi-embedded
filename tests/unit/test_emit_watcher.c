@@ -77,7 +77,7 @@ static bool bytecode_contains_op(const UModule *m, UOpcode op) {
  * T33 test cases
  * ----------------------------------------------------------------------- */
 
-/* at (x > 5) x  →  bytecode must contain OP_AT_INSTALL (=39).
+/* at (x > 5) x  →  bytecode must contain OP_AT_INSTALL (=38).
  * Pre-declare x with `var` to satisfy the v1.0 no-globals constraint. */
 UTEST(emit_at_produces_OP_AT_INSTALL) {
     UModule  module = {0};
@@ -93,7 +93,7 @@ UTEST(emit_at_produces_OP_AT_INSTALL) {
     watcher_cleanup(&module, &arena, &vm);
 }
 
-/* at sync (cond) body  →  bytecode must contain OP_AT_SYNC_INSTALL (=40). */
+/* at sync (cond) body  →  bytecode must contain OP_AT_SYNC_INSTALL (=39). */
 UTEST(emit_at_sync_produces_OP_AT_SYNC_INSTALL) {
     UModule  module = {0};
     UArena   arena;
@@ -109,7 +109,7 @@ UTEST(emit_at_sync_produces_OP_AT_SYNC_INSTALL) {
     watcher_cleanup(&module, &arena, &vm);
 }
 
-/* whenever (cond) body  →  bytecode must contain OP_WHENEVER_INSTALL (=41). */
+/* whenever (cond) body  →  bytecode must contain OP_WHENEVER_INSTALL (=40). */
 UTEST(emit_whenever_produces_OP_WHENEVER_INSTALL) {
     UModule  module = {0};
     UArena   arena;
@@ -125,7 +125,7 @@ UTEST(emit_whenever_produces_OP_WHENEVER_INSTALL) {
     watcher_cleanup(&module, &arena, &vm);
 }
 
-/* waituntil (cond)  →  bytecode must contain OP_WAITUNTIL_INSTALL (=42). */
+/* waituntil (cond)  →  bytecode must contain OP_WAITUNTIL_INSTALL (=41). */
 UTEST(emit_waituntil_produces_OP_WAITUNTIL_INSTALL) {
     UModule  module = {0};
     UArena   arena;

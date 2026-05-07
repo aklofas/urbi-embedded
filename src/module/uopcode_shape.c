@@ -56,7 +56,7 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_RESUME]             = { UOPF_ABC, UOPK_REG,                UOPK_UNUSED,        UOPK_UNUSED, UBXK_UNUSED },
     [OP_LOAD_CATCH_VALUE]   = { UOPF_ABC, UOPK_REG,                UOPK_UNUSED,        UOPK_UNUSED, UBXK_UNUSED },
 
-    /* M5 reactive 38-45 (v1.5 renumber per T17; v1.4 was 39-46).
+    /* M5 reactive 38-45 (renumbered at v0.5.6 T17; v1.4 was 39-46).
      * Install ops: C carries either an onleave-closure register OR the
      * 0xFF "no onleave" sentinel; UOPK_UNUSED so the verifier accepts
      * arbitrary byte values (runtime decodes the sentinel at dispatch).

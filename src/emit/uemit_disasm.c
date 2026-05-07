@@ -423,15 +423,14 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 35 OP_PUSH_FRAME_GUARD   */ NULL,
     /* 36 OP_RESUME             */ NULL,
     /* 37 OP_LOAD_CATCH_VALUE   */ NULL,
-    /* 38 (retired OP_INVOKE)   */ NULL,
-    /* 39 OP_AT_INSTALL         */ fmt_at_install,
-    /* 40 OP_AT_SYNC_INSTALL    */ fmt_at_sync_install,
-    /* 41 OP_WHENEVER_INSTALL   */ fmt_whenever_install,
-    /* 42 OP_WAITUNTIL_INSTALL  */ fmt_waituntil_install,
-    /* 43 OP_AT_EVENT_INSTALL   */ fmt_at_event_install,
-    /* 44 OP_AT_EVENT_SYNC_INSTALL */ fmt_at_event_sync_install,
-    /* 45 OP_GETSLOT_CHANGE_EVENT  */ fmt_getslot_change_event,
-    /* 46 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
+    /* 38 OP_AT_INSTALL         */ fmt_at_install,
+    /* 39 OP_AT_SYNC_INSTALL    */ fmt_at_sync_install,
+    /* 40 OP_WHENEVER_INSTALL   */ fmt_whenever_install,
+    /* 41 OP_WAITUNTIL_INSTALL  */ fmt_waituntil_install,
+    /* 42 OP_AT_EVENT_INSTALL   */ fmt_at_event_install,
+    /* 43 OP_AT_EVENT_SYNC_INSTALL */ fmt_at_event_sync_install,
+    /* 44 OP_GETSLOT_CHANGE_EVENT  */ fmt_getslot_change_event,
+    /* 45 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
 };
 
 size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {

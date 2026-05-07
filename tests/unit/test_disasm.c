@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Disassembler coverage for M5 reactive opcodes 39..46.
+/* Disassembler coverage for M5 reactive opcodes 38..45.
  *
  * Each test hand-builds a one-instruction UModule, calls uemit_disassemble,
  * and verifies the exact mnemonic and operand formatting that each case
@@ -29,7 +29,7 @@ static UModule make_one_instr_module(uint32_t instr) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_AT_INSTALL (39): ABC: cond_reg, body_reg, onleave_or_FF
+ * OP_AT_INSTALL (38): ABC: cond_reg, body_reg, onleave_or_FF
  * Expected: "AT_INSTALL R5, R6, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_install) {
@@ -45,7 +45,7 @@ UTEST(disasm_at_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_AT_SYNC_INSTALL (40): ABC: cond_reg, body_reg, onleave_or_FF
+ * OP_AT_SYNC_INSTALL (39): ABC: cond_reg, body_reg, onleave_or_FF
  * Expected: "AT_SYNC_INSTALL R2, R3, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_sync_install) {
@@ -61,7 +61,7 @@ UTEST(disasm_at_sync_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_WHENEVER_INSTALL (41): ABC: cond_reg, body_reg, onleave_or_FF
+ * OP_WHENEVER_INSTALL (40): ABC: cond_reg, body_reg, onleave_or_FF
  * Expected: "WHENEVER_INSTALL R1, R2, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_whenever_install) {
@@ -77,7 +77,7 @@ UTEST(disasm_whenever_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_WAITUNTIL_INSTALL (42): ABC: cond_reg, 0, 0  (cond only)
+ * OP_WAITUNTIL_INSTALL (41): ABC: cond_reg, 0, 0  (cond only)
  * Expected: "WAITUNTIL_INSTALL R7" — no spurious R0 operands
  * ------------------------------------------------------------------------- */
 UTEST(disasm_waituntil_install) {
@@ -97,7 +97,7 @@ UTEST(disasm_waituntil_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_AT_EVENT_INSTALL (43): ABC: event_reg, body_reg, onleave_or_FF
+ * OP_AT_EVENT_INSTALL (42): ABC: event_reg, body_reg, onleave_or_FF
  * Expected: "AT_EVENT_INSTALL R4, R5, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_event_install) {
@@ -113,7 +113,7 @@ UTEST(disasm_at_event_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_AT_EVENT_SYNC_INSTALL (44): ABC: event_reg, body_reg, onleave_or_FF
+ * OP_AT_EVENT_SYNC_INSTALL (43): ABC: event_reg, body_reg, onleave_or_FF
  * Expected: "AT_EVENT_SYNC_INSTALL R8, R9, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_event_sync_install) {
@@ -129,7 +129,7 @@ UTEST(disasm_at_event_sync_install) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_GETSLOT_CHANGE_EVENT (45): ABC: dst_reg, recv_reg, name_sym_id
+ * OP_GETSLOT_CHANGE_EVENT (44): ABC: dst_reg, recv_reg, name_sym_id
  * Expected: "GETSLOT_CHANGE_EVENT R0, R1, K3"
  * (C encodes a symbol-table index — displayed as Kn to distinguish from reg)
  * ------------------------------------------------------------------------- */
@@ -146,7 +146,7 @@ UTEST(disasm_getslot_change_event) {
 }
 
 /* -------------------------------------------------------------------------
- * OP_LOAD_REALM_GLOBAL (46): ABC: dst_reg, sym_id_hi, sym_id_lo
+ * OP_LOAD_REALM_GLOBAL (45): ABC: dst_reg, sym_id_hi, sym_id_lo
  * Expected: "LOAD_REALM_GLOBAL R2, sym(0,7)"
  * (B and C are a 16-bit symbol id split into hi/lo bytes)
  * ------------------------------------------------------------------------- */

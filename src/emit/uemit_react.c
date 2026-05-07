@@ -175,7 +175,7 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
 
 uint8_t emit_waituntil_arm(UEmitter *e, UAstNode *n) {
     /* T33: waituntil (cond) — one-shot strand-block primitive.
-     * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=42).
+     * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=41).
      * Side-effect check per spec #2 §9.2. */
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -217,7 +217,7 @@ uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n) {
      * Emit the event-expression into a register, build a 1-param body
      * closure (R[0] receives the emit payload per spec #3 §5.5) and an
      * optional 0-param onleave closure, then emit the appropriate install
-     * opcode: OP_AT_EVENT_INSTALL (=43) or OP_AT_EVENT_SYNC_INSTALL (=44).
+     * opcode: OP_AT_EVENT_INSTALL (=42) or OP_AT_EVENT_SYNC_INSTALL (=43).
      * 0xFF in the alt_reg slot signals "no onleave" to the runtime. */
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;

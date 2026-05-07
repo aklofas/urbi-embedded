@@ -165,7 +165,7 @@ UTEST(parse_question_outside_at_standalone) {
  * T45 emit tests
  * ----------------------------------------------------------------------- */
 
-/* at (e?) body  →  bytecode contains OP_AT_EVENT_INSTALL (=43).
+/* at (e?) body  →  bytecode contains OP_AT_EVENT_INSTALL (=42).
  * Pre-declare both ev and body_val to satisfy the v1.0 no-globals rule. */
 UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
     UModule  module = {0};
@@ -182,7 +182,7 @@ UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
     at_event_cleanup(&module, &arena, &vm);
 }
 
-/* at sync (e?) body  →  bytecode contains OP_AT_EVENT_SYNC_INSTALL (=44) */
+/* at sync (e?) body  →  bytecode contains OP_AT_EVENT_SYNC_INSTALL (=43) */
 UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
     UModule  module = {0};
     UArena   arena;
