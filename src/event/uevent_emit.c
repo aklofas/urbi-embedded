@@ -221,12 +221,14 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     }
 
     /* Transition to WAIT_EVENT and decrement runnable count.
-     * USTRAND_WAIT_EVENT (0x33) uses sub-code 0x03 — distinct from
-     * USTRAND_REASON_EVENT (0x02) used by sched_strand_block.  Set directly
-     * to preserve the intended encoding.  Decrement count only when the
-     * strand is RUNNING (normal dispatch path) to avoid underflow.
-     * The urbi_step loop re-increments when it sees USTRAND_IS_WAITING(s)
-     * on return from dispatch_loop_until_yield, restoring balance. */
+     * USTRAND_WAIT_EVENT (0x33) is now equivalent to USTRAND_STATE_WAITING_EVENT
+     * after the v0.5.5 CHSTR-016 renumbering (USTRAND_REASON_EVENT = 0x03);
+     * earlier baselines distinguished the two because REASON_EVENT collided
+     * with REASON_WATCHER on 0x02.  Setting via the named macro is fine.
+     * Decrement count only when the strand is RUNNING (normal dispatch path)
+     * to avoid underflow.  The urbi_step loop re-increments when it sees
+     * USTRAND_IS_WAITING(s) on return from dispatch_loop_until_yield,
+     * restoring balance. */
     if (s->state == USTRAND_STATE_RUNNING && vm->strand_runnable_count > 0)
         vm->strand_runnable_count--;
     s->state = USTRAND_WAIT_EVENT;

@@ -29,13 +29,23 @@ extern "C" {
 #define USTRAND_DEAD           0x40U  /* terminated, awaiting GC */
 #define USTRAND_SUSPENDED      0x50U  /* RESERVED — Tag.freeze (M5/M6) */
 
-/* WAITING reason sub-codes (lower nibble). */
+/* WAITING reason sub-codes (lower nibble).
+ *
+ * Each reason has a distinct value (CHSTR-016, v0.5.5).  Earlier baselines
+ * reused 0x02 for both EVENT and WATCHER and disambiguated by call-site
+ * context; the WAIT_EVENT composite was documented as 0x33 (= 0x30 | 0x03)
+ * even though REASON_EVENT was 0x02 — a real comment-vs-macro divergence
+ * (CHSTR-017).  Renumbering pushes EVENT to 0x03 / JOIN to 0x04 / HOST to
+ * 0x05 so every composite is reconstructible from its constituents.
+ *
+ * The state byte is RUNTIME-ONLY (never serialized to bytecode), so the
+ * numeric values are not part of any external contract. */
 #define USTRAND_REASON_NONE    0x00U
 #define USTRAND_REASON_SLEEP   0x01U
-#define USTRAND_REASON_EVENT   0x02U
-#define USTRAND_REASON_JOIN    0x03U
-#define USTRAND_REASON_HOST    0x04U  /* RESERVED v1.x/v2 */
-#define USTRAND_REASON_WATCHER 0x02U  /* same sub-code as EVENT; context disambiguates */
+#define USTRAND_REASON_WATCHER 0x02U
+#define USTRAND_REASON_EVENT   0x03U
+#define USTRAND_REASON_JOIN    0x04U
+#define USTRAND_REASON_HOST    0x05U  /* RESERVED v1.x/v2 */
 
 /* Composite values stored in strand->state. */
 #define USTRAND_STATE_DORMANT         (USTRAND_DORMANT)
@@ -50,11 +60,11 @@ extern "C" {
 
 /* spec #2 §7.7 — waituntil(cond) strand parked awaiting edge fire.
    0x32 = USTRAND_WAITING (0x30) | USTRAND_REASON_WATCHER (0x02). */
-#define USTRAND_WAIT_WATCHER          0x32U
+#define USTRAND_WAIT_WATCHER          (USTRAND_WAITING | USTRAND_REASON_WATCHER)
 
 /* spec #3 §3.3 — waituntil(e?) strand parked awaiting Event emit.
    0x33 = USTRAND_WAITING (0x30) | USTRAND_REASON_EVENT (0x03). */
-#define USTRAND_WAIT_EVENT            0x33U
+#define USTRAND_WAIT_EVENT            (USTRAND_WAITING | USTRAND_REASON_EVENT)
 
 /* Helper macros — take a pointer to UStrand. */
 #define USTRAND_IS_WAITING(s)  (((s)->state & USTRAND_STATE_MASK) == USTRAND_WAITING)

@@ -23,11 +23,32 @@ extern "C" {
 
 /* === Interface ops (row 9 §2.2 contract, ~12 ops) === */
 
-/* Scheduler lifecycle */
+/* Scheduler lifecycle.
+ *
+ * sched_init: zero the per-VM scheduler queues (ready_head/tail, sleep_q_head)
+ *   and reset strand_runnable_count.  Called once during urbi_vm_create
+ *   before any strand is enqueued.  `config` is reserved for future
+ *   scheduler-class configuration (priority/deadline) and is currently ignored.
+ *
+ * sched_destroy: clear the per-VM scheduler queue heads.  Strands are owned
+ *   by their realms (URealm.strands_head) and freed via urbi_realm_destroy,
+ *   so this op does no per-strand teardown.  Called during urbi_vm_destroy
+ *   after all realms have been torn down. */
 void sched_init(UVM *vm, void *config);
 void sched_destroy(UVM *vm);
 
-/* Per-strand lifecycle */
+/* Per-strand lifecycle.
+ *
+ * sched_strand_init: zero the scheduler intrusive list links
+ *   (ready_next/prev, wait_next) and seed instruction_budget_remaining to
+ *   URBI_STRAND_BUDGET_MAX.  Called by ustrand_init for every strand on
+ *   create.  The strand is left in DORMANT state (sched_strand_init does
+ *   not touch the state byte).  `attrs` is reserved for the v1.x scheduler-
+ *   class abstraction (priority/deadline schedulers); currently unused.
+ *
+ * sched_strand_destroy: detach the strand from the ready/sleep queue lists
+ *   (idempotent — safe to call on an already-detached strand).  Does not
+ *   free the strand itself; that is the caller's responsibility. */
 void sched_strand_init(UStrand *s, void *attrs);
 void sched_strand_destroy(UStrand *s);
 
@@ -56,7 +77,12 @@ sched_consume_budget(UStrand *s, uint16_t n) {
         s->instruction_budget_remaining = 0;
 }
 
-/* GC root walker — stub at T5; T26 wires into root provider registry. */
+/* GC root walker — registered with the GC root-provider registry at
+ * urbi_vm_create.  Iterates the realm hierarchy (vm->realms_head →
+ * realm.strands_head) so every live strand's register window, unwind state
+ * and event-wait payload is visited; DEAD strands are filtered inside
+ * strand_walk_roots.  See pre-M4 GC strand-walker spec §4.2/§6.1 for the
+ * realm-hierarchy invariant the scheduler maintains. */
 void sched_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* Dequeue the ready-queue head and decrement strand_runnable_count.

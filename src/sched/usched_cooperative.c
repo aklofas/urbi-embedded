@@ -114,10 +114,16 @@ sched_destroy(UVM *vm)
 
 /* === Per-strand lifecycle === */
 
+/* sched_strand_init: zero the scheduler-tracked queue links and seed the
+ * instruction budget.  `attrs` is currently unused — held in the signature
+ * as a forward-compatibility hold for the v1.x scheduler-class abstraction
+ * (priority/deadline schedulers will pass per-strand attribute structs
+ * through this slot; see USchedClass at include/urbi/sched.h).  The
+ * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX. */
 void
 sched_strand_init(UStrand *s, void *attrs)
 {
-    (void)attrs;
+    (void)attrs;  /* RESERVED v1.x — see header docstring */
     s->ready_next                   = NULL;
     s->ready_prev                   = NULL;
     s->wait_next                    = NULL;
