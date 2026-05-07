@@ -101,6 +101,10 @@ test: $(LIB) $(TEST_OBJ) test-integration test-chk
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
 	$(RUNNER_WRAPPER) $(RUNNER)
 
+.PHONY: test-loc-cap
+test-loc-cap:
+	@./tests/scripts/check_loc_cap.sh
+
 test-debug:
 	$(MAKE) TARGET=host-debug \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
@@ -568,4 +572,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
