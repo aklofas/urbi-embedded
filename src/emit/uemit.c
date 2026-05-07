@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode emitter. */
 
-#include "emit/uemit.h"
+#include "emit/uemit_internal.h"
 #include "runtime/umacros.h"
 #include "value/uintern.h"
 #include "value/uvarint.h"
@@ -14,54 +14,6 @@
 #if __STDC_HOSTED__
 #  include <stdio.h>              /* vsnprintf — emit_diag_warn message formatting */
 #endif
-
-/* Local byte-copy.  Replaces memcpy so the serializer compiles without
-   a hosted <string.h>.  Same pattern as module_memcpy in umodule.c. */
-static void emit_memcpy(void *dst, const void *src, size_t n) {
-    unsigned char *pd = (unsigned char *)dst;
-    const unsigned char *ps = (const unsigned char *)src;
-    for (size_t i = 0; i < n; i++) pd[i] = ps[i];
-}
-
-/* Local byte-move (overlapping-safe right shift).  Used by the prologue
-   prepend helper to shift instruction / line-delta arrays rightward. */
-static void emit_memmove_right(void *dst, const void *src, size_t n) {
-    unsigned char *pd = (unsigned char *)dst;
-    const unsigned char *ps = (const unsigned char *)src;
-    /* Right-shift: iterate backwards so overlapping src→dst works. */
-    size_t i = n;
-    while (i > 0) { i--; pd[i] = ps[i]; }
-}
-
-/* Local strlen replacement (byte-loop).  Freestanding-safe. */
-static size_t emit_strlen(const char *s) {
-    size_t n = 0;
-    while (s[n] != '\0') n++;
-    return n;
-}
-
-#if __STDC_HOSTED__
-#  include <stdlib.h>
-
-static void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
-    (void)ud;
-    if (nbytes == 0) { free(ptr); return NULL; }
-    return realloc(ptr, nbytes);
-}
-
-#endif  /* __STDC_HOSTED__ */
-
-/* Return the allocator to use for module c.  Available in both hosted and
-   freestanding builds so that emit_grow (below) can call it unconditionally.
-   In freestanding builds the stdlib fallback is absent; the caller must have
-   supplied alloc_fn, and emit_grow will return false if it is NULL. */
-static UModuleAllocFn emit_alloc_for(const UModule *c) {
-#if __STDC_HOSTED__
-    return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
-#else
-    return c->alloc_fn;   /* freestanding: caller must supply */
-#endif
-}
 
 /* Resolve which proto to write instructions/constants/synclines into.
  * When the current FuncState has a non-NULL target_proto, we are inside a
