@@ -2,6 +2,123 @@
 
 ## Unreleased
 
+## v0.5.4-decompose — 2026-05-06
+
+Wave 2 of the v0.5.x pre-M6 cleanup ramp: decomposes the four
+translation units that exceeded the 1000-LOC soft cap into focused
+per-concern files of ≤600 LOC; extracts the 14-site duplicated
+volatile-byte-zero loop into a shared `urbi_zero` helper; lands
+audit-driven cross-cutting refactors across all subsystems.  Bytecode
+output is byte-identical to v0.5.3-layout.
+
+### File decompositions
+
+- **`uemit.c` 3563 LOC → 9 files** (EMIT-045): `uemit.c` retains top-level
+  dispatch; `uemit_funcstate.c`, `uemit_expr.c`, `uemit_stmt.c`,
+  `uemit_react.c`, `uemit_unwind.c`, `uemit_disasm.c`,
+  `uemit_serialize.c`, `uemit_diag.c` extract per-concern logic.
+  `uemit_internal.h` provides inter-TU linkage.
+- **`uvm.c` 2314 LOC → 6 files** (VM decomposition): `uvm_init.c`,
+  `uvm_diag.c`, `uvm_closure.c`, `uvm_run.c`, plus header-inlined
+  `uvm_arith.h`.  `uvm_internal.h` provides inter-TU linkage.
+- **`uparse.c` 1698 LOC → 6 files** (PARSE-021): `uparse_top.c`,
+  `uparse_separators.c`, `uparse_stmt.c`, `uparse_react.c`,
+  `uparse_expr.c`.  `uparse_internal.h` provides inter-TU linkage.
+- **`uobject.c` 1157 LOC → 4 files** (OBJ-045): `uobject_proto.c`,
+  `uobject_lookup.c`, `uobject_slot.c`.  `uobject_internal.h`
+  provides inter-TU linkage.
+
+### New CI gate
+
+- `make test-loc-cap`: scans all `src/` translation units and fails on
+  any file exceeding 1000 LOC.  One documented exception: `uvm.c`
+  (dispatch loop, 1336 LOC — see `CONTRIBUTING.md`).
+
+### Audit findings closed
+
+**Decomposition** (EMIT-045, VM decomposition, PARSE-021, OBJ-045)
+
+**Theme 4 — volatile-byte-zero dedup**: `urbi_zero` helper extracted;
+14 open-coded volatile-byte-zero loops across 9 files swept to the
+shared helper (FOUND-030).
+
+**Lex** (LEX-019, LEX-020, LEX-024, LEX-025): duration-suffix dispatch
+table-driven; single-char punctuation switch table-driven; UToken
+init helpers consolidated; digit-accumulator loops unified.
+
+**Watcher** (WATCH-018, WATCH-019, WATCH-024): header-init + pool-drain
+deduplication; thin `run_closure_on_scratch_frame_with_result` wrapper
+retired; pool_destroy loops consolidated.
+
+**Event / EmitR** (EMITR-006, EMITR-008): waiter-wake loop deduped;
+ring weak-ref contract clarified; payload coercion / pad-zero / proto
+OOM propagation deduplicated (EVENT-019, EVENT-027).
+
+**Realm** (REALM-020, REALM-021, REALM-022, REALM-028, REALM-029):
+cleanup ladder consolidated; strlen dedup; dead resolvers removed;
+snapshot-next teardown path fixed; zero-helper sweep applied.
+
+**Chunk / strand** (CHSTR-020, CHSTR-021, CHSTR-022, CHSTR-029,
+CHSTR-031, CHSTR-044): strncpy dedup; arm-init helper extracted;
+REPL drain + error format consolidated; cleanup-stack OOM propagated;
+destroy / counter / regstack lifecycle centralized.
+
+**Module** (MOD-031): `umodule_deserialize` split into per-section
+helpers.  MOD-027 investigated and not applicable (include order is
+load-bearing).
+
+**GC** (GC-027, GC-028): duplicate gray-drain loop collapsed; gc_byte
+color-update pattern deduplicated.
+
+**Foundation** (FOUND-020, FOUND-031): `utype.c` folded into
+`uvalue.c`; `uvalue_le` 4-way dispatch simplified.
+
+**VM** (VM-008): IC-resolve preamble extracted into shared helper
+`ic_resolve_proto_inst`.
+
+**Emit core** (EMIT-033, EMIT-035): AST_TRY three near-duplicate paths
+collapsed to `emit_try_frame`; `uemit_disassemble` table-driven.
+
+**Object** (OBJ-031, OBJ-032, OBJ-034): atom switch / walker /
+module-instance init deduplicated.
+
+**Parse** (PARSE-013, PARSE-014, PARSE-022, PARSE-023, PARSE-024,
+PARSE-025): postfix-emit duplicate collapsed; IDENT-lookahead Pratt
+duplicate removed; `parse_at` split into per-form helpers;
+`reject_bare_function_forms` extracted; `parse_statement_or_expr`
+decomposed; 4× arena-array doubling pattern collapsed.
+
+**Tag / changed / event** (TAGCH-005): OOM-throw block collapsed; dead
+placeholders removed.
+
+**Cross-compile fix**: `ulex.c` duration-suffix table used `memcmp`
+from `<string.h>`; replaced with local `lex_memeq` so the file
+compiles under `-ffreestanding` (cross-arm / cross-riscv targets).
+
+### Carried forward / deferred
+
+- OBJ-041 (`urbi_object_install_property` spurious topology_gen bump) —
+  wave-5-fixes; correctness impact requires shape-mutation audit.
+- WATCH-023 (`urbi_watcher_install_internal` dead seam) — wave-6-cleanup.
+- FOUND-032 (`pop_call_frame` cleanup-TU coupling) — wave-5-fixes.
+- WATCH-017 (IC table walk hand-rolled): investigated; fixing requires
+  proto_inst membership guarantee not yet established — defer to M6.
+- EVENT-025 (subscriber-walk snapshot-next enforcement): design work
+  needed; defer to M6.
+- MOD-027 (umodule.h includes uframe.h mid-typedef): not applicable —
+  the include is load-bearing.
+- FOUND-029 (vm_alloc helper duplication): three sites differ in subtle
+  ways; consolidation deferred to wave-5-fixes with test coverage.
+
+### Verification
+
+- 1138 unit cases / 6382 checks / 0 failed; 148 `.chk` fixtures
+- Bytecode output byte-identical to v0.5.3-layout (all 148 fixtures)
+- `make test-loc-cap`: EXEMPT 1336 `src/vm/uvm.c`; no FAILs
+- `make releasetest`: all gates green (host + ASan + UBSan + tidy +
+  lint + docs-check + coverage + stress + GC-none + cross-arm +
+  cross-riscv + valgrind memcheck)
+
 ## v0.5.3-layout — 2026-05-06
 
 Wave 1 of the v0.5.x pre-M6 cleanup ramp: pure mechanical layout
