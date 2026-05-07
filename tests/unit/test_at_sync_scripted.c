@@ -120,11 +120,11 @@ run_to_no_runnable(UVM *vm)
 UTEST(scripted_at_sync_fires_on_rising_edge)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *gr = urbi_realm_global(&vm);
     UASSERT(gr != NULL);
-    if (gr == NULL) { uvm_destroy(&vm); return; }
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc;
     rc = urbi_realm_set_global(&vm, gr, "x",     1, make_int(0));
@@ -138,7 +138,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
         NULL);
     UASSERT_EQ(URBI_OK, rc);
     if (rc != URBI_OK) {
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -161,7 +161,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
     if (rc != URBI_OK) {
         while (vm.active_watchers_head != NULL)
             urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -191,7 +191,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
     /* === Cleanup === */
     while (vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

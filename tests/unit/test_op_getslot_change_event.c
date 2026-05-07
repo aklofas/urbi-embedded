@@ -35,24 +35,24 @@
 UTEST(get_change_event_uvalue_is_event)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(x != NULL);
 
     UEvent *e = urbi_object_get_or_create_change_event(&vm, o, x);
     UASSERT(e != NULL);
-    if (e == NULL) { uvm_destroy(&vm); return; }
+    if (e == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Wrap into a UValue and check the kind predicate. */
     UValue v = uvalue_from_event(e);
     UASSERT(uvalue_is_event(v));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -62,24 +62,24 @@ UTEST(get_change_event_uvalue_is_event)
 UTEST(get_change_event_uvalue_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(x != NULL);
 
     UEvent *e = urbi_object_get_or_create_change_event(&vm, o, x);
     UASSERT(e != NULL);
-    if (e == NULL) { uvm_destroy(&vm); return; }
+    if (e == NULL) { urbi_vm_destroy(&vm); return; }
 
     UValue v = uvalue_from_event(e);
     /* Round-trip: uvalue_as_event must return the same pointer. */
     UASSERT(uvalue_as_event(v) == e);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

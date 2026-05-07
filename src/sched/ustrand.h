@@ -126,7 +126,7 @@ struct UStrand {
                                                            cross-strand-affected strands). */
     uint8_t                 is_transient_strand;       /* Set on stack-local transient strands
                                                            (synthesized for in-process eval such as
-                                                           uvm_run and urbi_run_closure_on_scratch)
+                                                           urbi_vm_run and urbi_run_closure_on_scratch)
                                                            so OP_FORK_DETACH / OP_FORK_JOIN reject
                                                            forks even though realm now points at
                                                            vm->global_realm.  Always 0 for
@@ -179,12 +179,12 @@ struct UStrand {
      * Singly-linked list of all strands created under the same URealm.
      * Populated by urbi_strand_create; walked by urbi_realm_destroy to free
      * all realm-managed strands when the realm is torn down.
-     * NULL for strands not created via urbi_strand_create (e.g. uvm_run transient). */
+     * NULL for strands not created via urbi_strand_create (e.g. urbi_vm_run transient). */
     UStrand                *next_in_realm;
 
-    /* --- M2-baseline execution state migrated from uvm_run-locals + UVM at T6 ---
+    /* --- M2-baseline execution state migrated from urbi_vm_run-locals + UVM at T6 ---
        These fields are valid only while the strand is RUNNING or READY (paused mid-run).
-       uvm_run's thin adapter initialises them before calling dispatch_loop_until_yield
+       urbi_vm_run's thin adapter initialises them before calling dispatch_loop_until_yield
        and tears them down after the strand transitions to DEAD.
        T20 will move strand creation here when the full Strand C API lands. */
     UValue                 *stack;          /* heap-alloc'd register array; UVM_STACK_CAP slots */
@@ -194,7 +194,7 @@ struct UStrand {
     const UValue           *cur_consts;     /* current frame's constant pool */
     const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
     struct UModuleInstance *module_instance; /* M4 follow-up: per-(vm,module) IC RAM tier;
-                                               bound by uvm_run / urbi_run_chunk via
+                                               bound by urbi_vm_run / urbi_run_chunk via
                                                urbi_get_or_create_module_instance.  May be
                                                NULL if not yet wired (defensive). */
     UCallFrame              frames[UVM_MAX_FRAMES];
@@ -280,7 +280,7 @@ void urbi_strand_register_stack_free(struct UStrand *s, struct UVM *vm);
  *
  * Convenience composite: calls urbi_strand_register_stack_alloc then
  * urbi_strand_register_stack_zero.  Common foundation shared by
- * urbi_strand_arm_from_closure (closure-based arming) and uvm_run
+ * urbi_strand_arm_from_closure (closure-based arming) and urbi_vm_run
  * (module-level direct arming).  Each caller wires pc/pc_base/cur_consts/
  * out_slot/state afterward.
  *

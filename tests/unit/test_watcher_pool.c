@@ -16,13 +16,13 @@
 /* === Test cases === */
 
 /* 1. watcher_pool_init_threads_freelist:
- *    After uvm_init the pool slab is non-NULL, freelist head equals slab[0],
+ *    After urbi_vm_init the pool slab is non-NULL, freelist head equals slab[0],
  *    active_watchers_head is NULL, in_use is 0, and the freelist has exactly
  *    URBI_WATCHER_POOL_SIZE entries. */
 UTEST(watcher_pool_init_threads_freelist)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Pool must be allocated. */
     UASSERT(vm.watcher_pool_base != NULL);
@@ -42,7 +42,7 @@ UTEST(watcher_pool_init_threads_freelist)
         UASSERT_EQ(count, URBI_WATCHER_POOL_SIZE);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. watcher_record_size_is_within_budget:
@@ -70,7 +70,7 @@ UTEST(watcher_record_size_is_within_budget)
 UTEST(pool_alloc_returns_active_watcher)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UWatcher *w = urbi_watcher_install_internal(
         &vm,
@@ -100,7 +100,7 @@ UTEST(pool_alloc_returns_active_watcher)
     UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
     UASSERT(vm.active_watchers_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. pool_exhaustion_returns_null:
@@ -113,7 +113,7 @@ UTEST(pool_exhaustion_returns_null)
     UWatcher *watchers[URBI_WATCHER_POOL_SIZE];
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
         watchers[i] = urbi_watcher_install_internal(
@@ -137,7 +137,7 @@ UTEST(pool_exhaustion_returns_null)
 
     UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. pool_high_water_tracks_peak:
@@ -148,7 +148,7 @@ UTEST(pool_high_water_tracks_peak)
     UVM vm;
     UWatcher *w[3];
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     w[0] = urbi_watcher_install_internal(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     w[1] = urbi_watcher_install_internal(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
@@ -169,7 +169,7 @@ UTEST(pool_high_water_tracks_peak)
     /* Clean up. */
     urbi_watcher_unregister_internal(&vm, w[2]);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

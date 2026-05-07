@@ -70,7 +70,7 @@ uwatcher_pool_alloc(struct UVM *vm)
  * If URBI_WATCHER_OWNS_CLOSURES is set, frees condition/body/onleave closures
  * before recycling the slot.  Only install_watcher_runtime sets this flag,
  * when it unlinks the closures from the strand's pre-GC closure_list so
- * uvm_run's post-run cleanup loop cannot free them prematurely. */
+ * urbi_vm_run's post-run cleanup loop cannot free them prematurely. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
@@ -156,7 +156,7 @@ uwatcher_pool_init(struct UVM *vm)
     }
     slab[URBI_WATCHER_POOL_SIZE - 1U].next_active = NULL;
 
-    /* Wire pool fields on the VM (defensive zero — uvm_init already did this,
+    /* Wire pool fields on the VM (defensive zero — urbi_vm_init already did this,
      * but explicit is clearer for future readers). */
     vm->watcher_pool_base      = slab;
     vm->watcher_pool_freelist  = &slab[0];

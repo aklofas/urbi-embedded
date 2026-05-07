@@ -457,18 +457,18 @@ gc_sweep_step(UVM *vm, size_t budget)
 
 /* === urbi_gc_init ===
  *
- * uvm_init() already zero-initialises every GC field added at T4/T22, so
+ * urbi_vm_init() already zero-initialises every GC field added at T4/T22, so
  * urbi_gc_init only needs to set fields whose correct initial value is NOT
  * zero: gc_threshold and gc_debt.  All pointer and flag fields are already
- * NULL / 0 after uvm_init's zero pass.
+ * NULL / 0 after urbi_vm_init's zero pass.
  *
- * Called from uvm_init() after all other field zero-init. */
+ * Called from urbi_vm_init() after all other field zero-init. */
 void
 urbi_gc_init(UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Fields already zero-init by uvm_init:
+    /* Fields already zero-init by urbi_vm_init:
      *   gc_phase, current_white, gc_paused, in_destroy_callback,
      *   gc_live_bytes, gc_total_allocated,
      *   all_cells_head, gray_work_head, sweep_cursor, sweep_cursor_prev,
@@ -493,7 +493,7 @@ urbi_gc_init(UVM *vm)
  * re-entrant urbi_gc_alloc (which would be a bug, but guard anyway) can
  * assert or no-op.
  *
- * Called from uvm_destroy() as the last subsystem teardown step, after
+ * Called from urbi_vm_destroy() as the last subsystem teardown step, after
  * urealm_teardown_all() and all other subsystems that might still hold
  * cells (at M3 no subsystem allocates via urbi_gc_alloc yet, so ordering
  * is loose — placing gc_destroy last is safe and correct for all futures). */

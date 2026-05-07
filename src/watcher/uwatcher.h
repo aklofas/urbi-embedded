@@ -146,12 +146,12 @@ _Static_assert(sizeof(UWatcher) == 240,
 /* === Pool lifecycle === */
 
 /* uwatcher_pool_init: allocate the watcher slab and thread the freelist.
- * Must be called after urbi_gc_init in uvm_init.
+ * Must be called after urbi_gc_init in urbi_vm_init.
  * Returns 0 on success, -1 on OOM. */
 int  uwatcher_pool_init(struct UVM *vm);
 
 /* uwatcher_pool_destroy: free the watcher slab.
- * Must be called before urbi_gc_destroy in uvm_destroy. */
+ * Must be called before urbi_gc_destroy in urbi_vm_destroy. */
 void uwatcher_pool_destroy(struct UVM *vm);
 
 /* uwatcher_pool_alloc: pop one watcher entry from the pool freelist.
@@ -264,7 +264,7 @@ void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 /* === GC root provider (uwatcher_gc.c) === */
 
 /* watcher_table_walk_roots: registered via urbi_gc_register_root_provider at
- * uvm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
+ * urbi_vm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
  * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
  * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
  * read-set cells[] (concrete cell types land at M4).
@@ -297,7 +297,7 @@ void   urbi_watcher_check_invariants(struct UVM *vm);
  *   - install_watcher_runtime (install-time cond eval, uwatcher_install.c)
  *   - invoke_condition_closure (eval-time cond)
  *
- * The transient strand is allocated on the C stack (mirroring uvm_run's
+ * The transient strand is allocated on the C stack (mirroring urbi_vm_run's
  * pattern), threaded onto vm->global_realm->strands_head for the duration
  * of the call so the GC walker visits its register window, then unlinked
  * and torn down before return.  Bounded by URBI_SCRATCH_BUDGET_OPS dispatch

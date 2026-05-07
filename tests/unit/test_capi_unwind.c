@@ -74,7 +74,7 @@ UTEST(capi_strand_cancel_deposits_unwind)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -90,7 +90,7 @@ UTEST(capi_strand_cancel_deposits_unwind)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. urbi_strand_cancel on an already-DEAD strand returns URBI_ERR_STRAND_FATAL. */
@@ -98,7 +98,7 @@ UTEST(capi_strand_cancel_rejects_dead_strand)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
     s.state = USTRAND_STATE_DEAD;
@@ -108,7 +108,7 @@ UTEST(capi_strand_cancel_rejects_dead_strand)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. urbi_strand_panic marks strand DEAD; urbi_strand_is_fatal confirms it. */
@@ -116,7 +116,7 @@ UTEST(capi_strand_panic_marks_fatal)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -136,7 +136,7 @@ UTEST(capi_strand_panic_marks_fatal)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. urbi_strand_reset clears fatal + unwind, returns strand to DORMANT. */
@@ -144,7 +144,7 @@ UTEST(capi_strand_reset_clears_fatal_and_returns_dormant)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -167,7 +167,7 @@ UTEST(capi_strand_reset_clears_fatal_and_returns_dormant)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. urbi_strand_unwind_status returns UEXEC_OK for a fresh strand. */
@@ -175,7 +175,7 @@ UTEST(capi_strand_unwind_status_ok_on_clean_strand)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -184,7 +184,7 @@ UTEST(capi_strand_unwind_status_ok_on_clean_strand)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. urbi_throw deposits THROW; urbi_return_val deposits RETURN. */
@@ -192,7 +192,7 @@ UTEST(capi_host_callback_helpers_throw_and_return)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -209,7 +209,7 @@ UTEST(capi_host_callback_helpers_throw_and_return)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. urbi_tag_stop_local deposits TAG_STOP with the correct target pointer. */
@@ -217,7 +217,7 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -231,7 +231,7 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 8. urbi_tag_stop: valid args return URBI_OK; NULL args return error.
@@ -239,7 +239,7 @@ UTEST(capi_tag_stop_local_deposits_tag_stop)
 UTEST(capi_tag_stop_validates_args)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* NULL vm: must return URBI_ERR_INVALID_ARG. */
     /* Use a stack-allocated real UTag so dereferencing is safe. */
@@ -267,7 +267,7 @@ UTEST(capi_tag_stop_validates_args)
     rc = urbi_tag_stop(&vm, &real_tag, make_nil());
     UASSERT_EQ(rc, URBI_OK);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 9. urbi_strand_cancel on a WAITING strand transitions state to READY.
@@ -276,7 +276,7 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
 {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue *reg = strand_minimal(&s, &vm);
 
@@ -295,7 +295,7 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
 
     free(reg);
     strand_cleanup_stack_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 10. strand_cleanup_stack_init returns -1 when the allocator returns NULL.
@@ -313,7 +313,7 @@ UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
     UStrand s;
 
     /* Wire up a failing allocator. */
-    uvm_init(&vm, null_alloc, NULL);
+    urbi_vm_init(&vm, null_alloc, NULL);
 
     memset(&s, 0, sizeof(s));
     s.vm = &vm;
@@ -327,7 +327,7 @@ UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
     UASSERT(s.cleanup_top   == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

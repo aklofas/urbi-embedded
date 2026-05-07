@@ -17,7 +17,7 @@
 UTEST(counter_strand_runnable_increments_on_make_runnable)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -43,14 +43,14 @@ UTEST(counter_strand_runnable_increments_on_make_runnable)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: wakeup_pending_count tracks sleep_q_insert and sleep_q_remove. */
 UTEST(counter_wakeup_pending_tracks_sleep_q)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b, c;
@@ -89,14 +89,14 @@ UTEST(counter_wakeup_pending_tracks_sleep_q)
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
     ustrand_destroy(&c, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: sched_quiescent returns true only when all active counters are zero. */
 UTEST(quiescent_when_all_counters_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_quiescent(&vm));
@@ -120,7 +120,7 @@ UTEST(quiescent_when_all_counters_zero)
     UASSERT(sched_quiescent(&vm));
 
     ustrand_destroy(&a, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 4: strand_suspended_count is excluded from quiescence (always 0 at M3).
@@ -129,7 +129,7 @@ UTEST(quiescent_when_all_counters_zero)
 UTEST(suspended_count_excluded_from_quiescence)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -150,7 +150,7 @@ UTEST(suspended_count_excluded_from_quiescence)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 5: wakeup_pending_count does not underflow on double-remove.
@@ -158,7 +158,7 @@ UTEST(suspended_count_excluded_from_quiescence)
 UTEST(wakeup_pending_no_underflow_on_strand_not_on_queue)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -181,14 +181,14 @@ UTEST(wakeup_pending_no_underflow_on_strand_not_on_queue)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 6: runnable_count correctly tracks sched_strand_yield (yield re-enqueues). */
 UTEST(runnable_count_stable_across_yield_cycle)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a;
@@ -215,7 +215,7 @@ UTEST(runnable_count_stable_across_yield_cycle)
     UASSERT_EQ(a.state, USTRAND_STATE_READY);
 
     ustrand_destroy(&a, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== T16 urbi_step driver tests ===== */
@@ -227,7 +227,7 @@ UTEST(runnable_count_stable_across_yield_cycle)
 UTEST(step_quiescent_on_empty_vm)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     uint64_t wake_us = 0xdeadbeef;
@@ -237,7 +237,7 @@ UTEST(step_quiescent_on_empty_vm)
     /* out_next_wake_us should be untouched for QUIESCENT. */
     UASSERT_EQ(wake_us, (uint64_t)0xdeadbeef);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 8: urbi_step returns FATAL when vm->fatal_strand is non-NULL.
@@ -245,7 +245,7 @@ UTEST(step_quiescent_on_empty_vm)
 UTEST(step_fatal_when_fatal_strand_set)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand stub;
@@ -261,7 +261,7 @@ UTEST(step_fatal_when_fatal_strand_set)
     /* Clear so destroy/cleanup doesn't see it. */
     vm.fatal_strand = NULL;
     ustrand_destroy(&stub, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 9: urbi_step returns WAKE_AT (not QUIESCENT) when one strand is sleeping.
@@ -269,7 +269,7 @@ UTEST(step_fatal_when_fatal_strand_set)
 UTEST(step_wake_at_with_wakeup_pending)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a;
@@ -294,14 +294,14 @@ UTEST(step_wake_at_with_wakeup_pending)
     sched_dequeue_ready_head(&vm);
 
     ustrand_destroy(&a, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 10: sched_dequeue_ready_head is idempotent on an empty queue (no crash). */
 UTEST(dequeue_ready_head_noop_on_empty_queue)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     /* Should not crash / underflow. */
@@ -309,7 +309,7 @@ UTEST(dequeue_ready_head_noop_on_empty_queue)
     UASSERT_EQ(vm.strand_runnable_count, 0U);
     UASSERT(vm.ready_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 11: sched_dequeue_ready_head from a two-strand queue leaves the
@@ -317,7 +317,7 @@ UTEST(dequeue_ready_head_noop_on_empty_queue)
 UTEST(dequeue_ready_head_advances_queue)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -342,7 +342,7 @@ UTEST(dequeue_ready_head_advances_queue)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_step_driver_suite(void) {

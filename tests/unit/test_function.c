@@ -33,7 +33,7 @@ static UVMError fn_eval(const char *src, UValue *out) {
     ulex_init(&lex, src, strlen(src));
 
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UModule module = {0};
@@ -55,12 +55,12 @@ static UVMError fn_eval(const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = uvm_run(&vm, &module, out);
+        vm_rc = urbi_vm_run(&vm, &module, out);
     }
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return vm_rc;
 }
 
@@ -91,7 +91,7 @@ static UEmitError fn_emit_error(const char *src) {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -109,7 +109,7 @@ static UEmitError fn_emit_error(const char *src) {
     UEmitError rc = uemit_finish(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return rc;
 }
 
@@ -215,7 +215,7 @@ UTEST(emit_function_creates_nested_proto) {
     const char *src = "function(x) { x + 1 }";
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -237,7 +237,7 @@ UTEST(emit_function_creates_nested_proto) {
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_function_nested_proto_has_nparams) {
@@ -246,7 +246,7 @@ UTEST(emit_function_nested_proto_has_nparams) {
     const char *src = "function(a, b) { a + b }";
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -267,7 +267,7 @@ UTEST(emit_function_nested_proto_has_nparams) {
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_two_functions_two_nested_protos) {
@@ -302,7 +302,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     const char *src = "function(x) { x * 2 }";
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -320,7 +320,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     UASSERT_EQ(EMIT_OK, emit_rc);
 
     UValue out = {0};
-    UVMError vm_rc = uvm_run(&vm, &module, &out);
+    UVMError vm_rc = urbi_vm_run(&vm, &module, &out);
     UASSERT_EQ(UVM_OK, vm_rc);
     UASSERT_EQ(UVAL_CLOSURE, out.kind);
     /* nupvals == 0 on the closure's proto */
@@ -328,7 +328,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(vm_named_function_def_produces_closure) {
@@ -346,7 +346,7 @@ UTEST(vm_function_body_has_instructions) {
     const char *src = "function(x) { x + 1 }";
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -363,14 +363,14 @@ UTEST(vm_function_body_has_instructions) {
     uemit_finish(&e);
 
     UValue out = {0};
-    uvm_run(&vm, &module, &out);
+    urbi_vm_run(&vm, &module, &out);
     UASSERT_EQ(UVAL_CLOSURE, out.kind);
     /* Body should have at least: LOADK(1), GETLOCAL/MOVE(x), ADD, RET */
     UASSERT(((UClosure *)out.v.p)->proto->instr_count >= 2);
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -----------------------------------------------------------------------

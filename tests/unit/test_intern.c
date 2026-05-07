@@ -12,7 +12,7 @@
 
 UTEST(intern_returns_canonical_pointer) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     const char *a = ustr_intern(&vm, "hello", 5);
     const char *b = ustr_intern(&vm, "hello", 5);
@@ -21,46 +21,46 @@ UTEST(intern_returns_canonical_pointer) {
     UASSERT_EQ(0, strcmp(a, "hello"));
     UASSERT_EQ((size_t)1, uintern_count(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(intern_distinguishes_different_strings) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     const char *a = ustr_intern(&vm, "foo", 3);
     const char *b = ustr_intern(&vm, "bar", 3);
     UASSERT(a != b);
     UASSERT_EQ((size_t)2, uintern_count(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(intern_treats_substrings_as_distinct) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     const char *full = ustr_intern(&vm, "foobar", 6);
     const char *part = ustr_intern(&vm, "foo", 3);
     UASSERT(full != part);
     UASSERT_EQ((size_t)2, uintern_count(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(intern_handles_zero_length) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     const char *empty = ustr_intern(&vm, "", 0);
     UASSERT(empty != NULL);
     UASSERT_EQ((char)0, empty[0]);
     UASSERT_EQ((size_t)1, uintern_count(&vm));
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(intern_grows_through_load_factor) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Insert 100 distinct strings — forces multiple grows. */
     char buf[16];
@@ -79,13 +79,13 @@ UTEST(intern_grows_through_load_factor) {
     }
     UASSERT_EQ((size_t)100, uintern_count(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(intern_two_vms_have_independent_tables) {
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
 
     const char *sa = ustr_intern(&vm_a, "shared", 6);
     const char *sb = ustr_intern(&vm_b, "shared", 6);
@@ -94,8 +94,8 @@ UTEST(intern_two_vms_have_independent_tables) {
     UASSERT(sa != sb);                /* per-VM table = per-VM canonical pointer */
     UASSERT_EQ(0, strcmp(sa, sb));
 
-    uvm_destroy(&vm_a);
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
 }
 
 UTEST(intern_destroy_is_safe_on_zero_init) {

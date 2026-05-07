@@ -61,7 +61,7 @@ UTEST(resolve_owning_tag_returns_innermost)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -90,7 +90,7 @@ UTEST(resolve_owning_tag_returns_innermost)
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. resolve_owning_tag_skips_non_tag_scope
@@ -102,7 +102,7 @@ UTEST(resolve_owning_tag_skips_non_tag_scope)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -127,7 +127,7 @@ UTEST(resolve_owning_tag_skips_non_tag_scope)
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. resolve_owning_tag_empty_stack_returns_realm_tag
@@ -138,7 +138,7 @@ UTEST(resolve_owning_tag_empty_stack_returns_realm_tag)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -150,7 +150,7 @@ UTEST(resolve_owning_tag_empty_stack_returns_realm_tag)
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

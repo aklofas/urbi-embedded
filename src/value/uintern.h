@@ -20,7 +20,7 @@ struct UVM;
  *
  * On success: returns a canonical, null-terminated `const char *` whose
  * bytes match the input. The pointer is stable for the lifetime of the
- * UVM (no unintern at v1.0 — strings live until uvm_destroy). Two calls
+ * UVM (no unintern at v1.0 — strings live until urbi_vm_destroy). Two calls
  * with byte-equal inputs return the SAME pointer (pointer-equality
  * implies content-equality and vice versa).
  *
@@ -33,7 +33,7 @@ struct UVM;
 const char *ustr_intern(struct UVM *vm, const char *bytes, size_t nbytes);
 
 /* Free all interned strings and the table itself. Called from
- * uvm_destroy. Safe on a NULL or zero-initialized table. */
+ * urbi_vm_destroy. Safe on a NULL or zero-initialized table. */
 void uintern_destroy(struct UVM *vm);
 
 /* Debug helper. Returns the count of unique strings interned in vm.

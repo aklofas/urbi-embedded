@@ -40,7 +40,7 @@ static void rg_ctx_init(RGCtx *c, const char *src)
 {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    uvm_init(&c->vm, NULL, NULL);
+    urbi_vm_init(&c->vm, NULL, NULL);
     c->realm  = urbi_realm_create(&c->vm);
     c->module = (UModule){0};
     uparse_init(&c->p, &c->lex, &c->arena);
@@ -62,7 +62,7 @@ static void rg_ctx_destroy(RGCtx *c)
     uarena_destroy(&c->arena);
     umodule_destroy(&c->module);
     if (c->realm != NULL) urbi_realm_destroy(&c->vm, c->realm);
-    uvm_destroy(&c->vm);
+    urbi_vm_destroy(&c->vm);
 }
 
 /* === Tests === */

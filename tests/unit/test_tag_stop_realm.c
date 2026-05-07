@@ -59,7 +59,7 @@ UTEST(tag_stop_deposits_on_member_strands)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -85,7 +85,7 @@ UTEST(tag_stop_deposits_on_member_strands)
     urbi_strand_destroy(s1);
     urbi_strand_destroy(s2);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. tag_stop_increments_host_call_pending_count_per_fresh_strand
@@ -97,7 +97,7 @@ UTEST(tag_stop_increments_host_call_pending_count_per_fresh_strand)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -117,7 +117,7 @@ UTEST(tag_stop_increments_host_call_pending_count_per_fresh_strand)
     urbi_strand_destroy(s2);
     urbi_strand_destroy(s3);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. tag_stop_idempotent_on_repeat_call
@@ -129,7 +129,7 @@ UTEST(tag_stop_idempotent_on_repeat_call)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -146,7 +146,7 @@ UTEST(tag_stop_idempotent_on_repeat_call)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. tag_stop_does_not_overwrite_cancel
@@ -159,7 +159,7 @@ UTEST(tag_stop_does_not_overwrite_cancel)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -184,7 +184,7 @@ UTEST(tag_stop_does_not_overwrite_cancel)
     urbi_strand_destroy(s_cancel);
     urbi_strand_destroy(s_ok);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. tag_stop_overwrites_throw
@@ -195,7 +195,7 @@ UTEST(tag_stop_overwrites_throw)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -216,7 +216,7 @@ UTEST(tag_stop_overwrites_throw)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. tag_stop_decrement_on_strand_destroy
@@ -228,7 +228,7 @@ UTEST(tag_stop_decrement_on_strand_destroy)
     UVM vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -254,7 +254,7 @@ UTEST(tag_stop_decrement_on_strand_destroy)
     UASSERT_EQ((int)vm.host_call_pending_count, 0);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -271,7 +271,7 @@ UTEST(realm_destroy_cascade_watchers)
     UVM    vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -298,7 +298,7 @@ UTEST(realm_destroy_cascade_watchers)
     UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 8. realm_destroy_drain_ordering
@@ -311,7 +311,7 @@ UTEST(realm_destroy_drain_ordering)
 {
     UVM    vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Install a no-op onleave hook so drain doesn't dereference the
      * (UClosure *)1 sentinel.  The test observes drain state, not onleave
@@ -344,7 +344,7 @@ UTEST(realm_destroy_drain_ordering)
     UASSERT_EQ((unsigned)vm.watcher_dirty_count, 0U);
     UASSERT(!vm.in_watcher_eval);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

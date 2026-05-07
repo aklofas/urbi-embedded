@@ -95,7 +95,7 @@ UTEST(watcher_invariant_holds_during_body_run)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -121,7 +121,7 @@ UTEST(watcher_invariant_holds_during_body_run)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. watcher_invariant_holds_after_body_completes
@@ -135,7 +135,7 @@ UTEST(watcher_invariant_holds_after_body_completes)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -160,7 +160,7 @@ UTEST(watcher_invariant_holds_after_body_completes)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 #endif /* URBI_DEBUG */

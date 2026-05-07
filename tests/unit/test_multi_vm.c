@@ -20,12 +20,12 @@
 
 UTEST(uvm_init_zeroes_intern_table_and_topology_gen) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UASSERT(vm.intern_table == NULL);
     /* Per pre-M4 topology-generation spec §3.1: topology_gen init=1, reserves 0
      * as the IC unfilled sentinel.  (Was 0 pre-M4.) */
     UASSERT_EQ(1ULL, vm.topology_gen);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(umodule_origin_vm_initially_null) {
@@ -77,7 +77,7 @@ static UVMError eval_on_vm(UVM *vm, const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = uvm_run(vm, &module, out);
+        vm_rc = urbi_vm_run(vm, &module, out);
     }
 
     umodule_destroy(&module);
@@ -93,8 +93,8 @@ UTEST(two_vms_have_independent_allocators) {
     UVM vm_a, vm_b;
     size_t counter_a = 0, counter_b = 0;
 
-    uvm_init(&vm_a, counting_alloc, &counter_a);
-    uvm_init(&vm_b, counting_alloc, &counter_b);
+    urbi_vm_init(&vm_a, counting_alloc, &counter_a);
+    urbi_vm_init(&vm_b, counting_alloc, &counter_b);
 
     UValue out_a, out_b;
     const char *src = "42";
@@ -116,15 +116,15 @@ UTEST(two_vms_have_independent_allocators) {
     /* Counters may differ (due to arena/module state differences), but
      * each is independent — no cross-VM pollution. */
 
-    uvm_destroy(&vm_a);
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
 }
 
 UTEST(two_vms_have_independent_last_error) {
     /* Trigger a TYPE_ERROR on vm_a; assert vm_b->last_error is still OK. */
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
 
     UValue out_a, out_b;
 
@@ -141,15 +141,15 @@ UTEST(two_vms_have_independent_last_error) {
     UASSERT_EQ(UVM_OK, rc_b);
     UASSERT_EQ(UVM_OK, vm_b.last_error);
 
-    uvm_destroy(&vm_a);
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
 }
 
 UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
     /* Emit a module for vm_a; origin_vm should be set. Then serialize +
      * deserialize; origin_vm should be NULL on the loaded copy. */
     UVM vm_a;
-    uvm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
 
     ULexer lex;
     ulex_init(&lex, "42", 2);
@@ -193,7 +193,7 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
     umodule_destroy(&module);
     umodule_destroy(&loaded);
     uarena_destroy(&arena);
-    uvm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_a);
 }
 
 UTEST(topology_gen_is_per_vm_not_global) {
@@ -201,20 +201,20 @@ UTEST(topology_gen_is_per_vm_not_global) {
      * unchanged at its init value. Verifies the per-VM relocation.
      * Per pre-M4 topology-generation spec §3.1: init=1 (was 0 pre-M4). */
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
     vm_a.topology_gen = 17;
     UASSERT_EQ(1ULL, vm_b.topology_gen);
-    uvm_destroy(&vm_a);
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
 }
 
 UTEST(alternating_uvm_run_proves_single_thread_multi_vm) {
     /* Compile two different modules; run them alternately on vm_a and
      * vm_b in a tight loop. Assert no state corruption. */
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
 
     UValue out_a, out_b;
     UVMError rc_a = eval_on_vm(&vm_a, "42", &out_a);
@@ -237,23 +237,23 @@ UTEST(alternating_uvm_run_proves_single_thread_multi_vm) {
         UASSERT_EQ((int64_t)99, out_b.v.i);
     }
 
-    uvm_destroy(&vm_a);
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
 }
 
 UTEST(closing_vm_a_does_not_invalidate_vm_b_intern) {
-    /* Intern "shared" in both VMs. uvm_destroy(vm_a) must not affect
+    /* Intern "shared" in both VMs. urbi_vm_destroy(vm_a) must not affect
      * vm_b's interned pointer. */
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
     const char *sa = ustr_intern(&vm_a, "shared", 6);
     const char *sb = ustr_intern(&vm_b, "shared", 6);
-    uvm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_a);
     /* sa is now invalid — don't dereference. sb must still be live. */
     (void)sa;  /* silence unused-variable warning */
     UASSERT_EQ(0, strcmp(sb, "shared"));
-    uvm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_b);
 }
 
 /* --- Deferred test stubs (M3+, M5+, M6+) --- */
@@ -274,7 +274,7 @@ void test_multi_vm_suite(void) {
         module_compiled_for_vm_a_has_origin_vm_a);
     utest_run("topology_gen is per-VM, not global",
         topology_gen_is_per_vm_not_global);
-    utest_run("Alternating uvm_run proves single-thread multi-VM",
+    utest_run("Alternating urbi_vm_run proves single-thread multi-VM",
         alternating_uvm_run_proves_single_thread_multi_vm);
     utest_run("Closing vm_a does not invalidate vm_b intern",
         closing_vm_a_does_not_invalidate_vm_b_intern);

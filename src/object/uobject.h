@@ -388,7 +388,7 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
 /* === T36: GC root provider for atom singletons + module instances ===
  *
  * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Registered via
- * urbi_gc_register_root_provider in uvm_init after urbi_object_builtin_types_init.
+ * urbi_gc_register_root_provider in urbi_vm_init after urbi_object_builtin_types_init.
  * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
  * vm->root_shape, and every UModuleInstance reachable from
  * vm->module_instances_head.  Each non-NULL cell is shaded gray directly via

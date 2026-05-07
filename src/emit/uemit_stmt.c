@@ -553,7 +553,7 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
  * Compile the value (or nil if absent), emit OP_RET.
  * Only valid inside a function body (current_fs must be non-NULL and
  * must have a target_proto — top-level return is not meaningful but
- * is not rejected at emit time; OP_RET at top-level exits uvm_run). */
+ * is not rejected at emit time; OP_RET at top-level exits urbi_vm_run). */
 uint8_t emit_return_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;

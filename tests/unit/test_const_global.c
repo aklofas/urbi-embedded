@@ -70,7 +70,7 @@ UTEST(top_level_var_object_raises_const_slot_write) {
      * detects URBI_SLOT_FLAG_CONSTANT and the VM halts with an error
      * message that includes the slot name. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int rc = compile_and_run(&vm, "var Object = 42");
 
@@ -79,7 +79,7 @@ UTEST(top_level_var_object_raises_const_slot_write) {
     /* Error message must contain the slot name "Object". */
     UASSERT(strstr(vm.last_errmsg, "Object") != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(slot_assign_on_object_proto_works) {
@@ -87,14 +87,14 @@ UTEST(slot_assign_on_object_proto_works) {
      * "x" on the global object.  There is no existing slot named "x", so
      * the IC slow path takes the miss path and installs it — no error. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int rc = compile_and_run(&vm, "var x = 42");
 
     /* Must succeed. */
     UASSERT_EQ(URBI_OK, rc);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(unresolved_identifier_raises_slot_not_found) {
@@ -103,7 +103,7 @@ UTEST(unresolved_identifier_raises_slot_not_found) {
      * slow path returns a miss and the VM halts with an error message that
      * includes the slot name. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int rc = compile_and_run(&vm, "nonexistent_global_xyz");
 
@@ -112,7 +112,7 @@ UTEST(unresolved_identifier_raises_slot_not_found) {
     /* Error message must contain the missing slot name. */
     UASSERT(strstr(vm.last_errmsg, "nonexistent_global_xyz") != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

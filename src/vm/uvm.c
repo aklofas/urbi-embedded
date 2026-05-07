@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Bytecode interpreter — dispatch loop (uvm_init.c + uvm_run.c hold lifecycle). */
+/* Bytecode interpreter — dispatch loop (urbi_vm_init.c + urbi_vm_run.c hold lifecycle). */
 
 #include "vm/uvm.h"
 #include "runtime/umacros.h"
@@ -94,7 +94,7 @@ ic_resolve_pi(UStrand *s)
    - step_budget_in opcodes are consumed (state remains RUNNING)
    Returns the number of opcodes consumed.
 
-   The uvm_run() function below is a thin adapter that creates a transient
+   The urbi_vm_run() function below is a thin adapter that creates a transient
    UStrand, loops calling this function until DEAD, then tears down.
    All dispatch state lives on the strand; vm holds only VM-wide state. */
 
@@ -109,7 +109,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
 
 #if UVM_USE_COMPUTED_GOTO
     /* Dispatch table keyed by opcode.  All opcodes populated; loader
-       validates opcode is in [0, OP_MAX) before uvm_run is called. */
+       validates opcode is in [0, OP_MAX) before urbi_vm_run is called. */
     static void *dispatch_table[OP_MAX] = {
         [OP_LOADK]      = &&label_OP_LOADK,
         [OP_MOVE]       = &&label_OP_MOVE,
@@ -259,7 +259,7 @@ dispatch:
 
             if (s->frame_count == 0) {
                 /* Top-frame return — strand becomes DEAD.
-                 * Adapter (uvm_run) extracts result via out_slot. */
+                 * Adapter (urbi_vm_run) extracts result via out_slot. */
                 if (s->out_slot != NULL) {
                     *s->out_slot = retval;
                 }
@@ -371,7 +371,7 @@ dispatch:
                 && (size_t)bx + 1U < (size_t)s->module_instance->proto_instances->n) {
                 cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1U];
             }
-            /* If no module_instance is bound (defensive — uvm_run wires it for
+            /* If no module_instance is bound (defensive — urbi_vm_run wires it for
              * every normal execution path), proto_inst stays NULL and
              * OP_GETSLOT/SETSLOT will diagnose cleanly. */
 
@@ -563,7 +563,7 @@ dispatch:
 
         CASE(OP_YIELD) {
             /* Cooperative yield: advance past this opcode, transition to READY,
-               and return to the scheduler.  The uvm_run adapter re-enters
+               and return to the scheduler.  The urbi_vm_run adapter re-enters
                dispatch_loop_until_yield until strand is DEAD. */
             s->pc++;
             s->state = USTRAND_STATE_READY;
@@ -576,7 +576,7 @@ dispatch:
             /* `,` separator: spawn child closure as detached strand.
              * A = closure_reg.  Parent continues; child runs concurrently.
              * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
-             * Rejected from uvm_run's stack-local transient because that
+             * Rejected from urbi_vm_run's stack-local transient because that
              * adapter only dispatches its own strand and would leak any
              * spawned children.  T33 routes the transient onto
              * vm->global_realm->strands_head for GC-walker visibility, so
@@ -584,7 +584,7 @@ dispatch:
              * is_transient_strand does. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)");
+                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (urbi_vm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_detach(s, vm, *s->pc);
@@ -595,10 +595,10 @@ dispatch:
         CASE(OP_FORK_JOIN) {
             /* `&` separator LHS: spawn child closure, store handle in R[B].
              * A = closure_reg, B = child_handle_reg.
-             * Same uvm_run-transient guard as OP_FORK_DETACH; see note above. */
+             * Same urbi_vm_run-transient guard as OP_FORK_DETACH; see note above. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)");
+                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (urbi_vm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_join(s, vm, *s->pc);
@@ -1255,7 +1255,7 @@ dispatch:
 
 #if !UVM_USE_COMPUTED_GOTO
         default: {
-            /* Unreachable — loader rejects unknown opcodes before uvm_run
+            /* Unreachable — loader rejects unknown opcodes before urbi_vm_run
                is called. The default: branch satisfies -Wswitch-enum. */
             vm->last_error = UVM_TYPE_ERROR;
             HALT();
@@ -1287,7 +1287,7 @@ safepoint:
     s->instruction_budget_remaining--;
     if (vm->step_budget_remaining == 0) {
         /* Budget exhausted from caller's perspective; state stays RUNNING.
-           The uvm_run adapter treats RUNNING-but-exit as "continue". */
+           The urbi_vm_run adapter treats RUNNING-but-exit as "continue". */
         goto exit_strand;
     }
     vm->step_budget_remaining--;
@@ -1320,10 +1320,10 @@ exit_strand:
     }
 
     /* strand_runnable_count ownership at exit:
-     *   - uvm_run transient strands are not tracked in strand_runnable_count
+     *   - urbi_vm_run transient strands are not tracked in strand_runnable_count
      *     (they bypass sched_strand_make_runnable). The READY-cycle increment
      *     via sched_strand_yield is balanced by the dequeue decrement in the
-     *     uvm_run loop (src/uvm.c, the strand_runnable_count-- block).
+     *     urbi_vm_run loop (src/uvm.c, the strand_runnable_count-- block).
      *   - T16 urbi_step driver: strands dequeued from the ready queue before
      *     entering dispatch_loop_until_yield. T16 decrements strand_runnable_count
      *     in the driver after dispatch returns with state == USTRAND_STATE_DEAD,
@@ -1333,4 +1333,4 @@ exit_strand:
     return steps_consumed;
 }
 
-/* uvm_run: moved to uvm_run.c (VM #6). */
+/* urbi_vm_run: moved to urbi_vm_run.c (VM #6). */

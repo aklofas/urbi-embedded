@@ -45,7 +45,7 @@ spy_alloc(void *ptr, size_t n, void *ud)
 UTEST(utag_create_basic)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -60,7 +60,7 @@ UTEST(utag_create_basic)
     UASSERT_EQ((unsigned)r->tag->name.kind, (unsigned)UVAL_NIL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. utag_create_oom: allocator fails on the tag alloc → realm_create returns NULL.
@@ -79,30 +79,30 @@ UTEST(utag_create_oom)
 
     /* Calibration run: count how many allocs a successful realm_create uses. */
     AllocSpy spy1 = { 0, -1 };
-    uvm_init(&vm, spy_alloc, &spy1);
+    urbi_vm_init(&vm, spy_alloc, &spy1);
     r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 
     /* The realm struct is alloc call #1, UTag is #2.
      * Fail at call index 2 (fail_at == 1 means > 1 fails, i.e. call #2 onward). */
     AllocSpy spy2 = { 0, 1 };   /* fail on alloc_calls > 1 = fail on call #2+ */
-    uvm_init(&vm, spy_alloc, &spy2);
+    urbi_vm_init(&vm, spy_alloc, &spy2);
     r = urbi_realm_create(&vm);
     UASSERT(r == NULL);           /* OOM: UTag alloc failed → whole create returns NULL */
     UASSERT(vm.realms_head == NULL);  /* no partial realm was linked */
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. utag_destroy_null_safe: utag_destroy(vm, NULL) is a no-op. */
 UTEST(utag_destroy_null_safe)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     /* Must not crash. */
     utag_destroy(&vm, NULL);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. strand_scope_tag_returns_innermost: scope_tag walks top-down and returns
@@ -113,7 +113,7 @@ UTEST(strand_scope_tag_returns_innermost)
     UTag inner_tag;
     UCleanupEntry *e;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -163,7 +163,7 @@ UTEST(strand_scope_tag_returns_innermost)
     UASSERT(inner_tag.member_strands_head == NULL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. strand_scope_tag_empty_returns_null: a strand with cleanup_depth == 0
@@ -173,7 +173,7 @@ UTEST(strand_scope_tag_empty_returns_null)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Use ustrand_init directly — bypasses ambient-tag attachment, depth == 0. */
     ustrand_init(&s, &vm);
@@ -182,7 +182,7 @@ UTEST(strand_scope_tag_empty_returns_null)
     UASSERT(urbi_strand_scope_tag(&s) == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. strand_scope_tag_null_safe: NULL strand returns NULL. */
@@ -271,7 +271,7 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
     instrs[3] = t30_enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -293,7 +293,7 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 9. op_push_tag_member_strands_head_wired:
@@ -315,7 +315,7 @@ UTEST(op_push_tag_member_strands_head_wired)
     instrs[2] = t30_enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -361,12 +361,12 @@ UTEST(op_push_tag_member_strands_head_wired)
     top->owning_tag = NULL;
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 10. op_push_tag_oom_marks_strand_fatal:
  *     Install a spy allocator that fails on all allocations (fail_at = 0).
- *     uvm_init's event_ring alloc fails first and tolerates NULL gracefully;
+ *     urbi_vm_init's event_ring alloc fails first and tolerates NULL gracefully;
  *     utag_create's subsequent allocation failure triggers the OP_PUSH_TAG
  *     fatal path under test.  Verify the strand goes fatal with UEXEC_THROW
  *     and state DEAD. */
@@ -380,7 +380,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
     /* fail_at == 0: spy_alloc fails on alloc_calls > 0, i.e. the very first
      * allocation (alloc_calls becomes 1 on call #1, which is > 0 → NULL). */
     AllocSpy spy = { 0, 0 };
-    uvm_init(&vm, spy_alloc, &spy);
+    urbi_vm_init(&vm, spy_alloc, &spy);
     sched_init(&vm, NULL);
 
     /* The cleanup stack is allocated via calloc() directly (not vm->alloc_fn),
@@ -401,7 +401,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 11. op_push_tag_cleanup_overflow_releases_tag:
@@ -415,7 +415,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     instrs[1] = t30_enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -438,7 +438,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     s.cleanup_depth = 0;
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -505,7 +505,7 @@ UTEST(nested_tag_membership)
     UVM vm;
     UTag tag_a, tag_b, tag_c;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -542,7 +542,7 @@ UTEST(nested_tag_membership)
     UASSERT(r->tag->member_strands_head == NULL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 13. realm_root_at_bottom
@@ -553,7 +553,7 @@ UTEST(realm_root_at_bottom)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -576,7 +576,7 @@ UTEST(realm_root_at_bottom)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 14. tag_stop_synchronous_no_bytecode
@@ -591,7 +591,7 @@ UTEST(tag_stop_synchronous_no_bytecode)
     UVM vm;
     UValue nil;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
@@ -619,7 +619,7 @@ UTEST(tag_stop_synchronous_no_bytecode)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

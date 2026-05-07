@@ -62,7 +62,7 @@ compile_src(UVM *vm, const char *src, UModule *out_module)
 UTEST(run_chunk_round_trip_with_realm)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -79,7 +79,7 @@ UTEST(run_chunk_round_trip_with_realm)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: NULL realm auto-uses the global realm; the call succeeds and a
@@ -87,7 +87,7 @@ UTEST(run_chunk_round_trip_with_realm)
 UTEST(run_chunk_null_realm_uses_global)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m1, m2;
     UASSERT(compile_src(&vm, "2 + 2", &m1));
@@ -111,7 +111,7 @@ UTEST(run_chunk_null_realm_uses_global)
 
     umodule_destroy(&m1);
     umodule_destroy(&m2);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: run_chunk with out_result == NULL discards the result without crash.
@@ -119,7 +119,7 @@ UTEST(run_chunk_null_realm_uses_global)
 UTEST(run_chunk_null_out_result_no_crash)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule module;
     UASSERT(compile_src(&vm, "42", &module));
@@ -128,7 +128,7 @@ UTEST(run_chunk_null_out_result_no_crash)
     UASSERT_EQ(rc, URBI_OK);
 
     umodule_destroy(&module);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------
@@ -139,7 +139,7 @@ UTEST(run_chunk_null_out_result_no_crash)
 UTEST(repl_eval_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     char buf[64];
     int rc = urbi_repl_eval(&vm, NULL, "1+2", 3, buf, sizeof(buf));
@@ -147,7 +147,7 @@ UTEST(repl_eval_round_trip)
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ(0, strcmp(buf, "3"));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 5: compile error (truncated expression) fills buf with "compile error"
@@ -155,7 +155,7 @@ UTEST(repl_eval_round_trip)
 UTEST(repl_eval_compile_error_path)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     char buf[128];
     buf[0] = '\0';
@@ -167,7 +167,7 @@ UTEST(repl_eval_compile_error_path)
      * "1+" leaves a parse hole — expected expression at col 3 or similar. */
     UASSERT(buf[0] != '\0');  /* some diagnostic was written */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 6: runtime type error (nil < 1 is invalid at M3) returns
@@ -175,7 +175,7 @@ UTEST(repl_eval_compile_error_path)
 UTEST(repl_eval_writes_fatal_message_on_runtime_error)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     char buf[128];
     buf[0] = '\0';
@@ -186,7 +186,7 @@ UTEST(repl_eval_writes_fatal_message_on_runtime_error)
     /* buf must be non-empty — it carries the error message. */
     UASSERT(buf[0] != '\0');
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 7: sequential repl_eval calls accumulate results correctly.
@@ -195,7 +195,7 @@ UTEST(repl_eval_writes_fatal_message_on_runtime_error)
 UTEST(repl_eval_sequential_calls)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     char buf[64];
 
@@ -205,7 +205,7 @@ UTEST(repl_eval_sequential_calls)
     urbi_repl_eval(&vm, NULL, "100 - 1", 7, buf, sizeof(buf));
     UASSERT_EQ(0, strcmp(buf, "99"));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------
@@ -217,7 +217,7 @@ UTEST(repl_eval_sequential_calls)
 UTEST(run_script_returns_ok_discards_result)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule module;
     UASSERT(compile_src(&vm, "7 * 6", &module));
@@ -226,7 +226,7 @@ UTEST(run_script_returns_ok_discards_result)
     UASSERT_EQ(rc, URBI_OK);
 
     umodule_destroy(&module);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------
@@ -238,7 +238,7 @@ UTEST(run_script_returns_ok_discards_result)
 UTEST(load_module_stub_returns_invalid_arg)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule module;
     UASSERT(compile_src(&vm, "42", &module));
@@ -247,7 +247,7 @@ UTEST(load_module_stub_returns_invalid_arg)
     UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
 
     umodule_destroy(&module);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------

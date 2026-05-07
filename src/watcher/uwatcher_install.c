@@ -39,7 +39,7 @@
  * Called by install_watcher_runtime / install_at_event_runtime to transfer
  * ownership of condition/body/onleave closures from the strand's pre-GC
  * free-list to the watcher.  After a successful unlink:
- *   - uvm_run's closure cleanup loop will not free `cl`
+ *   - urbi_vm_run's closure cleanup loop will not free `cl`
  *   - umodule_destroy will not free `cl->proto` or its sub-buffers
  *   - pool_free must free both proto (+ sub-buffers) and the closure */
 static int
@@ -206,7 +206,7 @@ install_watcher_runtime(
     w->body_strand      = NULL;
 
     /* Ownership transfer: unlink cond/body/onleave from s->closure_list so
-     * uvm_run's post-run cleanup loop does not free them.  Only closures that
+     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures that
      * were heap-allocated by OP_CLOSURE will be found on the list; test
      * sentinels ((UClosure *)1 etc.) are not on the list and are not freed.
      * Per-closure ownership bits track which were actually unlinked so

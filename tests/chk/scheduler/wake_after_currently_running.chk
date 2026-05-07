@@ -8,7 +8,7 @@
 # defer-to: M5 (chk runner needs urbi_step driver path)
 #
 # Reason: observing that a sleeping strand wakes while another strand is
-# running requires two concurrent strands.  The chk runner uses the uvm_run
+# running requires two concurrent strands.  The chk runner uses the urbi_vm_run
 # REPL path (no realm); `,` (OP_FORK_DETACH) and sleep-based suspension are
 # not available there.  The single-strand sleep path is covered by
 # tests/chk/scheduler/wait_sleep_basic.chk; this test additionally requires

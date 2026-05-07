@@ -105,7 +105,7 @@ budget_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
 UTEST(vm_step_budget_exhausts_mid_program)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -141,7 +141,7 @@ UTEST(vm_step_budget_exhausts_mid_program)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: per-strand budget manually zeroed → strand soft-yields at next safepoint.
@@ -155,7 +155,7 @@ UTEST(vm_step_budget_exhausts_mid_program)
 UTEST(per_strand_budget_zero_causes_soft_yield)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -199,7 +199,7 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: sched_consume_budget floors at zero (no underflow).
@@ -207,7 +207,7 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
 UTEST(consume_budget_floors_at_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -232,7 +232,7 @@ UTEST(consume_budget_floors_at_zero)
     UASSERT_EQ(s.instruction_budget_remaining, 0U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===========================================================================

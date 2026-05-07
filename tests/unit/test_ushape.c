@@ -61,9 +61,9 @@ UTEST(ushape_uprops_layout_matches_spec) {
 
 UTEST(ushape_root_starts_null_then_lazy_allocates) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    /* Pre-condition: vm->root_shape zero-initialised by uvm_init. */
+    /* Pre-condition: vm->root_shape zero-initialised by urbi_vm_init. */
     UASSERT(vm.root_shape == NULL);
 
     UShape *root = urbi_shape_root(&vm);
@@ -80,12 +80,12 @@ UTEST(ushape_root_starts_null_then_lazy_allocates) {
     /* Type tag is UTYPE_SHAPE (set by urbi_gc_alloc). */
     UASSERT_EQ((int)root->cell.type_tag, (int)UTYPE_SHAPE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(ushape_root_is_idempotent_singleton) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UShape *r1 = urbi_shape_root(&vm);
     UShape *r2 = urbi_shape_root(&vm);
@@ -95,7 +95,7 @@ UTEST(ushape_root_is_idempotent_singleton) {
     UASSERT(r1 == r2);
     UASSERT(r2 == r3);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === transition_add_slot input guards ===
@@ -103,7 +103,7 @@ UTEST(ushape_root_is_idempotent_singleton) {
 
 UTEST(ushape_transition_input_guards) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UShape *root = urbi_shape_root(&vm);
     UASSERT(root != NULL);
@@ -116,7 +116,7 @@ UTEST(ushape_transition_input_guards) {
      * slot_index is out of range and the call returns NULL. */
     UASSERT(urbi_shape_transition_property(&vm, root, 0U, 0U, 1) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T13: transition cache returns same shape for repeated add ===
@@ -127,7 +127,7 @@ UTEST(ushape_transition_input_guards) {
 
 UTEST(ushape_transition_cache_returns_same_shape_for_repeated_add) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UShape *root = urbi_shape_root(&vm);
     /* ustr_intern returns const char* — cast to USymbol* for the opaque
@@ -147,7 +147,7 @@ UTEST(ushape_transition_cache_returns_same_shape_for_repeated_add) {
     UASSERT_EQ((int)urbi_shape_find_slot(s1, foo), 0);
     UASSERT_EQ((int)urbi_shape_find_slot(root, foo), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T13: distinct construction orders yield distinct shapes ===
@@ -157,7 +157,7 @@ UTEST(ushape_transition_cache_returns_same_shape_for_repeated_add) {
 
 UTEST(ushape_distinct_shapes_for_distinct_construction_orders) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UShape *root = urbi_shape_root(&vm);
     USymbol *a = (USymbol *)ustr_intern(&vm, "a", 1);
@@ -182,7 +182,7 @@ UTEST(ushape_distinct_shapes_for_distinct_construction_orders) {
     UASSERT_EQ((int)urbi_shape_find_slot(ba, b), 0);
     UASSERT_EQ((int)urbi_shape_find_slot(ba, a), 1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T17: transition_property installs flag bit + lazy props_table ===
@@ -198,7 +198,7 @@ UTEST(ushape_distinct_shapes_for_distinct_construction_orders) {
 
 UTEST(ushape_transition_property_installs_flag_and_lazy_props_table) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UShape *root = urbi_shape_root(&vm);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -246,7 +246,7 @@ UTEST(ushape_transition_property_installs_flag_and_lazy_props_table) {
     UASSERT(urbi_shape_transition_property(&vm, foo_shape,
         /*slot_index=*/1U, URBI_SLOT_FLAG_OGET, 1) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_ushape_suite(void) {

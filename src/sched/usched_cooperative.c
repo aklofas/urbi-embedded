@@ -14,7 +14,7 @@
  *                             strands; -- when dispatch returns DEAD).
  *                             Invariant: number of strands in READY or
  *                             RUNNING state (i.e. consuming or eligible to
- *                             consume CPU on this VM). The uvm_run transient
+ *                             consume CPU on this VM). The urbi_vm_run transient
  *                             strand is intentionally excluded: it bypasses
  *                             sched_strand_make_runnable and balances its own
  *                             READY-cycle increments at dequeue.

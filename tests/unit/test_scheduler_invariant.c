@@ -42,7 +42,7 @@ static int strand_on_realm_list(URealm *r, UStrand *s)
 UTEST(every_state_transition_preserves_strand_in_realm_list)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -105,7 +105,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
 
     /* Cleanup: realm destroy walks strands_head to free both. */
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Test: multiple strands across mixed states all stay on realm list === */
@@ -113,7 +113,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
 UTEST(mixed_state_strands_all_remain_on_realm_list)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -145,7 +145,7 @@ UTEST(mixed_state_strands_all_remain_on_realm_list)
     UASSERT(strand_on_realm_list(r, d));
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

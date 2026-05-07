@@ -46,7 +46,7 @@ count_all_cells(UVM *vm)
 UTEST(utag_gc_promoted)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int cells_before = count_all_cells(&vm);
 
@@ -73,7 +73,7 @@ UTEST(utag_gc_promoted)
         UASSERT_EQ((unsigned)t->name.kind, (unsigned)UVAL_NIL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: sizeof(UTag) >= 64 (spec #3 §3.4: 48 → 64 B) ===== */
@@ -92,7 +92,7 @@ UTEST(utag_sizeof_m5)
 UTEST(utag_walker_registered)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Descriptor must be installed. */
     UASSERT(vm.type_table[UTYPE_TAG] != NULL);
@@ -102,7 +102,7 @@ UTEST(utag_walker_registered)
         UASSERT(vm.type_table[UTYPE_TAG]->walk_payload != NULL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

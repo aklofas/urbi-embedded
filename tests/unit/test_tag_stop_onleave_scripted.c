@@ -144,11 +144,11 @@ run_to_no_runnable(UVM *vm)
 UTEST(scripted_tag_stop_drains_onleave)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *gr = urbi_realm_global(&vm);
     UASSERT(gr != NULL);
-    if (gr == NULL) { uvm_destroy(&vm); return; }
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc;
     rc = urbi_realm_set_global(&vm, gr, "x",     1, make_int(0));
@@ -165,7 +165,7 @@ UTEST(scripted_tag_stop_drains_onleave)
         NULL);
     UASSERT_EQ(URBI_OK, rc);
     if (rc != URBI_OK) {
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -182,7 +182,7 @@ UTEST(scripted_tag_stop_drains_onleave)
     if (rc != URBI_OK) {
         while (vm.active_watchers_head != NULL)
             urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -234,7 +234,7 @@ UTEST(scripted_tag_stop_drains_onleave)
      * urbi_tag_stop cascaded ALL watchers off active list into pending,
      * and drain unregistered them all.  No active watchers should remain. */
     UASSERT(vm.active_watchers_head == NULL);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

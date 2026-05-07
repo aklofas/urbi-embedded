@@ -128,7 +128,7 @@ void   urbi_gc_force_full(struct UVM *vm);
 size_t urbi_gc_bytes_allocated_inline(struct UVM *vm);
 
 /* === Root provider forward declarations (T26) ===
- * Each subsystem's root-walker function is declared here so that uvm_init
+ * Each subsystem's root-walker function is declared here so that urbi_vm_init
  * can register them without pulling in each subsystem's full header.
  * Definitions live in their respective source files.
  *

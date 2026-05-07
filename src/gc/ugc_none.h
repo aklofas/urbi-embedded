@@ -9,7 +9,7 @@
  * This header satisfies the strategy-router include path so that the
  * URBI_GC_NONE compile-smoke build can verify the strategy interface contract
  * holds at the header level.  A real heap-freeze allocator (fixed arena, no
- * sweep, destroy on uvm_destroy) is deferred to v2.
+ * sweep, destroy on urbi_vm_destroy) is deferred to v2.
  *
  * All barriers are no-op static inlines.  All allocator ops are declared as
  * no-op stubs; linking against a real URBI_GC_NONE library is deferred to v2.

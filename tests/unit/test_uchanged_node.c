@@ -21,7 +21,7 @@
 static void uchanged_node_head_null_at_create(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -31,7 +31,7 @@ static void uchanged_node_head_null_at_create(void)
         UASSERT(o->changed_events_head == NULL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: sizeof(UObject) >= 56 ===== */

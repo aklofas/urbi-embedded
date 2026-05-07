@@ -57,7 +57,7 @@ static void *vm_alloc(UVM *vm, void *ptr, size_t nbytes) {
     if (vm->alloc_fn != NULL) {
         return vm->alloc_fn(ptr, nbytes, vm->alloc_ud);
     }
-    /* Hosted-fallback only: caller should have wired alloc_fn at uvm_init.
+    /* Hosted-fallback only: caller should have wired alloc_fn at urbi_vm_init.
      * Returning NULL forces propagation as OOM. */
     return NULL;
 }

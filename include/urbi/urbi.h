@@ -86,7 +86,7 @@ struct URealm *urbi_realm_create(struct UVM *vm);
 void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
 
 /* Return (auto-creating if needed) the VM-level global Realm singleton.
- * The global Realm has REALM_GLOBAL set and persists until uvm_destroy().
+ * The global Realm has REALM_GLOBAL set and persists until urbi_vm_destroy().
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
@@ -347,6 +347,24 @@ typedef struct UModuleInstance UModuleInstance;
 
 UModuleInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
 void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
+
+/* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
+ *
+ * Hosts allocate a UVM struct themselves, initialize it with urbi_vm_init
+ * (passing a host allocator), drive it via urbi_step / urbi_run_chunk /
+ * urbi_repl_eval, and tear it down with urbi_vm_destroy.  urbi_vm_run is
+ * a convenience wrapper that runs a module's root chunk to completion.
+ *
+ * Pre-v0.5.5 these were `uvm_*` and lived in src/vm/uvm.h; tests had to
+ * include the internal header to call them.  Wave 3 promotes the names
+ * to `urbi_vm_*` and publishes the supporting types via urbi/types.h.
+ * Closes API-013 + API-027.
+ *
+ * Conservative scope: pure rename.  Signatures, semantics, and error
+ * codes are byte-identical to the pre-v0.5.5 internal forms. */
+void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+void     urbi_vm_destroy(struct UVM *vm);
+UVMError urbi_vm_run    (struct UVM *vm, const struct UModule *module, UValue *out);
 
 #ifdef URBI_DEBUG
 /* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.

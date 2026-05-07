@@ -64,7 +64,7 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
  * URBI_DEFERRED_SLOT_CHANGE_RING_SIZE sets the capacity of the per-VM
  * deferred-emit ring used when a slot-write barrier fires inside a sync
  * slot-change body (re-entrancy).  Default 64; footprint preset → 16.
- * The ring is heap-allocated (one calloc at uvm_init), not GC-managed. */
+ * The ring is heap-allocated (one calloc at urbi_vm_init), not GC-managed. */
 #ifndef URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
 #  define URBI_DEFERRED_SLOT_CHANGE_RING_SIZE  64
 #endif
@@ -130,10 +130,10 @@ typedef struct UVM {
 
     /* === M5 T53/T54 — native proto objects ===
      * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
-     *   Allocated at uvm_init by event_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by event_native_register.  NULL until then.
      *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
      * tag_proto: UObject carrying native getter slots (enter/leave).
-     *   Allocated at uvm_init by tag_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by tag_native_register.  NULL until then.
      * Both protos have atom_event / atom_tag as their single prototype respectively,
      * mirroring the M4 atom hierarchy. */
     struct UObject *event_proto;
@@ -149,15 +149,15 @@ typedef struct UVM {
     struct UModuleInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
-     * recent uvm_run() call.  Freed at the start of the next uvm_run() or
-     * on uvm_destroy().  Allows callers to inspect *out without immediately
+     * recent urbi_vm_run() call.  Freed at the start of the next urbi_vm_run() or
+     * on urbi_vm_destroy().  Allows callers to inspect *out without immediately
      * freeing it, while preventing leaks across multi-run sessions (REPL). */
     UClosure   *last_return_closure;
 
     /* ================================================================
      * M3 additions (rows 8, 9, 10, 11 of the pre-M3 design bundle)
      * All pointer fields zero-init to NULL; uint fields zero-init to 0.
-     * Non-zero defaults set explicitly in uvm_init().
+     * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
 
     /* --- Row 8 + Rule X: 5-flag liveness counters ---
@@ -306,7 +306,7 @@ typedef struct UVM {
      * slot_change_ring_full_warned: one-shot flag; set when the deferred ring
      *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
      * deferred_slot_changes: heap-allocated ring buffer (cap entries),
-     *   freed in uvm_destroy.  NOT GC-managed — entries live only while
+     *   freed in urbi_vm_destroy.  NOT GC-managed — entries live only while
      *   head != tail; drain logic (R6) clears each slot after firing.
      * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
@@ -338,11 +338,11 @@ typedef struct UVM {
 
 /* Initialize vm. On hosted builds, passing alloc_fn == NULL wires up a
    stdlib-realloc shim internally. On freestanding builds the caller MUST
-   supply alloc_fn; if NULL is passed, uvm_init still returns (cannot fail
-   at M1), but any subsequent uvm_run will NULL-deref in the frame
+   supply alloc_fn; if NULL is passed, urbi_vm_init still returns (cannot fail
+   at M1), but any subsequent urbi_vm_run will NULL-deref in the frame
    allocation path — caller's bug. Zero-initializes last_error and
    last_errmsg. */
-void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
 /* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
@@ -357,14 +357,14 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    error, vm->last_error and vm->last_errmsg are populated and *out is
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
-   them after each uvm_run call without stale state from prior runs. */
-UVMError uvm_run(UVM *vm, const UModule *module, UValue *out);
+   them after each urbi_vm_run call without stale state from prior runs. */
+UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
-void uvm_destroy(UVM *vm);
+void urbi_vm_destroy(UVM *vm);
 
 /* Allocate vm->event_proto + vm->tag_proto and install their native slots.
- * Must be called after uvm_init.  Separated from uvm_init because unit tests
+ * Must be called after urbi_vm_init.  Separated from urbi_vm_init because unit tests
  * that check exact post-init cell / intern counts would break otherwise
  * (same lazy pattern as the atom-family singletons).
  * Safe to call multiple times — re-entrant calls are no-ops if protos already

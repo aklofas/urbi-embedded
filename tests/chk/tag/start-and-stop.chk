@@ -6,7 +6,7 @@
 # Reason:
 #   The fixture uses '&' (OP_FORK_JOIN) which requires the M5 chk driver.
 #   tag.stop() is also used implicitly via the |{}| pipe pattern.  At M3 the
-#   join opcode produces TypeError in the uvm_run REPL path.
+#   join opcode produces TypeError in the urbi_vm_run REPL path.
 #
 # Original urbiscript (activate at M5 with urbi_step chk driver):
 # # function f() { return 1 } | {};

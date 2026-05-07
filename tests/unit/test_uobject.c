@@ -106,9 +106,9 @@ UTEST(uobject_public_atom_tag_values_match_internal) {
 
 UTEST(uobject_root_object_singleton_has_atom_family_object) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    /* Pre-condition: vm->atom_object zero-initialised by uvm_init. */
+    /* Pre-condition: vm->atom_object zero-initialised by urbi_vm_init. */
     UASSERT(vm.atom_object == NULL);
 
     UObject *root = urbi_object_root(&vm);
@@ -137,7 +137,7 @@ UTEST(uobject_root_object_singleton_has_atom_family_object) {
     UASSERT(urbi_object_root(&vm) == root);
     UASSERT(vm.atom_object == root);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T8: non-root atom singleton (Integer) ===
@@ -147,7 +147,7 @@ UTEST(uobject_root_object_singleton_has_atom_family_object) {
 
 UTEST(uobject_atom_integer_singleton_links_to_root) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
     UASSERT(integer != NULL);
@@ -170,14 +170,14 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
     UASSERT(urbi_object_atom(&vm, URBI_ATOM_INTEGER_F) == integer);
     UASSERT(vm.atom_integer == integer);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T8: independent atoms across the full set === */
 
 UTEST(uobject_atom_singletons_are_independent) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *flt = urbi_object_atom(&vm, URBI_ATOM_FLOAT_F);
     UObject *str = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
@@ -204,14 +204,14 @@ UTEST(uobject_atom_singletons_are_independent) {
     UASSERT((UObject *)(str->protos >> 1) == root);
     UASSERT((UObject *)(tag->protos >> 1) == root);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T8: URBI_ATOM_OBJECT_F routes through urbi_object_root === */
 
 UTEST(uobject_atom_via_object_f_returns_root) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *via_atom = urbi_object_atom(&vm, URBI_ATOM_OBJECT_F);
     UObject *via_root = urbi_object_root(&vm);
@@ -219,20 +219,20 @@ UTEST(uobject_atom_via_object_f_returns_root) {
     UASSERT(via_atom != NULL);
     UASSERT(via_atom == via_root);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T8: invalid family tag returns NULL === */
 
 UTEST(uobject_atom_invalid_family_returns_null) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* 9..15 reserved per uobject.h; >= 9 must not match the switch. */
     UObject *o = urbi_object_atom(&vm, (URBIAtomFamilyTag)9);
     UASSERT(o == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T11: NULL-arg defensive contracts on the public mutators ===
@@ -242,7 +242,7 @@ UTEST(uobject_atom_invalid_family_returns_null) {
 
 UTEST(uobject_proto_mutators_reject_null_args) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_root(&vm);
     UASSERT(o != NULL);
@@ -264,7 +264,7 @@ UTEST(uobject_proto_mutators_reject_null_args) {
     /* NULL entries inside a non-NULL list are also rejected. */
     UASSERT_EQ((int)urbi_object_set_protos(&vm, o, junk, 1U), (int)URBI_ERR_INVALID_ARG);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T9: UPROTOS_FOREACH dispatches across all three storage forms ===
@@ -275,7 +275,7 @@ UTEST(uobject_proto_mutators_reject_null_args) {
 
 UTEST(uobject_protos_foreach_empty_form_yields_nothing) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_root(&vm);   /* root has empty-form protos (0) */
     UASSERT(o != NULL);
@@ -293,12 +293,12 @@ UTEST(uobject_protos_foreach_empty_form_yields_nothing) {
     UASSERT_EQ((int)urbi_object_proto_count(o), 0);
     UASSERT(urbi_object_proto_at(o, 0U) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_protos_foreach_single_form_yields_one) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Integer atom uses the single-tag form ((root << 1) | 1). */
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
@@ -322,12 +322,12 @@ UTEST(uobject_protos_foreach_single_form_yields_one) {
     UASSERT(urbi_object_proto_at(integer, 0U) == root);
     UASSERT(urbi_object_proto_at(integer, 1U) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_protos_foreach_heap_form_yields_all) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *root = urbi_object_root(&vm);
     UObject *a    = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
@@ -374,7 +374,7 @@ UTEST(uobject_protos_foreach_heap_form_yields_all) {
      * within the well-defined empty case. */
     root->protos = 0U;
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T10: prototype-mutation primitives ===
@@ -387,7 +387,7 @@ UTEST(uobject_protos_foreach_heap_form_yields_all) {
  * The five transitions exercised below cover all storage-form pairs the
  * higher-level mutators (T11) can produce.
  *
- * vm->topology_gen is initialised to 1 at uvm_init (per pre-M4 topology
+ * vm->topology_gen is initialised to 1 at urbi_vm_init (per pre-M4 topology
  * spec §3.1, reserves 0 as the IC-unfilled sentinel).  Each primitive call
  * bumps by exactly 1, so we sample pre/post around the call under test
  * after all the setup allocations have happened. */
@@ -408,7 +408,7 @@ make_uprotos(UVM *vm, UObject **src, uint32_t n) {
 
 UTEST(uobject_set_protos_empty_to_single_bumps_topology) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -425,12 +425,12 @@ UTEST(uobject_set_protos_empty_to_single_bumps_topology) {
     UASSERT(urbi_object_proto_at(o, 0U) == p);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_single_to_heap_bumps_topology) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -459,12 +459,12 @@ UTEST(uobject_set_protos_single_to_heap_bumps_topology) {
     UASSERT(urbi_object_proto_at(o, 2U) == c);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_heap_to_fresh_heap_bumps_topology) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -498,12 +498,12 @@ UTEST(uobject_set_protos_heap_to_fresh_heap_bumps_topology) {
     UASSERT(urbi_object_proto_at(o, 2U) == a);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_heap_to_single_collapse_bumps_topology) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -526,12 +526,12 @@ UTEST(uobject_set_protos_heap_to_single_collapse_bumps_topology) {
     UASSERT(urbi_object_proto_at(o, 0U) == a);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -548,7 +548,7 @@ UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
     UASSERT_EQ((int)urbi_object_proto_count(o), 0);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T11: behavioural contracts on add_proto / remove_proto / set_protos ===
@@ -562,7 +562,7 @@ UTEST(uobject_set_protos_single_to_empty_collapse_bumps_topology) {
 
 UTEST(uobject_add_proto_prepends_position_zero) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -579,12 +579,12 @@ UTEST(uobject_add_proto_prepends_position_zero) {
     UASSERT(urbi_object_proto_at(o, 0U) == a);   /* prepended */
     UASSERT(urbi_object_proto_at(o, 1U) == b);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_remove_absent_proto_is_silent_noop) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o       = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *present = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -600,12 +600,12 @@ UTEST(uobject_remove_absent_proto_is_silent_noop) {
     UASSERT_EQ((int)urbi_object_proto_count(o), 1);
     UASSERT(urbi_object_proto_at(o, 0U) == present);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_dedups_first_occurrence_wins) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -620,12 +620,12 @@ UTEST(uobject_set_protos_dedups_first_occurrence_wins) {
     UASSERT(urbi_object_proto_at(o, 0U) == a);
     UASSERT(urbi_object_proto_at(o, 1U) == b);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_valid_proto_rejects_cross_atom_family) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
     UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
@@ -640,12 +640,12 @@ UTEST(uobject_valid_proto_rejects_cross_atom_family) {
     /* No partial state: Integer's proto count is unchanged. */
     UASSERT_EQ((int)urbi_object_proto_count(integer), (int)before);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *root    = urbi_object_root(&vm);
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
@@ -669,7 +669,7 @@ UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
     UASSERT(integer->protos == before_p);
     UASSERT(vm.topology_gen == before_g);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T12: cycle-safe DFS lookup ===
@@ -689,7 +689,7 @@ UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
 
 UTEST(uobject_lookup_safe_under_cycle) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Build a→b→a cycle in the proto graph.  Atom OBJECT permits any
      * inheritance (valid_proto accepts root-Object on either side), so
@@ -720,7 +720,7 @@ UTEST(uobject_lookup_safe_under_cycle) {
     UASSERT_EQ((int)a->lookup_stamp, (int)(uint32_t)vm.lookup_id);
     UASSERT_EQ((int)b->lookup_stamp, (int)(uint32_t)vm.lookup_id);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
@@ -731,8 +731,8 @@ UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
      * miss-calls on a freshly allocated object therefore leave
      * vm->lookup_id == initial + 4. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
-    UASSERT_EQ((int)vm.lookup_id, 1);   /* uvm_init invariant per pre-M4 spec */
+    urbi_vm_init(&vm, NULL, NULL);
+    UASSERT_EQ((int)vm.lookup_id, 1);   /* urbi_vm_init invariant per pre-M4 spec */
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -749,7 +749,7 @@ UTEST(uobject_lookup_pre_bumps_lookup_id_each_call) {
      * which is the fallback-retry pass at the end of the second call. */
     UASSERT_EQ((int)o->lookup_stamp, 5);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_lookup_id_rollover_clears_stamps) {
@@ -769,7 +769,7 @@ UTEST(uobject_lookup_id_rollover_clears_stamps) {
      * lookup_id explicitly to UINT32_MAX to drive the wrap on entry to
      * a call (rather than mid-call), keeping the assertion shape simple. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -797,14 +797,14 @@ UTEST(uobject_lookup_id_rollover_clears_stamps) {
     /* o2 was cleared by the wrap pass and never re-stamped. */
     UASSERT_EQ((int)o2->lookup_stamp, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
     /* Direct test of urbi_object_lookup_id_force_wrap: every UObject's
      * lookup_stamp returns to 0, lookup_id resets to 1. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o1 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *o2 = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -825,7 +825,7 @@ UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
     UASSERT_EQ((int)o3->lookup_stamp, 0);
     UASSERT_EQ((int)vm.lookup_id, 1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T26: urbi_object_set_local_slot ===
@@ -837,7 +837,7 @@ UTEST(uobject_lookup_id_force_wrap_clears_all_object_stamps) {
 
 UTEST(uobject_set_local_slot_grows_slots_array_and_transitions_shape) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -878,14 +878,14 @@ UTEST(uobject_set_local_slot_grows_slots_array_and_transitions_shape) {
     UASSERT_EQ((int)o->slots[0].v.i, 7);   /* preserved */
     UASSERT_EQ((int)o->slots[1].v.i, 11);  /* new */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
     /* Re-setting an already-local slot is in-place value update.  Shape
      * stays put (count unchanged); no fresh USlotArray allocation. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -910,7 +910,7 @@ UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
     UASSERT(o->slots == slots_after_first);       /* slots wrapper unchanged */
     UASSERT_EQ((int)o->slots[0].v.i, 2);          /* value overwritten */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T40: fallback retry on lookup miss ===
@@ -930,7 +930,7 @@ UTEST(uobject_set_local_slot_replaces_existing_value_when_present) {
 
 UTEST(uobject_fallback_retry_on_miss) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -955,14 +955,14 @@ UTEST(uobject_fallback_retry_on_miss) {
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 99);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_fallback_lookup_of_fallback_itself_does_not_recurse) {
     /* Looking up "fallback" on an object that doesn't have one must NOT
      * trigger the retry (would recurse forever).  Returns -1 cleanly. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -973,14 +973,14 @@ UTEST(uobject_fallback_lookup_of_fallback_itself_does_not_recurse) {
     out.kind = UVAL_NIL;
     UASSERT_EQ(urbi_object_lookup(&vm, o, fallback_sym, &out), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
     /* If the receiver has no "fallback" slot AND the original name misses,
      * the retry also misses — overall result is -1. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *bogus = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
@@ -989,7 +989,7 @@ UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
     out.kind = UVAL_NIL;
     UASSERT_EQ(urbi_object_lookup(&vm, o, bogus, &out), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T39: urbi_object_clone ===
@@ -1001,7 +1001,7 @@ UTEST(uobject_fallback_no_fallback_slot_returns_miss) {
 
 UTEST(uobject_clone_preserves_atom_family_and_protos_single) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
     UASSERT(integer != NULL);
@@ -1032,14 +1032,14 @@ UTEST(uobject_clone_preserves_atom_family_and_protos_single) {
     /* Parent flagged IS_PROTOTYPE by set_protos_single (called inside clone). */
     UASSERT((integer->flags & URBI_OBJ_FLAG_IS_PROTOTYPE) != 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_clone_root_returns_object_atom_chained) {
     /* Cloning the root Object yields a fresh Object whose single proto is
      * the root itself.  Atom family stays URBI_ATOM_OBJECT. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *root = urbi_object_root(&vm);
     UObject *c    = urbi_object_clone(&vm, root);
@@ -1048,17 +1048,17 @@ UTEST(uobject_clone_root_returns_object_atom_chained) {
     UASSERT_EQ((int)urbi_object_proto_count(c), 1);
     UASSERT(urbi_object_proto_at(c, 0U) == root);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uobject_clone_null_returns_null) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(urbi_object_clone(&vm, NULL) == NULL);
     UASSERT(urbi_object_clone(NULL, NULL) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_uobject_suite(void) {

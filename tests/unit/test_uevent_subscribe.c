@@ -38,7 +38,7 @@ make_watcher(UVM *vm)
 UTEST(uevent_at_watchers_append_preserves_fifo)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -59,7 +59,7 @@ UTEST(uevent_at_watchers_append_preserves_fifo)
     UASSERT(w2->next_in_event   == w3);
     UASSERT(w3->next_in_event   == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: remove unlinks the target ================================ */
@@ -67,7 +67,7 @@ UTEST(uevent_at_watchers_append_preserves_fifo)
 UTEST(uevent_at_watchers_remove_unlinks)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -86,7 +86,7 @@ UTEST(uevent_at_watchers_remove_unlinks)
     UASSERT(e->at_watchers_head == w2);
     UASSERT(w1->next_in_event   == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point =============================================== */

@@ -12,7 +12,7 @@
 static void uvm_trace_fields_zero_at_create(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT_EQ(0, (int)vm.in_watcher_install);
     UASSERT_EQ(0, (int)vm.trace_overflow);
@@ -24,7 +24,7 @@ static void uvm_trace_fields_zero_at_create(void)
     /* Cap macro defined and large enough for minimum useful read-set. */
     UASSERT(URBI_WATCHER_READSET_MAX >= 4);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

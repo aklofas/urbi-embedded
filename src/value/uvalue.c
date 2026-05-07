@@ -106,7 +106,7 @@ urbi_register_type(UVM *vm, const UType *type)
          * M4 NOTE: built-in types (UTYPE_OBJECT/CLOSURE/STRING/etc., tags 1..63)
          * cannot be registered through urbi_register_type — they must write
          * vm->type_table[tag] directly via an internal init function
-         * (e.g., builtin_types_init(vm) called from uvm_init). This guard exists
+         * (e.g., builtin_types_init(vm) called from urbi_vm_init). This guard exists
          * to catch accidental host misuse of those slots.
          * URBI_INTERNAL_ASSERT fires in URBI_DEBUG builds; returns 0 in release. */
         URBI_INTERNAL_ASSERT(0);

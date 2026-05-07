@@ -20,13 +20,13 @@ int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
 static void setup(UEmitter *e, UModule *m, UArena *a, UVM *v) {
     *m = (UModule){0};
     uarena_init(a, 0);
-    uvm_init(v, NULL, NULL);
+    urbi_vm_init(v, NULL, NULL);
     uemit_init(e, m, a, v, "test");
 }
 static void teardown(UModule *m, UArena *a, UVM *v) {
     uarena_destroy(a);
     umodule_destroy(m);
-    uvm_destroy(v);
+    urbi_vm_destroy(v);
 }
 
 UTEST(funcstate_open_zeroes_freereg_and_nactvar) {

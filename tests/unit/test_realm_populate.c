@@ -56,17 +56,17 @@ local_lookup(UVM *vm, UObject *obj, const char *name, UValue *out)
 
 UTEST(realm_create_global_object_is_not_null) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UASSERT(r->global_object != NULL);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_create_populates_object_global) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UValue v;
@@ -75,12 +75,12 @@ UTEST(realm_create_populates_object_global) {
     UASSERT_EQ(UVAL_OBJECT, (int)v.kind);
     UASSERT(v.v.p == vm.atom_object);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_create_populates_tag_global) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UValue v;
@@ -89,12 +89,12 @@ UTEST(realm_create_populates_tag_global) {
     UASSERT_EQ(UVAL_OBJECT, (int)v.kind);
     UASSERT(v.v.p == vm.tag_proto);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_create_populates_event_global) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UValue v;
@@ -103,12 +103,12 @@ UTEST(realm_create_populates_event_global) {
     UASSERT_EQ(UVAL_OBJECT, (int)v.kind);
     UASSERT(v.v.p == vm.event_proto);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_create_populates_nil_global) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UValue v;
@@ -116,13 +116,13 @@ UTEST(realm_create_populates_nil_global) {
     UASSERT_EQ(0, rc);
     UASSERT_EQ(UVAL_NIL, (int)v.kind);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_self_loop_global) {
     /* The "Realm" slot on global_object should point back to global_object. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UValue v;
@@ -131,13 +131,13 @@ UTEST(realm_self_loop_global) {
     UASSERT_EQ(UVAL_OBJECT, (int)v.kind);
     UASSERT(v.v.p == r->global_object);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_global_object_slot_is_const) {
     /* The "Object" slot should carry the CONSTANT flag bit. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UObject *go = r->global_object;
@@ -150,27 +150,27 @@ UTEST(realm_global_object_slot_is_const) {
     uint8_t nibble = (uint8_t)((go->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU);
     UASSERT(nibble & URBI_SLOT_FLAG_CONSTANT);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_has_all_15_globals) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     /* global_object shape count should be at least 15. */
     UASSERT((int)r->global_object->shape->count >= 15);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(realm_create_oom_realm_struct_returns_null) {
     /* Use a spy alloc that fails on the very first call.  Pass it to
-     * uvm_init; the vm init itself may fail silently (event_ring etc.)
+     * urbi_vm_init; the vm init itself may fail silently (event_ring etc.)
      * but realm_create must return NULL without crashing. */
     RealmSpy spy = { 0, -1 };   /* start with unlimited allocs */
     UVM vm;
-    uvm_init(&vm, realm_spy_alloc, &spy);
+    urbi_vm_init(&vm, realm_spy_alloc, &spy);
 
     /* Reset counter and set fail threshold so only 1 alloc succeeds.
      * realm_create's first alloc is the URealm struct itself. */
@@ -182,7 +182,7 @@ UTEST(realm_create_oom_realm_struct_returns_null) {
 
     /* Restore stdlib alloc for clean teardown. */
     spy.fail_at = -1;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

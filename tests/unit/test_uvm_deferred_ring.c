@@ -13,7 +13,7 @@
 static void uvm_deferred_slot_change_ring_alloc(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.deferred_slot_changes != NULL);
     UASSERT_EQ(0, (int)vm.deferred_slot_changes_head);
@@ -21,7 +21,7 @@ static void uvm_deferred_slot_change_ring_alloc(void)
     UASSERT(vm.deferred_slot_changes_cap >= 16);
     UASSERT_EQ(0, (int)vm.slot_change_reentrancy_warned);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

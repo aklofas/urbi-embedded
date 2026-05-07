@@ -101,7 +101,7 @@ static uint32_t enc_pop_tag(uint8_t tag_reg) {
  * ============================================================ */
 
 /* Init a strand for a synthetic module.
-   module is read-only; strand fields set up as uvm_run does for transient strands. */
+   module is read-only; strand fields set up as urbi_vm_run does for transient strands. */
 static int strand_setup(UStrand *s, UVM *vm,
                         const uint32_t *instructions,
                         const UValue   *constants,
@@ -148,7 +148,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
     instrs[1] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -172,7 +172,7 @@ UTEST(dispatch_loop_yields_on_op_yield) {
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -184,7 +184,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
     instrs[0] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -204,7 +204,7 @@ UTEST(dispatch_loop_dies_on_top_level_ret) {
     UASSERT(consumed >= 1);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -232,7 +232,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
     instrs[2] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -254,7 +254,7 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
     UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -270,7 +270,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     instrs[1] = enc_jmp(-1);   /* backward: safepoint every iteration */
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -298,7 +298,7 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -316,7 +316,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
     instrs[2] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -338,7 +338,7 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
     UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -357,7 +357,7 @@ UTEST(dispatch_loop_multiple_yields) {
     instrs[2] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -402,7 +402,7 @@ UTEST(dispatch_loop_multiple_yields) {
     UASSERT(c3 >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -419,7 +419,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     instrs[3] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -444,7 +444,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -468,7 +468,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     instrs[4] = enc_ret_reg(1);        /* return R[1] (the caught value) */
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -514,7 +514,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     UASSERT_EQ((long long)retval.v.i, 42LL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -533,7 +533,7 @@ UTEST(dispatch_loop_loadk_and_ret) {
     consts[0].v.i  = 77;
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -554,7 +554,7 @@ UTEST(dispatch_loop_loadk_and_ret) {
     UASSERT_EQ((long long)retval.v.i, 77LL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -574,7 +574,7 @@ UTEST(dispatch_loop_move_and_add) {
     consts[1].kind = (uint8_t)UVAL_INT; consts[1].v.i = 7;
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -594,7 +594,7 @@ UTEST(dispatch_loop_move_and_add) {
     (void)consumed;
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -612,7 +612,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
     instrs[3] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -636,7 +636,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -683,7 +683,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     static UValue no_consts[1];
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -719,7 +719,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     UASSERT(consumed >= 3U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -737,7 +737,7 @@ UTEST(dispatch_loop_loadnil_then_move) {
     static UValue no_consts[1];
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -761,7 +761,7 @@ UTEST(dispatch_loop_loadnil_then_move) {
     UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -781,7 +781,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
     instrs[2] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -803,7 +803,7 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
     UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -823,7 +823,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
     instrs[2] = enc_ret();
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
@@ -845,7 +845,7 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
     UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================

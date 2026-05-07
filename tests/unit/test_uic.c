@@ -70,7 +70,7 @@ UTEST(uic_flag_bits_distinct) {
 
 UTEST(module_instance_basic_create) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
@@ -127,12 +127,12 @@ UTEST(module_instance_basic_create) {
 
     urbi_module_instance_destroy(&vm, mi);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(module_instance_two_instances_independent) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
@@ -179,7 +179,7 @@ UTEST(module_instance_two_instances_independent) {
     urbi_module_instance_destroy(&vm, mi_b);
     urbi_module_instance_destroy(&vm, mi_a);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(module_instance_zero_nested_protos) {
@@ -187,7 +187,7 @@ UTEST(module_instance_zero_nested_protos) {
      * still be allocated with n = 1 (just the root-chunk sentinel) and
      * zero IC bytes trailing the entries[] array. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
 
@@ -200,7 +200,7 @@ UTEST(module_instance_zero_nested_protos) {
 
     urbi_module_instance_destroy(&vm, mi);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(module_instance_proto_with_zero_ic_count) {
@@ -208,7 +208,7 @@ UTEST(module_instance_proto_with_zero_ic_count) {
      * NULL for that entry; bulk allocation accounts for zero IC bytes
      * from this proto. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
@@ -224,16 +224,16 @@ UTEST(module_instance_proto_with_zero_ic_count) {
 
     urbi_module_instance_destroy(&vm, mi);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(module_instance_invalid_args_return_null) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UModule m = {0};
     UASSERT(urbi_module_instance_create(NULL, &m) == NULL);
     UASSERT(urbi_module_instance_create(&vm, NULL) == NULL);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T25: slow-path helpers ===
@@ -250,7 +250,7 @@ UTEST(get_slow_resolves_via_proto_walk_and_fills_ic) {
      * resolve via the prototype walk; the IC entry must record child's
      * shape (not parent's) and clear FLAG_LOCAL (slot lives on parent). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -277,13 +277,13 @@ UTEST(get_slow_resolves_via_proto_walk_and_fills_ic) {
     UASSERT(ic.slots[0] == &parent->slots[0]);
     UASSERT_EQ((int)ic.replace_cursor, 1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(get_slow_local_hit_sets_flag_local) {
     /* Receiver owns the slot directly — IC fill must record FLAG_LOCAL. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -303,14 +303,14 @@ UTEST(get_slow_local_hit_sets_flag_local) {
     UASSERT(ic.flags[0] & URBI_SLOT_FLAG_LOCAL);
     UASSERT(ic.slots[0] == &o->slots[0]);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(get_slow_miss_returns_minus_one) {
     /* No slot named foo anywhere on the chain → urbi_slot_get_slow returns
      * -1 and does NOT fill the IC. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *missing = (USymbol *)ustr_intern(&vm, "missing", 7);
 
@@ -320,7 +320,7 @@ UTEST(get_slow_miss_returns_minus_one) {
     UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic, &out), -1);
     UASSERT_EQ((int)ic.n, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(set_slow_does_cow_when_resolution_via_proto_chain) {
@@ -328,7 +328,7 @@ UTEST(set_slow_does_cow_when_resolution_via_proto_chain) {
      * After the set: child has its own local slot bar = 42; parent.bar
      * is unchanged at 0. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -361,13 +361,13 @@ UTEST(set_slow_does_cow_when_resolution_via_proto_chain) {
     UASSERT(pidx >= 0);
     UASSERT_EQ((int)parent->slots[pidx].v.i, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(set_slow_local_hit_writes_in_place_and_fills_ic) {
     /* Receiver already owns the slot — write is in-place and the IC fills. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -396,14 +396,14 @@ UTEST(set_slow_local_hit_writes_in_place_and_fills_ic) {
     UASSERT(ic.flags[0] & URBI_SLOT_FLAG_LOCAL);
     UASSERT(ic.slots[0] == &o->slots[0]);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(set_slow_miss_installs_local_slot_on_receiver) {
     /* No slot anywhere on the chain → install on receiver via leaf-shape-
      * add.  No IC fill (subsequent miss-by-shape will re-resolve). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *fresh = (USymbol *)ustr_intern(&vm, "fresh", 5);
@@ -421,12 +421,12 @@ UTEST(set_slow_miss_installs_local_slot_on_receiver) {
     UASSERT_EQ((int)o->slots[idx].v.i, 7);
     UASSERT_EQ((int)ic.n, 0);   /* no fill on the miss-install path */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(slot_helpers_reject_invalid_args) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *n = (USymbol *)ustr_intern(&vm, "n", 1);
     UIC ic = {0};
@@ -449,14 +449,14 @@ UTEST(slot_helpers_reject_invalid_args) {
     UASSERT_EQ(urbi_slot_get_slow(&vm, o, &ic_no_name, &out), -1);
     UASSERT_EQ(urbi_slot_set_slow(&vm, o, &ic_no_name, v), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(resolve_slot_finds_via_protos) {
     /* Direct test of urbi_object_resolve_slot — the shared helper used by
      * the slow paths and (later) USlotHandle. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *gp = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *p  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -484,7 +484,7 @@ UTEST(resolve_slot_finds_via_protos) {
     UASSERT_EQ(urbi_object_resolve_slot(NULL, c, deep, &holder, &idx), -1);
     UASSERT_EQ(urbi_object_resolve_slot(&vm, NULL, deep, &holder, &idx), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T3 follow-up: entries[0] populated from UModule.ic_count ===
@@ -494,7 +494,7 @@ UTEST(resolve_slot_finds_via_protos) {
 
 UTEST(module_instance_populates_root_chunk_ic_table) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
 
@@ -531,7 +531,7 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     m.ic_names = NULL;
     m.ic_count = 0;
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T30: cross-VM IC isolation + determinism-checksum extension ===
@@ -549,8 +549,8 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
 
 UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
 
     /* Same module shape — but each VM gets its own UModuleInstance.  The
      * IC tables (allocated via each VM's GC) must live in disjoint memory
@@ -604,8 +604,8 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     urbi_module_instance_destroy(&vm_b, mi_b);
     urbi_module_instance_destroy(&vm_a, mi_a);
     umodule_destroy(&m);
-    uvm_destroy(&vm_b);
-    uvm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
 }
 
 /* === T5: urbi_get_or_create_module_instance cache helper ===
@@ -615,7 +615,7 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
 
 UTEST(get_or_create_module_instance_caches_per_module) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m1 = {0};
     UModule m2 = {0};
@@ -630,15 +630,15 @@ UTEST(get_or_create_module_instance_caches_per_module) {
 
     umodule_destroy(&m1);
     umodule_destroy(&m2);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Same module loaded into two different VMs must produce distinct
  * UModuleInstances, each threaded onto its own vm->module_instances_head. */
 UTEST(get_or_create_module_instance_isolated_per_vm) {
     UVM vm_a, vm_b;
-    uvm_init(&vm_a, NULL, NULL);
-    uvm_init(&vm_b, NULL, NULL);
+    urbi_vm_init(&vm_a, NULL, NULL);
+    urbi_vm_init(&vm_b, NULL, NULL);
 
     UModule m = {0};
 
@@ -654,8 +654,8 @@ UTEST(get_or_create_module_instance_isolated_per_vm) {
     UASSERT(vm_b.module_instances_head == mi_b);
 
     umodule_destroy(&m);
-    uvm_destroy(&vm_b);
-    uvm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
 }
 
 #ifdef URBI_DEBUG
@@ -664,7 +664,7 @@ UTEST(determinism_checksum_includes_ic_state) {
      * two checksums must differ.  Tests the §6 fold step in
      * urbi_get_determinism_checksum. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
@@ -690,18 +690,18 @@ UTEST(determinism_checksum_includes_ic_state) {
 
     urbi_module_instance_destroy(&vm, mi);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_stable_with_no_module_instances) {
     /* Two consecutive checksum reads on a VM with no UModuleInstance must
      * agree (the per-IC fold is a no-op when the registry head is NULL). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uint64_t h1 = urbi_get_determinism_checksum(&vm);
     uint64_t h2 = urbi_get_determinism_checksum(&vm);
     UASSERT(h1 == h2);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 #endif  /* URBI_DEBUG */
 
@@ -712,7 +712,7 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
 
 UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Compile a trivial source ("var x = 1;") into a fresh module. */
     UModule m = {0};
@@ -754,7 +754,7 @@ UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
 
     umodule_destroy(&m);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_uic_suite(void) {

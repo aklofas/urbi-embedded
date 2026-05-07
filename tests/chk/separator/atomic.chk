@@ -7,7 +7,7 @@
 #   This fixture uses call.evalArgAt(0) for lazy parameter evaluation (M4
 #   object/reflection model), System.cycle counter (M4 stdlib), Semaphore type
 #   (M6 stdlib), and nested '&' separator (M5 chk driver).  None of these are
-#   available in the M3 uvm_run REPL path.
+#   available in the M3 urbi_vm_run REPL path.
 #
 # Original urbiscript (activate at M5+ with full stdlib):
 # # function atomic { var start = System.cycle | call.evalArgAt(0) | assert(System.cycle == start) }|;

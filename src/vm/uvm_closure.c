@@ -20,7 +20,7 @@
  * valid color for the barrier check.  The closure is NOT enrolled on
  * vm->all_cells_head — lifetime stays with the strand's closure_list
  * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
- * as a follow-up M4 task; it requires enrolling the transient uvm_run
+ * as a follow-up M4 task; it requires enrolling the transient urbi_vm_run
  * strand as a GC root before closures stored in registers can survive
  * a mid-dispatch collection cycle.
  *

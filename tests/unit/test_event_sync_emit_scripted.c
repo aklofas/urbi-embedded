@@ -24,7 +24,7 @@
  *     end-to-end via the real bytecode dispatcher.
  *
  * The compiled body closure is held alive by vm->last_return_closure until
- * the next urbi_run_chunk or uvm_destroy — so the test must NOT call
+ * the next urbi_run_chunk or urbi_vm_destroy — so the test must NOT call
  * urbi_run_chunk a second time after the closure is captured.
  *
  * No test hooks installed — the body runs through the real scratch helper. */
@@ -117,11 +117,11 @@ compile_and_run(UVM *vm, UArena *arena, UModule *module,
 UTEST(scripted_event_sync_emit_delivers_payload)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *gr = urbi_realm_global(&vm);
     UASSERT(gr != NULL);
-    if (gr == NULL) { uvm_destroy(&vm); return; }
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc = urbi_realm_set_global(&vm, gr, "received", 8, make_int(0));
     UASSERT_EQ(URBI_OK, rc);
@@ -142,7 +142,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     if (rc != URBI_OK || closure_val.kind != UVAL_CLOSURE) {
         umodule_destroy(&module);
         uarena_destroy(&arena);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -155,7 +155,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     if (e == NULL) {
         umodule_destroy(&module);
         uarena_destroy(&arena);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -201,7 +201,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     ustrand_destroy(&inst_strand, &vm);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

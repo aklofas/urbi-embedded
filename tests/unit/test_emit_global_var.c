@@ -39,7 +39,7 @@ static void gv_ctx_init(GVCtx *c, const char *src)
 {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    uvm_init(&c->vm, NULL, NULL);
+    urbi_vm_init(&c->vm, NULL, NULL);
     c->module = (UModule){0};
     uparse_init(&c->p, &c->lex, &c->arena);
     uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_gv");
@@ -59,7 +59,7 @@ static void gv_ctx_destroy(GVCtx *c)
 {
     uarena_destroy(&c->arena);
     umodule_destroy(&c->module);
-    uvm_destroy(&c->vm);
+    urbi_vm_destroy(&c->vm);
 }
 
 /* === Tests === */

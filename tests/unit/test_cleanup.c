@@ -21,7 +21,7 @@ UTEST(cleanup_size_40_bytes) {
 UTEST(cleanup_push_pop_basic) {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     UCleanupEntry *e1 = strand_cleanup_push(&s);
@@ -45,7 +45,7 @@ UTEST(cleanup_push_pop_basic) {
     UASSERT(s.cleanup_top == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: fill stack to URBI_CLEANUP_MAX, then verify one more push returns NULL. */
@@ -53,7 +53,7 @@ UTEST(cleanup_overflow_returns_null) {
     UVM vm;
     UStrand s;
     uint16_t i;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     for (i = 0; i < (uint16_t)URBI_CLEANUP_MAX; i++) {
@@ -69,7 +69,7 @@ UTEST(cleanup_overflow_returns_null) {
     UASSERT_EQ((unsigned)s.cleanup_depth, (unsigned)URBI_CLEANUP_MAX);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_cleanup_suite(void) {

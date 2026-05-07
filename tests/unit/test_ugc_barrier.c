@@ -38,7 +38,7 @@ uvalue_from_test_cell(UCell *c)
 UTEST(barrier_black_stores_white_shades)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -54,7 +54,7 @@ UTEST(barrier_black_stores_white_shades)
     /* Parent remains black. */
     UASSERT(IS_BLACK(parent));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: gray parent + white child → child NOT shaded ===== */
@@ -65,7 +65,7 @@ UTEST(barrier_black_stores_white_shades)
 UTEST(barrier_gray_stores_white_no_shade)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -79,7 +79,7 @@ UTEST(barrier_gray_stores_white_no_shade)
     /* Child must remain white — gray parent does not trigger the barrier. */
     UASSERT(IS_WHITE(child));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: white parent + white child → child NOT shaded ===== */
@@ -88,7 +88,7 @@ UTEST(barrier_gray_stores_white_no_shade)
 UTEST(barrier_white_stores_white_no_shade)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -102,7 +102,7 @@ UTEST(barrier_white_stores_white_no_shade)
     /* Child must remain white. */
     UASSERT(IS_WHITE(child));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: register_write is a no-op — GC state unchanged ===== */
@@ -112,7 +112,7 @@ UTEST(barrier_white_stores_white_no_shade)
 UTEST(barrier_register_write_no_op)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *child = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
 
@@ -127,7 +127,7 @@ UTEST(barrier_register_write_no_op)
     UASSERT_EQ((child->gc_byte & UGC_COLOR_MASK), color_before);
     UASSERT(vm.gray_work_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: observer bit set + stub observer_dirty (T25 no-op) ===== */
@@ -138,7 +138,7 @@ UTEST(barrier_register_write_no_op)
 UTEST(barrier_observer_bit_calls_stub)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *parent = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UCell *child  = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -159,7 +159,7 @@ UTEST(barrier_observer_bit_calls_stub)
     /* GC barrier still fires: child was white + parent was black → child gray. */
     UASSERT(IS_GRAY(child));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 6: upvalue_write black parent + white child → child shaded ===== */
@@ -170,7 +170,7 @@ UTEST(barrier_observer_bit_calls_stub)
 UTEST(barrier_upvalue_black_stores_white_shades)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* parent_cell stands in for a UClosure (T25 synthetic). */
     UCell *parent_cell = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
@@ -186,7 +186,7 @@ UTEST(barrier_upvalue_black_stores_white_shades)
     UASSERT(IS_GRAY(child));
     UASSERT(IS_BLACK(parent_cell));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 7: UClosure embeds UCell at offset 0 ===== */

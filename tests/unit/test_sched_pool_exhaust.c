@@ -76,7 +76,7 @@ count_alloc(void *ptr, size_t nbytes, void *ud)
 UTEST(strand_create_null_alloc_returns_null)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);  /* NULL = stdlib realloc shim installed */
+    urbi_vm_init(&vm, NULL, NULL);  /* NULL = stdlib realloc shim installed */
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -95,19 +95,19 @@ UTEST(strand_create_null_alloc_returns_null)
     vm.alloc_ud = saved_ud;
 
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: counting allocator — after N strands the N+1-th creation returns NULL.
  *
- * The limit is calibrated at runtime: we count allocs consumed by uvm_init and
+ * The limit is calibrated at runtime: we count allocs consumed by urbi_vm_init and
  * urbi_realm_create, then allow exactly one more (for the first strand).  The
  * second strand creation must fail gracefully. */
 UTEST(strand_alloc_exhaustion_returns_null)
 {
     CountAlloc ca = {0, (size_t)-1};  /* unlimited initially */
     UVM vm;
-    uvm_init(&vm, count_alloc, &ca);
+    urbi_vm_init(&vm, count_alloc, &ca);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -133,7 +133,7 @@ UTEST(strand_alloc_exhaustion_returns_null)
 
     urbi_strand_destroy(s1);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: destroying a partially-initialised DORMANT strand (cleanup_base == NULL)
@@ -144,7 +144,7 @@ UTEST(strand_alloc_exhaustion_returns_null)
 UTEST(strand_dormant_destroy_no_counter_corrupt)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     /* ustrand_init with a NULL-alloc vm: cleanup_base stays NULL. */
@@ -168,7 +168,7 @@ UTEST(strand_dormant_destroy_no_counter_corrupt)
     UASSERT_EQ(vm.wakeup_pending_count,  0U);
     UASSERT_EQ(vm.host_call_pending_count, 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===========================================================================

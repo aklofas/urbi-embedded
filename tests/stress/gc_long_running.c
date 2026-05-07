@@ -21,7 +21,7 @@
 int main(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     for (int i = 0; i < LOOP_COUNT; i++) {
         /* Allocate a small cell and immediately drop the reference.
@@ -29,7 +29,7 @@ int main(void)
         UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
         if (c == NULL) {
             fprintf(stderr, "FAIL: urbi_gc_alloc returned NULL at i=%d\n", i);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             return 1;
         }
         (void)c;  /* drop reference — cell is now unreachable */
@@ -57,6 +57,6 @@ int main(void)
                 " — heap not fully reclaimed\n", live);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return pass ? 0 : 1;
 }

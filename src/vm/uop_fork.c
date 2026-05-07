@@ -96,7 +96,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
      * urbi_strand_create() leaves all execution fields zero-init
      * ("frame-0 setup deferred to urbi_step or a future urbi_strand_arm
      * helper" per ustrand.c).  urbi_strand_arm_from_closure is that helper.
-     * The child runs with frame_count == 0, just like uvm_run's transient
+     * The child runs with frame_count == 0, just like urbi_vm_run's transient
      * strand; OP_RET at frame_count == 0 writes to out_slot (NULL for
      * detached children) and transitions to DEAD cleanly.
      *

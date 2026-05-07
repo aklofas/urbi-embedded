@@ -257,8 +257,8 @@ urbi_realm_has_live_work(URealm *realm,
 
 /* === urealm_teardown_all ===
  *
- * Destroy all Realms still alive at uvm_destroy() time.
- * Called from uvm_destroy().  Safe to call on a VM with no Realms. */
+ * Destroy all Realms still alive at urbi_vm_destroy() time.
+ * Called from urbi_vm_destroy().  Safe to call on a VM with no Realms. */
 
 void
 urealm_teardown_all(struct UVM *vm)

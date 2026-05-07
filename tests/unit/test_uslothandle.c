@@ -32,7 +32,7 @@
 
 UTEST(uslothandle_get_slot_returns_handle_pointing_at_owner) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -57,14 +57,14 @@ UTEST(uslothandle_get_slot_returns_handle_pointing_at_owner) {
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 42);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: shape transition refreshes cached state on next access ===== */
 
 UTEST(uslothandle_refresh_after_shape_transition) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -93,14 +93,14 @@ UTEST(uslothandle_refresh_after_shape_transition) {
     UASSERT_EQ((int)out.v.i, 7);
     UASSERT(h->shape_at_create == o->shape);   /* refresh updated cache */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: removed slot → handle permanently invalid ===== */
 
 UTEST(uslothandle_becomes_invalid_after_slot_removal) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -118,14 +118,14 @@ UTEST(uslothandle_becomes_invalid_after_slot_removal) {
     /* Re-read also returns -1 (the slot stays removed). */
     UASSERT_EQ(urbi_slothandle_read_value(&vm, h, &out), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: write_value path — same validate-or-refresh contract ===== */
 
 UTEST(uslothandle_write_value_updates_owner_slot) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -145,14 +145,14 @@ UTEST(uslothandle_write_value_updates_owner_slot) {
     UValue v_post; v_post.kind = UVAL_INT; v_post.v.i = 1;
     UASSERT_EQ(urbi_slothandle_write_value(&vm, h, v_post), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: get_slot on missing name returns NULL ===== */
 
 UTEST(uslothandle_get_slot_miss_returns_null) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *bogus = (USymbol *)ustr_intern(&vm, "doesNotExist", 12);
@@ -161,14 +161,14 @@ UTEST(uslothandle_get_slot_miss_returns_null) {
     UASSERT(urbi_object_get_slot(&vm, NULL, bogus) == NULL);
     UASSERT(urbi_object_get_slot(&vm, o, NULL) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 6: get_slot resolves through the prototype chain ===== */
 
 UTEST(uslothandle_get_slot_resolves_via_proto_chain) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* parent has the slot; child inherits via prototype. */
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -187,7 +187,7 @@ UTEST(uslothandle_get_slot_resolves_via_proto_chain) {
     UASSERT_EQ(urbi_slothandle_read_value(&vm, h, &out), 0);
     UASSERT_EQ((int)out.v.i, 77);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

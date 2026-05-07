@@ -20,7 +20,7 @@ extern "C" {
 struct UVM;
 
 /* Register the M4 object-model cell types' UType descriptors directly into
- * vm->type_table[].  Called from uvm_init after vm->type_table[] has been
+ * vm->type_table[].  Called from urbi_vm_init after vm->type_table[] has been
  * zeroed. */
 void urbi_object_builtin_types_init(struct UVM *vm);
 

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Event prototype native methods (spec #3 §7.3).
  *
- * Installs four native slots on vm->event_proto at uvm_init time:
+ * Installs four native slots on vm->event_proto at urbi_vm_init time:
  *   new        — allocate a fresh UEvent via urbi_event_create
  *   emit       — async fan-out via c_event_emit_async
  *   syncEmit   — sync fan-out via c_event_emit_sync
@@ -173,7 +173,7 @@ urbi_native_event_waituntil(struct UStrand *s, int argc, UValue *argv)
 /* === event_native_register ===
  *
  * Allocate vm->event_proto as a UObject in the URBI_ATOM_EVENT family,
- * then install the four native slots.  Called from uvm_init after the
+ * then install the four native slots.  Called from urbi_vm_init after the
  * type-table setup and atom-proto walk are in place.
  * Returns UVM_OK on success, UVM_OOM if the proto object allocation fails. */
 UVMError

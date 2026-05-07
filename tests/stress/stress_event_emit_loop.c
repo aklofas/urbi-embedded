@@ -62,12 +62,12 @@ int main(void)
     uint32_t instrs[NUM_SUBS][1];
     UWatcher *watchers[NUM_SUBS];
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     realm = urbi_realm_create(&vm);
     if (realm == NULL) {
         fprintf(stderr, "FAIL: urbi_realm_create returned NULL\n");
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 
@@ -75,7 +75,7 @@ int main(void)
     if (e == NULL) {
         fprintf(stderr, "FAIL: urbi_event_create returned NULL\n");
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 
@@ -92,7 +92,7 @@ int main(void)
                     i, (int)rc);
             ustrand_destroy(&strand, &vm);
             urbi_realm_destroy(&vm, realm);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             return 1;
         }
         /* Record last-inserted watcher (tail of event list). */
@@ -107,7 +107,7 @@ int main(void)
                 NUM_SUBS, (unsigned)pool_in_use_after_install);
         ustrand_destroy(&strand, &vm);
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 
@@ -143,7 +143,7 @@ int main(void)
                 NUM_SUBS, (unsigned)vm.watcher_pool_in_use);
         ustrand_destroy(&strand, &vm);
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 
@@ -158,13 +158,13 @@ int main(void)
                 (unsigned)vm.watcher_pool_in_use);
         ustrand_destroy(&strand, &vm);
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 
     ustrand_destroy(&strand, &vm);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 
     long ns = (long)(t1.tv_sec  - t0.tv_sec)  * 1000000000L
             + (long)(t1.tv_nsec - t0.tv_nsec);

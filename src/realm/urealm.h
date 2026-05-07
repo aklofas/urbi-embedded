@@ -107,8 +107,8 @@ void               unamespace_walk_roots(struct UNamespace *ns,
 
 /* === VM teardown helper ===
  *
- * Destroy all Realms still alive at uvm_destroy() time.
- * Called from uvm_destroy() — T14 wires this up. */
+ * Destroy all Realms still alive at urbi_vm_destroy() time.
+ * Called from urbi_vm_destroy() — T14 wires this up. */
 void urealm_teardown_all(struct UVM *vm);
 
 /* === GC root walker for the full realm list ===

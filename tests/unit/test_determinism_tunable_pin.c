@@ -119,7 +119,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
     int tight_count;
     {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
 
         URealm *realm = urbi_realm_create(&vm);
         UASSERT(realm != NULL);
@@ -139,14 +139,14 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
 
         umodule_destroy(&module);
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
     }
 
     /* Run with loose budget. */
     int loose_count;
     {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
 
         URealm *realm = urbi_realm_create(&vm);
         UASSERT(realm != NULL);
@@ -166,7 +166,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
 
         umodule_destroy(&module);
         urbi_realm_destroy(&vm, realm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
     }
 
     /* Tight budget must require strictly more step calls. */
@@ -183,7 +183,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
 UTEST(zero_strand_budget_forces_mid_step_yield)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -218,7 +218,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===========================================================================

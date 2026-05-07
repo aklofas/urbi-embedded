@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uvm_init.c — VM lifecycle: init / destroy / native-protos / drain reg.
+/* urbi_vm_init.c — VM lifecycle: init / destroy / native-protos / drain reg.
  * Extracted from uvm.c during v0.5.4-decompose (VM #1). */
 
 /* _POSIX_C_SOURCE must be defined before any system header; guard against
@@ -47,7 +47,7 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
 /* --- Default host time source ---
    Returns monotonic microseconds on POSIX hosts (Linux/macOS/BSD); returns 0
    on freestanding targets and non-POSIX hosted targets.
-   Embedded callers MUST override via the host_time_us field after uvm_init(). */
+   Embedded callers MUST override via the host_time_us field after urbi_vm_init(). */
 static uint64_t default_host_time_us_stub(void) {
 #if defined(UVM_INIT_HAVE_CLOCK_GETTIME)
     struct timespec ts;
@@ -59,7 +59,7 @@ static uint64_t default_host_time_us_stub(void) {
 #endif
 }
 
-void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
+void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
 #if __STDC_HOSTED__
@@ -202,9 +202,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* T53/T54: event_native_register + tag_native_register allocate UObject
      * proto cells and intern slot-name strings.  They are NOT called here
      * because existing GC + intern + object-model tests assert on exact cell /
-     * entry counts immediately after uvm_init (the atom singletons themselves
+     * entry counts immediately after urbi_vm_init (the atom singletons themselves
      * are lazy for the same reason).  Callers that need the native protos must
-     * call urbi_native_protos_init(vm) after uvm_init — or test them via the
+     * call urbi_native_protos_init(vm) after urbi_vm_init — or test them via the
      * typed C helpers (tag_enter_getter / tag_leave_getter) directly.
      *
      * The full "call from VM init" wiring will land when the globals-exposure
@@ -276,7 +276,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_drain_handler = NULL;
 }
 
-void uvm_destroy(UVM *vm) {
+void urbi_vm_destroy(UVM *vm) {
     if (vm == NULL) return;
 
     /* --- M3 teardown stubs (in reverse-init order) ---
@@ -307,19 +307,19 @@ void uvm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* Pre-GC: free any closure surviving from the last uvm_run(). */
+    /* Pre-GC: free any closure surviving from the last urbi_vm_run(). */
     if (vm->last_return_closure != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
     }
     /* Note: open_upvals is now on the strand, not the VM.
-       The uvm_run adapter cleans up strand.open_upvals before destroy. */
+       The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */
 }
 
 /* urbi_native_protos_init: allocate vm->event_proto + vm->tag_proto and
- * install their native slots.  Must be called after uvm_init.
+ * install their native slots.  Must be called after urbi_vm_init.
  *
- * Separated from uvm_init because existing unit tests that assert exact
+ * Separated from urbi_vm_init because existing unit tests that assert exact
  * cell / intern counts immediately post-init would break (atoms are lazy
  * for the same reason).  The T59 globals-exposure task will wire this into
  * the vm-create path once the affected tests are updated to account for the

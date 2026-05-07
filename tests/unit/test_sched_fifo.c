@@ -36,7 +36,7 @@ UTEST(fifo_transition1_dormant_make_runnable_appends_tail)
 {
     /* Verify DORMANT → READY goes to the tail via sched_strand_make_runnable. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -56,7 +56,7 @@ UTEST(fifo_transition1_dormant_make_runnable_appends_tail)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Transition 2: fork-spawn via urbi_strand_start === */
@@ -66,7 +66,7 @@ UTEST(fifo_transition2_strand_start_goes_to_tail)
     /* urbi_strand_start calls sched_strand_make_runnable (the single entry point).
      * Verify the spawned strand lands at the queue tail behind an existing strand. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -90,7 +90,7 @@ UTEST(fifo_transition2_strand_start_goes_to_tail)
     urbi_strand_destroy(second);
     urbi_strand_destroy(first);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Transition 3: cooperative-yield re-enqueues at tail === */
@@ -100,7 +100,7 @@ UTEST(fifo_transition3_yield_appends_tail)
     /* sched_strand_yield is called for RUNNING → READY (soft budget exhaust
      * or explicit OP_YIELD).  Verify the yielded strand goes to the tail. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -126,7 +126,7 @@ UTEST(fifo_transition3_yield_appends_tail)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Transition 4: WAITING-unblock goes to tail === */
@@ -137,7 +137,7 @@ UTEST(fifo_transition4_unblock_appends_tail)
      * To correctly set up the counter invariant, we enqueue a first, then
      * simulate dispatch (dequeue + set RUNNING) before blocking on sleep. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -183,7 +183,7 @@ UTEST(fifo_transition4_unblock_appends_tail)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Transition 5: watcher-body-spawn goes to tail ===
@@ -195,7 +195,7 @@ UTEST(fifo_transition4_unblock_appends_tail)
 UTEST(fifo_transition5_watcher_body_spawn_appends_tail)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand parent, watcher_body;
@@ -222,7 +222,7 @@ UTEST(fifo_transition5_watcher_body_spawn_appends_tail)
 
     ustrand_destroy(&parent, &vm);
     ustrand_destroy(&watcher_body, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite registration === */

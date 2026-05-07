@@ -32,14 +32,14 @@ UTEST(register_type_auto_assigns_host_slot)
     /* type_tag == 0: auto-assign */
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &t);
     UASSERT(tag >= UTYPE_HOST_BASE);
     UASSERT_EQ(vm.host_type_count, 1U);
     UASSERT(vm.type_table[tag] == &t);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Two successive auto-assigns get distinct tags. */
@@ -52,7 +52,7 @@ UTEST(register_two_types_get_distinct_tags)
     t2.name = "Type2";
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t tag1 = urbi_register_type(&vm, &t1);
     uint8_t tag2 = urbi_register_type(&vm, &t2);
@@ -64,7 +64,7 @@ UTEST(register_two_types_get_distinct_tags)
     UASSERT(vm.type_table[tag1] == &t1);
     UASSERT(vm.type_table[tag2] == &t2);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Explicit host tag in [UTYPE_HOST_BASE, UTYPE_HOST_MAX] is used as-is. */
@@ -75,7 +75,7 @@ UTEST(register_type_explicit_host_tag)
     t.name     = "ExplicitTag";
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &t);
     UASSERT_EQ(tag, UTYPE_HOST_BASE + 5U);
@@ -83,7 +83,7 @@ UTEST(register_type_explicit_host_tag)
     UASSERT_EQ(vm.host_type_count, 0U);
     UASSERT(vm.type_table[tag] == &t);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== UType.destroy finalizer tests ===== */
@@ -100,7 +100,7 @@ UTEST(finalizer_runs_on_dead_cell)
     /* type_tag == 0: auto-assign */
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &fin_type);
     UASSERT(tag >= UTYPE_HOST_BASE);
@@ -117,7 +117,7 @@ UTEST(finalizer_runs_on_dead_cell)
     urbi_gc_force_full(&vm);
     UASSERT_EQ(g_destroy_count, before + 1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* A cell with UGC_HAS_FINALIZER but NO registered type (type_table entry NULL)
@@ -125,7 +125,7 @@ UTEST(finalizer_runs_on_dead_cell)
 UTEST(finalizer_null_type_no_crash)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Use a built-in type tag that has no UType registered (type_table[1] == NULL). */
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
@@ -140,7 +140,7 @@ UTEST(finalizer_null_type_no_crash)
     /* No finalizer call (type_table entry is NULL). */
     UASSERT_EQ(g_destroy_count, before);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* A pinned cell with UGC_HAS_FINALIZER must NOT have its finalizer called
@@ -153,7 +153,7 @@ UTEST(finalizer_not_called_for_pinned_cell)
     fin_type.destroy = test_destroy_fn;
 
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &fin_type);
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, tag);
@@ -167,7 +167,7 @@ UTEST(finalizer_not_called_for_pinned_cell)
     /* Cell is pinned — finalizer must NOT fire. */
     UASSERT_EQ(g_destroy_count, before);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

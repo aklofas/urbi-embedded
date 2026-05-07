@@ -23,7 +23,7 @@
 static void uevent_alloc_basics(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *ev = urbi_event_create(&vm);
 
@@ -42,7 +42,7 @@ static void uevent_alloc_basics(void)
         UASSERT_EQ((int)ev->name.kind, (int)UVAL_NIL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: sizeof ===== */
@@ -61,7 +61,7 @@ static void uevent_sizeof(void)
 static void uevent_walker_registered(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Descriptor must be installed. */
     UASSERT(vm.type_table[UTYPE_EVENT] != NULL);
@@ -71,7 +71,7 @@ static void uevent_walker_registered(void)
         UASSERT(vm.type_table[UTYPE_EVENT]->walk_payload != NULL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

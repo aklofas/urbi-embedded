@@ -58,7 +58,7 @@ static void
 strand_arm_sets_exec_fields(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -97,7 +97,7 @@ strand_arm_sets_exec_fields(void)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: arm with proto->constants == NULL preserves existing cur_consts
@@ -106,7 +106,7 @@ static void
 strand_arm_null_constants(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -143,7 +143,7 @@ strand_arm_null_constants(void)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

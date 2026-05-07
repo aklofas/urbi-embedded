@@ -24,7 +24,7 @@ UValue tag_enter_getter(struct UVM *vm, struct UTag *tag);
 UValue tag_leave_getter(struct UVM *vm, struct UTag *tag);
 
 /* tag_native_register: allocate vm->tag_proto and install getter/setter slots.
- *   Called from uvm_init after urbi_object_register_gc_roots. */
+ *   Called from urbi_vm_init after urbi_object_register_gc_roots. */
 void tag_native_register(struct UVM *vm);
 
 #ifdef __cplusplus

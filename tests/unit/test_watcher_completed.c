@@ -125,7 +125,7 @@ UTEST(watcher_completed_clears_pointers)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -150,7 +150,7 @@ UTEST(watcher_completed_clears_pointers)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. watcher_completed_respawns_when_pending_refire
@@ -165,7 +165,7 @@ UTEST(watcher_completed_respawns_when_pending_refire)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -193,7 +193,7 @@ UTEST(watcher_completed_respawns_when_pending_refire)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. watcher_completed_suppresses_refire_under_pending_unregister
@@ -207,7 +207,7 @@ UTEST(watcher_completed_suppresses_refire_under_pending_unregister)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -235,7 +235,7 @@ UTEST(watcher_completed_suppresses_refire_under_pending_unregister)
     /* Watcher was already flagged PENDING_UNREGISTER — skip unregister call
      * and let realm_destroy clean up strands. */
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. watcher_completed_logs_on_uncaught_throw
@@ -248,7 +248,7 @@ UTEST(watcher_completed_logs_on_uncaught_throw)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -289,7 +289,7 @@ UTEST(watcher_completed_logs_on_uncaught_throw)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. watcher_completed_silent_on_tag_stop_and_cancel
@@ -302,7 +302,7 @@ UTEST(watcher_completed_silent_on_tag_stop_and_cancel)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -351,7 +351,7 @@ UTEST(watcher_completed_silent_on_tag_stop_and_cancel)
     }
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

@@ -93,7 +93,7 @@ UTEST(unwind_return_at_call_frame_absorbs)
     UStrand s;
     UCallFrame *cf;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -146,7 +146,7 @@ UTEST(unwind_return_at_call_frame_absorbs)
     UASSERT_EQ((int)s.frame_count, 0);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: UEXEC_THROW caught at TRY_FRAME with HAS_CATCH.
@@ -157,7 +157,7 @@ UTEST(unwind_throw_caught_at_try_frame)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -191,7 +191,7 @@ UTEST(unwind_throw_caught_at_try_frame)
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: UEXEC_THROW uncaught (empty cleanup stack) marks strand DEAD.
@@ -202,7 +202,7 @@ UTEST(unwind_throw_uncaught_marks_fatal)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -221,7 +221,7 @@ UTEST(unwind_throw_uncaught_marks_fatal)
     UASSERT_EQ((int)s.fatal_value.v.i, 7);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 4: Frame teardown zeros registers (Inv-5).
@@ -234,7 +234,7 @@ UTEST(unwind_frame_teardown_zeros_registers)
     UStrand s;
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -285,7 +285,7 @@ UTEST(unwind_frame_teardown_zeros_registers)
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 5: urbi_unwind is a no-op when pending_unwind == UEXEC_OK.
@@ -295,7 +295,7 @@ UTEST(unwind_noop_on_ok_state)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -338,7 +338,7 @@ UTEST(unwind_noop_on_ok_state)
     UASSERT_EQ((int)s.cleanup_depth, old_depth);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 6: UEXEC_RETURN without cleanup entries (backward-compat direct-pop path).
@@ -349,7 +349,7 @@ UTEST(unwind_return_direct_pop_no_cleanup_entry)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -383,7 +383,7 @@ UTEST(unwind_return_direct_pop_no_cleanup_entry)
     UASSERT_EQ((int)s.stack[3].kind, (int)UVAL_INT);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 7: Innermost-first ordering.
@@ -395,7 +395,7 @@ UTEST(unwind_innermost_first_ordering)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -469,7 +469,7 @@ UTEST(unwind_innermost_first_ordering)
     UASSERT_EQ((unsigned)s.cleanup_depth, 2U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 8: URBI_CLEANUP_MAX overflow: push a full cleanup stack then attempt
@@ -482,7 +482,7 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     UStrand s;
     uint16_t i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -520,7 +520,7 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 9: suppressed_head invariant.
@@ -533,7 +533,7 @@ UTEST(unwind_suppressed_head_invariant)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -565,7 +565,7 @@ UTEST(unwind_suppressed_head_invariant)
     UASSERT(s.suppressed_head == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 10: UEXEC_CANCEL propagates through CALL_FRAME (not absorbed).
@@ -577,7 +577,7 @@ UTEST(unwind_cancel_propagates_through_call_frame)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -617,7 +617,7 @@ UTEST(unwind_cancel_propagates_through_call_frame)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_CANCEL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 11: THROW propagates past TRY_FRAME with only FINALLY (no catch).
@@ -632,7 +632,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -664,7 +664,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 12: Nested TRY_FRAMEs — innermost catch absorbs.
@@ -676,7 +676,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -719,7 +719,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 13: THROW propagates through TAG_SCOPE (M3 stub passthrough).
@@ -732,7 +732,7 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue *reg_stack = strand_setup_minimal(&s, &vm);
     UASSERT(reg_stack != NULL);
 
@@ -761,7 +761,7 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite registration ===== */

@@ -40,7 +40,7 @@ UTEST(event_ring_init_empty)
 UTEST(event_ring_inject_then_pending)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
@@ -49,14 +49,14 @@ UTEST(event_ring_inject_then_pending)
     UASSERT_EQ(rc, URBI_OK);
     UASSERT(uevent_ring_has_pending(vm.event_ring));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 3: fill ring → next inject returns RING_FULL + overflow++ ---- */
 UTEST(event_ring_overflow_returns_error_with_counter)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -77,14 +77,14 @@ UTEST(event_ring_overflow_returns_error_with_counter)
     __atomic_load(&vm.event_ring->overflow_count, &ov, __ATOMIC_RELAXED);
     UASSERT_EQ((long long)ov, 1LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 4: drain after 2 injects → ring becomes empty ---------------- */
 UTEST(event_ring_drain_advances_read_idx)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -100,14 +100,14 @@ UTEST(event_ring_drain_advances_read_idx)
     __atomic_load(&vm.event_ring->overflow_count, &ov, __ATOMIC_RELAXED);
     UASSERT_EQ((long long)ov, 0LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 5: payload round-trip (direct ring inspection) --------------- */
 UTEST(event_ring_payload_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -124,14 +124,14 @@ UTEST(event_ring_payload_round_trip)
     UASSERT_EQ((long long)e->payload[2],  (long long)0xBEU);
     UASSERT_EQ((long long)e->payload[3],  (long long)0xEFU);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 6: payload too large → rejected, overflow++ ----------------- */
 UTEST(event_ring_payload_too_large_rejected)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -150,14 +150,14 @@ UTEST(event_ring_payload_too_large_rejected)
     __atomic_load(&vm.event_ring->overflow_count, &ov, __ATOMIC_RELAXED);
     UASSERT_EQ((long long)ov, 1LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 7: drain-when-empty is a no-op (no crash, no counter drift) - */
 UTEST(event_ring_drain_empty_noop)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
@@ -169,14 +169,14 @@ UTEST(event_ring_drain_empty_noop)
     UASSERT_EQ((long long)vm.event_queue_count, (long long)eq_before);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 8: overflow_count not bumped on successful inject ------------ */
 UTEST(event_ring_overflow_not_bumped_on_success)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -187,14 +187,14 @@ UTEST(event_ring_overflow_not_bumped_on_success)
     __atomic_load(&vm.event_ring->overflow_count, &ov, __ATOMIC_RELAXED);
     UASSERT_EQ((long long)ov, 0LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 9: zero-len payload with NULL pointer accepted --------------- */
 UTEST(event_ring_zero_payload_null_ptr_accepted)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -206,14 +206,14 @@ UTEST(event_ring_zero_payload_null_ptr_accepted)
     UASSERT_EQ((long long)e->event_id,    (long long)55U);
     UASSERT_EQ((long long)e->payload_len, (long long)0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 10: event_queue_count tracks drain count --------------------- */
 UTEST(event_ring_drain_increments_event_queue_count)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.event_ring != NULL);
 
@@ -229,7 +229,7 @@ UTEST(event_ring_drain_increments_event_queue_count)
     UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 3U));
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 11 (Linux-only): multi-threaded fuzz — 100k events ----------- */

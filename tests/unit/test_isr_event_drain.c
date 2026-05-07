@@ -40,7 +40,7 @@ static void capture_drain_handler(struct UVM *vm,
 UTEST(drain_handler_called_per_entry)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
     urbi_register_event_drain(&vm, capture_drain_handler);
@@ -59,14 +59,14 @@ UTEST(drain_handler_called_per_entry)
     /* Ring must be empty after drain. */
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 2: handler receives NIL payload ------------------------------ */
 UTEST(drain_handler_payload_is_nil)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
     urbi_register_event_drain(&vm, capture_drain_handler);
@@ -77,16 +77,16 @@ UTEST(drain_handler_payload_is_nil)
     UASSERT_EQ((long long)g_capture.call_count, 1LL);
     UASSERT_EQ((long long)g_capture.payload_kinds[0], (long long)UVAL_NIL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 3: no handler → falls back to event_queue_count -------------- */
 UTEST(no_handler_increments_event_queue_count)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    /* No drain handler registered (default NULL from uvm_init). */
+    /* No drain handler registered (default NULL from urbi_vm_init). */
     uint32_t before = vm.event_queue_count;
 
     urbi_inject_event(&vm, 1U, NULL, 0U);
@@ -96,14 +96,14 @@ UTEST(no_handler_increments_event_queue_count)
     UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 2U));
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 4: NULL-handler removal stops dispatch ----------------------- */
 UTEST(null_handler_removes_drain_callback)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
     urbi_register_event_drain(&vm, capture_drain_handler);
@@ -119,14 +119,14 @@ UTEST(null_handler_removes_drain_callback)
     /* Fallback path must have incremented event_queue_count. */
     UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 1U));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 5: drain on empty ring does not call handler ----------------- */
 UTEST(drain_empty_ring_does_not_call_handler)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
     urbi_register_event_drain(&vm, capture_drain_handler);
@@ -136,14 +136,14 @@ UTEST(drain_empty_ring_does_not_call_handler)
 
     UASSERT_EQ((long long)g_capture.call_count, 0LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 6: handler receives correct event_id ordering (FIFO) --------- */
 UTEST(drain_handler_fifo_ordering)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_capture.call_count = 0U;
     urbi_register_event_drain(&vm, capture_drain_handler);
@@ -161,7 +161,7 @@ UTEST(drain_handler_fifo_ordering)
     UASSERT_EQ((long long)g_capture.event_ids[2], 300LL);
     UASSERT_EQ((long long)g_capture.event_ids[3], 400LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Test suite registration ------------------------------------------ */

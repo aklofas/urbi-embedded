@@ -71,7 +71,7 @@ root_count_cb(struct UVM *vm, UValue *root, void *ctx)
 UTEST(realm_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -80,28 +80,28 @@ UTEST(realm_round_trip)
     urbi_realm_destroy(&vm, r);
     UASSERT(vm.realms_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. global_idempotent: repeated calls return the same pointer. */
 UTEST(realm_global_idempotent)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *g1 = urbi_realm_global(&vm);
     URealm *g2 = urbi_realm_global(&vm);
     UASSERT(g1 != NULL);
     UASSERT(g1 == g2);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. id_unique_monotonic: IDs are > 0, unique, and increasing. */
 UTEST(realm_id_unique_monotonic)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r1 = urbi_realm_create(&vm);
     URealm *r2 = urbi_realm_create(&vm);
@@ -118,7 +118,7 @@ UTEST(realm_id_unique_monotonic)
     urbi_realm_destroy(&vm, r1);
     urbi_realm_destroy(&vm, r2);
     urbi_realm_destroy(&vm, r3);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. destroy_cascades_via_tag_stop: realm->tag is created at T29; destroy completes
@@ -126,7 +126,7 @@ UTEST(realm_id_unique_monotonic)
 UTEST(realm_destroy_cascades_via_tag_stop)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -137,41 +137,41 @@ UTEST(realm_destroy_cascades_via_tag_stop)
     urbi_realm_destroy(&vm, r);
     UASSERT(vm.realms_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. realm_flags_default_zero: fresh Realm has flags == 0. */
 UTEST(realm_flags_default_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UASSERT_EQ((unsigned)r->flags, 0U);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. realm_global_sets_global_flag: the global Realm has REALM_GLOBAL set. */
 UTEST(realm_global_sets_global_flag)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *g = urbi_realm_global(&vm);
     UASSERT(g != NULL);
     UASSERT((g->flags & REALM_GLOBAL) != 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. realm_user_data_round_trip: user_data survives round-trip through create. */
 UTEST(realm_user_data_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -182,21 +182,21 @@ UTEST(realm_user_data_round_trip)
     UASSERT(*(int *)r->user_data == 42);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 8. realm_reflective_nil_at_m3: reflective.kind == UVAL_NIL after create. */
 UTEST(realm_reflective_nil_at_m3)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
     UASSERT(r->reflective.kind == UVAL_NIL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 9. realm_linked_list_invariants_after_create_destroy_create:
@@ -204,7 +204,7 @@ UTEST(realm_reflective_nil_at_m3)
 UTEST(realm_linked_list_invariants_after_create_destroy_create)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *a = urbi_realm_create(&vm);
     UASSERT(a != NULL);
@@ -222,14 +222,14 @@ UTEST(realm_linked_list_invariants_after_create_destroy_create)
     UASSERT(b->next_in_vm == NULL);
 
     urbi_realm_destroy(&vm, b);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 10. realm_destroy_unlinks_middle: A→B→C, destroy B → A↔C. */
 UTEST(realm_destroy_unlinks_middle)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Create order: C first (head), then B (new head), then A (new head).
      * List order: A→B→C (most-recently-created at front). */
@@ -249,26 +249,26 @@ UTEST(realm_destroy_unlinks_middle)
 
     urbi_realm_destroy(&vm, a);
     urbi_realm_destroy(&vm, c);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 11. realm_destroy_null_safe: no-op on NULL. */
 UTEST(realm_destroy_null_safe)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Should not crash. */
     urbi_realm_destroy(&vm, NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 12. realm_namespace_set_get_round_trip: set a value, get it back. */
 UTEST(realm_namespace_set_get_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -287,14 +287,14 @@ UTEST(realm_namespace_set_get_round_trip)
     UASSERT_EQ(got->v.i, 99LL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 13. realm_namespace_grow_past_initial_cap: insert > 16 entries. */
 UTEST(realm_namespace_grow_past_initial_cap)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -325,7 +325,7 @@ UTEST(realm_namespace_grow_past_initial_cap)
     }
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 14. realm_walk_roots_invokes_callback_per_namespace_entry:
@@ -333,7 +333,7 @@ UTEST(realm_namespace_grow_past_initial_cap)
 UTEST(realm_walk_roots_invokes_callback_per_namespace_entry)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -355,20 +355,20 @@ UTEST(realm_walk_roots_invokes_callback_per_namespace_entry)
     UASSERT(count >= 3);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 15. realm_create_oom_returns_null: null allocator → NULL from create. */
 UTEST(realm_create_oom_returns_null)
 {
     UVM vm;
-    uvm_init(&vm, null_alloc, NULL);
+    urbi_vm_init(&vm, null_alloc, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r == NULL);
     UASSERT(vm.realms_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

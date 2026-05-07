@@ -82,7 +82,7 @@ UTEST(tag_stop_during_waituntil_unlinks_waiter)
     UVM    vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -114,7 +114,7 @@ UTEST(tag_stop_during_waituntil_unlinks_waiter)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -128,7 +128,7 @@ UTEST(cancel_during_waituntil_unlinks_waiter)
     UVM    vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -155,7 +155,7 @@ UTEST(cancel_during_waituntil_unlinks_waiter)
     UASSERT(s.state != USTRAND_WAIT_EVENT);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -168,7 +168,7 @@ UTEST(panic_during_waituntil_unlinks_waiter)
 {
     UVM    vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -191,7 +191,7 @@ UTEST(panic_during_waituntil_unlinks_waiter)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -211,7 +211,7 @@ UTEST(tag_stop_middle_waiter_unlinks_correctly)
     UVM    vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -250,7 +250,7 @@ UTEST(tag_stop_middle_waiter_unlinks_correctly)
     ustrand_destroy(&s1, &vm);
     ustrand_destroy(&s2, &vm);
     ustrand_destroy(&s3, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -265,7 +265,7 @@ UTEST(unregister_idempotent_when_not_waiting)
     UVM    vm;
     UValue nil = make_nil();
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -302,7 +302,7 @@ UTEST(unregister_idempotent_when_not_waiting)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

@@ -85,7 +85,7 @@ static UValue slow_host_fn(struct UStrand *s, int argc, UValue *argv)
 UTEST(watchdog_fast_callback_no_warn)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Install mock time and log hooks. */
     vm.host_time_us = mock_time_us;
@@ -104,7 +104,7 @@ UTEST(watchdog_fast_callback_no_warn)
     UASSERT(g_log_called == 0);
     UASSERT(result.kind == 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 2: slow callback triggers a WARN log call ----------------------- */
@@ -112,7 +112,7 @@ UTEST(watchdog_fast_callback_no_warn)
 UTEST(watchdog_slow_callback_warns)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = mock_log_fn;
@@ -130,7 +130,7 @@ UTEST(watchdog_slow_callback_warns)
     UASSERT(g_log_called == 1);
     UASSERT(g_log_level  == URBI_LOG_WARN);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 3: watchdog in WARN mode with no log fn — no crash -------------- */
@@ -138,7 +138,7 @@ UTEST(watchdog_slow_callback_warns)
 UTEST(watchdog_slow_no_log_fn_is_silent)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = NULL;  /* no log fn installed */
@@ -152,7 +152,7 @@ UTEST(watchdog_slow_no_log_fn_is_silent)
     (void)urbi_call_host_with_watchdog(&vm, NULL, slow_host_fn, 0, NULL);
     UASSERT(1);  /* reached here without crash */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 4: isr_check_fn returns false → non-ISR-safe call succeeds ------ */
@@ -163,7 +163,7 @@ static bool isr_check_not_in_isr(void) { return false; }
 UTEST(isr_check_fn_set_returns_false_no_panic)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     urbi_set_isr_check_fn(&vm, isr_check_not_in_isr);
     UASSERT(vm.isr_check_fn == isr_check_not_in_isr);
@@ -173,7 +173,7 @@ UTEST(isr_check_fn_set_returns_false_no_panic)
     struct URealm *r = urbi_realm_global(&vm);
     UASSERT(r != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 5: urbi_set_callback_watchdog_mode stores the mode -------------- */
@@ -181,7 +181,7 @@ UTEST(isr_check_fn_set_returns_false_no_panic)
 UTEST(set_watchdog_mode_stored)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.callback_watchdog_mode == URBI_WATCHDOG_WARN);
     urbi_set_callback_watchdog_mode(&vm, URBI_WATCHDOG_ASSERT);
@@ -189,7 +189,7 @@ UTEST(set_watchdog_mode_stored)
     urbi_set_callback_watchdog_mode(&vm, URBI_WATCHDOG_WARN);
     UASSERT(vm.callback_watchdog_mode == URBI_WATCHDOG_WARN);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 6: urbi_set_isr_check_fn stores and clears the fn pointer ------- */
@@ -197,7 +197,7 @@ UTEST(set_watchdog_mode_stored)
 UTEST(set_isr_check_fn_stores_and_clears)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.isr_check_fn == NULL);
     urbi_set_isr_check_fn(&vm, isr_check_not_in_isr);
@@ -205,7 +205,7 @@ UTEST(set_isr_check_fn_stores_and_clears)
     urbi_set_isr_check_fn(&vm, NULL);
     UASSERT(vm.isr_check_fn == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ---- Case 7: watchdog ASSERT mode when callback is fast — no panic -------- */
@@ -213,7 +213,7 @@ UTEST(set_isr_check_fn_stores_and_clears)
 UTEST(watchdog_assert_mode_fast_no_panic)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = mock_log_fn;
@@ -229,7 +229,7 @@ UTEST(watchdog_assert_mode_fast_no_panic)
     /* Fast callback in ASSERT mode: no panic, no log. */
     UASSERT(g_log_called == 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* NOTE: watchdog_assert_mode_fires (slow callback in ASSERT mode) calls

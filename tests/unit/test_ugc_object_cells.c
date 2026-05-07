@@ -52,7 +52,7 @@ static int count_all_cells(UVM *vm) {
 
 UTEST(ugc_object_cells_types_registered) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.type_table[UTYPE_OBJECT]           != NULL);
     UASSERT(vm.type_table[UTYPE_PROTOS]           != NULL);
@@ -73,14 +73,14 @@ UTEST(ugc_object_cells_types_registered) {
     UASSERT(vm.type_table[UTYPE_MODULE_INSTANCE]->walk_payload != NULL);
     UASSERT(vm.type_table[UTYPE_PROTO_INSTANCE]->walk_payload  != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: each cell type allocates and carries the right tag ===== */
 
 UTEST(ugc_object_cells_alloc_each_type) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *o   = urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
     UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4U * sizeof(UObject *),
@@ -99,7 +99,7 @@ UTEST(ugc_object_cells_alloc_each_type) {
     UASSERT(mi != NULL); UASSERT_EQ(mi->type_tag, (int)UTYPE_MODULE_INSTANCE);
     UASSERT(pi != NULL); UASSERT_EQ(pi->type_tag, (int)UTYPE_PROTO_INSTANCE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: full GC cycle over allocations of all 7 tags ===== */
@@ -110,7 +110,7 @@ UTEST(ugc_object_cells_alloc_each_type) {
  * unreferenced cells. */
 UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     (void)urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
     (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2U * sizeof(UObject *),
@@ -132,7 +132,7 @@ UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     UASSERT_EQ(count_all_cells(&vm), 0);
     UASSERT_EQ((int)urbi_gc_live_bytes(&vm), 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: UShape walker traces parent + props_table children =====
@@ -170,7 +170,7 @@ static int cell_is_alive(UVM *vm, UCell *target) {
  * actually shaded them via parent / props_table[0]. */
 UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     /* Allocate child cells first so they live earlier on all_cells_head
@@ -218,9 +218,9 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UASSERT(cell_is_alive(&vm, (UCell *)child_props));
 
     /* Clear the root before destroy so cleanup doesn't re-shade a freed
-     * cell (uvm_destroy frees all live cells unconditionally). */
+     * cell (urbi_vm_destroy frees all live cells unconditionally). */
     g_test_root_cell = NULL;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: UProtos walker traces items[] entries =====
@@ -231,7 +231,7 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
  * proving the walker shaded items[i]. */
 UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     UObject *child0 = (UObject *)urbi_gc_alloc(&vm, sizeof(UObject),
@@ -260,7 +260,7 @@ UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UASSERT(cell_is_alive(&vm, (UCell *)child1));
 
     g_test_root_cell = NULL;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

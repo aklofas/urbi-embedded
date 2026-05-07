@@ -7,7 +7,7 @@
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
  * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root
  * provider (m4_object_roots_walker, registered via urbi_object_register_gc_roots
- * in uvm_init) keeps the singletons alive across GC cycles by shading each
+ * in urbi_vm_init) keeps the singletons alive across GC cycles by shading each
  * non-NULL vm->atom_* field directly during MARK_ROOTS.
  *
  * The single-tag prototype encoding `(root << 1) | 1` used in
@@ -30,7 +30,7 @@
  *
  * Per-VM monotonic UObject identity counter (spec §8.1).
  *
- * vm->next_object_id is initialised to 0 by uvm_init; pre-increment yields
+ * vm->next_object_id is initialised to 0 by urbi_vm_init; pre-increment yields
  * 1 on the first call, 2 on the second, etc.  At UINT32_MAX the next bump
  * would overflow — fatal-abort per spec §8.1 rather than silently wrap.
  *
@@ -123,7 +123,7 @@ urbi_object_root(struct UVM *vm)
     vm->atom_object = o;
 
     /* T36: m4_object_roots_walker (registered via urbi_object_register_gc_roots
-     * in uvm_init) keeps this singleton alive across collection cycles by
+     * in urbi_vm_init) keeps this singleton alive across collection cycles by
      * shading vm->atom_object directly during MARK_ROOTS.  No explicit pin
      * needed — replaces the synthetic UVAL_CLOSURE wrapper trick used pre-T36. */
     return o;

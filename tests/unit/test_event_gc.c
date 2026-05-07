@@ -118,17 +118,17 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
     UProto   body_proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     g_ev_test_root = NULL;
     urbi_gc_register_root_provider(&vm, ev_test_root_provider);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     UEvent *ev = urbi_event_create(&vm);
     UASSERT(ev != NULL);
-    if (ev == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (ev == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -161,7 +161,7 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
 
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -174,24 +174,24 @@ UTEST(uevent_walker_shades_at_watchers_chain_not_waiters)
 UTEST(utag_walker_shades_enter_leave_events)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     g_ev_test_root = NULL;
     urbi_gc_register_root_provider(&vm, ev_test_root_provider);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
-    if (tag == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (tag == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     UEvent *enter_ev = urbi_event_create(&vm);
     UEvent *leave_ev = urbi_event_create(&vm);
     UASSERT(enter_ev != NULL);
     UASSERT(leave_ev != NULL);
     if (enter_ev == NULL || leave_ev == NULL) {
-        urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return;
+        urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return;
     }
     tag->enter_event = enter_ev;
     tag->leave_event = leave_ev;
@@ -216,7 +216,7 @@ UTEST(utag_walker_shades_enter_leave_events)
     UASSERT(!cell_is_alive(&vm, (UCell *)leave_ev));
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -237,16 +237,16 @@ UTEST(utag_walker_shades_enter_leave_events)
 UTEST(strand_walker_roots_last_event_payload)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Allocate a closure via GC (GC-managed; will be collected if unreachable). */
     UCell *cl_cell = urbi_gc_alloc(&vm, sizeof(UClosure), UTYPE_CLOSURE);
     UASSERT(cl_cell != NULL);
-    if (cl_cell == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (cl_cell == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     UStrand s;
     ustrand_init(&s, &vm);
@@ -257,7 +257,7 @@ UTEST(strand_walker_roots_last_event_payload)
                    UVM_STACK_CAP * sizeof(UValue), vm.alloc_ud);
     UASSERT(s.stack != NULL);
     if (s.stack == NULL) {
-        ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return;
+        ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return;
     }
     {
         int i;
@@ -292,7 +292,7 @@ UTEST(strand_walker_roots_last_event_payload)
     s.stack = NULL;
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -305,11 +305,11 @@ UTEST(strand_walker_roots_last_event_payload)
 UTEST(unrooted_event_collected_by_gc)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *ev = urbi_event_create(&vm);
     UASSERT(ev != NULL);
-    if (ev == NULL) { uvm_destroy(&vm); return; }
+    if (ev == NULL) { urbi_vm_destroy(&vm); return; }
 
     UASSERT(cell_is_alive(&vm, (UCell *)ev));
 
@@ -317,7 +317,7 @@ UTEST(unrooted_event_collected_by_gc)
 
     UASSERT(!cell_is_alive(&vm, (UCell *)ev));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

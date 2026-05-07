@@ -8,7 +8,7 @@
 # Reason: verifying watcher firing order requires installing watchers via
 # `at (cond) body` syntax, which produces watcher body strands that run via
 # OP_FORK_DETACH (spawn_body_coroutine path).  The chk runner uses the REPL
-# (uvm_run path) — fork opcodes return TypeError there.  Additionally, the
+# (urbi_vm_run path) — fork opcodes return TypeError there.  Additionally, the
 # `at` keyword emit path requires the M5 reactive runtime wiring (condition
 # closures, install/uninstall, edge/level detection).  The watcher pool and
 # dirty-set infrastructure is wired at M3 but the full activation requires M5.

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: OP_FORK_DETACH / OP_FORK_JOIN / OP_JOIN_WAIT runtime (T38).
  *
- * Tests use the urbi_step driver (realm-managed strands), not uvm_run, because
+ * Tests use the urbi_step driver (realm-managed strands), not urbi_vm_run, because
  * fork opcodes require a realm to spawn child strands.
  *
  * M3 closure-spawn note: children capture upvalues from the parent's scope.
@@ -130,7 +130,7 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
 UTEST(fork_detach_basic_no_crash)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -148,7 +148,7 @@ UTEST(fork_detach_basic_no_crash)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: OP_FORK_JOIN + OP_JOIN_WAIT — `&` separator blocks parent until child DEAD.
@@ -156,7 +156,7 @@ UTEST(fork_detach_basic_no_crash)
 UTEST(fork_join_wait_basic)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -173,7 +173,7 @@ UTEST(fork_join_wait_basic)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: Child strand inherits parent's ambient tag chain.
@@ -183,7 +183,7 @@ UTEST(fork_join_wait_basic)
 UTEST(fork_child_inherits_ambient_tags)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -205,7 +205,7 @@ UTEST(fork_child_inherits_ambient_tags)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 4: Three-way comma — "1 , 2 , 3" — spawns two children, parent runs '3'.
@@ -213,7 +213,7 @@ UTEST(fork_child_inherits_ambient_tags)
 UTEST(fork_detach_three_way)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -231,7 +231,7 @@ UTEST(fork_detach_three_way)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 5: Fork detach followed by parent continuation — runnable count tracks correctly.
@@ -239,7 +239,7 @@ UTEST(fork_detach_three_way)
 UTEST(fork_detach_quiescent_count_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -253,7 +253,7 @@ UTEST(fork_detach_quiescent_count_zero)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 6: fork_wake_joiners is idempotent — calling it twice on a strand
@@ -261,7 +261,7 @@ UTEST(fork_detach_quiescent_count_zero)
 UTEST(fork_wake_joiners_empty_is_noop)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -277,14 +277,14 @@ UTEST(fork_wake_joiners_empty_is_noop)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 7: UVAL_STRAND_MAKE / UVAL_AS_STRAND round-trip. */
 UTEST(uval_strand_round_trip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -301,7 +301,7 @@ UTEST(uval_strand_round_trip)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 8: `&` with non-trivial expressions — `(1 + 2) & (3 + 4)`.
@@ -309,7 +309,7 @@ UTEST(uval_strand_round_trip)
 UTEST(fork_join_arithmetic_children)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -325,7 +325,7 @@ UTEST(fork_join_arithmetic_children)
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

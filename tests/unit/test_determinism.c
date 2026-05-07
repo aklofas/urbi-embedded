@@ -40,28 +40,28 @@ UTEST(determinism_checksum_returns_nonzero_on_empty_vm)
     /* FNV-1a seed is non-zero; any mix with gc/intern counters keeps it
      * non-zero.  The checksum must never be 0 on a freshly initialised VM. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uint64_t h = urbi_get_determinism_checksum(&vm);
     UASSERT(h != 0);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_is_stable_across_calls_on_quiescent_vm)
 {
     /* Two successive calls on an untouched, quiescent VM must agree. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uint64_t h1 = urbi_get_determinism_checksum(&vm);
     uint64_t h2 = urbi_get_determinism_checksum(&vm);
     UASSERT(h1 == h2);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_differs_after_namespace_binding)
 {
     /* Inserting a binding into the global realm must change the checksum. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint64_t h_before = urbi_get_determinism_checksum(&vm);
 
@@ -80,7 +80,7 @@ UTEST(determinism_checksum_differs_after_namespace_binding)
     uint64_t h_after = urbi_get_determinism_checksum(&vm);
     UASSERT(h_before != h_after);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_two_identical_vms_match)
@@ -93,8 +93,8 @@ UTEST(determinism_checksum_two_identical_vms_match)
      * checksums.  T42's cross-process determinism test exercises the
      * cross-run-stable subset of state only. */
     UVM vm1, vm2;
-    uvm_init(&vm1, NULL, NULL);
-    uvm_init(&vm2, NULL, NULL);
+    urbi_vm_init(&vm1, NULL, NULL);
+    urbi_vm_init(&vm2, NULL, NULL);
 
     UValue v;
     v.kind  = UVAL_INT;
@@ -120,8 +120,8 @@ UTEST(determinism_checksum_two_identical_vms_match)
     uint64_t h2 = urbi_get_determinism_checksum(&vm2);
     UASSERT(h1 == h2);
 
-    uvm_destroy(&vm1);
-    uvm_destroy(&vm2);
+    urbi_vm_destroy(&vm1);
+    urbi_vm_destroy(&vm2);
 }
 
 UTEST(determinism_checksum_includes_topology_gen)
@@ -130,12 +130,12 @@ UTEST(determinism_checksum_includes_topology_gen)
      * surface any divergence in shape-tree mutation ordering.  Bumping
      * topology_gen on an otherwise-quiescent VM must change the hash. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uint64_t pre = urbi_get_determinism_checksum(&vm);
     vm.topology_gen += 5;
     uint64_t post = urbi_get_determinism_checksum(&vm);
     UASSERT(pre != post);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_includes_next_object_id_and_lookup_id)
@@ -144,7 +144,7 @@ UTEST(determinism_checksum_includes_next_object_id_and_lookup_id)
      * lookup_id, by symmetry) must perturb the checksum.  Both counters are
      * mixed; flipping either produces a different hash. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint64_t pre = urbi_get_determinism_checksum(&vm);
     vm.next_object_id += 1;
@@ -155,7 +155,7 @@ UTEST(determinism_checksum_includes_next_object_id_and_lookup_id)
     uint64_t post_lid = urbi_get_determinism_checksum(&vm);
     UASSERT(post_oid != post_lid);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_folds_root_chunk_ic_state)
@@ -169,7 +169,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
      * Create a UModuleInstance, verify the checksum changes after mutating
      * the root-chunk IC entry (entries[0].ic_table[0]). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
     USymbol *xsym = (USymbol *)ustr_intern(&vm, "x", 1);
@@ -203,7 +203,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
 
     urbi_module_instance_destroy(&vm, mi);
     umodule_destroy(&m);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 #endif /* URBI_DEBUG */

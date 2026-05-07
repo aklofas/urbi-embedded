@@ -87,7 +87,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
     UVM    vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -104,7 +104,7 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
 
     vm.test_install_cond_hook = NULL;
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. waituntil_blocks_strand_when_cond_starts_false
@@ -119,7 +119,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
     UVM    vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -141,7 +141,7 @@ UTEST(waituntil_blocks_strand_when_cond_starts_false)
 
     vm.test_install_cond_hook = NULL;
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

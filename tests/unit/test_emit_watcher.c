@@ -38,7 +38,7 @@ static UEmitError watcher_compile(const char *src,
                                   UArena     *arena_out,
                                   UVM        *vm_out,
                                   UEmitter   *e_out) {
-    uvm_init(vm_out, NULL, NULL);
+    urbi_vm_init(vm_out, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
@@ -61,7 +61,7 @@ static UEmitError watcher_compile(const char *src,
 static void watcher_cleanup(UModule *mod, UArena *arena, UVM *vm) {
     umodule_destroy(mod);
     uarena_destroy(arena);
-    uvm_destroy(vm);
+    urbi_vm_destroy(vm);
 }
 
 /* Return true if any instruction in module (root chunk) has opcode == op. */
@@ -151,7 +151,7 @@ UTEST(emit_at_with_assign_in_cond_warns) {
     UModule module = {0};
     UEmitter e;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     uemit_init(&e, &module, &arena, &vm, NULL);
 
@@ -202,7 +202,7 @@ UTEST(emit_at_with_assign_in_cond_warns) {
     emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -----------------------------------------------------------------------

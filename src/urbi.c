@@ -38,7 +38,7 @@ urbi_panic(const char *msg)
 }
 
 /* urbi_set_isr_check_fn: install an ISR-context predicate.
- * Pass NULL to disable ISR checking (the default after uvm_init). */
+ * Pass NULL to disable ISR checking (the default after urbi_vm_init). */
 void
 urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
 {

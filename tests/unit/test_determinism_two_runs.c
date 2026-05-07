@@ -43,7 +43,7 @@ static uint64_t
 checksum_with_int_binding(const char *name, int64_t value)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_global(&vm);
     UValue v;
@@ -56,7 +56,7 @@ checksum_with_int_binding(const char *name, int64_t value)
     (void)unamespace_set(&vm, r->bindings, iname, v);
 
     uint64_t h = urbi_get_determinism_checksum(&vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return h;
 }
 
@@ -83,15 +83,15 @@ UTEST(two_runs_different_int_binding_differ)
 UTEST(two_runs_empty_vms_match)
 {
     UVM vm1, vm2;
-    uvm_init(&vm1, NULL, NULL);
-    uvm_init(&vm2, NULL, NULL);
+    urbi_vm_init(&vm1, NULL, NULL);
+    urbi_vm_init(&vm2, NULL, NULL);
 
     uint64_t h1 = urbi_get_determinism_checksum(&vm1);
     uint64_t h2 = urbi_get_determinism_checksum(&vm2);
     UASSERT(h1 == h2);
 
-    uvm_destroy(&vm1);
-    uvm_destroy(&vm2);
+    urbi_vm_destroy(&vm1);
+    urbi_vm_destroy(&vm2);
 }
 
 #endif /* URBI_DEBUG */
