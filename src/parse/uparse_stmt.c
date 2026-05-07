@@ -71,8 +71,9 @@ UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
 
 /* parse_assign_or_expr: IDENT already consumed as `name`.
    Handles assignment (`x = expr`), tag-prefix (`mytag: { body }`), and
-   the Pratt-climb-plus-pipe/amp path for expressions that start with an
-   identifier (call chains, member accesses, arithmetic). */
+   expression statements that start with an identifier (call chains,
+   member accesses, arithmetic).  The non-assign/non-tag path delegates
+   to parse_inner_tier_from_lhs to avoid duplicating the Pratt loop. */
 static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     if (peek(p).type == TOK_EQ) {
         return parse_assign_from_ident(p, name);
@@ -83,106 +84,14 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     if (peek(p).type == TOK_COLON) {
         return parse_tag_prefix(p, name);
     }
-    /* Not assignment: build the ident node and finish the Pratt climb
-       for the arithmetic expression (including postfix calls), then
-       hand to the inner-tier pipe/amp separator loop. */
+    /* Not assignment or tag: build the ident node and hand to the
+     * inner-tier entry point that accepts an already-parsed lhs.  This
+     * runs parse_expression_cont (Pratt climb) + the pipe/amp fold —
+     * identical to parse_inner_tier but without re-consuming the IDENT. */
     UAstNode *lhs = make_ident(p, name.u.str.start, name.u.str.len,
                                name.line, name.col);
     if (!lhs) return NULL;
-    /* Pratt climb: handle postfix `(args)`, member access, and
-       arithmetic operators.  Mirrors parse_expression's postfix tier. */
-    for (;;) {
-        UToken op = peek(p);
-        /* Postfix call: highest precedence. */
-        if (op.type == TOK_LPAREN) {
-            lhs = parse_call_args(p, lhs);
-            if (!lhs) return NULL;
-            if (lhs->kind == AST_ERROR) return lhs;
-            continue;
-        }
-        /* Postfix member-access: `.IDENT [= rhs]` / `->IDENT [= rhs]`.
-           On SET, parse_member_access already consumed `= value` via
-           parse_inner_tier (which itself greedily absorbs `|`/`&`),
-           so return immediately rather than re-entering the outer
-           separator loop. */
-        if (op.type == TOK_DOT || op.type == TOK_ARROW) {
-            bool is_assign = false;
-            lhs = parse_member_access(p, lhs, &is_assign);
-            if (!lhs) return NULL;
-            if (lhs->kind == AST_ERROR) return lhs;
-            if (is_assign) return lhs;
-            /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...).
-             * Flag as an error so users are guided to the correct form. */
-            if (!p->at_event_cond
-                && lhs->kind == AST_MEMBER_GET
-                && ident_equals(lhs->u.member.name_start,
-                                lhs->u.member.name_len,
-                                "changed", 7)) {
-                UToken nxt = peek(p);
-                if (nxt.type == TOK_BANG) {
-                    return make_error(p, PARSE_SLOT_CHANGED_EMIT_V1,
-                                      kErrorMessages[PARSE_SLOT_CHANGED_EMIT_V1],
-                                      nxt.line, nxt.col);
-                }
-                return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
-                                  kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
-                                  lhs->line, lhs->col);
-            }
-            continue;
-        }
-        /* Postfix `?` — only valid inside at(...) condition context. */
-        if (op.type == TOK_QUESTION) {
-            if (p->at_event_cond) break;  /* let parse_at consume it */
-            consume(p);
-            return make_error(p, PARSE_QUESTION_OUTSIDE_AT,
-                              kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
-                              op.line, op.col);
-        }
-        /* Postfix `e!` — desugar to `e.emit([arg])`. */
-        if (op.type == TOK_BANG) {
-            consume(p);
-            lhs = desugar_postfix_emit(p, lhs, op);
-            if (!lhs) return NULL;
-            if (lhs->kind == AST_ERROR) return lhs;
-            continue;
-        }
-        int prec = infix_prec(op.type);
-        if (prec == 0) break;
-        consume(p);
-        UAstNode *rhs = parse_expression(p, prec + 1);
-        if (!rhs) return NULL;
-        if (rhs->kind == AST_ERROR) return rhs;
-        lhs = make_binary(p, infix_binop(op.type), lhs, rhs,
-                          op.line, op.col);
-        if (!lhs) return NULL;
-    }
-    /* Inner-tier pipe/amp separator loop (mirrors parse_inner_tier body). */
-    for (;;) {
-        UToken sep = peek(p);
-        if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
-        consume(p);
-        UAstSeparator s = (sep.type == TOK_PIPE) ? SEP_PIPE : SEP_AMP;
-        bool trail = at_statement_end(p)
-                  || peek(p).type == TOK_SEMI
-                  || peek(p).type == TOK_COMMA
-                  || peek(p).type == TOK_PIPE;
-        if (trail) {
-            if (s == SEP_PIPE) return lhs;
-            return make_error(p, PARSE_TRAILING_AMP,
-                              kErrorMessages[PARSE_TRAILING_AMP],
-                              sep.line, sep.col);
-        }
-        UAstNode *rhs = parse_expression(p, 0);
-        if (!rhs) return NULL;
-        if (rhs->kind == AST_ERROR) return rhs;
-        UAstNode *node = make_node(p, AST_BIN_SEP, sep.line, sep.col);
-        if (!node) return NULL;
-        node->u.bin_sep.separator = s;
-        node->u.bin_sep.lhs = lhs;
-        node->u.bin_sep.rhs = rhs;
-        lhs = node;
-    }
-    return lhs;
+    return parse_inner_tier_from_lhs(p, lhs);
 }
 
 /* --- parse_statement_or_expr: var-decl, assign, or inner-tier expression.

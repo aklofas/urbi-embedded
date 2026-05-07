@@ -305,13 +305,11 @@ UAstNode *parse_member_access(UParser *p, UAstNode *recv,
     return node;
 }
 
-/* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
+/* --- parse_expression_cont: Pratt infix/postfix loop starting from lhs.
+   Called by parse_expression (after parse_prefix) and by
+   parse_inner_tier_from_lhs (after an already-produced lhs node). --- */
 
-UAstNode *parse_expression(UParser *p, int min_prec) {
-    UAstNode *left = parse_prefix(p);
-    if (!left) return NULL;
-    if (left->kind == AST_ERROR) return left;
-
+UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
     for (;;) {
         UToken op = peek(p);
 
@@ -396,4 +394,13 @@ UAstNode *parse_expression(UParser *p, int min_prec) {
         if (!left) return NULL;
     }
     return left;
+}
+
+/* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
+
+UAstNode *parse_expression(UParser *p, int min_prec) {
+    UAstNode *left = parse_prefix(p);
+    if (!left) return NULL;
+    if (left->kind == AST_ERROR) return left;
+    return parse_expression_cont(p, left, min_prec);
 }

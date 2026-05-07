@@ -38,6 +38,7 @@ UAstNode *make_compare(UParser *p, UAstCompareOp op, UAstNode *lhs, UAstNode *rh
                        int line, int col);
 UAstNode *make_bool_node(UParser *p, bool value, int line, int col);
 UAstNode *make_nil_node(UParser *p, int line, int col);
+UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec);
 UAstNode *parse_expression(UParser *p, int min_prec);
 UAstNode *parse_prefix(UParser *p);
 UAstNode *parse_atom(UParser *p);
@@ -51,6 +52,7 @@ UAstCompareOp compare_op(UTokenType t);
 /* --- Separator loop (defined in uparse_separators.c). --- */
 bool at_statement_end(UParser *p);
 UAstNode *parse_inner_tier(UParser *p);
+UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs);
 UAstNode *parse_outer_tier(UParser *p);
 
 /* --- Statement parser (defined in uparse_stmt.c). --- */

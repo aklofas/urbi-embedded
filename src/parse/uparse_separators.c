@@ -15,15 +15,9 @@ bool at_statement_end(UParser *p) {
         || t == TOK_PIPE;
 }
 
-/* Inner-tier: parse an arithmetic expression, then left-fold `|` and `&`
-   binops at equal precedence (left-associative).
-   Trailing `|` at statement-end is silently dropped.
-   Trailing `&` at statement-end is a parse error (PARSE_TRAILING_AMP). */
-UAstNode *parse_inner_tier(UParser *p) {
-    UAstNode *lhs = parse_expression(p, 0);
-    if (!lhs) return NULL;
-    if (lhs->kind == AST_ERROR) return lhs;
-
+/* pipe_amp_fold: left-fold `|` and `&` binops starting from an already-parsed
+   lhs.  Shared by parse_inner_tier and parse_inner_tier_from_lhs. */
+static UAstNode *pipe_amp_fold(UParser *p, UAstNode *lhs) {
     for (;;) {
         UToken sep = peek(p);
         if (sep.type != TOK_PIPE && sep.type != TOK_AMP) break;
@@ -56,6 +50,28 @@ UAstNode *parse_inner_tier(UParser *p) {
         lhs = node;
     }
     return lhs;
+}
+
+/* Inner-tier: parse an arithmetic expression, then left-fold `|` and `&`
+   binops at equal precedence (left-associative).
+   Trailing `|` at statement-end is silently dropped.
+   Trailing `&` at statement-end is a parse error (PARSE_TRAILING_AMP). */
+UAstNode *parse_inner_tier(UParser *p) {
+    UAstNode *lhs = parse_expression(p, 0);
+    if (!lhs) return NULL;
+    if (lhs->kind == AST_ERROR) return lhs;
+    return pipe_amp_fold(p, lhs);
+}
+
+/* parse_inner_tier_from_lhs: resume inner-tier parsing from an already-parsed
+   lhs node (e.g. an IDENT already consumed by the statement dispatcher).
+   Runs parse_expression_cont(p, lhs, 0) to finish the Pratt climb, then
+   pipe_amp_fold for the | / & separator loop. */
+UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
+    lhs = parse_expression_cont(p, lhs, 0);
+    if (!lhs) return NULL;
+    if (lhs->kind == AST_ERROR) return lhs;
+    return pipe_amp_fold(p, lhs);
 }
 
 /* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
