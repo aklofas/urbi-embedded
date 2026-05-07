@@ -183,7 +183,7 @@ UTEST(walk_roots_t36_m4_object_singletons_survive_gc)
 
     /* Touch the atom singletons + root shape so they exist. */
     UObject *root      = urbi_object_root(&vm);
-    UObject *integer   = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *integer   = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UShape  *root_shp  = urbi_shape_root(&vm);
 
     UASSERT(root != NULL);

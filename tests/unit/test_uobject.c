@@ -88,18 +88,18 @@ UTEST(uobject_atom_family_values_pinned) {
 /* === T8: public-mirror atom enum stays in sync with the internal one === */
 
 UTEST(uobject_public_atom_tag_values_match_internal) {
-    /* The public URBIAtomFamilyTag (in include/urbi/object.h) uses _F
+    /* The public URBIAtomFamily (in include/urbi/object.h) uses _F
      * suffixes to dodge namespace collisions but must mirror the internal
      * URBIAtomFamily numerically — urbi_object_atom dispatches on these. */
-    UASSERT_EQ((int)URBI_ATOM_OBJECT_F,  (int)URBI_ATOM_OBJECT);
-    UASSERT_EQ((int)URBI_ATOM_INTEGER_F, (int)URBI_ATOM_INTEGER);
-    UASSERT_EQ((int)URBI_ATOM_FLOAT_F,   (int)URBI_ATOM_FLOAT);
-    UASSERT_EQ((int)URBI_ATOM_STRING_F,  (int)URBI_ATOM_STRING);
-    UASSERT_EQ((int)URBI_ATOM_LIST_F,    (int)URBI_ATOM_LIST);
-    UASSERT_EQ((int)URBI_ATOM_DICT_F,    (int)URBI_ATOM_DICT);
-    UASSERT_EQ((int)URBI_ATOM_TAG_F,     (int)URBI_ATOM_TAG);
-    UASSERT_EQ((int)URBI_ATOM_EVENT_F,   (int)URBI_ATOM_EVENT);
-    UASSERT_EQ((int)URBI_ATOM_SYMBOL_F,  (int)URBI_ATOM_SYMBOL);
+    UASSERT_EQ((int)URBI_ATOM_OBJECT,  (int)URBI_ATOM_OBJECT);
+    UASSERT_EQ((int)URBI_ATOM_INTEGER, (int)URBI_ATOM_INTEGER);
+    UASSERT_EQ((int)URBI_ATOM_FLOAT,   (int)URBI_ATOM_FLOAT);
+    UASSERT_EQ((int)URBI_ATOM_STRING,  (int)URBI_ATOM_STRING);
+    UASSERT_EQ((int)URBI_ATOM_LIST,    (int)URBI_ATOM_LIST);
+    UASSERT_EQ((int)URBI_ATOM_DICT,    (int)URBI_ATOM_DICT);
+    UASSERT_EQ((int)URBI_ATOM_TAG,     (int)URBI_ATOM_TAG);
+    UASSERT_EQ((int)URBI_ATOM_EVENT,   (int)URBI_ATOM_EVENT);
+    UASSERT_EQ((int)URBI_ATOM_SYMBOL,  (int)URBI_ATOM_SYMBOL);
 }
 
 /* === T8: root Object singleton lifecycle === */
@@ -149,7 +149,7 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UASSERT(integer != NULL);
     UASSERT_EQ((int)(integer->flags & URBI_OBJ_ATOM_MASK),
                (int)URBI_ATOM_INTEGER);
@@ -167,7 +167,7 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
     UASSERT((UObject *)(integer->protos >> 1) == vm.atom_object);
 
     /* Idempotent — second call returns the same singleton. */
-    UASSERT(urbi_object_atom(&vm, URBI_ATOM_INTEGER_F) == integer);
+    UASSERT(urbi_object_atom(&vm, URBI_ATOM_INTEGER) == integer);
     UASSERT(vm.atom_integer == integer);
 
     urbi_vm_destroy(&vm);
@@ -179,9 +179,9 @@ UTEST(uobject_atom_singletons_are_independent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UObject *flt = urbi_object_atom(&vm, URBI_ATOM_FLOAT_F);
-    UObject *str = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
-    UObject *tag = urbi_object_atom(&vm, URBI_ATOM_TAG_F);
+    UObject *flt = urbi_object_atom(&vm, URBI_ATOM_FLOAT);
+    UObject *str = urbi_object_atom(&vm, URBI_ATOM_STRING);
+    UObject *tag = urbi_object_atom(&vm, URBI_ATOM_TAG);
 
     UASSERT(flt != NULL);
     UASSERT(str != NULL);
@@ -207,13 +207,13 @@ UTEST(uobject_atom_singletons_are_independent) {
     urbi_vm_destroy(&vm);
 }
 
-/* === T8: URBI_ATOM_OBJECT_F routes through urbi_object_root === */
+/* === T8: URBI_ATOM_OBJECT routes through urbi_object_root === */
 
 UTEST(uobject_atom_via_object_f_returns_root) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UObject *via_atom = urbi_object_atom(&vm, URBI_ATOM_OBJECT_F);
+    UObject *via_atom = urbi_object_atom(&vm, URBI_ATOM_OBJECT);
     UObject *via_root = urbi_object_root(&vm);
 
     UASSERT(via_atom != NULL);
@@ -229,7 +229,7 @@ UTEST(uobject_atom_invalid_family_returns_null) {
     urbi_vm_init(&vm, NULL, NULL);
 
     /* 9..15 reserved per uobject.h; >= 9 must not match the switch. */
-    UObject *o = urbi_object_atom(&vm, (URBIAtomFamilyTag)9);
+    UObject *o = urbi_object_atom(&vm, (URBIAtomFamily)9);
     UASSERT(o == NULL);
 
     urbi_vm_destroy(&vm);
@@ -301,7 +301,7 @@ UTEST(uobject_protos_foreach_single_form_yields_one) {
     urbi_vm_init(&vm, NULL, NULL);
 
     /* Integer atom uses the single-tag form ((root << 1) | 1). */
-    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UObject *root    = vm.atom_object;
     UASSERT(integer != NULL);
     UASSERT(root != NULL);
@@ -330,9 +330,9 @@ UTEST(uobject_protos_foreach_heap_form_yields_all) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UObject *root = urbi_object_root(&vm);
-    UObject *a    = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
-    UObject *b    = urbi_object_atom(&vm, URBI_ATOM_FLOAT_F);
-    UObject *c    = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UObject *a    = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
+    UObject *b    = urbi_object_atom(&vm, URBI_ATOM_FLOAT);
+    UObject *c    = urbi_object_atom(&vm, URBI_ATOM_STRING);
     UASSERT(root != NULL); UASSERT(a != NULL); UASSERT(b != NULL); UASSERT(c != NULL);
 
     /* Heap form: allocate a UProtos block with three entries.  Bit 0 of
@@ -627,8 +627,8 @@ UTEST(uobject_valid_proto_rejects_cross_atom_family) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
-    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
+    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING);
     UASSERT(integer && str);
 
     uint32_t before = urbi_object_proto_count(integer);
@@ -648,8 +648,8 @@ UTEST(uobject_set_protos_aborts_on_invalid_proto_no_partial_state) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UObject *root    = urbi_object_root(&vm);
-    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
-    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING_F);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
+    UObject *str     = urbi_object_atom(&vm, URBI_ATOM_STRING);
     UASSERT(root && integer && str);
 
     /* Snapshot Integer's pre-call proto state. */
@@ -1003,7 +1003,7 @@ UTEST(uobject_clone_preserves_atom_family_and_protos_single) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *integer = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UASSERT(integer != NULL);
 
     UObject *c = urbi_object_clone(&vm, integer);

@@ -2,12 +2,11 @@
 /* Public C API for the urbi object model (M4 / T8).
  *
  * Atom-family singletons + prototype-list mutators.  Internals (UObject
- * layout, URBIAtomFamily numeric enum, UPROTOS_FOREACH macro, etc.) live
- * in src/object/uobject.h and are not exposed to host embedders.
- *
- * The public URBIAtomFamilyTag enum mirrors src/object/uobject.h's
- * URBIAtomFamily numerically; the `_F` suffix prevents identifier
- * collisions when both headers are visible to a single TU. */
+ * layout, UPROTOS_FOREACH macro, etc.) live in src/object/uobject.h and
+ * are not exposed to host embedders.  The URBIAtomFamily enum (single
+ * source of truth at v0.5.5) is shared between this public header and
+ * the internal one; src/object/uobject.h includes this header rather
+ * than redefining the enum. */
 
 #ifndef URBI_OBJECT_H
 #define URBI_OBJECT_H
@@ -30,19 +29,20 @@ typedef struct UObject UObject;
 typedef struct UShape  UShape;
 #endif
 
-/* Atom families (numerically identical to src/object/uobject.h::URBIAtomFamily;
- * the _F suffix avoids namespace collisions when both headers are visible). */
+/* Atom families (single source of truth; v0.5.5 retired the dual-enum
+ * with `_F` suffixes).  Low 4 bits of UObject.flags encode the family;
+ * 9..15 reserved for v1.x. */
 typedef enum {
-    URBI_ATOM_OBJECT_F  = 0,
-    URBI_ATOM_INTEGER_F = 1,
-    URBI_ATOM_FLOAT_F   = 2,
-    URBI_ATOM_STRING_F  = 3,
-    URBI_ATOM_LIST_F    = 4,
-    URBI_ATOM_DICT_F    = 5,
-    URBI_ATOM_TAG_F     = 6,
-    URBI_ATOM_EVENT_F   = 7,
-    URBI_ATOM_SYMBOL_F  = 8
-} URBIAtomFamilyTag;
+    URBI_ATOM_OBJECT  = 0,   /* root Object */
+    URBI_ATOM_INTEGER = 1,
+    URBI_ATOM_FLOAT   = 2,
+    URBI_ATOM_STRING  = 3,
+    URBI_ATOM_LIST    = 4,
+    URBI_ATOM_DICT    = 5,
+    URBI_ATOM_TAG     = 6,
+    URBI_ATOM_EVENT   = 7,
+    URBI_ATOM_SYMBOL  = 8
+} URBIAtomFamily;
 
 /* === Atom-family accessors (T8) ===
  *
@@ -53,7 +53,7 @@ typedef enum {
  *
  * Returns NULL on OOM (allocation failure during first-touch creation). */
 UObject *urbi_object_root(struct UVM *vm);
-UObject *urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family);
+UObject *urbi_object_atom(struct UVM *vm, URBIAtomFamily family);
 
 /* === Prototype-list mutators (T11 implements; declared here to lock the
  *     ABI surface introduced by T8) ===

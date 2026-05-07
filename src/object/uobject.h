@@ -78,19 +78,10 @@ typedef struct USlotArray {
  * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
  * the atom family (root Object, the eight built-in atoms, plus 9..15 spare);
  * bit 4 is frozen; bit 5 is sandbox-readonly (per Luau prior art); the high
- * bits are spare. */
-typedef enum {
-    URBI_ATOM_OBJECT  = 0,   /* root Object */
-    URBI_ATOM_INTEGER = 1,
-    URBI_ATOM_FLOAT   = 2,
-    URBI_ATOM_STRING  = 3,
-    URBI_ATOM_LIST    = 4,
-    URBI_ATOM_DICT    = 5,
-    URBI_ATOM_TAG     = 6,
-    URBI_ATOM_EVENT   = 7,
-    URBI_ATOM_SYMBOL  = 8
-    /* 9..15 reserved */
-} URBIAtomFamily;
+ * bits are spare.  URBIAtomFamily enum lives in <urbi/object.h> as of
+ * v0.5.5; the internal duplicate (with no `_F` suffix) was retired in
+ * favor of the public form. */
+#include "urbi/object.h"
 #define URBI_OBJ_ATOM_MASK         0x0FU
 #define URBI_OBJ_FLAG_FROZEN       (1U << 4)
 #define URBI_OBJ_FLAG_SANDBOX_RO   (1U << 5)   /* per Luau prior art */

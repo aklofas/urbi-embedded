@@ -138,25 +138,25 @@ urbi_object_root(struct UVM *vm)
  *
  * Returns NULL on OOM or invalid family tag. */
 
-/* Table entry: per-family vm field offset.  URBIAtomFamilyTag values 0-8
+/* Table entry: per-family vm field offset.  URBIAtomFamily values 0-8
  * are numerically identical to URBIAtomFamily 0-8, so the table is indexed
  * directly by family.  offsetof is used to avoid assuming struct-member
  * ordering beyond what is documented in uvm.h §M4 atom-family singletons. */
 static const size_t kAtomFieldOffset[] = {
-    [URBI_ATOM_OBJECT_F]  = offsetof(UVM, atom_object),
-    [URBI_ATOM_INTEGER_F] = offsetof(UVM, atom_integer),
-    [URBI_ATOM_FLOAT_F]   = offsetof(UVM, atom_float),
-    [URBI_ATOM_STRING_F]  = offsetof(UVM, atom_string),
-    [URBI_ATOM_LIST_F]    = offsetof(UVM, atom_list),
-    [URBI_ATOM_DICT_F]    = offsetof(UVM, atom_dict),
-    [URBI_ATOM_TAG_F]     = offsetof(UVM, atom_tag),
-    [URBI_ATOM_EVENT_F]   = offsetof(UVM, atom_event),
-    [URBI_ATOM_SYMBOL_F]  = offsetof(UVM, atom_symbol),
+    [URBI_ATOM_OBJECT]  = offsetof(UVM, atom_object),
+    [URBI_ATOM_INTEGER] = offsetof(UVM, atom_integer),
+    [URBI_ATOM_FLOAT]   = offsetof(UVM, atom_float),
+    [URBI_ATOM_STRING]  = offsetof(UVM, atom_string),
+    [URBI_ATOM_LIST]    = offsetof(UVM, atom_list),
+    [URBI_ATOM_DICT]    = offsetof(UVM, atom_dict),
+    [URBI_ATOM_TAG]     = offsetof(UVM, atom_tag),
+    [URBI_ATOM_EVENT]   = offsetof(UVM, atom_event),
+    [URBI_ATOM_SYMBOL]  = offsetof(UVM, atom_symbol),
 };
 #define KATOM_TABLE_COUNT ((int)(sizeof(kAtomFieldOffset) / sizeof(kAtomFieldOffset[0])))
 
 UObject *
-urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
+urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
 {
     if ((int)family < 0 || (int)family >= KATOM_TABLE_COUNT) {
         return NULL;
@@ -168,10 +168,10 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
         return *slot;
     }
 
-    /* For URBI_ATOM_OBJECT_F, route through urbi_object_root so the
+    /* For URBI_ATOM_OBJECT, route through urbi_object_root so the
      * allocate-and-pin path is identical to a direct urbi_object_root call.
      * urbi_object_root sets vm->atom_object; we return via *slot on next call. */
-    if (family == URBI_ATOM_OBJECT_F) {
+    if (family == URBI_ATOM_OBJECT) {
         return urbi_object_root(vm);
     }
 
