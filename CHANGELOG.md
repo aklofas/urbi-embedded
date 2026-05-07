@@ -1,6 +1,66 @@
 # Changelog
 
-## Unreleased
+## Unreleased — Wave 3 of v0.5.x cleanup ramp (v0.5.5 candidate)
+
+Internal symbol + public C API naming pass per CONTRIBUTING.md §3.2 conventions.
+Last opportunity to settle public API before M6 grows the surface.
+
+### Changed (naming hygiene)
+
+- (T7) Public VM lifecycle promoted: `uvm_init` → `urbi_vm_init`,
+  `uvm_destroy` → `urbi_vm_destroy`, `uvm_run` → `urbi_vm_run`.
+- (T8) `URBI_ERR_OUT_OF_MEMORY` (-10) collapsed into `URBI_ERR_OOM` (-3);
+  native-code OOM no longer reports a distinct numeric.
+- (T9) `URBIAtomFamilyTag` retired; public surface uses `URBIAtomFamily`
+  directly. `URBI_ATOM_*_F` enumerators drop the `_F` suffix.
+- (T10) `URBI_WATCHDOG_*` macros promoted to `UWatchdogMode` enum.
+- (T11) `URBI_SCHED_CLASS_DEADLINE` → `URBI_SCHED_DEADLINE` (drop `_CLASS_`
+  infix).
+- (T15-T17) New `include/urbi/types.h` hosts UValue / UExecStatus / UErrCode
+  / UVMError / UVMAllocFn + opaque struct fwd-decls; `include/urbi/urbi.h`
+  no longer pulls in `src/sched/ustrand.h`.
+- (T18) `URBI_ASSERT_NOT_ISR(vm)` macro now calls `urbi_in_isr(vm)`;
+  embedders no longer need a complete `struct UVM` definition to use the
+  macro.
+
+### Internal
+
+- (T6) Mass uppercase-literal-suffix sweep: `1u`/`0u` → `1U`/`0U`
+  (~650 sites; clang-tidy `readability-uppercase-literal-suffix`).
+- (T20-T31) Per-subsystem internal symbol renames per spec §3.2; ~70 audit
+  IDs closed.
+- (T32) `misc-include-cleaner` direct-include sweep (~241 sites) — every
+  TU now declares its own includes rather than relying on transitive
+  pulls.
+- (T33) Const-correctness sweep (28 sites flagged by cppcheck
+  `constParameterPointer` + `constVariablePointer`).
+
+### Added
+
+- `urbi-embedded/CONTRIBUTING.md` — naming + layout + commit conventions
+  (will be finalized in Wave 6).
+- `runtime/umacros.h` gains `urbi_memeq` static-inline helper retiring
+  file-local `lex_memeq` + `module_memcmp` lookalikes.
+
+### Fixed
+
+- (T12) `urbi_step` declaration/definition argument-name drift — public
+  header and impl now use `budget_instructions` consistently.
+- (T13) 8 sites in uunwind public APIs had `strand` (decl) vs `s` (def)
+  drift — settled to `strand`.
+- (T14) `urbi_run_chunk` no longer collapses every non-OOM `uvm_run`
+  error into `URBI_ERR_STRAND_FATAL`; the underlying `UErrCode` now
+  propagates through. The `realm` argument is no longer silently
+  discarded.
+
+### Verification
+
+- Bytecode byte-identical against `tests/golden/v0.5.3-bytecode-hashes.txt`
+  (148 fixture hashes; the v0.5.3 baseline is the operative gate, not a
+  fresh capture — no codegen changes in this wave).
+- All `make releasetest` gates green: host + ASan + UBSan + valgrind-fast
+  + tidy + docs-check + coverage 85% + GC stress + URBI_GC_NONE smoke +
+  3-preset × 100-run determinism + cross-arm + cross-riscv + LOC-cap.
 
 ## v0.5.4-decompose — 2026-05-06
 
