@@ -438,6 +438,15 @@ static UTriviaResult skip_trivia(ULexer *l) {
     return r;
 }
 
+/* Purely single-char punctuation tokens — 0 (TOK_EOF) means "not here". */
+static const UTokenType kPunctTable[256] = {
+    ['+'] = TOK_PLUS,   ['*'] = TOK_STAR,    ['/'] = TOK_SLASH,
+    ['('] = TOK_LPAREN, [')'] = TOK_RPAREN,
+    ['|'] = TOK_PIPE,   [';'] = TOK_SEMI,    [','] = TOK_COMMA,
+    ['&'] = TOK_AMP,    ['{'] = TOK_LBRACE,  ['}'] = TOK_RBRACE,
+    [':'] = TOK_COLON,  ['.'] = TOK_DOT,     ['?'] = TOK_QUESTION,
+};
+
 UToken ulex_next(ULexer *lex) {
     UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
@@ -449,27 +458,22 @@ UToken ulex_next(ULexer *lex) {
 
     const char *start = lex->cur;
     const char c = *lex->cur;
+
+    /* Fast path: purely single-char punctuation. */
+    {
+        const UTokenType pt = kPunctTable[(unsigned char)c];
+        if (pt != 0) { lex->cur++; return make_tok(lex, pt, start, 1); }
+    }
+
+    /* Multi-char tokens and the default fall-through. */
     switch (c) {
-    case '+': lex->cur++; return make_tok(lex, TOK_PLUS,   start, 1);
     case '-':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '>') {
             lex->cur += 2;
             return make_tok(lex, TOK_ARROW, start, 2);
         }
         lex->cur++;
-        return make_tok(lex, TOK_MINUS,  start, 1);
-    case '*': lex->cur++; return make_tok(lex, TOK_STAR,   start, 1);
-    case '/': lex->cur++; return make_tok(lex, TOK_SLASH,  start, 1);
-    case '(': lex->cur++; return make_tok(lex, TOK_LPAREN, start, 1);
-    case ')': lex->cur++; return make_tok(lex, TOK_RPAREN, start, 1);
-    case '|': lex->cur++; return make_tok(lex, TOK_PIPE,   start, 1);
-    case ';': lex->cur++; return make_tok(lex, TOK_SEMI,   start, 1);
-    case ',': lex->cur++; return make_tok(lex, TOK_COMMA,  start, 1);
-    case '&': lex->cur++; return make_tok(lex, TOK_AMP,    start, 1);
-    case '{': lex->cur++; return make_tok(lex, TOK_LBRACE, start, 1);
-    case '}': lex->cur++; return make_tok(lex, TOK_RBRACE, start, 1);
-    case ':': lex->cur++; return make_tok(lex, TOK_COLON,  start, 1);
-    case '.': lex->cur++; return make_tok(lex, TOK_DOT,    start, 1);
+        return make_tok(lex, TOK_MINUS, start, 1);
     case '=':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
@@ -484,9 +488,6 @@ UToken ulex_next(ULexer *lex) {
         }
         lex->cur++;
         return make_tok(lex, TOK_BANG, start, 1);
-    case '?':
-        lex->cur++;
-        return make_tok(lex, TOK_QUESTION, start, 1);
     case '<':
         if (lex->cur + 1 < lex->end && lex->cur[1] == '=') {
             lex->cur += 2;
