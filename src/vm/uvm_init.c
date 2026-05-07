@@ -224,7 +224,11 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->in_watcher_eval        = 0U;
     vm->pad_in_eval[0]         = 0U;
     vm->pad_in_eval[1]         = 0U;   /* array is [2]; index 2 removed */
-    vm->in_watcher_scratch     = 0U;   /* spec #3 §5.4: re-entrancy guard for sync emit */
+    /* Zero-initialize the in_watcher_scratch re-entrancy guard so the
+     * dispatcher's slow-path detection in c_event_emit_sync /
+     * c_event_waituntil starts from the correct "not currently inside a
+     * scratch-frame body" state on a fresh VM (spec #3 §5.4). */
+    vm->in_watcher_scratch     = 0U;
     /* spec #2 §5.2 install-time trace state. */
     vm->in_watcher_install     = 0U;
     vm->trace_overflow         = 0U;

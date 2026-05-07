@@ -268,31 +268,36 @@ typedef struct UVM {
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
-    /* M3-only test hooks for watcher eval/fire (M5 replaces with real
-     * urbi_run_closure_on_scratch and spawn_body_coroutine).
+    /* Test seams for the watcher fast path.  Originally introduced as M3
+     * stubs and retained at v0.5.5 because all four are still load-bearing
+     * for C-level unit tests; structural removal of these seams is deferred
+     * to Wave 5 (v0.5.7-fixes) per WATCH-023.  Production code paths (real
+     * watcher dispatch via urbi_run_closure_on_scratch) coexist with the
+     * hooks: each consumer checks the hook pointer and falls through to the
+     * real path when NULL.
      *
      * test_watcher_condition_hook: replaces invoke_condition_closure when non-NULL.
      *   Tests install this to feed deterministic condition values for edge/level
-     *   firing tests.  NULL → invoke_condition_closure returns UVAL_NIL.
-     *   See spec §6.4 + §6.8 for the M3 stub rationale.
+     *   firing tests.  NULL → invoke_condition_closure runs the real cond closure.
      *
      * test_watcher_fire_hook: invoked by spawn_body_coroutine when non-NULL.
-     *   Tests install this to observe watcher body fires.  NULL → no-op at M3. */
+     *   Tests install this to observe watcher body fires.  NULL → real body spawn. */
     UValue (*test_watcher_condition_hook)(struct UVM *vm, struct UWatcher *w);
     void   (*test_watcher_fire_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* M3-only test hook for run_watcher_onleave (M5 replaces with real
-     * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
+    /* Test seam for run_watcher_onleave; same Wave-5 deferral as above.
+     * NULL → run_watcher_onleave runs the real onleave path. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* Install-time cond-eval test hook.
+    /* Install-time cond-eval test seam.
      * When non-NULL, install_watcher_runtime calls this hook instead of the
      * real urbi_run_closure_on_scratch (uwatcher_scratch.c) — used by C-level
      * unit tests that inject specific cond results or simulate cond-throws.
      *   Signature: hook(vm, cond, out_result, out_threw)
      *   - out_result receives the simulated return value.
      *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
-     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch. */
+     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch.
+     * Same Wave-5 deferral as the three watcher hooks above. */
     void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
                                      UValue *out_result, int *out_threw);
 

@@ -832,12 +832,15 @@ dispatch:
             }
             /* Fire the write barrier on the slow path so watchers whose
              * read-set includes recv see the write.  Mirrors the fast-path
-             * urbi_gc_slot_write call above (line 1571).  The actual store
-             * was already performed inside urbi_slot_set_slow; calling the
-             * barrier after the store is correct because observer_dirty only
-             * bumps watcher_dirty_count and watcher_eval_dirty runs at the
-             * next safepoint, not inline here.  Slot index 0 is passed as a
-             * conservative sentinel — observer_dirty ignores the key at M5. */
+             * urbi_gc_slot_write call earlier in this OP_SETSLOT arm (the
+             * URBI_SLOT_FLAG_LOCAL branch above) — see urbi_gc_slot_write
+             * in src/gc/ugc_incremental.c for the barrier itself.  The
+             * actual store was already performed inside urbi_slot_set_slow;
+             * calling the barrier after the store is correct because
+             * observer_dirty only bumps watcher_dirty_count and
+             * watcher_eval_dirty runs at the next safepoint, not inline
+             * here.  Slot index 0 is passed as a conservative sentinel —
+             * observer_dirty ignores the key at M5. */
             urbi_gc_slot_write(vm, (UCell *)recv, 0U, v);
             urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
@@ -910,7 +913,12 @@ dispatch:
         CASE(OP_PUSH_TAG) {
             /* OP_PUSH_TAG ABx:
              *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
-             *   A[3:0] = tag_reg nibble (register holding the tag value)
+             *   A[3:0] = reserved (currently unused at runtime; the emitter
+             *            packs a tag_reg here per uemit_push_tag, but the
+             *            dispatch path creates an anonymous UTag from the
+             *            cleanup stack and never reads this nibble — the
+             *            register binding is reserved for a future feature
+             *            where the tag is exposed to a register slot)
              *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
              *
              * T30: allocate a per-scope UTag (no UVAL_TAG / register binding at M3).
