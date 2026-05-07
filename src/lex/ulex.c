@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* ULexer. */
 
-#include "ulex.h"
+#include "lex/ulex.h"
 
 #include <limits.h>
 

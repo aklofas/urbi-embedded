@@ -4,7 +4,7 @@
 #include "utest.h"
 #include "value/uarena.h"
 #include "uast.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "uparse.h"
 #include <inttypes.h>
 #include <stdio.h>

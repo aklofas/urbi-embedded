@@ -8,7 +8,7 @@
 
 #include "value/uarena.h"
 #include "uast.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 
 #ifdef __cplusplus
 extern "C" {

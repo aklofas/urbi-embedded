@@ -9,7 +9,7 @@
 #include "uast.h"
 #include "uemit.h"
 #include "value/uintern.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "umodule.h"
 #include "uparse.h"
 #include "uvm.h"

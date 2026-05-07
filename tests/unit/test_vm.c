@@ -8,7 +8,7 @@
 #include "uast.h"
 #include "runtime/uclosure.h"   /* T22: UClosure.proto_inst plumbing tests */
 #include "uemit.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "uparse.h"
 #include <stdlib.h>
 #include <string.h>

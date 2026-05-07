@@ -26,7 +26,7 @@
 #include "umodule.h"
 #include "value/uarena.h"
 #include "uemit.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "uparse.h"
 #include "uast.h"
 #include "value/uvalue.h"

@@ -16,7 +16,7 @@
 #include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "umodule.h"
 #include "uparse.h"
 #include "uvm.h"

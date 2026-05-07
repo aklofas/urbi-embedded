@@ -24,7 +24,7 @@
 #include "value/uarena.h"
 #include "uast.h"
 #include "uemit.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "uparse.h"
 #include "sched/usched_cooperative.h"
 #include "object/umoduleinstance.h"

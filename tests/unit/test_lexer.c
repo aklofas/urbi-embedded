@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "utest.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 
 static void eof_on_empty_input(void) {
     ULexer l;

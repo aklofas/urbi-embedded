@@ -14,7 +14,7 @@
 #include "umodule.h"
 #include "runtime/uclosure.h"
 #include "uemit.h"
-#include "ulex.h"
+#include "lex/ulex.h"
 #include "uparse.h"
 #include "uvm.h"
 
