@@ -8,6 +8,7 @@
 #include "runtime/umacros.h"
 #include "object/uic.h"
 #include "object/umodule_instance.h"
+#include <stdint.h>
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -38,7 +39,7 @@ urbi_panic(const char *msg)
 }
 
 /* urbi_set_isr_check_fn: install an ISR-context predicate.
- * Pass NULL to disable ISR checking (the default after uvm_init). */
+ * Pass NULL to disable ISR checking (the default after urbi_vm_init). */
 void
 urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
 {
@@ -46,12 +47,25 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
     vm->isr_check_fn = fn;
 }
 
+#ifdef URBI_DEBUG
+/* urbi_in_isr: query the registered ISR-context predicate.  Hides
+ * vm->isr_check_fn so URBI_ASSERT_NOT_ISR can be written without a
+ * complete struct UVM in scope.  Closes API-018 / GC-012 structurally. */
+bool
+urbi_in_isr(const struct UVM *vm)
+{
+    return vm != NULL
+        && vm->isr_check_fn != NULL
+        && vm->isr_check_fn();
+}
+#endif
+
 /* urbi_set_callback_watchdog_mode: select WARN or ASSERT on slow callback. */
 void
-urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode)
+urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)
 {
     if (!vm) return;
-    vm->callback_watchdog_mode = mode;
+    vm->callback_watchdog_mode = (uint8_t)mode;
 }
 
 /* urbi_call_host_with_watchdog: URBI_DEBUG build implementation.
@@ -195,20 +209,20 @@ urbi_get_determinism_checksum(struct UVM *vm)
             const UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL) continue;
             uint16_t i;
-            for (i = 0u; i < arr->n; i++) {
+            for (i = 0U; i < arr->n; i++) {
                 const UProtoInstance *pi = &arr->entries[i];
                 if (pi->ic_table == NULL) continue;
                 uint16_t ic_count;
                 if (pi->proto != NULL) {
                     ic_count = pi->proto->ic_count;
-                } else if (i == 0u) {
+                } else if (i == 0U) {
                     /* Root chunk — read ic_count from UModule. */
                     ic_count = mi->module->ic_count;
                 } else {
-                    ic_count = 0u;  /* entries[i>0] always have a proto */
+                    ic_count = 0U;  /* entries[i>0] always have a proto */
                 }
                 uint16_t k;
-                for (k = 0u; k < ic_count; k++) {
+                for (k = 0U; k < ic_count; k++) {
                     const UIC *ic = &pi->ic_table[k];
                     FNV1A_MIX(ctx.h, (uint64_t)ic->n);
                     FNV1A_MIX(ctx.h, (uint64_t)ic->replace_cursor);

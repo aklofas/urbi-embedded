@@ -37,7 +37,7 @@ UTEST(at_event_install_links_into_event_chain)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     UEvent *e = urbi_event_create(&vm);
@@ -53,7 +53,7 @@ UTEST(at_event_install_links_into_event_chain)
     UASSERT(e->at_watchers_head->event == e);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: sync mode stored correctly ============================== */
@@ -63,7 +63,7 @@ UTEST(at_event_sync_install_links_with_sync_mode)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     UEvent *e = urbi_event_create(&vm);
@@ -77,7 +77,7 @@ UTEST(at_event_sync_install_links_with_sync_mode)
     UASSERT_EQ((int)UWATCHER_AT_EVENT_SYNC, (int)e->at_watchers_head->mode);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: does not join active_watchers_head ====================== */
@@ -87,7 +87,7 @@ UTEST(at_event_install_does_not_join_active_watchers)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     UEvent *e = urbi_event_create(&vm);
@@ -101,7 +101,7 @@ UTEST(at_event_install_does_not_join_active_watchers)
     UASSERT(vm.active_watchers_head == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: pool exhausted returns OOM ============================== */
@@ -113,7 +113,7 @@ UTEST(at_event_install_pool_exhausted)
     UWatcher *held[URBI_WATCHER_POOL_SIZE];
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     /* Drain the pool. */
@@ -136,7 +136,7 @@ UTEST(at_event_install_pool_exhausted)
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point =============================================== */

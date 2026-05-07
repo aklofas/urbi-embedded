@@ -21,7 +21,7 @@
 static void uchanged_node_head_null_at_create(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -31,7 +31,7 @@ static void uchanged_node_head_null_at_create(void)
         UASSERT(o->changed_events_head == NULL);
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: sizeof(UObject) >= 56 ===== */
@@ -42,7 +42,7 @@ static void uchanged_node_uobject_size(void)
      * Assert >= 56 so the test also passes on 32-bit cross targets where
      * the struct is smaller; the _Static_assert in uobject.h gates the exact
      * 56-byte requirement to __SIZEOF_POINTER__ == 8 builds. */
-    UASSERT(sizeof(UObject) >= 56u);
+    UASSERT(sizeof(UObject) >= 56U);
 }
 
 /* ===== Test 3: sizeof(UChangedNode) is 32 host / 16 32-bit ===== */

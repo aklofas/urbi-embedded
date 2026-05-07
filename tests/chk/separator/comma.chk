@@ -5,7 +5,7 @@
 #
 # Reason:
 #   ',' (OP_FORK_DETACH) fires a detached strand.  The chk runner uses the
-#   uvm_run REPL path (realm == NULL); OP_FORK_DETACH produces "TypeError:
+#   urbi_vm_run REPL path (realm == NULL); OP_FORK_DETACH produces "TypeError:
 #   requires urbi_step driver" in that context (see comma_amp_unsupported.chk).
 #   Timing-based ordering (sleep interleave) additionally requires the step
 #   driver to advance time and schedule strands.

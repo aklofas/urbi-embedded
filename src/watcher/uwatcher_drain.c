@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Watcher pending-onleave queue: push helper, run_watcher_onleave stub,
+/* Watcher pending-onleave queue: push helper, run_watcher_onleave,
  * drain_pending_onleave_queue.
- * Row 11.
+ * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -40,6 +40,7 @@
 #include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
+#include <stddef.h>
 
 /* === run_watcher_onleave — file-scope static ===
  *

@@ -27,11 +27,18 @@
 
 /* Priority API — only compiled when the selected scheduler supports it.
    Cooperative never defines URBI_SCHED_HAS_PRIORITY != 0, so these
-   declarations are absent in M3 builds. */
+   declarations are absent in M3 builds.
+
+   v0.5.5 (T11) made the `_CLASS_` infix uniform across all three
+   enumerators (closes API-019).  The original asymmetric form had only
+   the third member CLASS-prefixed; dropping CLASS to match the others
+   would have collided with USCHED_DEADLINE (the scheduler-strategy
+   selector at src/sched/usched.h:11), so the infix was pushed onto the
+   first two enumerators instead. */
 #if URBI_SCHED_HAS_PRIORITY
 typedef enum {
-    URBI_SCHED_DEFAULT        = 0,
-    URBI_SCHED_PRIORITY       = 1,
+    URBI_SCHED_CLASS_DEFAULT  = 0,
+    URBI_SCHED_CLASS_PRIORITY = 1,
     URBI_SCHED_CLASS_DEADLINE = 2
 } USchedClass;
 

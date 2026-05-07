@@ -21,7 +21,7 @@ static inline void emit_memcpy(void *dst, const void *src, size_t n) {
     unsigned char *pd = (unsigned char *)dst;
     const unsigned char *ps = (const unsigned char *)src;
     size_t i;
-    for (i = 0u; i < n; i++) pd[i] = ps[i];
+    for (i = 0U; i < n; i++) pd[i] = ps[i];
 }
 
 /* Local byte-move (overlapping-safe right shift).  Used by the prologue
@@ -30,14 +30,7 @@ static inline void emit_memmove_right(void *dst, const void *src, size_t n) {
     unsigned char *pd = (unsigned char *)dst;
     const unsigned char *ps = (const unsigned char *)src;
     size_t i = n;
-    while (i > 0u) { i--; pd[i] = ps[i]; }
-}
-
-/* Local strlen replacement (byte-loop).  Freestanding-safe. */
-static inline size_t emit_strlen(const char *s) {
-    size_t n = 0u;
-    while (s[n] != '\0') n++;
-    return n;
+    while (i > 0U) { i--; pd[i] = ps[i]; }
 }
 
 /* --- Module allocator helper --- */
@@ -47,7 +40,7 @@ static inline size_t emit_strlen(const char *s) {
 
 static inline void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
-    if (nbytes == 0u) { free(ptr); return NULL; }
+    if (nbytes == 0U) { free(ptr); return NULL; }
     return realloc(ptr, nbytes);
 }
 
@@ -128,8 +121,14 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 
 /* --- Sentinels and biases shared across emit TUs --- */
 
-#define UEMIT_NO_OPERAND      ((uint8_t)0xFFu)   /* "no body / no onleave" — replaces inline 0xFFu (EMIT-023) */
-#define UEMIT_JMP_BIAS        32768              /* used by emit_stmt + emit_expr (EMIT-024) */
+#define UEMIT_NO_OPERAND      ((uint8_t)0xFFU)   /* "no body / no onleave" — replaces inline 0xFFU (EMIT-023) */
+/* JMP offset encoding: signed 16-bit offsets are stored as Bx with a
+ * +0x8000 bias (UEMIT_JMP_BIAS) so 0x0000 means "jump back 0x8000",
+ * 0x8000 means "no offset", 0xFFFF means "jump forward 0x7FFF".
+ * UEMIT_JMP_FALLTHROUGH_BIAS encodes "+1 instr" — used by comparison
+ * sites that always fall through to a single skip-over JMP. */
+#define UEMIT_JMP_BIAS                32768U
+#define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
@@ -140,7 +139,7 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
  * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
  * all 256 slots are consumed (cursor at 255 before call). */
 static inline uint8_t alloc_reg(UEmitter *e) {
-    if (e->next_reg == 255u) { e->error = EMIT_REG_EXHAUSTED; return 0u; }
+    if (e->next_reg == 255U) { e->error = EMIT_REG_EXHAUSTED; return 0U; }
     uint8_t r = e->next_reg++;
     if (r > e->max_reg_seen) e->max_reg_seen = r;
     return r;
@@ -148,7 +147,7 @@ static inline uint8_t alloc_reg(UEmitter *e) {
 
 /* Release the most-recently-allocated register (stack discipline). */
 static inline void free_reg(UEmitter *e) {
-    if (e->next_reg > 0u) e->next_reg--;
+    if (e->next_reg > 0U) e->next_reg--;
 }
 
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
@@ -161,14 +160,14 @@ uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
 
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
-uint8_t emit_int_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_bool_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_nil_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_noop_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_int_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_compare_arm(UEmitter *e, UAstNode *n);
-uint8_t emit_ident_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_ident_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_var_decl_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_assign_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_nary_arm(UEmitter *e, UAstNode *n);

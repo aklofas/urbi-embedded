@@ -4,7 +4,7 @@
 #
 # Reason:
 #   '&' (OP_FORK_JOIN) requires the realm-managed scheduler path.  The chk
-#   runner uses the uvm_run REPL path (realm == NULL); OP_FORK_JOIN produces
+#   runner uses the urbi_vm_run REPL path (realm == NULL); OP_FORK_JOIN produces
 #   a TypeError in that context.  This fixture exercises deeply nested '&'/'|'
 #   interleaving which depends on correct multi-strand scheduling.
 #

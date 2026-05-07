@@ -81,21 +81,21 @@ UTEST(deferred_ring_drains_at_safepoint)
     UStrand s;
     uint32_t instr[1]; UProto proto; UClosure cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (!r) { uvm_destroy(&vm); return; }
+    if (!r) { urbi_vm_destroy(&vm); return; }
     ustrand_init(&s, &vm);
     s.realm = r;
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!o) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
     UEvent *e = install_at_event_on_slot(&vm, &s, o, sym, &cl, &proto, instr);
     UASSERT(e != NULL);
-    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
@@ -123,7 +123,7 @@ UTEST(deferred_ring_drains_at_safepoint)
         urbi_watcher_unregister_internal(&vm, e->at_watchers_head);
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -133,17 +133,17 @@ UTEST(deferred_ring_drains_at_safepoint)
 UTEST(deferred_ring_overflow_drops_with_warn)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { uvm_destroy(&vm); return; }
+    if (!o) { urbi_vm_destroy(&vm); return; }
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
     /* Install change event so bit 7 is set. */
     UEvent *e = urbi_object_get_or_create_change_event(&vm, o, sym);
     UASSERT(e != NULL);
-    if (!e) { uvm_destroy(&vm); return; }
+    if (!e) { urbi_vm_destroy(&vm); return; }
 
     /* Fill the ring to capacity (cap - 1 entries, since it's SPSC). */
     uint16_t cap = vm.deferred_slot_changes_cap;
@@ -163,7 +163,7 @@ UTEST(deferred_ring_overflow_drops_with_warn)
     urbi_defer_slot_change(&vm, o, sym, v);
     UASSERT_EQ(1, (int)vm.slot_change_ring_full_warned);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -178,16 +178,16 @@ UTEST(deferred_ring_drain_fifo_order)
     UProto proto1, proto2;
     UClosure cl1, cl2;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (!r) { uvm_destroy(&vm); return; }
+    if (!r) { urbi_vm_destroy(&vm); return; }
     ustrand_init(&s, &vm);
     s.realm = r;
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!o) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     USymbol *sym_x = (USymbol *)ustr_intern(&vm, "x", 1);
     USymbol *sym_y = (USymbol *)ustr_intern(&vm, "y", 1);
@@ -200,7 +200,7 @@ UTEST(deferred_ring_drain_fifo_order)
         if (ey && ey->at_watchers_head) urbi_watcher_unregister_internal(&vm, ey->at_watchers_head);
         ustrand_destroy(&s, &vm);
         urbi_realm_destroy(&vm, r);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -225,7 +225,7 @@ UTEST(deferred_ring_drain_fifo_order)
     if (ey->at_watchers_head) urbi_watcher_unregister_internal(&vm, ey->at_watchers_head);
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

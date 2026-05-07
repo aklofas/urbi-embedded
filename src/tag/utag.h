@@ -27,8 +27,8 @@ struct UEvent;
 
 /* === UTag flag bits (stored in UTag.flags) === */
 
-#define UTAG_FLAG_FROZEN  0x01u  /* RESERVED — Tag.freeze (M5/M6) */
-#define UTAG_FLAG_STOPPED 0x02u  /* RESERVED — Tag.stop state (M5/M6) */
+#define UTAG_FLAG_FROZEN  0x01U  /* RESERVED — Tag.freeze (M5/M6) */
+#define UTAG_FLAG_STOPPED 0x02U  /* RESERVED — Tag.stop state (M5/M6) */
 
 /* === UTag struct (row 11 §3.2, extended M5 spec #3 §3.4) ===
  *
@@ -57,7 +57,27 @@ typedef struct UTag {
     uint8_t  flags;                     /* UTAG_FLAG_FROZEN / UTAG_FLAG_STOPPED */
     uint8_t  pad1[3];
 
-    /* --- membership lists (row 11 §3) --- */
+    /* --- membership lists (row 11 §3) ---
+     *
+     * TAGCH-014: the two _head fields look symmetric but are not — element
+     * type and ownership differ:
+     *
+     *   member_strands_head: chains UCleanupEntry instances (one per strand
+     *     that opened a TAG_SCOPE for this tag).  The cleanup entries are
+     *     owned by their strand's cleanup stack — the tag holds a back-ref
+     *     only.  Threading via UCleanupEntry.next_member.  Strand-driven
+     *     mutation: push at scope-enter, splice at scope-leave.
+     *
+     *   member_watchers_head: chains UWatcher structs directly (no per-link
+     *     entry node).  Watchers are owned by their realm (via w->realm),
+     *     not by this tag — the tag is one of two intrusive lists they sit
+     *     on (the other is vm->active_watchers_head).  Threading via
+     *     UWatcher.next_in_tag.  Watcher-driven mutation: head-insert at
+     *     install, splice at unregister.
+     *
+     * The shared "member_*_head" naming reflects "things scoped to this
+     * tag" but DO NOT confuse the chains for shared structure: separate
+     * link fields, separate element types, separate mutation paths. */
     struct UCleanupEntry *member_strands_head;  /* TAG_SCOPE entries, via next_member */
     struct UWatcher      *member_watchers_head; /* watchers, via UWatcher.next_in_tag */
 
@@ -94,7 +114,7 @@ _Static_assert(sizeof(UTag) == 56,
  *   NULL-safe.  Not ISR-safe. */
 
 UTag *utag_create(struct UVM *vm);
-void  utag_destroy(struct UVM *vm, UTag *tag);
+void  utag_destroy(struct UVM *vm, const UTag *tag);
 
 /* === Ambient-tag lookup (C-internal) ===
  *

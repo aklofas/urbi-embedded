@@ -38,9 +38,9 @@ handle_walk_count_cb(struct UVM *vm, UValue *slot, void *ctx)
 UTEST(handle_create_get_release)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -56,33 +56,33 @@ UTEST(handle_create_get_release)
     UValue after = urbi_handle_get(&vm, h);
     UASSERT_EQ(after.kind, UVAL_NIL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* URBI_HANDLE_INVALID (0) and out-of-range get return nil. */
 UTEST(handle_invalid_returns_nil)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue v1 = urbi_handle_get(&vm, URBI_HANDLE_INVALID);
     UASSERT_EQ(v1.kind, UVAL_NIL);
 
-    UValue v2 = urbi_handle_get(&vm, 9999u);
+    UValue v2 = urbi_handle_get(&vm, 9999U);
     UASSERT_EQ(v2.kind, UVAL_NIL);
 
     /* Release of invalid handle is a no-op (no crash). */
     urbi_handle_release(&vm, URBI_HANDLE_INVALID);
-    urbi_handle_release(&vm, 9999u);
+    urbi_handle_release(&vm, 9999U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Allocate more handles than INITIAL_CAP (16) to exercise table growth. */
 UTEST(handle_grow_beyond_initial_cap)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate 20 handles to force at least one growth. */
 #define N_HANDLES 20
@@ -91,7 +91,7 @@ UTEST(handle_grow_beyond_initial_cap)
     int      i;
 
     for (i = 0; i < N_HANDLES; i++) {
-        cells[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
+        cells[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
         UASSERT(cells[i] != NULL);
         UValue v = make_handle_cell_value(cells[i]);
         handles[i] = urbi_handle_create(&vm, v);
@@ -111,17 +111,17 @@ UTEST(handle_grow_beyond_initial_cap)
     }
 #undef N_HANDLES
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* host_handle_walk_roots calls back for active (non-nil) slots only. */
 UTEST(handle_walk_roots_active_only)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c1 = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
-    UCell *c2 = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
+    UCell *c1 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
+    UCell *c2 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
     UASSERT(c1 != NULL);
     UASSERT(c2 != NULL);
 
@@ -143,7 +143,7 @@ UTEST(handle_walk_roots_active_only)
     /* After creating h1 (released) and h2 (active): 1 active slot visited. */
     UASSERT_EQ(walk_count, 1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== pin/unpin tests ===== */
@@ -152,9 +152,9 @@ UTEST(handle_walk_roots_active_only)
 UTEST(pin_sets_bit_unpin_clears)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -168,16 +168,16 @@ UTEST(pin_sets_bit_unpin_clears)
     urbi_unpin(&vm, v);
     UASSERT(!(c->gc_byte & UGC_IS_PINNED));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* A pinned cell must survive urbi_gc_force_full (not freed). */
 UTEST(pin_skips_sweep)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -193,14 +193,14 @@ UTEST(pin_skips_sweep)
     /* Clean up: unpin so the next GC cycle can collect it. */
     urbi_unpin(&vm, v);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* pin/unpin are no-ops for non-heap UValues (no crash). */
 UTEST(pin_unpin_nop_for_non_heap)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UValue nil_val = {0};
     nil_val.kind = UVAL_NIL;
@@ -213,7 +213,7 @@ UTEST(pin_unpin_nop_for_non_heap)
     urbi_pin(&vm, int_val);
     urbi_unpin(&vm, int_val);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== UGC_IS_FIXED survival ===== */
@@ -222,9 +222,9 @@ UTEST(pin_unpin_nop_for_non_heap)
 UTEST(fixed_cell_survives_sweep)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     c->gc_byte |= UGC_IS_FIXED;
@@ -235,7 +235,7 @@ UTEST(fixed_cell_survives_sweep)
     /* FIXED cells must survive: verify the flag is still set. */
     UASSERT(c->gc_byte & UGC_IS_FIXED);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

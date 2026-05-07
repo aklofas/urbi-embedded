@@ -126,7 +126,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
     return 0;
 }
 
-#define URBI_REPL_MAX_FILE (1024u * 1024u)
+#define URBI_REPL_MAX_FILE (1024U * 1024U)
 
 /* Slurp a file (or stdin, with path=="-") into a freshly-malloc'd buffer.
    Returns pointer on success, NULL on error (message printed to stderr).
@@ -189,7 +189,7 @@ static int run_file(UVM *vm, const char *path) {
     char err[256] = {0};
     if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
         UValue out;
-        UVMError vrc = uvm_run(vm, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
             rc = 0;
         } else {
@@ -242,7 +242,7 @@ static int run_expression(UVM *vm, const char *expr) {
     char err[256] = {0};
     if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {
         UValue out;
-        UVMError vrc = uvm_run(vm, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, &module, &out);
         if (vrc == UVM_OK) {
             /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
                M2 string literals may truncate silently — promote to
@@ -456,9 +456,9 @@ int main(int argc, char *argv[]) {
                 final_len = len + 2;
             }
             UVM vm;
-            uvm_init(&vm, NULL, NULL);
+            urbi_vm_init(&vm, NULL, NULL);
             int rc = run_dump(&vm, buf, final_len, "<expr>");
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             free(buf);
             return rc;
         }
@@ -467,9 +467,9 @@ int main(int argc, char *argv[]) {
             char *src = slurp(file_arg, &flen);
             if (!src) return 2;
             UVM vm;
-            uvm_init(&vm, NULL, NULL);
+            urbi_vm_init(&vm, NULL, NULL);
             int rc = run_dump(&vm, src, flen, file_arg);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             free(src);
             return rc;
         }
@@ -479,26 +479,26 @@ int main(int argc, char *argv[]) {
 
     if (expr) {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
         int rc = run_expression(&vm, expr);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return rc;
     }
 
     if (file_arg) {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
         int rc = run_file(&vm, file_arg);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return rc;
     }
 
     /* No -e, no file: check stdin. */
     if (argc == 1 && !isatty(fileno(stdin))) {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
         int rc = run_file(&vm, "-");
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return rc;
     }
 
@@ -506,9 +506,9 @@ int main(int argc, char *argv[]) {
     if (want_interactive ||
         (argc == 1 && isatty(fileno(stdin)))) {
         UVM vm;
-        uvm_init(&vm, NULL, NULL);
+        urbi_vm_init(&vm, NULL, NULL);
         int rc = run_interactive(&vm);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return rc;
     }
 

@@ -19,7 +19,7 @@
 int main(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     for (int i = 0; i < CYCLE_COUNT; i++) {
         urbi_gc_force_full(&vm);
@@ -30,12 +30,12 @@ int main(void)
                     "FAIL: gc_phase != GC_PHASE_IDLE after force_full"
                     " (cycle %d, phase=%u)\n",
                     i, (unsigned)phase);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             return 1;
         }
     }
 
     printf("gc_many_cycles: %d forced full cycles completed PASS\n", CYCLE_COUNT);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return 0;
 }

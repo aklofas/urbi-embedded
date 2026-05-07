@@ -3,7 +3,7 @@
  *
  * At M3 baseline the only heap-bearing UValKind is UVAL_CLOSURE.  Most root
  * slots are UVAL_NIL.  Tests verify:
- *   - 4 providers registered after uvm_init
+ *   - 4 providers registered after urbi_vm_init
  *   - urbi_gc_walk_roots dispatches to every registered provider
  *   - Adding an extra provider increments the count
  *   - Walk completes without crash on an empty-but-initialised VM
@@ -51,17 +51,17 @@ static void noop_provider(UVM *vm, UGcRootCallback cb, void *ctx)
     (void)ctx;
 }
 
-/* ===== Test 1: 4 providers registered after uvm_init ===== */
+/* ===== Test 1: 4 providers registered after urbi_vm_init ===== */
 
 UTEST(walk_roots_t26_four_providers_at_init)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    /* uvm_init registers: sched, realm, intern, host_handle. */
-    UASSERT(vm.root_provider_count >= 4u);
+    /* urbi_vm_init registers: sched, realm, intern, host_handle. */
+    UASSERT(vm.root_provider_count >= 4U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: register_root_provider increments count ===== */
@@ -69,13 +69,13 @@ UTEST(walk_roots_t26_four_providers_at_init)
 UTEST(walk_roots_t26_register_increments_count)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     uint8_t before = vm.root_provider_count;
     urbi_gc_register_root_provider(&vm, noop_provider);
-    UASSERT_EQ(vm.root_provider_count, (uint8_t)(before + 1u));
+    UASSERT_EQ(vm.root_provider_count, (uint8_t)(before + 1U));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: urbi_gc_walk_roots dispatches to each provider =====
@@ -87,7 +87,7 @@ UTEST(walk_roots_t26_register_increments_count)
 UTEST(walk_roots_t26_dispatches_to_providers)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Register a trivial counting provider. */
     int invocations = 0;
@@ -99,7 +99,7 @@ UTEST(walk_roots_t26_dispatches_to_providers)
     urbi_gc_walk_roots(&vm, count_all_callback, &invocations);
     /* invocations >= 0 always; the real check is "no crash". */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: walk completes without crash after realm creation ===== */
@@ -107,7 +107,7 @@ UTEST(walk_roots_t26_dispatches_to_providers)
 UTEST(walk_roots_t26_walk_with_realm)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -120,7 +120,7 @@ UTEST(walk_roots_t26_walk_with_realm)
     UASSERT(seen >= 1);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: gc_mark_roots_step wires providers into the GC phase =====
@@ -131,28 +131,28 @@ UTEST(walk_roots_t26_walk_with_realm)
 UTEST(walk_roots_t26_mark_roots_phase_transition)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Force a GC cycle start: flip current_white and set to MARK_ROOTS. */
-    vm.current_white ^= 0x01u;
+    vm.current_white ^= 0x01U;
     vm.gc_phase = GC_PHASE_MARK_ROOTS;
 
     /* Allocate some debt so gc_slice will work through the phases. */
     vm.gc_debt = 1024;
 
     /* Run one slice — should cover MARK_ROOTS → MARK_INCREMENTAL transition. */
-    urbi_gc_slice(&vm, 65536u);
+    urbi_gc_slice(&vm, 65536U);
 
     /* After the slice, GC should have advanced past MARK_ROOTS (providers walked). */
     UASSERT(vm.gc_phase != GC_PHASE_MARK_ROOTS);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== T36: M4 root provider keeps atom singletons + root_shape alive =====
  *
  * Verifies that after the manual urbi_pin calls were removed (T36), the
- * registered m4_object_roots_walker is the load-bearing reachability path:
+ * registered object_roots_walker is the load-bearing reachability path:
  * a full GC cycle does NOT reclaim atom_object / atom_integer / root_shape.
  *
  * Mechanism: peek into vm->all_cells_head's sidecar list (private layout
@@ -179,11 +179,11 @@ static int cell_present(UVM *vm, UCell *target)
 UTEST(walk_roots_t36_m4_object_singletons_survive_gc)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Touch the atom singletons + root shape so they exist. */
     UObject *root      = urbi_object_root(&vm);
-    UObject *integer   = urbi_object_atom(&vm, URBI_ATOM_INTEGER_F);
+    UObject *integer   = urbi_object_atom(&vm, URBI_ATOM_INTEGER);
     UShape  *root_shp  = urbi_shape_root(&vm);
 
     UASSERT(root != NULL);
@@ -214,7 +214,7 @@ UTEST(walk_roots_t36_m4_object_singletons_survive_gc)
     UASSERT(cell_present(&vm, (UCell *)integer));
     UASSERT(cell_present(&vm, (UCell *)root_shp));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

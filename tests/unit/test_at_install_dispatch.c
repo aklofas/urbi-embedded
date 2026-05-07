@@ -18,7 +18,7 @@
  *   4. waituntil_does_not_yield_when_cond_true:
  *      Compile and run "var x = 1; waituntil (x);" — cond starts true so the
  *      install fast-path unregisters immediately.  Strand stays RUNNABLE (not
- *      WAITING), uvm_run returns UVM_OK, and active_watchers_head is NULL. */
+ *      WAITING), urbi_vm_run returns UVM_OK, and active_watchers_head is NULL. */
 
 #include "utest.h"
 #include "value/uarena.h"
@@ -50,7 +50,7 @@ typedef struct {
 static int
 compile_source(PipeCtx *ctx, const char *src)
 {
-    uvm_init(&ctx->vm, NULL, NULL);
+    urbi_vm_init(&ctx->vm, NULL, NULL);
     uarena_init(&ctx->arena, 4096);
     memset(&ctx->module, 0, sizeof(ctx->module));
 
@@ -76,13 +76,13 @@ compile_source(PipeCtx *ctx, const char *src)
 static void
 pipeline_ctx_destroy(PipeCtx *ctx)
 {
-    /* Drain active watchers so uvm_destroy is clean. */
+    /* Drain active watchers so urbi_vm_destroy is clean. */
     while (ctx->vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&ctx->vm,
                                          ctx->vm.active_watchers_head);
     umodule_destroy(&ctx->module);
     uarena_destroy(&ctx->arena);
-    uvm_destroy(&ctx->vm);
+    urbi_vm_destroy(&ctx->vm);
 }
 
 /* ===================================================================
@@ -102,7 +102,7 @@ UTEST(at_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = uvm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
     /* Watcher installed (cond starts false, no fire). */
     UASSERT(ctx.vm.active_watchers_head != NULL);
@@ -120,7 +120,7 @@ UTEST(whenever_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = uvm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -136,7 +136,7 @@ UTEST(at_sync_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = uvm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -165,7 +165,7 @@ hook_cond_true(struct UVM *vm, struct UClosure *cond,
  *
  * Install a waituntil with a hook that returns truthy.  The T40 fast-path
  * must unregister the watcher immediately, leaving the strand RUNNING.
- * uvm_run returns UVM_OK; active_watchers_head is NULL (watcher freed). */
+ * urbi_vm_run returns UVM_OK; active_watchers_head is NULL (watcher freed). */
 UTEST(waituntil_does_not_yield_when_cond_true)
 {
     PipeCtx ctx;
@@ -178,7 +178,7 @@ UTEST(waituntil_does_not_yield_when_cond_true)
     ctx.vm.test_install_cond_hook = hook_cond_true;
 
     UValue out;
-    UVMError vm_rc = uvm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
 
     ctx.vm.test_install_cond_hook = NULL;
 

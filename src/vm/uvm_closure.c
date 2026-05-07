@@ -9,6 +9,10 @@
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
 #include "value/uvalue.h"      /* UValue */
+#include "module/umodule.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
  * Uses the VM's allocator.  Threads the new closure into *list_head so
@@ -20,7 +24,7 @@
  * valid color for the barrier check.  The closure is NOT enrolled on
  * vm->all_cells_head — lifetime stays with the strand's closure_list
  * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
- * as a follow-up M4 task; it requires enrolling the transient uvm_run
+ * as a follow-up M4 task; it requires enrolling the transient urbi_vm_run
  * strand as a GC root before closures stored in registers can survive
  * a mid-dispatch collection cycle.
  *
@@ -29,7 +33,7 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
                            UClosure **list_head) {
     uint8_t nup = proto->nupvals;
     /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
-    size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
+    size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
     size_t nbytes = sizeof(UClosure) + extra;
     UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
     if (cl == NULL) return NULL;
@@ -70,7 +74,7 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
  * Removed cells are appended to *closed_list (for per-run bulk free at halt).
  * Called by OP_CLOSE, OP_RET, and urbi_unwind.
  * Declared in uvm.h for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, UValue *threshold,
+void vm_close_upvalues(UStrand *s, const UValue *threshold,
                        UUpvalCell **closed_list) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {

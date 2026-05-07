@@ -4,7 +4,7 @@
 #
 # Reason:
 #   '&' (OP_FORK_JOIN / OP_JOIN_WAIT) requires the realm-managed scheduler path.
-#   The chk runner uses the uvm_run REPL path (realm == NULL); OP_FORK_JOIN
+#   The chk runner uses the urbi_vm_run REPL path (realm == NULL); OP_FORK_JOIN
 #   produces TypeError in that context.  See comma_amp_unsupported.chk.
 #
 # Original urbiscript (activate at M5 with urbi_step chk driver):

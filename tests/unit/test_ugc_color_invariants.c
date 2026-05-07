@@ -30,22 +30,22 @@ static void *spy_alloc(void *ptr, size_t n, void *ud) {
 
 /* ===== Test 1: two-white flip ===== */
 
-/* After uvm_init the current_white is 0; manually flipping it yields 1;
+/* After urbi_vm_init the current_white is 0; manually flipping it yields 1;
  * OTHER_WHITE then yields 0 again.  T24 will flip current_white at the
  * IDLE → MARK_ROOTS transition; this test validates the macro arithmetic. */
 UTEST(ugc_two_white_flip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UASSERT_EQ(vm.current_white, 0u);
+    UASSERT_EQ(vm.current_white, 0U);
 
     /* Manually flip — T24 does this at the IDLE → MARK_ROOTS transition. */
-    vm.current_white ^= 0x01u;
-    UASSERT_EQ(vm.current_white, 1u);
-    UASSERT_EQ(OTHER_WHITE(&vm), 0u);
+    vm.current_white ^= 0x01U;
+    UASSERT_EQ(vm.current_white, 1U);
+    UASSERT_EQ(OTHER_WHITE(&vm), 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: alloc paints cell current_white ===== */
@@ -55,14 +55,14 @@ UTEST(ugc_two_white_flip)
 UTEST(ugc_alloc_born_current_white)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UASSERT(c != NULL);
     UASSERT_EQ((c->gc_byte & UGC_COLOR_MASK), vm.current_white);
     UASSERT_EQ(c->type_tag, (uint8_t)UTYPE_OBJECT);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: dead color after white flip ===== */
@@ -73,16 +73,16 @@ UTEST(ugc_alloc_born_current_white)
 UTEST(ugc_dead_color_after_flip)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     /* c was born white(0); flip current_white → c is now in OTHER_WHITE. */
-    vm.current_white ^= 0x01u;
+    vm.current_white ^= 0x01U;
     UASSERT(IS_DEAD(&vm, c));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: alloc increments gc_debt ===== */
@@ -93,15 +93,15 @@ UTEST(ugc_dead_color_after_flip)
 UTEST(ugc_alloc_increments_debt)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int64_t debt_before = vm.gc_debt;
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 100u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 100U, UTYPE_OBJECT);
     UASSERT(c != NULL);
     UASSERT(vm.gc_debt > debt_before);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: gc_pending set when debt crosses zero ===== */
@@ -111,7 +111,7 @@ UTEST(ugc_alloc_increments_debt)
 UTEST(ugc_alloc_triggers_pending_at_threshold)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Force debt to -1: one byte of credit remaining. */
     vm.gc_debt = -1;
@@ -120,11 +120,11 @@ UTEST(ugc_alloc_triggers_pending_at_threshold)
      * positive.  Note: urbi_gc_alloc with option-B sidecar works for any
      * size >= sizeof(UCell) (header is inside the allocated block).
      * size=100 is fine with option B; sidecar is separate. */
-    UCell *c = urbi_gc_alloc(&vm, 100u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, 100U, UTYPE_OBJECT);
     UASSERT(c != NULL);
-    UASSERT_EQ(vm.gc_pending, 1u);
+    UASSERT_EQ(vm.gc_pending, 1U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 6: alloc OOM on cell allocation ===== */
@@ -139,15 +139,15 @@ UTEST(ugc_alloc_returns_null_on_cell_oom)
     spy.fail_at = 0;  /* fail the FIRST alloc — the cell itself */
 
     UVM vm;
-    uvm_init(&vm, spy_alloc, &spy);
+    urbi_vm_init(&vm, spy_alloc, &spy);
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32, UTYPE_OBJECT);
     UASSERT(c == NULL);
     /* Counters must NOT have been incremented on a failed alloc. */
     UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 7: alloc OOM on sidecar allocation ===== */
@@ -161,15 +161,15 @@ UTEST(ugc_alloc_returns_null_on_sidecar_oom)
     spy.fail_at = 1;  /* fail the SECOND alloc — the sidecar */
 
     UVM vm;
-    uvm_init(&vm, spy_alloc, &spy);
+    urbi_vm_init(&vm, spy_alloc, &spy);
 
     UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32, UTYPE_OBJECT);
     UASSERT(c == NULL);
     /* Cell allocation must have been rolled back (freed); counters NOT incremented. */
     UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

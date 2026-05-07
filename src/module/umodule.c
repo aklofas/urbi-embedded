@@ -6,17 +6,7 @@
 #include "value/uvarint.h"
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
-
-/* Local byte-compare.  Replaces memcmp so umodule.c compiles without
-   <string.h> under -ffreestanding. */
-static int module_memcmp(const void *a, const void *b, size_t n) {
-    const unsigned char *pa = (const unsigned char *)a;
-    const unsigned char *pb = (const unsigned char *)b;
-    for (size_t i = 0; i < n; i++) {
-        if (pa[i] != pb[i]) return (int)pa[i] - (int)pb[i];
-    }
-    return 0;
-}
+#include <stdint.h>
 
 /* Local byte-copy.  Replaces memcpy so umodule.c compiles without
    <string.h> under -ffreestanding. */
@@ -80,8 +70,8 @@ static bool module_grow(UModule *c, void **data, size_t *cap,
     if (*cap >= new_cap) return true;
     UModuleAllocFn alloc = module_allocator(c);
     if (alloc == NULL) return false;
-    size_t target = *cap == 0u ? 8u : *cap;
-    while (target < new_cap) target *= 2u;
+    size_t target = *cap == 0U ? 8U : *cap;
+    while (target < new_cap) target *= 2U;
     void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
     if (fresh == NULL) return false;
     *data = fresh;
@@ -114,7 +104,7 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* --- Proto helpers --- */
 
-void umodule_proto_destroy_buffers(UProto *proto, UModuleAllocFn alloc,
+void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
     if (proto == NULL || alloc == NULL) return;
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
@@ -165,7 +155,7 @@ typedef struct {
 /* --- Per-section decode helpers (each <40 LOC) --- */
 
 static UModuleLoadError decode_header(MDecCtx *d) {
-    if (d->size < 24u) {
+    if (d->size < 24U) {
         set_errmsg(d->errmsg, d->errcap,
                    "buffer truncated at header (got %zu bytes, need 24)", d->size);
         return ULOAD_TRUNCATED;
@@ -183,14 +173,14 @@ static UModuleLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
                    (unsigned)d->buf[4],
-                   (unsigned)(d->buf[4] >> 4), (unsigned)(d->buf[4] & 0x0Fu),
+                   (unsigned)(d->buf[4] >> 4), (unsigned)(d->buf[4] & 0x0FU),
                    (unsigned)URBI_BYTECODE_VERSION_BYTE,
                    (unsigned)URBI_BYTECODE_VERSION_MAJOR, (unsigned)URBI_BYTECODE_VERSION_MINOR);
         return ULOAD_UNSUPPORTED_VERSION;
     }
     /* buf[5] = flags; no flag bits defined at v1.0, ignored for forward-compat */
     /* canary bytes at offsets 6-11 */
-    if (module_memcmp(d->buf + 6, kCanary, sizeof kCanary) != 0) {
+    if (!urbi_memeq(d->buf + 6, kCanary, sizeof kCanary)) {
         set_errmsg(d->errmsg, d->errcap,
                    "corrupt canary bytes (possible FTP/Windows paste translation)");
         return ULOAD_BAD_MAGIC;
@@ -222,7 +212,7 @@ static UModuleLoadError decode_header(MDecCtx *d) {
 }
 
 static UModuleLoadError decode_metadata(MDecCtx *d) {
-    if (d->off + 1u > d->size) {
+    if (d->off + 1U > d->size) {
         set_errmsg(d->errmsg, d->errcap, "truncated at metadata");
         return ULOAD_TRUNCATED;
     }
@@ -241,13 +231,13 @@ static UModuleLoadError decode_metadata(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "truncated at source_name");
         return ULOAD_TRUNCATED;
     }
-    if (src_len > 0u) {
+    if (src_len > 0U) {
         UModuleAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) {
             set_errmsg(d->errmsg, d->errcap, "no allocator for source_name");
             return ULOAD_OOM;
         }
-        char *name = (char *)alloc(NULL, src_len + 1u, d->module->alloc_ud);
+        char *name = (char *)alloc(NULL, src_len + 1U, d->module->alloc_ud);
         if (name == NULL) return ULOAD_OOM;
         module_memcpy(name, d->buf + d->off, src_len);
         name[src_len] = '\0';
@@ -267,18 +257,18 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
         return rc;
     }
     d->off += consumed;
-    if (n_const > (uint64_t)UINT16_MAX + 1u) {
+    if (n_const > (uint64_t)UINT16_MAX + 1U) {
         set_errmsg(d->errmsg, d->errcap, "n_constants too large");
         return ULOAD_CORRUPT;
     }
-    if (n_const > 0u) {
+    if (n_const > 0U) {
         if (!module_grow(d->module, (void **)&d->module->constants, &d->module->const_cap,
                          (size_t)n_const, sizeof(UValue))) {
             return ULOAD_OOM;
         }
     }
     for (uint64_t i = 0; i < n_const; i++) {
-        if (d->off + 1u > d->size) {
+        if (d->off + 1U > d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at constant kind");
             return ULOAD_TRUNCATED;
         }
@@ -300,7 +290,7 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
             d->module->constants[d->module->const_count].v.i = v;
         } else if (kind == (uint8_t)UVAL_FLOAT) {
 #if URBI_FLOAT_TYPE == 8
-            if (d->off + 8u > d->size) {
+            if (d->off + 8U > d->size) {
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
                 return ULOAD_TRUNCATED;
             }
@@ -308,7 +298,7 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
                           d->buf + d->off, 8);
             d->off += 8;
 #else
-            if (d->off + 4u > d->size) {
+            if (d->off + 4U > d->size) {
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
                 return ULOAD_TRUNCATED;
             }
@@ -317,10 +307,13 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
             d->off += 4;
 #endif
         } else {
-            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload at M1.
-               M1 should not encounter these in produced bytecode, but the
-               loader must not crash if hand-crafted. */
-            set_errmsg(d->errmsg, d->errcap, "constant kind %u not yet decodable at M1",
+            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload encoder/decoder
+               implemented in v0.5.5.  The emitter never produces these in
+               constant pools (BOOL is OP_LOADBOOL immediate, NIL is
+               OP_LOADNIL, STR is M6 stdlib).  Hand-crafted bytecode that
+               smuggles them in is rejected via ULOAD_CORRUPT_TAG so the
+               loader does not crash on the missing payload read. */
+            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in v0.5.5 constant pools",
                        (unsigned)kind);
             return ULOAD_CORRUPT_TAG;
         }
@@ -340,26 +333,26 @@ static UModuleLoadError decode_instructions(MDecCtx *d) {
     }
     d->off += consumed;
     /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
-    while ((d->off & 3u) != 0u) {
+    while ((d->off & 3U) != 0U) {
         if (d->off >= d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at instruction alignment padding");
             return ULOAD_TRUNCATED;
         }
-        if (d->buf[d->off] != 0u) {
+        if (d->buf[d->off] != 0U) {
             set_errmsg(d->errmsg, d->errcap, "non-zero instruction-align padding at offset %zu",
                        d->off);
             return ULOAD_CORRUPT;
         }
         d->off++;
     }
-    if (n_instr > 0u) {
+    if (n_instr > 0U) {
         if (!module_grow(d->module, (void **)&d->module->instructions, &d->module->instr_cap,
                          (size_t)n_instr, sizeof(uint32_t))) {
             return ULOAD_OOM;
         }
     }
     for (uint64_t i = 0; i < n_instr; i++) {
-        if (d->off + 4u > d->size) {
+        if (d->off + 4U > d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at instruction %llu",
                        (unsigned long long)i);
             return ULOAD_TRUNCATED;
@@ -392,7 +385,7 @@ static UModuleLoadError decode_line_table(MDecCtx *d) {
                    (unsigned long long)n_deltas, d->module->instr_count);
         return ULOAD_CORRUPT;
     }
-    if (n_deltas > 0u) {
+    if (n_deltas > 0U) {
         UModuleAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) return ULOAD_OOM;
         d->module->line_deltas = (int8_t *)alloc(NULL, (size_t)n_deltas, d->module->alloc_ud);
@@ -412,7 +405,7 @@ static UModuleLoadError decode_line_table(MDecCtx *d) {
         return rc;
     }
     d->off += consumed;
-    if (n_abs > 0u) {
+    if (n_abs > 0U) {
         if (!module_grow(d->module, (void **)&d->module->abs_lines, &d->module->abs_line_cap,
                          (size_t)n_abs, sizeof(UAbsLine))) {
             return ULOAD_OOM;
@@ -513,9 +506,17 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
             }
         }
     }
-    /* Last instruction must be OP_RET. */
-    if (d->module->instr_count > 0u) {
-        uint32_t last = d->module->instructions[d->module->instr_count - 1u];
+    /* Last instruction must be OP_RET.
+     *
+     * v1.x relaxation note: this strict trailing-OP_RET requirement assumes
+     * the emitter always closes a chunk with an explicit return.  If a
+     * future bytecode revision allows fall-through-to-end semantics (e.g. an
+     * implicit RET, or a tail-call that elides RET), this check will need
+     * to widen to "ends in OP_RET, OP_TAILCALL, or any unconditional
+     * terminator".  At v0.5.5 every chunk uemit produces ends in OP_RET, so
+     * the strict form catches truncated/corrupt bytecode early. */
+    if (d->module->instr_count > 0U) {
+        uint32_t last = d->module->instructions[d->module->instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {
             set_errmsg(d->errmsg, d->errcap, "last instruction is not OP_RET");
             return ULOAD_CORRUPT;
@@ -528,6 +529,12 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
 
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap) {
+    /* errmsg/errcap contract: the (NULL, 0) pair suppresses diagnostics; any
+     * other shape — including (non-NULL, 0) — is silently accepted as
+     * "diagnostics off".  set_errmsg internally no-ops on errcap == 0 so
+     * passing a non-NULL buffer with zero capacity is harmless rather than
+     * a contract violation.  Callers that require a populated errmsg must
+     * supply errcap >= 1. */
     if (module == NULL || buf == NULL) {
         set_errmsg(errmsg, errcap, "null module or buffer");
         return ULOAD_TRUNCATED;
@@ -554,17 +561,40 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     return ULOAD_OK;
 }
 
+/* Destroy ordering (MOD-005):
+ *   1. Resolve allocator BEFORE any frees — alloc_fn/alloc_ud are still
+ *      live in the struct at this point and must remain readable for the
+ *      entire free walk below.
+ *   2. Walk nested[] and free each non-NULL UProto's sub-buffers + the
+ *      UProto struct itself.  NULL slots in nested[] are by design (see
+ *      MOD-015 below); skip them silently.
+ *   3. Free the nested[] array, root-chunk buffers, source_name, and
+ *      ic_names — all read directly from `module->...` because nothing
+ *      has been zeroed yet.
+ *   4. ONLY THEN zero the struct.  After step 4 the struct is fully wiped:
+ *      source_name, alloc_fn, alloc_ud are all reset; the caller must
+ *      re-init before reuse.
+ *
+ * MOD-015 — nested[k] may be NULL by design:
+ *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
+ *   from module->nested[] when its UClosure is captured by a watcher
+ *   (transferring ownership from the module to the watcher pool).  After
+ *   detach, nested[k] reads NULL.  This is the expected steady-state for any
+ *   chunk that installed reactive watchers — umodule_destroy must skip NULL
+ *   slots without freeing them, since the watcher's pool_free now owns
+ *   that proto and will free it on watcher recycle. */
 void umodule_destroy(UModule *module) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
-        /* Free nested proto buffers and the proto structs themselves. */
+        /* Free nested proto buffers and the proto structs themselves.
+         * NULL entries (watcher-detached, see MOD-015) are skipped. */
         if (module->nested != NULL) {
             size_t i;
             for (i = 0; i < module->nested_count; i++) {
                 UProto *p = module->nested[i];
                 if (p != NULL) {
-                    umodule_proto_destroy_buffers(p, alloc, module->alloc_ud);
+                    umodule_destroy_proto_buffers(p, alloc, module->alloc_ud);
                     alloc(p, 0, module->alloc_ud);
                 }
             }
@@ -577,8 +607,8 @@ void umodule_destroy(UModule *module) {
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
         if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
     }
-    /* Zero the entire struct — preserves no fields (source_name, alloc_fn,
-       alloc_ud are all reset; caller must re-init before re-use). */
+    /* Zero the entire struct AFTER all frees complete.  No field is read
+     * after this point. */
     urbi_zero(module, sizeof(*module));
 }
 

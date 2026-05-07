@@ -2,7 +2,7 @@
 /* libFuzzer harness for the VM.
  *
  * Feeds raw bytes through umodule_deserialize; any accepted module is
- * executed via uvm_run. Sanitizers (ASan + UBSan) catch undefined
+ * executed via urbi_vm_run. Sanitizers (ASan + UBSan) catch undefined
  * behavior, leaks, and crashes in both the dispatch loop and the
  * arithmetic helpers. Most random input is rejected by the loader;
  * only structurally valid modules reach the VM — which is where the
@@ -29,16 +29,16 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
 
     UVM vm;
-    uvm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
+    urbi_vm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
 
     UValue result;
-    (void)uvm_run(&vm, &module, &result);
+    (void)urbi_vm_run(&vm, &module, &result);
     /* Touch result so the compiler keeps the run-path live. */
     if ((int)result.kind < 0) {
         /* unreachable; UValKind is unsigned */
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     umodule_destroy(&module);
     return 0;
 }

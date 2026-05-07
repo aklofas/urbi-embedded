@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Watcher eval pass: watcher_eval_dirty, invoke_condition_closure.
- * Row 11.
+ * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -9,7 +9,7 @@
  *   invoke_condition_closure: test hook short-circuits; otherwise routes to
  *     urbi_run_closure_on_scratch (spec §6.4 + §6.8).  Eval-time throws
  *     fail-soft as nil.
- *   spawn_body_coroutine: lives in uwatcher_spawn.c (Row 11). */
+ *   spawn_body_coroutine: lives in uwatcher_spawn.c. */
 
 #include "uwatcher.h"
 #include "vm/uvm.h"
@@ -17,6 +17,8 @@
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h" /* URBI_INTERNAL_ASSERT */
 #include "sched/usched_cooperative.h" /* sched_strand_make_runnable */
+#include <stddef.h>
+#include <stdint.h>
 
 /* === invoke_condition_closure ===
  *
@@ -274,5 +276,5 @@ watcher_eval_dirty(struct UVM *vm)
     vm->in_watcher_eval = 0;
 }
 
-/* spawn_body_coroutine lives in uwatcher_spawn.c (Row 11).
+/* spawn_body_coroutine lives in uwatcher_spawn.c.
  * Declaration is in uwatcher.h; watcher_eval_dirty calls it above. */

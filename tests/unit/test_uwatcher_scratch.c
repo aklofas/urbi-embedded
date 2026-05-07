@@ -63,7 +63,7 @@ UTEST(scratch_runner_returns_integer_value)
     UArena arena;
     UModule module;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
@@ -97,7 +97,7 @@ UTEST(scratch_runner_returns_integer_value)
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_sets_threw_on_unhandled_throw
@@ -115,7 +115,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
     UArena arena;
     UModule module;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
@@ -150,7 +150,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_handles_null_closure
@@ -161,7 +161,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 UTEST(scratch_runner_handles_null_closure)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Pre-poison the out params to confirm the helper overwrites them. */
     UValue out;
@@ -175,7 +175,7 @@ UTEST(scratch_runner_handles_null_closure)
     UASSERT_EQ(0, threw);
     UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_returns_nil_for_nil_literal
@@ -188,7 +188,7 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
     UArena arena;
     UModule module;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
@@ -219,7 +219,7 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_returns_true_for_truthy_comparison
@@ -233,7 +233,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
     UArena arena;
     UModule module;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
@@ -265,7 +265,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_returns_false_for_falsy_comparison
@@ -279,7 +279,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
     UArena arena;
     UModule module;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     memset(&module, 0, sizeof(module));
 
@@ -311,7 +311,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_with_payload_writes_r0
@@ -328,7 +328,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 UTEST(scratch_runner_with_payload_writes_r0)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* One-instruction proto: OP_RET R0, 0, 0. */
     uint32_t instrs[1];
@@ -358,7 +358,7 @@ UTEST(scratch_runner_with_payload_writes_r0)
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
     UASSERT_EQ(1234, (int)out.v.i);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* scratch_runner_with_payload_handles_null_closure
@@ -370,7 +370,7 @@ UTEST(scratch_runner_with_payload_writes_r0)
 UTEST(scratch_runner_with_payload_handles_null_closure)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Pre-poison the out params to confirm the helper overwrites them. */
     UValue out;
@@ -389,7 +389,7 @@ UTEST(scratch_runner_with_payload_handles_null_closure)
     UASSERT_EQ(0, threw);
     UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

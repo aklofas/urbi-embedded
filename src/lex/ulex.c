@@ -2,15 +2,16 @@
 /* ULexer. */
 
 #include "lex/ulex.h"
+#include "runtime/umacros.h"
 
 #include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 
-/* Local byte-compare.  Replaces memcmp so ulex.c compiles without
- * <string.h> under -ffreestanding (cross-arm / cross-riscv targets). */
-static int lex_memeq(const char *a, const char *b, int n) {
-    for (int i = 0; i < n; i++) { if (a[i] != b[i]) return 0; }
-    return 1;
-}
+/* Length of a radix prefix ("0x", "0b", "0o").  Used by scan_radix to size
+   the EMPTY_RADIX error span; LEX_RADIX_PREFIX_LEN + 1 sizes the MALFORMED
+   span (prefix + the bad digit-ish byte we consumed for recovery). */
+#define LEX_RADIX_PREFIX_LEN 2
 
 static const char * const TOKEN_NAMES[] = {
     "TOK_EOF", "TOK_INT", "TOK_IDENT",
@@ -30,6 +31,10 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_QUESTION", "TOK_BANG",
     "TOK_ERROR"
 };
+/* LEX-014: positional alignment with UTokenType — guard against silent
+   drift when a new token is added to one but not the other. */
+_Static_assert(sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0]) == TOK__LAST,
+               "TOKEN_NAMES[] must have one entry per UTokenType");
 
 static const char * const ERR_MSG[] = {
     "ok",
@@ -45,6 +50,9 @@ static const char * const ERR_MSG[] = {
     "adjacent underscores in numeric literal",
     "integer literal exceeds INT64_MAX"
 };
+/* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
+_Static_assert(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
+               "ERR_MSG[] must have one entry per ULexError");
 
 static UToken make_tok_base(const UTokenType type, const int line, const int col) {
     UToken t = {0};
@@ -58,7 +66,13 @@ static UToken make_error(const ULexError code, const int line, const int col, co
     UToken t = make_tok_base(TOK_ERROR, line, col);
     t.len = len;
     t.u.err.code = code;
-    t.u.err.message = ERR_MSG[code];
+    /* Defensive bounds check (LEX-015); _Static_assert above pins the table
+       size to LEX__LAST, but a future caller could still pass an
+       out-of-range int.  Return a static fallback string rather than read
+       OOB. */
+    t.u.err.message = ((unsigned)code < (unsigned)LEX__LAST)
+                          ? ERR_MSG[code]
+                          : "unknown lex error";
     return t;
 }
 
@@ -135,8 +149,9 @@ static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
 }
 
 /* Scan a radix-prefixed integer. lex->cur points at the first char after
-   the prefix; start points at the '0' of the prefix; prefix_len is 2.
-   base is 16/2/8; malformed code is the base-appropriate LEX_MALFORMED_*. */
+   the prefix; start points at the '0' of the prefix; prefix length is
+   LEX_RADIX_PREFIX_LEN (2).  base is 16/2/8; malformed code is the
+   base-appropriate LEX_MALFORMED_*. */
 static UToken scan_radix(ULexer *lex, const char *start, const int base,
                         const ULexError malformed_code) {
     const int start_col = (int)(start - lex->line_start) + 1;
@@ -144,7 +159,8 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
 
     /* Must have at least one digit or underscore. */
     if (lex->cur >= lex->end) {
-        return make_error(LEX_EMPTY_RADIX, start_line, start_col, 2);
+        return make_error(LEX_EMPTY_RADIX, start_line, start_col,
+                          LEX_RADIX_PREFIX_LEN);
     }
     const char c0 = *lex->cur;
     if (c0 == '_') {
@@ -170,10 +186,12 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
             /* Consume the bad digit-ish char so we advance. */
             lex->cur++;
             return make_error(malformed_code,
-                              start_line, start_col, 3);
+                              start_line, start_col,
+                              LEX_RADIX_PREFIX_LEN + 1);
         }
         return make_error(LEX_EMPTY_RADIX,
-                          start_line, start_col, 2);
+                          start_line, start_col,
+                          LEX_RADIX_PREFIX_LEN);
     }
 
     const UDigitAccResult r = accumulate_digits(lex, start, start_line, start_col, base);
@@ -185,7 +203,7 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
     return t;
 }
 
-/* Identifier character classification.  Defined ahead of scan_decimal /
+/* Identifier character classification.  Defined ahead of scan_number /
  * scan_radix so the suffix-parsing fall-throughs can call them without a
  * forward declaration (LEX-022, Wave 1 v0.5.3-layout). */
 static int is_ident_start(const char c) {
@@ -204,7 +222,9 @@ typedef struct {
     int64_t     mul;  /* positive: value *= mul; negative: value /= -mul */
 } UDurationSuffix;
 
-/* Longer suffixes first so "ms" / "us" / "ns" match before bare "m" (LEX-008). */
+/* Longer suffixes first so "ms" / "us" / "ns" match before bare "m".
+   The single boundary check inside apply_duration_suffix is uniform across
+   one-char and two-char entries — closes LEX-008. */
 static const UDurationSuffix kDurationSuffixes[] = {
     { "ms", 2,          1000LL },
     { "us", 2,             1LL },
@@ -216,64 +236,105 @@ static const UDurationSuffix kDurationSuffixes[] = {
     { NULL, 0,             0LL },
 };
 
-/* Scan a decimal integer starting at lex->cur.
-   Caller has confirmed *lex->cur is a decimal digit. */
-static UToken scan_decimal(ULexer *lex) {
-    const char *start = lex->cur;
-    const int start_col = (int)(start - lex->line_start) + 1;
-    const int start_line = lex->line;
+/* Result of dispatch_radix_prefix: either we routed to scan_radix / produced
+   an AMBIGUOUS_LEADING_ZERO error (handled=1, tok carries the value), or
+   the caller should fall through to decimal accumulation (handled=0). */
+typedef struct { int handled; UToken tok; } URadixDispatch;
 
-    /* Radix-prefix dispatch on a leading '0'. */
-    if (*start == '0' && lex->cur + 1 < lex->end) {
-        const char c2 = lex->cur[1];
-        if (c2 == 'x' || c2 == 'X') {
-            lex->cur += 2;
-            return scan_radix(lex, start, 16, LEX_MALFORMED_HEX);
-        }
-        if (c2 == 'b' || c2 == 'B') {
-            lex->cur += 2;
-            return scan_radix(lex, start, 2, LEX_MALFORMED_BIN);
-        }
-        if (c2 == 'o' || c2 == 'O') {
-            lex->cur += 2;
-            return scan_radix(lex, start, 8, LEX_MALFORMED_OCT);
-        }
-        if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
-            /* Consume the leading-zero sequence so caller advances. */
-            lex->cur++;
-            while (lex->cur < lex->end &&
-                   ((*lex->cur >= '0' && *lex->cur <= '9') || *lex->cur == '_')) {
-                lex->cur++;
-            }
-            const int len = (int)(lex->cur - start);
-            return make_error(LEX_AMBIGUOUS_LEADING_ZERO,
-                              start_line, start_col, len);
-        }
+/* On a leading '0', detect a radix prefix (0x/0b/0o) or an ambiguous
+   leading-zero sequence ("01", "0_") and produce a complete token.
+   Otherwise return handled=0 so the caller can fall through to decimal
+   digit accumulation. */
+static URadixDispatch dispatch_radix_prefix(ULexer *lex, const char *start,
+                                            const int start_line,
+                                            const int start_col) {
+    URadixDispatch r = {0, {0}};
+    if (*start != '0' || lex->cur + 1 >= lex->end) return r;
+
+    const char c2 = lex->cur[1];
+    if (c2 == 'x' || c2 == 'X') {
+        lex->cur += LEX_RADIX_PREFIX_LEN;
+        r.handled = 1;
+        r.tok = scan_radix(lex, start, 16, LEX_MALFORMED_HEX);
+        return r;
     }
+    if (c2 == 'b' || c2 == 'B') {
+        lex->cur += LEX_RADIX_PREFIX_LEN;
+        r.handled = 1;
+        r.tok = scan_radix(lex, start, 2, LEX_MALFORMED_BIN);
+        return r;
+    }
+    if (c2 == 'o' || c2 == 'O') {
+        lex->cur += LEX_RADIX_PREFIX_LEN;
+        r.handled = 1;
+        r.tok = scan_radix(lex, start, 8, LEX_MALFORMED_OCT);
+        return r;
+    }
+    if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
+        /* Consume the leading-zero sequence so caller advances. */
+        lex->cur++;
+        while (lex->cur < lex->end &&
+               ((*lex->cur >= '0' && *lex->cur <= '9') || *lex->cur == '_')) {
+            lex->cur++;
+        }
+        const int len = (int)(lex->cur - start);
+        r.handled = 1;
+        r.tok = make_error(LEX_AMBIGUOUS_LEADING_ZERO,
+                           start_line, start_col, len);
+        return r;
+    }
+    return r;
+}
 
-    const UDigitAccResult dr = accumulate_digits(lex, start, start_line, start_col, 10);
-    if (!dr.ok) return dr.err;
-    int64_t value = dr.value;
+/* Accumulate base-10 digits at lex->cur into a TOK_INT.  On overflow or an
+   underscore violation, returns an error token via UDigitAccResult.err. */
+static UDigitAccResult scan_decimal_digits(ULexer *lex, const char *start,
+                                           const int start_line,
+                                           const int start_col) {
+    return accumulate_digits(lex, start, start_line, start_col, 10);
+}
 
-    UToken t = make_tok_base(TOK_INT, start_line, start_col);
-
-    /* Check for duration suffix and convert to microseconds. */
+/* If lex->cur sits at a duration suffix ("ms", "us", "ns", "s", "m", "h",
+   "d"), consume it and scale *value to microseconds.  No-op otherwise.
+   Suffix table is ordered longest-first so "ms" beats bare "m"; the
+   ident-cont boundary check is uniform across all entries (LEX-008
+   structurally closed by the table rewrite — both two-char and one-char
+   paths now share one predicate). */
+static void apply_duration_suffix(ULexer *lex, int64_t *value) {
     for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
         if (lex->cur + e->sufflen > lex->end) continue;
-        if (!lex_memeq(lex->cur, e->suffix, e->sufflen)) continue;
+        if (!urbi_memeq(lex->cur, e->suffix, e->sufflen)) continue;
         /* Boundary: next char must not be ident-cont. */
         if (lex->cur + e->sufflen < lex->end &&
             is_ident_cont(lex->cur[e->sufflen])) continue;
         lex->cur += e->sufflen;
-        if (e->mul >= 0) value *= e->mul;
-        else             value /= -e->mul;
-        break;
+        if (e->mul >= 0) *value *= e->mul;
+        else             *value /= -e->mul;
+        return;
     }
+}
 
-    /* Update token length if a suffix was consumed. */
+/* Scan a numeric literal starting at lex->cur.  Caller has confirmed
+   *lex->cur is a decimal digit; this function dispatches to the radix
+   path on a leading '0' and otherwise scans a decimal integer with an
+   optional duration suffix.  Renamed from scan_decimal (LEX-018). */
+static UToken scan_number(ULexer *lex) {
+    const char *start = lex->cur;
+    const int start_col = (int)(start - lex->line_start) + 1;
+    const int start_line = lex->line;
+
+    const URadixDispatch rd = dispatch_radix_prefix(lex, start, start_line, start_col);
+    if (rd.handled) return rd.tok;
+
+    const UDigitAccResult dr = scan_decimal_digits(lex, start, start_line, start_col);
+    if (!dr.ok) return dr.err;
+    int64_t value = dr.value;
+
+    apply_duration_suffix(lex, &value);
+
+    UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);
     t.u.i = value;
-
     return t;
 }
 
@@ -283,30 +344,36 @@ typedef struct {
     UTokenType  type;
 } UKeyword;
 
-/* Sorted by name for human readability; lookup is linear (15 entries —
- * faster than a hash for this size). */
+/* KW_ENTRY drops the redundant hand-counted length from KEYWORDS[] entries
+   (LEX-016).  `sizeof(name) - 1` excludes the trailing NUL of a string
+   literal — fine since every name above is a literal. */
+#define KW_ENTRY(name, tok) { name, (int)(sizeof(name) - 1), tok }
+
+/* Sorted by name for human readability; lookup is linear — kept in sync
+ * with the keyword set, faster than a hash for this size (LEX-017: count
+ * elided to avoid drift between comment and table). */
 static const UKeyword KEYWORDS[] = {
-    { "async",     5, TOK_KW_ASYNC    },
-    { "at",        2, TOK_KW_AT       },
-    { "catch",     5, TOK_KW_CATCH    },
-    { "closure",   7, TOK_KW_CLOSURE  },
-    { "else",      4, TOK_KW_ELSE     },
-    { "false",     5, TOK_KW_FALSE    },
-    { "finally",   7, TOK_KW_FINALLY  },
-    { "function",  8, TOK_KW_FUNCTION },
-    { "if",        2, TOK_KW_IF       },
-    { "lazy",      4, TOK_KW_LAZY     },
-    { "nil",       3, TOK_KW_NIL      },
-    { "onleave",   7, TOK_KW_ONLEAVE  },
-    { "return",    6, TOK_KW_RETURN   },
-    { "sync",      4, TOK_KW_SYNC     },
-    { "throw",     5, TOK_KW_THROW    },
-    { "true",      4, TOK_KW_TRUE     },
-    { "try",       3, TOK_KW_TRY      },
-    { "var",       3, TOK_KW_VAR      },
-    { "waituntil", 9, TOK_KW_WAITUNTIL},
-    { "whenever",  8, TOK_KW_WHENEVER },
-    { "while",     5, TOK_KW_WHILE    }
+    KW_ENTRY("async",     TOK_KW_ASYNC),
+    KW_ENTRY("at",        TOK_KW_AT),
+    KW_ENTRY("catch",     TOK_KW_CATCH),
+    KW_ENTRY("closure",   TOK_KW_CLOSURE),
+    KW_ENTRY("else",      TOK_KW_ELSE),
+    KW_ENTRY("false",     TOK_KW_FALSE),
+    KW_ENTRY("finally",   TOK_KW_FINALLY),
+    KW_ENTRY("function",  TOK_KW_FUNCTION),
+    KW_ENTRY("if",        TOK_KW_IF),
+    KW_ENTRY("lazy",      TOK_KW_LAZY),
+    KW_ENTRY("nil",       TOK_KW_NIL),
+    KW_ENTRY("onleave",   TOK_KW_ONLEAVE),
+    KW_ENTRY("return",    TOK_KW_RETURN),
+    KW_ENTRY("sync",      TOK_KW_SYNC),
+    KW_ENTRY("throw",     TOK_KW_THROW),
+    KW_ENTRY("true",      TOK_KW_TRUE),
+    KW_ENTRY("try",       TOK_KW_TRY),
+    KW_ENTRY("var",       TOK_KW_VAR),
+    KW_ENTRY("waituntil", TOK_KW_WAITUNTIL),
+    KW_ENTRY("whenever",  TOK_KW_WHENEVER),
+    KW_ENTRY("while",     TOK_KW_WHILE),
 };
 #define KEYWORD_COUNT (sizeof KEYWORDS / sizeof KEYWORDS[0])
 
@@ -485,7 +552,7 @@ UToken ulex_next(ULexer *lex) {
         return make_tok(lex, TOK_GT, start, 1);
     default:
         if (c >= '0' && c <= '9') {
-            return scan_decimal(lex);
+            return scan_number(lex);
         }
         if (is_ident_start(c)) {
             return scan_ident(lex);

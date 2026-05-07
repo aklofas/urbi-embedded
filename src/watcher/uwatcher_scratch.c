@@ -3,7 +3,7 @@
  *
  * Spec ref: #2 §6.4 + §7.3 phase 3 (no-payload variant);
  *           #3 §5.3            (payload variant).
- * Mirrors uvm_run's transient-strand pattern (src/uvm.c:2112) but scoped to
+ * Mirrors urbi_vm_run's transient-strand pattern (src/uvm.c:2112) but scoped to
  * single-closure evaluation with bounded dispatch budget and no-yield contract.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
@@ -32,6 +32,10 @@
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
+#include "module/umodule.h"
+#include "object/umodule_instance.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
 
 /* === run_on_scratch_core (file-static) ===
  *
@@ -57,7 +61,7 @@ run_on_scratch_core(struct UVM       *vm,
     *out_threw  = 0;
 
     /* Reset last_error at entry so a stale error from a prior VM operation
-     * doesn't get misread as a cond throw.  Mirrors uvm_run's entry pattern. */
+     * doesn't get misread as a cond throw.  Mirrors urbi_vm_run's entry pattern. */
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
 
@@ -65,19 +69,19 @@ run_on_scratch_core(struct UVM       *vm,
      * watchers installed without a condition. */
     if (closure == NULL) return 0;
 
-    /* Allocate a transient strand on the C stack.  Mirrors uvm_run. */
+    /* Allocate a transient strand on the C stack.  Mirrors urbi_vm_run. */
     UStrand strand;
     urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_transient_strand = 1u;  /* guards reject OP_FORK_DETACH/JOIN */
+    strand.is_transient_strand = 1U;  /* guards reject OP_FORK_DETACH/JOIN */
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
      * cur_consts / frame_count from closure->proto.  Returns -1 on OOM. */
     if (urbi_strand_arm_from_closure(&strand, closure) != 0) {
         if (vm->host_log_fn) {
             vm->host_log_fn(vm, URBI_LOG_WARN,
-                "run_on_scratch_core: register-stack OOM");
+                "scratch-frame arm: register-stack OOM");
         }
         return -1;
     }
@@ -120,7 +124,7 @@ run_on_scratch_core(struct UVM       *vm,
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* Thread onto global_realm->strands_head so the GC walker sees the
-     * strand's register window (mirrors uvm_run T33 dance). */
+     * strand's register window (mirrors urbi_vm_run's transient-strand dance). */
     {
         URealm *gr = urbi_realm_global(vm);
         if (gr != NULL) {
@@ -161,7 +165,7 @@ run_on_scratch_core(struct UVM       *vm,
     }
 
     /* Unlink from global_realm before tearing down (symmetric with insert
-     * above; mirrors uvm_run's pre-ustrand_destroy unlink). */
+     * above; mirrors urbi_vm_run's pre-ustrand_destroy unlink). */
     if (strand.realm != NULL && strand.realm->strands_head != NULL) {
         UStrand **pp = &strand.realm->strands_head;
         while (*pp != NULL) {
@@ -175,10 +179,10 @@ run_on_scratch_core(struct UVM       *vm,
         strand.realm = NULL;
     }
 
-    /* Teardown sequence: adapted from uvm_run's tail block (unlink reordered to before free) (src/uvm.c:2251-2305).
+    /* Teardown sequence: adapted from urbi_vm_run's tail block (unlink reordered to before free) (src/uvm.c:2251-2305).
      * closure_list and closed_cells are nulled before ustrand_destroy to
      * avoid double-free on the same list if ustrand_destroy were to walk them
-     * (it doesn't at v1.0, but belt-and-suspenders matches uvm_run). */
+     * (it doesn't at v1.0, but belt-and-suspenders matches urbi_vm_run). */
     {
         UClosure *cl = strand.closure_list;
         strand.closure_list = NULL;

@@ -6,7 +6,7 @@
 # Cond evaluation goes through urbi_run_closure_on_scratch
 # (src/watcher/uwatcher_scratch.c); body fires through the M5-baseline
 # spawn_body_coroutine path.  The REPL drains spawned body strands with
-# urbi_step after each uvm_run so the counter is updated before the next
+# urbi_step after each urbi_vm_run so the counter is updated before the next
 # line executes.
 #
 # The nested function pattern (trigger()) is required: watcher_eval_dirty

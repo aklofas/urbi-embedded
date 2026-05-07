@@ -4,6 +4,10 @@
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stddef.h>
 
 /* True when the next token is a statement-terminating position:
    end-of-block, end-of-paren, EOF, or the REPL-boundary '|'.
@@ -77,7 +81,12 @@ UAstNode *parse_inner_tier_from_lhs(UParser *p, UAstNode *lhs) {
 /* Outer-tier: parse one or more inner-tier expressions joined by `;` or `,`.
    Returns a single node (no Nary) if only one inner-tier child exists.
    Trailing `;` or `,` at statement-end is silently dropped.
-   Mixing `;` and `,` in the same outer-tier group is an error. */
+   Mixing `;` and `,` in the same outer-tier group is an error.
+   OOM convention: returns NULL on child OOM (preferred), but a few
+   sites currently return uparser_oom_sentinel directly — see the
+   OOM-sentinel comment at the top of uparse_internal.h. The top-level
+   uparse_next_statement collapses both forms via the arena->oom
+   recheck (closes PARSE-005). */
 UAstNode *parse_outer_tier(UParser *p) {
     UAstNode *first = parse_statement_or_expr(p);
     if (!first) return NULL;

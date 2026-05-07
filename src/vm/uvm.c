@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Bytecode interpreter — dispatch loop (uvm_init.c + uvm_run.c hold lifecycle). */
+/* Bytecode interpreter — dispatch loop (urbi_vm_init.c + urbi_vm_run.c hold lifecycle). */
 
 #include "vm/uvm.h"
 #include "runtime/umacros.h"
@@ -23,6 +23,14 @@
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
 #include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
+#include "gc/ugc.h"
+#include "gc/ugc_incremental.h"
+#include "module/umodule.h"
+#include "object/umodule_instance.h"
+#include "runtime/ucleanup.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* --- Dispatch macros.
        Under GCC/Clang with computed-goto support (and without
@@ -94,7 +102,7 @@ ic_resolve_pi(UStrand *s)
    - step_budget_in opcodes are consumed (state remains RUNNING)
    Returns the number of opcodes consumed.
 
-   The uvm_run() function below is a thin adapter that creates a transient
+   The urbi_vm_run() function below is a thin adapter that creates a transient
    UStrand, loops calling this function until DEAD, then tears down.
    All dispatch state lives on the strand; vm holds only VM-wide state. */
 
@@ -109,8 +117,8 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
 
 #if UVM_USE_COMPUTED_GOTO
     /* Dispatch table keyed by opcode.  All opcodes populated; loader
-       validates opcode is in [0, OP_MAX) before uvm_run is called. */
-    static void *dispatch_table[OP_MAX] = {
+       validates opcode is in [0, OP_MAX) before urbi_vm_run is called. */
+    static const void *const dispatch_table[OP_MAX] = {
         [OP_LOADK]      = &&label_OP_LOADK,
         [OP_MOVE]       = &&label_OP_MOVE,
         [OP_ADD]        = &&label_OP_ADD,
@@ -259,7 +267,7 @@ dispatch:
 
             if (s->frame_count == 0) {
                 /* Top-frame return — strand becomes DEAD.
-                 * Adapter (uvm_run) extracts result via out_slot. */
+                 * Adapter (urbi_vm_run) extracts result via out_slot. */
                 if (s->out_slot != NULL) {
                     *s->out_slot = retval;
                 }
@@ -368,10 +376,10 @@ dispatch:
              * is the root chunk; entries[bx + 1] is the matching nested proto. */
             if (s->module_instance != NULL
                 && s->module_instance->proto_instances != NULL
-                && (size_t)bx + 1u < (size_t)s->module_instance->proto_instances->n) {
-                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1u];
+                && (size_t)bx + 1U < (size_t)s->module_instance->proto_instances->n) {
+                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1U];
             }
-            /* If no module_instance is bound (defensive — uvm_run wires it for
+            /* If no module_instance is bound (defensive — urbi_vm_run wires it for
              * every normal execution path), proto_inst stays NULL and
              * OP_GETSLOT/SETSLOT will diagnose cleanly. */
 
@@ -563,7 +571,7 @@ dispatch:
 
         CASE(OP_YIELD) {
             /* Cooperative yield: advance past this opcode, transition to READY,
-               and return to the scheduler.  The uvm_run adapter re-enters
+               and return to the scheduler.  The urbi_vm_run adapter re-enters
                dispatch_loop_until_yield until strand is DEAD. */
             s->pc++;
             s->state = USTRAND_STATE_READY;
@@ -576,7 +584,7 @@ dispatch:
             /* `,` separator: spawn child closure as detached strand.
              * A = closure_reg.  Parent continues; child runs concurrently.
              * See src/uop_fork.c for M3 closure-spawn vs. spec §7.1 rationale.
-             * Rejected from uvm_run's stack-local transient because that
+             * Rejected from urbi_vm_run's stack-local transient because that
              * adapter only dispatches its own strand and would leak any
              * spawned children.  T33 routes the transient onto
              * vm->global_realm->strands_head for GC-walker visibility, so
@@ -584,7 +592,7 @@ dispatch:
              * is_transient_strand does. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (uvm_run transient strand)");
+                vm_format_type_error_msg(vm, "OP_FORK_DETACH: `,` requires urbi_step driver (urbi_vm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_detach(s, vm, *s->pc);
@@ -595,10 +603,10 @@ dispatch:
         CASE(OP_FORK_JOIN) {
             /* `&` separator LHS: spawn child closure, store handle in R[B].
              * A = closure_reg, B = child_handle_reg.
-             * Same uvm_run-transient guard as OP_FORK_DETACH; see note above. */
+             * Same urbi_vm_run-transient guard as OP_FORK_DETACH; see note above. */
             if (s->is_transient_strand) {
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (uvm_run transient strand)");
+                vm_format_type_error_msg(vm, "OP_FORK_JOIN: `&` requires urbi_step driver (urbi_vm_run transient strand)");
                 HALT();
             }
             int rc = op_fork_join(s, vm, *s->pc);
@@ -717,9 +725,9 @@ dispatch:
             }
             /* Inspect the just-filled IC entry to decide if a getter is
              * pending.  Same TODO as above — diagnose for now. */
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
+            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
                 HALT();
@@ -823,22 +831,25 @@ dispatch:
                 }
                 HALT();
             }
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
+            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
                 HALT();
             }
             /* Fire the write barrier on the slow path so watchers whose
              * read-set includes recv see the write.  Mirrors the fast-path
-             * urbi_gc_slot_write call above (line 1571).  The actual store
-             * was already performed inside urbi_slot_set_slow; calling the
-             * barrier after the store is correct because observer_dirty only
-             * bumps watcher_dirty_count and watcher_eval_dirty runs at the
-             * next safepoint, not inline here.  Slot index 0 is passed as a
-             * conservative sentinel — observer_dirty ignores the key at M5. */
-            urbi_gc_slot_write(vm, (UCell *)recv, 0u, v);
+             * urbi_gc_slot_write call earlier in this OP_SETSLOT arm (the
+             * URBI_SLOT_FLAG_LOCAL branch above) — see urbi_gc_slot_write
+             * in src/gc/ugc_incremental.c for the barrier itself.  The
+             * actual store was already performed inside urbi_slot_set_slow;
+             * calling the barrier after the store is correct because
+             * observer_dirty only bumps watcher_dirty_count and
+             * watcher_eval_dirty runs at the next safepoint, not inline
+             * here.  Slot index 0 is passed as a conservative sentinel —
+             * observer_dirty ignores the key at M5. */
+            urbi_gc_slot_write(vm, (UCell *)recv, 0U, v);
             urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }
@@ -872,8 +883,8 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
             entry->flags          = flags;
             entry->handler_pc     = handler_pc;
-            entry->register_base  = 0u;
-            entry->register_count = 0u;
+            entry->register_base  = 0U;
+            entry->register_count = 0U;
             entry->owning_tag     = NULL;
             entry->catch_pattern  = NULL;
             entry->next_member    = NULL;
@@ -910,7 +921,12 @@ dispatch:
         CASE(OP_PUSH_TAG) {
             /* OP_PUSH_TAG ABx:
              *   A[7:4] = flags nibble (0 at M3 — no FLAG_HAS_ONLEAVE)
-             *   A[3:0] = tag_reg nibble (register holding the tag value)
+             *   A[3:0] = reserved (currently unused at runtime; the emitter
+             *            packs a tag_reg here per uemit_push_tag, but the
+             *            dispatch path creates an anonymous UTag from the
+             *            cleanup stack and never reads this nibble — the
+             *            register binding is reserved for a future feature
+             *            where the tag is exposed to a register slot)
              *   Bx     = onleave_pc (handler PC; 0 at M3 since no onleave body)
              *
              * T30: allocate a per-scope UTag (no UVAL_TAG / register binding at M3).
@@ -920,7 +936,7 @@ dispatch:
              * deferred for T31/walker integration when full tag lifecycle wires through.
              * strand_back = s for future tag.stop() walk (T31 uses). */
             uint8_t  a          = uinstr_a(*s->pc);
-            uint8_t  flags      = (uint8_t)((a >> 4) & 0xFu);
+            uint8_t  flags      = (uint8_t)((a >> 4) & 0xFU);
             uint16_t handler_pc = uinstr_bx(*s->pc);
             UTag *tag = utag_create(s->vm);
             if (tag == NULL) {
@@ -938,8 +954,8 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
             entry->flags          = flags;
             entry->handler_pc     = handler_pc;
-            entry->register_base  = 0u;
-            entry->register_count = 0u;
+            entry->register_base  = 0U;
+            entry->register_count = 0U;
             entry->owning_tag     = tag;
             entry->catch_pattern  = NULL;
             entry->next_member    = tag->member_strands_head;  /* head-insert */
@@ -965,7 +981,7 @@ dispatch:
              * branch is dead code.  Include the check for forward-compatibility. */
             if (s->cleanup_depth > 0) {
                 UCleanupEntry *top = &s->cleanup_base[s->cleanup_depth - 1];
-                if ((top->flags & FLAG_HAS_ONLEAVE) != 0u) {
+                if ((top->flags & FLAG_HAS_ONLEAVE) != 0U) {
                     /* onleave handler: not reachable at M3 (emit always sets flags=0).
                      * If somehow reached (bytecode corruption), halt safely. */
                     vm->last_error = UVM_TYPE_ERROR;
@@ -1037,8 +1053,8 @@ dispatch:
                 goto exit_strand;
             }
             entry->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
-            entry->flags          = 0u;
-            entry->handler_pc     = 0u;
+            entry->flags          = 0U;
+            entry->handler_pc     = 0U;
             entry->register_base  = register_base;
             entry->register_count = register_count;
             entry->owning_tag     = NULL;
@@ -1075,7 +1091,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
             NEXT();
         }
@@ -1095,7 +1111,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
             NEXT();
         }
@@ -1150,7 +1166,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
             NEXT();
         }
@@ -1161,7 +1177,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
             NEXT();
         }
@@ -1255,7 +1271,7 @@ dispatch:
 
 #if !UVM_USE_COMPUTED_GOTO
         default: {
-            /* Unreachable — loader rejects unknown opcodes before uvm_run
+            /* Unreachable — loader rejects unknown opcodes before urbi_vm_run
                is called. The default: branch satisfies -Wswitch-enum. */
             vm->last_error = UVM_TYPE_ERROR;
             HALT();
@@ -1287,7 +1303,7 @@ safepoint:
     s->instruction_budget_remaining--;
     if (vm->step_budget_remaining == 0) {
         /* Budget exhausted from caller's perspective; state stays RUNNING.
-           The uvm_run adapter treats RUNNING-but-exit as "continue". */
+           The urbi_vm_run adapter treats RUNNING-but-exit as "continue". */
         goto exit_strand;
     }
     vm->step_budget_remaining--;
@@ -1320,10 +1336,10 @@ exit_strand:
     }
 
     /* strand_runnable_count ownership at exit:
-     *   - uvm_run transient strands are not tracked in strand_runnable_count
+     *   - urbi_vm_run transient strands are not tracked in strand_runnable_count
      *     (they bypass sched_strand_make_runnable). The READY-cycle increment
      *     via sched_strand_yield is balanced by the dequeue decrement in the
-     *     uvm_run loop (src/uvm.c, the strand_runnable_count-- block).
+     *     urbi_vm_run loop (src/uvm.c, the strand_runnable_count-- block).
      *   - T16 urbi_step driver: strands dequeued from the ready queue before
      *     entering dispatch_loop_until_yield. T16 decrements strand_runnable_count
      *     in the driver after dispatch returns with state == USTRAND_STATE_DEAD,
@@ -1333,4 +1349,4 @@ exit_strand:
     return steps_consumed;
 }
 
-/* uvm_run: moved to uvm_run.c (VM #6). */
+/* urbi_vm_run: moved to urbi_vm_run.c (VM #6). */

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* uvm_run.c — uvm_run adapter: transient-strand setup for non-strand entry points.
+/* urbi_vm_run.c — urbi_vm_run adapter: transient-strand setup for non-strand entry points.
  * Extracted from uvm.c during v0.5.4-decompose (VM #6). */
 
 #include "vm/uvm.h"
@@ -10,26 +10,31 @@
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
 #include "object/umodule_instance.h" /* urbi_module_instance_create */
+#include "module/umodule.h"
+#include "runtime/ucleanup.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
-/* --- uvm_run: thin adapter that wraps dispatch_loop_until_yield.
+/* --- urbi_vm_run: thin adapter that wraps dispatch_loop_until_yield.
    Preserves the M2 public API contract:
    - Resets error state at entry.
    - Frees the previous run's return closure.
    - Returns UVM_OK with *out set on success, or the error code on failure.
    - Keeps vm->last_return_closure alive for the caller to inspect. */
 
-UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
+UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out) {
     /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
 
-    /* Pre-GC: free the closure returned by the previous uvm_run (if any).
+    /* Pre-GC: free the closure returned by the previous urbi_vm_run (if any).
      * The caller had one run's lifetime to inspect it. */
     if (vm->last_return_closure != NULL) {
         UClosure *prev = vm->last_return_closure;
         uint8_t nup = prev->nupvals;
-        size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
+        size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
         (void)extra;
         vm->alloc_fn(prev, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
@@ -54,12 +59,12 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_transient_strand = 1u;  /* T33: discriminator for OP_FORK_* guards */
+    strand.is_transient_strand = 1U;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init).
      * CHSTR-022: delegates alloc+zero to urbi_strand_arm_init; the manual
-     * error path is preserved here because uvm_run needs to set last_error
+     * error path is preserved here because urbi_vm_run needs to set last_error
      * before returning (urbi_strand_arm_init returns -1 without diagnostics). */
     if (urbi_strand_arm_init(&strand) != 0) {
         vm->last_error = UVM_OOM;
@@ -79,7 +84,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
      * The strand stays a stack-local UStrand and is unlinked again before the
      * matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
      * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
-     * / OP_FORK_JOIN guards now use to reject forks from a uvm_run transient. */
+     * / OP_FORK_JOIN guards now use to reject forks from a urbi_vm_run transient. */
     {
         URealm *gr = urbi_realm_global(vm);
         if (gr != NULL) {
@@ -96,14 +101,14 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     strand.cur_consts = module->constants;
     strand.module     = module;
     /* M4 follow-up / T72 fix: always create a fresh UModuleInstance for each
-     * uvm_run call.  urbi_get_or_create_module_instance is unsuitable here
+     * urbi_vm_run call.  urbi_get_or_create_module_instance is unsuitable here
      * because the REPL stack-allocates UModule and reuses the same stack
      * address across calls; the cache lookup would return a stale instance
      * with old (freed) ic_names.  Forcing fresh creation ensures ic->name is
      * populated from the current module's ic_names table.
      *
      * urbi_run_chunk pre-creates an instance via get_or_create before calling
-     * uvm_run; that cached instance is shadowed by this fresh one (prepended to
+     * urbi_vm_run; that cached instance is shadowed by this fresh one (prepended to
      * vm->module_instances_head) but both are functionally correct — only this
      * strand's module_instance is used for IC dispatch during this run. */
     strand.module_instance = urbi_module_instance_create(vm, (UModule *)module);
@@ -117,7 +122,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
      * safepoint budget check does not immediately yield.  The transient
      * strand is zero-initialised above, leaving instruction_budget_remaining=0;
      * without this the first safepoint (OP_CALL, backward JMP, or non-top
-     * OP_RET) exits before reaching watcher_eval_dirty.  uvm_run re-enters on
+     * OP_RET) exits before reaching watcher_eval_dirty.  urbi_vm_run re-enters on
      * yield so forward-progress is correct, but watcher_eval_dirty never fires
      * (the exit happens before the hook).  sched_strand_init was previously
      * skipped for transients; calling it here also zero-initialises the
@@ -127,7 +132,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
 
     /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
-       "continue" for the M2 API contract (uvm_run must block until completion). */
+       "continue" for the M2 API contract (urbi_vm_run must block until completion). */
     for (;;) {
         (void)dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
         if (strand.state == USTRAND_STATE_DEAD) break;
@@ -153,7 +158,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
         if (USTRAND_IS_WAITING(&strand)) {
             /* M2 baseline has no blocking opcodes; WAITING here is a bug. */
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "strand blocked unexpectedly in uvm_run");
+            vm_format_type_error_msg(vm, "strand blocked unexpectedly in urbi_vm_run");
             break;
         }
         /* RUNNING with step_budget exhausted (UINT64_MAX → shouldn't happen). */
@@ -162,7 +167,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
 
     /* Pre-GC: free every closure allocated this run, except the one returned
      * to the caller via *out.  That closure is kept alive in
-     * vm->last_return_closure until the next uvm_run() or uvm_destroy(). */
+     * vm->last_return_closure until the next urbi_vm_run() or urbi_vm_destroy(). */
     {
         UClosure *out_cl = (out->kind == (uint8_t)UVAL_CLOSURE)
                            ? (UClosure *)out->v.p : NULL;

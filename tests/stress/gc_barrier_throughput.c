@@ -33,15 +33,15 @@ uvalue_from_cell(UCell *c)
 int main(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate a small pool of reusable cells. */
     UCell *pool[POOL_SIZE];
     for (int i = 0; i < POOL_SIZE; i++) {
-        pool[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+        pool[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
         if (pool[i] == NULL) {
             fprintf(stderr, "FAIL: urbi_gc_alloc returned NULL (pool i=%d)\n", i);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             return 1;
         }
     }
@@ -82,6 +82,6 @@ int main(void)
     printf("gc_barrier_throughput: %d calls in %ld ns (%.0f ops/sec) PASS\n",
            BARRIER_CALLS, ns, ops_per_sec);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return 0;
 }

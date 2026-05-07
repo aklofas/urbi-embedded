@@ -89,20 +89,20 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
     UProto   body_proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Create a UTag and lazy-alloc its enter_event. */
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
-    if (tag == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (tag == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     UEvent *enter_ev = urbi_event_create(&vm);
     UASSERT(enter_ev != NULL);
-    if (enter_ev == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (enter_ev == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
     tag->enter_event = enter_ev;
 
     /* Install an AT_EVENT watcher on enter_event. */
@@ -137,7 +137,7 @@ UTEST(push_tag_fires_enter_event_when_subscribed)
     }
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -155,19 +155,19 @@ UTEST(pop_tag_fires_leave_event_when_subscribed)
     UProto   body_proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
-    if (tag == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (tag == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     UEvent *leave_ev = urbi_event_create(&vm);
     UASSERT(leave_ev != NULL);
-    if (leave_ev == NULL) { urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (leave_ev == NULL) { urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
     tag->leave_event = leave_ev;
 
     UStrand s;
@@ -200,7 +200,7 @@ UTEST(pop_tag_fires_leave_event_when_subscribed)
     }
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -231,12 +231,12 @@ count_cells(UVM *vm)
 UTEST(push_tag_no_overhead_when_enter_event_null)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Create a UTag with no enter_event (NULL at birth). */
     UTag *tag = utag_create(&vm);
     UASSERT(tag != NULL);
-    if (tag == NULL) { uvm_destroy(&vm); return; }
+    if (tag == NULL) { urbi_vm_destroy(&vm); return; }
 
     UASSERT(tag->enter_event == NULL);
 
@@ -252,7 +252,7 @@ UTEST(push_tag_no_overhead_when_enter_event_null)
     /* No new cells allocated by the fast-path check. */
     UASSERT_EQ(count_cells(&vm), cells_before);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

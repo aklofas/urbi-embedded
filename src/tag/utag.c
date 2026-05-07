@@ -15,6 +15,7 @@
 #include "urbi/gc.h"      /* urbi_gc_alloc */
 #include "urbi/urbi.h"    /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"
+#include <stddef.h>
 
 /* === utag_create ===
  *
@@ -67,7 +68,7 @@ utag_create(struct UVM *vm)
  * handle unlinking). */
 
 void
-utag_destroy(struct UVM *vm, UTag *tag)
+utag_destroy(struct UVM *vm, const UTag *tag)
 {
     if (tag == NULL) return;
     if (vm == NULL) return;

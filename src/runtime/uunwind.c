@@ -35,6 +35,8 @@
 #include "tag/utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 #include "event/uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */
+#include <stddef.h>
+#include <stdint.h>
 
 /* ===== Freestanding-safe zero loop =====
    No memset; mirrors the volatile-byte pattern from uarena.c and ucleanup.c. */
@@ -381,7 +383,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
          * re-increment (counter tracks lifetime cross-strand-affected strands, not
          * pending deposits). Counter is decremented at ustrand_destroy. */
         if (fresh_deposit && !s->cross_strand_stop_pending) {
-            s->cross_strand_stop_pending = 1u;
+            s->cross_strand_stop_pending = 1U;
             vm->host_call_pending_count++;
         }
 
@@ -419,20 +421,20 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
 /* urbi_strand_cancel — deposit CANCEL (fatal, no catch) on a strand. */
 int
-urbi_strand_cancel(struct UStrand *s, UValue cancel_reason)
+urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason)
 {
-    if (!s) return URBI_ERR_INVALID_ARG;
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return URBI_ERR_STRAND_FATAL;
-    s->pending_unwind = UEXEC_CANCEL;
-    s->unwind_value   = cancel_reason;
+    if (!strand) return URBI_ERR_INVALID_ARG;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (USTRAND_GET_STATE(strand) == USTRAND_DEAD) return URBI_ERR_STRAND_FATAL;
+    strand->pending_unwind = UEXEC_CANCEL;
+    strand->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
-     * unwind.  USTRAND_IS_WAITING checks the upper nibble of s->state.
+     * unwind.  USTRAND_IS_WAITING checks the upper nibble of strand->state.
      * Unlink from event waiter chain first (spec #3 §6.4). */
-    if (USTRAND_IS_WAITING(s)) {
-        if (s->state == USTRAND_WAIT_EVENT)
-            uevent_waiter_unregister(s);
-        s->state = USTRAND_STATE_READY;
+    if (USTRAND_IS_WAITING(strand)) {
+        if (strand->state == USTRAND_WAIT_EVENT)
+            uevent_waiter_unregister(strand);
+        strand->state = USTRAND_STATE_READY;
     }
     return URBI_OK;
 }
@@ -442,23 +444,23 @@ urbi_strand_cancel(struct UStrand *s, UValue cancel_reason)
  * is not stored (no string heap) — T16/T19 diagnostic infra will wire it.
  * The fatal_value is set to nil; T29 may upgrade to a string UValue. */
 int
-urbi_strand_panic(struct UStrand *s, const char *msg)
+urbi_strand_panic(struct UStrand *strand, const char *msg)
 {
     UValue nil;
     nil.kind  = UVAL_NIL;
     nil.v.i   = 0;
 
-    if (!s) return URBI_ERR_INVALID_ARG;
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
+    if (!strand) return URBI_ERR_INVALID_ARG;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
     (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
     /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
      * Prevents stale pointers in e->waiters_head if the strand is freed
      * without ever being woken by an emit. */
-    if (s->state == USTRAND_WAIT_EVENT)
-        uevent_waiter_unregister(s);
-    s->fatal_status = UEXEC_CANCEL;
-    s->fatal_value  = nil;
-    s->state        = USTRAND_STATE_DEAD;
+    if (strand->state == USTRAND_WAIT_EVENT)
+        uevent_waiter_unregister(strand);
+    strand->fatal_status = UEXEC_CANCEL;
+    strand->fatal_value  = nil;
+    strand->state        = USTRAND_STATE_DEAD;
     /* pending_unwind stays as-is; the strand is immediately dead.
      * No cleanup runs — panic is the "kill unconditionally" path. */
     return URBI_OK;
@@ -466,22 +468,22 @@ urbi_strand_panic(struct UStrand *s, const char *msg)
 
 /* urbi_strand_unwind_status — read pending unwind state (non-destructive). */
 UExecStatus
-urbi_strand_unwind_status(const struct UStrand *s)
+urbi_strand_unwind_status(const struct UStrand *strand)
 {
-    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    return s ? s->pending_unwind : UEXEC_OK;
+    if (strand && strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    return strand ? strand->pending_unwind : UEXEC_OK;
 }
 
 /* urbi_strand_is_fatal — query whether the strand has hit a fatal unwind.
  * Returns true and populates out_status / out_value (both nullable) if fatal. */
 bool
-urbi_strand_is_fatal(const struct UStrand *s,
+urbi_strand_is_fatal(const struct UStrand *strand,
                      UExecStatus *out_status, UValue *out_value)
 {
-    if (s && s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    if (!s || s->fatal_status == UEXEC_OK) return false;
-    if (out_status) *out_status = s->fatal_status;
-    if (out_value)  *out_value  = s->fatal_value;
+    if (strand && strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || strand->fatal_status == UEXEC_OK) return false;
+    if (out_status) *out_status = strand->fatal_status;
+    if (out_value)  *out_value  = strand->fatal_value;
     return true;
 }
 
@@ -491,23 +493,23 @@ urbi_strand_is_fatal(const struct UStrand *s,
  * left intact; callers are expected to re-initialise it per their session
  * semantics before the next dispatch. */
 int
-urbi_strand_reset(struct UStrand *s)
+urbi_strand_reset(struct UStrand *strand)
 {
     UValue nil;
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
 
-    if (!s) return URBI_ERR_INVALID_ARG;
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
+    if (!strand) return URBI_ERR_INVALID_ARG;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
 
-    s->pending_unwind  = UEXEC_OK;
-    s->unwind_value    = nil;
-    s->unwind_target   = NULL;
-    s->fatal_status    = UEXEC_OK;
-    s->fatal_value     = nil;
-    s->cleanup_depth   = 0;
-    s->cleanup_top     = NULL;
-    s->state           = USTRAND_STATE_DORMANT;
+    strand->pending_unwind  = UEXEC_OK;
+    strand->unwind_value    = nil;
+    strand->unwind_target   = NULL;
+    strand->fatal_status    = UEXEC_OK;
+    strand->fatal_value     = nil;
+    strand->cleanup_depth   = 0;
+    strand->cleanup_top     = NULL;
+    strand->state           = USTRAND_STATE_DORMANT;
     return URBI_OK;
 }
 
@@ -520,30 +522,30 @@ urbi_strand_reset(struct UStrand *s)
 
 /* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW). */
 void
-urbi_throw(struct UStrand *s, UValue value)
+urbi_throw(struct UStrand *strand, UValue value)
 {
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    s->pending_unwind = UEXEC_THROW;
-    s->unwind_value   = value;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    strand->pending_unwind = UEXEC_THROW;
+    strand->unwind_value   = value;
 }
 
 /* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
  * Named urbi_return_val (not urbi_return) to avoid conflict with the C
  * keyword `return` in macro expansion contexts and to be unambiguous. */
 void
-urbi_return_val(struct UStrand *s, UValue value)
+urbi_return_val(struct UStrand *strand, UValue value)
 {
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    s->pending_unwind = UEXEC_RETURN;
-    s->unwind_value   = value;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    strand->pending_unwind = UEXEC_RETURN;
+    strand->unwind_value   = value;
 }
 
 /* urbi_tag_stop_local — deposit TAG_STOP from within the same strand. */
 void
-urbi_tag_stop_local(struct UStrand *s, struct UTag *tag, UValue value)
+urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
 {
-    if (s->vm) { URBI_ASSERT_NOT_ISR(s->vm); }
-    s->pending_unwind  = UEXEC_TAG_STOP;
-    s->unwind_target   = tag;
-    s->unwind_value    = value;
+    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    strand->pending_unwind  = UEXEC_TAG_STOP;
+    strand->unwind_target   = tag;
+    strand->unwind_value    = value;
 }

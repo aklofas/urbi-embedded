@@ -31,27 +31,27 @@ UTEST(watcher_install_sets_bit6)
     UCell *rs[1];
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     rs[0] = c;
     w = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, rs, 1u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, rs, 1U);
     UASSERT(w != NULL);
 
     /* Bit-6 must be set on the observed cell. */
     UASSERT(c->gc_byte & UGC_HAS_WATCHER_OBSERVER);
     /* cells[0] must point to c. */
     UASSERT(w->cells[0] == c);
-    UASSERT_EQ((unsigned)w->read_set_count, 1u);
+    UASSERT_EQ((unsigned)w->read_set_count, 1U);
 
     /* Unregister — no other watcher observes c, so bit-6 must be cleared. */
     urbi_watcher_unregister_internal(&vm, w);
     UASSERT(!(c->gc_byte & UGC_HAS_WATCHER_OBSERVER));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. watcher_overlap_keeps_bit6_until_last:
@@ -65,16 +65,16 @@ UTEST(watcher_overlap_keeps_bit6_until_last)
     UCell *rs[1];
     UWatcher *w1, *w2;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     rs[0] = c;
     w1 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, rs, 1u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, rs, 1U);
     w2 = urbi_watcher_install_internal(
-        &vm, UWATCHER_WHENEVER, NULL, NULL, NULL, NULL, rs, 1u);
+        &vm, UWATCHER_WHENEVER, NULL, NULL, NULL, NULL, rs, 1U);
     UASSERT(w1 != NULL);
     UASSERT(w2 != NULL);
 
@@ -89,7 +89,7 @@ UTEST(watcher_overlap_keeps_bit6_until_last)
     urbi_watcher_unregister_internal(&vm, w2);
     UASSERT(!(c->gc_byte & UGC_HAS_WATCHER_OBSERVER));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. watcher_install_inserts_into_tag_member_list:
@@ -101,13 +101,13 @@ UTEST(watcher_install_inserts_into_tag_member_list)
     UTag    *tag;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     tag = utag_create(&vm);
     UASSERT(tag != NULL);
 
     w = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     /* Watcher must be head of tag's member list. */
@@ -118,7 +118,7 @@ UTEST(watcher_install_inserts_into_tag_member_list)
     UASSERT(tag->member_watchers_head == NULL);
 
     utag_destroy(&vm, tag);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. observer_dirty_bumps_counter:
@@ -128,17 +128,17 @@ UTEST(observer_dirty_bumps_counter)
     UVM   vm;
     UCell c;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Zero out the dummy cell header enough for the call. */
     c.type_tag = UTYPE_OBJECT;
     c.gc_byte  = 0;
 
     uint32_t before = vm.watcher_dirty_count;
-    observer_dirty(&vm, &c, 42u);
-    UASSERT_EQ((long long)vm.watcher_dirty_count, (long long)(before + 1u));
+    observer_dirty(&vm, &c, 42U);
+    UASSERT_EQ((long long)vm.watcher_dirty_count, (long long)(before + 1U));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. watcher_active_count_tracks_install_unregister:
@@ -150,13 +150,13 @@ UTEST(watcher_active_count_tracks_install_unregister)
     UWatcher *w[3];
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
 
     for (i = 0; i < 3; i++) {
         w[i] = urbi_watcher_install_internal(
-            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
         UASSERT(w[i] != NULL);
     }
     UASSERT_EQ((long long)vm.watcher_active_count, 3LL);
@@ -166,7 +166,7 @@ UTEST(watcher_active_count_tracks_install_unregister)
     }
     UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. active_list_is_tail_inserted:
@@ -178,14 +178,14 @@ UTEST(active_list_is_tail_inserted)
     UWatcher *w1, *w2, *w3;
     UWatcher *cur;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     w1 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
     w2 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
     w3 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w1 != NULL && w2 != NULL && w3 != NULL);
 
     /* Walk active list: must be w1 → w2 → w3 → NULL. */
@@ -199,7 +199,7 @@ UTEST(active_list_is_tail_inserted)
     urbi_watcher_unregister_internal(&vm, w2);
     urbi_watcher_unregister_internal(&vm, w3);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. watcher_install_readset_overflow_returns_null:
@@ -212,7 +212,7 @@ UTEST(watcher_install_readset_overflow_returns_null)
     UCell *dummy[URBI_WATCHER_READSET_MAX + 1];
     size_t i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Fill dummy array with non-NULL pointers (values don't matter; install
      * must reject before dereferencing them). */
@@ -222,13 +222,13 @@ UTEST(watcher_install_readset_overflow_returns_null)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL,
-        dummy, (size_t)URBI_WATCHER_READSET_MAX + 1u);
+        dummy, (size_t)URBI_WATCHER_READSET_MAX + 1U);
 
     UASSERT(w == NULL);
     /* Pool must be untouched — no slot consumed. */
     UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -286,13 +286,13 @@ fire_hook_count(struct UVM *vm, struct UWatcher *w)
 UTEST(watcher_eval_dirty_skips_when_count_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT_EQ((int)vm.watcher_dirty_count, 0);
     watcher_eval_dirty(&vm);
     UASSERT(!vm.in_watcher_eval);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 9. watcher_eval_dirty_resets_count_to_zero:
@@ -300,14 +300,14 @@ UTEST(watcher_eval_dirty_skips_when_count_zero)
 UTEST(watcher_eval_dirty_resets_count_to_zero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    vm.watcher_dirty_count = 5u;
+    vm.watcher_dirty_count = 5U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ((int)vm.watcher_dirty_count, 0);
     UASSERT(!vm.in_watcher_eval);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 10. watcher_eval_at_edge_only_fires_on_false_to_true:
@@ -320,7 +320,7 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
     UVM vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count       = 0;
     g_condition_truthy = 0;  /* start false */
@@ -330,30 +330,30 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Install-time seed with false: condition_hook_toggle returns UVAL_NIL
      * (kind=0) when g_condition_truthy=0.  Verify the cache is falsy. */
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
 
     /* Pass 1: still false → no fire. */
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
     /* Pass 2: flip to true → edge fires. */
     g_condition_truthy = 1;
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     /* Pass 3: still true → no fire (no rising edge). */
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 11. watcher_eval_whenever_level_fires_each_dirty_pass:
@@ -364,7 +364,7 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
     UVM vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count = 0;
 
@@ -373,17 +373,17 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_WHENEVER, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     /* Three passes — WHENEVER fires every time condition is truthy. */
-    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
-    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
-    vm.watcher_dirty_count = 1u; watcher_eval_dirty(&vm);
+    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
+    vm.watcher_dirty_count = 1U; watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 3);
 
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 12. watcher_eval_skips_pending_unregister:
@@ -395,7 +395,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     UWatcher *w;
     UValue initial_cache;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count = 0;
 
@@ -404,7 +404,7 @@ UTEST(watcher_eval_skips_pending_unregister)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     initial_cache = w->last_value_cache;
@@ -412,7 +412,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     /* Mark pending-unregister before eval. */
     w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
 
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
 
     /* No fire, last_value_cache unchanged. */
@@ -422,7 +422,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     /* Manual cleanup (watcher has PENDING_UNREGISTER; unregister normally). */
     w->flags &= (uint8_t)~(uint8_t)URBI_WATCHER_PENDING_UNREGISTER;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 13. watcher_install_seeds_last_value_cache:
@@ -435,7 +435,7 @@ UTEST(watcher_install_seeds_last_value_cache)
     UVM vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count = 0;
 
@@ -444,18 +444,18 @@ UTEST(watcher_install_seeds_last_value_cache)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Install-time seed must be truthy. */
     UASSERT(w->last_value_cache.kind == UVAL_BOOL && w->last_value_cache.v.i == 1);
 
     /* First dirty pass: old=true, new=true → no rising edge → no fire. */
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 0);
 
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* (former case 14 — watcher_scratch_frame_allocated_at_init — removed by
@@ -495,13 +495,13 @@ UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
     UWatcher *w;
     UTag     *tag;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     tag = utag_create(&vm);
     UASSERT(tag != NULL);
 
     w = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT(vm.active_watchers_head == w);
     UASSERT(tag->member_watchers_head == w);
@@ -527,7 +527,7 @@ UTEST(pending_onleave_push_sets_flag_and_unlinks_from_active)
     UASSERT_EQ((long long)vm.watcher_active_count, 0LL);
 
     utag_destroy(&vm, tag);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 16. pending_onleave_drain_walks_until_empty:
@@ -539,11 +539,11 @@ UTEST(pending_onleave_drain_walks_until_empty)
     UWatcher *w[5];
     int       i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     for (i = 0; i < 5; i++) {
         w[i] = urbi_watcher_install_internal(
-            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0u);
+            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0U);
         UASSERT(w[i] != NULL);
     }
     UASSERT_EQ((long long)vm.watcher_active_count, 5LL);
@@ -561,7 +561,7 @@ UTEST(pending_onleave_drain_walks_until_empty)
     UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
     UASSERT(!vm.in_watcher_eval);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 17. pending_onleave_drain_invokes_hook_when_onleave_set:
@@ -572,7 +572,7 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_onleave_count     = 0;
     g_onleave_order_idx = 0;
@@ -582,7 +582,7 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
      * The pointer value doesn't matter at M3 — only non-NULL triggers the hook path. */
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
-        /*onleave=*/(UClosure *)1, NULL, 0u);
+        /*onleave=*/(UClosure *)1, NULL, 0U);
     UASSERT(w != NULL);
 
     pending_onleave_queue_push(&vm, w);
@@ -591,7 +591,7 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
     UASSERT_EQ(g_onleave_count, 1);
     UASSERT(vm.pending_onleave_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 18. pending_onleave_drain_skips_null_onleave:
@@ -602,14 +602,14 @@ UTEST(pending_onleave_drain_skips_null_onleave)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_onleave_count = 0;
     vm.test_watcher_onleave_hook = onleave_hook_count;
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
-        /*onleave=*/NULL, NULL, 0u);
+        /*onleave=*/NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     pending_onleave_queue_push(&vm, w);
@@ -620,7 +620,7 @@ UTEST(pending_onleave_drain_skips_null_onleave)
     UASSERT(vm.pending_onleave_head == NULL);
     UASSERT_EQ((int)vm.watcher_pool_in_use, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 19. pending_onleave_drain_ordering_FIFO:
@@ -630,18 +630,18 @@ UTEST(pending_onleave_drain_ordering_FIFO)
     UVM      vm;
     UWatcher *wa, *wb, *wc;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_onleave_count     = 0;
     g_onleave_order_idx = 0;
     vm.test_watcher_onleave_hook = onleave_hook_count;
 
     wa = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
     wb = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
     wc = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
     UASSERT(wa != NULL && wb != NULL && wc != NULL);
 
     pending_onleave_queue_push(&vm, wa);
@@ -655,7 +655,7 @@ UTEST(pending_onleave_drain_ordering_FIFO)
     UASSERT(g_onleave_order[1] == wb);
     UASSERT(g_onleave_order[2] == wc);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 20. tag_stop_pushes_watchers_to_onleave_queue:
@@ -669,7 +669,7 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
     UWatcher *w;
     UValue    nil;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
@@ -678,7 +678,7 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
     UASSERT(tag != NULL);
 
     w = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, tag, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT(tag->member_watchers_head == w);
 
@@ -697,7 +697,7 @@ UTEST(tag_stop_pushes_watchers_to_onleave_queue)
     UASSERT(vm.pending_onleave_head == NULL);
 
     utag_destroy(&vm, tag);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -726,7 +726,7 @@ UTEST(watcher_root_walker_visits_active_watchers)
     int       count_after;
     int       total;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Use non-NULL pointer sentinels for closures (cast; value not dereferenced
      * by the GC walk itself — the GC mark callback only receives UValue pointers,
@@ -736,7 +736,7 @@ UTEST(watcher_root_walker_visits_active_watchers)
         /*condition=*/(UClosure *)1,
         /*body=*/     (UClosure *)2,
         /*onleave=*/  (UClosure *)3,
-        NULL, 0u);
+        NULL, 0U);
     UASSERT(w != NULL);
 
     count_before = 0;
@@ -755,7 +755,7 @@ UTEST(watcher_root_walker_visits_active_watchers)
     total = count_before - count_after;
     UASSERT(total >= 4);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 22. watcher_root_walker_visits_pending_onleave:
@@ -769,14 +769,14 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     int       count_active;
     int       count_pending;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL,
         /*condition=*/NULL,
         /*body=*/     NULL,
         /*onleave=*/  (UClosure *)1,
-        NULL, 0u);
+        NULL, 0U);
     UASSERT(w != NULL);
 
     /* Walk with watcher on active list. */
@@ -798,7 +798,7 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     vm.test_watcher_onleave_hook = onleave_hook_count;
     drain_pending_onleave_queue(&vm);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 23. watcher_root_walker_skips_null_closures:
@@ -812,7 +812,7 @@ UTEST(watcher_root_walker_skips_null_closures)
     int       count_without;
     int       delta;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Walk roots with no watchers to get a baseline. */
     count_without = 0;
@@ -823,7 +823,7 @@ UTEST(watcher_root_walker_skips_null_closures)
         /*condition=*/NULL,
         /*body=*/     NULL,
         /*onleave=*/  NULL,
-        NULL, 0u);
+        NULL, 0U);
     UASSERT(w != NULL);
 
     count_with = 0;
@@ -834,18 +834,18 @@ UTEST(watcher_root_walker_skips_null_closures)
     UASSERT_EQ(delta, 1);
 
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 24. watcher_root_provider_count_is_6_after_init:
- *     Verify 6 root providers are registered at uvm_init time
+ *     Verify 6 root providers are registered at urbi_vm_init time
  *     (sched, realm, intern, host_handle, watcher_table, T36 m4_object). */
 UTEST(watcher_root_provider_count_is_6_after_init)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
-    UASSERT_EQ(6u, vm.root_provider_count);
-    uvm_destroy(&vm);
+    urbi_vm_init(&vm, NULL, NULL);
+    UASSERT_EQ(6U, vm.root_provider_count);
+    urbi_vm_destroy(&vm);
 }
 
 /* 25. spawn_body_coroutine_relocated_still_works:
@@ -860,14 +860,14 @@ UTEST(spawn_body_coroutine_relocated_still_works)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count = 0;
 
     /* Install with no condition hook so seed = UVAL_NIL (falsy). */
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Confirm seed is NIL/falsy. */
     UASSERT(w->last_value_cache.kind == UVAL_NIL);
@@ -877,12 +877,12 @@ UTEST(spawn_body_coroutine_relocated_still_works)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     /* Trigger one dirty eval — rising edge: nil→true fires once. */
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
     UASSERT_EQ(g_fire_count, 1);
 
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -898,18 +898,18 @@ UTEST(eval_pass_walks_all_watchers)
     UVM      vm;
     UWatcher *w1, *w2, *w3;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count = 0;
 
     /* All three: AT mode, no seed (install with no condition hook → NIL cache),
      * then set condition hook to fixed_true before eval so all see false→true. */
     w1 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
     w2 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
     w3 = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
     UASSERT(w1 != NULL && w2 != NULL && w3 != NULL);
 
     /* Seeds are NIL (falsy) because no condition hook was set during install. */
@@ -923,7 +923,7 @@ UTEST(eval_pass_walks_all_watchers)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     /* Single dirty-eval pass — all 3 see nil→true rising edge. */
-    vm.watcher_dirty_count = 1u;
+    vm.watcher_dirty_count = 1U;
     watcher_eval_dirty(&vm);
 
     /* All 3 must have fired. */
@@ -932,7 +932,7 @@ UTEST(eval_pass_walks_all_watchers)
     urbi_watcher_unregister_internal(&vm, w1);
     urbi_watcher_unregister_internal(&vm, w2);
     urbi_watcher_unregister_internal(&vm, w3);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

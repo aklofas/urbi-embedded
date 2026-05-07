@@ -7,7 +7,7 @@
 # defer-to: M5 (chk runner needs urbi_step driver path)
 #
 # Reason: verifying cross-strand FIFO ordering requires two concurrent
-# strands.  The chk runner uses the uvm_run REPL path which has no realm;
+# strands.  The chk runner uses the urbi_vm_run REPL path which has no realm;
 # `,` (OP_FORK_DETACH) produces "TypeError: requires urbi_step driver"
 # in that context.  The test is substantively covered by test_fork.c
 # (fork_detach_basic_no_crash + fork_detach_quiescent_count_zero) at M3.

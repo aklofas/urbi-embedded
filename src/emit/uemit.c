@@ -8,6 +8,11 @@
 
 #include <limits.h>
 #include <stddef.h>
+#include "emit/uemit.h"
+#include "module/umodule.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stdint.h>
 
 /* Resolve which proto to write instructions/constants/synclines into.
  * When the current FuncState has a non-NULL target_proto, we are inside a
@@ -28,11 +33,11 @@ static UProto *current_proto(const UEmitter *e) {
    back to the stdlib wrapper), so no NULL guard on `alloc` is needed. */
 static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
-    size_t len = emit_strlen(src);
+    size_t len = urbi_strlen(src);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
-    char *copy = (char *)alloc(NULL, len + 1u, e->module->alloc_ud);
+    char *copy = (char *)alloc(NULL, len + 1U, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
-    emit_memcpy(copy, src, len + 1u);
+    emit_memcpy(copy, src, len + 1U);
     e->module->source_name = copy;
 }
 
@@ -58,8 +63,8 @@ bool emit_grow(UModule *c, void **data, size_t *cap,
     if (*cap >= new_cap) return true;
     UModuleAllocFn alloc = emit_alloc_for(c);
     if (alloc == NULL) return false;
-    size_t target = *cap == 0u ? 8u : *cap;
-    while (target < new_cap) target *= 2u;
+    size_t target = *cap == 0U ? 8U : *cap;
+    while (target < new_cap) target *= 2U;
     void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
     if (fresh == NULL) return false;
     *data  = fresh;
@@ -113,7 +118,7 @@ bool proto_grow(UModule *module, UProto *proto,
 uint8_t fs_temp_floor(const UFuncState *fs) {
     uint8_t floor_val = (uint8_t)fs->nactvar;
     if (fs->global_slot_reserved) {
-        floor_val = (uint8_t)(fs->nactvar + 1u);
+        floor_val = (uint8_t)(fs->nactvar + 1U);
     }
     return floor_val;
 }
@@ -148,17 +153,17 @@ uint16_t add_const_int(UEmitter *e, const int64_t v) {
     }
     if (*count > (size_t)UINT16_MAX) {
         e->error = EMIT_CONSTANT_POOL_FULL;
-        return 0u;
+        return 0U;
     }
-    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1u, sizeof(UValue))) {
+    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
         e->error = EMIT_OOM;
-        return 0u;
+        return 0U;
     }
     {
         const size_t idx = *count;
         int pad;
         (*pool)[idx].kind = (uint8_t)UVAL_INT;
-        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0u;
+        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
         (*pool)[idx].v.i = v;
         (*count)++;
         return (uint16_t)idx;
@@ -171,7 +176,7 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
     UProto *p = current_proto(e);
     if (p != NULL) {
         if (!proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
-                        p->abs_line_count + 1u, sizeof(UAbsLine))) {
+                        p->abs_line_count + 1U, sizeof(UAbsLine))) {
             e->error = EMIT_OOM;
             return;
         }
@@ -181,7 +186,7 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
         return;
     }
     if (!emit_grow(e->module, (void **)&e->module->abs_lines, &e->module->abs_line_cap,
-                   e->module->abs_line_count + 1u, sizeof(UAbsLine))) {
+                   e->module->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM;
         return;
     }
@@ -211,7 +216,7 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
                             p->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return; }
         p->line_deltas = (int8_t *)fresh;
-        p->line_deltas[p->instr_count - 1u] = delta;
+        p->line_deltas[p->instr_count - 1U] = delta;
         return;
     }
     UModuleAllocFn alloc = emit_alloc_for(e->module);
@@ -221,7 +226,7 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
                         e->module->alloc_ud);
     if (fresh == NULL) { e->error = EMIT_OOM; return; }
     e->module->line_deltas = (int8_t *)fresh;
-    e->module->line_deltas[e->module->instr_count - 1u] = delta;
+    e->module->line_deltas[e->module->instr_count - 1U] = delta;
 }
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
@@ -239,16 +244,16 @@ void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     if (p != NULL) {
         /* Nested proto path: write instruction into the child proto. */
         if (!proto_grow(e->module, p, (void **)&p->instructions,
-                        &p->instr_cap, p->instr_count + 1u, sizeof(uint32_t))) {
+                        &p->instr_cap, p->instr_count + 1U, sizeof(uint32_t))) {
             e->error = EMIT_OOM;
             return;
         }
         p->instructions[p->instr_count++] = ins;
 
-        pc = (uint32_t)(p->instr_count - 1u);
+        pc = (uint32_t)(p->instr_count - 1U);
         delta = 0;
         needs_abs = false;
-        if (e->prev_line == 0u) {
+        if (e->prev_line == 0U) {
             needs_abs = true;
         } else {
             const int64_t d = (int64_t)line - (int64_t)e->prev_line;
@@ -272,17 +277,17 @@ void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
     /* Root module path (existing behavior). */
     if (!emit_grow(e->module, (void **)&e->module->instructions,
                    &e->module->instr_cap,
-                   e->module->instr_count + 1u, sizeof(uint32_t))) {
+                   e->module->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM;
         return;
     }
     e->module->instructions[e->module->instr_count++] = ins;
 
     /* Delta encoding.  INT8_MIN (-128) is the sentinel; valid range [-127,+127]. */
-    pc = (uint32_t)(e->module->instr_count - 1u);
+    pc = (uint32_t)(e->module->instr_count - 1U);
     delta = 0;
     needs_abs = false;
-    if (e->prev_line == 0u) {
+    if (e->prev_line == 0U) {
         /* First instruction ever: bootstrap abs checkpoint regardless of line value. */
         needs_abs = true;
     } else {
@@ -390,7 +395,7 @@ bool cond_has_direct_side_effect(UAstNode *n) {
 /* AST walker — returns the register holding the result of the expression.
    Returns 0 and sets e->error on any failure. */
 uint8_t emit_expr(UEmitter *e, UAstNode *n) {
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
     /* Default arm returns EMIT_UNSUPPORTED_AST for AST kinds not yet
        emitted by this milestone. Later tasks will add explicit case arms as
        each construct's emit lands; the NOLINT suppresses clang's switch-
@@ -433,13 +438,13 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
          * an optimised AST_IDENT).  Reaching this arm means a malformed
          * AST — treat as unsupported. */
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
-        return 0u;
+        return 0U;
     }
     e->error = EMIT_UNSUPPORTED_AST;
-    return 0u;
+    return 0U;
 }
 
 
@@ -488,7 +493,7 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
 UEmitError uemit_finish(UEmitter *e) {
     if (e->finished) return e->error;
     if (e->error == EMIT_OK && e->any_stmt_emitted) {
-        emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_RET, e->last_result_reg, 0U, 0U),
                    e->prev_line);
     }
     /* Close any lazily-opened top-level FuncState. */

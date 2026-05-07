@@ -57,7 +57,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -78,7 +78,7 @@ UTEST(waituntil_from_scratch_warns_and_returns_nil)
     /* waiters_head must be untouched. */
     UASSERT(e->waiters_head == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -101,7 +101,7 @@ UTEST(waituntil_appends_to_waiters_head)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -130,7 +130,7 @@ UTEST(waituntil_appends_to_waiters_head)
 
     vm.cur_strand = NULL;
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

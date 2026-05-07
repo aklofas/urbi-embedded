@@ -13,6 +13,10 @@
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
+#include "module/umodule.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
+#include <stdint.h>
 
 int
 ustrand_init(UStrand *s, struct UVM *vm) {
@@ -78,9 +82,9 @@ strand_unlink_from_tags(UStrand *s)
  * that previously appeared in ustrand_destroy.
  *
  * closure_list: skips any closure that equals vm->last_return_closure (the
- * caller-owned return value kept alive between uvm_run calls).
+ * caller-owned return value kept alive between urbi_vm_run calls).
  *
- * uvm_run pre-frees these chains itself (before calling ustrand_destroy) to
+ * urbi_vm_run pre-frees these chains itself (before calling ustrand_destroy) to
  * avoid the skip-logic for last_return_closure; by the time ustrand_destroy
  * is called from that path the three pointers are NULL and these loops are
  * no-ops. */
@@ -138,7 +142,7 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
     }
 
     /* CHSTR-044: register-stack free via urbi_strand_register_stack_free.
-     * uvm_run frees its own transient strand's stack before calling
+     * urbi_vm_run frees its own transient strand's stack before calling
      * ustrand_destroy, so double-free is not a risk there (stack is NULL). */
     if (vm != NULL)
         urbi_strand_register_stack_free(s, vm);
@@ -369,7 +373,7 @@ urbi_strand_register_stack_free(UStrand *s, struct UVM *vm)
 /* === CHSTR-022: urbi_strand_arm_init ===
  *
  * Convenience composite: alloc + zero the register stack and wire s->R.
- * Shared by urbi_strand_arm_from_closure and uvm_run; each caller wires
+ * Shared by urbi_strand_arm_from_closure and urbi_vm_run; each caller wires
  * pc/pc_base/cur_consts/out_slot/state afterward.
  *
  * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */

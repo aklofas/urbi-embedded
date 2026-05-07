@@ -52,11 +52,11 @@ spy_alloc60(void *ptr, size_t n, void *ud)
 UTEST(get_or_create_returns_same_event_for_same_name)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(x != NULL);
@@ -79,7 +79,7 @@ UTEST(get_or_create_returns_same_event_for_same_name)
     for (n = o->changed_events_head; n != NULL; n = n->next) count++;
     UASSERT_EQ(1, count);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -89,11 +89,11 @@ UTEST(get_or_create_returns_same_event_for_same_name)
 UTEST(get_or_create_distinct_events_per_name)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *sx = (USymbol *)ustr_intern(&vm, "x", 1);
     USymbol *sy = (USymbol *)ustr_intern(&vm, "y", 1);
@@ -114,7 +114,7 @@ UTEST(get_or_create_distinct_events_per_name)
     for (n = o->changed_events_head; n != NULL; n = n->next) count++;
     UASSERT_EQ(2, count);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -123,21 +123,21 @@ UTEST(get_or_create_distinct_events_per_name)
 
 UTEST(get_or_create_oom_returns_null_failsoft)
 {
-    /* Let uvm_init succeed, then fail on the very next allocation request
+    /* Let urbi_vm_init succeed, then fail on the very next allocation request
      * (which will be the UChangedNode GC cell + sidecar pair). */
     AllocSpy60 spy;
     spy.alloc_calls = 0;
     spy.fail_at     = 0;   /* fail starting from the 1st subsequent alloc */
 
     UVM vm;
-    uvm_init(&vm, spy_alloc60, &spy);
+    urbi_vm_init(&vm, spy_alloc60, &spy);
 
     /* Disable fail_at while we set up the test objects. */
     spy.fail_at = -1;
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(x != NULL);
@@ -154,9 +154,9 @@ UTEST(get_or_create_oom_returns_null_failsoft)
     /* Bit 7 must NOT be set on failure. */
     UASSERT_EQ(0, (int)(((UCell *)o)->gc_byte & UGC_HAS_SLOT_CHANGE_EVENT));
 
-    /* Re-arm to -1 so uvm_destroy doesn't fail. */
+    /* Re-arm to -1 so urbi_vm_destroy doesn't fail. */
     spy.fail_at = -1;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

@@ -3,6 +3,10 @@
  * Extracted from uemit.c during v0.5.4-decompose (EMIT-045 #9). */
 
 #include "uemit_internal.h"
+#include "emit/uemit.h"
+#include "module/umodule.h"
+#include "parse/uast.h"
+#include "runtime/umacros.h"
 
 #if __STDC_HOSTED__
 #  include <stdarg.h>
@@ -37,11 +41,11 @@ void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...) {
     va_end(ap);
 
     /* Copy the message string using the module allocator. */
-    size_t msg_len = emit_strlen(buf);
+    size_t msg_len = urbi_strlen(buf);
     UModuleAllocFn alloc = emit_alloc_for(e->module);
-    char *msg = (char *)alloc(NULL, msg_len + 1u, e->module->alloc_ud);
+    char *msg = (char *)alloc(NULL, msg_len + 1U, e->module->alloc_ud);
     if (msg == NULL) return;  /* OOM — drop silently */
-    emit_memcpy(msg, buf, msg_len + 1u);
+    emit_memcpy(msg, buf, msg_len + 1U);
 
     e->diag_buf[e->diag_count].level   = UEMIT_DIAG_WARN;
     e->diag_buf[e->diag_count].line    = n ? n->line : 0;

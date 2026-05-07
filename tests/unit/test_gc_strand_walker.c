@@ -14,8 +14,8 @@
  *   1. A WAITING_JOIN strand on realm.strands_head IS visited by the walker.
  *   2. A DEAD strand on realm.strands_head is visited but the per-strand
  *      walker exits immediately (no roots reported for that strand).
- *   3. A uvm_run transient strand is routed to vm->global_realm during the
- *      run and unlinked again before uvm_run returns. */
+ *   3. A urbi_vm_run transient strand is routed to vm->global_realm during the
+ *      run and unlinked again before urbi_vm_run returns. */
 
 #include "utest.h"
 #include "vm/uvm.h"
@@ -74,7 +74,7 @@ static void visit_probe_cb(UVM *vm, UValue *root, void *ctx)
 UTEST(strand_walker_visits_waiting_join_strand)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -119,7 +119,7 @@ UTEST(strand_walker_visits_waiting_join_strand)
 
     /* Cleanup: realm destroy will walk strands_head and free both. */
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Test 2 (T32): DEAD strand is filtered inside strand_walk_roots ===
@@ -131,7 +131,7 @@ UTEST(strand_walker_visits_waiting_join_strand)
 UTEST(strand_walker_dead_strand_filtered)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -162,7 +162,7 @@ UTEST(strand_walker_dead_strand_filtered)
     UASSERT_EQ(dead.total_count, 0);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Test 3 (T32): walker reaches strand on realm.strands_head regardless
@@ -175,7 +175,7 @@ UTEST(strand_walker_dead_strand_filtered)
 UTEST(strand_walker_reaches_strand_off_scheduler_queues)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -205,19 +205,19 @@ UTEST(strand_walker_reaches_strand_off_scheduler_queues)
     UASSERT(probe.total_count >= UVM_STACK_CAP + 2);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
-/* === Test 4 (T33): uvm_run transient is routed to global_realm + unlinked ===
+/* === Test 4 (T33): urbi_vm_run transient is routed to global_realm + unlinked ===
  *
- * Lazy-create the global realm via uvm_run, then verify after return that
+ * Lazy-create the global realm via urbi_vm_run, then verify after return that
  *   (a) vm.global_realm is non-NULL (the run-path lazy-created it).
  *   (b) global_realm.strands_head is empty (transient unlinked at exit).
- * This exercises the head-insert / unlink round trip in uvm_run. */
+ * This exercises the head-insert / unlink round trip in urbi_vm_run. */
 UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* No realms initially. */
     UASSERT(vm.global_realm == NULL);
@@ -244,18 +244,18 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     UASSERT(uemit_finish(&e) == EMIT_OK);
 
     UValue out = {0};
-    UVMError rc = uvm_run(&vm, &module, &out);
+    UVMError rc = urbi_vm_run(&vm, &module, &out);
     UASSERT_EQ((int)rc, (int)UVM_OK);
 
     /* T33: global_realm was lazy-created during the run. */
     UASSERT(vm.global_realm != NULL);
 
-    /* Transient was unlinked at uvm_run exit; strands_head is empty. */
+    /* Transient was unlinked at urbi_vm_run exit; strands_head is empty. */
     UASSERT(vm.global_realm->strands_head == NULL);
 
     uarena_destroy(&arena);
     umodule_destroy(&module);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

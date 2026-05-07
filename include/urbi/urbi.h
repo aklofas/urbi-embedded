@@ -8,51 +8,27 @@
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* uint64_t */
 
+/* UValue, UExecStatus, UErrCode, UVMError, UVMAllocFn, opaque struct
+ * fwd-decls (UVM, UStrand, UTag, URealm, UModule, UClosure).  Replaces
+ * the pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal
+ * header into the public surface; closes API-012 / INC-003 structurally. */
+#include "urbi/types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 const char *urbi_version(void);
 
-/* === Public error codes (row 7 §8 + T12) ===
- *
- * Functions in the public C API return int: 0 = URBI_OK, negative = error.
- * New codes are appended; never reordered (ABI stability).
- *
- * URBI_ERR_BYTECODE_VERSION_MISMATCH is used by the module loader (T1) and
- * is placed here (rather than umodule.h) so host embedders only include
- * one header for error inspection.  The loader's internal ULOAD_* codes
- * remain in umodule.h for internal use. */
-typedef enum {
-    URBI_OK                             =  0,
-    URBI_ERR_INVALID_ARG                = -1,   /* NULL pointer or out-of-range argument */
-    URBI_ERR_STRAND_FATAL               = -2,   /* strand is already DEAD / in fatal state */
-    URBI_ERR_OOM                        = -3,   /* allocator returned NULL */
-    URBI_ERR_BYTECODE_VERSION_MISMATCH  = -4,   /* module version != runtime (T1) */
-    URBI_ERR_COMPILE                    = -5,   /* parse/emit error during eval */
-    URBI_ERR_CLEANUP_OVERFLOW           = -6,   /* cleanup stack full (row 7 §4.3) */
-    URBI_ERR_EVENT_PAYLOAD_TOO_LARGE    = -7,   /* event ring payload exceeds capacity */
-    URBI_ERR_EVENT_RING_FULL            = -8,   /* event ring is full (no space) */
-    URBI_ERR_PROTECTED_SLOT             = -9,   /* write to a read-only native slot (T54) */
-    URBI_ERR_OUT_OF_MEMORY              = -10,  /* allocator returned NULL in native code */
-    URBI_ERR_CONST_SLOT_WRITE           = -11,  /* write to a const-flagged slot (T74) */
-    URBI_ERR_SLOT_NOT_FOUND             = -12   /* slot name not found on object (T74) */
-} UErrCode;
-
 /* === Row 7 control-transfer C API (M3 / T12) ===
  *
  * These functions allow host C code to inject unwind events into strands
  * and inspect their state.  They operate on struct UStrand / struct UTag /
- * struct UVM — forward-declared here; definitions live in sched/ustrand.h
- * and vm/uvm.h.
+ * struct UVM — forward-declared in <urbi/types.h>; definitions live in
+ * sched/ustrand.h and vm/uvm.h.
  *
  * Thread safety: none at M3 — these are not ISR-safe.  The ISR-safe event
  * ring (urbi_inject_event) is added at T18. */
-struct UVM;
-struct UStrand;
-struct UTag;
-
-#include "sched/ustrand.h"  /* UExecStatus, UValue — needed by return types below */
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.
@@ -110,7 +86,7 @@ struct URealm *urbi_realm_create(struct UVM *vm);
 void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
 
 /* Return (auto-creating if needed) the VM-level global Realm singleton.
- * The global Realm has REALM_GLOBAL set and persists until uvm_destroy().
+ * The global Realm has REALM_GLOBAL set and persists until urbi_vm_destroy().
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
@@ -271,8 +247,13 @@ typedef enum {
     URBI_LOG_ERROR = 3
 } ULogLevel;
 
-#define URBI_WATCHDOG_WARN   0
-#define URBI_WATCHDOG_ASSERT 1
+/* UWatchdogMode: response to slow host-callback timing in URBI_DEBUG builds.
+ * Promoted from #defines to a typedef enum at v0.5.5 (T10) to match the
+ * sibling ULogLevel idiom; numeric values pinned (0 = WARN, 1 = ASSERT). */
+typedef enum {
+    URBI_WATCHDOG_WARN   = 0,
+    URBI_WATCHDOG_ASSERT = 1
+} UWatchdogMode;
 
 /* UHostFn: signature for host-implemented native functions called by OP_CALL.
  * M5 wires this into the call-dispatch path; M3 defines the typedef for the
@@ -299,22 +280,32 @@ URBI_NORETURN void urbi_panic(const char *msg);
 /* URBI_CALLBACK_WARN_US: default watchdog threshold (microseconds).
  * Overridable at compile time: -DURBI_CALLBACK_WARN_US=2000 */
 #ifndef URBI_CALLBACK_WARN_US
-#  define URBI_CALLBACK_WARN_US 1000u
+#  define URBI_CALLBACK_WARN_US 1000U
+#endif
+
+/* urbi_in_isr: returns true if currently in ISR context, false otherwise.
+ *
+ * Reads vm->isr_check_fn (registered via urbi_set_isr_check_fn); returns
+ * false if no check function has been registered, or if vm is NULL.
+ * URBI_DEBUG-only.
+ *
+ * Hides the internal isr_check_fn field, allowing URBI_ASSERT_NOT_ISR to
+ * be written without requiring a complete struct UVM definition in the
+ * embedder's TU.  Closes the structural half of API-018 / GC-012. */
+#ifdef URBI_DEBUG
+bool urbi_in_isr(const struct UVM *vm);
 #endif
 
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not
  * called from ISR context.  vm must be a pointer to a live UVM.
  *
  * Lives in this public header (rather than src/runtime/umacros.h) because
- * the macro is part of the embedder-facing assertion surface — host C code
- * can sprinkle it across its own bridges if it wants debug-build catches
- * for ISR-unsafe entry points.  The macro touches vm->isr_check_fn, an
- * internal field; this dependency is acknowledged here and tracked for
- * wave-3-naming hygiene cleanup (API-012, API-018, API-027, INC-003,
- * GC-012 in their structural form). */
+ * the macro is part of the embedder-facing assertion surface — host C
+ * code can sprinkle it across its own bridges if it wants debug-build
+ * catches for ISR-unsafe entry points. */
 #ifdef URBI_DEBUG
 #  define URBI_ASSERT_NOT_ISR(vm) \
-       do { if ((vm)->isr_check_fn && (vm)->isr_check_fn()) \
+       do { if (urbi_in_isr(vm)) \
                 urbi_panic("called non-ISR-safe function from ISR context"); \
           } while (0)
 #else
@@ -344,9 +335,9 @@ UValue urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
 void urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void));
 
 /* urbi_set_callback_watchdog_mode: set the watchdog response mode.
- * mode: URBI_WATCHDOG_WARN (0) — log warning via host_log_fn.
- *       URBI_WATCHDOG_ASSERT (1) — call urbi_panic on threshold exceeded. */
-void urbi_set_callback_watchdog_mode(struct UVM *vm, uint8_t mode);
+ * URBI_WATCHDOG_WARN — log warning via host_log_fn.
+ * URBI_WATCHDOG_ASSERT — call urbi_panic on threshold exceeded. */
+void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 
 /* === M4 module-instance C API (T16) ===
  *
@@ -371,6 +362,24 @@ typedef struct UModuleInstance UModuleInstance;
 
 UModuleInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
 void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
+
+/* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
+ *
+ * Hosts allocate a UVM struct themselves, initialize it with urbi_vm_init
+ * (passing a host allocator), drive it via urbi_step / urbi_run_chunk /
+ * urbi_repl_eval, and tear it down with urbi_vm_destroy.  urbi_vm_run is
+ * a convenience wrapper that runs a module's root chunk to completion.
+ *
+ * Pre-v0.5.5 these were `uvm_*` and lived in src/vm/uvm.h; tests had to
+ * include the internal header to call them.  Wave 3 promotes the names
+ * to `urbi_vm_*` and publishes the supporting types via urbi/types.h.
+ * Closes API-013 + API-027.
+ *
+ * Conservative scope: pure rename.  Signatures, semantics, and error
+ * codes are byte-identical to the pre-v0.5.5 internal forms. */
+void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+void     urbi_vm_destroy(struct UVM *vm);
+UVMError urbi_vm_run    (struct UVM *vm, const struct UModule *module, UValue *out);
 
 #ifdef URBI_DEBUG
 /* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.

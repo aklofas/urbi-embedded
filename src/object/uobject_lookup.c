@@ -11,6 +11,8 @@
 #include "value/uintern.h"       /* ustr_intern (fallback retry) */
 #include "gc/ugc_incremental.h"  /* urbi_gc_walk_all_cells */
 #include "gc/ugc.h"              /* UTYPE_OBJECT */
+#include "module/umodule.h"
+#include <stddef.h>
 
 /* === T12: cycle-safe DFS lookup ===
  *
@@ -42,7 +44,7 @@ lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * -1, so this branch is never taken yet — obj->slots may be NULL.
      * T13 lands the real find; T26 lands slot-array growth that makes
      * obj->slots non-NULL once the first slot transitions in. */
-    UShape *s = obj->shape;
+    const UShape *s = obj->shape;
     int32_t idx = urbi_shape_find_slot(s, name);
     if (idx >= 0) {
         *out = obj->slots[idx];
@@ -70,7 +72,7 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * be 0 (the "no stamp" sentinel), force a clear-pass and reset to 1
      * BEFORE doing the increment.  Otherwise pre-bump so the new id is
      * fresh against every UObject's previous stamp. */
-    if ((uint32_t)(vm->lookup_id + 1ull) == 0u) {
+    if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
         /* force_wrap leaves lookup_id == 1, which is fresh after the
          * just-cleared stamps. */
@@ -99,7 +101,7 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     if (name == fb) {
         return -1;
     }
-    if ((uint32_t)(vm->lookup_id + 1ull) == 0u) {
+    if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {
         vm->lookup_id++;
@@ -115,7 +117,7 @@ clear_lookup_stamp_cb(UVM *vm, UCell *cell, void *ctx)
 {
     (void)vm; (void)ctx;
     if (cell->type_tag == UTYPE_OBJECT) {
-        ((UObject *)cell)->lookup_stamp = 0u;
+        ((UObject *)cell)->lookup_stamp = 0U;
     }
 }
 
@@ -126,5 +128,5 @@ urbi_object_lookup_id_force_wrap(UVM *vm)
      * fold this into the mark phase to avoid a separate iteration; for
      * now an immediate dedicated pass is correct (per spec §7.2). */
     urbi_gc_walk_all_cells(vm, clear_lookup_stamp_cb, NULL);
-    vm->lookup_id = 1ull;
+    vm->lookup_id = 1ULL;
 }

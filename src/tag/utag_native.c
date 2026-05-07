@@ -37,13 +37,15 @@
 #include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
-#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */
+#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
+#include <stddef.h>
+#include <stdint.h>
 
 /* === throw_oom_for_tag_event ===
  *
  * Shared OOM-throw path for tag_enter_getter / tag_leave_getter.
- * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OUT_OF_MEMORY.
+ * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OOM.
  * Returns a NIL UValue for use as the getter's return value on failure. */
 static UValue
 throw_oom_for_tag_event(struct UVM *vm)
@@ -51,7 +53,7 @@ throw_oom_for_tag_event(struct UVM *vm)
     if (vm->cur_strand != NULL) {
         UValue err;
         err.kind = (uint8_t)UVAL_INT;
-        err.v.i  = (int64_t)URBI_ERR_OUT_OF_MEMORY;
+        err.v.i  = (int64_t)URBI_ERR_OOM;
         urbi_throw(vm->cur_strand, err);
     }
     UValue nil = {0};
@@ -85,7 +87,15 @@ tag_leave_getter(struct UVM *vm, struct UTag *tag)
 
 /* === Native method stubs for proto slot installation === */
 
-/* Enter getter stub: argv[0] is the UTag receiver (UVAL_OBJECT, UTYPE_TAG). */
+/* Enter getter stub: argv[0].v.p points to the UTag receiver.
+ *
+ * TAGCH-011: there is NO UVAL_TAG kind in UValKind (see include/urbi/types.h:62).
+ * UTag is a GC-managed cell tagged UTYPE_TAG (see src/gc/ugc.h) but is not a
+ * UObject and has no dedicated UValue discriminant.  At T54 baseline the
+ * UValue.kind passed via argv[0] is implementation-defined (the C-level
+ * tests dispatch this stub directly with argv[0].v.p set; OP_CALL wiring
+ * for tag-typed receivers lands at M6).  Until that wiring exists, we read
+ * v.p without inspecting v.kind. */
 static UValue
 tag_enter_getter_stub(struct UStrand *s, int argc, UValue *argv)
 {
@@ -94,7 +104,7 @@ tag_enter_getter_stub(struct UStrand *s, int argc, UValue *argv)
     return tag_enter_getter(s->vm, tag);
 }
 
-/* Leave getter stub: same shape. */
+/* Leave getter stub: same shape and same TAGCH-011 caveat as the enter stub. */
 static UValue
 tag_leave_getter_stub(struct UStrand *s, int argc, UValue *argv)
 {

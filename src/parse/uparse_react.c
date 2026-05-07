@@ -4,6 +4,10 @@
 #include "parse/uparse_internal.h"
 #include "watcher/uwatcher.h"
 #include <stddef.h>
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "parse/uparse.h"
+#include "value/uarena.h"
 
 /* --- desugar_postfix_emit: common helper for postfix `e!` desugar.
  *
@@ -17,12 +21,11 @@
  *
  * Returns NULL on OOM, AST_ERROR on parse error, or the call node. */
 UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
-    static const char emit_name[] = "emit";
     UAstNode *member = make_node(p, AST_MEMBER_GET, bang_tok.line, bang_tok.col);
     if (!member) return NULL;
     member->u.member.recv       = recv;
-    member->u.member.name_start = emit_name;
-    member->u.member.name_len   = (int)(sizeof emit_name - 1u);
+    member->u.member.name_start = kEmitMethodName;
+    member->u.member.name_len   = kEmitMethodNameLen;
     member->u.member.value      = NULL;
     if (peek(p).type == TOK_LPAREN) {
         consume(p);  /* consume '(' */

@@ -24,9 +24,9 @@ struct UNamespace;
 
 /* === Realm flag bits (stored in URealm.flags) === */
 
-#define REALM_GLOBAL   0x1u  /* VM's anonymous global Realm — auto-created on first access */
-#define REALM_REPL     0x2u  /* hosts an interactive session */
-#define REALM_MODULE   0x4u  /* owns a loaded library module */
+#define REALM_GLOBAL   0x1U  /* VM's anonymous global Realm — auto-created on first access */
+#define REALM_REPL     0x2U  /* hosts an interactive session */
+#define REALM_MODULE   0x4U  /* owns a loaded library module */
 /* 0x8-0x80 reserved */
 
 /* === URealm struct ===
@@ -59,8 +59,8 @@ typedef struct URealm {
     struct UObject *global_object; /* UTYPE_OBJECT; owned by GC */
 
     /* Reflective handle (urbiscript-visible Realm.this / Realm.tag).
-     * NIL at M3; populated at M4+. */
-    UValue       reflective;    /* UVAL_OBJECT at M4+; UVAL_NIL at M3 */
+     * NIL at M3; populated at M5+. */
+    UValue       reflective;    /* UVAL_OBJECT at M5+; UVAL_NIL at M3 */
 
     /* Host-attached data */
     void        *user_data;     /* opaque to runtime */
@@ -72,7 +72,9 @@ typedef struct URealm {
     /* Strand ownership (T38): singly-linked list of all UStrand objects
      * created under this realm via urbi_strand_create.  Threaded via
      * UStrand.next_in_realm.  Walked by urbi_realm_destroy to free
-     * all heap-allocated strands when the realm is torn down.
+     * all heap-allocated strands when the realm is torn down (this
+     * happens BEFORE utag_destroy so the realm's tag member-list is
+     * empty when the tag is freed — see urealm.c step 1).
      *
      * GC walker contract (pre-M4 GC strand-walker spec §6.1):
      *   strands_head MUST contain every live strand whose register window
@@ -92,7 +94,19 @@ typedef struct URealm {
 /* === UNamespace public surface ===
  *
  * The struct definition is opaque — defined in urealm_namespace.c.
- * These 5 functions are the only entry points. */
+ * These 5 functions are the only entry points.
+ *
+ * Production routes for top-level globals at v0.5.x do NOT use this map;
+ * they read/write realm->global_object via OP_GETSLOT/OP_SETSLOT and the
+ * urbi_realm_{set,get}_global C-API (declared in include/urbi/urbi.h).
+ * UNamespace is retained as a side-channel for:
+ *   - test harnesses that seed deterministic UValue bindings without
+ *     constructing a full UObject (test_realm.c, test_determinism.c)
+ *   - the determinism-checksum walk (src/urbi.c::checksum_walk_cb)
+ *   - the GC root-provider walker, which folds these UValues into the
+ *     reachable set (urealm.c::realm_list_walk_roots step 2)
+ * Removing the map would force tests to build full UObjects; the cost
+ * vs. complexity trade keeps the side-channel through v1.0. */
 
 struct UNamespace *unamespace_create(struct UVM *vm);
 void               unamespace_destroy(struct UVM *vm, struct UNamespace *ns);
@@ -107,8 +121,8 @@ void               unamespace_walk_roots(struct UNamespace *ns,
 
 /* === VM teardown helper ===
  *
- * Destroy all Realms still alive at uvm_destroy() time.
- * Called from uvm_destroy() — T14 wires this up. */
+ * Destroy all Realms still alive at urbi_vm_destroy() time.
+ * Called from urbi_vm_destroy() — T14 wires this up. */
 void urealm_teardown_all(struct UVM *vm);
 
 /* === GC root walker for the full realm list ===
@@ -116,9 +130,11 @@ void urealm_teardown_all(struct UVM *vm);
  * Called by the GC root-provider registry (row 10 / T26) to enumerate
  * all UValues reachable from every live Realm.
  * Iterates vm->realms_head linked list; for each Realm visits:
- *   1. realm->reflective
- *   2. namespace entries (via unamespace_walk_roots)
- *   3. realm->tag — host-managed at M3; GC enrollment deferred to M5/M6 */
+ *   1. realm->reflective       (callback)
+ *   2. namespace entries       (via unamespace_walk_roots)
+ *   3. realm->global_object    (gc_shade_gray — UTYPE_OBJECT cell)
+ *   4. realm->tag              (gc_shade_gray — UTYPE_TAG cell at M5+)
+ * The implementation in urealm.c is the source of truth for this list. */
 void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* === 4 Realm lifecycle C API functions ===

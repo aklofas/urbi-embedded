@@ -11,11 +11,12 @@
 #include "gc/ugc_incremental.h" /* gc_shade_gray */
 #include "gc/ugc.h"            /* UTYPE_PROTOS */
 #include "urbi/urbi.h"         /* URBI_OK / URBI_ERR_INVALID_ARG */
+#include <stddef.h>
 
 /* Cap on the number of distinct prototypes a single setProtos call may
  * install (after dedup).  Stays in sync with the plan's stack-array sizing;
  * a larger cap can land in v1.x as part of stdlib error-code expansion. */
-#define URBI_PROTOS_SETPROTOS_CAP  64u
+#define URBI_PROTOS_SETPROTOS_CAP  64U
 
 /* shade_existing_protos — internal helper. Decodes obj->protos's three
  * storage forms (empty/single/heap per spec §4.1) and shades the underlying
@@ -24,10 +25,10 @@ void
 shade_existing_protos(UVM *vm, UObject *obj)
 {
     uintptr_t raw = obj->protos;
-    if (raw == 0u) {
+    if (raw == 0U) {
         return;   /* empty form — nothing to shade */
     }
-    if ((raw & 1u) != 0u) {
+    if ((raw & 1U) != 0U) {
         /* single form: bit 0 set, address in high bits */
         gc_shade_gray(vm, (UCell *)(raw >> 1));
     } else {
@@ -44,7 +45,7 @@ void
 urbi_object_set_protos_empty(UVM *vm, UObject *obj)
 {
     shade_existing_protos(vm, obj);
-    obj->protos = 0u;
+    obj->protos = 0U;
     vm->topology_gen++;
 }
 
@@ -55,7 +56,7 @@ urbi_object_set_protos_single(UVM *vm, UObject *obj, UObject *p)
     /* Forward barrier on the inserted child (per spec §5.3 — barrier is
      * per-write, not per-disposition). */
     gc_shade_gray(vm, (UCell *)p);
-    obj->protos = ((uintptr_t)p << 1) | 1u;
+    obj->protos = ((uintptr_t)p << 1) | 1U;
     /* T27: mark the inserted prototype so future slot installs on it bump
      * topology_gen (topology spec §4.1 row 4).  Monotonic — never cleared. */
     p->flags |= URBI_OBJ_FLAG_IS_PROTOTYPE;
@@ -106,7 +107,7 @@ urbi_protos_alloc(UVM *vm, uint32_t n)
     }
     UProtos *up = (UProtos *)c;
     up->n    = n;
-    up->_pad = 0u;
+    up->_pad = 0U;
     for (uint32_t i = 0; i < n; i++) {
         up->items[i] = NULL;
     }
@@ -127,13 +128,13 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
      * gets MRO priority. */
     uint32_t old_n = urbi_object_proto_count(obj);
 
-    if (old_n == 0u) {
+    if (old_n == 0U) {
         urbi_object_set_protos_single(vm, obj, proto);
         return URBI_OK;
     }
 
     /* old_n >= 1 — build a fresh UProtos with [proto, ...existing]. */
-    uint32_t new_n = old_n + 1u;
+    uint32_t new_n = old_n + 1U;
     if (new_n > URBI_PROTOS_SETPROTOS_CAP) {
         return URBI_ERR_INVALID_ARG;
     }
@@ -143,14 +144,14 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
     }
     up->items[0] = proto;
     for (uint32_t i = 0; i < old_n; i++) {
-        up->items[i + 1u] = urbi_object_proto_at(obj, i);
+        up->items[i + 1U] = urbi_object_proto_at(obj, i);
     }
     urbi_object_set_protos_heap(vm, obj, up);
     return URBI_OK;
 }
 
 int
-urbi_object_remove_proto(struct UVM *vm, UObject *obj, UObject *proto)
+urbi_object_remove_proto(struct UVM *vm, UObject *obj, const UObject *proto)
 {
     if (vm == NULL || obj == NULL || proto == NULL) {
         return URBI_ERR_INVALID_ARG;
@@ -171,14 +172,14 @@ urbi_object_remove_proto(struct UVM *vm, UObject *obj, UObject *proto)
         return URBI_OK;   /* not present — silent no-op */
     }
 
-    uint32_t new_n = old_n - 1u;
-    if (new_n == 0u) {
+    uint32_t new_n = old_n - 1U;
+    if (new_n == 0U) {
         urbi_object_set_protos_empty(vm, obj);
         return URBI_OK;
     }
-    if (new_n == 1u) {
+    if (new_n == 1U) {
         /* Pick the survivor (the one element whose index isn't `idx`). */
-        UObject *survivor = urbi_object_proto_at(obj, (idx == 0u) ? 1u : 0u);
+        UObject *survivor = urbi_object_proto_at(obj, (idx == 0U) ? 1U : 0U);
         urbi_object_set_protos_single(vm, obj, survivor);
         return URBI_OK;
     }
@@ -188,7 +189,7 @@ urbi_object_remove_proto(struct UVM *vm, UObject *obj, UObject *proto)
     if (up == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    uint32_t out = 0u;
+    uint32_t out = 0U;
     for (uint32_t i = 0; i < old_n; i++) {
         if (i == idx) continue;
         up->items[out++] = urbi_object_proto_at(obj, i);
@@ -203,7 +204,7 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
     if (vm == NULL || obj == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    if (n > 0u && list == NULL) {
+    if (n > 0U && list == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
 
@@ -211,7 +212,7 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
      * URBI_PROTOS_SETPROTOS_CAP distinct survivors (per plan).  Skip NULL
      * entries up-front — they are invalid prototype slots. */
     UObject *deduped[URBI_PROTOS_SETPROTOS_CAP];
-    uint32_t dn = 0u;
+    uint32_t dn = 0U;
     for (uint32_t i = 0; i < n; i++) {
         UObject *cand = list[i];
         if (cand == NULL) {
@@ -238,11 +239,11 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
     }
 
     /* All checks passed; dispatch on dedup count. */
-    if (dn == 0u) {
+    if (dn == 0U) {
         urbi_object_set_protos_empty(vm, obj);
         return URBI_OK;
     }
-    if (dn == 1u) {
+    if (dn == 1U) {
         urbi_object_set_protos_single(vm, obj, deduped[0]);
         return URBI_OK;
     }

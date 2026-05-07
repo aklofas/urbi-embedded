@@ -5,6 +5,10 @@
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stddef.h>
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
@@ -12,7 +16,10 @@
      3 = equality (==, !=)
      4 = relational (<, <=, >, >=)
      5 = additive (+, -)
-     6 = multiplicative (*, /) */
+     6 = multiplicative (*, /)
+     7 = postfix (call, member, `!`, `?`) — see PARSE_PREC_POSTFIX
+         in uparse_internal.h; not produced by this function (handled
+         directly in parse_expression_cont). */
 int infix_prec(UTokenType t) {
     switch (t) {
     case TOK_EQEQ:
@@ -313,8 +320,8 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
     for (;;) {
         UToken op = peek(p);
 
-        /* Postfix call: `expr(args)` — highest precedence (7). */
-        if (op.type == TOK_LPAREN && min_prec <= 7) {
+        /* Postfix call: `expr(args)` — highest precedence (postfix). */
+        if (op.type == TOK_LPAREN && min_prec <= PARSE_PREC_POSTFIX) {
             left = parse_call_args(p, left);
             if (!left) return NULL;
             if (left->kind == AST_ERROR) return left;
@@ -325,7 +332,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
            Same precedence tier as the postfix call.  After a SET form, stop
            climbing — assignment terminates the postfix chain.  After a GET,
            keep looping so chains like `a.b.c` and `a.b()` keep building. */
-        if ((op.type == TOK_DOT || op.type == TOK_ARROW) && min_prec <= 7) {
+        if ((op.type == TOK_DOT || op.type == TOK_ARROW) && min_prec <= PARSE_PREC_POSTFIX) {
             bool is_assign = false;
             left = parse_member_access(p, left, &is_assign);
             if (!left) return NULL;
@@ -354,7 +361,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
            `e!`        → AST_CALL { callee=left, method="emit", args=[] }
            `e!(p)`     → AST_CALL { callee=left, method="emit", args=[p] }
            `e!(x,y,z)` → PARSE_EMIT_MULTI_ARG_V1 error */
-        if (op.type == TOK_BANG && min_prec <= 7) {
+        if (op.type == TOK_BANG && min_prec <= PARSE_PREC_POSTFIX) {
             consume(p);  /* consume '!' */
             left = desugar_postfix_emit(p, left, op);
             if (!left) return NULL;
@@ -365,7 +372,7 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
         /* Postfix `?` — only valid inside at(...) condition.
          * When at_event_cond is set, pass through (parse_at will consume it).
          * Otherwise it is an error. */
-        if (op.type == TOK_QUESTION && min_prec <= 7) {
+        if (op.type == TOK_QUESTION && min_prec <= PARSE_PREC_POSTFIX) {
             if (p->at_event_cond) break;  /* let parse_at consume it */
             consume(p);
             return make_error(p, PARSE_QUESTION_OUTSIDE_AT,

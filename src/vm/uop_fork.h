@@ -31,19 +31,20 @@ extern "C" {
 #define UVAL_AS_STRAND(uv)   ((UStrand *)((uv).v.p))
 
 /* OP_FORK_DETACH handler.
- * ABx: A = closure_reg.  Spawns child from R[A] as a detached strand.
+ * ABC: A = closure_reg.  B and C are reserved (encoded as 0; not decoded).
+ * Spawns child from R[A] as a detached strand.
  * Parent inherits ambient tag chain; child also inherits it.
  * Returns 0 on success; sets s->fatal_status and returns -1 on OOM. */
 int op_fork_detach(UStrand *s, UVM *vm, uint32_t instr);
 
 /* OP_FORK_JOIN handler.
- * ABC: A = closure_reg, B = child_handle_reg.
+ * ABC: A = closure_reg, B = child_handle_reg.  C is reserved (encoded as 0).
  * Spawns child from R[A]; stores child handle in R[B].
  * Returns 0 on success; -1 on OOM (strand fatal). */
 int op_fork_join(UStrand *s, UVM *vm, uint32_t instr);
 
 /* OP_JOIN_WAIT handler.
- * ABC: A = child_handle_reg.
+ * ABC: A = child_handle_reg.  B and C are reserved (encoded as 0).
  * If child is already DEAD: returns 0 (parent continues).
  * Otherwise: threads parent onto child->joiners_head, blocks parent with
  * sched_strand_block(REASON_JOIN), and returns 1 (caller must goto exit_strand). */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Chunk-execution C API wrappers (row 8 §5 / T16).
  *
- * M3-baseline note: urbi_run_chunk wraps uvm_run for synchronous execution.
+ * M3-baseline note: urbi_run_chunk wraps urbi_vm_run for synchronous execution.
  * The step-driven architecture described in §5 of the chunk-lifecycle spec
  * (per-realm strands, budget loops, T20 strand C API) is deferred to T20.
  * At that point, urbi_run_chunk will route through urbi_step with a real
@@ -37,7 +37,7 @@
  * *out_result (or discarding it if out_result is NULL).  realm == NULL
  * auto-creates/uses the VM's global Realm.
  *
- * M3 baseline: delegates to uvm_run, which allocates a transient strand and
+ * M3 baseline: delegates to urbi_vm_run, which allocates a transient strand and
  * drives it to completion synchronously.  T20 promotes this to the step-driven
  * per-realm strand pattern once the strand C API (urbi_strand_create, etc.) lands.
  * --------------------------------------------------------------------------- */
@@ -54,27 +54,32 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
 
     /* M4 follow-up: bind UModuleInstance so OP_GETSLOT/SETSLOT find IC table.
      * Cache lookup on vm->module_instances_head; lazy create.  OOM here is
-     * not fatal — uvm_run will surface a clean diagnostic on first GETSLOT
+     * not fatal — urbi_vm_run will surface a clean diagnostic on first GETSLOT
      * if the binding never happened. */
     (void)urbi_get_or_create_module_instance(vm, (UModule *)module);
 
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    /* M3 baseline: uvm_run drives a transient strand to completion synchronously.
-     * The realm is accepted for API-stability but not yet used to partition
-     * bindings — that wiring lands at T20 with the full strand lifecycle API.
-     * Suppressing unused-variable warning for realm: it is intentionally held
-     * for future use and not yet threaded through uvm_run. */
+    /* realm is accepted for API stability but not yet threaded through
+     * urbi_vm_run, which takes (vm, module, out) — no realm parameter.
+     * Threading requires expanding urbi_vm_run's signature, which is a
+     * Wave-5 boundary change (API-004 carries forward).  At v0.5.5 the
+     * realm argument's role is contract validation: it must belong to
+     * this vm or be NULL.  Wave 5 wires the partitioned-binding path. */
     (void)realm;
 
-    UVMError rc = uvm_run(vm, module, out);
+    UVMError rc = urbi_vm_run(vm, module, out);
 
+    /* Map UVMError to UErrCode.  UVM_TYPE_ERROR collapses to STRAND_FATAL
+     * at v0.5.5 because the public surface has no dedicated type-error
+     * code; M6 stdlib expansion may add one (API-032 review). */
     switch (rc) {
     case UVM_OK:         return URBI_OK;
     case UVM_OOM:        return URBI_ERR_OOM;
-    default:             return URBI_ERR_STRAND_FATAL;
+    case UVM_TYPE_ERROR: return URBI_ERR_STRAND_FATAL;
     }
+    return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
 }
 
 /* ---------------------------------------------------------------------------
@@ -87,7 +92,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
  * Returns URBI_ERR_COMPILE on parse/emit error (buf gets "compile error").
  * Returns URBI_ERR_STRAND_FATAL on runtime error (buf gets vm->last_errmsg).
  *
- * Mirrors the lex→parse→emit→uvm_run pipeline in tests/unit/test_vm.c.
+ * Mirrors the lex→parse→emit→urbi_vm_run pipeline in tests/unit/test_vm.c.
  * --------------------------------------------------------------------------- */
 int
 urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
@@ -170,12 +175,12 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         return URBI_ERR_COMPILE;
     }
 
-    /* Run via urbi_run_chunk (which delegates to uvm_run at M3). */
+    /* Run via urbi_run_chunk (which delegates to urbi_vm_run at M3). */
     UValue result = {0};
     int run_rc = urbi_run_chunk(vm, realm, &module, &result);
 
     /* API-009: drain any body strands spawned by watcher eval during this run.
-     * uvm_run (inside urbi_run_chunk) only drives its own transient strand;
+     * urbi_vm_run (inside urbi_run_chunk) only drives its own transient strand;
      * spawned body strands accumulate in vm->ready_head and need urbi_step
      * to execute.  Cap at URBI_REPL_DRAIN_BUDGET iterations to prevent
      * infinite spin with persistent watchers. */
@@ -189,7 +194,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     }
 
     if (run_rc != URBI_OK) {
-        /* Copy vm->last_errmsg into out_buf; it was populated by uvm_run. */
+        /* Copy vm->last_errmsg into out_buf; it was populated by urbi_vm_run. */
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }

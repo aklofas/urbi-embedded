@@ -98,7 +98,7 @@ UTEST(set_global_then_script_reads) {
      * Note: urbi_run_chunk always executes scripts in the VM's global realm
      * (realm argument is reserved for future multi-realm scheduling). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Auto-create the global realm so we can install on it. */
     URealm *realm = urbi_realm_global(&vm);
@@ -113,7 +113,7 @@ UTEST(set_global_then_script_reads) {
     UASSERT_EQ((uint8_t)UVAL_INT, result.kind);
     UASSERT_EQ((int64_t)42, result.v.i);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(set_global_const_blocks_script_write) {
@@ -125,7 +125,7 @@ UTEST(set_global_const_blocks_script_write) {
      * urbi_populate_realm_globals).  The IC checks packed shape flags for
      * indices 0-7, so CONSTANT enforcement is guaranteed here. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -142,14 +142,14 @@ UTEST(set_global_const_blocks_script_write) {
     /* Error message must mention the slot name. */
     UASSERT(strstr(vm.last_errmsg, "Object") != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(get_global_returns_slot_not_found_when_absent) {
     /* urbi_realm_get_global on a name that doesn't exist must return
      * URBI_ERR_SLOT_NOT_FOUND (not a crash, not URBI_OK). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -159,7 +159,7 @@ UTEST(get_global_returns_slot_not_found_when_absent) {
                                    "totally_absent_xyz", 18, &out);
     UASSERT_EQ(URBI_ERR_SLOT_NOT_FOUND, rc);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(set_global_overwrites_non_const) {
@@ -167,7 +167,7 @@ UTEST(set_global_overwrites_non_const) {
      * must update the value, and urbi_realm_get_global must return the
      * new value. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
@@ -187,7 +187,7 @@ UTEST(set_global_overwrites_non_const) {
     UASSERT_EQ((uint8_t)UVAL_INT, out.kind);
     UASSERT_EQ((int64_t)2, out.v.i);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

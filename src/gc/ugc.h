@@ -161,16 +161,16 @@ void   urbi_gc_collect(struct UVM *vm);
  *   3. urbi_gc_destroy()      — frees all remaining GC cells + sidecar list
  * Remaining VM infrastructure (event ring, sched queues, deferred
  * slot-change ring, handle table) does NOT own GC cells and is freed
- * after urbi_gc_destroy in uvm_destroy.  See src/vm/uvm.c:uvm_destroy. */
+ * after urbi_gc_destroy in urbi_vm_destroy.  See src/vm/uvm.c:urbi_vm_destroy. */
 
 /* Pause / resume incremental GC slices.  While paused, urbi_gc_slice() is a
  * no-op.  urbi_gc_collect() still works (explicit override). */
 void   urbi_gc_pause(struct UVM *vm, bool paused);
 
 /* Query GC accounting (reads directly from vm fields; no locks). */
-size_t urbi_gc_bytes_allocated(struct UVM *vm);
-size_t urbi_gc_live_bytes(struct UVM *vm);
-size_t urbi_gc_threshold(struct UVM *vm);
-uint8_t urbi_gc_phase(struct UVM *vm);
+size_t urbi_gc_bytes_allocated(const struct UVM *vm);
+size_t urbi_gc_live_bytes(const struct UVM *vm);
+size_t urbi_gc_threshold(const struct UVM *vm);
+uint8_t urbi_gc_phase(const struct UVM *vm);
 
 #endif /* UGC_H */

@@ -2,7 +2,7 @@
 /* Unit tests: GC 5-phase state machine + slice work + threshold tuning.
  * Row 10 §6.1–§6.5.  T24 baseline.
  *
- * All tests use the uvm_init/uvm_destroy pattern.  No concrete cell types
+ * All tests use the urbi_vm_init/urbi_vm_destroy pattern.  No concrete cell types
  * are registered (type_table[] is empty at T24), so walk_payload is never
  * called.  Tests exercise:
  *   - Phase transitions through a full cycle
@@ -60,11 +60,11 @@ static int count_all_cells(UVM *vm) {
 UTEST(ugc_phase_getter_returns_idle_initially)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: phase transitions IDLE → MARK_ROOTS when debt > 0 ===== */
@@ -72,17 +72,17 @@ UTEST(ugc_phase_getter_returns_idle_initially)
 UTEST(ugc_phase_transitions_idle_to_mark)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Force debt positive so the trigger fires. */
     vm.gc_debt = 1;
 
-    urbi_gc_slice(&vm, 64u);
+    urbi_gc_slice(&vm, 64U);
 
     /* Phase should have moved out of IDLE (to MARK_ROOTS or beyond). */
     UASSERT(urbi_gc_phase(&vm) != GC_PHASE_IDLE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: urbi_gc_force_full completes a full cycle ===== */
@@ -90,21 +90,21 @@ UTEST(ugc_phase_transitions_idle_to_mark)
 UTEST(ugc_force_full_reaches_idle)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate a few cells to give the sweep something to walk. */
     int i;
     for (i = 0; i < 10; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
 
     urbi_gc_force_full(&vm);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: sweep frees all unreachable cells (no roots registered) ===== */
@@ -112,13 +112,13 @@ UTEST(ugc_force_full_reaches_idle)
 UTEST(ugc_force_full_collects_all_unreachable)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate 20 cells; none are roots (no root providers registered,
      * no UVAL_CLOSURE values in any slot). */
     int i;
     for (i = 0; i < 20; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
 
@@ -131,7 +131,7 @@ UTEST(ugc_force_full_collects_all_unreachable)
     /* gc_live_bytes should be 0 after collecting everything. */
     UASSERT_EQ(urbi_gc_live_bytes(&vm), (size_t)0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: sweep survives UGC_IS_PINNED cells ===== */
@@ -139,11 +139,11 @@ UTEST(ugc_force_full_collects_all_unreachable)
 UTEST(ugc_sweep_survives_pinned_cell)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate one pinned cell and one unpinned cell. */
-    UCell *pinned = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
-    UCell *dead   = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    UCell *pinned = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
+    UCell *dead   = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(pinned != NULL);
     UASSERT(dead != NULL);
 
@@ -157,7 +157,7 @@ UTEST(ugc_sweep_survives_pinned_cell)
     /* Verify the surviving cell is pinned (same pointer still readable). */
     UASSERT(pinned->gc_byte & UGC_IS_PINNED);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 6: sweep survives UGC_IS_FIXED cells ===== */
@@ -165,10 +165,10 @@ UTEST(ugc_sweep_survives_pinned_cell)
 UTEST(ugc_sweep_survives_fixed_cell)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
-    UCell *fixed = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
-    UCell *dead  = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    UCell *fixed = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
+    UCell *dead  = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(fixed != NULL);
     UASSERT(dead != NULL);
 
@@ -181,7 +181,7 @@ UTEST(ugc_sweep_survives_fixed_cell)
     UASSERT_EQ(count_all_cells(&vm), 1);
     UASSERT(fixed->gc_byte & UGC_IS_FIXED);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 7: gc_pause suppresses automatic cycle start ===== */
@@ -189,7 +189,7 @@ UTEST(ugc_sweep_survives_fixed_cell)
 UTEST(ugc_pause_suppresses_cycle)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     urbi_gc_pause(&vm, true);
 
@@ -197,17 +197,17 @@ UTEST(ugc_pause_suppresses_cycle)
     vm.gc_debt = (int64_t)vm.gc_threshold + 1;
 
     /* Slice with positive debt and paused GC: should stay IDLE. */
-    urbi_gc_slice(&vm, 4096u);
+    urbi_gc_slice(&vm, 4096U);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
 
     /* Resume and verify that a cycle starts normally. */
     urbi_gc_pause(&vm, false);
-    urbi_gc_slice(&vm, 4096u);
+    urbi_gc_slice(&vm, 4096U);
     /* Phase should have advanced out of IDLE. */
     /* (force_full brings it back to IDLE; we only check it moved) */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 8: threshold updates based on live bytes at end of cycle ===== */
@@ -215,14 +215,14 @@ UTEST(ugc_pause_suppresses_cycle)
 UTEST(ugc_threshold_updates_at_cycle_end)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     size_t initial_threshold = vm.gc_threshold;
 
     /* Allocate some pinned cells so they survive the sweep. */
     int i;
     for (i = 0; i < 5; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 128u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 128U, UTYPE_OBJECT);
         UASSERT(c != NULL);
         c->gc_byte |= UGC_IS_PINNED;
     }
@@ -247,7 +247,7 @@ UTEST(ugc_threshold_updates_at_cycle_end)
     UASSERT(vm.gc_debt <= 0);
     UASSERT_EQ(vm.gc_debt, -(int64_t)vm.gc_threshold);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 9: full cycle with large allocation triggers threshold > initial ===== */
@@ -255,14 +255,14 @@ UTEST(ugc_threshold_updates_at_cycle_end)
 UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Allocate enough pinned cells so that live_bytes * PAUSE_RATIO / 100
      * exceeds URBI_GC_INITIAL_THRESHOLD (16384).
      * Need: live * 2 > 16384  →  live > 8192.  Use 10 cells * 1024 = 10240 bytes. */
     int i;
     for (i = 0; i < 10; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 1024u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 1024U, UTYPE_OBJECT);
         UASSERT(c != NULL);
         c->gc_byte |= UGC_IS_PINNED;
     }
@@ -270,12 +270,12 @@ UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
     urbi_gc_force_full(&vm);
 
     size_t live = urbi_gc_live_bytes(&vm);
-    size_t expected_thresh = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100u;
+    size_t expected_thresh = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100U;
 
     UASSERT_EQ(urbi_gc_live_bytes(&vm), (size_t)(10 * 1024));
     UASSERT_EQ(urbi_gc_threshold(&vm), expected_thresh);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 10: urbi_gc_collect is equivalent to force_full ===== */
@@ -283,11 +283,11 @@ UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
 UTEST(ugc_collect_frees_dead_cells)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     int i;
     for (i = 0; i < 8; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
     UASSERT_EQ(count_all_cells(&vm), 8);
@@ -297,7 +297,7 @@ UTEST(ugc_collect_frees_dead_cells)
     UASSERT_EQ(count_all_cells(&vm), 0);
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

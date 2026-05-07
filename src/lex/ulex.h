@@ -83,7 +83,10 @@ typedef enum {
     TOK_QUESTION,      /* ? — event-subscribe postfix inside at(...) */
     TOK_BANG,          /* ! — event-emit postfix (e.g. `e!`) */
 
-    TOK_ERROR         /* malformed input */
+    TOK_ERROR,        /* malformed input */
+
+    TOK__LAST          /* sentinel; not a real token type — used to size
+                          TOKEN_NAMES[] and detect drift via _Static_assert */
 } UTokenType;
 
 /* Error codes carried in UToken.u.err.code when UToken.type == TOK_ERROR. */
@@ -99,7 +102,9 @@ typedef enum {
     LEX_LEADING_UNDERSCORE,
     LEX_TRAILING_UNDERSCORE,
     LEX_ADJACENT_UNDERSCORES,
-    LEX_INT_OVERFLOW
+    LEX_INT_OVERFLOW,
+    LEX__LAST          /* sentinel; not a real error code — used to size
+                          ERR_MSG[] and detect drift via _Static_assert */
 } ULexError;
 
 /*

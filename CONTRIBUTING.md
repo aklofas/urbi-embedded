@@ -51,6 +51,148 @@ The file is gitignored — regenerate it after changing `CFLAGS`/`CPPFLAGS` or a
 
 See `docs/STYLE.md` for the full style guide — naming, memory model, const-correctness, initialization, error handling, headers, tests, and comment conventions. Mechanical rules are enforced by `.editorconfig`, `.clang-tidy`, and the Makefile's warning flags.
 
+### Naming policy (summary)
+
+Filenames:
+
+- `u` prefix on all source files; snake_case for compound names.
+- Subsystem-public header is `u<subsystem>.h` matching `u<subsystem>.c`.
+- Sub-files within a subsystem use `u<subsystem>_<aspect>.{c,h}`.
+
+Function names:
+
+| Visibility | Convention | Example |
+|---|---|---|
+| Public C API (in `include/urbi/*.h`) | `urbi_<noun>_<verb>` | `urbi_realm_set_global` |
+| Subsystem-public (in `src/<subsys>/u<subsys>.h`) | `u<subsystem>_<verb>` | `uvm_run`, `uemit_expr` |
+| TU-local (`static`) | `<short_descriptive>` | `lex_number`, `parse_expr_atom` |
+
+Other:
+
+- No double-underscore (`__foo`) prefixes — reserved by C99/C11 §7.1.3.
+- No milestone-tag prefixes in symbol names.
+- Integer-literal suffixes uppercase: `1U`, `0ULL` — never `1u`, `0ull`.
+
+## Header hygiene
+
+- One header per `.c` when the `.c` exposes anything beyond its TU.
+- Subsystem-public headers live in the subsystem folder (`src/<subsys>/u<subsys>.h`).
+- Headers declare; never include implementation.
+- TU-local types: forward-decl or stay in the `.c`.
+- No `#include` cycles.
+- Direct `#include` for everything used; do not rely on transitive pulls. `make tidy` flags `misc-include-cleaner` violations (system-wide sweep at v0.5.5; some intentional skips for the public/internal layer split).
+
+## Layout policy
+
+Source files live under per-subsystem folders:
+
+    src/lex/      src/parse/    src/emit/     src/vm/
+    src/gc/       src/sched/    src/watcher/  src/event/
+    src/tag/      src/changed/  src/module/   src/value/
+    src/runtime/  src/realm/    src/object/
+
+Public C API lives in `include/urbi/`:
+
+    include/urbi/types.h     UValue, UExecStatus, UErrCode, UVMError, UVMAllocFn, opaque struct fwd-decls
+    include/urbi/urbi.h      Public lifecycle + control + step
+    include/urbi/gc.h        GC strategy router
+    include/urbi/sched.h     Per-scheduler API umbrella
+    include/urbi/object.h    Object-model public API
+
+## Commit messages
+
+Format:
+
+    <prefix>: <imperative summary, lowercase, ≤ 72 chars, no trailing period>
+
+    <optional body, wrapped at 72 cols, explains WHY not WHAT>
+
+### Subsystem prefixes
+
+| Prefix | Scope |
+|---|---|
+| `tests:` | Test harness, test cases, fixtures |
+| `chk:` | `.chk` conformance fixture files |
+| `build:` | Makefile, build flags, cross-compile targets |
+| `ci:` | `.github/workflows/*`, static analysis config |
+| `docs:` | README, CHANGELOG, CONTRIBUTING, comments-only changes |
+| `lex:` | Lexer (`src/lex/`) |
+| `parse:` | Parser, AST (`src/parse/`) |
+| `desugar:` | Desugaring pass |
+| `emit:` | Bytecode emitter, register allocator (`src/emit/`) |
+| `module:` | Bytecode module format, serializer/deserializer (`src/module/`) |
+| `vm:` | Interpreter core, opcode dispatch (`src/vm/`) |
+| `value:` | Value representation, shape system (`src/value/`) |
+| `gc:` | Garbage collector (`src/gc/`) |
+| `sched:` | Coroutine scheduler (`src/sched/`) |
+| `react:` | Events, watchers, tags (`src/{event,watcher,tag,changed}/`) |
+| `runtime:` | Cross-cutting runtime (`src/runtime/`) |
+| `realm:` | Realms (`src/realm/`) |
+| `object:` | Object model (`src/object/`) |
+| `api:` | Public C API (`include/urbi/*.h`, `src/urbi.c`) |
+| `tools:` | Anything under `tools/` |
+| `repl:` | REPL service |
+| `ros:` | micro-ROS bridge |
+| `port:` | ESP-IDF / STM32 / Xtensa integration |
+
+Multi-subsystem commits: pick the dominant one, or split. Splitting is almost always right.
+
+### Style rules
+
+- Imperative mood. "add", "fix", "refactor" — not "added", "fixes".
+- One concern per commit. If you're typing "and" in the summary, split it.
+- Body explains why, especially for non-obvious choices.
+- No internal plan or phase markers in commits or tags.
+- No emojis in commits, code, README, CHANGELOG, or anywhere in the public repo.
+
+### AI-attribution rule
+
+Nothing in the public repo mentions Claude, Anthropic, Copilot, Cursor, Aider, or AI assistance of any kind. This covers commit messages (no `Co-Authored-By: Claude …` trailers), PR descriptions, release notes, tag messages, README, CHANGELOG, CONTRIBUTING, and code comments.
+
+## Branching
+
+Default: main-only. Topic branches `topic/<short-slug>` for work taking
+> 10 commits or that would break main mid-flight. Push for backup is fine.
+Merge with `git merge --ff-only` (or `--no-ff` if explicitly preserving the
+branch shape). No PRs. Delete the branch after merge.
+
+Never force-push to `main`.
+
+## Pre-commit verification
+
+Required for every commit to `main`:
+
+    make test         # Release -Os build
+    make test-debug   # -O0 -g build
+
+Both must pass.
+
+For `src/*.c` changes:
+
+    make test-asan
+    make test-ubsan
+
+For public-API or opcode-semantics changes:
+
+    make cross-arm    # if arm-none-eabi-gcc installed
+    make cross-riscv  # if riscv*-elf-gcc installed
+
+Or push and let CI catch it.
+
+Bytecode-byte-identical contract: any commit that touches `src/lex/`,
+`src/parse/`, `src/emit/`, `src/value/`, `src/module/`, `src/object/`, or
+`src/runtime/` should reproduce `tests/golden/v0.5.3-bytecode-hashes.txt`
+exactly unless a deliberate codegen change is being made (which requires
+re-capturing the golden table and bumping bytecode version).
+
+## Tag conventions
+
+One annotated tag per milestone or wave. Format:
+
+    v<MAJOR>.<MINOR>.<PATCH>-<codename>
+
+Examples: `v0.5.3-layout`, `v0.5.4-decompose`, `v0.5.5-naming`.
+
 ## Per-file LOC-cap exceptions
 
 The default soft cap is 1000 LOC per `.c` source file (enforced by

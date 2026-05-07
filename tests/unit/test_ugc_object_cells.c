@@ -52,7 +52,7 @@ static int count_all_cells(UVM *vm) {
 
 UTEST(ugc_object_cells_types_registered) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UASSERT(vm.type_table[UTYPE_OBJECT]           != NULL);
     UASSERT(vm.type_table[UTYPE_PROTOS]           != NULL);
@@ -73,23 +73,23 @@ UTEST(ugc_object_cells_types_registered) {
     UASSERT(vm.type_table[UTYPE_MODULE_INSTANCE]->walk_payload != NULL);
     UASSERT(vm.type_table[UTYPE_PROTO_INSTANCE]->walk_payload  != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 2: each cell type allocates and carries the right tag ===== */
 
 UTEST(ugc_object_cells_alloc_each_type) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UCell *o   = urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
-    UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4u * sizeof(UObject *),
+    UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4U * sizeof(UObject *),
                                UTYPE_PROTOS);
     UCell *s   = urbi_gc_alloc(&vm, sizeof(UShape),  UTYPE_SHAPE);
     UCell *p   = urbi_gc_alloc(&vm, sizeof(UProps),  UTYPE_PROPS);
-    UCell *sh  = urbi_gc_alloc(&vm, 32u, UTYPE_SLOTHANDLE);
-    UCell *mi  = urbi_gc_alloc(&vm, 32u, UTYPE_MODULE_INSTANCE);
-    UCell *pi  = urbi_gc_alloc(&vm, 32u, UTYPE_PROTO_INSTANCE);
+    UCell *sh  = urbi_gc_alloc(&vm, 32U, UTYPE_SLOTHANDLE);
+    UCell *mi  = urbi_gc_alloc(&vm, 32U, UTYPE_MODULE_INSTANCE);
+    UCell *pi  = urbi_gc_alloc(&vm, 32U, UTYPE_PROTO_INSTANCE);
 
     UASSERT(o  != NULL); UASSERT_EQ(o->type_tag,  (int)UTYPE_OBJECT);
     UASSERT(up != NULL); UASSERT_EQ(up->type_tag, (int)UTYPE_PROTOS);
@@ -99,7 +99,7 @@ UTEST(ugc_object_cells_alloc_each_type) {
     UASSERT(mi != NULL); UASSERT_EQ(mi->type_tag, (int)UTYPE_MODULE_INSTANCE);
     UASSERT(pi != NULL); UASSERT_EQ(pi->type_tag, (int)UTYPE_PROTO_INSTANCE);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 3: full GC cycle over allocations of all 7 tags ===== */
@@ -110,16 +110,16 @@ UTEST(ugc_object_cells_alloc_each_type) {
  * unreferenced cells. */
 UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     (void)urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
-    (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2u * sizeof(UObject *),
+    (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2U * sizeof(UObject *),
                         UTYPE_PROTOS);
     (void)urbi_gc_alloc(&vm, sizeof(UShape),  UTYPE_SHAPE);
     (void)urbi_gc_alloc(&vm, sizeof(UProps),  UTYPE_PROPS);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_SLOTHANDLE);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_MODULE_INSTANCE);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_PROTO_INSTANCE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_SLOTHANDLE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_MODULE_INSTANCE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_PROTO_INSTANCE);
 
     UASSERT_EQ(count_all_cells(&vm), 7);
 
@@ -132,7 +132,7 @@ UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     UASSERT_EQ(count_all_cells(&vm), 0);
     UASSERT_EQ((int)urbi_gc_live_bytes(&vm), 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 4: UShape walker traces parent + props_table children =====
@@ -170,7 +170,7 @@ static int cell_is_alive(UVM *vm, UCell *target) {
  * actually shaded them via parent / props_table[0]. */
 UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     /* Allocate child cells first so they live earlier on all_cells_head
@@ -193,12 +193,12 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UPropsTable *pt = (UPropsTable *)urbi_gc_alloc(&vm,
         sizeof(UPropsTable) + sizeof(UProps *), UTYPE_PROPS_TABLE);
     UASSERT(pt != NULL);
-    pt->n          = 1u;
-    pt->_pad       = 0u;
+    pt->n          = 1U;
+    pt->_pad       = 0U;
     pt->entries[0] = child_props;
     shape->parent      = parent;
     shape->props_table = pt->entries;
-    shape->count       = 1u;
+    shape->count       = 1U;
 
     /* Install shape as the only test root.  After the cycle, the mark
      * phase shades shape gray, walks it (shading parent + child_props),
@@ -218,9 +218,9 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UASSERT(cell_is_alive(&vm, (UCell *)child_props));
 
     /* Clear the root before destroy so cleanup doesn't re-shade a freed
-     * cell (uvm_destroy frees all live cells unconditionally). */
+     * cell (urbi_vm_destroy frees all live cells unconditionally). */
     g_test_root_cell = NULL;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Test 5: UProtos walker traces items[] entries =====
@@ -231,7 +231,7 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
  * proving the walker shaded items[i]. */
 UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_gc_register_root_provider(&vm, test_root_provider);
 
     UObject *child0 = (UObject *)urbi_gc_alloc(&vm, sizeof(UObject),
@@ -242,10 +242,10 @@ UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UASSERT(child1 != NULL);
 
     UProtos *up = (UProtos *)urbi_gc_alloc(
-            &vm, sizeof(UProtos) + 3u * sizeof(UObject *),
+            &vm, sizeof(UProtos) + 3U * sizeof(UObject *),
             UTYPE_PROTOS);
     UASSERT(up != NULL);
-    up->n        = 3u;
+    up->n        = 3U;
     up->items[0] = child0;
     up->items[1] = NULL;     /* exercise the NULL-skip path */
     up->items[2] = child1;
@@ -260,7 +260,7 @@ UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UASSERT(cell_is_alive(&vm, (UCell *)child1));
 
     g_test_root_cell = NULL;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

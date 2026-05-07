@@ -16,19 +16,19 @@
 UTEST(strand_state_dormant_at_init) {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     UASSERT_EQ(USTRAND_GET_STATE(&s), USTRAND_DORMANT);
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_NONE);
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: WAITING composite values round-trip through the helper macros. */
 UTEST(strand_state_waiting_macros_round_trip) {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     s.state = USTRAND_STATE_WAITING_SLEEP;
@@ -44,21 +44,21 @@ UTEST(strand_state_waiting_macros_round_trip) {
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_JOIN);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: RUNNING state is not flagged as WAITING; reason reads NONE. */
 UTEST(strand_state_running_not_waiting) {
     UVM vm;
     UStrand s;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     s.state = USTRAND_STATE_RUNNING;
     UASSERT(!USTRAND_IS_WAITING(&s));
     UASSERT_EQ(USTRAND_GET_STATE(&s), USTRAND_RUNNING);
     UASSERT_EQ(USTRAND_GET_REASON(&s), USTRAND_REASON_NONE);
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 4: the state field is exactly one byte wide. */
@@ -75,7 +75,7 @@ static UVM  g_vm;
 static URealm *g_realm;
 
 static void setup_vm_realm(void) {
-    uvm_init(&g_vm, NULL, NULL);
+    urbi_vm_init(&g_vm, NULL, NULL);
     sched_init(&g_vm, NULL);
     g_realm = urbi_realm_create(&g_vm);
 }
@@ -83,7 +83,7 @@ static void setup_vm_realm(void) {
 static void teardown_vm_realm(void) {
     urbi_realm_destroy(&g_vm, g_realm);
     g_realm = NULL;
-    uvm_destroy(&g_vm);
+    urbi_vm_destroy(&g_vm);
 }
 
 /* Allocator spy: counts allocations and can fail at a specific call. */
@@ -118,7 +118,7 @@ UTEST(strand_create_starts_dormant) {
     /* cleanup stack should be pre-allocated (non-NULL base) */
     UASSERT(s->cleanup_base != NULL);
     /* strand_runnable_count must be 0 — DORMANT does not increment it */
-    UASSERT_EQ(g_vm.strand_runnable_count, 0u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
     urbi_strand_destroy(s);
     teardown_vm_realm();
@@ -132,11 +132,11 @@ UTEST(strand_start_transitions_to_ready) {
     UStrand *s = urbi_strand_create(g_realm, NULL);
     UASSERT(s != NULL);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
-    UASSERT_EQ(g_vm.strand_runnable_count, 0u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
     urbi_strand_start(s);
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_READY);
-    UASSERT_EQ(g_vm.strand_runnable_count, 1u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 1U);
     /* The strand should be the ready-queue head. */
     UASSERT(g_vm.ready_head == s);
 
@@ -156,7 +156,7 @@ UTEST(strand_spawn_is_create_plus_start) {
     UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_READY);
     UASSERT(s->vm    == &g_vm);
     UASSERT(s->realm == g_realm);
-    UASSERT_EQ(g_vm.strand_runnable_count, 1u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 1U);
     UASSERT(g_vm.ready_head == s);
 
     sched_dequeue_ready_head(&g_vm);
@@ -177,11 +177,11 @@ UTEST(strand_create_destroy_round_trip) {
 
     UStrand *s = urbi_strand_create(g_realm, NULL);
     UASSERT(s != NULL);
-    UASSERT_EQ(g_vm.strand_runnable_count, 0u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
     urbi_strand_destroy(s);
     /* After destroy: counter must still be 0 (DORMANT never incremented it). */
-    UASSERT_EQ(g_vm.strand_runnable_count, 0u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
 
     teardown_vm_realm();
 }
@@ -194,7 +194,7 @@ UTEST(strand_spawn_two_fifo_order) {
     UStrand *b = urbi_strand_spawn(g_realm, NULL);
     UASSERT(a != NULL);
     UASSERT(b != NULL);
-    UASSERT_EQ(g_vm.strand_runnable_count, 2u);
+    UASSERT_EQ(g_vm.strand_runnable_count, 2U);
     /* FIFO: a was enqueued first → head */
     UASSERT(g_vm.ready_head == a);
     UASSERT(g_vm.ready_tail == b);
@@ -216,7 +216,7 @@ UTEST(strand_create_returns_null_on_oom) {
 
     /* First, count how many allocs are needed to set up a realm. */
     AllocSpy spy1 = { 0, -1 };  /* never fail */
-    uvm_init(&vm, spy_alloc, &spy1);
+    urbi_vm_init(&vm, spy_alloc, &spy1);
     sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -224,11 +224,11 @@ UTEST(strand_create_returns_null_on_oom) {
 
     /* Clean up for the real test. */
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 
     /* Now do the real test: allocate realm successfully, fail on strand alloc. */
     AllocSpy spy2 = { 0, allocs_after_realm };  /* fail on the next alloc after realm */
-    uvm_init(&vm, spy_alloc, &spy2);
+    urbi_vm_init(&vm, spy_alloc, &spy2);
     sched_init(&vm, NULL);
     realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
@@ -238,10 +238,10 @@ UTEST(strand_create_returns_null_on_oom) {
     s = urbi_strand_create(realm, NULL);
     UASSERT(s == NULL);  /* OOM: alloc failed */
     UASSERT_EQ(spy2.alloc_calls, allocs_after_realm + 1);  /* tried one more */
-    UASSERT_EQ(vm.strand_runnable_count, 0u);  /* counter must stay clean */
+    UASSERT_EQ(vm.strand_runnable_count, 0U);  /* counter must stay clean */
 
     urbi_realm_destroy(&vm, realm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_strand_suite(void) {

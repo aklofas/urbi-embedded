@@ -180,7 +180,7 @@ UTEST(write_zz_extremes) {
 UTEST(write_u_honors_offset) {
     /* write_u should append at off, not overwrite earlier bytes. */
     uint8_t buf[6] = { 0xAA, 0xBB, 0xCC, 0, 0, 0 };
-    const size_t end = uvarint_write_u(buf, 3u, 300u);   /* 300 = 0xAC 0x02 */
+    const size_t end = uvarint_write_u(buf, 3U, 300U);   /* 300 = 0xAC 0x02 */
     UASSERT_EQ((size_t)5, end);
     UASSERT_EQ((uint8_t)0xAA, buf[0]);
     UASSERT_EQ((uint8_t)0xBB, buf[1]);

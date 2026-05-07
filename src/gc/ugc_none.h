@@ -9,7 +9,7 @@
  * This header satisfies the strategy-router include path so that the
  * URBI_GC_NONE compile-smoke build can verify the strategy interface contract
  * holds at the header level.  A real heap-freeze allocator (fixed arena, no
- * sweep, destroy on uvm_destroy) is deferred to v2.
+ * sweep, destroy on urbi_vm_destroy) is deferred to v2.
  *
  * All barriers are no-op static inlines.  All allocator ops are declared as
  * no-op stubs; linking against a real URBI_GC_NONE library is deferred to v2.
@@ -29,12 +29,12 @@
 #define URBI_GC_INCREMENTAL_BARRIER  0
 
 /* === gc_byte layout — no color tracking under NONE === */
-#define UGC_COLOR_MASK           0x00u
-#define UGC_HAS_FINALIZER        0x00u
-#define UGC_IS_PINNED            0x00u
-#define UGC_IS_FIXED             0x00u
-#define UGC_HAS_WATCHER_OBSERVER 0x00u
-#define UGC_HAS_SLOT_CHANGE_EVENT 0x00u
+#define UGC_COLOR_MASK           0x00U
+#define UGC_HAS_FINALIZER        0x00U
+#define UGC_IS_PINNED            0x00U
+#define UGC_IS_FIXED             0x00U
+#define UGC_HAS_WATCHER_OBSERVER 0x00U
+#define UGC_HAS_SLOT_CHANGE_EVENT 0x00U
 
 /* === Phase constant — NONE is permanently IDLE (no cycles) === */
 #define GC_PHASE_IDLE            0

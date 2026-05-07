@@ -29,7 +29,7 @@
 static UEmitError diag_emit(const char *src, UEmitter *e_out,
                             UModule *mod_out, UArena *arena_out,
                             UVM *vm_out) {
-    uvm_init(vm_out, NULL, NULL);
+    urbi_vm_init(vm_out, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
@@ -52,7 +52,7 @@ static UEmitError diag_emit(const char *src, UEmitter *e_out,
 static void diag_cleanup(UModule *mod, UArena *arena, UVM *vm) {
     umodule_destroy(mod);
     uarena_destroy(arena);
-    uvm_destroy(vm);
+    urbi_vm_destroy(vm);
 }
 
 /* -----------------------------------------------------------------------
@@ -64,7 +64,7 @@ UTEST(emit_diag_warn_records_message) {
     UVM vm;
     UModule module = {0};
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
@@ -88,7 +88,7 @@ UTEST(emit_diag_warn_records_message) {
     emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* emit_diag_warn is non-fatal — bytecode is still produced after a warn. */
@@ -111,7 +111,7 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT_EQ(1, e.diag_count);
     /* Bytecode was emitted (at least one instruction). */
-    UASSERT(module.instr_count >= 1u);
+    UASSERT(module.instr_count >= 1U);
 
     emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
@@ -122,7 +122,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     UVM vm;
     UModule module = {0};
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
@@ -147,7 +147,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* NULL ast node — position defaults to 0,0; no crash. */
@@ -155,7 +155,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UVM vm;
     UModule module = {0};
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UEmitter e;
@@ -170,7 +170,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     emit_diag_free_all(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* -----------------------------------------------------------------------

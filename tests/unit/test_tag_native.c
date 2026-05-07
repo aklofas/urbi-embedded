@@ -47,11 +47,11 @@
 UTEST(tag_enter_is_lazy_allocated)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UTag *t = utag_create(&vm);
     UASSERT(t != NULL);
-    if (t == NULL) { uvm_destroy(&vm); return; }
+    if (t == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* enter_event is NULL at create. */
     UASSERT(t->enter_event == NULL);
@@ -72,7 +72,7 @@ UTEST(tag_enter_is_lazy_allocated)
         UASSERT(uvalue_as_event(r2) == uvalue_as_event(r1));
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -82,11 +82,11 @@ UTEST(tag_enter_is_lazy_allocated)
 UTEST(tag_leave_is_lazy_allocated)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UTag *t = utag_create(&vm);
     UASSERT(t != NULL);
-    if (t == NULL) { uvm_destroy(&vm); return; }
+    if (t == NULL) { urbi_vm_destroy(&vm); return; }
 
     UASSERT(t->leave_event == NULL);
 
@@ -104,7 +104,7 @@ UTEST(tag_leave_is_lazy_allocated)
         UASSERT(uvalue_as_event(r2) == uvalue_as_event(r1));
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -114,11 +114,11 @@ UTEST(tag_leave_is_lazy_allocated)
 UTEST(tag_proto_has_enter_and_leave_slots)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.tag_proto != NULL);
-    if (vm.tag_proto == NULL) { uvm_destroy(&vm); return; }
+    if (vm.tag_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
     struct { const char *name; size_t len; } slots[] = {
         { "enter", 5 },
@@ -139,7 +139,7 @@ UTEST(tag_proto_has_enter_and_leave_slots)
         }
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -153,22 +153,22 @@ UTEST(tag_proto_has_enter_and_leave_slots)
 UTEST(tag_enter_setter_throws_protected_slot)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.tag_proto != NULL);
-    if (vm.tag_proto == NULL) { uvm_destroy(&vm); return; }
+    if (vm.tag_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Locate _enter_set stub. */
     USymbol *sym_set = (USymbol *)ustr_intern(&vm, "_enter_set", 10);
     UASSERT(sym_set != NULL);
-    if (sym_set == NULL) { uvm_destroy(&vm); return; }
+    if (sym_set == NULL) { urbi_vm_destroy(&vm); return; }
 
     UValue slot_val;
     slot_val.kind = (uint8_t)UVAL_NIL;
     UASSERT(urbi_object_lookup(&vm, vm.tag_proto, sym_set, &slot_val) == 0);
     UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { uvm_destroy(&vm); return; }
+    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { urbi_vm_destroy(&vm); return; }
 
     /* Create a strand so urbi_throw has somewhere to deposit. */
     UStrand s;
@@ -197,7 +197,7 @@ UTEST(tag_enter_setter_throws_protected_slot)
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

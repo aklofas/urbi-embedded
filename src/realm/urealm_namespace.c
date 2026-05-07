@@ -1,5 +1,13 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UNamespace: open-addressed name→UValue map for a URealm.
+/* UNamespace: linear-scan name→UValue array for a URealm.
+ *
+ * NOT a hash table — no hashing, no probing, no buckets.  Entries are
+ * a flat dynamic array; lookup is a linear walk that compares interned
+ * name pointers for equality (O(n) in count).  Capacity doubles on
+ * demand (NS_INITIAL_CAP=16).  This is intentional: top-level
+ * namespaces rarely exceed a few hundred entries, and pointer-equality
+ * on interned names is fast enough that the constant factor wins over
+ * a hash table for the expected n.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * Allocation uses vm->alloc_fn (realloc semantics).
@@ -7,8 +15,7 @@
  * Precondition checks use a guarded <assert.h> on hosted targets.
  *
  * Key discipline: names are INTERNED pointers (from ustr_intern).
- * Lookup uses pointer equality — O(n) linear scan; adequate for
- * top-level namespaces which rarely exceed a few hundred entries.
+ * Lookup uses pointer equality, not strcmp.
  * Row 8 / T14. */
 
 #if __STDC_HOSTED__
@@ -41,7 +48,7 @@ struct UNamespace {
 };
 
 /* Initial capacity — must be > 0. */
-#define NS_INITIAL_CAP 16u
+#define NS_INITIAL_CAP 16U
 
 /* === unamespace_create === */
 
@@ -117,7 +124,7 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
 
     /* Grow if at capacity. */
     if (ns->count >= ns->cap) {
-        new_cap   = (size_t)ns->cap * 2u;
+        new_cap   = (size_t)ns->cap * 2U;
         new_bytes = new_cap * sizeof(UNsEntry);
         old_entries = ns->entries;
         new_entries = (UNsEntry *)vm->alloc_fn(old_entries, new_bytes,

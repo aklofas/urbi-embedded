@@ -134,14 +134,14 @@ run_to_no_runnable(UVM *vm)
 UTEST(scripted_at_fires_on_rising_edge)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Pre-install Realm.x = 0, Realm.fired = 0 via C API.
      * This installs them on global_object before the watcher is compiled,
      * so the IC for Realm.x exists when the watcher cond is traced. */
     URealm *gr = urbi_realm_global(&vm);
     UASSERT(gr != NULL);
-    if (gr == NULL) { uvm_destroy(&vm); return; }
+    if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc;
     rc = urbi_realm_set_global(&vm, gr, "x",     1, make_int(0));
@@ -164,7 +164,7 @@ UTEST(scripted_at_fires_on_rising_edge)
         NULL);
     UASSERT_EQ(URBI_OK, rc);
     if (rc != URBI_OK) {
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -213,7 +213,7 @@ UTEST(scripted_at_fires_on_rising_edge)
         NULL);
     /* compile_and_run itself may return OK even if the watcher eval
      * spawned a body strand that later fails — the body strand runs
-     * asynchronously via urbi_step, not synchronously inside uvm_run.
+     * asynchronously via urbi_step, not synchronously inside urbi_vm_run.
      * However, if the non-top OP_RET safepoint fires watcher_eval_dirty
      * and the body is spawned BEFORE compile_and_run returns, the body
      * strand might already be in the ready queue. */
@@ -221,7 +221,7 @@ UTEST(scripted_at_fires_on_rising_edge)
         /* Drain watchers before destroy. */
         while (vm.active_watchers_head != NULL)
             urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -265,7 +265,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * use-after-free in watcher pool teardown. */
     while (vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

@@ -55,6 +55,9 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
+#include "gc/ugc.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* No stdlib.h or string.h — freestanding-strict like every other src/c file.
  * Memory operations go through vm->alloc_fn.  Zero-init uses a byte loop. */
@@ -76,8 +79,19 @@ typedef struct UAllCellsNode {
     struct UAllCellsNode *next_gray;  /* T24: gray work-list link; NULL when not on gray queue */
 } UAllCellsNode;
 
-/* Accessor: recover the sidecar head from vm->all_cells_head (which stores
- * UAllCellsNode* cast to UCell*).  All internal traversals use this. */
+/* === Sidecar accessor convention (GC-019) ===
+ *
+ * Each `gc_<role>` accessor below recovers the embedded UAllCellsNode
+ * sidecar stored in the corresponding UCell* field of the UVM struct
+ * (all_cells_head, gray_work_head, sweep_cursor, sweep_cursor_prev).
+ *
+ * The cast convention is identical across all six (one-line cast through
+ * `void *` to satisfy strict-aliasing).  The functions are kept as
+ * separate inlines for type safety — a single parameterized helper would
+ * defeat the type-safety value the audit cited.  See the T27 comment
+ * threads above for what changes when the sidecar layout collapses
+ * (each accessor body switches to a direct UCell* cast; signatures are
+ * load-bearing across the file and stay). */
 static UAllCellsNode *gc_node_head(UVM *vm) {
     return (UAllCellsNode *)(void *)vm->all_cells_head;
 }
@@ -126,7 +140,7 @@ static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
  *
  * Returns NULL if not found (shouldn't happen in correct use). */
 static UAllCellsNode *
-find_sidecar_for_cell(UVM *vm, UCell *target)
+find_sidecar_for_cell(UVM *vm, const UCell *target)
 {
     UAllCellsNode *node = gc_node_head(vm);
     while (node != NULL) {
@@ -198,7 +212,7 @@ walk_vm_globals(UVM *vm, UGcRootCallback cb, void *ctx)
 static size_t
 drain_gray(UVM *vm, size_t budget)
 {
-    size_t consumed = 0u;
+    size_t consumed = 0U;
     while (gc_gray_head(vm) != NULL && consumed < budget) {
         /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
         UAllCellsNode *node = gc_gray_head(vm);
@@ -240,12 +254,12 @@ gc_mark_roots_step(UVM *vm)
 
     /* Walk all registered root providers. */
     uint8_t i;
-    for (i = 0u; i < vm->root_provider_count; i++) {
+    for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, mark_root_callback, vm);
     }
 
     vm->gc_phase = GC_PHASE_MARK_INCREMENTAL;
-    return 1024u;  /* approximate work units for root scanning */
+    return 1024U;  /* approximate work units for root scanning */
 }
 
 /* === gc_mark_incremental_step ===
@@ -295,7 +309,7 @@ gc_atomic_finish_step(UVM *vm)
     /* Drain residual gray work-list (fully in-slice — bounded by remaining
      * gray set after MARK_INCREMENTAL, which converges because no mutator
      * runs during ATOMIC_FINISH). */
-    size_t consumed = drain_gray(vm, (size_t)-1u);
+    size_t consumed = drain_gray(vm, (size_t)-1U);
 
     /* Gray work-list should be fully drained before SWEEP. */
     URBI_INTERNAL_ASSERT(gc_gray_head(vm) == NULL);
@@ -307,7 +321,7 @@ gc_atomic_finish_step(UVM *vm)
 
     /* Return accumulated consumed bytes; if gray list was empty, return
      * a small constant so slice loop progresses. */
-    return consumed > 0u ? consumed : 64u;
+    return consumed > 0U ? consumed : 64U;
 }
 
 /* === end_of_cycle_threshold_update ===
@@ -327,10 +341,10 @@ end_of_cycle_threshold_update(UVM *vm)
     size_t live = vm->gc_live_bytes;
     size_t threshold;
 
-    if (live == 0u) {
+    if (live == 0U) {
         threshold = (size_t)URBI_GC_INITIAL_THRESHOLD;
     } else {
-        threshold = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100u;
+        threshold = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100U;
         if (threshold < (size_t)URBI_GC_INITIAL_THRESHOLD) {
             threshold = (size_t)URBI_GC_INITIAL_THRESHOLD;
         }
@@ -338,7 +352,7 @@ end_of_cycle_threshold_update(UVM *vm)
 
     vm->gc_threshold = threshold;
     vm->gc_debt      = -(int64_t)threshold;
-    vm->gc_pending   = 0u;
+    vm->gc_pending   = 0U;
 }
 
 /* === gc_sweep_step ===
@@ -364,8 +378,8 @@ end_of_cycle_threshold_update(UVM *vm)
 static size_t
 gc_sweep_step(UVM *vm, size_t budget)
 {
-    size_t consumed  = 0u;
-    size_t surviving = 0u;
+    size_t consumed  = 0U;
+    size_t surviving = 0U;
 
     /* Re-derive surviving bytes for cells already processed before this
      * slice by walking from the list head to the current cursor.  This
@@ -373,7 +387,7 @@ gc_sweep_step(UVM *vm, size_t budget)
      * unlinked and thus absent from the list. */
     {
         UAllCellsNode *scan = gc_node_head(vm);
-        UAllCellsNode *stop = gc_sweep_node(vm);
+        const UAllCellsNode *stop = gc_sweep_node(vm);
         while (scan != NULL && scan != stop) {
             /* All nodes before sweep_cursor have already been processed
              * (survived and re-painted).  Accumulate their sizes. */
@@ -394,7 +408,7 @@ gc_sweep_step(UVM *vm, size_t budget)
          * color didn't get updated by the mark phase (because no root
          * registered it as reachable), it must not be freed.  Re-paint it
          * to current_white so it survives further cycles too. */
-        if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0u) {
+        if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0U) {
             urbi_gc_set_color(cell, vm->current_white);
             surviving += cur->size;
             consumed  += cur->size;
@@ -413,20 +427,20 @@ gc_sweep_step(UVM *vm, size_t budget)
             }
 
             /* Run finalizer if registered. */
-            if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0u) {
+            if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0U) {
                 const UType *t = vm->type_table[cell->type_tag];
                 if (t != NULL && t->destroy != NULL) {
-                    vm->in_destroy_callback = 1u;
+                    vm->in_destroy_callback = 1U;
                     t->destroy(vm, (void *)(cell + 1));
-                    vm->in_destroy_callback = 0u;
+                    vm->in_destroy_callback = 0U;
                 }
             }
 
             consumed += cur->size;
 
             /* Free cell, then sidecar. */
-            vm->alloc_fn(cell, 0u, vm->alloc_ud);
-            vm->alloc_fn(cur,  0u, vm->alloc_ud);
+            vm->alloc_fn(cell, 0U, vm->alloc_ud);
+            vm->alloc_fn(cur,  0U, vm->alloc_ud);
 
             /* prev stays unchanged; cur moves to next. */
             cur = next;
@@ -457,18 +471,18 @@ gc_sweep_step(UVM *vm, size_t budget)
 
 /* === urbi_gc_init ===
  *
- * uvm_init() already zero-initialises every GC field added at T4/T22, so
+ * urbi_vm_init() already zero-initialises every GC field added at T4/T22, so
  * urbi_gc_init only needs to set fields whose correct initial value is NOT
  * zero: gc_threshold and gc_debt.  All pointer and flag fields are already
- * NULL / 0 after uvm_init's zero pass.
+ * NULL / 0 after urbi_vm_init's zero pass.
  *
- * Called from uvm_init() after all other field zero-init. */
+ * Called from urbi_vm_init() after all other field zero-init. */
 void
 urbi_gc_init(UVM *vm)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Fields already zero-init by uvm_init:
+    /* Fields already zero-init by urbi_vm_init:
      *   gc_phase, current_white, gc_paused, in_destroy_callback,
      *   gc_live_bytes, gc_total_allocated,
      *   all_cells_head, gray_work_head, sweep_cursor, sweep_cursor_prev,
@@ -493,7 +507,7 @@ urbi_gc_init(UVM *vm)
  * re-entrant urbi_gc_alloc (which would be a bug, but guard anyway) can
  * assert or no-op.
  *
- * Called from uvm_destroy() as the last subsystem teardown step, after
+ * Called from urbi_vm_destroy() as the last subsystem teardown step, after
  * urealm_teardown_all() and all other subsystems that might still hold
  * cells (at M3 no subsystem allocates via urbi_gc_alloc yet, so ordering
  * is loose — placing gc_destroy last is safe and correct for all futures). */
@@ -510,23 +524,23 @@ urbi_gc_destroy(UVM *vm)
         UCell         *cell      = node->cell;
 
         /* Call finalizer if registered. */
-        if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0u) {
+        if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0U) {
             const UType *t = vm->type_table[cell->type_tag];
             if (t != NULL && t->destroy != NULL) {
-                vm->in_destroy_callback = 1u;
+                vm->in_destroy_callback = 1U;
                 /* Payload starts immediately after UCell header.
                  * At M3 no concrete cell types exist, so this path is
                  * unreachable in practice; provided for correctness at T27+. */
                 t->destroy(vm, (void *)(cell + 1));
-                vm->in_destroy_callback = 0u;
+                vm->in_destroy_callback = 0U;
             }
         }
 
         /* Free the cell. */
-        vm->alloc_fn(cell, 0u, vm->alloc_ud);
+        vm->alloc_fn(cell, 0U, vm->alloc_ud);
 
         /* Free the sidecar node itself. */
-        vm->alloc_fn(node, 0u, vm->alloc_ud);
+        vm->alloc_fn(node, 0U, vm->alloc_ud);
 
         node = next_node;
     }
@@ -566,7 +580,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     UAllCellsNode *node = (UAllCellsNode *)vm->alloc_fn(
             NULL, sizeof(UAllCellsNode), vm->alloc_ud);
     if (UNLIKELY(node == NULL)) {
-        vm->alloc_fn(cell, 0u, vm->alloc_ud);
+        vm->alloc_fn(cell, 0U, vm->alloc_ud);
         return NULL;
     }
 
@@ -588,7 +602,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 
     /* Trigger: if debt turns positive and GC is not paused, request a slice. */
     if (UNLIKELY(vm->gc_debt > 0 && !vm->gc_paused)) {
-        vm->gc_pending = 1u;
+        vm->gc_pending = 1U;
     }
 
     return cell;
@@ -659,7 +673,7 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    size_t consumed = 0u;
+    size_t consumed = 0U;
 
     while (consumed < byte_budget) {
         switch (vm->gc_phase) {
@@ -669,11 +683,11 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
                 /* Start a new collection cycle: flip current_white so that
                  * all existing cells (born in the previous white) become
                  * "other white" and are treated as dead unless re-marked. */
-                vm->current_white ^= 0x01u;
+                vm->current_white ^= 0x01U;
                 vm->gc_phase = GC_PHASE_MARK_ROOTS;
             } else {
                 /* Nothing to do. */
-                vm->gc_pending = 0u;
+                vm->gc_pending = 0U;
                 return;
             }
             break;
@@ -719,14 +733,14 @@ urbi_gc_force_full(UVM *vm)
 
     /* If already IDLE, start a new cycle. */
     if (vm->gc_phase == GC_PHASE_IDLE) {
-        vm->current_white ^= 0x01u;
+        vm->current_white ^= 0x01U;
         vm->gc_phase = GC_PHASE_MARK_ROOTS;
     }
 
     /* Run slices until IDLE.  Use SIZE_MAX budget per slice to complete
      * each phase in one shot. */
     while (vm->gc_phase != GC_PHASE_IDLE) {
-        urbi_gc_slice(vm, (size_t)-1u);
+        urbi_gc_slice(vm, (size_t)-1U);
     }
 }
 
@@ -742,7 +756,7 @@ urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     walk_vm_globals(vm, cb, ctx);
     /* Iterate registered root providers. */
     uint8_t i;
-    for (i = 0u; i < vm->root_provider_count; i++) {
+    for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, cb, ctx);
     }
 }
@@ -783,7 +797,7 @@ urbi_gc_register_root_provider(UVM *vm, UGcRootProviderFn provider)
 }
 
 size_t
-urbi_gc_bytes_allocated_inline(UVM *vm)
+urbi_gc_bytes_allocated_inline(const UVM *vm)
 {
     return vm->gc_total_allocated;
 }
@@ -808,7 +822,7 @@ void
 urbi_gc_pause(UVM *vm, bool paused)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    vm->gc_paused = paused ? 1u : 0u;
+    vm->gc_paused = paused ? 1U : 0U;
 }
 
 /* === Read-only GC query functions ===
@@ -819,25 +833,25 @@ urbi_gc_pause(UVM *vm, bool paused)
  * URBI_ASSERT_NOT_ISR is omitted — they are test/diagnostic accessors. */
 
 size_t
-urbi_gc_bytes_allocated(UVM *vm)
+urbi_gc_bytes_allocated(const UVM *vm)
 {
     return vm->gc_total_allocated;
 }
 
 size_t
-urbi_gc_live_bytes(UVM *vm)
+urbi_gc_live_bytes(const UVM *vm)
 {
     return vm->gc_live_bytes;
 }
 
 size_t
-urbi_gc_threshold(UVM *vm)
+urbi_gc_threshold(const UVM *vm)
 {
     return vm->gc_threshold;
 }
 
 uint8_t
-urbi_gc_phase(UVM *vm)
+urbi_gc_phase(const UVM *vm)
 {
     return vm->gc_phase;
 }
@@ -885,10 +899,10 @@ urbi_unpin(UVM *vm, UValue v)
  * uvalue_is_heap and uvalue_as_cell are static inline in ugc_incremental.h;
  * this function uses them directly. */
 bool
-uvalue_is_heap_white(UVM *vm, UValue v)
+uvalue_is_heap_white(const UVM *vm, UValue v)
 {
     if (!uvalue_is_heap(v)) return false;
-    UCell *c = uvalue_as_cell(v);
+    const UCell *c = uvalue_as_cell(v);
     if (c == NULL) return false;
     return (c->gc_byte & UGC_COLOR_MASK) == vm->current_white;
 }

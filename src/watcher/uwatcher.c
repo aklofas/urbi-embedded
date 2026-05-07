@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UWatcher pool lifecycle + install/unregister + observer_dirty.
- * Row 11 / T33.
+ * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation uses vm->alloc_fn (realloc semantics).
- * Zero-fill uses a volatile byte loop — no memset dependency. */
+ * Zero-fill uses urbi_zero (volatile byte loop) — no memset dependency. */
 
 #include "uwatcher.h"
 #include "vm/uvm.h"
@@ -15,6 +15,9 @@
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
+#include "module/umodule.h"
+#include <stddef.h>
+#include <stdint.h>
 
 /* uwatcher_pool_alloc: pop one entry from the freelist.
  * Returns NULL if the pool is exhausted.
@@ -67,10 +70,12 @@ uwatcher_pool_alloc(struct UVM *vm)
 
 /* pool_free: push one entry back onto the freelist.
  * Decrements in_use counter; does NOT touch high_water.
- * If URBI_WATCHER_OWNS_CLOSURES is set, frees condition/body/onleave closures
- * before recycling the slot.  Only install_watcher_runtime sets this flag,
- * when it unlinks the closures from the strand's pre-GC closure_list so
- * uvm_run's post-run cleanup loop cannot free them prematurely. */
+ * For each of URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE that is set, frees the
+ * matching closure (and its detached proto) before recycling the slot.  These
+ * flags are set by install_watcher_runtime / install_at_event_runtime when
+ * they unlink the closures from the strand's pre-GC closure_list so
+ * urbi_vm_run's post-run cleanup loop cannot free them prematurely.  The
+ * three flags are independent — any subset (including none) may be set. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
@@ -83,7 +88,7 @@ pool_free(struct UVM *vm, UWatcher *w)
         if (w->condition->proto != NULL) {
             /* Proto was detached from module->nested[] by strand_closure_unlink;
              * free its sub-buffers then the struct itself. */
-            umodule_proto_destroy_buffers(w->condition->proto,
+            umodule_destroy_proto_buffers(w->condition->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
         }
@@ -92,7 +97,7 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
         if (w->body->proto != NULL) {
-            umodule_proto_destroy_buffers(w->body->proto,
+            umodule_destroy_proto_buffers(w->body->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
         }
@@ -101,7 +106,7 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
         if (w->onleave->proto != NULL) {
-            umodule_proto_destroy_buffers(w->onleave->proto,
+            umodule_destroy_proto_buffers(w->onleave->proto,
                                           vm->alloc_fn, vm->alloc_ud);
             vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
         }
@@ -125,7 +130,7 @@ drain_watcher_list(struct UVM *vm, UWatcher **head)
         UWatcher *w = *head;
         *head = w->next_active;
         vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
+                                   ? vm->watcher_active_count - 1U : 0U;
         pool_free(vm, w);
     }
 }
@@ -151,18 +156,18 @@ uwatcher_pool_init(struct UVM *vm)
 
     /* Thread freelist: each slot's next_active points to the next slot;
      * the last slot terminates with NULL. */
-    for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE - 1u; i++) {
-        slab[i].next_active = &slab[i + 1u];
+    for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE - 1U; i++) {
+        slab[i].next_active = &slab[i + 1U];
     }
-    slab[URBI_WATCHER_POOL_SIZE - 1u].next_active = NULL;
+    slab[URBI_WATCHER_POOL_SIZE - 1U].next_active = NULL;
 
-    /* Wire pool fields on the VM (defensive zero — uvm_init already did this,
+    /* Wire pool fields on the VM (defensive zero — urbi_vm_init already did this,
      * but explicit is clearer for future readers). */
     vm->watcher_pool_base      = slab;
     vm->watcher_pool_freelist  = &slab[0];
     vm->active_watchers_head   = NULL;
-    vm->watcher_pool_in_use    = 0u;
-    vm->watcher_pool_high_water = 0u;
+    vm->watcher_pool_in_use    = 0U;
+    vm->watcher_pool_high_water = 0U;
 
     return 0;
 }
@@ -206,7 +211,7 @@ uwatcher_pool_destroy(struct UVM *vm)
 /* === Install / unregister ===
  *
  * install: pool-alloc, wire read-set (cells[] + bit-6), tail-insert into
- *          active_watchers_head (row 12 §2.2 determinism), head-insert into
+ *          active_watchers_head (FIFO determinism contract), head-insert into
  *          owning_tag->member_watchers_head, bump watcher_active_count.
  *
  * unregister: scan-on-unregister to clear bit-6 per spec §5.4, unlink from
@@ -249,8 +254,8 @@ urbi_watcher_install_internal(
         w->cells[i] = read_set[i];
     }
 
-    /* Tail-insert into active_watchers_head per row 12 §2.2 (install order =
-     * eval order; determinism gate relies on this invariant). */
+    /* Tail-insert into active_watchers_head: install order = eval order
+     * (determinism gate relies on this invariant). */
     w->next_active = NULL;
     if (vm->active_watchers_head == NULL) {
         vm->active_watchers_head = w;
@@ -363,8 +368,8 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  * safepoint turn.
  *
  * Per spec §5.5: walk-all eval at safepoint; identifying the specific cell or
- * slot key is unnecessary at M3 — watcher_eval_dirty (T34) will visit every
- * active watcher whose read-set might be affected. */
+ * slot key is unnecessary — watcher_eval_dirty visits every active watcher
+ * whose read-set might be affected. */
 void
 observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
 {

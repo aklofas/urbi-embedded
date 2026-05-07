@@ -40,7 +40,7 @@ static void rg_ctx_init(RGCtx *c, const char *src)
 {
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
-    uvm_init(&c->vm, NULL, NULL);
+    urbi_vm_init(&c->vm, NULL, NULL);
     c->realm  = urbi_realm_create(&c->vm);
     c->module = (UModule){0};
     uparse_init(&c->p, &c->lex, &c->arena);
@@ -62,7 +62,7 @@ static void rg_ctx_destroy(RGCtx *c)
     uarena_destroy(&c->arena);
     umodule_destroy(&c->module);
     if (c->realm != NULL) urbi_realm_destroy(&c->vm, c->realm);
-    uvm_destroy(&c->vm);
+    urbi_vm_destroy(&c->vm);
 }
 
 /* === Tests === */
@@ -129,10 +129,10 @@ UTEST(function_without_global_ref_skips_prologue) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     /* Find the first UProto in the module (the inner function). */
-    UASSERT(c.module.nested_count > 0u);
+    UASSERT(c.module.nested_count > 0U);
     UProto *inner = c.module.nested[0];
     UASSERT(inner != NULL);
-    UASSERT(inner->instr_count > 0u);
+    UASSERT(inner->instr_count > 0U);
 
     /* The inner function's first instruction must NOT be OP_LOAD_REALM_GLOBAL. */
     UASSERT(uinstr_op(inner->instructions[0]) != OP_LOAD_REALM_GLOBAL);

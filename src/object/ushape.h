@@ -195,7 +195,7 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
  * 64-deep stack precedent in resolve_slot, doubled here because shape
  * lineages can be longer than prototype graph depth). */
 UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
-                                          USymbol *name);
+                                          const USymbol *name);
 
 #ifdef __cplusplus
 }

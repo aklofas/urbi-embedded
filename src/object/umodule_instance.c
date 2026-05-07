@@ -10,6 +10,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "gc/ugc.h"
+#include "module/umodule.h"
+#include "object/uic.h"
 
 /* init_ic_slice — zero-fill an IC table slice carved from ic_cursor.
  * Fills pi->ic_table with ic_count entries sourced from ic_names (may be
@@ -21,22 +24,22 @@ init_ic_slice(UProtoInstance *pi, UProto *proto,
               UIC **cursor)
 {
     pi->proto = proto;
-    if (ic_count == 0u) {
+    if (ic_count == 0U) {
         pi->ic_table = NULL;
         return;
     }
     pi->ic_table = *cursor;
-    for (uint16_t k = 0u; k < ic_count; k++) {
+    for (uint16_t k = 0U; k < ic_count; k++) {
         UIC *ic = &(*cursor)[k];
         ic->name           = (ic_names != NULL) ? ic_names[k] : NULL;
-        ic->n              = 0u;
-        ic->replace_cursor = 0u;
+        ic->n              = 0U;
+        ic->replace_cursor = 0U;
         for (int e = 0; e < URBI_IC_ENTRIES_PER_SITE; e++) {
             ic->recv_shapes[e]  = NULL;
-            ic->topology_gen[e] = 0u;
+            ic->topology_gen[e] = 0U;
             ic->slots[e]        = NULL;
             ic->uprops[e]       = NULL;
-            ic->flags[e]        = 0u;
+            ic->flags[e]        = 0U;
         }
     }
     *cursor += ic_count;
@@ -70,12 +73,12 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      *           + n * sizeof(UProtoInstance)              (entries[] payload)
      *           + m->ic_count * sizeof(UIC)              (root-chunk IC region)
      *           + sum(nested[i]->ic_count) * sizeof(UIC)  (nested IC region) */
-    uint16_t n = (uint16_t)(1u + m->nested_count);
+    uint16_t n = (uint16_t)(1U + m->nested_count);
 
     size_t entries_bytes = (size_t)n * sizeof(UProtoInstance);
 
     size_t ic_bytes = (size_t)m->ic_count * sizeof(UIC);  /* root-chunk ICs */
-    for (size_t i = 0u; i < m->nested_count; i++) {
+    for (size_t i = 0U; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
         if (p == NULL) continue;
         ic_bytes += (size_t)p->ic_count * sizeof(UIC);
@@ -90,9 +93,9 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     }
     UProtoInstanceArr *arr = (UProtoInstanceArr *)arr_cell;
     arr->n        = n;
-    arr->_pad[0]  = 0u;
-    arr->_pad[1]  = 0u;
-    arr->_pad[2]  = 0u;
+    arr->_pad[0]  = 0U;
+    arr->_pad[1]  = 0U;
+    arr->_pad[2]  = 0U;
 
     /* IC tables live immediately after entries[].  Compute base by
      * pointer-arithmetic past the FAM. */
@@ -107,11 +110,11 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
      * slice of the trailing IC region; unfilled sites have topology_gen == 0
      * (the sentinel per pre-M4 topology-generation spec §3.1). */
-    for (uint16_t i = 0u; i < m->nested_count; i++) {
+    for (uint16_t i = 0U; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
-        uint16_t   pc = (p != NULL) ? p->ic_count : 0u;
+        uint16_t   pc = (p != NULL) ? p->ic_count : 0U;
         USymbol  **pn = (p != NULL) ? p->ic_names : NULL;
-        init_ic_slice(&arr->entries[i + 1u], p, pc, pn, &ic_cursor);
+        init_ic_slice(&arr->entries[i + 1U], p, pc, pn, &ic_cursor);
     }
 
     /* Publish the bulk pointer last so a partial-init mi never hands a

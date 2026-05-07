@@ -13,6 +13,7 @@
 #include "gc/ugc_incremental.h" /* gc_shade_gray */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
+#include "module/umodule.h"
 
 /* uprops_alloc — allocate a fresh UProps cell with all flags clear and
  * oget/oset = UVAL_VOID.  Returns NULL on OOM. */
@@ -28,8 +29,8 @@ uprops_alloc(UVM *vm)
     p->oget.v.i      = 0;
     p->oset.kind     = UVAL_VOID;
     p->oset.v.i      = 0;
-    p->constant      = 0u;
-    p->_spare        = 0u;
+    p->constant      = 0U;
+    p->_spare        = 0U;
     return p;
 }
 
@@ -97,11 +98,11 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
     }
     USlotArray *fresh = (USlotArray *)c;
     fresh->n    = new_shape->count;
-    fresh->_pad = 0u;
+    fresh->_pad = 0U;
 
     /* Copy old slot values into the new wrapper.  obj->shape->count is
      * the old slot count (one less than new_shape->count). */
-    for (uint32_t i = 0u; i < obj->shape->count; i++) {
+    for (uint32_t i = 0U; i < obj->shape->count; i++) {
         fresh->entries[i] = obj->slots[i];
     }
     /* Write the new slot value at the freshly added index. */
@@ -146,7 +147,7 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
  *    0 — success or silent no-op (slot wasn't present)
  *   -1 — OOM (transition or USlotArray allocation failed) */
 int
-urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
+urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
         return -1;
@@ -167,7 +168,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
     /* Allocate fresh USlotArray sized for new_shape->count.  When count == 0
      * (last slot removed), publish slots = NULL and skip the wrapper alloc. */
     USlotArray *fresh = NULL;
-    if (new_shape->count > 0u) {
+    if (new_shape->count > 0U) {
         UCell *c = urbi_gc_alloc(vm,
                                  sizeof(USlotArray)
                                  + (size_t)new_shape->count * sizeof(USlot),
@@ -177,7 +178,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
         }
         fresh = (USlotArray *)c;
         fresh->n    = new_shape->count;
-        fresh->_pad = 0u;
+        fresh->_pad = 0U;
 
         /* Walk the new shape's lineage in reverse (root-ward → leaf-ward) to
          * recover, for each surviving slot, the *old* index it occupied in
@@ -219,7 +220,7 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, USymbol *name)
  * UProps in-place. */
 
 int
-urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                              uint8_t flag_bit, UValue value)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -233,7 +234,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
     /* Allocate a fresh UProps if the slot doesn't have one yet, or copy
      * the existing one (immutability — the existing UProps may be shared
      * with another shape; see USlot/UProps spec §5.1). */
-    UProps *existing = (obj->shape->props_table != NULL)
+    const UProps *existing = (obj->shape->props_table != NULL)
                        ? obj->shape->props_table[idx]
                        : NULL;
     UProps *fresh = uprops_alloc(vm);
@@ -251,7 +252,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
     } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
         fresh->oset = value;
     } else if (flag_bit == URBI_SLOT_FLAG_CONSTANT) {
-        fresh->constant = 1u;
+        fresh->constant = 1U;
         (void)value;   /* CONSTANT carries no payload */
     } else {
         return -1;   /* unsupported flag bit */
@@ -289,8 +290,8 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
             }
             UPropsTable *pt = (UPropsTable *)c;
             pt->n    = obj->shape->count;
-            pt->_pad = 0u;
-            for (uint32_t i = 0u; i < pt->n; i++) {
+            pt->_pad = 0U;
+            for (uint32_t i = 0U; i < pt->n; i++) {
                 pt->entries[i] = NULL;
             }
             pt->entries[idx] = fresh;
@@ -310,7 +311,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, USymbol *name,
 }
 
 int
-urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_remove_property(UVM *vm, UObject *obj, const USymbol *name,
                             uint8_t flag_bit)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -322,7 +323,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
     }
 
     /* If the slot has no UProps, nothing to remove. */
-    UProps *existing = (obj->shape->props_table != NULL)
+    const UProps *existing = (obj->shape->props_table != NULL)
                        ? obj->shape->props_table[idx]
                        : NULL;
     if (existing == NULL) {
@@ -354,13 +355,13 @@ urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
         fresh->oset.kind = UVAL_VOID;
         fresh->oset.v.i  = 0;
     } else if (flag_bit == URBI_SLOT_FLAG_CONSTANT) {
-        fresh->constant = 0u;
+        fresh->constant = 0U;
     } else {
         return -1;
     }
     all_clear = (fresh->oget.kind == UVAL_VOID
                  && fresh->oset.kind == UVAL_VOID
-                 && fresh->constant == 0u);
+                 && fresh->constant == 0U);
 
     UProps *publish = all_clear ? NULL : fresh;
 
@@ -379,7 +380,7 @@ urbi_object_remove_property(UVM *vm, UObject *obj, USymbol *name,
 }
 
 int
-urbi_object_set_property_value(UVM *vm, UObject *obj, USymbol *name,
+urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
                                uint8_t flag_bit, UValue value)
 {
     if (vm == NULL || obj == NULL || name == NULL) {
@@ -422,7 +423,7 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, USymbol *name,
  * promoted to a heap-allocated stack in v1.x).  Stack overflow returns -1
  * so the caller can surface a diagnostic. */
 int
-urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
+urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
                          UObject **out_holder, uint32_t *out_index)
 {
     if (vm == NULL || recv == NULL || name == NULL
@@ -433,7 +434,7 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
     /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
      * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
      * for the entire DFS below. */
-    if ((uint32_t)(vm->lookup_id + 1ull) == 0u) {
+    if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {
         vm->lookup_id++;
@@ -460,11 +461,11 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, USymbol *name,
         /* Push protos in reverse so left-first DFS pops them in declaration
          * order (mirrors UPROTOS_FOREACH iteration order). */
         uint32_t n = urbi_object_proto_count(cur);
-        for (uint32_t i = n; i > 0u; i--) {
+        for (uint32_t i = n; i > 0U; i--) {
             if (sp >= URBI_RESOLVE_STACK_CAP) {
                 return -1;   /* depth overflow — caller raises diagnostic */
             }
-            stack[sp++] = urbi_object_proto_at(cur, i - 1u);
+            stack[sp++] = urbi_object_proto_at(cur, i - 1U);
         }
     }
 

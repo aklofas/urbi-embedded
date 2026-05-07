@@ -83,7 +83,7 @@ UTEST(install_returns_recursive_when_in_eval)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -100,7 +100,7 @@ UTEST(install_returns_recursive_when_in_eval)
     vm.in_watcher_eval = 0;
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. install_returns_ok_normally
@@ -113,7 +113,7 @@ UTEST(install_returns_ok_normally)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -129,7 +129,7 @@ UTEST(install_returns_ok_normally)
         urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -163,7 +163,7 @@ UTEST(install_warns_on_empty_readset)
     UVM    vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -176,7 +176,7 @@ UTEST(install_warns_on_empty_readset)
     UASSERT(strstr(g_last_msg, "no observable cells") != NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. install_returns_oom_pool_when_exhausted
@@ -190,7 +190,7 @@ UTEST(install_returns_oom_pool_when_exhausted)
     UWatcher *held[URBI_WATCHER_POOL_SIZE];
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -202,14 +202,14 @@ UTEST(install_returns_oom_pool_when_exhausted)
     UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
     UASSERT(g_warn_count >= 1);
 
-    /* Return pool slots so uvm_destroy is clean. */
+    /* Return pool slots so urbi_vm_destroy is clean. */
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
         if (held[i] != NULL)
             urbi_watcher_unregister_internal(&vm, held[i]);
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. install_initializes_watcher_fields
@@ -221,7 +221,7 @@ UTEST(install_initializes_watcher_fields)
     UVM     vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -240,7 +240,7 @@ UTEST(install_initializes_watcher_fields)
     urbi_watcher_unregister_internal(&vm, w);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -279,7 +279,7 @@ UTEST(install_marks_observed_cells_with_bit6)
     UVM    vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
     reset_log(&vm);
 
@@ -298,7 +298,7 @@ UTEST(install_marks_observed_cells_with_bit6)
         urbi_watcher_unregister_internal(&vm, vm.active_watchers_head);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. install_appends_watcher_to_active_and_tag_lists
@@ -310,7 +310,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     UVM    vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     /* Create a realm (gives us a non-NULL realm->tag for owning_tag). */
     URealm *r = urbi_realm_create(&vm);
@@ -338,7 +338,7 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

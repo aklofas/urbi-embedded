@@ -38,22 +38,22 @@
 UTEST(event_new_creates_uevent)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.event_proto != NULL);
-    if (vm.event_proto == NULL) { uvm_destroy(&vm); return; }
+    if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* "new" slot must exist and be UVAL_HOST_FN. */
     USymbol *sym_new = (USymbol *)ustr_intern(&vm, "new", 3);
     UASSERT(sym_new != NULL);
-    if (sym_new == NULL) { uvm_destroy(&vm); return; }
+    if (sym_new == NULL) { urbi_vm_destroy(&vm); return; }
 
     UValue slot_val;
     slot_val.kind = (uint8_t)UVAL_NIL;
     UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_new, &slot_val) == 0);
     UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { uvm_destroy(&vm); return; }
+    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { urbi_vm_destroy(&vm); return; }
 
     /* Create a minimal stack-local strand so s->vm is valid. */
     UStrand s;
@@ -80,7 +80,7 @@ UTEST(event_new_creates_uevent)
     }
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -90,27 +90,27 @@ UTEST(event_new_creates_uevent)
 UTEST(event_emit_method_dispatches_to_async)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.event_proto != NULL);
-    if (vm.event_proto == NULL) { uvm_destroy(&vm); return; }
+    if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Locate the "emit" slot. */
     USymbol *sym_emit = (USymbol *)ustr_intern(&vm, "emit", 4);
     UASSERT(sym_emit != NULL);
-    if (sym_emit == NULL) { uvm_destroy(&vm); return; }
+    if (sym_emit == NULL) { urbi_vm_destroy(&vm); return; }
 
     UValue slot_val;
     slot_val.kind = (uint8_t)UVAL_NIL;
     UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_emit, &slot_val) == 0);
     UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { uvm_destroy(&vm); return; }
+    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { urbi_vm_destroy(&vm); return; }
 
     /* Create an event and a waiter strand. */
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
-    if (e == NULL) { uvm_destroy(&vm); return; }
+    if (e == NULL) { urbi_vm_destroy(&vm); return; }
 
     UStrand waiter;
     ustrand_init(&waiter, &vm);
@@ -145,7 +145,7 @@ UTEST(event_emit_method_dispatches_to_async)
 
     ustrand_destroy(&caller, &vm);
     ustrand_destroy(&waiter, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -155,11 +155,11 @@ UTEST(event_emit_method_dispatches_to_async)
 UTEST(event_proto_has_all_four_slots)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     urbi_native_protos_init(&vm);
 
     UASSERT(vm.event_proto != NULL);
-    if (vm.event_proto == NULL) { uvm_destroy(&vm); return; }
+    if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
     struct { const char *name; size_t len; } slots[] = {
         { "new",       3 },
@@ -182,7 +182,7 @@ UTEST(event_proto_has_all_four_slots)
         }
     }
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===== Suite entry point ===== */

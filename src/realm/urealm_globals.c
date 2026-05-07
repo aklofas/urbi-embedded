@@ -22,7 +22,9 @@
                                *   urbi_object_install_property */
 #include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
-#include "urbi/object.h"      /* URBI_ATOM_*_F family tags */
+#include "urbi/object.h"      /* URBI_ATOM_* family tags */
+#include "module/umodule.h"
+#include <stdint.h>
 
 /* === Zero-fill helper for UValue padding bytes === */
 
@@ -80,19 +82,19 @@ resolve_object_proto(UVM *vm)
 static UValue
 resolve_atom_int(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_INTEGER_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_INTEGER));
 }
 
 static UValue
 resolve_atom_float(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_FLOAT_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_FLOAT));
 }
 
 static UValue
 resolve_atom_string(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING));
 }
 
 /* Bool/Nil/Void protos: no singletons at M5 baseline → nil placeholder.
@@ -108,19 +110,19 @@ resolve_nil_placeholder(UVM *vm)
 static UValue
 resolve_atom_list(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_LIST_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_LIST));
 }
 
 static UValue
 resolve_atom_dict(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_DICT_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_DICT));
 }
 
 static UValue
 resolve_atom_symbol(UVM *vm)
 {
-    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_SYMBOL_F));
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_SYMBOL));
 }
 
 static UValue
@@ -342,7 +344,7 @@ urbi_realm_get_global(UVM *vm, URealm *realm,
             name == NULL || out_value == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    const USymbol *sym = (const USymbol *)ustr_intern(vm, name, name_len);
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }

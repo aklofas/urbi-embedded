@@ -6,8 +6,8 @@
  *
  * Per-VM lazy-allocated atom prototypes: root Object plus the eight built-in
  * atoms (Integer/Float/String/List/Dict/Tag/Event/Symbol).  T36's root
- * provider (m4_object_roots_walker, registered via urbi_object_register_gc_roots
- * in uvm_init) keeps the singletons alive across GC cycles by shading each
+ * provider (object_roots_walker, registered via urbi_object_register_gc_roots
+ * in urbi_vm_init) keeps the singletons alive across GC cycles by shading each
  * non-NULL vm->atom_* field directly during MARK_ROOTS.
  *
  * The single-tag prototype encoding `(root << 1) | 1` used in
@@ -25,12 +25,14 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "urbi/object.h"
 #include "urbi/urbi.h"    /* urbi_panic */
+#include "gc/ugc.h"
+#include <stddef.h>
 
 /* === next_id ===
  *
  * Per-VM monotonic UObject identity counter (spec §8.1).
  *
- * vm->next_object_id is initialised to 0 by uvm_init; pre-increment yields
+ * vm->next_object_id is initialised to 0 by urbi_vm_init; pre-increment yields
  * 1 on the first call, 2 on the second, etc.  At UINT32_MAX the next bump
  * would overflow — fatal-abort per spec §8.1 rather than silently wrap.
  *
@@ -73,11 +75,11 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
         return NULL;
     }
     o->slots               = NULL;  /* zero-slot at construction; T15 lands slot transitions */
-    o->protos              = 0u;   /* empty form per spec §4.1 */
+    o->protos              = 0U;   /* empty form per spec §4.1 */
     o->object_id           = next_id(vm);
-    o->lookup_stamp        = 0u;
+    o->lookup_stamp        = 0U;
     o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
-    o->reserved            = 0u;
+    o->reserved            = 0U;
     o->changed_events_head = NULL; /* lazy-alloc at first `obj.x.changed?` install (R6) */
     return o;
 }
@@ -122,8 +124,8 @@ urbi_object_root(struct UVM *vm)
     /* protos already 0 (empty form) from urbi_object_alloc. */
     vm->atom_object = o;
 
-    /* T36: m4_object_roots_walker (registered via urbi_object_register_gc_roots
-     * in uvm_init) keeps this singleton alive across collection cycles by
+    /* T36: object_roots_walker (registered via urbi_object_register_gc_roots
+     * in urbi_vm_init) keeps this singleton alive across collection cycles by
      * shading vm->atom_object directly during MARK_ROOTS.  No explicit pin
      * needed — replaces the synthetic UVAL_CLOSURE wrapper trick used pre-T36. */
     return o;
@@ -138,25 +140,25 @@ urbi_object_root(struct UVM *vm)
  *
  * Returns NULL on OOM or invalid family tag. */
 
-/* Table entry: per-family vm field offset.  URBIAtomFamilyTag values 0-8
+/* Table entry: per-family vm field offset.  URBIAtomFamily values 0-8
  * are numerically identical to URBIAtomFamily 0-8, so the table is indexed
  * directly by family.  offsetof is used to avoid assuming struct-member
  * ordering beyond what is documented in uvm.h §M4 atom-family singletons. */
 static const size_t kAtomFieldOffset[] = {
-    [URBI_ATOM_OBJECT_F]  = offsetof(UVM, atom_object),
-    [URBI_ATOM_INTEGER_F] = offsetof(UVM, atom_integer),
-    [URBI_ATOM_FLOAT_F]   = offsetof(UVM, atom_float),
-    [URBI_ATOM_STRING_F]  = offsetof(UVM, atom_string),
-    [URBI_ATOM_LIST_F]    = offsetof(UVM, atom_list),
-    [URBI_ATOM_DICT_F]    = offsetof(UVM, atom_dict),
-    [URBI_ATOM_TAG_F]     = offsetof(UVM, atom_tag),
-    [URBI_ATOM_EVENT_F]   = offsetof(UVM, atom_event),
-    [URBI_ATOM_SYMBOL_F]  = offsetof(UVM, atom_symbol),
+    [URBI_ATOM_OBJECT]  = offsetof(UVM, atom_object),
+    [URBI_ATOM_INTEGER] = offsetof(UVM, atom_integer),
+    [URBI_ATOM_FLOAT]   = offsetof(UVM, atom_float),
+    [URBI_ATOM_STRING]  = offsetof(UVM, atom_string),
+    [URBI_ATOM_LIST]    = offsetof(UVM, atom_list),
+    [URBI_ATOM_DICT]    = offsetof(UVM, atom_dict),
+    [URBI_ATOM_TAG]     = offsetof(UVM, atom_tag),
+    [URBI_ATOM_EVENT]   = offsetof(UVM, atom_event),
+    [URBI_ATOM_SYMBOL]  = offsetof(UVM, atom_symbol),
 };
 #define KATOM_TABLE_COUNT ((int)(sizeof(kAtomFieldOffset) / sizeof(kAtomFieldOffset[0])))
 
 UObject *
-urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
+urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
 {
     if ((int)family < 0 || (int)family >= KATOM_TABLE_COUNT) {
         return NULL;
@@ -168,10 +170,10 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
         return *slot;
     }
 
-    /* For URBI_ATOM_OBJECT_F, route through urbi_object_root so the
+    /* For URBI_ATOM_OBJECT, route through urbi_object_root so the
      * allocate-and-pin path is identical to a direct urbi_object_root call.
      * urbi_object_root sets vm->atom_object; we return via *slot on next call. */
-    if (family == URBI_ATOM_OBJECT_F) {
+    if (family == URBI_ATOM_OBJECT) {
         return urbi_object_root(vm);
     }
 
@@ -195,7 +197,7 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamilyTag family)
     urbi_object_set_protos_single(vm, o, root);
     *slot = o;
 
-    /* T36: kept alive by m4_object_roots_walker (see urbi_object_root). */
+    /* T36: kept alive by object_roots_walker (see urbi_object_root). */
     return o;
 }
 
@@ -250,7 +252,7 @@ urbi_object_clone(UVM *vm, UObject *parent)
  * caches) keep the receiver shapes / slot pointers / uprops cached entries
  * reachable through walk_uprotoinstance (T22+ wiring lands on cache fill). */
 static void
-m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
+object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
 
@@ -281,5 +283,5 @@ m4_object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 void
 urbi_object_register_gc_roots(struct UVM *vm)
 {
-    urbi_gc_register_root_provider(vm, m4_object_roots_walker);
+    urbi_gc_register_root_provider(vm, object_roots_walker);
 }

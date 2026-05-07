@@ -21,9 +21,9 @@ static void version_contains_milestone_suffix(void) {
 }
 
 static void urbi_bytecode_version_byte_is_v1_4(void) {
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x14u);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1u);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 4u);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x14U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 4U);
 }
 
 void test_version_suite(void) {

@@ -12,6 +12,9 @@
  *   Called at every safepoint BEFORE watcher_eval_dirty per spec §5.4. */
 
 #include "changed/uchanged_node.h"      /* UChangedNode, urbi_emit_slot_change_slow,
+#include "module/umodule.h"
+#include <stddef.h>
+#include <stdint.h>
                                    urbi_drain_deferred_slot_changes */
 #include "object/uobject.h"     /* UObject, struct UObject */
 #include "event/uevent_emit.h"        /* c_event_emit_sync */
@@ -54,10 +57,12 @@ urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
         }
     }
 
-    /* Bit 7 is set but no chain entry matches `key`.  This is a programming
-     * error (bit 7 must only be set when at least one UChangedNode exists for
-     * the object; individual keys may not match if the subscriber was for a
-     * different slot — that is normal and we silently return). */
+    /* Bit 7 (UGC_HAS_SLOT_CHANGE_EVENT) is set but no chain entry matches
+     * `key`.  This is the normal "subscriber on a different slot" case:
+     * bit 7 is per-object, not per-slot, so a slot-change emit for any slot
+     * on a subscribed object reaches here, but only one slot's UChangedNode
+     * needs to match.  Silently return; the unmatched slot has no
+     * subscribers. */
 }
 
 /* === urbi_defer_slot_change (spec #4 §5.3) ===
@@ -70,7 +75,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
 {
     if (vm->deferred_slot_changes == NULL) return;   /* OOM at init */
 
-    uint16_t next = (uint16_t)((vm->deferred_slot_changes_tail + 1u)
+    uint16_t next = (uint16_t)((vm->deferred_slot_changes_tail + 1U)
                                 % vm->deferred_slot_changes_cap);
     if (next == vm->deferred_slot_changes_head) {
         /* Ring full — drop and one-shot warn. */
@@ -111,7 +116,7 @@ urbi_drain_deferred_slot_changes(UVM *vm)
         }
 
         vm->deferred_slot_changes_head =
-            (uint16_t)((vm->deferred_slot_changes_head + 1u)
+            (uint16_t)((vm->deferred_slot_changes_head + 1U)
                         % vm->deferred_slot_changes_cap);
 
         /* Walk chain and dispatch.  No scratch context at this point so

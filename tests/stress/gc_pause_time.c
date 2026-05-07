@@ -37,17 +37,17 @@ elapsed_ns(struct timespec *start, struct timespec *end)
 int main(void)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     long max_ns   = 0;
     long total_ns = 0;
     int  slices   = 0;
 
     for (int i = 0; i < ALLOC_COUNT; i++) {
-        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 64U, UTYPE_OBJECT);
         if (c == NULL) {
             fprintf(stderr, "FAIL: urbi_gc_alloc returned NULL at i=%d\n", i);
-            uvm_destroy(&vm);
+            urbi_vm_destroy(&vm);
             return 1;
         }
         (void)c;
@@ -84,11 +84,11 @@ int main(void)
     if (max_ns > GC_PAUSE_ASSERT_NS) {
         printf("FAIL — max slice %ld ns exceeds GC_PAUSE_ASSERT_NS=%d\n",
                max_ns, GC_PAUSE_ASSERT_NS);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return 1;
     }
 #endif
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return 0;
 }

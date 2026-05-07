@@ -97,7 +97,7 @@ hook_onleave_count(struct UVM *vm, struct UWatcher *w)
 static void
 run_one_dirty_pass(struct UVM *vm)
 {
-    vm->watcher_dirty_count = 1u;
+    vm->watcher_dirty_count = 1U;
     watcher_eval_dirty(vm);
 }
 
@@ -110,7 +110,7 @@ UTEST(at_rising_edge_fires_body)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count   = 0;
     g_cond_truthy  = 0;   /* start false — seed will be NIL */
@@ -118,7 +118,7 @@ UTEST(at_rising_edge_fires_body)
     /* Install with condition hook off so seed is NIL (falsy). */
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
 
@@ -146,7 +146,7 @@ UTEST(at_rising_edge_fires_body)
     vm.test_watcher_condition_hook = NULL;
     vm.test_watcher_fire_hook      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -158,7 +158,7 @@ UTEST(at_with_onleave_fires_on_falling_edge)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count   = 0;
     g_onleave_count = 0;
@@ -169,7 +169,7 @@ UTEST(at_with_onleave_fires_on_falling_edge)
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
         NULL,
         /*onleave=*/(UClosure *)3,
-        NULL, 0u);
+        NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;
@@ -198,7 +198,7 @@ UTEST(at_with_onleave_fires_on_falling_edge)
     vm.test_watcher_fire_hook      = NULL;
     vm.test_watcher_onleave_hook   = NULL;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -210,7 +210,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count  = 0;
     g_cond_truthy = 1;   /* start true for WHENEVER seed too */
@@ -223,7 +223,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_WHENEVER, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     /* Two passes with cond true → two fires. */
@@ -239,7 +239,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
     vm.test_watcher_condition_hook = NULL;
     vm.test_watcher_fire_hook      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -251,7 +251,7 @@ UTEST(at_sync_runs_inline)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count  = 0;
     g_cond_truthy = 0;   /* seed false */
@@ -261,7 +261,7 @@ UTEST(at_sync_runs_inline)
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT_SYNC, NULL, (UClosure *)1,
         /*body=*/(UClosure *)2,
-        NULL, NULL, 0u);
+        NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;
@@ -282,7 +282,7 @@ UTEST(at_sync_runs_inline)
     vm.test_watcher_condition_hook = NULL;
     vm.test_watcher_fire_hook      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -294,7 +294,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     UVM     vm;
     UStrand waiter;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&waiter, &vm);
 
     g_cond_truthy = 0;   /* seed false so watcher stays installed */
@@ -308,7 +308,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     /* Install WAITUNTIL with waiter_strand wired. */
     UWatcher *w = urbi_watcher_install_internal(
         &vm, UWATCHER_WAITUNTIL, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Wire waiter_strand manually (install_internal does not know about waiter). */
     w->waiter_strand = &waiter;
@@ -337,7 +337,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
         waiter.state = USTRAND_STATE_DORMANT;
     }
     ustrand_destroy(&waiter, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -349,14 +349,14 @@ UTEST(at_no_onleave_falling_edge_no_crash)
     UVM      vm;
     UWatcher *w;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     g_fire_count  = 0;
     g_cond_truthy = 0;
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;
@@ -379,7 +379,7 @@ UTEST(at_no_onleave_falling_edge_no_crash)
     vm.test_watcher_condition_hook = NULL;
     vm.test_watcher_fire_hook      = NULL;
     urbi_watcher_unregister_internal(&vm, w);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

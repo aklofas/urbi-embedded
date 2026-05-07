@@ -4,6 +4,10 @@
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
 #include <stddef.h>
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stdint.h>
 
 /* Local string helper — compare an (unterminated) lexeme against a literal.
  * Returns non-zero when bytes[0..len) == literal (all ASCII, no NUL in bytes). */
@@ -73,6 +77,24 @@ static const char * const kErrorNames[] = {
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
+
+/* Compile-time parity check: the kErrorNames / kErrorMessages tables
+ * are indexed by UParseError, so their length must equal the count of
+ * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
+ * enumerator (added in M5 spec #4); update both forms together when
+ * adding a new code.  Closes PARSE-017. */
+_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+               "kErrorNames length must match UParseError enum count");
+_Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
+               == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+               "kErrorMessages length must match UParseError enum count");
+
+/* --- Postfix-emit method name.  Promoted to file scope so the postfix
+ * `e!` desugar in uparse_react.c does not duplicate the literal.
+ * Closes PARSE-016. --- */
+const char kEmitMethodName[] = "emit";
+_Static_assert(sizeof kEmitMethodName - 1U == kEmitMethodNameLen,
+               "kEmitMethodNameLen must equal strlen(kEmitMethodName)");
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
@@ -152,6 +174,19 @@ UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
     return n;
 }
 
+/* make_error: build a UParseError record from an error code + line/col.
+ *
+ * msg parameter convention:
+ *   - NULL → look up message text from kErrorMessages[code].  Used by
+ *            error sites that report a bare code with no contextual prose.
+ *   - non-NULL → use the caller-provided message verbatim.  Used by
+ *            error sites that need to interpolate context not encoded in
+ *            the bare error code (e.g. "expected ')' after ',' at column 17").
+ *
+ * Call-site convention is inconsistent across parse TUs: some pass NULL,
+ * others pass kErrorMessages[code] explicitly even when the value is
+ * the same.  Both patterns are supported and produce identical output;
+ * standardization across the parse subsystem is a Wave 6 cleanup target. */
 UAstNode *make_error(UParser *p, UParseError code, const char *msg,
                      int line, int col) {
     UAstNode *n = make_node(p, AST_ERROR, line, col);

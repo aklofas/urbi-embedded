@@ -15,7 +15,7 @@ struct UTag;
 
 /* tag_enter_getter: lazy-allocate tag->enter_event on first read.
  *   Returns UVAL_EVENT wrapping the UEvent.
- *   On OOM: throws URBI_ERR_OUT_OF_MEMORY via urbi_throw (requires vm->cur_strand
+ *   On OOM: throws URBI_ERR_OOM via urbi_throw (requires vm->cur_strand
  *   to be set) and returns NIL.
  *   Idempotent: second call returns the same event. */
 UValue tag_enter_getter(struct UVM *vm, struct UTag *tag);
@@ -24,7 +24,7 @@ UValue tag_enter_getter(struct UVM *vm, struct UTag *tag);
 UValue tag_leave_getter(struct UVM *vm, struct UTag *tag);
 
 /* tag_native_register: allocate vm->tag_proto and install getter/setter slots.
- *   Called from uvm_init after urbi_object_register_gc_roots. */
+ *   Called from urbi_vm_init after urbi_object_register_gc_roots. */
 void tag_native_register(struct UVM *vm);
 
 #ifdef __cplusplus

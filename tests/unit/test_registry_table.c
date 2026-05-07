@@ -30,31 +30,31 @@ UTEST(registry_all_entries_const) {
 
 UTEST(registry_resolves_object_proto_to_singleton) {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue v = urbi_builtin_registry[0].resolver(&vm);
     UASSERT_EQ(UVAL_OBJECT, (int)v.kind);
     UASSERT(v.v.p == vm.atom_object);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(registry_nil_entry_is_fourteenth) {
     /* "nil" is the 14th entry (index 13). */
     UASSERT_STR_EQ("nil", urbi_builtin_registry[13].name);
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue v = urbi_builtin_registry[13].resolver(&vm);
     UASSERT_EQ(UVAL_NIL, (int)v.kind);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(registry_void_entry_is_fifteenth) {
     /* "void" is the 15th entry (index 14). */
     UASSERT_STR_EQ("void", urbi_builtin_registry[14].name);
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     UValue v = urbi_builtin_registry[14].resolver(&vm);
     UASSERT_EQ(UVAL_VOID, (int)v.kind);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void

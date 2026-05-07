@@ -71,7 +71,7 @@ UTEST(capture_ambient_chain_bottom_up)
     UTag *chain[8];
     size_t n;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -102,7 +102,7 @@ UTEST(capture_ambient_chain_bottom_up)
     UASSERT(inner.member_strands_head == NULL);
     UASSERT(outer.member_strands_head == NULL);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. capture_ambient_chain_skips_non_tag_kinds
@@ -117,7 +117,7 @@ UTEST(capture_ambient_chain_skips_non_tag_kinds)
     UTag *chain[8];
     size_t n;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -144,7 +144,7 @@ UTEST(capture_ambient_chain_skips_non_tag_kinds)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. capture_ambient_chain_truncation: cap smaller than chain → SIZE_MAX. */
@@ -155,7 +155,7 @@ UTEST(capture_ambient_chain_truncation)
     UTag *chain[2];  /* cap = 2, but we'll have 4 entries */
     size_t n;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -176,7 +176,7 @@ UTEST(capture_ambient_chain_truncation)
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. attach_ambient_tags_basic
@@ -192,7 +192,7 @@ UTEST(attach_ambient_tags_basic)
     UTag *chain[2];
     UStrand *child;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -219,7 +219,7 @@ UTEST(attach_ambient_tags_basic)
 
     /* Attach the two-element chain. */
     urbi_strand_attach_ambient_tags(child, chain, n);
-    UASSERT_EQ((unsigned)child->cleanup_depth, 2u);
+    UASSERT_EQ((unsigned)child->cleanup_depth, 2U);
     UASSERT(child->fatal_status == UEXEC_OK);
 
     /* child should appear in realm->tag's member list. */
@@ -251,7 +251,7 @@ UTEST(attach_ambient_tags_basic)
     vm.alloc_fn(child, 0, vm.alloc_ud);
     urbi_strand_destroy(parent);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. attach_ambient_tags_overflow
@@ -268,7 +268,7 @@ UTEST(attach_ambient_tags_overflow)
     UStrand *s;
     int i;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     tag_init_local(&filler);
 
@@ -295,7 +295,7 @@ UTEST(attach_ambient_tags_overflow)
     ustrand_destroy(s, &vm);
     vm.alloc_fn(s, 0, vm.alloc_ud);
     free(big_chain);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 6. spawned_strand_inherits_ambient_chain
@@ -306,7 +306,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -316,7 +316,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
     UASSERT(s != NULL);
 
     /* Strand should have exactly one cleanup entry: the synthetic realm->tag. */
-    UASSERT_EQ((unsigned)s->cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 1U);
     UASSERT(s->cleanup_base[0].kind == (uint8_t)UCLEANUP_TAG_SCOPE);
     UASSERT(s->cleanup_base[0].owning_tag  == r->tag);
     UASSERT(s->cleanup_base[0].strand_back == s);
@@ -330,7 +330,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
     UASSERT(r->tag->member_strands_head == NULL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ============================================================
@@ -346,14 +346,14 @@ UTEST(synthetic_entries_no_onleave)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
     UStrand *s = urbi_strand_create(r, NULL);
     UASSERT(s != NULL);
-    UASSERT(s->cleanup_depth >= 1u);
+    UASSERT(s->cleanup_depth >= 1U);
 
     /* Walk all TAG_SCOPE entries on the cleanup stack. */
     unsigned i;
@@ -361,16 +361,16 @@ UTEST(synthetic_entries_no_onleave)
         UCleanupEntry *e = &s->cleanup_base[i];
         if (e->kind != (uint8_t)UCLEANUP_TAG_SCOPE) continue;
         /* Synthetic entries must have no onleave flag and no handler_pc. */
-        UASSERT_EQ((unsigned)e->flags,          0u);
-        UASSERT_EQ((unsigned)e->handler_pc,     0u);
+        UASSERT_EQ((unsigned)e->flags,          0U);
+        UASSERT_EQ((unsigned)e->handler_pc,     0U);
         /* Register range fields must be zero. */
-        UASSERT_EQ((unsigned)e->register_base,  0u);
-        UASSERT_EQ((unsigned)e->register_count, 0u);
+        UASSERT_EQ((unsigned)e->register_base,  0U);
+        UASSERT_EQ((unsigned)e->register_count, 0U);
     }
 
     urbi_strand_destroy(s);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 8. synthetic_entries_unlink_on_termination
@@ -383,7 +383,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     UVM vm;
     UTag local_tag;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -394,7 +394,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     /* Add a second synthetic entry for local_tag. */
     tag_init_local(&local_tag);
     UASSERT(push_tag_scope(s, &local_tag) != NULL);
-    UASSERT(s->cleanup_depth == 2u);
+    UASSERT(s->cleanup_depth == 2U);
 
     /* local_tag must now have s in its member list. */
     UASSERT(local_tag.member_strands_head != NULL);
@@ -408,7 +408,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     UASSERT(r->tag->member_strands_head == NULL);
 
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === Suite entry point === */

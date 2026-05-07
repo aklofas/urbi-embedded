@@ -32,7 +32,7 @@ static UVMError lazy_eval(const char *src, UValue *out) {
     ulex_init(&lex, src, strlen(src));
 
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
     UModule module = {0};
@@ -54,12 +54,12 @@ static UVMError lazy_eval(const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = uvm_run(&vm, &module, out);
+        vm_rc = urbi_vm_run(&vm, &module, out);
     }
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return vm_rc;
 }
 
@@ -88,7 +88,7 @@ static UEmitError lazy_emit_error(const char *src) {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
     UArena arena;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
     UModule module = {0};
     UEmitter e;
@@ -106,7 +106,7 @@ static UEmitError lazy_emit_error(const char *src) {
     UEmitError rc = uemit_finish(&e);
     umodule_destroy(&module);
     uarena_destroy(&arena);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
     return rc;
 }
 

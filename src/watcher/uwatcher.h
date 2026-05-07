@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* UWatcher: reactive watcher record + pool allocation.
- * Row 11 / T32.
+ * Reactive runtime landed in M5 (see docs/milestones/m5-reactive.md).
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation goes through vm->alloc_fn.
@@ -26,7 +26,7 @@ struct UVM;
 struct UTag;
 struct URealm;
 struct UStrand;
-struct UEvent;   /* defined in T17; used only as pointer here */
+struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 
 /* === Pool size build flags === */
 
@@ -49,17 +49,20 @@ struct UEvent;   /* defined in T17; used only as pointer here */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
-#define URBI_WATCHER_ACTIVE                    0x01u  /* installed and live */
-#define URBI_WATCHER_PENDING_UNREGISTER        0x02u  /* stop requested; drain before free */
-#define URBI_WATCHER_FIRED_DURING_EVAL         0x04u  /* condition fired while eval in progress */
-#define URBI_WATCHER_PENDING_REFIRE            0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
-#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10u  /* body fired at least once since last onleave check (spec #2 §5.1) */
-/* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime when a
- * heap closure was unlinked from strand.closure_list.  pool_free frees each owned closure.
- * Only set when strand_closure_unlink confirms the closure was on the heap list. */
-#define URBI_WATCHER_OWNS_COND                 0x20u  /* condition was unlinked from closure_list; pool_free must free it */
-#define URBI_WATCHER_OWNS_BODY                 0x40u  /* body was unlinked; pool_free must free it */
-#define URBI_WATCHER_OWNS_ONLEAVE              0x80u  /* onleave was unlinked; pool_free must free it */
+#define URBI_WATCHER_ACTIVE                    0x01U  /* installed and live */
+#define URBI_WATCHER_PENDING_UNREGISTER        0x02U  /* stop requested; drain before free */
+#define URBI_WATCHER_FIRED_DURING_EVAL         0x04U  /* condition fired while eval in progress */
+#define URBI_WATCHER_PENDING_REFIRE            0x08U  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10U  /* body fired at least once since last onleave check (spec #2 §5.1) */
+/* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime
+ * when strand_closure_unlink confirms the heap closure was on strand.closure_list
+ * AND its proto was detached from module->nested[].  Each bit means the watcher
+ * owns BOTH the closure struct AND its detached proto (sub-buffers + struct);
+ * pool_free frees each owned (closure, proto) pair via vm->alloc_fn.
+ * The three bits are independent — any subset (including none) may be set. */
+#define URBI_WATCHER_OWNS_COND                 0x20U  /* condition closure + proto owned by watcher; pool_free must free both */
+#define URBI_WATCHER_OWNS_BODY                 0x40U  /* body closure + proto owned by watcher; pool_free must free both */
+#define URBI_WATCHER_OWNS_ONLEAVE              0x80U  /* onleave closure + proto owned by watcher; pool_free must free both */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 
@@ -94,7 +97,7 @@ struct UEvent;   /* defined in T17; used only as pointer here */
  * on the macro — intended, per §5.1 size-budget table. */
 
 typedef struct UWatcher {
-    /* === Common cell header (row 10 §3.1 lock) === */
+    /* === Common cell header (matches UCell layout; type_tag + gc_byte) === */
     uint8_t   type_tag;                    /* 1 B  UTYPE_WATCHER */
     uint8_t   gc_byte;                     /* 1 B  UGC_IS_FIXED set; color bits as usual */
 
@@ -106,7 +109,18 @@ typedef struct UWatcher {
     uint16_t  pad0;                        /* 2 B  align to 8 */
 
     /* === Linked-list threading === */
-    struct UWatcher *next_active;          /* 8 B  vm->active_watchers_head chain */
+    /* next_active doubles as the threading link for two mutually exclusive
+     * lists, depending on watcher state:
+     *   - Live cond watchers (AT/WHENEVER/AT_SYNC/WAITUNTIL, no
+     *     PENDING_UNREGISTER): link in vm->active_watchers_head.
+     *     AT_EVENT/AT_EVENT_SYNC do not use this field while live — they
+     *     thread on event->at_watchers_head via next_in_event below.
+     *   - Drained watchers (PENDING_UNREGISTER set, awaiting onleave):
+     *     link in vm->pending_onleave_head FIFO.
+     * pending_onleave_queue_push transfers from the active chain to the
+     * pending FIFO (same field re-used as queue link).  A watcher is never
+     * on both lists simultaneously. */
+    struct UWatcher *next_active;          /* 8 B  active or pending-onleave list link (mutually exclusive) */
     struct UWatcher *next_in_tag;          /* 8 B  owning_tag->member_watchers_head chain */
 
     /* === Identity + closures === */
@@ -146,12 +160,12 @@ _Static_assert(sizeof(UWatcher) == 240,
 /* === Pool lifecycle === */
 
 /* uwatcher_pool_init: allocate the watcher slab and thread the freelist.
- * Must be called after urbi_gc_init in uvm_init.
+ * Must be called after urbi_gc_init in urbi_vm_init.
  * Returns 0 on success, -1 on OOM. */
 int  uwatcher_pool_init(struct UVM *vm);
 
 /* uwatcher_pool_destroy: free the watcher slab.
- * Must be called before urbi_gc_destroy in uvm_destroy. */
+ * Must be called before urbi_gc_destroy in urbi_vm_destroy. */
 void uwatcher_pool_destroy(struct UVM *vm);
 
 /* uwatcher_pool_alloc: pop one watcher entry from the pool freelist.
@@ -161,15 +175,17 @@ void uwatcher_pool_destroy(struct UVM *vm);
  * inserting the result into the active and tag member lists. */
 struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
 
-/* === Install / unregister (C-internal; not in public urbi headers at M3) ===
+/* === Install / unregister (C-internal; not in public urbi headers) ===
  *
- * T32 ships minimal stubs:
- *   - install: allocates from pool + wires active_watchers_head.
- *   - unregister: unlinks from active_watchers_head + returns to pool.
+ * Install:
+ *   - allocate from pool + wire active_watchers_head.
+ *   - copy read_set (cells[] + bit-6 UGC_HAS_WATCHER_OBSERVER).
+ *   - insert into owning_tag->member_watchers_head.
  *
- * T33 completes:
- *   - read_set wiring (cells[] + bit-6 UGC_HAS_WATCHER_OBSERVER)
- *   - member_watchers_head insertion in owning_tag
+ * Unregister:
+ *   - clear bit-6 on cells no other watcher observes.
+ *   - unlink from active_watchers_head + owning_tag->member_watchers_head.
+ *   - return slot to pool.
  *
  * **Test-only seam:** `urbi_watcher_install_internal` is the low-level pool
  * + wiring path used by unit tests (`tests/unit/test_watcher_*.c` etc.).  It
@@ -179,7 +195,7 @@ struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
  * `install_watcher_runtime` (uwatcher_install.c), which uses the real
  * scratch-frame helper.  Tests passing fake `(UClosure *)1` sentinels MUST
  * also set `test_watcher_condition_hook` before any subsequent eval, since
- * eval *does* dispatch real bytecode now (post-T8). */
+ * eval *does* dispatch real bytecode (since v0.5.1-cond-unstub). */
 
 struct UWatcher *urbi_watcher_install_internal(
     struct UVM       *vm,
@@ -193,7 +209,7 @@ struct UWatcher *urbi_watcher_install_internal(
 
 void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 
-/* === Eval pass (T34) === */
+/* === Eval pass === */
 
 /* invoke_condition_closure: evaluate w->condition on the VM scratch frame.
  * Routes to `vm->test_watcher_condition_hook` if set (existing fire-path
@@ -210,7 +226,7 @@ UValue invoke_condition_closure(struct UVM *vm, struct UWatcher *w);
  * Called from the safepoint when vm->watcher_dirty_count > 0. Per spec §6.2. */
 void   watcher_eval_dirty(struct UVM *vm);
 
-/* === Pending-onleave queue (T35) ===
+/* === Pending-onleave queue ===
  *
  * pending_onleave_queue_push: transfer watcher from active lists to the FIFO.
  *   Sets URBI_WATCHER_PENDING_UNREGISTER, unlinks from active_watchers_head and
@@ -225,14 +241,14 @@ void drain_pending_onleave_queue(struct UVM *vm);
 
 /* === Body spawn (uwatcher_spawn.c) === */
 
-/* do_spawn_body_coroutine: M5 real implementation (spec #1 §5.3 steps 2-6).
- *   Allocates body strand via urbi_strand_create, attaches owning_tag when
- *   distinct from realm->tag, arms via urbi_strand_arm_from_closure, wires
- *   back-pointers, and enqueues via urbi_strand_start.  Three OOM points
- *   (strand alloc / ambient overflow / stack alloc) all log URBI_LOG_WARN and
- *   tear down any partial state — watcher remains installed for future fires.
- *   fire_context is NULL at M5 baseline; spec #2 wires patterns later.
- *   Exhaust gate arrives in T26. */
+/* do_spawn_body_coroutine: spec #1 §5.3 steps 1-6.
+ *   Step 1 is the exhaust-policy gate (URBI_EXHAUST_QUEUE / _DROP).
+ *   Steps 2-6 allocate the body strand via urbi_strand_create, attach
+ *   owning_tag when distinct from realm->tag, arm via urbi_strand_arm_from_closure,
+ *   wire back-pointers, and enqueue via urbi_strand_start.  Three OOM points
+ *   (strand alloc / ambient overflow / stack alloc) all log URBI_LOG_WARN
+ *   and tear down any partial state — watcher remains installed for future
+ *   fires.  fire_context is NULL today; spec #2 wires patterns later. */
 void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
                                void *fire_context);
 
@@ -264,7 +280,7 @@ void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 /* === GC root provider (uwatcher_gc.c) === */
 
 /* watcher_table_walk_roots: registered via urbi_gc_register_root_provider at
- * uvm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
+ * urbi_vm_init.  Walks vm->active_watchers_head + vm->pending_onleave_head, yielding
  * closure + last_value_cache UValues to the GC mark callback.  Per spec §6.6.
  * M3 deferrals: owning_tag (UVAL_TAG kind doesn't exist until M5/M6) and
  * read-set cells[] (concrete cell types land at M4).
@@ -297,7 +313,7 @@ void   urbi_watcher_check_invariants(struct UVM *vm);
  *   - install_watcher_runtime (install-time cond eval, uwatcher_install.c)
  *   - invoke_condition_closure (eval-time cond)
  *
- * The transient strand is allocated on the C stack (mirroring uvm_run's
+ * The transient strand is allocated on the C stack (mirroring urbi_vm_run's
  * pattern), threaded onto vm->global_realm->strands_head for the duration
  * of the call so the GC walker visits its register window, then unlinked
  * and torn down before return.  Bounded by URBI_SCRATCH_BUDGET_OPS dispatch

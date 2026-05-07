@@ -13,14 +13,14 @@
 UTEST(sched_init_empties_ready_queue)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
     UASSERT(vm.ready_head == NULL);
     UASSERT(vm.ready_tail == NULL);
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
     UASSERT(sched_pick_next(&vm) == NULL);
     UASSERT(sched_quiescent(&vm));
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 2: sched_strand_make_runnable appends in FIFO order; pick_next
@@ -28,7 +28,7 @@ UTEST(sched_init_empties_ready_queue)
 UTEST(sched_make_runnable_appends_tail)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b, c;
@@ -41,23 +41,23 @@ UTEST(sched_make_runnable_appends_tail)
     sched_strand_make_runnable(&c);
 
     UASSERT(sched_pick_next(&vm) == &a);
-    UASSERT_EQ(vm.strand_runnable_count, 3u);
+    UASSERT_EQ(vm.strand_runnable_count, 3U);
     UASSERT(!sched_quiescent(&vm));
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
     ustrand_destroy(&c, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 3: sched_earliest_wake_us returns UINT64_MAX when sleep queue is empty. */
 UTEST(sched_earliest_wake_uintmax_on_empty)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
     UASSERT_EQ(sched_earliest_wake_us(&vm), UINT64_MAX);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 4: sched_consume_budget decrements correctly and floors at zero. */
@@ -66,9 +66,9 @@ UTEST(sched_consume_budget_floors_at_zero)
     UStrand s;
     s.instruction_budget_remaining = 5;
     sched_consume_budget(&s, 3);
-    UASSERT_EQ(s.instruction_budget_remaining, 2u);
+    UASSERT_EQ(s.instruction_budget_remaining, 2U);
     sched_consume_budget(&s, 10);   /* would underflow without the floor */
-    UASSERT_EQ(s.instruction_budget_remaining, 0u);
+    UASSERT_EQ(s.instruction_budget_remaining, 0U);
 }
 
 /* Case 5: sched_strand_make_runnable is idempotent in that calling it a second
@@ -78,7 +78,7 @@ UTEST(sched_consume_budget_floors_at_zero)
 UTEST(sched_make_runnable_sets_state_ready)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
@@ -86,10 +86,10 @@ UTEST(sched_make_runnable_sets_state_ready)
 
     sched_strand_make_runnable(&s);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 6: sched_strand_block (REASON_SLEEP) removes strand from the ready
@@ -97,7 +97,7 @@ UTEST(sched_make_runnable_sets_state_ready)
 UTEST(sched_strand_block_sleep_moves_to_sleep_q)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
@@ -107,19 +107,19 @@ UTEST(sched_strand_block_sleep_moves_to_sleep_q)
     s.state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;
 
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000u);
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000U);
 
     UASSERT_EQ((int)(s.state & USTRAND_STATE_MASK), (int)USTRAND_WAITING);
     UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_SLEEP);
     /* wakeup_pending_count incremented by sleep_q_insert */
-    UASSERT_EQ(vm.wakeup_pending_count, 1u);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
     /* runnable_count decremented */
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
     /* strand is on sleep queue */
     UASSERT(vm.sleep_q_head == &s);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 7: sched_dequeue_ready_head dequeues the head and decrements
@@ -127,7 +127,7 @@ UTEST(sched_strand_block_sleep_moves_to_sleep_q)
 UTEST(sched_dequeue_ready_head_advances_queue)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -136,11 +136,11 @@ UTEST(sched_dequeue_ready_head_advances_queue)
 
     sched_strand_make_runnable(&a);
     sched_strand_make_runnable(&b);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     sched_dequeue_ready_head(&vm);
 
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
     UASSERT(vm.ready_head == &b);
     UASSERT(vm.ready_tail == &b);
     /* a is no longer on a list */
@@ -149,19 +149,19 @@ UTEST(sched_dequeue_ready_head_advances_queue)
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 8: sched_pick_next on an empty queue returns NULL (no-crash). */
 UTEST(sched_pick_next_empty_returns_null)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_pick_next(&vm) == NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 9: sleep_q_insert maintains sorted order (head, mid, tail cases).
@@ -169,7 +169,7 @@ UTEST(sched_pick_next_empty_returns_null)
 UTEST(sched_sleep_q_sorted_insertion)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand early, mid, late;
@@ -180,13 +180,13 @@ UTEST(sched_sleep_q_sorted_insertion)
     /* Insert out-of-order: late, early, mid — sorted queue should be
        early → mid → late after all three insertions. */
     early.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&early, USTRAND_REASON_SLEEP, 100u);
+    sched_strand_block(&early, USTRAND_REASON_SLEEP, 100U);
 
     late.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&late, USTRAND_REASON_SLEEP, 300u);
+    sched_strand_block(&late, USTRAND_REASON_SLEEP, 300U);
 
     mid.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&mid, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&mid, USTRAND_REASON_SLEEP, 200U);
 
     /* Head must be 'early' (smallest wake_us). */
     UASSERT(vm.sleep_q_head == &early);
@@ -194,12 +194,12 @@ UTEST(sched_sleep_q_sorted_insertion)
     UASSERT(vm.sleep_q_head->wait_next->wait_next == &late);
     UASSERT(late.wait_next == NULL);
 
-    UASSERT_EQ(vm.wakeup_pending_count, 3u);
+    UASSERT_EQ(vm.wakeup_pending_count, 3U);
 
     ustrand_destroy(&early, &vm);
     ustrand_destroy(&mid,   &vm);
     ustrand_destroy(&late,  &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 10: sched_earliest_wake_us returns the wake_us of the sleep-queue head
@@ -207,19 +207,19 @@ UTEST(sched_sleep_q_sorted_insertion)
 UTEST(sched_earliest_wake_us_single_sleeper)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
     ustrand_init(&s, &vm);
 
     s.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 42u);
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, 42U);
 
-    UASSERT_EQ(sched_earliest_wake_us(&vm), 42u);
+    UASSERT_EQ(sched_earliest_wake_us(&vm), 42U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 11: sched_earliest_wake_us returns the minimum wake_us when multiple
@@ -227,7 +227,7 @@ UTEST(sched_earliest_wake_us_single_sleeper)
 UTEST(sched_earliest_wake_us_picks_minimum)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b;
@@ -235,17 +235,17 @@ UTEST(sched_earliest_wake_us_picks_minimum)
     ustrand_init(&b, &vm);
 
     a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&a, USTRAND_REASON_SLEEP, 500u);
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 500U);
 
     b.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
 
     /* 'b' was inserted with wake_us=200, which is less than 'a' (500). */
-    UASSERT_EQ(sched_earliest_wake_us(&vm), 200u);
+    UASSERT_EQ(sched_earliest_wake_us(&vm), 200U);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 12: sched_quiescent returns true only when all 5 counters are zero;
@@ -253,7 +253,7 @@ UTEST(sched_earliest_wake_us_picks_minimum)
 UTEST(sched_quiescent_false_when_runnable_nonzero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_quiescent(&vm));  /* starts quiescent */
@@ -264,7 +264,7 @@ UTEST(sched_quiescent_false_when_runnable_nonzero)
     vm.strand_runnable_count = 0;
     UASSERT(sched_quiescent(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 13: sched_quiescent returns false when wakeup_pending_count is non-zero
@@ -272,7 +272,7 @@ UTEST(sched_quiescent_false_when_runnable_nonzero)
 UTEST(sched_quiescent_false_when_sleep_q_nonempty)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     vm.wakeup_pending_count = 1;
@@ -281,7 +281,7 @@ UTEST(sched_quiescent_false_when_sleep_q_nonempty)
     vm.wakeup_pending_count = 0;
     UASSERT(sched_quiescent(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 14: sched_consume_budget(s, 0) is a no-op (budget unchanged). */
@@ -290,7 +290,7 @@ UTEST(sched_consume_budget_zero_noop)
     UStrand s;
     s.instruction_budget_remaining = 100;
     sched_consume_budget(&s, 0);
-    UASSERT_EQ(s.instruction_budget_remaining, 100u);
+    UASSERT_EQ(s.instruction_budget_remaining, 100U);
 }
 
 /* Case 15: sched_strand_unblock transitions a SLEEPING strand back to READY
@@ -298,7 +298,7 @@ UTEST(sched_consume_budget_zero_noop)
 UTEST(sched_strand_unblock_from_sleep)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
@@ -306,26 +306,26 @@ UTEST(sched_strand_unblock_from_sleep)
 
     /* Block into sleep. */
     s.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s, USTRAND_REASON_SLEEP, 9999u);
-    UASSERT_EQ(vm.wakeup_pending_count, 1u);
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, 9999U);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     /* Unblock: should move back to READY. */
     sched_strand_unblock(&s);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
-    UASSERT_EQ(vm.wakeup_pending_count, 0u);
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
     UASSERT(vm.sleep_q_head == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 16: sched_destroy NULLs the scheduler queues (lifecycle cleanup). */
 UTEST(sched_destroy_nulls_queues)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
@@ -342,14 +342,14 @@ UTEST(sched_destroy_nulls_queues)
     UASSERT(vm.sleep_q_head == NULL);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 17: sched_strand_block with REASON_EVENT stores the event pointer. */
 UTEST(sched_strand_block_event_stores_pointer)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s;
@@ -359,24 +359,24 @@ UTEST(sched_strand_block_event_stores_pointer)
     vm.strand_runnable_count = 1;
 
     /* Use an arbitrary non-NULL sentinel for the event pointer. */
-    uintptr_t event_sentinel = 0xDEADBEEFu;
+    uintptr_t event_sentinel = 0xDEADBEEFU;
     sched_strand_block(&s, USTRAND_REASON_EVENT, (uint64_t)event_sentinel);
 
     UASSERT_EQ((int)(s.state & USTRAND_STATE_MASK), (int)USTRAND_WAITING);
     UASSERT_EQ((int)USTRAND_GET_REASON(&s), (int)USTRAND_REASON_EVENT);
     UASSERT((uintptr_t)s.wait_payload.event == event_sentinel);
     /* Event-wait does not insert into sleep queue. */
-    UASSERT_EQ(vm.wakeup_pending_count, 0u);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 18: sched_strand_block with REASON_JOIN stores the join_parent pointer. */
 UTEST(sched_strand_block_join_stores_pointer)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand parent, child;
@@ -392,11 +392,11 @@ UTEST(sched_strand_block_join_stores_pointer)
     UASSERT_EQ((int)USTRAND_GET_REASON(&child), (int)USTRAND_REASON_JOIN);
     UASSERT(child.wait_payload.join_parent == &parent);
     /* Join-wait does not insert into sleep queue. */
-    UASSERT_EQ(vm.wakeup_pending_count, 0u);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
 
     ustrand_destroy(&parent, &vm);
     ustrand_destroy(&child,  &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 19: sleep_q_insert advances the while-loop (insert mid after 2+ elements).
@@ -405,7 +405,7 @@ UTEST(sched_strand_block_join_stores_pointer)
 UTEST(sched_sleep_q_multi_advance)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand s1, s2, s3, s4;
@@ -416,37 +416,37 @@ UTEST(sched_sleep_q_multi_advance)
 
     /* Insert 400 first, then 100 (head insert), then 300 (mid), then 200 (mid-mid). */
     s1.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s1, USTRAND_REASON_SLEEP, 400u);
+    sched_strand_block(&s1, USTRAND_REASON_SLEEP, 400U);
 
     s2.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s2, USTRAND_REASON_SLEEP, 100u);
+    sched_strand_block(&s2, USTRAND_REASON_SLEEP, 100U);
 
     s3.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s3, USTRAND_REASON_SLEEP, 300u);
+    sched_strand_block(&s3, USTRAND_REASON_SLEEP, 300U);
 
     s4.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&s4, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&s4, USTRAND_REASON_SLEEP, 200U);
 
     /* Expected order: s2(100) → s4(200) → s3(300) → s1(400) */
     UASSERT(vm.sleep_q_head == &s2);
     UASSERT(vm.sleep_q_head->wait_next == &s4);
     UASSERT(vm.sleep_q_head->wait_next->wait_next == &s3);
     UASSERT(vm.sleep_q_head->wait_next->wait_next->wait_next == &s1);
-    UASSERT_EQ(vm.wakeup_pending_count, 4u);
-    UASSERT_EQ(sched_earliest_wake_us(&vm), 100u);
+    UASSERT_EQ(vm.wakeup_pending_count, 4U);
+    UASSERT_EQ(sched_earliest_wake_us(&vm), 100U);
 
     ustrand_destroy(&s1, &vm);
     ustrand_destroy(&s2, &vm);
     ustrand_destroy(&s3, &vm);
     ustrand_destroy(&s4, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 20: sleep_q_remove removes a mid-queue element (non-head). */
 UTEST(sched_sleep_q_remove_mid_element)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand early, mid, late;
@@ -455,22 +455,22 @@ UTEST(sched_sleep_q_remove_mid_element)
     ustrand_init(&late,  &vm);
 
     early.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&early, USTRAND_REASON_SLEEP, 100u);
+    sched_strand_block(&early, USTRAND_REASON_SLEEP, 100U);
 
     late.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&late, USTRAND_REASON_SLEEP, 300u);
+    sched_strand_block(&late, USTRAND_REASON_SLEEP, 300U);
 
     mid.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&mid, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&mid, USTRAND_REASON_SLEEP, 200U);
 
     /* Queue: early(100) → mid(200) → late(300). Unblock mid. */
-    UASSERT_EQ(vm.wakeup_pending_count, 3u);
+    UASSERT_EQ(vm.wakeup_pending_count, 3U);
 
     /* sched_strand_unblock calls sleep_q_remove then sched_strand_make_runnable. */
     sched_strand_unblock(&mid);
 
     /* After removal: early(100) → late(300). */
-    UASSERT_EQ(vm.wakeup_pending_count, 2u);
+    UASSERT_EQ(vm.wakeup_pending_count, 2U);
     UASSERT(vm.sleep_q_head == &early);
     UASSERT(vm.sleep_q_head->wait_next == &late);
     UASSERT(late.wait_next == NULL);
@@ -488,7 +488,7 @@ UTEST(sched_sleep_q_remove_mid_element)
     ustrand_destroy(&early, &vm);
     ustrand_destroy(&mid,   &vm);
     ustrand_destroy(&late,  &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 21: sleep_q_insert while-loop advance: insert an element that requires
@@ -496,7 +496,7 @@ UTEST(sched_sleep_q_remove_mid_element)
 UTEST(sched_sleep_q_insert_while_advance)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b, c, d;
@@ -507,31 +507,31 @@ UTEST(sched_sleep_q_insert_while_advance)
 
     /* Build sorted queue: 100 → 200 → 350 */
     a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100u);
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100U);
 
     b.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
 
     c.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&c, USTRAND_REASON_SLEEP, 350u);
+    sched_strand_block(&c, USTRAND_REASON_SLEEP, 350U);
 
     /* Insert 300: cur starts at a(100), 200<=300 is true → advance.
        cur becomes b(200), 350<=300 is false → insert d after b.
        Expected: a(100) → b(200) → d(300) → c(350). */
     d.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&d, USTRAND_REASON_SLEEP, 300u);
+    sched_strand_block(&d, USTRAND_REASON_SLEEP, 300U);
 
     UASSERT(vm.sleep_q_head == &a);
     UASSERT(vm.sleep_q_head->wait_next == &b);
     UASSERT(vm.sleep_q_head->wait_next->wait_next == &d);
     UASSERT(vm.sleep_q_head->wait_next->wait_next->wait_next == &c);
-    UASSERT_EQ(vm.wakeup_pending_count, 4u);
+    UASSERT_EQ(vm.wakeup_pending_count, 4U);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
     ustrand_destroy(&c, &vm);
     ustrand_destroy(&d, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 22: sleep_q_remove mid-element via while-loop advance (non-head removal
@@ -539,7 +539,7 @@ UTEST(sched_sleep_q_insert_while_advance)
 UTEST(sched_sleep_q_remove_while_advance)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UStrand a, b, c;
@@ -549,17 +549,17 @@ UTEST(sched_sleep_q_remove_while_advance)
 
     /* Queue: a(100) → b(200) → c(300). */
     a.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100u);
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100U);
     b.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200u);
+    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
     c.state = USTRAND_STATE_RUNNING; vm.strand_runnable_count = 1;
-    sched_strand_block(&c, USTRAND_REASON_SLEEP, 300u);
+    sched_strand_block(&c, USTRAND_REASON_SLEEP, 300U);
 
     /* Unblock c (tail element): sleep_q_remove must walk from head to find it. */
     sched_strand_unblock(&c);
 
     /* Queue: a(100) → b(200). */
-    UASSERT_EQ(vm.wakeup_pending_count, 2u);
+    UASSERT_EQ(vm.wakeup_pending_count, 2U);
     UASSERT(vm.sleep_q_head == &a);
     UASSERT(vm.sleep_q_head->wait_next == &b);
     UASSERT(b.wait_next == NULL);
@@ -574,14 +574,14 @@ UTEST(sched_sleep_q_remove_while_advance)
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
     ustrand_destroy(&c, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 23: sched_quiescent returns false when watcher_active_count is non-zero. */
 UTEST(sched_quiescent_false_when_watcher_active_nonzero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_quiescent(&vm));
@@ -592,14 +592,14 @@ UTEST(sched_quiescent_false_when_watcher_active_nonzero)
     vm.watcher_active_count = 0;
     UASSERT(sched_quiescent(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 24: sched_quiescent returns false when event_queue_count is non-zero. */
 UTEST(sched_quiescent_false_when_event_queue_nonzero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_quiescent(&vm));
@@ -610,14 +610,14 @@ UTEST(sched_quiescent_false_when_event_queue_nonzero)
     vm.event_queue_count = 0;
     UASSERT(sched_quiescent(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 25: sched_quiescent returns false when host_call_pending_count is non-zero. */
 UTEST(sched_quiescent_false_when_host_call_pending_nonzero)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UASSERT(sched_quiescent(&vm));
@@ -628,17 +628,17 @@ UTEST(sched_quiescent_false_when_host_call_pending_nonzero)
     vm.host_call_pending_count = 0;
     UASSERT(sched_quiescent(&vm));
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* Case 26: sched_walk_roots is a no-op stub; calling it doesn't crash. */
 UTEST(sched_walk_roots_noop)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_walk_roots(&vm, NULL, NULL);
     UASSERT(1);  /* reached here without crash */
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_scheduler_cooperative_suite(void) {

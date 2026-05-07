@@ -14,7 +14,7 @@
  *                             strands; -- when dispatch returns DEAD).
  *                             Invariant: number of strands in READY or
  *                             RUNNING state (i.e. consuming or eligible to
- *                             consume CPU on this VM). The uvm_run transient
+ *                             consume CPU on this VM). The urbi_vm_run transient
  *                             strand is intentionally excluded: it bypasses
  *                             sched_strand_make_runnable and balances its own
  *                             READY-cycle increments at dequeue.
@@ -42,6 +42,9 @@
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
 #include <stdbool.h>
 #include <stdint.h>
+#include "gc/ugc.h"
+#include "runtime/uframe.h"
+#include <stddef.h>
 
 /* Maximum instruction budget assigned to a strand on sched_strand_init.
    Can be overridden at compile time (e.g. -DURBI_STRAND_BUDGET_MAX=500). */
@@ -114,10 +117,16 @@ sched_destroy(UVM *vm)
 
 /* === Per-strand lifecycle === */
 
+/* sched_strand_init: zero the scheduler-tracked queue links and seed the
+ * instruction budget.  `attrs` is currently unused — held in the signature
+ * as a forward-compatibility hold for the v1.x scheduler-class abstraction
+ * (priority/deadline schedulers will pass per-strand attribute structs
+ * through this slot; see USchedClass at include/urbi/sched.h).  The
+ * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX. */
 void
 sched_strand_init(UStrand *s, void *attrs)
 {
-    (void)attrs;
+    (void)attrs;  /* RESERVED v1.x — see header docstring */
     s->ready_next                   = NULL;
     s->ready_prev                   = NULL;
     s->wait_next                    = NULL;
@@ -205,7 +214,7 @@ sched_earliest_wake_us(UVM *vm)
 }
 
 bool
-sched_quiescent(UVM *vm)
+sched_quiescent(const UVM *vm)
 {
     /* Per row 8 §3 Rule X: 5 counters AND'd zero.
        strand_suspended_count is excluded (always 0 at M3). */
@@ -231,7 +240,7 @@ sched_strand_account_destroy(UVM *vm, UStrand *s)
     if (s->cross_strand_stop_pending != 0) {
         if (vm->host_call_pending_count > 0)
             vm->host_call_pending_count--;
-        s->cross_strand_stop_pending = 0u;
+        s->cross_strand_stop_pending = 0U;
     }
 }
 

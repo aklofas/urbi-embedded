@@ -62,7 +62,7 @@ void urbi_unpin(struct UVM *vm, UValue v);
  *   void   urbi_gc_init(struct UVM *vm);
  *   void   urbi_gc_destroy(struct UVM *vm);
  *   void   urbi_gc_force_full(struct UVM *vm);
- *   size_t urbi_gc_bytes_allocated_inline(struct UVM *vm);
+ *   size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
  *
  * Three barrier surfaces (always inline, defined as no-op stubs in
  * ugc_incremental.h; T25 lands the real Dijkstra forward-barrier logic):
@@ -125,10 +125,10 @@ void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider
 void   urbi_gc_init(struct UVM *vm);
 void   urbi_gc_destroy(struct UVM *vm);
 void   urbi_gc_force_full(struct UVM *vm);
-size_t urbi_gc_bytes_allocated_inline(struct UVM *vm);
+size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 
 /* === Root provider forward declarations (T26) ===
- * Each subsystem's root-walker function is declared here so that uvm_init
+ * Each subsystem's root-walker function is declared here so that urbi_vm_init
  * can register them without pulling in each subsystem's full header.
  * Definitions live in their respective source files.
  *

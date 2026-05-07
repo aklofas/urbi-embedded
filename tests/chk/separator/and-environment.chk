@@ -6,7 +6,7 @@
 # Reason:
 #   '&' (OP_FORK_JOIN / OP_JOIN_WAIT) requires the realm-managed scheduler
 #   path to actually schedule two strands and collect them.  The chk runner
-#   uses the uvm_run REPL path (realm == NULL); OP_FORK_JOIN produces a
+#   uses the urbi_vm_run REPL path (realm == NULL); OP_FORK_JOIN produces a
 #   TypeError in that context (see tests/chk/separator/comma_amp_unsupported.chk).
 #   Cross-strand read/write ordering needs urbi_step driver to verify.
 #

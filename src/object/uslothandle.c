@@ -13,6 +13,9 @@
 #include "urbi/gc.h"               /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
 #include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
+#include "gc/ugc.h"
+#include "module/umodule.h"
+#include <stddef.h>
 
 /* === urbi_object_get_slot ===
  *
@@ -29,7 +32,7 @@ urbi_object_get_slot(UVM *vm, UObject *obj, USymbol *name)
     }
 
     UObject *holder = NULL;
-    uint32_t idx    = 0u;
+    uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, obj, name, &holder, &idx);
     if (rc <= 0) {
         return NULL;   /* miss or resolve-stack overflow */

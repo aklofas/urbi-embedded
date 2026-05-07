@@ -61,7 +61,7 @@ make_trivial_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
  * Installs an AT_EVENT watcher with a trivial body on the slot-change event.
  * Returns the event pointer; sets *out_strand / *out_realm.
  * Caller must clean up (urbi_watcher_unregister_internal, ustrand_destroy,
- * urbi_realm_destroy, uvm_destroy). */
+ * urbi_realm_destroy, urbi_vm_destroy). */
 static UEvent *
 setup_subscriber(UVM *vm_out, URealm **realm_out, UStrand *s_out,
                  UObject *obj, USymbol *sym,
@@ -105,11 +105,11 @@ UTEST(slot_change_fires_via_uslothandle_write)
     URealm *r;
     uint32_t instr[1]; UProto proto; UClosure cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { uvm_destroy(&vm); return; }
+    if (!o) { urbi_vm_destroy(&vm); return; }
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "y", 1);
 
@@ -120,11 +120,11 @@ UTEST(slot_change_fires_via_uslothandle_write)
 
     UEvent *e = setup_subscriber(&vm, &r, &s, o, sym, &cl, &proto, instr);
     UASSERT(e != NULL);
-    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     USlotHandle *h = urbi_object_get_slot(&vm, o, sym);
     UASSERT(h != NULL);
-    if (!h) { cleanup_subscriber(&vm, &s, r, e); uvm_destroy(&vm); return; }
+    if (!h) { cleanup_subscriber(&vm, &s, r, e); urbi_vm_destroy(&vm); return; }
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
@@ -136,7 +136,7 @@ UTEST(slot_change_fires_via_uslothandle_write)
     UASSERT(vm.strand_runnable_count > runnable_before);
 
     cleanup_subscriber(&vm, &s, r, e);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -150,11 +150,11 @@ UTEST(slot_change_fires_via_set_local_slot_inplace)
     URealm *r;
     uint32_t instr[1]; UProto proto; UClosure cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { uvm_destroy(&vm); return; }
+    if (!o) { urbi_vm_destroy(&vm); return; }
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
 
@@ -164,7 +164,7 @@ UTEST(slot_change_fires_via_set_local_slot_inplace)
 
     UEvent *e = setup_subscriber(&vm, &r, &s, o, sym, &cl, &proto, instr);
     UASSERT(e != NULL);
-    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
@@ -176,7 +176,7 @@ UTEST(slot_change_fires_via_set_local_slot_inplace)
     UASSERT(vm.strand_runnable_count > runnable_before);
 
     cleanup_subscriber(&vm, &s, r, e);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -190,18 +190,18 @@ UTEST(slot_change_fires_via_set_local_slot_cow)
     URealm *r;
     uint32_t instr[1]; UProto proto; UClosure cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { uvm_destroy(&vm); return; }
+    if (!o) { urbi_vm_destroy(&vm); return; }
 
     /* Use a fresh symbol "z" — no slot installed yet. */
     USymbol *sym = (USymbol *)ustr_intern(&vm, "z", 1);
 
     UEvent *e = setup_subscriber(&vm, &r, &s, o, sym, &cl, &proto, instr);
     UASSERT(e != NULL);
-    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); uvm_destroy(&vm); return; }
+    if (!e) { ustrand_destroy(&s, &vm); urbi_realm_destroy(&vm, r); urbi_vm_destroy(&vm); return; }
 
     uint32_t runnable_before = vm.strand_runnable_count;
 
@@ -213,7 +213,7 @@ UTEST(slot_change_fires_via_set_local_slot_cow)
     UASSERT(vm.strand_runnable_count > runnable_before);
 
     cleanup_subscriber(&vm, &s, r, e);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -223,11 +223,11 @@ UTEST(slot_change_fires_via_set_local_slot_cow)
 UTEST(slot_change_no_fire_when_no_subscriber)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (!o) { uvm_destroy(&vm); return; }
+    if (!o) { urbi_vm_destroy(&vm); return; }
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "w", 1);
     UValue v; v.kind = UVAL_INT; v.v.i = 5;
@@ -243,7 +243,7 @@ UTEST(slot_change_no_fire_when_no_subscriber)
     UASSERT_EQ((int)runnable_before, (int)vm.strand_runnable_count);
     UASSERT_EQ((int)ring_tail_before, (int)vm.deferred_slot_changes_tail);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

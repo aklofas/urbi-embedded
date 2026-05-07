@@ -60,11 +60,11 @@ make_trivial_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
 UTEST(emit_skips_when_bit7_clear)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* No subscriber → bit 7 must be clear at alloc. */
     UASSERT_EQ(0, (int)(((UCell *)o)->gc_byte & UGC_HAS_SLOT_CHANGE_EVENT));
@@ -81,7 +81,7 @@ UTEST(emit_skips_when_bit7_clear)
     UASSERT_EQ((int)vm.deferred_slot_changes_head,
                (int)vm.deferred_slot_changes_tail);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -96,10 +96,10 @@ UTEST(emit_dispatches_when_subscriber_present)
     UProto   proto;
     UClosure body;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    if (r == NULL) { uvm_destroy(&vm); return; }
+    if (r == NULL) { urbi_vm_destroy(&vm); return; }
 
     ustrand_init(&s, &vm);
     s.realm = r;
@@ -109,7 +109,7 @@ UTEST(emit_dispatches_when_subscriber_present)
     if (o == NULL) {
         ustrand_destroy(&s, &vm);
         urbi_realm_destroy(&vm, r);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -122,7 +122,7 @@ UTEST(emit_dispatches_when_subscriber_present)
     if (e == NULL) {
         ustrand_destroy(&s, &vm);
         urbi_realm_destroy(&vm, r);
-        uvm_destroy(&vm);
+        urbi_vm_destroy(&vm);
         return;
     }
 
@@ -148,7 +148,7 @@ UTEST(emit_dispatches_when_subscriber_present)
     }
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -158,16 +158,16 @@ UTEST(emit_dispatches_when_subscriber_present)
 UTEST(emit_defers_when_in_scratch_context)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
-    if (o == NULL) { uvm_destroy(&vm); return; }
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
 
     USymbol *x = (USymbol *)ustr_intern(&vm, "x", 1);
     UEvent *e = urbi_object_get_or_create_change_event(&vm, o, x);
     UASSERT(e != NULL);
-    if (e == NULL) { uvm_destroy(&vm); return; }
+    if (e == NULL) { urbi_vm_destroy(&vm); return; }
 
     uint16_t head_before = vm.deferred_slot_changes_head;
     (void)head_before;
@@ -190,7 +190,7 @@ UTEST(emit_defers_when_in_scratch_context)
     UASSERT_EQ(1, (int)vm.slot_change_reentrancy_warned);
 
     vm.in_watcher_scratch = 0;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

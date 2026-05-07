@@ -76,8 +76,8 @@ make_module_with_one_ic_site(UVM *vm, UModule *m, uint32_t *instrs_out,
 
     /* Bytecode: OP_GETSLOT R[1] = R[0].slot[0]; OP_RET R[0].
      *   A=1 (dst), B=0 (recv_reg), C=0 (ic_index). */
-    instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1u, 0u, 0u);
-    instrs_out[1] = uinstr_enc_abc(OP_RET,     0u, 0u, 0u);
+    instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1U, 0U, 0U);
+    instrs_out[1] = uinstr_enc_abc(OP_RET,     0U, 0U, 0U);
 
     m->instructions = instrs_out;
     m->instr_count  = 2;
@@ -121,7 +121,7 @@ strand_setup_for_getslot(UStrand *s, UVM *vm,
 }
 
 /* Run a single OP_GETSLOT (followed by OP_RET) against `obj` on `vm`.
- * Requires vm->topology_gen to be initialised (non-zero sentinel — see uvm_init).
+ * Requires vm->topology_gen to be initialised (non-zero sentinel — see urbi_vm_init).
  * Returns the number of opcodes consumed by dispatch_loop_until_yield. */
 static uint64_t
 run_one_getslot(UVM *vm, UObject *obj)
@@ -146,7 +146,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     strand_setup_for_getslot(&s, vm, instrs, reg_stack, obj, mi);
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     /* Module IC names are heap-allocated in this helper; umodule_destroy
      * would free instructions (stack here), so only free ic_names manually. */
@@ -167,7 +167,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 UTEST(trace_records_slot_reads_during_install)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -185,7 +185,7 @@ UTEST(trace_records_slot_reads_during_install)
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
     vm.in_watcher_install = 0;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. trace_deduplicates_same_receiver
@@ -195,7 +195,7 @@ UTEST(trace_records_slot_reads_during_install)
 UTEST(trace_deduplicates_same_receiver)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -215,7 +215,7 @@ UTEST(trace_deduplicates_same_receiver)
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
     vm.in_watcher_install = 0;
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. trace_overflow_sets_flag_and_caps
@@ -226,11 +226,11 @@ UTEST(trace_deduplicates_same_receiver)
 UTEST(trace_overflow_sets_flag_and_caps)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     /* Allocate MAX+2 distinct objects. */
-    size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2u;
+    size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2U;
     UObject **objs = (UObject **)malloc(extra * sizeof(UObject *));
     UASSERT(objs != NULL);
     size_t i;
@@ -252,7 +252,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
 
     vm.in_watcher_install = 0;
     free(objs);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 4. trace_disabled_when_flag_clear
@@ -262,7 +262,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
 UTEST(trace_disabled_when_flag_clear)
 {
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     sched_init(&vm, NULL);
 
     UObject *obj = make_object_with_x_slot(&vm);
@@ -276,7 +276,7 @@ UTEST(trace_disabled_when_flag_clear)
 
     UASSERT_EQ(0, (int)vm.trace_read_set_count);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. install_arms_and_resets_trace_fields
@@ -292,7 +292,7 @@ UTEST(install_arms_and_resets_trace_fields)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     /* Pre-condition: dirty values to verify the phase-2 reset. */
@@ -308,7 +308,7 @@ UTEST(install_arms_and_resets_trace_fields)
     UASSERT_EQ(0, (int)vm.trace_overflow);
 
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -374,7 +374,7 @@ UTEST(install_returns_readset_over_when_overflow)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     g_t37_warn_count = 0;
@@ -392,7 +392,7 @@ UTEST(install_returns_readset_over_when_overflow)
 
     vm.test_install_cond_hook = NULL;
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. install_returns_trace_fault_on_cond_throw
@@ -406,7 +406,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
     UVM vm;
     UStrand s;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
 
     g_t37_warn_count = 0;
@@ -423,7 +423,7 @@ UTEST(install_returns_trace_fault_on_cond_throw)
 
     vm.test_install_cond_hook = NULL;
     ustrand_destroy(&s, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

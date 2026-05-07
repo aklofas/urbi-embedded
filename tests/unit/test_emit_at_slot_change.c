@@ -33,7 +33,7 @@ static UEmitError slot_change_compile(const char *src,
                                       UArena     *arena_out,
                                       UVM        *vm_out,
                                       UEmitter   *e_out) {
-    uvm_init(vm_out, NULL, NULL);
+    urbi_vm_init(vm_out, NULL, NULL);
     uarena_init(arena_out, 4096);
 
     ULexer lex;
@@ -56,7 +56,7 @@ static UEmitError slot_change_compile(const char *src,
 static void slot_change_cleanup(UModule *mod, UArena *arena, UVM *vm) {
     umodule_destroy(mod);
     uarena_destroy(arena);
-    uvm_destroy(vm);
+    urbi_vm_destroy(vm);
 }
 
 /* Return true if the root chunk contains opcode `op`. */

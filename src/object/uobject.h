@@ -67,10 +67,10 @@ typedef struct USlotArray {
  * (inline-cache attribute summary) and the per-slot 4-bit nibbles packed
  * into UShape.flags (v1.0 cap of 8 slots in the packed form; T15 spills
  * to a side allocation when a UShape's slot count exceeds 8). */
-#define URBI_SLOT_FLAG_OGET      (1u << 0)   /* slot has a getter installed */
-#define URBI_SLOT_FLAG_OSET      (1u << 1)   /* slot has a setter installed */
-#define URBI_SLOT_FLAG_CONSTANT  (1u << 2)   /* slot value is constant */
-#define URBI_SLOT_FLAG_LOCAL     (1u << 3)   /* slot is on the receiver, not a prototype */
+#define URBI_SLOT_FLAG_OGET      (1U << 0)   /* slot has a getter installed */
+#define URBI_SLOT_FLAG_OSET      (1U << 1)   /* slot has a setter installed */
+#define URBI_SLOT_FLAG_CONSTANT  (1U << 2)   /* slot value is constant */
+#define URBI_SLOT_FLAG_LOCAL     (1U << 3)   /* slot is on the receiver, not a prototype */
 /* bits 4-7 reserved for v1.x */
 
 /* === UObject.flags layout ===
@@ -78,23 +78,14 @@ typedef struct USlotArray {
  * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
  * the atom family (root Object, the eight built-in atoms, plus 9..15 spare);
  * bit 4 is frozen; bit 5 is sandbox-readonly (per Luau prior art); the high
- * bits are spare. */
-typedef enum {
-    URBI_ATOM_OBJECT  = 0,   /* root Object */
-    URBI_ATOM_INTEGER = 1,
-    URBI_ATOM_FLOAT   = 2,
-    URBI_ATOM_STRING  = 3,
-    URBI_ATOM_LIST    = 4,
-    URBI_ATOM_DICT    = 5,
-    URBI_ATOM_TAG     = 6,
-    URBI_ATOM_EVENT   = 7,
-    URBI_ATOM_SYMBOL  = 8
-    /* 9..15 reserved */
-} URBIAtomFamily;
-#define URBI_OBJ_ATOM_MASK         0x0Fu
-#define URBI_OBJ_FLAG_FROZEN       (1u << 4)
-#define URBI_OBJ_FLAG_SANDBOX_RO   (1u << 5)   /* per Luau prior art */
-#define URBI_OBJ_FLAG_IS_PROTOTYPE (1u << 6)   /* T27: set when this object is referenced as another's prototype.
+ * bits are spare.  URBIAtomFamily enum lives in <urbi/object.h> as of
+ * v0.5.5; the internal duplicate (with no `_F` suffix) was retired in
+ * favor of the public form. */
+#include "urbi/object.h"
+#define URBI_OBJ_ATOM_MASK         0x0FU
+#define URBI_OBJ_FLAG_FROZEN       (1U << 4)
+#define URBI_OBJ_FLAG_SANDBOX_RO   (1U << 5)   /* per Luau prior art */
+#define URBI_OBJ_FLAG_IS_PROTOTYPE (1U << 6)   /* T27: set when this object is referenced as another's prototype.
                                                   Monotonic — never cleared.  Drives the conditional topology_gen
                                                   bump in urbi_object_set_local_slot per topology spec §4.1 row 4
                                                   (slot install on a prototype must invalidate IC entries that
@@ -219,7 +210,7 @@ void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
  *
  * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
  *   - empty:  obj->protos == 0
- *   - single: obj->protos == ((p << 1) | 1u)   — bit 0 set, address in high bits
+ *   - single: obj->protos == ((p << 1) | 1U)   — bit 0 set, address in high bits
  *   - heap:   obj->protos == (uintptr_t)up     — bit 0 clear, raw UProtos*
  *
  * UPROTOS_FOREACH dispatches across all three forms and captures
@@ -230,43 +221,43 @@ void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
  *   UObject *p;
  *   UPROTOS_FOREACH(obj, p) { ... visit p ... }
  *
- * Identifier-naming note: the for-loop scope already isolates __upf_ctx_local,
+ * Identifier-naming note: the for-loop scope already isolates upf_ctx_local,
  * so a fixed name is sufficient — no __LINE__ token-paste gymnastics required. */
-struct __upf_ctx {
+struct upf_ctx {
     uintptr_t  raw;       /* copy of obj->protos at iteration start */
     UProtos   *up;        /* non-NULL only in heap case */
     uint32_t   i;         /* 0..up->n in heap; 0/1 in single; unused in empty */
 };
 
-static inline struct __upf_ctx __upf_init(const UObject *obj) {
-    struct __upf_ctx c;
+static inline struct upf_ctx upf_init(const UObject *obj) {
+    struct upf_ctx c;
     c.raw = obj->protos;
     c.up  = NULL;
-    c.i   = 0u;
-    if (c.raw != 0u && (c.raw & 1u) == 0u) {
+    c.i   = 0U;
+    if (c.raw != 0U && (c.raw & 1U) == 0U) {
         c.up = (UProtos *)c.raw;
     }
     return c;
 }
 
-static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
+static inline int upf_next(struct upf_ctx *c, UObject **out) {
     if (c->up != NULL) {
         if (c->i >= c->up->n) return 0;
         *out = c->up->items[c->i++];
         return 1;
     }
-    if ((c->raw & 1u) != 0u) {
-        if (c->i != 0u) return 0;
+    if ((c->raw & 1U) != 0U) {
+        if (c->i != 0U) return 0;
         *out = (UObject *)(c->raw >> 1);
-        c->i = 1u;
+        c->i = 1U;
         return 1;
     }
     return 0;
 }
 
 #define UPROTOS_FOREACH(obj, p_var)                                     \
-    for (struct __upf_ctx __upf_ctx_local = __upf_init((obj));          \
-         __upf_next(&__upf_ctx_local, &(p_var));                        \
+    for (struct upf_ctx upf_ctx_local = upf_init((obj));                \
+         upf_next(&upf_ctx_local, &(p_var));                            \
         )
 
 /* === T12: cycle-safe DFS lookup primitive ===
@@ -314,7 +305,7 @@ void urbi_object_lookup_id_force_wrap(struct UVM *vm);
  *
  * Bumps vm->lookup_id on entry; honours the wrap protocol that
  * urbi_object_lookup uses (force_wrap when the next id would be 0). */
-int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, USymbol *name,
+int urbi_object_resolve_slot(struct UVM *vm, UObject *recv, const USymbol *name,
                              UObject **out_holder, uint32_t *out_index);
 
 /* === T26: install a local slot on a receiver ===
@@ -356,7 +347,7 @@ int urbi_object_set_local_slot(struct UVM *vm, UObject *obj,
  * (the slot may have moved to a different index in the new shape).
  *
  * Returns 0 on success or no-op, -1 on OOM. */
-int urbi_object_remove_slot(struct UVM *vm, UObject *obj, USymbol *name);
+int urbi_object_remove_slot(struct UVM *vm, UObject *obj, const USymbol *name);
 
 /* === T28: install / remove / mutate a slot property ===
  *
@@ -377,18 +368,18 @@ int urbi_object_remove_slot(struct UVM *vm, UObject *obj, USymbol *name);
  *   oset field (no shape transition).  Bumps topology_gen because cached
  *   IC uprops[] pointer is stale (next dispatch must re-fetch). */
 int urbi_object_install_property   (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit,
+                                    const USymbol *name, uint8_t flag_bit,
                                     UValue value);
 int urbi_object_remove_property    (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit);
+                                    const USymbol *name, uint8_t flag_bit);
 int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
-                                    USymbol *name, uint8_t flag_bit,
+                                    const USymbol *name, uint8_t flag_bit,
                                     UValue value);
 
 /* === T36: GC root provider for atom singletons + module instances ===
  *
  * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Registered via
- * urbi_gc_register_root_provider in uvm_init after urbi_object_builtin_types_init.
+ * urbi_gc_register_root_provider in urbi_vm_init after urbi_object_builtin_types_init.
  * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
  * vm->root_shape, and every UModuleInstance reachable from
  * vm->module_instances_head.  Each non-NULL cell is shaded gray directly via
@@ -402,15 +393,15 @@ void urbi_object_register_gc_roots(struct UVM *vm);
 
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
-    if (obj->protos == 0u) return 0u;
-    if ((obj->protos & 1u) != 0u) return 1u;
+    if (obj->protos == 0U) return 0U;
+    if ((obj->protos & 1U) != 0U) return 1U;
     return ((const UProtos *)obj->protos)->n;
 }
 
 static inline UObject *urbi_object_proto_at(const UObject *obj, uint32_t i) {
-    if (obj->protos == 0u) return NULL;
-    if ((obj->protos & 1u) != 0u) {
-        return (i == 0u) ? (UObject *)(obj->protos >> 1) : NULL;
+    if (obj->protos == 0U) return NULL;
+    if ((obj->protos & 1U) != 0U) {
+        return (i == 0U) ? (UObject *)(obj->protos >> 1) : NULL;
     }
     {
         UProtos *up = (UProtos *)obj->protos;

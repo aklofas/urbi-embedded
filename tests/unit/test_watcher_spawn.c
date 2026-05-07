@@ -101,7 +101,7 @@ make_body_watcher(struct UVM *vm, struct URealm *realm,
         NULL,         /* condition */
         body_cl,      /* body */
         NULL,         /* onleave */
-        NULL, 0u);
+        NULL, 0U);
     if (w) {
         w->realm = realm;
     }
@@ -172,7 +172,7 @@ UTEST(watcher_spawn_happy_path)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -200,7 +200,7 @@ UTEST(watcher_spawn_happy_path)
      * (walks strands_head and frees all realm-managed strands). */
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 2. watcher_spawn_oom_strand_alloc
@@ -219,7 +219,7 @@ UTEST(watcher_spawn_oom_strand_alloc)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -263,7 +263,7 @@ UTEST(watcher_spawn_oom_strand_alloc)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 3. watcher_spawn_oom_stack_alloc
@@ -283,7 +283,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -293,7 +293,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
     UWatcher *w = make_body_watcher(&vm, r, &body_cl);
     UASSERT(w != NULL);
 
-    /* Calibrate: count allocs consumed by uvm_init + urbi_realm_create +
+    /* Calibrate: count allocs consumed by urbi_vm_init + urbi_realm_create +
      * urbi_watcher_install_internal.  We'll allow that many allocs plus
      * enough for urbi_strand_create (UStrand + cleanup-stack) but deny
      * the register-stack alloc.
@@ -347,7 +347,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -367,7 +367,7 @@ UTEST(watcher_spawn_rejects_at_sync)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -388,7 +388,7 @@ UTEST(watcher_spawn_rejects_at_sync)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 5. watcher_respawn_skips_eval_assert
@@ -403,7 +403,7 @@ UTEST(watcher_respawn_skips_eval_assert)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -423,7 +423,7 @@ UTEST(watcher_respawn_skips_eval_assert)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 #endif /* URBI_DEBUG */
@@ -445,7 +445,7 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -475,7 +475,7 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* 7. watcher_spawn_drops_silently_under_exhaust_drop
@@ -491,7 +491,7 @@ UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -519,7 +519,7 @@ UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
 
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

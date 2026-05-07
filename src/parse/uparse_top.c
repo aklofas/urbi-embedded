@@ -4,6 +4,10 @@
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stddef.h>
 
 /* Advance the lexer until peek is TOK_PIPE or TOK_EOF.  If we land on
    TOK_PIPE, consume it so the next statement starts clean. */

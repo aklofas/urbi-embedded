@@ -43,9 +43,9 @@ static inline void urbi_zero(void *const dst, const size_t n) {
 }
 
 /* urbi_strlen — freestanding strlen (no <string.h>).
- * Consolidates per-file strlen helpers (rg_strlen in urealm_globals.c,
- * emit_strlen in uemit_internal.h) into a single shared helper.
- * REALM-022. */
+ * Consolidates per-file strlen helpers (rg_strlen in urealm_globals.c
+ * at v0.5.4; emit_strlen in uemit_internal.h at v0.5.5) into a single
+ * shared helper.  REALM-022. */
 static inline size_t urbi_strlen(const char *s) {
     size_t n = 0;
     while (s[n] != '\0') n++;
@@ -60,11 +60,30 @@ static inline size_t urbi_strlen(const char *s) {
 static inline void urbi_strncpy_truncating(char *dst, size_t cap, const char *src) {
     size_t n = 0;
     if (cap == 0) return;
-    while (n + 1u < cap && src[n] != '\0') {
+    while (n + 1U < cap && src[n] != '\0') {
         dst[n] = src[n];
         n++;
     }
     dst[n] = '\0';
+}
+
+/* urbi_memeq: byte-equality for two memory regions of equal length.
+ *
+ * Equivalent to `memcmp(a, b, n) == 0` but with no <string.h> dependency.
+ * Useful in -ffreestanding builds where libc is unavailable.
+ *
+ * Returns 1 if every byte of [a, a+n) equals the corresponding byte of
+ * [b, b+n); 0 otherwise. Behavior is defined for n == 0 (returns 1).
+ *
+ * Pre-existing local equivalents (`lex_memeq`, `module_memcmp`) are
+ * retired in favor of this helper at v0.5.5 (Wave 3). */
+static inline int urbi_memeq(const void *a, const void *b, size_t n) {
+    const unsigned char *pa = (const unsigned char *)a;
+    const unsigned char *pb = (const unsigned char *)b;
+    for (size_t i = 0; i < n; i++) {
+        if (pa[i] != pb[i]) return 0;
+    }
+    return 1;
 }
 
 #endif /* UMACROS_H */

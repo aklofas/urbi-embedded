@@ -67,7 +67,7 @@ install_body_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
         NULL,         /* condition: NULL (no condition closure) */
         body_cl,      /* body */
         NULL,         /* onleave */
-        NULL, 0u);    /* read_set: empty */
+        NULL, 0U);    /* read_set: empty */
     if (w)
         w->realm = realm;
     return w;
@@ -125,7 +125,7 @@ UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -155,7 +155,7 @@ UTEST(watcher_body_completion_clears_back_pointer_before_destroy)
     /* Cleanup. */
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -172,7 +172,7 @@ UTEST(unregister_while_body_alive_defers_drain)
     UProto   proto;
     UClosure body_cl;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
@@ -233,7 +233,7 @@ UTEST(unregister_while_body_alive_defers_drain)
 
     /* Realm destroy: frees all realm-managed strands. */
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================

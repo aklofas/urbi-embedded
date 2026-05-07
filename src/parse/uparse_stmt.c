@@ -4,6 +4,10 @@
 
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
+#include "lex/ulex.h"
+#include "parse/uast.h"
+#include "value/uarena.h"
+#include <stddef.h>
 
 /* --- parse_var_decl: `var x = expr` --- */
 
@@ -51,9 +55,19 @@ UAstNode *parse_var_decl(UParser *p) {
     return node;
 }
 
-/* --- parse_assign: `x = expr` — IDENT already consumed as `name`. --- */
+/* --- parse_assign_after_eq_peek: `x = expr`.
+ *
+ * Caller contract (closes PARSE-012):
+ *   - `name` is the already-consumed IDENT token (passed by value).
+ *   - The next lexer token MUST be TOK_EQ; the caller has already
+ *     peeked and confirmed it.  This function consumes the TOK_EQ
+ *     and parses the RHS.  Calling it without that hidden lookahead
+ *     state would mis-parse the expression.
+ *
+ * The function name encodes that lexer-state precondition explicitly —
+ * earlier name `parse_assign_from_ident` did not. --- */
 
-UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
+UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; consume it. */
     consume(p);
 
@@ -76,7 +90,7 @@ UAstNode *parse_assign_from_ident(UParser *p, UToken name) {
    to parse_inner_tier_from_lhs to avoid duplicating the Pratt loop. */
 static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     if (peek(p).type == TOK_EQ) {
-        return parse_assign_from_ident(p, name);
+        return parse_assign_after_eq_peek(p, name);
     }
     /* Tag-prefix: `mytag: { body }`.  At statement level, `:` has no
      * other meaning (not an infix operator, not a separator), so seeing
@@ -157,7 +171,12 @@ UAstNode *parse_block(UParser *p) {
         /* Statements within a block are separated by `;` or `|`.
          * `|` acts as the REPL-boundary convention inside blocks too.
          * If neither is present, the block ends (next token is `}` or
-         * an expression starting another statement — stop and expect `}`). */
+         * an expression starting another statement — stop and expect `}`).
+         *
+         * Trailing-separator handling: after consuming `;` or `|` we
+         * fall back to the top of the while-loop; the loop guard then
+         * exits on `}` or TOK_EOF, so a trailing `; }` or `| }` is
+         * silently accepted (closes PARSE-010). */
         UToken sep = peek(p);
         if (sep.type == TOK_SEMI) {
             consume(p);
@@ -166,7 +185,6 @@ UAstNode *parse_block(UParser *p) {
         } else {
             break;
         }
-        /* Trailing sep just before `}` — continue loop; it will break on `}`. */
     }
 
     UToken rbrace = peek(p);

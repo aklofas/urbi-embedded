@@ -38,25 +38,16 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 #endif
 
 #ifndef URBI_MAX_ROOT_PROVIDERS
-#  define URBI_MAX_ROOT_PROVIDERS 8u        /* row 10 §5.1; T26 may move to ugc.h */
+#  define URBI_MAX_ROOT_PROVIDERS 8U        /* row 10 §5.1; T26 may move to ugc.h */
 #endif
 
-/* --- errors --- */
-
-typedef enum {
-    UVM_OK = 0,
-    UVM_TYPE_ERROR,
-    UVM_OOM,
-} UVMError;
-
-/* --- pluggable allocator (matches umodule pattern) --- */
-
-typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
-/* Standard realloc semantics:
- *   ptr == NULL && nbytes > 0  : allocate fresh buffer; return non-NULL or NULL on OOM.
- *   ptr != NULL && nbytes == 0 : free ptr; return NULL.
- *   ptr != NULL && nbytes > 0  : reallocate ptr to nbytes (may move); return non-NULL or NULL on OOM.
- *   ptr == NULL && nbytes == 0 : no-op; return NULL. */
+/* --- errors + pluggable allocator ---
+ *
+ * UVMError and UVMAllocFn moved to <urbi/types.h> at v0.5.5 (T17) so
+ * include/urbi/urbi.h can declare urbi_vm_run / urbi_vm_init without
+ * pulling internal headers.  See <urbi/types.h> for the canonical
+ * definitions and the realloc-semantics docstring. */
+#include "urbi/types.h"
 
 /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
@@ -73,7 +64,7 @@ typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
  * URBI_DEFERRED_SLOT_CHANGE_RING_SIZE sets the capacity of the per-VM
  * deferred-emit ring used when a slot-write barrier fires inside a sync
  * slot-change body (re-entrancy).  Default 64; footprint preset → 16.
- * The ring is heap-allocated (one calloc at uvm_init), not GC-managed. */
+ * The ring is heap-allocated (one calloc at urbi_vm_init), not GC-managed. */
 #ifndef URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
 #  define URBI_DEFERRED_SLOT_CHANGE_RING_SIZE  64
 #endif
@@ -139,10 +130,10 @@ typedef struct UVM {
 
     /* === M5 T53/T54 — native proto objects ===
      * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
-     *   Allocated at uvm_init by event_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by event_native_register.  NULL until then.
      *   Walked by urbi_object_register_gc_roots (added to atom-proto walk pass).
      * tag_proto: UObject carrying native getter slots (enter/leave).
-     *   Allocated at uvm_init by tag_native_register.  NULL until then.
+     *   Allocated at urbi_vm_init by tag_native_register.  NULL until then.
      * Both protos have atom_event / atom_tag as their single prototype respectively,
      * mirroring the M4 atom hierarchy. */
     struct UObject *event_proto;
@@ -158,15 +149,15 @@ typedef struct UVM {
     struct UModuleInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
-     * recent uvm_run() call.  Freed at the start of the next uvm_run() or
-     * on uvm_destroy().  Allows callers to inspect *out without immediately
+     * recent urbi_vm_run() call.  Freed at the start of the next urbi_vm_run() or
+     * on urbi_vm_destroy().  Allows callers to inspect *out without immediately
      * freeing it, while preventing leaks across multi-run sessions (REPL). */
     UClosure   *last_return_closure;
 
     /* ================================================================
      * M3 additions (rows 8, 9, 10, 11 of the pre-M3 design bundle)
      * All pointer fields zero-init to NULL; uint fields zero-init to 0.
-     * Non-zero defaults set explicitly in uvm_init().
+     * Non-zero defaults set explicitly in urbi_vm_init().
      * ================================================================ */
 
     /* --- Row 8 + Rule X: 5-flag liveness counters ---
@@ -277,31 +268,36 @@ typedef struct UVM {
     uint16_t  trace_read_set_count;
     struct UCell *trace_read_set[URBI_WATCHER_READSET_MAX];
 
-    /* M3-only test hooks for watcher eval/fire (M5 replaces with real
-     * urbi_run_closure_on_scratch and spawn_body_coroutine).
+    /* Test seams for the watcher fast path.  Originally introduced as M3
+     * stubs and retained at v0.5.5 because all four are still load-bearing
+     * for C-level unit tests; structural removal of these seams is deferred
+     * to Wave 5 (v0.5.7-fixes) per WATCH-023.  Production code paths (real
+     * watcher dispatch via urbi_run_closure_on_scratch) coexist with the
+     * hooks: each consumer checks the hook pointer and falls through to the
+     * real path when NULL.
      *
      * test_watcher_condition_hook: replaces invoke_condition_closure when non-NULL.
      *   Tests install this to feed deterministic condition values for edge/level
-     *   firing tests.  NULL → invoke_condition_closure returns UVAL_NIL.
-     *   See spec §6.4 + §6.8 for the M3 stub rationale.
+     *   firing tests.  NULL → invoke_condition_closure runs the real cond closure.
      *
      * test_watcher_fire_hook: invoked by spawn_body_coroutine when non-NULL.
-     *   Tests install this to observe watcher body fires.  NULL → no-op at M3. */
+     *   Tests install this to observe watcher body fires.  NULL → real body spawn. */
     UValue (*test_watcher_condition_hook)(struct UVM *vm, struct UWatcher *w);
     void   (*test_watcher_fire_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* M3-only test hook for run_watcher_onleave (M5 replaces with real
-     * urbi_run_closure_on_scratch).  NULL → run_watcher_onleave is no-op. */
+    /* Test seam for run_watcher_onleave; same Wave-5 deferral as above.
+     * NULL → run_watcher_onleave runs the real onleave path. */
     void   (*test_watcher_onleave_hook)(struct UVM *vm, struct UWatcher *w);
 
-    /* Install-time cond-eval test hook.
+    /* Install-time cond-eval test seam.
      * When non-NULL, install_watcher_runtime calls this hook instead of the
      * real urbi_run_closure_on_scratch (uwatcher_scratch.c) — used by C-level
      * unit tests that inject specific cond results or simulate cond-throws.
      *   Signature: hook(vm, cond, out_result, out_threw)
      *   - out_result receives the simulated return value.
      *   - *out_threw is set to 1 to simulate a cond-throw (URBI_INSTALL_TRACE_FAULT).
-     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch. */
+     * NULL → install_watcher_runtime calls the real urbi_run_closure_on_scratch.
+     * Same Wave-5 deferral as the three watcher hooks above. */
     void   (*test_install_cond_hook)(struct UVM *vm, struct UClosure *cond,
                                      UValue *out_result, int *out_threw);
 
@@ -315,7 +311,7 @@ typedef struct UVM {
      * slot_change_ring_full_warned: one-shot flag; set when the deferred ring
      *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
      * deferred_slot_changes: heap-allocated ring buffer (cap entries),
-     *   freed in uvm_destroy.  NOT GC-managed — entries live only while
+     *   freed in urbi_vm_destroy.  NOT GC-managed — entries live only while
      *   head != tail; drain logic (R6) clears each slot after firing.
      * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
@@ -347,11 +343,11 @@ typedef struct UVM {
 
 /* Initialize vm. On hosted builds, passing alloc_fn == NULL wires up a
    stdlib-realloc shim internally. On freestanding builds the caller MUST
-   supply alloc_fn; if NULL is passed, uvm_init still returns (cannot fail
-   at M1), but any subsequent uvm_run will NULL-deref in the frame
+   supply alloc_fn; if NULL is passed, urbi_vm_init still returns (cannot fail
+   at M1), but any subsequent urbi_vm_run will NULL-deref in the frame
    allocation path — caller's bug. Zero-initializes last_error and
    last_errmsg. */
-void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
 /* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
@@ -366,14 +362,14 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    error, vm->last_error and vm->last_errmsg are populated and *out is
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
-   them after each uvm_run call without stale state from prior runs. */
-UVMError uvm_run(UVM *vm, const UModule *module, UValue *out);
+   them after each urbi_vm_run call without stale state from prior runs. */
+UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
-void uvm_destroy(UVM *vm);
+void urbi_vm_destroy(UVM *vm);
 
 /* Allocate vm->event_proto + vm->tag_proto and install their native slots.
- * Must be called after uvm_init.  Separated from uvm_init because unit tests
+ * Must be called after urbi_vm_init.  Separated from urbi_vm_init because unit tests
  * that check exact post-init cell / intern counts would break otherwise
  * (same lazy pattern as the atom-family singletons).
  * Safe to call multiple times — re-entrant calls are no-ops if protos already
@@ -391,7 +387,7 @@ const char *uvm_error_name(UVMError code);
 /* Heapify all open upvalue cells whose stack address is >= threshold.
  * Removed cells are appended to *closed_list.
  * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
-void vm_close_upvalues(struct UStrand *s, UValue *threshold,
+void vm_close_upvalues(struct UStrand *s, const UValue *threshold,
                        UUpvalCell **closed_list);
 
 #ifdef __cplusplus

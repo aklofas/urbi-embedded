@@ -6,6 +6,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"    /* URBI_INTERNAL_ASSERT */
+#include "module/umodule.h"
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 
@@ -92,10 +93,10 @@ urbi_register_type(UVM *vm, const UType *type)
 
     uint8_t tag = type->type_tag;
 
-    if (tag == 0u) {
+    if (tag == 0U) {
         /* Auto-assign next free host slot. */
         URBI_INTERNAL_ASSERT(
-            vm->host_type_count < (uint8_t)(UTYPE_HOST_MAX - UTYPE_HOST_BASE + 1u));
+            vm->host_type_count < (uint8_t)(UTYPE_HOST_MAX - UTYPE_HOST_BASE + 1U));
         tag = (uint8_t)(UTYPE_HOST_BASE + vm->host_type_count);
         vm->host_type_count++;
     } else if (tag >= UTYPE_HOST_BASE /* && tag <= UTYPE_HOST_MAX */) {
@@ -106,11 +107,11 @@ urbi_register_type(UVM *vm, const UType *type)
          * M4 NOTE: built-in types (UTYPE_OBJECT/CLOSURE/STRING/etc., tags 1..63)
          * cannot be registered through urbi_register_type — they must write
          * vm->type_table[tag] directly via an internal init function
-         * (e.g., builtin_types_init(vm) called from uvm_init). This guard exists
+         * (e.g., builtin_types_init(vm) called from urbi_vm_init). This guard exists
          * to catch accidental host misuse of those slots.
          * URBI_INTERNAL_ASSERT fires in URBI_DEBUG builds; returns 0 in release. */
         URBI_INTERNAL_ASSERT(0);
-        return 0u;
+        return 0U;
     }
 
     /* Detect collision: explicit-tag must point at a free slot.  Auto-assign

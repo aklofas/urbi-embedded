@@ -7,9 +7,11 @@
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "event/uevent_ring.h"
+#include <stddef.h>
+#include <stdint.h>
 
 UStepResult
-urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
+urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -21,7 +23,7 @@ urbi_step(UVM *vm, uint64_t budget, uint64_t *out_next_wake_us)
     if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
         uevent_ring_drain(vm);
 
-    vm->step_budget_remaining = budget;
+    vm->step_budget_remaining = budget_instructions;
 
     /* Round-robin through all READY strands until the budget is exhausted
      * or the run-queue empties. */

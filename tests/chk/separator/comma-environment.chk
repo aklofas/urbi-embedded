@@ -5,7 +5,7 @@
 #
 # Reason:
 #   ',' (OP_FORK_DETACH) requires the realm-managed scheduler path; not available
-#   in the uvm_run REPL (realm == NULL).  See tests/chk/separator/comma_amp_unsupported.chk.
+#   in the urbi_vm_run REPL (realm == NULL).  See tests/chk/separator/comma_amp_unsupported.chk.
 #   Cross-strand shared-environment semantics (§7.1 shared-frame) are additionally
 #   deferred to M5 design-risks-7 resolution.
 #

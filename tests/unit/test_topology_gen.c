@@ -50,7 +50,7 @@ UTEST(topology_gen_row_1_remove_slot_bumps) {
      * (any IC entry that resolved past this object may now find the slot
      * elsewhere or not at all). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(o != NULL);
@@ -63,13 +63,13 @@ UTEST(topology_gen_row_1_remove_slot_bumps) {
      * and per §4.2 row 2 must NOT bump).  Removing then must increment. */
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_remove_slot(&vm, o, foo), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Slot is gone. */
     UASSERT_EQ((int)urbi_shape_find_slot(o->shape, foo), -1);
     UASSERT_EQ((int)o->shape->count, 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
@@ -83,7 +83,7 @@ UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
      * carrying the slot is in-place; no bump."  The shadowing-via-leaf-add
      * case is already covered by row_4 below. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -98,7 +98,7 @@ UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
     uint64_t pre1 = vm.topology_gen;
     UValue v0 = {.kind = UVAL_INT, .v = {.i = 0}};
     UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, foo, v0), 0);
-    UASSERT(vm.topology_gen == pre1 + 1u);
+    UASSERT(vm.topology_gen == pre1 + 1U);
 
     /* Now overwrite parent.foo in-place.  §4.2 row 1 — must NOT bump. */
     uint64_t pre2 = vm.topology_gen;
@@ -106,14 +106,14 @@ UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
     UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, foo, v9), 0);
     UASSERT(vm.topology_gen == pre2);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(topology_gen_row_4_install_slot_on_prototype_bumps) {
     /* §4.1 row 4: leaf-shape-add (new slot) on a prototype must bump.
      * Pin via: parent.foo = X, where parent has been wired as a prototype. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *parent = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UObject *child  = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
@@ -130,13 +130,13 @@ UTEST(topology_gen_row_4_install_slot_on_prototype_bumps) {
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
     UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
     UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, foo, v1), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Sanity: the slot is on the prototype, not the child. */
     UASSERT_EQ((int)urbi_shape_find_slot(parent->shape, foo), 0);
     UASSERT_EQ((int)urbi_shape_find_slot(child->shape, foo), -1);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T28 tests: property install / remove / in-place mutation surfaces === */
@@ -147,7 +147,7 @@ UTEST(topology_gen_row_5_install_oget_bumps) {
      * stale (the slot now dispatches via getter/setter instead of direct
      * read/write). */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -164,21 +164,21 @@ UTEST(topology_gen_row_5_install_oget_bumps) {
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_install_property(&vm, o, foo,
                                             URBI_SLOT_FLAG_OGET, getter), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* The shape's flag nibble for slot 0 now has OGET set. */
     UASSERT(o->shape->flags & URBI_SLOT_FLAG_OGET);
     UASSERT(o->shape->props_table != NULL);
     UASSERT(o->shape->props_table[0] != NULL);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(topology_gen_row_6_remove_oget_bumps) {
     /* §4.1 row 6: removing an oget bumps for the same reason — the IC's
      * cached flags need to drop the OGET bit. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -195,13 +195,13 @@ UTEST(topology_gen_row_6_remove_oget_bumps) {
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_remove_property(&vm, o, foo,
                                            URBI_SLOT_FLAG_OGET), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* OGET bit now clear; props_table entry dropped to NULL (only flag
      * was OGET so all_clear path fires). */
     UASSERT_EQ((int)(o->shape->flags & URBI_SLOT_FLAG_OGET), 0);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
@@ -209,7 +209,7 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
      * because cached IC uprops[] pointer is the same but the value behind
      * it has changed.  Subsequent dispatches must re-fetch. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -232,13 +232,13 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
     UValue getter2 = {.kind = UVAL_CLOSURE, .v = {.p = (void *)o2}};
     UASSERT_EQ(urbi_object_set_property_value(&vm, o, foo,
                                               URBI_SLOT_FLAG_OGET, getter2), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Same UProps pointer, different oget payload. */
     UASSERT(o->shape->props_table[0] == up_before);
     UASSERT(up_before->oget.v.p == (void *)o2);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T29 audit tests: surfaces that MUST NOT bump === */
@@ -248,7 +248,7 @@ UTEST(topology_gen_row_4_2_1_local_slot_value_write_does_not_bump) {
      * bump.  IC entries cached against this shape stay valid because the
      * slot's storage location and shape are unchanged. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -261,7 +261,7 @@ UTEST(topology_gen_row_4_2_1_local_slot_value_write_does_not_bump) {
     UASSERT_EQ(urbi_object_set_local_slot(&vm, o, foo, v2), 0);
     UASSERT(vm.topology_gen == pre);   /* no bump */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype) {
@@ -269,7 +269,7 @@ UTEST(topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype) {
      * NOT bump.  IC's per-site shape-mismatch check catches the new shape
      * naturally on the next access. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT_EQ((int)(o->flags & URBI_OBJ_FLAG_IS_PROTOTYPE), 0);
@@ -284,7 +284,7 @@ UTEST(topology_gen_row_4_2_2_leaf_shape_add_does_not_bump_when_not_prototype) {
     UASSERT_EQ(urbi_object_set_local_slot(&vm, o, bar, v2), 0);
     UASSERT(vm.topology_gen == pre);   /* both slot adds: no bump */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* === T29 audit tests: IC interaction with topology_gen === */
@@ -296,7 +296,7 @@ UTEST(uic_after_topology_bump_invalidates_entries) {
      * (vm->topology_gen == ic->topology_gen[k]); the second arm is the
      * topology invalidation gate per §3.1. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -324,7 +324,7 @@ UTEST(uic_after_topology_bump_invalidates_entries) {
     UASSERT(cached_gen != vm.topology_gen);
     UASSERT(ic.topology_gen[0] == cached_gen);   /* IC field unchanged */
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 UTEST(uic_stays_hot_after_local_slot_value_write) {
@@ -332,7 +332,7 @@ UTEST(uic_stays_hot_after_local_slot_value_write) {
      * so the cached topology_gen[0] still matches vm->topology_gen.
      * Fast-path stays warm. */
     UVM vm;
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
@@ -353,7 +353,7 @@ UTEST(uic_stays_hot_after_local_slot_value_write) {
     UASSERT(ic.topology_gen[0] == vm.topology_gen);
     UASSERT_EQ((int)o->slots[0].v.i, 99);
 
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 void test_topology_gen_suite(void) {

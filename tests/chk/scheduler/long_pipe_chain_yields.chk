@@ -7,7 +7,7 @@
 #
 # defer-to: M5 (chk runner needs urbi_step driver path)
 #
-# Reason: the chk runner executes under uvm_run which drives the entire REPL
+# Reason: the chk runner executes under urbi_vm_run which drives the entire REPL
 # input as a single transient strand without going through urbi_step or the
 # cooperative scheduler ready queue.  Budget-exhaustion soft yield is only
 # observable via urbi_step (the VM-wide step_budget_remaining > 0 check in

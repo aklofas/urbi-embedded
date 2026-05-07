@@ -20,13 +20,13 @@ int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
 static void setup(UEmitter *e, UModule *m, UArena *a, UVM *v) {
     *m = (UModule){0};
     uarena_init(a, 0);
-    uvm_init(v, NULL, NULL);
+    urbi_vm_init(v, NULL, NULL);
     uemit_init(e, m, a, v, "test");
 }
 static void teardown(UModule *m, UArena *a, UVM *v) {
     uarena_destroy(a);
     umodule_destroy(m);
-    uvm_destroy(v);
+    urbi_vm_destroy(v);
 }
 
 UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
@@ -223,7 +223,7 @@ UTEST(block_close_with_captured_emits_op_close) {
     UASSERT_EQ(pre_count + 1, m.instr_count);
 
     uint32_t last = m.instructions[m.instr_count - 1];
-    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFu));
+    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_function(&e);
     teardown(&m, &a, &v);
@@ -372,7 +372,7 @@ UTEST(loop_back_emit_close_when_captured) {
     UASSERT_EQ(pre + 1, m.instr_count);
 
     uint32_t last = m.instructions[m.instr_count - 1];
-    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFu));
+    UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_block(&e);
     uemit_close_function(&e);

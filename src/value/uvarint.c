@@ -2,12 +2,13 @@
 /* LEB128 varint codec.  Freestanding; see uvarint.h. */
 
 #include "value/uvarint.h"
+#include <stdint.h>
 
 /* --- Encode --- */
 
 size_t uvarint_size_u(uint64_t v) {
-    size_t n = 1u;
-    while (v >= 0x80u) { v >>= 7; n++; }
+    size_t n = 1U;
+    while (v >= 0x80U) { v >>= 7; n++; }
     return n;
 }
 
@@ -21,8 +22,8 @@ size_t uvarint_size_zz(int64_t v) {
 }
 
 size_t uvarint_write_u(uint8_t *buf, size_t off, uint64_t v) {
-    while (v >= 0x80u) {
-        buf[off++] = (uint8_t)((v & 0x7Fu) | 0x80u);
+    while (v >= 0x80U) {
+        buf[off++] = (uint8_t)((v & 0x7FU) | 0x80U);
         v >>= 7;
     }
     buf[off++] = (uint8_t)v;
@@ -48,17 +49,17 @@ UVarintError uvarint_decode_u(const uint8_t *buf, size_t size,
         /* At shift == 63 (the 10th byte) only bit 0 of the 7-bit
            payload fits in uint64_t. Payload values 0x02..0x7F at that
            position would silently overflow; reject them as oversize. */
-        if (shift == 63u && (b & 0x7Eu) != 0u) {
+        if (shift == 63U && (b & 0x7EU) != 0U) {
             return UVARINT_OVERSIZE;
         }
-        result |= (uint64_t)(b & 0x7Fu) << shift;
-        if ((b & 0x80u) == 0u) {
+        result |= (uint64_t)(b & 0x7FU) << shift;
+        if ((b & 0x80U) == 0U) {
             *v = result;
             *consumed = i + 1;
             return UVARINT_OK;
         }
         shift += 7;
-        if (shift > 63u) {
+        if (shift > 63U) {
             return UVARINT_OVERSIZE;
         }
     }
@@ -70,6 +71,6 @@ UVarintError uvarint_decode_zz(const uint8_t *buf, size_t size,
     uint64_t u = 0;
     UVarintError rc = uvarint_decode_u(buf, size, &u, consumed);
     if (rc != UVARINT_OK) return rc;
-    *v = (int64_t)((u >> 1) ^ (uint64_t)(-(int64_t)(u & 1u)));
+    *v = (int64_t)((u >> 1) ^ (uint64_t)(-(int64_t)(u & 1U)));
     return UVARINT_OK;
 }

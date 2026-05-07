@@ -52,7 +52,7 @@ urbi_realm_create(struct UVM *vm)
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */
     r->flags = 0;
 
-    /* reflective: UVAL_NIL at M3; populated at M4+. */
+    /* reflective: UVAL_NIL at M3; populated at M5+. */
     r->reflective.kind = UVAL_NIL;
     r->reflective.v.i  = 0;
 
@@ -106,7 +106,7 @@ fail_tag:
  * Destruction order per spec §4.4:
  *   1. Stop the realm's tag.
  *   2. Free namespace.
- *   3. Drop reflective (becomes unreachable; GC reclaims at M4+).
+ *   3. Drop reflective (becomes unreachable; GC reclaims at M5+).
  *   4. Unlink from VM's realm list.
  *   5. Free the URealm struct itself.
  *
@@ -171,7 +171,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * the realm-root-provider no longer shades it. */
     realm->global_object = NULL;
 
-    /* Step 4: reflective — zero it (GC owns the object if non-nil at M4+). */
+    /* Step 4: reflective — zero it (GC owns the object if non-nil at M5+). */
     realm->reflective.kind = UVAL_NIL;
     realm->reflective.v.i  = 0;
 
@@ -257,8 +257,8 @@ urbi_realm_has_live_work(URealm *realm,
 
 /* === urealm_teardown_all ===
  *
- * Destroy all Realms still alive at uvm_destroy() time.
- * Called from uvm_destroy().  Safe to call on a VM with no Realms. */
+ * Destroy all Realms still alive at urbi_vm_destroy() time.
+ * Called from urbi_vm_destroy().  Safe to call on a VM with no Realms. */
 
 void
 urealm_teardown_all(struct UVM *vm)

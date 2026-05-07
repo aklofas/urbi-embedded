@@ -81,7 +81,7 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
     UProto   proto1, proto2;
     UClosure body1, body2;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
@@ -136,7 +136,7 @@ UTEST(emit_async_spawns_at_event_bodies_in_fifo_order)
     urbi_watcher_unregister_internal(&vm, w2);
     ustrand_destroy(&s, &vm);
     urbi_realm_destroy(&vm, r);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
@@ -151,7 +151,7 @@ UTEST(emit_async_wakes_waiters)
 {
     UVM vm;
 
-    uvm_init(&vm, NULL, NULL);
+    urbi_vm_init(&vm, NULL, NULL);
 
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
@@ -184,7 +184,7 @@ UTEST(emit_async_wakes_waiters)
     UASSERT(waiter.next_event_waiter == NULL);
 
     ustrand_destroy(&waiter, &vm);
-    uvm_destroy(&vm);
+    urbi_vm_destroy(&vm);
 }
 
 /* ===================================================================
