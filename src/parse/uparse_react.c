@@ -5,6 +5,70 @@
 #include "watcher/uwatcher.h"
 #include <stddef.h>
 
+/* --- desugar_postfix_emit: common helper for postfix `e!` desugar.
+ *
+ * Called after the `!` token has been consumed.  bang_tok carries the
+ * source position.  recv is the left-hand-side expression.
+ *
+ * Produces:
+ *   e!        → AST_CALL { callee = AST_MEMBER_GET(recv, "emit"), args=[], count=0 }
+ *   e!(p)     → AST_CALL { callee = AST_MEMBER_GET(recv, "emit"), args=[p], count=1 }
+ *   e!(x,y,z) → PARSE_EMIT_MULTI_ARG_V1 error
+ *
+ * Returns NULL on OOM, AST_ERROR on parse error, or the call node. */
+UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
+    static const char emit_name[] = "emit";
+    UAstNode *member = make_node(p, AST_MEMBER_GET, bang_tok.line, bang_tok.col);
+    if (!member) return NULL;
+    member->u.member.recv       = recv;
+    member->u.member.name_start = emit_name;
+    member->u.member.name_len   = (int)(sizeof emit_name - 1u);
+    member->u.member.value      = NULL;
+    if (peek(p).type == TOK_LPAREN) {
+        consume(p);  /* consume '(' */
+        int arg_count = 0;
+        UAstNode *arg0 = NULL;
+        if (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+            arg0 = parse_inner_tier(p);
+            if (!arg0) return NULL;
+            if (arg0->kind == AST_ERROR) return arg0;
+            arg_count = 1;
+            if (peek(p).type == TOK_COMMA) {
+                UToken comma = consume(p);
+                return make_error(p, PARSE_EMIT_MULTI_ARG_V1,
+                                  kErrorMessages[PARSE_EMIT_MULTI_ARG_V1],
+                                  comma.line, comma.col);
+            }
+        }
+        UToken rp = peek(p);
+        if (rp.type != TOK_RPAREN) {
+            return make_error(p, PARSE_EXPECTED_RPAREN,
+                              kErrorMessages[PARSE_EXPECTED_RPAREN],
+                              rp.line, rp.col);
+        }
+        consume(p);  /* consume ')' */
+        UAstNode **args = NULL;
+        if (arg_count > 0) {
+            args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
+            if (!args) return (UAstNode *)&uparser_oom_sentinel;
+            args[0] = arg0;
+        }
+        UAstNode *call = make_node(p, AST_CALL, bang_tok.line, bang_tok.col);
+        if (!call) return NULL;
+        call->u.call.callee    = member;
+        call->u.call.args      = args;
+        call->u.call.arg_count = arg_count;
+        return call;
+    }
+    /* Bare `e!` — zero-arg emit call. */
+    UAstNode *call = make_node(p, AST_CALL, bang_tok.line, bang_tok.col);
+    if (!call) return NULL;
+    call->u.call.callee    = member;
+    call->u.call.args      = NULL;
+    call->u.call.arg_count = 0;
+    return call;
+}
+
 /* --- parse_tag_prefix: `name : { body }`
    Called from parse_statement_or_expr after consuming `name` and seeing `:`.
    Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name), body = AST_BLOCK.

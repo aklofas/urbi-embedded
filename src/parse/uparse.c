@@ -517,60 +517,12 @@ UAstNode *parse_statement_or_expr(UParser *p) {
                                   kErrorMessages[PARSE_QUESTION_OUTSIDE_AT],
                                   op.line, op.col);
             }
-            /* Postfix `e!` — desugar to `e.emit([arg])`.  Inline mirror of
-             * the equivalent arm in parse_expression. */
+            /* Postfix `e!` — desugar to `e.emit([arg])`. */
             if (op.type == TOK_BANG) {
                 consume(p);
-                static const char emit_name_s[] = "emit";
-                UAstNode *member2 = make_node(p, AST_MEMBER_GET, op.line, op.col);
-                if (!member2) return NULL;
-                member2->u.member.recv       = lhs;
-                member2->u.member.name_start = emit_name_s;
-                member2->u.member.name_len   = (int)(sizeof emit_name_s - 1u);
-                member2->u.member.value      = NULL;
-                if (peek(p).type == TOK_LPAREN) {
-                    consume(p);
-                    int arg_count2 = 0;
-                    UAstNode *arg0_2 = NULL;
-                    if (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
-                        arg0_2 = parse_inner_tier(p);
-                        if (!arg0_2) return NULL;
-                        if (arg0_2->kind == AST_ERROR) return arg0_2;
-                        arg_count2 = 1;
-                        if (peek(p).type == TOK_COMMA) {
-                            UToken comma2 = consume(p);
-                            return make_error(p, PARSE_EMIT_MULTI_ARG_V1,
-                                              kErrorMessages[PARSE_EMIT_MULTI_ARG_V1],
-                                              comma2.line, comma2.col);
-                        }
-                    }
-                    UToken rp2 = peek(p);
-                    if (rp2.type != TOK_RPAREN) {
-                        return make_error(p, PARSE_EXPECTED_RPAREN,
-                                          kErrorMessages[PARSE_EXPECTED_RPAREN],
-                                          rp2.line, rp2.col);
-                    }
-                    consume(p);
-                    UAstNode **args2 = NULL;
-                    if (arg_count2 > 0) {
-                        args2 = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
-                        if (!args2) return (UAstNode *)&uparser_oom_sentinel;
-                        args2[0] = arg0_2;
-                    }
-                    UAstNode *call2 = make_node(p, AST_CALL, op.line, op.col);
-                    if (!call2) return NULL;
-                    call2->u.call.callee    = member2;
-                    call2->u.call.args      = args2;
-                    call2->u.call.arg_count = arg_count2;
-                    lhs = call2;
-                } else {
-                    UAstNode *call2 = make_node(p, AST_CALL, op.line, op.col);
-                    if (!call2) return NULL;
-                    call2->u.call.callee    = member2;
-                    call2->u.call.args      = NULL;
-                    call2->u.call.arg_count = 0;
-                    lhs = call2;
-                }
+                lhs = desugar_postfix_emit(p, lhs, op);
+                if (!lhs) return NULL;
+                if (lhs->kind == AST_ERROR) return lhs;
                 continue;
             }
             int prec = infix_prec(op.type);
@@ -792,57 +744,9 @@ UAstNode *parse_expression(UParser *p, int min_prec) {
            `e!(x,y,z)` → PARSE_EMIT_MULTI_ARG_V1 error */
         if (op.type == TOK_BANG && min_prec <= 7) {
             consume(p);  /* consume '!' */
-            static const char emit_name[] = "emit";
-            UAstNode *member = make_node(p, AST_MEMBER_GET, op.line, op.col);
-            if (!member) return NULL;
-            member->u.member.recv       = left;
-            member->u.member.name_start = emit_name;
-            member->u.member.name_len   = (int)(sizeof emit_name - 1u);
-            member->u.member.value      = NULL;
-            if (peek(p).type == TOK_LPAREN) {
-                consume(p);  /* consume '(' */
-                int arg_count = 0;
-                UAstNode *arg0 = NULL;
-                if (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
-                    arg0 = parse_inner_tier(p);
-                    if (!arg0) return NULL;
-                    if (arg0->kind == AST_ERROR) return arg0;
-                    arg_count = 1;
-                    if (peek(p).type == TOK_COMMA) {
-                        UToken comma = consume(p);
-                        return make_error(p, PARSE_EMIT_MULTI_ARG_V1,
-                                          kErrorMessages[PARSE_EMIT_MULTI_ARG_V1],
-                                          comma.line, comma.col);
-                    }
-                }
-                UToken rp = peek(p);
-                if (rp.type != TOK_RPAREN) {
-                    return make_error(p, PARSE_EXPECTED_RPAREN,
-                                      kErrorMessages[PARSE_EXPECTED_RPAREN],
-                                      rp.line, rp.col);
-                }
-                consume(p);  /* consume ')' */
-                UAstNode **args = NULL;
-                if (arg_count > 0) {
-                    args = (UAstNode **)uarena_alloc(p->arena, sizeof(UAstNode *));
-                    if (!args) return (UAstNode *)&uparser_oom_sentinel;
-                    args[0] = arg0;
-                }
-                UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
-                if (!call) return NULL;
-                call->u.call.callee    = member;
-                call->u.call.args      = args;
-                call->u.call.arg_count = arg_count;
-                left = call;
-            } else {
-                /* Bare `e!` — zero-arg emit call. */
-                UAstNode *call = make_node(p, AST_CALL, op.line, op.col);
-                if (!call) return NULL;
-                call->u.call.callee    = member;
-                call->u.call.args      = NULL;
-                call->u.call.arg_count = 0;
-                left = call;
-            }
+            left = desugar_postfix_emit(p, left, op);
+            if (!left) return NULL;
+            if (left->kind == AST_ERROR) return left;
             continue;
         }
 

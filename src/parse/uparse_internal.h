@@ -65,6 +65,7 @@ UAstNode *parse_throw(UParser *p);
 UAstNode *parse_try(UParser *p);
 
 /* --- Reactive parser (defined in uparse_react.c). --- */
+UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok);
 UAstNode *parse_at(UParser *p);
 UAstNode *parse_whenever(UParser *p);
 UAstNode *parse_waituntil(UParser *p);
