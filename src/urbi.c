@@ -46,6 +46,19 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
     vm->isr_check_fn = fn;
 }
 
+#ifdef URBI_DEBUG
+/* urbi_in_isr: query the registered ISR-context predicate.  Hides
+ * vm->isr_check_fn so URBI_ASSERT_NOT_ISR can be written without a
+ * complete struct UVM in scope.  Closes API-018 / GC-012 structurally. */
+bool
+urbi_in_isr(const struct UVM *vm)
+{
+    return vm != NULL
+        && vm->isr_check_fn != NULL
+        && vm->isr_check_fn();
+}
+#endif
+
 /* urbi_set_callback_watchdog_mode: select WARN or ASSERT on slow callback. */
 void
 urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)

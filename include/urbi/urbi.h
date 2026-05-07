@@ -283,19 +283,29 @@ URBI_NORETURN void urbi_panic(const char *msg);
 #  define URBI_CALLBACK_WARN_US 1000U
 #endif
 
+/* urbi_in_isr: returns true if currently in ISR context, false otherwise.
+ *
+ * Reads vm->isr_check_fn (registered via urbi_set_isr_check_fn); returns
+ * false if no check function has been registered, or if vm is NULL.
+ * URBI_DEBUG-only.
+ *
+ * Hides the internal isr_check_fn field, allowing URBI_ASSERT_NOT_ISR to
+ * be written without requiring a complete struct UVM definition in the
+ * embedder's TU.  Closes the structural half of API-018 / GC-012. */
+#ifdef URBI_DEBUG
+bool urbi_in_isr(const struct UVM *vm);
+#endif
+
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not
  * called from ISR context.  vm must be a pointer to a live UVM.
  *
  * Lives in this public header (rather than src/runtime/umacros.h) because
- * the macro is part of the embedder-facing assertion surface — host C code
- * can sprinkle it across its own bridges if it wants debug-build catches
- * for ISR-unsafe entry points.  The macro touches vm->isr_check_fn, an
- * internal field; this dependency is acknowledged here and tracked for
- * wave-3-naming hygiene cleanup (API-012, API-018, API-027, INC-003,
- * GC-012 in their structural form). */
+ * the macro is part of the embedder-facing assertion surface — host C
+ * code can sprinkle it across its own bridges if it wants debug-build
+ * catches for ISR-unsafe entry points. */
 #ifdef URBI_DEBUG
 #  define URBI_ASSERT_NOT_ISR(vm) \
-       do { if ((vm)->isr_check_fn && (vm)->isr_check_fn()) \
+       do { if (urbi_in_isr(vm)) \
                 urbi_panic("called non-ISR-safe function from ISR context"); \
           } while (0)
 #else
