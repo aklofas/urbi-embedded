@@ -18,9 +18,9 @@ extern "C" {
    v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
    v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds). */
 
-#define URBI_BYTECODE_VERSION_MAJOR  1u
-#define URBI_BYTECODE_VERSION_MINOR  4u
-#define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4u) | URBI_BYTECODE_VERSION_MINOR)
+#define URBI_BYTECODE_VERSION_MAJOR  1U
+#define URBI_BYTECODE_VERSION_MINOR  4U
+#define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
 
@@ -188,11 +188,11 @@ typedef enum {
 
 /* --- instruction decode helpers (static inline; byte-aligned fields) --- */
 
-static inline UOpcode  uinstr_op (uint32_t i) { return (UOpcode)(i & 0xFFu); }
-static inline uint8_t  uinstr_a  (uint32_t i) { return (uint8_t)((i >> 8)  & 0xFFu); }
-static inline uint8_t  uinstr_b  (uint32_t i) { return (uint8_t)((i >> 16) & 0xFFu); }
-static inline uint8_t  uinstr_c  (uint32_t i) { return (uint8_t)((i >> 24) & 0xFFu); }
-static inline uint16_t uinstr_bx (uint32_t i) { return (uint16_t)((i >> 16) & 0xFFFFu); }
+static inline UOpcode  uinstr_op (uint32_t i) { return (UOpcode)(i & 0xFFU); }
+static inline uint8_t  uinstr_a  (uint32_t i) { return (uint8_t)((i >> 8)  & 0xFFU); }
+static inline uint8_t  uinstr_b  (uint32_t i) { return (uint8_t)((i >> 16) & 0xFFU); }
+static inline uint8_t  uinstr_c  (uint32_t i) { return (uint8_t)((i >> 24) & 0xFFU); }
+static inline uint16_t uinstr_bx (uint32_t i) { return (uint16_t)((i >> 16) & 0xFFFFU); }
 
 static inline uint32_t uinstr_enc_abc (UOpcode op, uint8_t a, uint8_t b, uint8_t c) {
     return (uint32_t)op

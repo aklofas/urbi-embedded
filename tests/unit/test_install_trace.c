@@ -76,8 +76,8 @@ make_module_with_one_ic_site(UVM *vm, UModule *m, uint32_t *instrs_out,
 
     /* Bytecode: OP_GETSLOT R[1] = R[0].slot[0]; OP_RET R[0].
      *   A=1 (dst), B=0 (recv_reg), C=0 (ic_index). */
-    instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1u, 0u, 0u);
-    instrs_out[1] = uinstr_enc_abc(OP_RET,     0u, 0u, 0u);
+    instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1U, 0U, 0U);
+    instrs_out[1] = uinstr_enc_abc(OP_RET,     0U, 0U, 0U);
 
     m->instructions = instrs_out;
     m->instr_count  = 2;
@@ -146,7 +146,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     strand_setup_for_getslot(&s, vm, instrs, reg_stack, obj, mi);
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     /* Module IC names are heap-allocated in this helper; umodule_destroy
      * would free instructions (stack here), so only free ic_names manually. */
@@ -230,7 +230,7 @@ UTEST(trace_overflow_sets_flag_and_caps)
     sched_init(&vm, NULL);
 
     /* Allocate MAX+2 distinct objects. */
-    size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2u;
+    size_t extra = (size_t)URBI_WATCHER_READSET_MAX + 2U;
     UObject **objs = (UObject **)malloc(extra * sizeof(UObject *));
     UASSERT(objs != NULL);
     size_t i;

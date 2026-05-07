@@ -28,7 +28,7 @@ UTEST(register_type_auto_assigns_host_slot)
 {
     UType t = {0};
     t.name         = "TestType";
-    t.payload_size = 16u;
+    t.payload_size = 16U;
     /* type_tag == 0: auto-assign */
 
     UVM vm;
@@ -36,7 +36,7 @@ UTEST(register_type_auto_assigns_host_slot)
 
     uint8_t tag = urbi_register_type(&vm, &t);
     UASSERT(tag >= UTYPE_HOST_BASE);
-    UASSERT_EQ(vm.host_type_count, 1u);
+    UASSERT_EQ(vm.host_type_count, 1U);
     UASSERT(vm.type_table[tag] == &t);
 
     uvm_destroy(&vm);
@@ -60,7 +60,7 @@ UTEST(register_two_types_get_distinct_tags)
     UASSERT(tag1 != tag2);
     UASSERT(tag1 >= UTYPE_HOST_BASE);
     UASSERT(tag2 >= UTYPE_HOST_BASE);
-    UASSERT_EQ(vm.host_type_count, 2u);
+    UASSERT_EQ(vm.host_type_count, 2U);
     UASSERT(vm.type_table[tag1] == &t1);
     UASSERT(vm.type_table[tag2] == &t2);
 
@@ -71,16 +71,16 @@ UTEST(register_two_types_get_distinct_tags)
 UTEST(register_type_explicit_host_tag)
 {
     UType t = {0};
-    t.type_tag = UTYPE_HOST_BASE + 5u;
+    t.type_tag = UTYPE_HOST_BASE + 5U;
     t.name     = "ExplicitTag";
 
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &t);
-    UASSERT_EQ(tag, UTYPE_HOST_BASE + 5u);
+    UASSERT_EQ(tag, UTYPE_HOST_BASE + 5U);
     /* host_type_count is not bumped for explicit tags. */
-    UASSERT_EQ(vm.host_type_count, 0u);
+    UASSERT_EQ(vm.host_type_count, 0U);
     UASSERT(vm.type_table[tag] == &t);
 
     uvm_destroy(&vm);
@@ -95,7 +95,7 @@ UTEST(finalizer_runs_on_dead_cell)
     UType fin_type = {0};
     fin_type.name         = "FinType";
     fin_type.flags        = TYPE_HAS_FINALIZER;
-    fin_type.payload_size = 16u;
+    fin_type.payload_size = 16U;
     fin_type.destroy      = test_destroy_fn;
     /* type_tag == 0: auto-assign */
 
@@ -106,7 +106,7 @@ UTEST(finalizer_runs_on_dead_cell)
     UASSERT(tag >= UTYPE_HOST_BASE);
 
     /* Allocate a cell with the registered type tag. */
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, tag);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, tag);
     UASSERT(c != NULL);
 
     /* Manually set the HAS_FINALIZER bit (urbi_gc_alloc doesn't read UType.flags). */
@@ -128,7 +128,7 @@ UTEST(finalizer_null_type_no_crash)
     uvm_init(&vm, NULL, NULL);
 
     /* Use a built-in type tag that has no UType registered (type_table[1] == NULL). */
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     /* Set finalizer bit but leave type_table[UTYPE_OBJECT] == NULL. */
@@ -156,7 +156,7 @@ UTEST(finalizer_not_called_for_pinned_cell)
     uvm_init(&vm, NULL, NULL);
 
     uint8_t tag = urbi_register_type(&vm, &fin_type);
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, tag);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, tag);
     UASSERT(c != NULL);
 
     c->gc_byte |= UGC_HAS_FINALIZER;

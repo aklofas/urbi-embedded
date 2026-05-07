@@ -59,7 +59,7 @@ UTEST(walk_roots_t26_four_providers_at_init)
     uvm_init(&vm, NULL, NULL);
 
     /* uvm_init registers: sched, realm, intern, host_handle. */
-    UASSERT(vm.root_provider_count >= 4u);
+    UASSERT(vm.root_provider_count >= 4U);
 
     uvm_destroy(&vm);
 }
@@ -73,7 +73,7 @@ UTEST(walk_roots_t26_register_increments_count)
 
     uint8_t before = vm.root_provider_count;
     urbi_gc_register_root_provider(&vm, noop_provider);
-    UASSERT_EQ(vm.root_provider_count, (uint8_t)(before + 1u));
+    UASSERT_EQ(vm.root_provider_count, (uint8_t)(before + 1U));
 
     uvm_destroy(&vm);
 }
@@ -134,14 +134,14 @@ UTEST(walk_roots_t26_mark_roots_phase_transition)
     uvm_init(&vm, NULL, NULL);
 
     /* Force a GC cycle start: flip current_white and set to MARK_ROOTS. */
-    vm.current_white ^= 0x01u;
+    vm.current_white ^= 0x01U;
     vm.gc_phase = GC_PHASE_MARK_ROOTS;
 
     /* Allocate some debt so gc_slice will work through the phases. */
     vm.gc_debt = 1024;
 
     /* Run one slice — should cover MARK_ROOTS → MARK_INCREMENTAL transition. */
-    urbi_gc_slice(&vm, 65536u);
+    urbi_gc_slice(&vm, 65536U);
 
     /* After the slice, GC should have advanced past MARK_ROOTS (providers walked). */
     UASSERT(vm.gc_phase != GC_PHASE_MARK_ROOTS);

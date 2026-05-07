@@ -22,7 +22,7 @@ UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
     if (!member) return NULL;
     member->u.member.recv       = recv;
     member->u.member.name_start = emit_name;
-    member->u.member.name_len   = (int)(sizeof emit_name - 1u);
+    member->u.member.name_len   = (int)(sizeof emit_name - 1U);
     member->u.member.value      = NULL;
     if (peek(p).type == TOK_LPAREN) {
         consume(p);  /* consume '(' */

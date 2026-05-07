@@ -129,10 +129,10 @@ UTEST(function_without_global_ref_skips_prologue) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     /* Find the first UProto in the module (the inner function). */
-    UASSERT(c.module.nested_count > 0u);
+    UASSERT(c.module.nested_count > 0U);
     UProto *inner = c.module.nested[0];
     UASSERT(inner != NULL);
-    UASSERT(inner->instr_count > 0u);
+    UASSERT(inner->instr_count > 0U);
 
     /* The inner function's first instruction must NOT be OP_LOAD_REALM_GLOBAL. */
     UASSERT(uinstr_op(inner->instructions[0]) != OP_LOAD_REALM_GLOBAL);

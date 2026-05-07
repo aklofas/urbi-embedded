@@ -125,7 +125,7 @@ drain_watcher_list(struct UVM *vm, UWatcher **head)
         UWatcher *w = *head;
         *head = w->next_active;
         vm->watcher_active_count = vm->watcher_active_count > 0
-                                   ? vm->watcher_active_count - 1u : 0u;
+                                   ? vm->watcher_active_count - 1U : 0U;
         pool_free(vm, w);
     }
 }
@@ -151,18 +151,18 @@ uwatcher_pool_init(struct UVM *vm)
 
     /* Thread freelist: each slot's next_active points to the next slot;
      * the last slot terminates with NULL. */
-    for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE - 1u; i++) {
-        slab[i].next_active = &slab[i + 1u];
+    for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE - 1U; i++) {
+        slab[i].next_active = &slab[i + 1U];
     }
-    slab[URBI_WATCHER_POOL_SIZE - 1u].next_active = NULL;
+    slab[URBI_WATCHER_POOL_SIZE - 1U].next_active = NULL;
 
     /* Wire pool fields on the VM (defensive zero — uvm_init already did this,
      * but explicit is clearer for future readers). */
     vm->watcher_pool_base      = slab;
     vm->watcher_pool_freelist  = &slab[0];
     vm->active_watchers_head   = NULL;
-    vm->watcher_pool_in_use    = 0u;
-    vm->watcher_pool_high_water = 0u;
+    vm->watcher_pool_in_use    = 0U;
+    vm->watcher_pool_high_water = 0U;
 
     return 0;
 }

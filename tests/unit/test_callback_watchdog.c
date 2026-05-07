@@ -24,7 +24,7 @@ UTEST(watchdog_release_build_compiles_out)
 {
     /* Verify that URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN, URBI_WATCHDOG_ASSERT
      * are defined in all builds. */
-    UASSERT(URBI_CALLBACK_WARN_US > 0u);
+    UASSERT(URBI_CALLBACK_WARN_US > 0U);
     UASSERT(URBI_WATCHDOG_WARN  == 0);
     UASSERT(URBI_WATCHDOG_ASSERT == 1);
     UASSERT(1);  /* always passes */
@@ -90,11 +90,11 @@ UTEST(watchdog_fast_callback_no_warn)
     /* Install mock time and log hooks. */
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = mock_log_fn;
-    vm.callback_warn_us = 1000u;
+    vm.callback_warn_us = 1000U;
     vm.callback_watchdog_mode = URBI_WATCHDOG_WARN;
 
-    g_mock_time    = 0u;
-    g_time_step_us = 100u;   /* each call advances by 100 µs — well under 1000 µs */
+    g_mock_time    = 0U;
+    g_time_step_us = 100U;   /* each call advances by 100 µs — well under 1000 µs */
     g_log_called   = 0;
     g_log_level    = -1;
 
@@ -116,11 +116,11 @@ UTEST(watchdog_slow_callback_warns)
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = mock_log_fn;
-    vm.callback_warn_us = 1000u;
+    vm.callback_warn_us = 1000U;
     vm.callback_watchdog_mode = URBI_WATCHDOG_WARN;
 
-    g_mock_time    = 0u;
-    g_time_step_us = 2000u;  /* each clock read advances 2000 µs; elapsed = 2000 > 1000 */
+    g_mock_time    = 0U;
+    g_time_step_us = 2000U;  /* each clock read advances 2000 µs; elapsed = 2000 > 1000 */
     g_log_called   = 0;
     g_log_level    = -1;
 
@@ -142,11 +142,11 @@ UTEST(watchdog_slow_no_log_fn_is_silent)
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = NULL;  /* no log fn installed */
-    vm.callback_warn_us = 500u;
+    vm.callback_warn_us = 500U;
     vm.callback_watchdog_mode = URBI_WATCHDOG_WARN;
 
-    g_mock_time    = 0u;
-    g_time_step_us = 1000u;  /* elapsed = 1000 > 500; but no log_fn → silently drop */
+    g_mock_time    = 0U;
+    g_time_step_us = 1000U;  /* elapsed = 1000 > 500; but no log_fn → silently drop */
 
     /* Must not crash or misbehave. */
     (void)urbi_call_host_with_watchdog(&vm, NULL, slow_host_fn, 0, NULL);
@@ -217,11 +217,11 @@ UTEST(watchdog_assert_mode_fast_no_panic)
 
     vm.host_time_us = mock_time_us;
     vm.host_log_fn  = mock_log_fn;
-    vm.callback_warn_us = 1000u;
+    vm.callback_warn_us = 1000U;
     vm.callback_watchdog_mode = URBI_WATCHDOG_ASSERT;
 
-    g_mock_time    = 0u;
-    g_time_step_us = 50u;   /* well under threshold */
+    g_mock_time    = 0U;
+    g_time_step_us = 50U;   /* well under threshold */
     g_log_called   = 0;
 
     (void)urbi_call_host_with_watchdog(&vm, NULL, fast_host_fn, 0, NULL);

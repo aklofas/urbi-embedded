@@ -69,8 +69,8 @@ static bool module_grow(UModule *c, void **data, size_t *cap,
     if (*cap >= new_cap) return true;
     UModuleAllocFn alloc = module_allocator(c);
     if (alloc == NULL) return false;
-    size_t target = *cap == 0u ? 8u : *cap;
-    while (target < new_cap) target *= 2u;
+    size_t target = *cap == 0U ? 8U : *cap;
+    while (target < new_cap) target *= 2U;
     void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
     if (fresh == NULL) return false;
     *data = fresh;
@@ -154,7 +154,7 @@ typedef struct {
 /* --- Per-section decode helpers (each <40 LOC) --- */
 
 static UModuleLoadError decode_header(MDecCtx *d) {
-    if (d->size < 24u) {
+    if (d->size < 24U) {
         set_errmsg(d->errmsg, d->errcap,
                    "buffer truncated at header (got %zu bytes, need 24)", d->size);
         return ULOAD_TRUNCATED;
@@ -172,7 +172,7 @@ static UModuleLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
                    (unsigned)d->buf[4],
-                   (unsigned)(d->buf[4] >> 4), (unsigned)(d->buf[4] & 0x0Fu),
+                   (unsigned)(d->buf[4] >> 4), (unsigned)(d->buf[4] & 0x0FU),
                    (unsigned)URBI_BYTECODE_VERSION_BYTE,
                    (unsigned)URBI_BYTECODE_VERSION_MAJOR, (unsigned)URBI_BYTECODE_VERSION_MINOR);
         return ULOAD_UNSUPPORTED_VERSION;
@@ -211,7 +211,7 @@ static UModuleLoadError decode_header(MDecCtx *d) {
 }
 
 static UModuleLoadError decode_metadata(MDecCtx *d) {
-    if (d->off + 1u > d->size) {
+    if (d->off + 1U > d->size) {
         set_errmsg(d->errmsg, d->errcap, "truncated at metadata");
         return ULOAD_TRUNCATED;
     }
@@ -230,13 +230,13 @@ static UModuleLoadError decode_metadata(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "truncated at source_name");
         return ULOAD_TRUNCATED;
     }
-    if (src_len > 0u) {
+    if (src_len > 0U) {
         UModuleAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) {
             set_errmsg(d->errmsg, d->errcap, "no allocator for source_name");
             return ULOAD_OOM;
         }
-        char *name = (char *)alloc(NULL, src_len + 1u, d->module->alloc_ud);
+        char *name = (char *)alloc(NULL, src_len + 1U, d->module->alloc_ud);
         if (name == NULL) return ULOAD_OOM;
         module_memcpy(name, d->buf + d->off, src_len);
         name[src_len] = '\0';
@@ -256,18 +256,18 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
         return rc;
     }
     d->off += consumed;
-    if (n_const > (uint64_t)UINT16_MAX + 1u) {
+    if (n_const > (uint64_t)UINT16_MAX + 1U) {
         set_errmsg(d->errmsg, d->errcap, "n_constants too large");
         return ULOAD_CORRUPT;
     }
-    if (n_const > 0u) {
+    if (n_const > 0U) {
         if (!module_grow(d->module, (void **)&d->module->constants, &d->module->const_cap,
                          (size_t)n_const, sizeof(UValue))) {
             return ULOAD_OOM;
         }
     }
     for (uint64_t i = 0; i < n_const; i++) {
-        if (d->off + 1u > d->size) {
+        if (d->off + 1U > d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at constant kind");
             return ULOAD_TRUNCATED;
         }
@@ -289,7 +289,7 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
             d->module->constants[d->module->const_count].v.i = v;
         } else if (kind == (uint8_t)UVAL_FLOAT) {
 #if URBI_FLOAT_TYPE == 8
-            if (d->off + 8u > d->size) {
+            if (d->off + 8U > d->size) {
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
                 return ULOAD_TRUNCATED;
             }
@@ -297,7 +297,7 @@ static UModuleLoadError decode_constants(MDecCtx *d) {
                           d->buf + d->off, 8);
             d->off += 8;
 #else
-            if (d->off + 4u > d->size) {
+            if (d->off + 4U > d->size) {
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_FLOAT");
                 return ULOAD_TRUNCATED;
             }
@@ -329,26 +329,26 @@ static UModuleLoadError decode_instructions(MDecCtx *d) {
     }
     d->off += consumed;
     /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
-    while ((d->off & 3u) != 0u) {
+    while ((d->off & 3U) != 0U) {
         if (d->off >= d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at instruction alignment padding");
             return ULOAD_TRUNCATED;
         }
-        if (d->buf[d->off] != 0u) {
+        if (d->buf[d->off] != 0U) {
             set_errmsg(d->errmsg, d->errcap, "non-zero instruction-align padding at offset %zu",
                        d->off);
             return ULOAD_CORRUPT;
         }
         d->off++;
     }
-    if (n_instr > 0u) {
+    if (n_instr > 0U) {
         if (!module_grow(d->module, (void **)&d->module->instructions, &d->module->instr_cap,
                          (size_t)n_instr, sizeof(uint32_t))) {
             return ULOAD_OOM;
         }
     }
     for (uint64_t i = 0; i < n_instr; i++) {
-        if (d->off + 4u > d->size) {
+        if (d->off + 4U > d->size) {
             set_errmsg(d->errmsg, d->errcap, "truncated at instruction %llu",
                        (unsigned long long)i);
             return ULOAD_TRUNCATED;
@@ -381,7 +381,7 @@ static UModuleLoadError decode_line_table(MDecCtx *d) {
                    (unsigned long long)n_deltas, d->module->instr_count);
         return ULOAD_CORRUPT;
     }
-    if (n_deltas > 0u) {
+    if (n_deltas > 0U) {
         UModuleAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) return ULOAD_OOM;
         d->module->line_deltas = (int8_t *)alloc(NULL, (size_t)n_deltas, d->module->alloc_ud);
@@ -401,7 +401,7 @@ static UModuleLoadError decode_line_table(MDecCtx *d) {
         return rc;
     }
     d->off += consumed;
-    if (n_abs > 0u) {
+    if (n_abs > 0U) {
         if (!module_grow(d->module, (void **)&d->module->abs_lines, &d->module->abs_line_cap,
                          (size_t)n_abs, sizeof(UAbsLine))) {
             return ULOAD_OOM;
@@ -503,8 +503,8 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
         }
     }
     /* Last instruction must be OP_RET. */
-    if (d->module->instr_count > 0u) {
-        uint32_t last = d->module->instructions[d->module->instr_count - 1u];
+    if (d->module->instr_count > 0U) {
+        uint32_t last = d->module->instructions[d->module->instr_count - 1U];
         if (uinstr_op(last) != OP_RET) {
             set_errmsg(d->errmsg, d->errcap, "last instruction is not OP_RET");
             return ULOAD_CORRUPT;

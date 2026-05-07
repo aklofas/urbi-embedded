@@ -381,7 +381,7 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
          * re-increment (counter tracks lifetime cross-strand-affected strands, not
          * pending deposits). Counter is decremented at ustrand_destroy. */
         if (fresh_deposit && !s->cross_strand_stop_pending) {
-            s->cross_strand_stop_pending = 1u;
+            s->cross_strand_stop_pending = 1U;
             vm->host_call_pending_count++;
         }
 

@@ -24,9 +24,9 @@ struct UNamespace;
 
 /* === Realm flag bits (stored in URealm.flags) === */
 
-#define REALM_GLOBAL   0x1u  /* VM's anonymous global Realm — auto-created on first access */
-#define REALM_REPL     0x2u  /* hosts an interactive session */
-#define REALM_MODULE   0x4u  /* owns a loaded library module */
+#define REALM_GLOBAL   0x1U  /* VM's anonymous global Realm — auto-created on first access */
+#define REALM_REPL     0x2U  /* hosts an interactive session */
+#define REALM_MODULE   0x4U  /* owns a loaded library module */
 /* 0x8-0x80 reserved */
 
 /* === URealm struct ===

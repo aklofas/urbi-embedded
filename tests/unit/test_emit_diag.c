@@ -111,7 +111,7 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT_EQ(1, e.diag_count);
     /* Bytecode was emitted (at least one instruction). */
-    UASSERT(module.instr_count >= 1u);
+    UASSERT(module.instr_count >= 1U);
 
     emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);

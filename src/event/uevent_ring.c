@@ -14,7 +14,7 @@ ring_memcpy(void *dst, const void *src, size_t n)
     uint8_t       *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     size_t i;
-    for (i = 0u; i < n; i++) {
+    for (i = 0U; i < n; i++) {
         d[i] = s[i];
     }
 }
@@ -22,9 +22,9 @@ ring_memcpy(void *dst, const void *src, size_t n)
 void
 uevent_ring_init(UEventRing *r)
 {
-    __atomic_store_n(&r->write_idx,      0u, __ATOMIC_RELAXED);
-    __atomic_store_n(&r->read_idx,       0u, __ATOMIC_RELAXED);
-    __atomic_store_n(&r->overflow_count, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&r->write_idx,      0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&r->read_idx,       0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&r->overflow_count, 0U, __ATOMIC_RELAXED);
 }
 
 bool
@@ -50,7 +50,7 @@ urbi_inject_event(struct UVM *vm, uint32_t event_id,
     if (!r) return URBI_ERR_INVALID_ARG;
 
     if (len > (size_t)URBI_EVENT_PAYLOAD_MAX) {
-        __atomic_fetch_add(&r->overflow_count, 1u, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&r->overflow_count, 1U, __ATOMIC_RELAXED);
         return URBI_ERR_EVENT_PAYLOAD_TOO_LARGE;
     }
 
@@ -59,18 +59,18 @@ urbi_inject_event(struct UVM *vm, uint32_t event_id,
        read_idx is written by the consumer — load with ACQUIRE. */
     w      = __atomic_load_n(&r->write_idx, __ATOMIC_RELAXED);
     rd     = __atomic_load_n(&r->read_idx,  __ATOMIC_ACQUIRE);
-    next_w = (w + 1u) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1u);
+    next_w = (w + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);
 
     if (next_w == rd) {
         /* Ring full. */
-        __atomic_fetch_add(&r->overflow_count, 1u, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&r->overflow_count, 1U, __ATOMIC_RELAXED);
         return URBI_ERR_EVENT_RING_FULL;
     }
 
     e = &r->ring[w];
     e->event_id    = event_id;
     e->payload_len = (uint16_t)len;
-    if (payload && len > 0u) {
+    if (payload && len > 0U) {
         ring_memcpy(e->payload, payload, len);
     }
 
@@ -95,7 +95,7 @@ uevent_ring_drain(struct UVM *vm)
     w   = __atomic_load_n(&r->write_idx, __ATOMIC_ACQUIRE);
     rd  = __atomic_load_n(&r->read_idx,  __ATOMIC_RELAXED);
 
-    drained = 0u;
+    drained = 0U;
     while (rd != w && drained < (uint32_t)URBI_EVENT_RING_DEPTH) {
         UEventRingEntry *e = &r->ring[rd];
 
@@ -114,7 +114,7 @@ uevent_ring_drain(struct UVM *vm)
             vm->event_queue_count++;
         }
 
-        rd = (rd + 1u) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1u);
+        rd = (rd + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);
         drained++;
     }
 

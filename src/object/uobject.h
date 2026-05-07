@@ -67,10 +67,10 @@ typedef struct USlotArray {
  * (inline-cache attribute summary) and the per-slot 4-bit nibbles packed
  * into UShape.flags (v1.0 cap of 8 slots in the packed form; T15 spills
  * to a side allocation when a UShape's slot count exceeds 8). */
-#define URBI_SLOT_FLAG_OGET      (1u << 0)   /* slot has a getter installed */
-#define URBI_SLOT_FLAG_OSET      (1u << 1)   /* slot has a setter installed */
-#define URBI_SLOT_FLAG_CONSTANT  (1u << 2)   /* slot value is constant */
-#define URBI_SLOT_FLAG_LOCAL     (1u << 3)   /* slot is on the receiver, not a prototype */
+#define URBI_SLOT_FLAG_OGET      (1U << 0)   /* slot has a getter installed */
+#define URBI_SLOT_FLAG_OSET      (1U << 1)   /* slot has a setter installed */
+#define URBI_SLOT_FLAG_CONSTANT  (1U << 2)   /* slot value is constant */
+#define URBI_SLOT_FLAG_LOCAL     (1U << 3)   /* slot is on the receiver, not a prototype */
 /* bits 4-7 reserved for v1.x */
 
 /* === UObject.flags layout ===
@@ -91,10 +91,10 @@ typedef enum {
     URBI_ATOM_SYMBOL  = 8
     /* 9..15 reserved */
 } URBIAtomFamily;
-#define URBI_OBJ_ATOM_MASK         0x0Fu
-#define URBI_OBJ_FLAG_FROZEN       (1u << 4)
-#define URBI_OBJ_FLAG_SANDBOX_RO   (1u << 5)   /* per Luau prior art */
-#define URBI_OBJ_FLAG_IS_PROTOTYPE (1u << 6)   /* T27: set when this object is referenced as another's prototype.
+#define URBI_OBJ_ATOM_MASK         0x0FU
+#define URBI_OBJ_FLAG_FROZEN       (1U << 4)
+#define URBI_OBJ_FLAG_SANDBOX_RO   (1U << 5)   /* per Luau prior art */
+#define URBI_OBJ_FLAG_IS_PROTOTYPE (1U << 6)   /* T27: set when this object is referenced as another's prototype.
                                                   Monotonic — never cleared.  Drives the conditional topology_gen
                                                   bump in urbi_object_set_local_slot per topology spec §4.1 row 4
                                                   (slot install on a prototype must invalidate IC entries that
@@ -219,7 +219,7 @@ void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
  *
  * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
  *   - empty:  obj->protos == 0
- *   - single: obj->protos == ((p << 1) | 1u)   — bit 0 set, address in high bits
+ *   - single: obj->protos == ((p << 1) | 1U)   — bit 0 set, address in high bits
  *   - heap:   obj->protos == (uintptr_t)up     — bit 0 clear, raw UProtos*
  *
  * UPROTOS_FOREACH dispatches across all three forms and captures
@@ -242,8 +242,8 @@ static inline struct __upf_ctx __upf_init(const UObject *obj) {
     struct __upf_ctx c;
     c.raw = obj->protos;
     c.up  = NULL;
-    c.i   = 0u;
-    if (c.raw != 0u && (c.raw & 1u) == 0u) {
+    c.i   = 0U;
+    if (c.raw != 0U && (c.raw & 1U) == 0U) {
         c.up = (UProtos *)c.raw;
     }
     return c;
@@ -255,10 +255,10 @@ static inline int __upf_next(struct __upf_ctx *c, UObject **out) {
         *out = c->up->items[c->i++];
         return 1;
     }
-    if ((c->raw & 1u) != 0u) {
-        if (c->i != 0u) return 0;
+    if ((c->raw & 1U) != 0U) {
+        if (c->i != 0U) return 0;
         *out = (UObject *)(c->raw >> 1);
-        c->i = 1u;
+        c->i = 1U;
         return 1;
     }
     return 0;
@@ -402,15 +402,15 @@ void urbi_object_register_gc_roots(struct UVM *vm);
 
 /* Convenience inlines — count + indexed access across all three forms. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
-    if (obj->protos == 0u) return 0u;
-    if ((obj->protos & 1u) != 0u) return 1u;
+    if (obj->protos == 0U) return 0U;
+    if ((obj->protos & 1U) != 0U) return 1U;
     return ((const UProtos *)obj->protos)->n;
 }
 
 static inline UObject *urbi_object_proto_at(const UObject *obj, uint32_t i) {
-    if (obj->protos == 0u) return NULL;
-    if ((obj->protos & 1u) != 0u) {
-        return (i == 0u) ? (UObject *)(obj->protos >> 1) : NULL;
+    if (obj->protos == 0U) return NULL;
+    if ((obj->protos & 1U) != 0U) {
+        return (i == 0U) ? (UObject *)(obj->protos >> 1) : NULL;
     }
     {
         UProtos *up = (UProtos *)obj->protos;

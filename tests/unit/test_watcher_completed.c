@@ -60,7 +60,7 @@ test_make_dummy_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
         NULL,         /* condition */
         body_cl,      /* body */
         NULL,         /* onleave */
-        NULL, 0u);
+        NULL, 0U);
     if (w)
         w->realm = realm;
     return w;
@@ -187,7 +187,7 @@ UTEST(watcher_completed_respawns_when_pending_refire)
     /* It must be a different strand from the completed one. */
     UASSERT(w->body_strand != s);
     /* PENDING_REFIRE must be cleared. */
-    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0u);
+    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0U);
     /* Back-pointer on the old strand must be NULL. */
     UASSERT(s->watcher_body_owner == NULL);
 
@@ -228,7 +228,7 @@ UTEST(watcher_completed_suppresses_refire_under_pending_unregister)
     /* No respawn — body_strand must stay NULL. */
     UASSERT(w->body_strand == NULL);
     /* PENDING_REFIRE must be cleared. */
-    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0u);
+    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0U);
     /* Back-pointer on old strand must be NULL. */
     UASSERT(s->watcher_body_owner == NULL);
 
@@ -275,7 +275,7 @@ UTEST(watcher_completed_logs_on_uncaught_throw)
         int found = 0;
         /* Simple substring check without <string.h> strstr dependency. */
         const char *needle = "uncaught throw";
-        size_t nlen = 14u; /* strlen("uncaught throw") */
+        size_t nlen = 14U; /* strlen("uncaught throw") */
         while (*p) {
             size_t i;
             for (i = 0; i < nlen; i++) {

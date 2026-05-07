@@ -249,7 +249,7 @@ UTEST(fork_detach_quiescent_count_zero)
 
     int rc = fork_run_to_quiescent(&vm, realm, &module, NULL);
     UASSERT_EQ(rc, 1);
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     umodule_destroy(&module);
     urbi_realm_destroy(&vm, realm);

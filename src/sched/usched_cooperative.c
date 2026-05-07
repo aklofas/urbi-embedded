@@ -231,7 +231,7 @@ sched_strand_account_destroy(UVM *vm, UStrand *s)
     if (s->cross_strand_stop_pending != 0) {
         if (vm->host_call_pending_count > 0)
             vm->host_call_pending_count--;
-        s->cross_strand_stop_pending = 0u;
+        s->cross_strand_stop_pending = 0U;
     }
 }
 

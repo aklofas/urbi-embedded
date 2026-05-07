@@ -87,7 +87,7 @@ static uint32_t enc_call(uint8_t a, uint8_t b) {
 /* Encode OP_PUSH_TAG A Bx — stubs (T11 wired; T29/T30 for real runtime).
    A[7:4]=flags nibble, A[3:0]=tag_reg; Bx=onleave_pc. */
 static uint32_t enc_push_tag(uint8_t flags_nibble, uint8_t tag_reg, uint16_t onleave_pc) {
-    uint8_t a = (uint8_t)((flags_nibble << 4) | (tag_reg & 0x0Fu));
+    uint8_t a = (uint8_t)((flags_nibble << 4) | (tag_reg & 0x0FU));
     return uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc);
 }
 
@@ -245,13 +245,13 @@ UTEST(dispatch_loop_exits_on_step_budget_exhaustion) {
 
     /* Give a large per-strand budget so instruction_budget_remaining doesn't
        cause a yield; use a tiny VM-wide step budget = 1. */
-    s.instruction_budget_remaining = 1000u;
+    s.instruction_budget_remaining = 1000U;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 1u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 1U);
 
     /* strand stays RUNNING (budget exhausted from VM's perspective) */
     UASSERT_EQ((int)USTRAND_STATE_RUNNING, (int)s.state);
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -280,15 +280,15 @@ UTEST(dispatch_loop_instruction_budget_decrements) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 3u;  /* will soft-yield after 3 safepoints */
+    s.instruction_budget_remaining = 3U;  /* will soft-yield after 3 safepoints */
 
     /* Give a very large VM step budget so that never triggers. */
-    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 100000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, /*step_budget*/ 100000U);
 
     /* Strand should be READY (soft-yield due to budget exhaustion). */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
-    UASSERT(consumed >= 3u);
-    UASSERT_EQ(s.instruction_budget_remaining, 0u);
+    UASSERT(consumed >= 3U);
+    UASSERT_EQ(s.instruction_budget_remaining, 0U);
 
     /* Drain ready queue. */
     if (vm.ready_head == &s) {
@@ -326,16 +326,16 @@ UTEST(dispatch_loop_forward_jump_no_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 2u;  /* only 2 budget; forward jump uses 0 */
+    s.instruction_budget_remaining = 2U;  /* only 2 budget; forward jump uses 0 */
 
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand reached DEAD via RET — no yield was triggered. */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -369,9 +369,9 @@ UTEST(dispatch_loop_multiple_yields) {
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
 
     /* First dispatch: should yield. */
-    uint64_t c1 = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t c1 = dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
-    UASSERT(c1 >= 1u);
+    UASSERT(c1 >= 1U);
 
     /* Simulate scheduler dequeuing and re-dispatching. */
     s.state = USTRAND_STATE_RUNNING;
@@ -382,9 +382,9 @@ UTEST(dispatch_loop_multiple_yields) {
     }
 
     /* Second dispatch: should yield again. */
-    uint64_t c2 = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t c2 = dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
-    UASSERT(c2 >= 1u);
+    UASSERT(c2 >= 1U);
 
     /* Drain ready queue again. */
     s.state = USTRAND_STATE_RUNNING;
@@ -397,9 +397,9 @@ UTEST(dispatch_loop_multiple_yields) {
     /* Third dispatch: RET → DEAD. */
     UValue retval = {0};
     s.out_slot = &retval;
-    uint64_t c3 = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t c3 = dispatch_loop_until_yield(&s, 10000U);
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
-    UASSERT(c3 >= 1u);
+    UASSERT(c3 >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -413,7 +413,7 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     /* Program: TRY_BEGIN(HAS_CATCH, handler_pc=5); LOADNIL R0; TRY_END; RET.
        No throw: TRY_END pops the entry normally; RET succeeds. */
     static uint32_t instrs[4];
-    instrs[0] = enc_try_begin(FLAG_HAS_CATCH, 5u); /* handler at pc=5 (beyond prog) */
+    instrs[0] = enc_try_begin(FLAG_HAS_CATCH, 5U); /* handler at pc=5 (beyond prog) */
     instrs[1] = enc_loadnil(0);
     instrs[2] = enc_try_end();
     instrs[3] = enc_ret();
@@ -434,12 +434,12 @@ UTEST(dispatch_loop_try_begin_end_normal_path) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* steps_consumed only counts safepoint-firing instrs (RET, CALL, backward JMP, YIELD).
        TRY_BEGIN/LOADNIL/TRY_END hit no safepoint; only the final top-level RET counts. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
     /* cleanup_depth should be back to 0 after TRY_END. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
@@ -461,7 +461,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
        The throw unwinds, the catch handler at pc=3 runs. */
 
     static uint32_t instrs[5];
-    instrs[0] = enc_try_begin(FLAG_HAS_CATCH, 3u);
+    instrs[0] = enc_try_begin(FLAG_HAS_CATCH, 3U);
     instrs[1] = enc_throw(0);          /* throw R[0] */
     instrs[2] = enc_try_end();         /* not reached */
     instrs[3] = enc_load_catch(1);     /* R[1] := catch_value */
@@ -482,7 +482,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     static UModule fake_mod;
     memset(&fake_mod, 0, sizeof(fake_mod));
     fake_mod.instructions = instrs;
-    fake_mod.instr_count  = 5u;
+    fake_mod.instr_count  = 5U;
     fake_mod.constants    = no_consts;
 
     UStrand s;
@@ -492,7 +492,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     /* Give sufficient budget so the safepoint after THROW doesn't soft-yield
        before the catch handler can run; OP_THROW → safepoint → urbi_unwind
        → catch absorbed → dispatch continues from handler. */
-    s.instruction_budget_remaining = 100u;
+    s.instruction_budget_remaining = 100U;
 
     /* Pre-set R[0] to an integer value (42) that will be thrown. */
     reg_stack[0].kind  = (uint8_t)UVAL_INT;
@@ -501,14 +501,14 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand should reach DEAD (handler ran; RET at top frame). */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* Only the top-level RET fires a safepoint step; THROW goes to safepoint
        without incrementing steps_consumed; urbi_unwind() then redirects pc
        to the handler without a new steps_consumed++ either. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
     /* Return value is the caught exception (42). */
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)retval.v.i, 42LL);
@@ -545,11 +545,11 @@ UTEST(dispatch_loop_loadk_and_ret) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* LOADK hits no safepoint; only the final top-level RET counts. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)retval.v.i, 77LL);
 
@@ -586,7 +586,7 @@ UTEST(dispatch_loop_move_and_add) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
@@ -606,7 +606,7 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
        R[0] = nil (tag register).  No tag runtime at M3 — these are stubs
        that push/pop cleanup entries without semantic effect. */
     static uint32_t instrs[4];
-    instrs[0] = enc_push_tag(0, 0, 0u);
+    instrs[0] = enc_push_tag(0, 0, 0U);
     instrs[1] = enc_loadnil(1);
     instrs[2] = enc_pop_tag(0);
     instrs[3] = enc_ret();
@@ -627,11 +627,11 @@ UTEST(dispatch_loop_push_pop_tag_noop) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     /* PUSH_TAG/LOADNIL/POP_TAG fire no safepoints; only the top-level RET counts. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
     /* cleanup_depth must be 0 after POP_TAG. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
@@ -660,17 +660,17 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     static UProto callee_proto;
     memset(&callee_proto, 0, sizeof(callee_proto));
     callee_proto.instructions = callee_instrs;
-    callee_proto.instr_count  = 2u;
+    callee_proto.instr_count  = 2U;
     callee_proto.constants    = callee_consts;
-    callee_proto.const_count  = 1u;
-    callee_proto.max_reg      = 0u;
-    callee_proto.nparams      = 0u;
-    callee_proto.nupvals      = 0u;
+    callee_proto.const_count  = 1U;
+    callee_proto.max_reg      = 0U;
+    callee_proto.nparams      = 0U;
+    callee_proto.nupvals      = 0U;
 
     static UClosure callee_closure;
     memset(&callee_closure, 0, sizeof(callee_closure));
     callee_closure.proto   = &callee_proto;
-    callee_closure.nupvals = 0u;
+    callee_closure.nupvals = 0U;
 
     /* Caller instructions:
        [0] (placeholder): R[0] is pre-set to callee closure value
@@ -698,7 +698,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     static UModule fake_caller_mod;
     memset(&fake_caller_mod, 0, sizeof(fake_caller_mod));
     fake_caller_mod.instructions = caller_instrs;
-    fake_caller_mod.instr_count  = 2u;
+    fake_caller_mod.instr_count  = 2U;
     fake_caller_mod.constants    = no_consts;
 
     UStrand s;
@@ -706,17 +706,17 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     strand_setup_cleanup(&s, &vm);
     s.module = &fake_caller_mod;
     /* Need non-zero budget so safepoints at CALL and non-top RET don't soft-yield. */
-    s.instruction_budget_remaining = 100u;
+    s.instruction_budget_remaining = 100U;
 
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)retval.v.i, 99LL);
-    UASSERT(consumed >= 3u);
+    UASSERT(consumed >= 3U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -753,12 +753,12 @@ UTEST(dispatch_loop_loadnil_then_move) {
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
     UASSERT_EQ((int)retval.kind, (int)UVAL_NIL);
     /* LOADNIL and MOVE fire no safepoints; only the top-level RET counts. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -791,16 +791,16 @@ UTEST(dispatch_loop_gc_pending_flag_triggers_gc_slice_at_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 100u;
+    s.instruction_budget_remaining = 100U;
 
     /* Set gc_pending flag; it will be tested at the backward-branch safepoint. */
     vm.gc_pending = 1;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 100000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 100000U);
 
     /* Dispatch should complete without crash. Strand may be RUNNING or READY
        depending on budget exhaustion; we verify the dispatch path was exercised. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -833,16 +833,16 @@ UTEST(dispatch_loop_watcher_dirty_count_triggers_watcher_eval_at_safepoint) {
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
-    s.instruction_budget_remaining = 100u;
+    s.instruction_budget_remaining = 100U;
 
     /* Set watcher_dirty_count; it will be tested at the backward-branch safepoint. */
     vm.watcher_dirty_count = 1;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 100000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 100000U);
 
     /* Dispatch should complete without crash. Strand may be RUNNING or READY
        depending on budget exhaustion; we verify the dispatch path was exercised. */
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);

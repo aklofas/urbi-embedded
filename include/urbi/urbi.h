@@ -299,7 +299,7 @@ URBI_NORETURN void urbi_panic(const char *msg);
 /* URBI_CALLBACK_WARN_US: default watchdog threshold (microseconds).
  * Overridable at compile time: -DURBI_CALLBACK_WARN_US=2000 */
 #ifndef URBI_CALLBACK_WARN_US
-#  define URBI_CALLBACK_WARN_US 1000u
+#  define URBI_CALLBACK_WARN_US 1000U
 #endif
 
 /* URBI_ASSERT_NOT_ISR: in URBI_DEBUG builds, asserts the function is not

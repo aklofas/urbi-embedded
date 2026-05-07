@@ -29,12 +29,12 @@
 #define URBI_GC_INCREMENTAL_BARRIER  0
 
 /* === gc_byte layout — no color tracking under NONE === */
-#define UGC_COLOR_MASK           0x00u
-#define UGC_HAS_FINALIZER        0x00u
-#define UGC_IS_PINNED            0x00u
-#define UGC_IS_FIXED             0x00u
-#define UGC_HAS_WATCHER_OBSERVER 0x00u
-#define UGC_HAS_SLOT_CHANGE_EVENT 0x00u
+#define UGC_COLOR_MASK           0x00U
+#define UGC_HAS_FINALIZER        0x00U
+#define UGC_IS_PINNED            0x00U
+#define UGC_IS_FIXED             0x00U
+#define UGC_HAS_WATCHER_OBSERVER 0x00U
+#define UGC_HAS_SLOT_CHANGE_EVENT 0x00U
 
 /* === Phase constant — NONE is permanently IDLE (no cycles) === */
 #define GC_PHASE_IDLE            0

@@ -3,7 +3,7 @@
  *
  * Checks:
  *   - watcher_body_owner field is present and pointer-sized (spec #1 §4.2).
- *   - USTRAND_WAIT_WATCHER == 0x32u (spec #2 §3).
+ *   - USTRAND_WAIT_WATCHER == 0x32U (spec #2 §3).
  *   - sizeof(UStrand) >= 264 (M3 256 B baseline + 8 B new pointer field). */
 
 #include "utest.h"
@@ -15,9 +15,9 @@ static void ustrand_spec1_field(void)
     /* Compile-time field presence check: assignment must compile. */
     s.watcher_body_owner = NULL;   /* spec #1 §4.2 */
     /* spec #2 §3 — waituntil(cond) parked state */
-    UASSERT_EQ(0x32u, USTRAND_WAIT_WATCHER);
+    UASSERT_EQ(0x32U, USTRAND_WAIT_WATCHER);
     /* M3 baseline was 256 B; adding one pointer field grows it by 8 B. */
-    UASSERT(sizeof(UStrand) >= 264u);
+    UASSERT(sizeof(UStrand) >= 264U);
     (void)s;
 }
 
@@ -27,8 +27,8 @@ static void ustrand_spec3_fields(void)
     s.next_event_waiter = NULL;
     s.wait_event_target = NULL;
     s.last_event_payload = (UValue){0};
-    UASSERT_EQ(0x33u, USTRAND_WAIT_EVENT);
-    UASSERT(sizeof(UStrand) >= 288u);  /* spec #3 §3.3 default */
+    UASSERT_EQ(0x33U, USTRAND_WAIT_EVENT);
+    UASSERT(sizeof(UStrand) >= 288U);  /* spec #3 §3.3 default */
     (void)s;
 }
 

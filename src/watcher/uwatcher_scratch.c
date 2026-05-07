@@ -70,7 +70,7 @@ run_on_scratch_core(struct UVM       *vm,
     urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_transient_strand = 1u;  /* guards reject OP_FORK_DETACH/JOIN */
+    strand.is_transient_strand = 1U;  /* guards reject OP_FORK_DETACH/JOIN */
 
     /* Arm from the closure: allocates register stack, wires pc / pc_base /
      * cur_consts / frame_count from closure->proto.  Returns -1 on OOM. */

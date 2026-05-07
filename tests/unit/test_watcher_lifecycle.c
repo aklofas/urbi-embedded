@@ -67,7 +67,7 @@ install_body_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
         NULL,         /* condition: NULL (no condition closure) */
         body_cl,      /* body */
         NULL,         /* onleave */
-        NULL, 0u);    /* read_set: empty */
+        NULL, 0U);    /* read_set: empty */
     if (w)
         w->realm = realm;
     return w;

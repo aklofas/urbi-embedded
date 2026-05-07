@@ -44,7 +44,7 @@ int main(void)
     int  slices   = 0;
 
     for (int i = 0; i < ALLOC_COUNT; i++) {
-        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 64U, UTYPE_OBJECT);
         if (c == NULL) {
             fprintf(stderr, "FAIL: urbi_gc_alloc returned NULL at i=%d\n", i);
             uvm_destroy(&vm);

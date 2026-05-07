@@ -22,7 +22,7 @@ static bool dis_printf(char *buf, const size_t cap, size_t *off,
     va_end(ap);
     if (n < 0) return false;
     if ((size_t)n >= cap - *off) {
-        *off = cap - 1u;
+        *off = cap - 1U;
         buf[*off] = '\0';
         return false;
     }
@@ -72,8 +72,8 @@ static bool fmt_closure(char *buf, size_t cap, size_t *off,
         const UProto *child = module->nested[bx];
         uint8_t u;
         for (u = 0; u < child->nupvals &&
-             (*ip + 1u + (size_t)u) < module->instr_count; u++) {
-            uint32_t pi = module->instructions[*ip + 1u + u];
+             (*ip + 1U + (size_t)u) < module->instr_count; u++) {
+            uint32_t pi = module->instructions[*ip + 1U + u];
             ok = dis_printf(buf, cap, off,
                 "    upval[%u]: %s parent_idx=%u\n",
                 (unsigned)u,

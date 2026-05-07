@@ -70,7 +70,7 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
 {
     if (vm->deferred_slot_changes == NULL) return;   /* OOM at init */
 
-    uint16_t next = (uint16_t)((vm->deferred_slot_changes_tail + 1u)
+    uint16_t next = (uint16_t)((vm->deferred_slot_changes_tail + 1U)
                                 % vm->deferred_slot_changes_cap);
     if (next == vm->deferred_slot_changes_head) {
         /* Ring full — drop and one-shot warn. */
@@ -111,7 +111,7 @@ urbi_drain_deferred_slot_changes(UVM *vm)
         }
 
         vm->deferred_slot_changes_head =
-            (uint16_t)((vm->deferred_slot_changes_head + 1u)
+            (uint16_t)((vm->deferred_slot_changes_head + 1U)
                         % vm->deferred_slot_changes_cap);
 
         /* Walk chain and dispatch.  No scratch context at this point so

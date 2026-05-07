@@ -968,37 +968,37 @@ UTEST(vm_create_zero_init_m3_fields) {
     UVM vm;
     uvm_init(&vm, NULL, NULL);
     /* 5-flag liveness counters (Rule X). */
-    UASSERT_EQ(0u, vm.strand_runnable_count);
-    UASSERT_EQ(0u, vm.strand_suspended_count);
-    UASSERT_EQ(0u, vm.watcher_active_count);
-    UASSERT_EQ(0u, vm.event_queue_count);
-    UASSERT_EQ(0u, vm.wakeup_pending_count);
-    UASSERT_EQ(0u, vm.host_call_pending_count);
+    UASSERT_EQ(0U, vm.strand_runnable_count);
+    UASSERT_EQ(0U, vm.strand_suspended_count);
+    UASSERT_EQ(0U, vm.watcher_active_count);
+    UASSERT_EQ(0U, vm.event_queue_count);
+    UASSERT_EQ(0U, vm.wakeup_pending_count);
+    UASSERT_EQ(0U, vm.host_call_pending_count);
     /* Scheduler queues. */
     UASSERT(vm.ready_head    == NULL);
     UASSERT(vm.ready_tail    == NULL);
     UASSERT(vm.sleep_q_head  == NULL);
     /* Dispatcher hooks. */
-    UASSERT_EQ(0u, vm.gc_pending);
-    UASSERT_EQ(0u, vm.watcher_dirty_count);
-    UASSERT_EQ(0u, vm.flag_preemption);
+    UASSERT_EQ(0U, vm.gc_pending);
+    UASSERT_EQ(0U, vm.watcher_dirty_count);
+    UASSERT_EQ(0U, vm.flag_preemption);
     /* ISR ring: T18 allocates it at uvm_init time. */
     UASSERT(vm.event_ring != NULL);
     /* GC root provider registry — 6 providers registered at uvm_init:
      * sched_walk_roots, realm_list_walk_roots, intern_table_walk_roots,
      * host_handle_walk_roots, watcher_table_walk_roots, plus T36's
      * m4_object_roots_walker (atom singletons + root_shape + module_instances). */
-    UASSERT_EQ(6u, vm.root_provider_count);
+    UASSERT_EQ(6U, vm.root_provider_count);
     /* Realm / fatal-strand pointers. */
     UASSERT(vm.realms_head  == NULL);
     UASSERT(vm.global_realm == NULL);
     UASSERT(vm.fatal_strand == NULL);
     /* Handle table (allocated at T27). */
     UASSERT(vm.handle_table == NULL);
-    UASSERT_EQ(0u, vm.handle_table_cap);
+    UASSERT_EQ(0U, vm.handle_table_cap);
     /* Watcher pool (allocated at T32 — pool_base is non-NULL post-init). */
     UASSERT(vm.watcher_pool_base != NULL);
-    UASSERT_EQ(0u, vm.watcher_pool_in_use);
+    UASSERT_EQ(0U, vm.watcher_pool_in_use);
     /* Host time hook must be non-NULL (default stub). */
     UASSERT(vm.host_time_us != NULL);
     uvm_destroy(&vm);
@@ -1019,18 +1019,18 @@ UTEST(vm_object_fields_initialized_to_v1_0_contract) {
     uvm_init(&vm, NULL, NULL);
 
     /* topology spec §3.1: initial value 1; reserves 0 as IC unfilled sentinel */
-    UASSERT_EQ(1ull, vm.topology_gen);
+    UASSERT_EQ(1ULL, vm.topology_gen);
 
     /* prototype-chain spec §7.1: lookup_id starts at 1; mark phase resets to 1 on rollover */
-    UASSERT_EQ(1ull, vm.lookup_id);
+    UASSERT_EQ(1ULL, vm.lookup_id);
 
     /* prototype-chain spec §8.1: object_id counter starts at 0; first alloc bumps to 1 */
-    UASSERT_EQ(0u, vm.next_object_id);
+    UASSERT_EQ(0U, vm.next_object_id);
 
     /* topology_gen and lookup_id are uint64_t; next_object_id is uint32_t */
-    UASSERT_EQ(8u, (unsigned)sizeof(vm.topology_gen));
-    UASSERT_EQ(8u, (unsigned)sizeof(vm.lookup_id));
-    UASSERT_EQ(4u, (unsigned)sizeof(vm.next_object_id));
+    UASSERT_EQ(8U, (unsigned)sizeof(vm.topology_gen));
+    UASSERT_EQ(8U, (unsigned)sizeof(vm.lookup_id));
+    UASSERT_EQ(4U, (unsigned)sizeof(vm.next_object_id));
 
     uvm_destroy(&vm);
 }

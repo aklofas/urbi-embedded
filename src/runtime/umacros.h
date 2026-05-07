@@ -60,7 +60,7 @@ static inline size_t urbi_strlen(const char *s) {
 static inline void urbi_strncpy_truncating(char *dst, size_t cap, const char *src) {
     size_t n = 0;
     if (cap == 0) return;
-    while (n + 1u < cap && src[n] != '\0') {
+    while (n + 1U < cap && src[n] != '\0') {
         dst[n] = src[n];
         n++;
     }

@@ -41,7 +41,7 @@ struct UNamespace {
 };
 
 /* Initial capacity — must be > 0. */
-#define NS_INITIAL_CAP 16u
+#define NS_INITIAL_CAP 16U
 
 /* === unamespace_create === */
 
@@ -117,7 +117,7 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
 
     /* Grow if at capacity. */
     if (ns->count >= ns->cap) {
-        new_cap   = (size_t)ns->cap * 2u;
+        new_cap   = (size_t)ns->cap * 2U;
         new_bytes = new_cap * sizeof(UNsEntry);
         old_entries = ns->entries;
         new_entries = (UNsEntry *)vm->alloc_fn(old_entries, new_bytes,

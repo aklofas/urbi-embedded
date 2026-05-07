@@ -32,12 +32,12 @@ urbi_event_create(struct UVM *vm)
     /* urbi_gc_alloc zeroes the allocation; set the identity fields.
      * gc_byte is managed by the GC (set to current_white by urbi_gc_alloc). */
     ev->type_tag        = UTYPE_EVENT;
-    ev->flags           = 0u;
-    ev->pad0[0]         = 0u;
-    ev->pad0[1]         = 0u;
-    ev->pad0[2]         = 0u;
-    ev->pad0[3]         = 0u;
-    ev->pad0[4]         = 0u;
+    ev->flags           = 0U;
+    ev->pad0[0]         = 0U;
+    ev->pad0[1]         = 0U;
+    ev->pad0[2]         = 0U;
+    ev->pad0[3]         = 0U;
+    ev->pad0[4]         = 0U;
     ev->at_watchers_head = NULL;
     ev->waiters_head     = NULL;
     ev->name.kind        = UVAL_NIL;

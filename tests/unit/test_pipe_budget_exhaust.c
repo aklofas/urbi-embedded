@@ -216,7 +216,7 @@ UTEST(consume_budget_floors_at_zero)
     sched_strand_init(&s, NULL);
 
     /* Initial budget is URBI_STRAND_BUDGET_MAX. */
-    UASSERT(s.instruction_budget_remaining > 0u);
+    UASSERT(s.instruction_budget_remaining > 0U);
     uint16_t initial = s.instruction_budget_remaining;
 
     /* Consume partial. */
@@ -224,12 +224,12 @@ UTEST(consume_budget_floors_at_zero)
     UASSERT_EQ(s.instruction_budget_remaining, (uint16_t)(initial - 10));
 
     /* Consume more than remaining: must floor at 0. */
-    sched_consume_budget(&s, 65535u);
-    UASSERT_EQ(s.instruction_budget_remaining, 0u);
+    sched_consume_budget(&s, 65535U);
+    UASSERT_EQ(s.instruction_budget_remaining, 0U);
 
     /* Consume again from 0: must stay at 0 (no underflow). */
     sched_consume_budget(&s, 1);
-    UASSERT_EQ(s.instruction_budget_remaining, 0u);
+    UASSERT_EQ(s.instruction_budget_remaining, 0U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);

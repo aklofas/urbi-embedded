@@ -33,7 +33,7 @@ static UModule make_one_instr_module(uint32_t instr) {
  * Expected: "AT_INSTALL R5, R6, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_INSTALL, 5u, 6u, 0xFFu));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_INSTALL, 5U, 6U, 0xFFU));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -49,7 +49,7 @@ UTEST(disasm_at_install) {
  * Expected: "AT_SYNC_INSTALL R2, R3, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_sync_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_SYNC_INSTALL, 2u, 3u, 0xFFu));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_SYNC_INSTALL, 2U, 3U, 0xFFU));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -65,7 +65,7 @@ UTEST(disasm_at_sync_install) {
  * Expected: "WHENEVER_INSTALL R1, R2, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_whenever_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_WHENEVER_INSTALL, 1u, 2u, 0xFFu));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_WHENEVER_INSTALL, 1U, 2U, 0xFFU));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -81,7 +81,7 @@ UTEST(disasm_whenever_install) {
  * Expected: "WAITUNTIL_INSTALL R7" — no spurious R0 operands
  * ------------------------------------------------------------------------- */
 UTEST(disasm_waituntil_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_WAITUNTIL_INSTALL, 7u, 0u, 0u));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_WAITUNTIL_INSTALL, 7U, 0U, 0U));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -101,7 +101,7 @@ UTEST(disasm_waituntil_install) {
  * Expected: "AT_EVENT_INSTALL R4, R5, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_event_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_INSTALL, 4u, 5u, 0xFFu));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_INSTALL, 4U, 5U, 0xFFU));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -117,7 +117,7 @@ UTEST(disasm_at_event_install) {
  * Expected: "AT_EVENT_SYNC_INSTALL R8, R9, R255"
  * ------------------------------------------------------------------------- */
 UTEST(disasm_at_event_sync_install) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_SYNC_INSTALL, 8u, 9u, 0xFFu));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_AT_EVENT_SYNC_INSTALL, 8U, 9U, 0xFFU));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -134,7 +134,7 @@ UTEST(disasm_at_event_sync_install) {
  * (C encodes a symbol-table index — displayed as Kn to distinguish from reg)
  * ------------------------------------------------------------------------- */
 UTEST(disasm_getslot_change_event) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT, 0u, 1u, 3u));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT, 0U, 1U, 3U));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
@@ -151,7 +151,7 @@ UTEST(disasm_getslot_change_event) {
  * (B and C are a 16-bit symbol id split into hi/lo bytes)
  * ------------------------------------------------------------------------- */
 UTEST(disasm_load_realm_global) {
-    UModule m = make_one_instr_module(uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 2u, 0u, 7u));
+    UModule m = make_one_instr_module(uinstr_enc_abc(OP_LOAD_REALM_GLOBAL, 2U, 0U, 7U));
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);

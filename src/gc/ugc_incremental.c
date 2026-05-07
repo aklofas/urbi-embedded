@@ -198,7 +198,7 @@ walk_vm_globals(UVM *vm, UGcRootCallback cb, void *ctx)
 static size_t
 drain_gray(UVM *vm, size_t budget)
 {
-    size_t consumed = 0u;
+    size_t consumed = 0U;
     while (gc_gray_head(vm) != NULL && consumed < budget) {
         /* T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
         UAllCellsNode *node = gc_gray_head(vm);
@@ -240,12 +240,12 @@ gc_mark_roots_step(UVM *vm)
 
     /* Walk all registered root providers. */
     uint8_t i;
-    for (i = 0u; i < vm->root_provider_count; i++) {
+    for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, mark_root_callback, vm);
     }
 
     vm->gc_phase = GC_PHASE_MARK_INCREMENTAL;
-    return 1024u;  /* approximate work units for root scanning */
+    return 1024U;  /* approximate work units for root scanning */
 }
 
 /* === gc_mark_incremental_step ===
@@ -295,7 +295,7 @@ gc_atomic_finish_step(UVM *vm)
     /* Drain residual gray work-list (fully in-slice — bounded by remaining
      * gray set after MARK_INCREMENTAL, which converges because no mutator
      * runs during ATOMIC_FINISH). */
-    size_t consumed = drain_gray(vm, (size_t)-1u);
+    size_t consumed = drain_gray(vm, (size_t)-1U);
 
     /* Gray work-list should be fully drained before SWEEP. */
     URBI_INTERNAL_ASSERT(gc_gray_head(vm) == NULL);
@@ -307,7 +307,7 @@ gc_atomic_finish_step(UVM *vm)
 
     /* Return accumulated consumed bytes; if gray list was empty, return
      * a small constant so slice loop progresses. */
-    return consumed > 0u ? consumed : 64u;
+    return consumed > 0U ? consumed : 64U;
 }
 
 /* === end_of_cycle_threshold_update ===
@@ -327,10 +327,10 @@ end_of_cycle_threshold_update(UVM *vm)
     size_t live = vm->gc_live_bytes;
     size_t threshold;
 
-    if (live == 0u) {
+    if (live == 0U) {
         threshold = (size_t)URBI_GC_INITIAL_THRESHOLD;
     } else {
-        threshold = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100u;
+        threshold = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100U;
         if (threshold < (size_t)URBI_GC_INITIAL_THRESHOLD) {
             threshold = (size_t)URBI_GC_INITIAL_THRESHOLD;
         }
@@ -338,7 +338,7 @@ end_of_cycle_threshold_update(UVM *vm)
 
     vm->gc_threshold = threshold;
     vm->gc_debt      = -(int64_t)threshold;
-    vm->gc_pending   = 0u;
+    vm->gc_pending   = 0U;
 }
 
 /* === gc_sweep_step ===
@@ -364,8 +364,8 @@ end_of_cycle_threshold_update(UVM *vm)
 static size_t
 gc_sweep_step(UVM *vm, size_t budget)
 {
-    size_t consumed  = 0u;
-    size_t surviving = 0u;
+    size_t consumed  = 0U;
+    size_t surviving = 0U;
 
     /* Re-derive surviving bytes for cells already processed before this
      * slice by walking from the list head to the current cursor.  This
@@ -394,7 +394,7 @@ gc_sweep_step(UVM *vm, size_t budget)
          * color didn't get updated by the mark phase (because no root
          * registered it as reachable), it must not be freed.  Re-paint it
          * to current_white so it survives further cycles too. */
-        if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0u) {
+        if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0U) {
             urbi_gc_set_color(cell, vm->current_white);
             surviving += cur->size;
             consumed  += cur->size;
@@ -413,20 +413,20 @@ gc_sweep_step(UVM *vm, size_t budget)
             }
 
             /* Run finalizer if registered. */
-            if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0u) {
+            if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0U) {
                 const UType *t = vm->type_table[cell->type_tag];
                 if (t != NULL && t->destroy != NULL) {
-                    vm->in_destroy_callback = 1u;
+                    vm->in_destroy_callback = 1U;
                     t->destroy(vm, (void *)(cell + 1));
-                    vm->in_destroy_callback = 0u;
+                    vm->in_destroy_callback = 0U;
                 }
             }
 
             consumed += cur->size;
 
             /* Free cell, then sidecar. */
-            vm->alloc_fn(cell, 0u, vm->alloc_ud);
-            vm->alloc_fn(cur,  0u, vm->alloc_ud);
+            vm->alloc_fn(cell, 0U, vm->alloc_ud);
+            vm->alloc_fn(cur,  0U, vm->alloc_ud);
 
             /* prev stays unchanged; cur moves to next. */
             cur = next;
@@ -510,23 +510,23 @@ urbi_gc_destroy(UVM *vm)
         UCell         *cell      = node->cell;
 
         /* Call finalizer if registered. */
-        if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0u) {
+        if ((cell->gc_byte & UGC_HAS_FINALIZER) != 0U) {
             const UType *t = vm->type_table[cell->type_tag];
             if (t != NULL && t->destroy != NULL) {
-                vm->in_destroy_callback = 1u;
+                vm->in_destroy_callback = 1U;
                 /* Payload starts immediately after UCell header.
                  * At M3 no concrete cell types exist, so this path is
                  * unreachable in practice; provided for correctness at T27+. */
                 t->destroy(vm, (void *)(cell + 1));
-                vm->in_destroy_callback = 0u;
+                vm->in_destroy_callback = 0U;
             }
         }
 
         /* Free the cell. */
-        vm->alloc_fn(cell, 0u, vm->alloc_ud);
+        vm->alloc_fn(cell, 0U, vm->alloc_ud);
 
         /* Free the sidecar node itself. */
-        vm->alloc_fn(node, 0u, vm->alloc_ud);
+        vm->alloc_fn(node, 0U, vm->alloc_ud);
 
         node = next_node;
     }
@@ -566,7 +566,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     UAllCellsNode *node = (UAllCellsNode *)vm->alloc_fn(
             NULL, sizeof(UAllCellsNode), vm->alloc_ud);
     if (UNLIKELY(node == NULL)) {
-        vm->alloc_fn(cell, 0u, vm->alloc_ud);
+        vm->alloc_fn(cell, 0U, vm->alloc_ud);
         return NULL;
     }
 
@@ -588,7 +588,7 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 
     /* Trigger: if debt turns positive and GC is not paused, request a slice. */
     if (UNLIKELY(vm->gc_debt > 0 && !vm->gc_paused)) {
-        vm->gc_pending = 1u;
+        vm->gc_pending = 1U;
     }
 
     return cell;
@@ -659,7 +659,7 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    size_t consumed = 0u;
+    size_t consumed = 0U;
 
     while (consumed < byte_budget) {
         switch (vm->gc_phase) {
@@ -669,11 +669,11 @@ urbi_gc_slice(UVM *vm, size_t byte_budget)
                 /* Start a new collection cycle: flip current_white so that
                  * all existing cells (born in the previous white) become
                  * "other white" and are treated as dead unless re-marked. */
-                vm->current_white ^= 0x01u;
+                vm->current_white ^= 0x01U;
                 vm->gc_phase = GC_PHASE_MARK_ROOTS;
             } else {
                 /* Nothing to do. */
-                vm->gc_pending = 0u;
+                vm->gc_pending = 0U;
                 return;
             }
             break;
@@ -719,14 +719,14 @@ urbi_gc_force_full(UVM *vm)
 
     /* If already IDLE, start a new cycle. */
     if (vm->gc_phase == GC_PHASE_IDLE) {
-        vm->current_white ^= 0x01u;
+        vm->current_white ^= 0x01U;
         vm->gc_phase = GC_PHASE_MARK_ROOTS;
     }
 
     /* Run slices until IDLE.  Use SIZE_MAX budget per slice to complete
      * each phase in one shot. */
     while (vm->gc_phase != GC_PHASE_IDLE) {
-        urbi_gc_slice(vm, (size_t)-1u);
+        urbi_gc_slice(vm, (size_t)-1U);
     }
 }
 
@@ -742,7 +742,7 @@ urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
     walk_vm_globals(vm, cb, ctx);
     /* Iterate registered root providers. */
     uint8_t i;
-    for (i = 0u; i < vm->root_provider_count; i++) {
+    for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, cb, ctx);
     }
 }
@@ -808,7 +808,7 @@ void
 urbi_gc_pause(UVM *vm, bool paused)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    vm->gc_paused = paused ? 1u : 0u;
+    vm->gc_paused = paused ? 1U : 0U;
 }
 
 /* === Read-only GC query functions ===

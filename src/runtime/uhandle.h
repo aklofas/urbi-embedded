@@ -17,7 +17,7 @@
 
 struct UVM;
 
-#define URBI_HANDLE_INVALID  0u
+#define URBI_HANDLE_INVALID  0U
 typedef uint32_t UHandle;
 
 /* Create a handle for value v.  Returns URBI_HANDLE_INVALID on OOM.

@@ -42,7 +42,7 @@ static void uchanged_node_uobject_size(void)
      * Assert >= 56 so the test also passes on 32-bit cross targets where
      * the struct is smaller; the _Static_assert in uobject.h gates the exact
      * 56-byte requirement to __SIZEOF_POINTER__ == 8 builds. */
-    UASSERT(sizeof(UObject) >= 56u);
+    UASSERT(sizeof(UObject) >= 56U);
 }
 
 /* ===== Test 3: sizeof(UChangedNode) is 32 host / 16 32-bit ===== */

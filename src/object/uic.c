@@ -44,9 +44,9 @@ static uint8_t
 ic_flags_for_resolved_slot(const UObject *recv, const UObject *holder,
                            uint32_t idx)
 {
-    uint8_t flags = 0u;
-    if (idx < 8u) {
-        flags = (uint8_t)((holder->shape->flags >> (idx * 4u)) & 0x0Fu);
+    uint8_t flags = 0U;
+    if (idx < 8U) {
+        flags = (uint8_t)((holder->shape->flags >> (idx * 4U)) & 0x0FU);
     }
     if (holder == recv) {
         flags |= URBI_SLOT_FLAG_LOCAL;
@@ -79,12 +79,12 @@ ic_fill_at_cursor(UIC *ic, UVM *vm, const UObject *recv,
     ic->slots[k]        = &holder->slots[idx];
     ic->uprops[k]       = up;
     ic->flags[k]        = flags;
-    ic->replace_cursor  = (uint8_t)((k + 1u) % URBI_IC_ENTRIES_PER_SITE);
+    ic->replace_cursor  = (uint8_t)((k + 1U) % URBI_IC_ENTRIES_PER_SITE);
     /* Grow live-entry count up to the cap.  When k == ic->n the cache is
      * still warming; once n hits URBI_IC_ENTRIES_PER_SITE the cursor wraps
      * and we overwrite the round-robin victim in place. */
     if (ic->n < URBI_IC_ENTRIES_PER_SITE && k >= ic->n) {
-        ic->n = (uint8_t)(k + 1u);
+        ic->n = (uint8_t)(k + 1U);
     }
 }
 
@@ -105,7 +105,7 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
     }
 
     UObject *holder = NULL;
-    uint32_t idx    = 0u;
+    uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, recv, ic->name, &holder, &idx);
     if (rc <= 0) {
         /* 0 == miss; -1 == resolve-stack overflow.  T40 will land the
@@ -155,7 +155,7 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
     }
 
     UObject *holder = NULL;
-    uint32_t idx    = 0u;
+    uint32_t idx    = 0U;
     int rc = urbi_object_resolve_slot(vm, recv, ic->name, &holder, &idx);
 
     if (rc < 0) {

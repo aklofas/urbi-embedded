@@ -18,24 +18,24 @@ extern "C" {
    Upper nibble: logical state class.
    Lower nibble: reason sub-code (meaningful only in WAITING). */
 
-#define USTRAND_STATE_MASK     0xF0u
-#define USTRAND_REASON_MASK    0x0Fu
+#define USTRAND_STATE_MASK     0xF0U
+#define USTRAND_REASON_MASK    0x0FU
 
 /* Logical state classes (pre-shifted into upper nibble). */
-#define USTRAND_DORMANT        0x00u  /* allocated, not yet enqueued */
-#define USTRAND_READY          0x10u  /* on run-queue */
-#define USTRAND_RUNNING        0x20u  /* currently dispatching */
-#define USTRAND_WAITING        0x30u  /* blocked, see reason sub-code */
-#define USTRAND_DEAD           0x40u  /* terminated, awaiting GC */
-#define USTRAND_SUSPENDED      0x50u  /* RESERVED — Tag.freeze (M5/M6) */
+#define USTRAND_DORMANT        0x00U  /* allocated, not yet enqueued */
+#define USTRAND_READY          0x10U  /* on run-queue */
+#define USTRAND_RUNNING        0x20U  /* currently dispatching */
+#define USTRAND_WAITING        0x30U  /* blocked, see reason sub-code */
+#define USTRAND_DEAD           0x40U  /* terminated, awaiting GC */
+#define USTRAND_SUSPENDED      0x50U  /* RESERVED — Tag.freeze (M5/M6) */
 
 /* WAITING reason sub-codes (lower nibble). */
-#define USTRAND_REASON_NONE    0x00u
-#define USTRAND_REASON_SLEEP   0x01u
-#define USTRAND_REASON_EVENT   0x02u
-#define USTRAND_REASON_JOIN    0x03u
-#define USTRAND_REASON_HOST    0x04u  /* RESERVED v1.x/v2 */
-#define USTRAND_REASON_WATCHER 0x02u  /* same sub-code as EVENT; context disambiguates */
+#define USTRAND_REASON_NONE    0x00U
+#define USTRAND_REASON_SLEEP   0x01U
+#define USTRAND_REASON_EVENT   0x02U
+#define USTRAND_REASON_JOIN    0x03U
+#define USTRAND_REASON_HOST    0x04U  /* RESERVED v1.x/v2 */
+#define USTRAND_REASON_WATCHER 0x02U  /* same sub-code as EVENT; context disambiguates */
 
 /* Composite values stored in strand->state. */
 #define USTRAND_STATE_DORMANT         (USTRAND_DORMANT)
@@ -50,11 +50,11 @@ extern "C" {
 
 /* spec #2 §7.7 — waituntil(cond) strand parked awaiting edge fire.
    0x32 = USTRAND_WAITING (0x30) | USTRAND_REASON_WATCHER (0x02). */
-#define USTRAND_WAIT_WATCHER          0x32u
+#define USTRAND_WAIT_WATCHER          0x32U
 
 /* spec #3 §3.3 — waituntil(e?) strand parked awaiting Event emit.
    0x33 = USTRAND_WAITING (0x30) | USTRAND_REASON_EVENT (0x03). */
-#define USTRAND_WAIT_EVENT            0x33u
+#define USTRAND_WAIT_EVENT            0x33U
 
 /* Helper macros — take a pointer to UStrand. */
 #define USTRAND_IS_WAITING(s)  (((s)->state & USTRAND_STATE_MASK) == USTRAND_WAITING)

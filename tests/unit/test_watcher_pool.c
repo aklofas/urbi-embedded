@@ -58,10 +58,10 @@ UTEST(watcher_record_size_is_within_budget)
      * We assert <= 256 for the standard (non-linux) case; if READSET_MAX > 16
      * the caller deliberately opted in to a larger record. */
 #if URBI_WATCHER_READSET_MAX <= 16
-    UASSERT(sizeof(UWatcher) <= 256u);
+    UASSERT(sizeof(UWatcher) <= 256U);
 #endif
     /* At minimum, the header fields must produce a non-trivial record. */
-    UASSERT(sizeof(UWatcher) >= 64u);
+    UASSERT(sizeof(UWatcher) >= 64U);
 }
 
 /* 3. pool_alloc_returns_active_watcher:

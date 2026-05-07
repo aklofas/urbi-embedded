@@ -24,7 +24,7 @@ UTEST(uvm_init_zeroes_intern_table_and_topology_gen) {
     UASSERT(vm.intern_table == NULL);
     /* Per pre-M4 topology-generation spec §3.1: topology_gen init=1, reserves 0
      * as the IC unfilled sentinel.  (Was 0 pre-M4.) */
-    UASSERT_EQ(1ull, vm.topology_gen);
+    UASSERT_EQ(1ULL, vm.topology_gen);
     uvm_destroy(&vm);
 }
 
@@ -204,7 +204,7 @@ UTEST(topology_gen_is_per_vm_not_global) {
     uvm_init(&vm_a, NULL, NULL);
     uvm_init(&vm_b, NULL, NULL);
     vm_a.topology_gen = 17;
-    UASSERT_EQ(1ull, vm_b.topology_gen);
+    UASSERT_EQ(1ULL, vm_b.topology_gen);
     uvm_destroy(&vm_a);
     uvm_destroy(&vm_b);
 }

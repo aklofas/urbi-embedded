@@ -20,12 +20,12 @@
 
 /* OP_THROW ABx: A = reg_value, Bx = 0 (unused). */
 void uemit_throw(UEmitter *e, uint8_t reg_value, uint32_t line) {
-    emit_instr(e, uinstr_enc_abx(OP_THROW, reg_value, 0u), line);
+    emit_instr(e, uinstr_enc_abx(OP_THROW, reg_value, 0U), line);
 }
 
 /* OP_TAG_STOP ABC: A = reg_tag, B = reg_value, C = 0. */
 void uemit_tag_stop(UEmitter *e, uint8_t reg_tag, uint8_t reg_value, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_TAG_STOP, reg_tag, reg_value, 0u), line);
+    emit_instr(e, uinstr_enc_abc(OP_TAG_STOP, reg_tag, reg_value, 0U), line);
 }
 
 /* OP_TRY_BEGIN ABx: A = flags byte, Bx = handler PC (16-bit, range 0-65535).
@@ -36,7 +36,7 @@ void uemit_try_begin(UEmitter *e, uint8_t flags, uint16_t handler_pc, uint32_t l
 
 /* OP_TRY_END ABC: no operands (all zero). Pops top cleanup entry. */
 void uemit_try_end(UEmitter *e, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_TRY_END, 0u, 0u, 0u), line);
+    emit_instr(e, uinstr_enc_abc(OP_TRY_END, 0U, 0U, 0U), line);
 }
 
 /* OP_PUSH_TAG ABx: A packs flags nibble and tag_reg nibble.
@@ -47,31 +47,31 @@ void uemit_try_end(UEmitter *e, uint32_t line) {
  * if wider operand ranges become necessary. */
 void uemit_push_tag(UEmitter *e, uint8_t reg_tag, uint8_t flags,
                     uint16_t onleave_pc, uint32_t line) {
-    uint8_t a = (uint8_t)(((flags & 0xFu) << 4) | (reg_tag & 0xFu));
+    uint8_t a = (uint8_t)(((flags & 0xFU) << 4) | (reg_tag & 0xFU));
     emit_instr(e, uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc), line);
 }
 
 /* OP_POP_TAG ABC: A = reg_tag, B = C = 0. */
 void uemit_pop_tag(UEmitter *e, uint8_t reg_tag, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_POP_TAG, reg_tag, 0u, 0u), line);
+    emit_instr(e, uinstr_enc_abc(OP_POP_TAG, reg_tag, 0U, 0U), line);
 }
 
 /* OP_PUSH_FRAME_GUARD ABC: A = register_base, B = register_count, C = 0. */
 void uemit_push_frame_guard(UEmitter *e, uint8_t register_base,
                              uint8_t register_count, uint32_t line) {
     emit_instr(e, uinstr_enc_abc(OP_PUSH_FRAME_GUARD, register_base,
-                                  register_count, 0u), line);
+                                  register_count, 0U), line);
 }
 
 /* OP_RESUME ABC: A = reg_state, B = C = 0. */
 void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_RESUME, reg_state, 0u, 0u), line);
+    emit_instr(e, uinstr_enc_abc(OP_RESUME, reg_state, 0U, 0U), line);
 }
 
 /* OP_LOAD_CATCH_VALUE ABC: A = destination register, B = C = 0.
  * T10 empirical addition — loads s->catch_value into R[A] at handler entry. */
 void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line) {
-    emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0u, 0u), line);
+    emit_instr(e, uinstr_enc_abc(OP_LOAD_CATCH_VALUE, reg, 0U, 0U), line);
 }
 
 /* =========================================================================
@@ -139,29 +139,29 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
     if (has_catch && has_finally) {
         /* === OUTER TRY_FRAME: finally wrapper === */
         int outer_try_begin_pc = (int)emit_instr_count(e);
-        uemit_try_begin(e, FLAG_HAS_FINALLY, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* === INNER TRY_FRAME: catch wrapper === */
         int inner_try_begin_pc = (int)emit_instr_count(e);
-        uemit_try_begin(e, FLAG_HAS_CATCH, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Body */
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         emit_expr(e, n->u.try_stmt.body);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* OP_TRY_END (inner) */
         uemit_try_end(e, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* JMP past catch */
         int jmp_past_catch_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch inner_try_begin handler_pc → catch handler */
         {
@@ -173,24 +173,24 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Catch handler */
         emit_catch_handler_section(e, n);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_catch → here (past_catch_pc) */
         {
             int past_catch_target = (int)emit_instr_count(e);
             int off = past_catch_target - (jmp_past_catch_pc + 1);
             emit_patch_instr(e, jmp_past_catch_pc,
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
         }
 
         /* OP_TRY_END (outer) */
         uemit_try_end(e, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* JMP past finally */
         int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch outer_try_begin handler_pc → finally handler */
         {
@@ -204,41 +204,41 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-        if (!uemit_open_block(e, false)) return 0u;
+        if (!uemit_open_block(e, false)) return 0U;
         emit_expr(e, n->u.try_stmt.finally_body);
-        if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
-        if (!uemit_close_block(e)) return 0u;
-        uemit_resume(e, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+        if (!uemit_close_block(e)) return 0U;
+        uemit_resume(e, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_finally → here */
         {
             int past_finally_target = (int)emit_instr_count(e);
             int off = past_finally_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
         }
 
     } else if (has_catch) {
         /* === Catch-only TRY_FRAME === */
         int try_begin_pc = (int)emit_instr_count(e);
-        uemit_try_begin(e, FLAG_HAS_CATCH, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        uemit_try_begin(e, FLAG_HAS_CATCH, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Body */
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         emit_expr(e, n->u.try_stmt.body);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         uemit_try_end(e, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* JMP past handler */
         int jmp_past_handler_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → catch handler */
         {
@@ -250,36 +250,36 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 
         /* Catch handler */
         emit_catch_handler_section(e, n);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_handler → here */
         {
             int past_target = (int)emit_instr_count(e);
             int off = past_target - (jmp_past_handler_pc + 1);
             emit_patch_instr(e, jmp_past_handler_pc,
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
         }
 
     } else {
         /* === Finally-only TRY_FRAME === */
         int try_begin_pc = (int)emit_instr_count(e);
-        uemit_try_begin(e, FLAG_HAS_FINALLY, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        uemit_try_begin(e, FLAG_HAS_FINALLY, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Body */
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
         emit_expr(e, n->u.try_stmt.body);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         uemit_try_end(e, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
 
         /* JMP past finally (normal exit path) */
         int jmp_past_finally_pc = (int)emit_instr_count(e);
-        emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch try_begin handler_pc → finally handler */
         {
@@ -293,19 +293,19 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         e->next_reg = rd;
         e->current_fs->freereg = fs_temp_floor(e->current_fs);
         if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-        if (!uemit_open_block(e, false)) return 0u;
+        if (!uemit_open_block(e, false)) return 0U;
         emit_expr(e, n->u.try_stmt.finally_body);
-        if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
-        if (!uemit_close_block(e)) return 0u;
-        uemit_resume(e, 0u, (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
+        if (!uemit_close_block(e)) return 0U;
+        uemit_resume(e, 0U, (uint32_t)n->line);
+        if (e->error != EMIT_OK) return 0U;
 
         /* Patch jmp_past_finally → here */
         {
             int past_target = (int)emit_instr_count(e);
             int off = past_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
         }
     }
 
@@ -313,8 +313,8 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
     e->next_reg = rd;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-    e->next_reg = rd + 1u;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
+    e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     e->current_fs->freereg = e->next_reg;
     return rd;
@@ -328,14 +328,14 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
 uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
     uint8_t val_reg = emit_expr(e, n->u.throw_expr.value);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
     uemit_throw(e, val_reg, (uint32_t)n->line);
     /* throw is a statement; return a nil reg for the block's last-stmt logic. */
     uint8_t rd = e->next_reg;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
     e->next_reg++;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs->freereg < e->next_reg)
@@ -352,7 +352,7 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
     uint8_t rd = e->next_reg;
     return emit_try_frame(e, n, rd);
@@ -380,51 +380,51 @@ uint8_t emit_try_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
 
     /* Evaluate tag_expr to get a register (will be nil at M3). */
     uint8_t tag_reg = emit_expr(e, n->u.tag_prefix.tag_expr);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
 
     /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding. */
-    if (tag_reg > 15u) {
+    if (tag_reg > 15U) {
         /* Spill into a lower register by moving (shouldn't happen in practice
          * since tag-prefix appears near top of scope, but defensive). */
         uint8_t spill = e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
         if (e->current_fs->freereg < e->next_reg)
             e->current_fs->freereg = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, spill, tag_reg, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, spill, tag_reg, 0U),
                    (uint32_t)n->line);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
         tag_reg = spill;
     }
 
     /* Emit OP_PUSH_TAG with placeholder onleave_pc (will be patched). */
-    uint8_t flags_m3 = 0u;  /* no FLAG_HAS_ONLEAVE at M3 */
+    uint8_t flags_m3 = 0U;  /* no FLAG_HAS_ONLEAVE at M3 */
     int push_tag_pc = (int)emit_instr_count(e);
-    uemit_push_tag(e, tag_reg, flags_m3, 0u /* placeholder */, (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0u;
+    uemit_push_tag(e, tag_reg, flags_m3, 0U /* placeholder */, (uint32_t)n->line);
+    if (e->error != EMIT_OK) return 0U;
 
     /* Emit body. */
     uint8_t rd = e->next_reg;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-    if (!uemit_open_block(e, false)) return 0u;
+    if (!uemit_open_block(e, false)) return 0U;
     uint8_t body_result = emit_expr(e, n->u.tag_prefix.body);
-    if (e->error != EMIT_OK) { uemit_close_block(e); return 0u; }
+    if (e->error != EMIT_OK) { uemit_close_block(e); return 0U; }
     (void)body_result;
-    if (!uemit_close_block(e)) return 0u;
+    if (!uemit_close_block(e)) return 0U;
 
     /* Emit OP_POP_TAG. */
     uemit_pop_tag(e, tag_reg, (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
 
     /* Emit OP_JMP past the (empty) onleave handler block. */
     int jmp_past_handler_pc = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
-    if (e->error != EMIT_OK) return 0u;
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
+    if (e->error != EMIT_OK) return 0U;
 
     /* Onleave handler block starts here.
      * At M3, onleave is always NULL — emit nothing; just record the PC. */
@@ -433,7 +433,7 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     /* Patch OP_PUSH_TAG Bx to point to onleave handler PC. */
     emit_patch_instr(e, push_tag_pc,
         uinstr_enc_abx(OP_PUSH_TAG,
-                       (uint8_t)(((flags_m3 & 0xFu) << 4) | (tag_reg & 0xFu)),
+                       (uint8_t)(((flags_m3 & 0xFU) << 4) | (tag_reg & 0xFU)),
                        (uint16_t)onleave_target));
 
     /* Past-handler: JMP lands here. */
@@ -441,15 +441,15 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
         int past_handler_target = (int)emit_instr_count(e);
         int off = past_handler_target - (jmp_past_handler_pc + 1);
         emit_patch_instr(e, jmp_past_handler_pc,
-            uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + off)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + off)));
     }
 
     /* Return a nil register as the tag-prefix's value. */
     e->next_reg = rd;
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
     if (e->current_fs->freereg < rd) e->current_fs->freereg = rd;
-    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-    e->next_reg = rd + 1u;
+    emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
+    e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     e->current_fs->freereg = e->next_reg;
     return rd;

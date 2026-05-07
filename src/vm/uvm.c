@@ -368,8 +368,8 @@ dispatch:
              * is the root chunk; entries[bx + 1] is the matching nested proto. */
             if (s->module_instance != NULL
                 && s->module_instance->proto_instances != NULL
-                && (size_t)bx + 1u < (size_t)s->module_instance->proto_instances->n) {
-                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1u];
+                && (size_t)bx + 1U < (size_t)s->module_instance->proto_instances->n) {
+                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1U];
             }
             /* If no module_instance is bound (defensive — uvm_run wires it for
              * every normal execution path), proto_inst stays NULL and
@@ -717,9 +717,9 @@ dispatch:
             }
             /* Inspect the just-filled IC entry to decide if a getter is
              * pending.  Same TODO as above — diagnose for now. */
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
+            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
                 HALT();
@@ -823,9 +823,9 @@ dispatch:
                 }
                 HALT();
             }
-            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1u)
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
-            if (ic->n > 0u && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
+            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
                 HALT();
@@ -838,7 +838,7 @@ dispatch:
              * bumps watcher_dirty_count and watcher_eval_dirty runs at the
              * next safepoint, not inline here.  Slot index 0 is passed as a
              * conservative sentinel — observer_dirty ignores the key at M5. */
-            urbi_gc_slot_write(vm, (UCell *)recv, 0u, v);
+            urbi_gc_slot_write(vm, (UCell *)recv, 0U, v);
             urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
             NEXT();
         }
@@ -872,8 +872,8 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
             entry->flags          = flags;
             entry->handler_pc     = handler_pc;
-            entry->register_base  = 0u;
-            entry->register_count = 0u;
+            entry->register_base  = 0U;
+            entry->register_count = 0U;
             entry->owning_tag     = NULL;
             entry->catch_pattern  = NULL;
             entry->next_member    = NULL;
@@ -920,7 +920,7 @@ dispatch:
              * deferred for T31/walker integration when full tag lifecycle wires through.
              * strand_back = s for future tag.stop() walk (T31 uses). */
             uint8_t  a          = uinstr_a(*s->pc);
-            uint8_t  flags      = (uint8_t)((a >> 4) & 0xFu);
+            uint8_t  flags      = (uint8_t)((a >> 4) & 0xFU);
             uint16_t handler_pc = uinstr_bx(*s->pc);
             UTag *tag = utag_create(s->vm);
             if (tag == NULL) {
@@ -938,8 +938,8 @@ dispatch:
             entry->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
             entry->flags          = flags;
             entry->handler_pc     = handler_pc;
-            entry->register_base  = 0u;
-            entry->register_count = 0u;
+            entry->register_base  = 0U;
+            entry->register_count = 0U;
             entry->owning_tag     = tag;
             entry->catch_pattern  = NULL;
             entry->next_member    = tag->member_strands_head;  /* head-insert */
@@ -965,7 +965,7 @@ dispatch:
              * branch is dead code.  Include the check for forward-compatibility. */
             if (s->cleanup_depth > 0) {
                 UCleanupEntry *top = &s->cleanup_base[s->cleanup_depth - 1];
-                if ((top->flags & FLAG_HAS_ONLEAVE) != 0u) {
+                if ((top->flags & FLAG_HAS_ONLEAVE) != 0U) {
                     /* onleave handler: not reachable at M3 (emit always sets flags=0).
                      * If somehow reached (bytecode corruption), halt safely. */
                     vm->last_error = UVM_TYPE_ERROR;
@@ -1037,8 +1037,8 @@ dispatch:
                 goto exit_strand;
             }
             entry->kind           = (uint8_t)UCLEANUP_CALL_FRAME;
-            entry->flags          = 0u;
-            entry->handler_pc     = 0u;
+            entry->flags          = 0U;
+            entry->handler_pc     = 0U;
             entry->register_base  = register_base;
             entry->register_count = register_count;
             entry->owning_tag     = NULL;
@@ -1075,7 +1075,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
             NEXT();
         }
@@ -1095,7 +1095,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
             NEXT();
         }
@@ -1150,7 +1150,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
             NEXT();
         }
@@ -1161,7 +1161,7 @@ dispatch:
             uint8_t C = uinstr_c(*s->pc);
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
-            UClosure *onleave = (C == 0xFFu) ? NULL : (UClosure *)s->R[C].v.p;
+            UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
             install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
             NEXT();
         }

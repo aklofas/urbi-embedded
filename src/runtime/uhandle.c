@@ -8,14 +8,14 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"   /* URBI_ASSERT_NOT_ISR */
 
-#define INITIAL_CAP  16u
+#define INITIAL_CAP  16U
 
 /* Grow the handle table.  Returns 0 on success, -1 on OOM. */
 static int
 handle_table_grow(UVM *vm)
 {
     uint32_t old_cap = vm->handle_table_cap;
-    uint32_t new_cap = old_cap ? old_cap * 2u : INITIAL_CAP;
+    uint32_t new_cap = old_cap ? old_cap * 2U : INITIAL_CAP;
     /* vm->alloc_fn with (ptr, n>0) == realloc semantics (umodule.h comment). */
     UValue *grown = (UValue *)vm->alloc_fn(vm->handle_table,
                                            new_cap * sizeof(UValue),
@@ -38,7 +38,7 @@ urbi_handle_create(UVM *vm, UValue v)
     }
     uint32_t slot = vm->handle_table_next_id++;
     vm->handle_table[slot] = v;
-    return slot + 1u;   /* 1-indexed; 0 is URBI_HANDLE_INVALID */
+    return slot + 1U;   /* 1-indexed; 0 is URBI_HANDLE_INVALID */
 }
 
 UValue
@@ -48,7 +48,7 @@ urbi_handle_get(UVM *vm, UHandle h)
     nil.kind = UVAL_NIL;
     if (h == URBI_HANDLE_INVALID) return nil;
     /* h is 1-indexed; slot = h - 1. */
-    uint32_t slot = h - 1u;
+    uint32_t slot = h - 1U;
     if (slot >= vm->handle_table_cap) return nil;
     return vm->handle_table[slot];
 }
@@ -58,7 +58,7 @@ urbi_handle_release(UVM *vm, UHandle h)
 {
     URBI_ASSERT_NOT_ISR(vm);
     if (h == URBI_HANDLE_INVALID) return;
-    uint32_t slot = h - 1u;
+    uint32_t slot = h - 1U;
     if (slot >= vm->handle_table_cap) return;
     UValue nil = {0};
     nil.kind = UVAL_NIL;
@@ -72,7 +72,7 @@ host_handle_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URBI_ASSERT_NOT_ISR(vm);
     uint32_t i;
-    for (i = 0u; i < vm->handle_table_cap; i++) {
+    for (i = 0U; i < vm->handle_table_cap; i++) {
         if (vm->handle_table[i].kind != UVAL_NIL)
             cb(vm, &vm->handle_table[i], ctx);
     }

@@ -37,10 +37,10 @@ typedef struct UInternTable {
 /* --- helpers --- */
 
 static uint32_t fnv1a(const char *bytes, size_t nbytes) {
-    uint32_t h = 0x811c9dc5u;
+    uint32_t h = 0x811c9dc5U;
     for (size_t i = 0; i < nbytes; i++) {
         h ^= (uint8_t)bytes[i];
-        h *= 0x01000193u;
+        h *= 0x01000193U;
     }
     return h;
 }

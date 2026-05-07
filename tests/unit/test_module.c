@@ -237,7 +237,7 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
     UModule m = {0};
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
-    UASSERT_EQ((unsigned)p->ic_count, 0u);
+    UASSERT_EQ((unsigned)p->ic_count, 0U);
     UASSERT_EQ((void *)p->ic_names, (void *)NULL);
     umodule_destroy(&m);
 }
@@ -315,8 +315,8 @@ UTEST(deserialize_rejects_wrong_endianness) {
 
 /* Append an LEB128 unsigned varint.  Returns new offset. */
 static size_t put_varint(uint8_t *buf, size_t offset, uint64_t v) {
-    while (v >= 0x80u) {
-        buf[offset++] = (uint8_t)((v & 0x7Fu) | 0x80u);
+    while (v >= 0x80U) {
+        buf[offset++] = (uint8_t)((v & 0x7FU) | 0x80U);
         v >>= 7;
     }
     buf[offset++] = (uint8_t)v;
@@ -423,7 +423,7 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     off = put_varint(buf, off, 0);
     /* instructions: 1.  varint 1 = 1 byte.  off before = 27; 27 mod 4 = 3, pad 1 byte. */
     off = put_varint(buf, off, 1);
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     /* OP_RET R0: op=7, A=0, B=0, C=0 */
     const uint32_t instr = (uint32_t)OP_RET;
     buf[off + 0] = (uint8_t)(instr & 0xFF);
@@ -464,7 +464,7 @@ UTEST(deserialize_rejects_non_zero_alignment_padding) {
     off = put_varint(buf, off, 0);          /* n_constants */
     off = put_varint(buf, off, 1);          /* n_instructions=1 */
     /* off is now 29 (29 mod 4 == 1); 3 pad bytes needed — corrupt them */
-    while ((off & 3u) != 0u) buf[off++] = 0xFF;
+    while ((off & 3U) != 0U) buf[off++] = 0xFF;
     /* instruction body (alignment check fires before reading this) */
     buf[off + 0] = (uint8_t)OP_RET;
     buf[off + 1] = 0; buf[off + 2] = 0; buf[off + 3] = 0;
@@ -495,7 +495,7 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 0);
     /* instructions: 3 */
     off = put_varint(buf, off, 3);
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         int j;
         for (j = 0; j < 3; j++) {
@@ -540,7 +540,7 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 1);          /* 1 instruction */
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         const uint32_t ins = (uint32_t)OP_RET;
         buf[off + 0] = (uint8_t)(ins & 0xFF);
@@ -581,7 +581,7 @@ static size_t build_module_bytes(uint8_t *buf,
         off = put_varint_zz(buf, off, const_vals[ci]);
     }
     off = put_varint(buf, off, (uint64_t)n_instr);
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     size_t ii;
     for (ii = 0; ii < n_instr; ii++) {
         buf[off++] = (uint8_t)(instrs[ii] & 0xFF);
@@ -613,7 +613,7 @@ UTEST(verifier_accepts_minimal_ret_only_module) {
 UTEST(verifier_rejects_opcode_ge_op_max) {
     uint8_t buf[256];
     const uint32_t instrs[] = {
-        200u,                                   /* op=200, invalid */
+        200U,                                   /* op=200, invalid */
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 2);
@@ -645,7 +645,7 @@ UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
     uint8_t buf[256];
     const int64_t consts[] = { 1 };             /* only K[0] exists */
     const uint32_t instrs[] = {
-        uinstr_enc_abx(OP_LOADK, 0, 5u),        /* Bx=5, out of range */
+        uinstr_enc_abx(OP_LOADK, 0, 5U),        /* Bx=5, out of range */
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, consts, 1, instrs, 2);
@@ -983,7 +983,7 @@ UTEST(deserialize_oom_on_instructions_allocation) {
     buf[off++] = (uint8_t)UVAL_INT;
     off = put_varint_zz(buf, off, 5);
     off = put_varint(buf, off, 1);              /* 1 instruction — triggers second grow */
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         const uint32_t ins = (uint32_t)OP_RET;
         buf[off + 0] = (uint8_t)(ins & 0xFF);
@@ -1035,7 +1035,7 @@ UTEST(deserialize_loads_float_constant) {
     }
     /* n_instructions = 0; then write 4-byte alignment padding if needed. */
     off = put_varint(buf, off, 0);
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     off = put_varint(buf, off, 0);              /* n_deltas = 0 */
     off = put_varint(buf, off, 0);              /* n_abs_lines = 0 */
     UModule c = {0};
@@ -1081,7 +1081,7 @@ UTEST(deserialize_truncated_at_line_deltas) {
     off = put_varint(buf, off, 0);              /* no source_name */
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         const uint32_t ins = (uint32_t)OP_RET;
         buf[off + 0] = (uint8_t)(ins & 0xFF);
@@ -1112,7 +1112,7 @@ UTEST(deserialize_oom_on_abs_lines_allocation) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         const uint32_t ins = (uint32_t)OP_RET;
         buf[off + 0] = (uint8_t)(ins & 0xFF);
@@ -1150,7 +1150,7 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 1);              /* 1 instruction */
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         const uint32_t ins = (uint32_t)OP_RET;
         buf[off + 0] = (uint8_t)(ins & 0xFF);
@@ -1290,7 +1290,7 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     off = put_varint(buf, off, 0);              /* 0 constants */
     /* 2 instructions */
     off = put_varint(buf, off, 2);
-    while ((off & 3u) != 0u) buf[off++] = 0;
+    while ((off & 3U) != 0U) buf[off++] = 0;
     {
         int j;
         for (j = 0; j < 2; j++) {
@@ -1322,7 +1322,7 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
 
 UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
     UModule m = {0};
-    UASSERT_EQ(0u, (unsigned)m.ic_count);
+    UASSERT_EQ(0U, (unsigned)m.ic_count);
     UASSERT(m.ic_names == NULL);
     umodule_destroy(&m);
 }

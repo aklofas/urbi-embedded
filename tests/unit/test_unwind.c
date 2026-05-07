@@ -141,7 +141,7 @@ UTEST(unwind_return_at_call_frame_absorbs)
     UASSERT_EQ((int)s.stack[2].v.i, 42);
     UASSERT_EQ((int)s.stack[2].kind, (int)UVAL_INT);
     /* Cleanup stack should be empty after absorption. */
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
     /* frame_count decremented. */
     UASSERT_EQ((int)s.frame_count, 0);
 
@@ -188,7 +188,7 @@ UTEST(unwind_throw_caught_at_try_frame)
     /* pc should point at handler_pc (instr[1]). */
     UASSERT(s.pc == s_dummy_module.instructions + 1);
     /* Cleanup stack empty. */
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -364,7 +364,7 @@ UTEST(unwind_return_direct_pop_no_cleanup_entry)
     s.R = s.stack + 4;   /* callee's register window */
 
     /* No cleanup entries pushed (cleanup_depth remains 0). */
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
     UValue retval;
     retval.kind = (uint8_t)UVAL_INT;
@@ -466,7 +466,7 @@ UTEST(unwind_innermost_first_ordering)
     /* Return value at inner caller's result register. */
     UASSERT_EQ((int)s.stack[2].v.i, 55);
     /* TRY_FRAME and outer CALL_FRAME are still on the cleanup stack (depth=2). */
-    UASSERT_EQ((unsigned)s.cleanup_depth, 2u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 2U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -716,7 +716,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
     UASSERT(s.pc == s_dummy_module.instructions + 1);
     /* Inner frame popped; outer frame remains (depth=1). */
-    UASSERT_EQ((unsigned)s.cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);
@@ -758,7 +758,7 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     /* TAG_SCOPE popped (passthrough); THROW has no outer handler → fatal. */
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
     ustrand_destroy(&s, &vm);
     uvm_destroy(&vm);

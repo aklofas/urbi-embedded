@@ -195,20 +195,20 @@ urbi_get_determinism_checksum(struct UVM *vm)
             const UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL) continue;
             uint16_t i;
-            for (i = 0u; i < arr->n; i++) {
+            for (i = 0U; i < arr->n; i++) {
                 const UProtoInstance *pi = &arr->entries[i];
                 if (pi->ic_table == NULL) continue;
                 uint16_t ic_count;
                 if (pi->proto != NULL) {
                     ic_count = pi->proto->ic_count;
-                } else if (i == 0u) {
+                } else if (i == 0U) {
                     /* Root chunk — read ic_count from UModule. */
                     ic_count = mi->module->ic_count;
                 } else {
-                    ic_count = 0u;  /* entries[i>0] always have a proto */
+                    ic_count = 0U;  /* entries[i>0] always have a proto */
                 }
                 uint16_t k;
-                for (k = 0u; k < ic_count; k++) {
+                for (k = 0U; k < ic_count; k++) {
                     const UIC *ic = &pi->ic_table[k];
                     FNV1A_MIX(ctx.h, (uint64_t)ic->n);
                     FNV1A_MIX(ctx.h, (uint64_t)ic->replace_cursor);

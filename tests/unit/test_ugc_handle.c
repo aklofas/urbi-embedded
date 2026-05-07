@@ -40,7 +40,7 @@ UTEST(handle_create_get_release)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -68,12 +68,12 @@ UTEST(handle_invalid_returns_nil)
     UValue v1 = urbi_handle_get(&vm, URBI_HANDLE_INVALID);
     UASSERT_EQ(v1.kind, UVAL_NIL);
 
-    UValue v2 = urbi_handle_get(&vm, 9999u);
+    UValue v2 = urbi_handle_get(&vm, 9999U);
     UASSERT_EQ(v2.kind, UVAL_NIL);
 
     /* Release of invalid handle is a no-op (no crash). */
     urbi_handle_release(&vm, URBI_HANDLE_INVALID);
-    urbi_handle_release(&vm, 9999u);
+    urbi_handle_release(&vm, 9999U);
 
     uvm_destroy(&vm);
 }
@@ -91,7 +91,7 @@ UTEST(handle_grow_beyond_initial_cap)
     int      i;
 
     for (i = 0; i < N_HANDLES; i++) {
-        cells[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
+        cells[i] = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
         UASSERT(cells[i] != NULL);
         UValue v = make_handle_cell_value(cells[i]);
         handles[i] = urbi_handle_create(&vm, v);
@@ -120,8 +120,8 @@ UTEST(handle_walk_roots_active_only)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c1 = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
-    UCell *c2 = urbi_gc_alloc(&vm, sizeof(UCell) + 8u, UTYPE_OBJECT);
+    UCell *c1 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
+    UCell *c2 = urbi_gc_alloc(&vm, sizeof(UCell) + 8U, UTYPE_OBJECT);
     UASSERT(c1 != NULL);
     UASSERT(c2 != NULL);
 
@@ -154,7 +154,7 @@ UTEST(pin_sets_bit_unpin_clears)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -177,7 +177,7 @@ UTEST(pin_skips_sweep)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     UValue v = make_handle_cell_value(c);
@@ -224,7 +224,7 @@ UTEST(fixed_cell_survives_sweep)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     c->gc_byte |= UGC_IS_FIXED;

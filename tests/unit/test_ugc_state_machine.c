@@ -77,7 +77,7 @@ UTEST(ugc_phase_transitions_idle_to_mark)
     /* Force debt positive so the trigger fires. */
     vm.gc_debt = 1;
 
-    urbi_gc_slice(&vm, 64u);
+    urbi_gc_slice(&vm, 64U);
 
     /* Phase should have moved out of IDLE (to MARK_ROOTS or beyond). */
     UASSERT(urbi_gc_phase(&vm) != GC_PHASE_IDLE);
@@ -95,14 +95,14 @@ UTEST(ugc_force_full_reaches_idle)
     /* Allocate a few cells to give the sweep something to walk. */
     int i;
     for (i = 0; i < 10; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
 
     urbi_gc_force_full(&vm);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
     uvm_destroy(&vm);
 }
@@ -118,7 +118,7 @@ UTEST(ugc_force_full_collects_all_unreachable)
      * no UVAL_CLOSURE values in any slot). */
     int i;
     for (i = 0; i < 20; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
 
@@ -142,8 +142,8 @@ UTEST(ugc_sweep_survives_pinned_cell)
     uvm_init(&vm, NULL, NULL);
 
     /* Allocate one pinned cell and one unpinned cell. */
-    UCell *pinned = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
-    UCell *dead   = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    UCell *pinned = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
+    UCell *dead   = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(pinned != NULL);
     UASSERT(dead != NULL);
 
@@ -167,8 +167,8 @@ UTEST(ugc_sweep_survives_fixed_cell)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *fixed = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
-    UCell *dead  = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+    UCell *fixed = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
+    UCell *dead  = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
     UASSERT(fixed != NULL);
     UASSERT(dead != NULL);
 
@@ -197,13 +197,13 @@ UTEST(ugc_pause_suppresses_cycle)
     vm.gc_debt = (int64_t)vm.gc_threshold + 1;
 
     /* Slice with positive debt and paused GC: should stay IDLE. */
-    urbi_gc_slice(&vm, 4096u);
+    urbi_gc_slice(&vm, 4096U);
 
     UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
 
     /* Resume and verify that a cycle starts normally. */
     urbi_gc_pause(&vm, false);
-    urbi_gc_slice(&vm, 4096u);
+    urbi_gc_slice(&vm, 4096U);
     /* Phase should have advanced out of IDLE. */
     /* (force_full brings it back to IDLE; we only check it moved) */
 
@@ -222,7 +222,7 @@ UTEST(ugc_threshold_updates_at_cycle_end)
     /* Allocate some pinned cells so they survive the sweep. */
     int i;
     for (i = 0; i < 5; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 128u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 128U, UTYPE_OBJECT);
         UASSERT(c != NULL);
         c->gc_byte |= UGC_IS_PINNED;
     }
@@ -262,7 +262,7 @@ UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
      * Need: live * 2 > 16384  →  live > 8192.  Use 10 cells * 1024 = 10240 bytes. */
     int i;
     for (i = 0; i < 10; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 1024u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 1024U, UTYPE_OBJECT);
         UASSERT(c != NULL);
         c->gc_byte |= UGC_IS_PINNED;
     }
@@ -270,7 +270,7 @@ UTEST(ugc_threshold_exceeds_initial_with_large_live_set)
     urbi_gc_force_full(&vm);
 
     size_t live = urbi_gc_live_bytes(&vm);
-    size_t expected_thresh = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100u;
+    size_t expected_thresh = (live * (size_t)URBI_GC_PAUSE_RATIO) / 100U;
 
     UASSERT_EQ(urbi_gc_live_bytes(&vm), (size_t)(10 * 1024));
     UASSERT_EQ(urbi_gc_threshold(&vm), expected_thresh);
@@ -287,7 +287,7 @@ UTEST(ugc_collect_frees_dead_cells)
 
     int i;
     for (i = 0; i < 8; i++) {
-        UCell *c = urbi_gc_alloc(&vm, 64u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
         UASSERT(c != NULL);
     }
     UASSERT_EQ(count_all_cells(&vm), 8);

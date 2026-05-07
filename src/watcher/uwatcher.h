@@ -49,17 +49,17 @@ struct UEvent;   /* defined in T17; used only as pointer here */
 
 /* === Watcher flag bits (stored in UWatcher.flags) === */
 
-#define URBI_WATCHER_ACTIVE                    0x01u  /* installed and live */
-#define URBI_WATCHER_PENDING_UNREGISTER        0x02u  /* stop requested; drain before free */
-#define URBI_WATCHER_FIRED_DURING_EVAL         0x04u  /* condition fired while eval in progress */
-#define URBI_WATCHER_PENDING_REFIRE            0x08u  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
-#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10u  /* body fired at least once since last onleave check (spec #2 §5.1) */
+#define URBI_WATCHER_ACTIVE                    0x01U  /* installed and live */
+#define URBI_WATCHER_PENDING_UNREGISTER        0x02U  /* stop requested; drain before free */
+#define URBI_WATCHER_FIRED_DURING_EVAL         0x04U  /* condition fired while eval in progress */
+#define URBI_WATCHER_PENDING_REFIRE            0x08U  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+#define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10U  /* body fired at least once since last onleave check (spec #2 §5.1) */
 /* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime when a
  * heap closure was unlinked from strand.closure_list.  pool_free frees each owned closure.
  * Only set when strand_closure_unlink confirms the closure was on the heap list. */
-#define URBI_WATCHER_OWNS_COND                 0x20u  /* condition was unlinked from closure_list; pool_free must free it */
-#define URBI_WATCHER_OWNS_BODY                 0x40u  /* body was unlinked; pool_free must free it */
-#define URBI_WATCHER_OWNS_ONLEAVE              0x80u  /* onleave was unlinked; pool_free must free it */
+#define URBI_WATCHER_OWNS_COND                 0x20U  /* condition was unlinked from closure_list; pool_free must free it */
+#define URBI_WATCHER_OWNS_BODY                 0x40U  /* body was unlinked; pool_free must free it */
+#define URBI_WATCHER_OWNS_ONLEAVE              0x80U  /* onleave was unlinked; pool_free must free it */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 

@@ -38,7 +38,7 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 #endif
 
 #ifndef URBI_MAX_ROOT_PROVIDERS
-#  define URBI_MAX_ROOT_PROVIDERS 8u        /* row 10 §5.1; T26 may move to ugc.h */
+#  define URBI_MAX_ROOT_PROVIDERS 8U        /* row 10 §5.1; T26 may move to ugc.h */
 #endif
 
 /* --- errors --- */

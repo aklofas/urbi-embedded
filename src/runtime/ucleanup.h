@@ -20,9 +20,9 @@ typedef enum {
 
 /* === Flag bits stored in UCleanupEntry.flags === */
 
-#define FLAG_HAS_CATCH    0x1u
-#define FLAG_HAS_FINALLY  0x2u
-#define FLAG_HAS_ONLEAVE  0x4u
+#define FLAG_HAS_CATCH    0x1U
+#define FLAG_HAS_FINALLY  0x2U
+#define FLAG_HAS_ONLEAVE  0x4U
 
 /* === Forward declarations for types that land in later tasks. === */
 

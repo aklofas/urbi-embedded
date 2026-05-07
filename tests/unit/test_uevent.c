@@ -53,7 +53,7 @@ static void uevent_sizeof(void)
      * We assert >= 32 so the test passes on 32-bit cross targets where
      * pointers are narrower; the _Static_assert in uevent.h gates the exact
      * 40-byte requirement to __SIZEOF_POINTER__ == 8 builds. */
-    UASSERT(sizeof(UEvent) >= 32u);
+    UASSERT(sizeof(UEvent) >= 32U);
 }
 
 /* ===== Test 6: walker registration ===== */

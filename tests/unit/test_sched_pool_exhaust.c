@@ -126,7 +126,7 @@ UTEST(strand_alloc_exhaustion_returns_null)
     /* First strand and VM remain valid. */
     UASSERT(s1->vm == &vm);
     UASSERT(USTRAND_GET_STATE(s1) == USTRAND_DORMANT);
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     /* Re-enable allocs for cleanup. */
     ca.limit = (size_t)-1;
@@ -164,9 +164,9 @@ UTEST(strand_dormant_destroy_no_counter_corrupt)
     ustrand_destroy(&s, &vm);
 
     /* Counters must be clean. */
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
-    UASSERT_EQ(vm.wakeup_pending_count,  0u);
-    UASSERT_EQ(vm.host_call_pending_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    UASSERT_EQ(vm.wakeup_pending_count,  0U);
+    UASSERT_EQ(vm.host_call_pending_count, 0U);
 
     uvm_destroy(&vm);
 }

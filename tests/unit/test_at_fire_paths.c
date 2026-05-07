@@ -97,7 +97,7 @@ hook_onleave_count(struct UVM *vm, struct UWatcher *w)
 static void
 run_one_dirty_pass(struct UVM *vm)
 {
-    vm->watcher_dirty_count = 1u;
+    vm->watcher_dirty_count = 1U;
     watcher_eval_dirty(vm);
 }
 
@@ -118,7 +118,7 @@ UTEST(at_rising_edge_fires_body)
     /* Install with condition hook off so seed is NIL (falsy). */
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
 
@@ -169,7 +169,7 @@ UTEST(at_with_onleave_fires_on_falling_edge)
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
         NULL,
         /*onleave=*/(UClosure *)3,
-        NULL, 0u);
+        NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;
@@ -223,7 +223,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_WHENEVER, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     /* Two passes with cond true → two fires. */
@@ -261,7 +261,7 @@ UTEST(at_sync_runs_inline)
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT_SYNC, NULL, (UClosure *)1,
         /*body=*/(UClosure *)2,
-        NULL, NULL, 0u);
+        NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;
@@ -308,7 +308,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     /* Install WAITUNTIL with waiter_strand wired. */
     UWatcher *w = urbi_watcher_install_internal(
         &vm, UWATCHER_WAITUNTIL, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Wire waiter_strand manually (install_internal does not know about waiter). */
     w->waiter_strand = &waiter;
@@ -356,7 +356,7 @@ UTEST(at_no_onleave_falling_edge_no_crash)
 
     w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, (UClosure *)1,
-        NULL, NULL, NULL, 0u);
+        NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
     vm.test_watcher_condition_hook = hook_cond_toggle;

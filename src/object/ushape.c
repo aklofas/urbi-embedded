@@ -24,7 +24,7 @@
 
 /* === Transition-cache helpers (file-private) === */
 
-#define USHAPE_INITIAL_CAP   8u
+#define USHAPE_INITIAL_CAP   8U
 
 /* map_alloc — allocate a fresh UShapeMap with `cap` empty entries.
  * cap MUST be a power of two.  Returns NULL on OOM. */
@@ -40,9 +40,9 @@ map_alloc(struct UVM *vm, uint32_t cap)
     }
     UShapeMap *m = (UShapeMap *)c;
     m->cap   = cap;
-    m->count = 0u;
-    m->_pad  = 0u;
-    for (uint32_t i = 0u; i < cap; i++) {
+    m->count = 0U;
+    m->_pad  = 0U;
+    for (uint32_t i = 0U; i < cap; i++) {
         m->entries[i].k = NULL;
         m->entries[i].v = NULL;
     }
@@ -64,16 +64,16 @@ map_hash(const USymbol *k, uint32_t mask)
 static UShape *
 map_get(const UShapeMap *m, const USymbol *k)
 {
-    const uint32_t mask = m->cap - 1u;
+    const uint32_t mask = m->cap - 1U;
     uint32_t i = map_hash(k, mask);
-    for (uint32_t probes = 0u; probes < m->cap; probes++) {
+    for (uint32_t probes = 0U; probes < m->cap; probes++) {
         if (m->entries[i].k == NULL) {
             return NULL;            /* empty slot — terminates the probe */
         }
         if (m->entries[i].k == k) {
             return m->entries[i].v;
         }
-        i = (i + 1u) & mask;
+        i = (i + 1U) & mask;
     }
     return NULL;
 }
@@ -86,10 +86,10 @@ map_get(const UShapeMap *m, const USymbol *k)
 static void
 map_put(UShapeMap *m, USymbol *k, UShape *v)
 {
-    const uint32_t mask = m->cap - 1u;
+    const uint32_t mask = m->cap - 1U;
     uint32_t i = map_hash(k, mask);
     while (m->entries[i].k != NULL && m->entries[i].k != k) {
-        i = (i + 1u) & mask;
+        i = (i + 1U) & mask;
     }
     if (m->entries[i].k == NULL) {
         m->count++;
@@ -113,10 +113,10 @@ UShape *urbi_shape_root(struct UVM *vm)
 
     UShape *s = (UShape *)c;
     s->name        = NULL;
-    s->index       = 0u;
-    s->count       = 0u;
-    s->flags       = 0u;
-    s->_pad        = 0u;
+    s->index       = 0U;
+    s->count       = 0U;
+    s->flags       = 0U;
+    s->_pad        = 0U;
     s->parent      = NULL;
     s->transitions = NULL;
     s->props_table = NULL;
@@ -148,14 +148,14 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
 
     /* 3. Resize cache to 2x if inserting would push load >= 75%.
      * Comparison ((count + 1) * 4) >= (cap * 3) avoids float math. */
-    if (((parent->transitions->count + 1u) * 4u)
-        >= (parent->transitions->cap * 3u)) {
-        UShapeMap *bigger = map_alloc(vm, parent->transitions->cap * 2u);
+    if (((parent->transitions->count + 1U) * 4U)
+        >= (parent->transitions->cap * 3U)) {
+        UShapeMap *bigger = map_alloc(vm, parent->transitions->cap * 2U);
         if (bigger == NULL) {
             return NULL;
         }
         /* Rehash existing entries into the bigger table. */
-        for (uint32_t i = 0u; i < parent->transitions->cap; i++) {
+        for (uint32_t i = 0U; i < parent->transitions->cap; i++) {
             if (parent->transitions->entries[i].k != NULL) {
                 map_put(bigger,
                         parent->transitions->entries[i].k,
@@ -173,9 +173,9 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
     UShape *child = (UShape *)cc;
     child->name        = name;
     child->index       = parent->count;
-    child->count       = parent->count + 1u;
+    child->count       = parent->count + 1U;
     child->flags       = parent->flags;
-    child->_pad        = 0u;
+    child->_pad        = 0U;
     child->parent      = parent;
     child->transitions = NULL;
     child->props_table = NULL;
@@ -191,7 +191,7 @@ UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
 static UPropsTable *
 alloc_props_table(struct UVM *vm, uint32_t n, UProps *const *seed)
 {
-    if (n == 0u) {
+    if (n == 0U) {
         return NULL;
     }
     UCell *c = urbi_gc_alloc(vm,
@@ -203,13 +203,13 @@ alloc_props_table(struct UVM *vm, uint32_t n, UProps *const *seed)
     }
     UPropsTable *pt = (UPropsTable *)c;
     pt->n    = n;
-    pt->_pad = 0u;
+    pt->_pad = 0U;
     if (seed != NULL) {
-        for (uint32_t i = 0u; i < n; i++) {
+        for (uint32_t i = 0U; i < n; i++) {
             pt->entries[i] = seed[i];
         }
     } else {
-        for (uint32_t i = 0u; i < n; i++) {
+        for (uint32_t i = 0U; i < n; i++) {
             pt->entries[i] = NULL;
         }
     }
@@ -228,22 +228,22 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
     if (vm == NULL || parent == NULL) {
         return NULL;
     }
-    if (parent->count == 0u || slot_index >= parent->count) {
+    if (parent->count == 0U || slot_index >= parent->count) {
         return NULL;            /* no slot to attach a property to */
     }
 
     /* Compute new flag nibble at slot_index.  Per pre-M4 USlot/UProps
      * spec §4.1, UShape.flags packs 4 bits/slot across slots (v1.0 cap of
      * 8 slots in the packed form — spill side-table deferred to T-later). */
-    const uint32_t shift = slot_index * 4u;
-    const uint32_t old_nibble = (parent->flags >> shift) & 0xFu;
-    const uint32_t fb = (uint32_t)flag_bit & 0xFu;
+    const uint32_t shift = slot_index * 4U;
+    const uint32_t old_nibble = (parent->flags >> shift) & 0xFU;
+    const uint32_t fb = (uint32_t)flag_bit & 0xFU;
     const uint32_t new_nibble = install ? (old_nibble | fb)
                                         : (old_nibble & ~fb);
     if (old_nibble == new_nibble) {
         return parent;          /* idempotent no-op */
     }
-    const uint32_t new_flags = (parent->flags & ~(0xFu << shift))
+    const uint32_t new_flags = (parent->flags & ~(0xFU << shift))
                              | (new_nibble << shift);
 
     /* Allocate sibling shape (shallow copy with overrides).  Sibling shares
@@ -258,7 +258,7 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
     sibling->index       = parent->index;
     sibling->count       = parent->count;
     sibling->flags       = new_flags;
-    sibling->_pad        = 0u;
+    sibling->_pad        = 0U;
     sibling->parent      = parent->parent;
     sibling->transitions = NULL;   /* sibling builds its own future cache */
     sibling->props_table = NULL;
@@ -301,7 +301,7 @@ int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
  * Cap at URBI_SHAPE_REMOVE_DEPTH_CAP names (256) — deeper lineages return
  * NULL so callers can surface a diagnostic.  Same depth-bound discipline
  * as urbi_object_resolve_slot's resolve stack. */
-#define URBI_SHAPE_REMOVE_DEPTH_CAP  256u
+#define URBI_SHAPE_REMOVE_DEPTH_CAP  256U
 
 UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
                                           USymbol *name)
@@ -309,14 +309,14 @@ UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
     if (vm == NULL || parent == NULL || name == NULL) {
         return NULL;
     }
-    if (parent->count == 0u) {
+    if (parent->count == 0U) {
         return NULL;            /* nothing to drop */
     }
 
     /* Walk parent-ward, recording the (name) at each shape hop.  Order:
      * names[0] is the leaf (last-added), names[depth-1] is the first-added. */
     USymbol *names[URBI_SHAPE_REMOVE_DEPTH_CAP];
-    uint32_t depth = 0u;
+    uint32_t depth = 0U;
     int found = 0;
     for (UShape *cur = parent; cur != NULL && cur->name != NULL;
          cur = cur->parent) {
@@ -341,8 +341,8 @@ UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
         return NULL;
     }
     UShape *cur = root;
-    for (uint32_t i = depth; i > 0u; i--) {
-        cur = urbi_shape_transition_add_slot(vm, cur, names[i - 1u]);
+    for (uint32_t i = depth; i > 0U; i--) {
+        cur = urbi_shape_transition_add_slot(vm, cur, names[i - 1U]);
         if (cur == NULL) {
             return NULL;
         }

@@ -279,7 +279,7 @@ UTEST(realm_destroy_cascade_watchers)
 
     /* Install a watcher owned by realm->tag. */
     UWatcher *w = urbi_watcher_install_internal(
-        &vm, UWATCHER_AT, r->tag, NULL, NULL, NULL, NULL, 0u);
+        &vm, UWATCHER_AT, r->tag, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT(r->tag->member_watchers_head == w);
 
@@ -320,11 +320,11 @@ UTEST(realm_destroy_drain_ordering)
 
     UWatcher *w = urbi_watcher_install_internal(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
-        /*onleave=*/(UClosure *)1, NULL, 0u);
+        /*onleave=*/(UClosure *)1, NULL, 0U);
     UASSERT(w != NULL);
 
     /* Simulate a dirty condition AND a pending cleanup simultaneously. */
-    vm.watcher_dirty_count = 3u;
+    vm.watcher_dirty_count = 3U;
     pending_onleave_queue_push(&vm, w);
 
     /* Before drain: in_watcher_eval must be false (drain hasn't run yet). */
@@ -337,11 +337,11 @@ UTEST(realm_destroy_drain_ordering)
     UASSERT(!vm.in_watcher_eval);
     UASSERT(vm.pending_onleave_head == NULL);
     /* Dirty count must NOT have been cleared by drain alone. */
-    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 3u);
+    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 3U);
 
     /* Now eval can run cleanly. */
     watcher_eval_dirty(&vm);
-    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 0u);
+    UASSERT_EQ((unsigned)vm.watcher_dirty_count, 0U);
     UASSERT(!vm.in_watcher_eval);
 
     uvm_destroy(&vm);

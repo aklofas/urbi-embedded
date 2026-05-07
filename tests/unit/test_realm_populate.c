@@ -147,7 +147,7 @@ UTEST(realm_global_object_slot_is_const) {
     int32_t idx = urbi_shape_find_slot(go->shape, sym);
     UASSERT(idx >= 0);
     /* Extract 4-bit flag nibble for this slot. */
-    uint8_t nibble = (uint8_t)((go->shape->flags >> ((uint32_t)idx * 4u)) & 0x0Fu);
+    uint8_t nibble = (uint8_t)((go->shape->flags >> ((uint32_t)idx * 4U)) & 0x0FU);
     UASSERT(nibble & URBI_SLOT_FLAG_CONSTANT);
     urbi_realm_destroy(&vm, r);
     uvm_destroy(&vm);

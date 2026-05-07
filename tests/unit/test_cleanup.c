@@ -14,7 +14,7 @@
    On 32-bit MCU (Cortex-M, rv32): 8 B fixed + 4 × 4 B = 24 B.
    Tests run host-side only, so 40 B is the operative assertion. */
 UTEST(cleanup_size_40_bytes) {
-    UASSERT_EQ(sizeof(UCleanupEntry), 40u);
+    UASSERT_EQ(sizeof(UCleanupEntry), 40U);
 }
 
 /* Case 2: push two entries, verify LIFO ordering and depth tracking, pop both. */
@@ -26,22 +26,22 @@ UTEST(cleanup_push_pop_basic) {
 
     UCleanupEntry *e1 = strand_cleanup_push(&s);
     UASSERT(e1 != NULL);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
     e1->kind  = (uint8_t)UCLEANUP_TRY_FRAME;
     e1->flags = FLAG_HAS_FINALLY;
 
     UCleanupEntry *e2 = strand_cleanup_push(&s);
     UASSERT(e2 != NULL);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 2u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 2U);
     e2->kind = (uint8_t)UCLEANUP_TAG_SCOPE;
 
     /* LIFO: pop TAG_SCOPE first, then TRY_FRAME. */
     strand_cleanup_pop(&s, UCLEANUP_TAG_SCOPE);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
     UASSERT(s.cleanup_top == e1);
 
     strand_cleanup_pop(&s, UCLEANUP_TRY_FRAME);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
     UASSERT(s.cleanup_top == NULL);
 
     ustrand_destroy(&s, &vm);

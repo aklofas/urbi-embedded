@@ -29,7 +29,7 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
                            UClosure **list_head) {
     uint8_t nup = proto->nupvals;
     /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
-    size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
+    size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
     size_t nbytes = sizeof(UClosure) + extra;
     UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
     if (cl == NULL) return NULL;

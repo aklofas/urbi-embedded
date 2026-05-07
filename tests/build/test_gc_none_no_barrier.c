@@ -20,9 +20,9 @@ static UValue g_child;
 static void exercise_barriers(void)
 {
     /* Under URBI_GC_NONE these are no-op stubs; the compiler folds them away. */
-    urbi_gc_slot_write(NULL, &g_parent, 0u, g_child);
-    urbi_gc_register_write(NULL, NULL, 0u, g_child);
-    urbi_gc_upvalue_write(NULL, NULL, 0u, g_child);
+    urbi_gc_slot_write(NULL, &g_parent, 0U, g_child);
+    urbi_gc_register_write(NULL, NULL, 0U, g_child);
+    urbi_gc_upvalue_write(NULL, NULL, 0U, g_child);
 }
 
 int main(void)

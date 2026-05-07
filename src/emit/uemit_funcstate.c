@@ -129,13 +129,13 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
 int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     if (e == NULL || e->current_fs == NULL) return -1;
     UFuncState *fs = e->current_fs;
-    if (fs->ic_next >= 256u) {
+    if (fs->ic_next >= 256U) {
         e->error = EMIT_TOO_MANY_IC_SITES;
         return -1;
     }
     if (fs->ic_next >= fs->ic_names_cap) {
-        uint16_t new_cap = (fs->ic_names_cap == 0u) ? 16u
-            : (fs->ic_names_cap < 128u ? (uint16_t)(fs->ic_names_cap * 2u) : 256u);
+        uint16_t new_cap = (fs->ic_names_cap == 0U) ? 16U
+            : (fs->ic_names_cap < 128U ? (uint16_t)(fs->ic_names_cap * 2U) : 256U);
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
         USymbol **fresh = (USymbol **)alloc(fs->ic_names,
@@ -160,10 +160,10 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     /* Instructions: grow by 1, shift right, insert at [0]. */
     if (!proto_grow(e->module, p,
                     (void **)&p->instructions, &p->instr_cap,
-                    p->instr_count + 1u, sizeof(uint32_t))) {
+                    p->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
-    if (p->instr_count > 0u) {
+    if (p->instr_count > 0U) {
         emit_memmove_right(p->instructions + 1, p->instructions,
                            p->instr_count * sizeof(uint32_t));
     }
@@ -173,12 +173,12 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     /* Patch instructions that store absolute PCs in their Bx field.
      * OP_TRY_BEGIN Bx = handler_pc; OP_PUSH_TAG Bx = onleave_pc.
      * All targets shifted right by 1 — increment by 1. */
-    for (size_t pi = 1u; pi < p->instr_count; pi++) {
+    for (size_t pi = 1U; pi < p->instr_count; pi++) {
         UOpcode op = uinstr_op(p->instructions[pi]);
         if (op == OP_TRY_BEGIN || op == OP_PUSH_TAG) {
             uint8_t  a  = uinstr_a(p->instructions[pi]);
             uint16_t bx = uinstr_bx(p->instructions[pi]);
-            p->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1u));
+            p->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1U));
         }
     }
 
@@ -197,9 +197,9 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
         if (fresh == NULL) { e->error = EMIT_OOM; return false; }
         p->line_deltas = fresh;
     }
-    if (p->instr_count > 1u) {
+    if (p->instr_count > 1U) {
         emit_memmove_right(p->line_deltas + 1, p->line_deltas,
-                           (p->instr_count - 1u) * sizeof(int8_t));
+                           (p->instr_count - 1U) * sizeof(int8_t));
     }
     p->line_deltas[0] = (int8_t)-128;   /* abs-checkpoint sentinel */
 
@@ -209,20 +209,20 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     }
     /* Insert an abs_line entry at pc=0 using the first real instruction's
      * line (which is now at abs_lines[0].pc == 1 after the bump). */
-    uint32_t line0 = 0u;
-    if (p->abs_line_count > 0u && p->abs_lines[0].pc == 1u) {
+    uint32_t line0 = 0U;
+    if (p->abs_line_count > 0U && p->abs_lines[0].pc == 1U) {
         line0 = p->abs_lines[0].line;
     }
     if (!proto_grow(e->module, p,
                     (void **)&p->abs_lines, &p->abs_line_cap,
-                    p->abs_line_count + 1u, sizeof(UAbsLine))) {
+                    p->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
-    if (p->abs_line_count > 0u) {
+    if (p->abs_line_count > 0U) {
         emit_memmove_right(p->abs_lines + 1, p->abs_lines,
                            p->abs_line_count * sizeof(UAbsLine));
     }
-    p->abs_lines[0].pc   = 0u;
+    p->abs_lines[0].pc   = 0U;
     p->abs_lines[0].line = line0;
     p->abs_line_count++;
 
@@ -237,10 +237,10 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 
     /* Instructions. */
     if (!emit_grow(m, (void **)&m->instructions, &m->instr_cap,
-                   m->instr_count + 1u, sizeof(uint32_t))) {
+                   m->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
-    if (m->instr_count > 0u) {
+    if (m->instr_count > 0U) {
         emit_memmove_right(m->instructions + 1, m->instructions,
                            m->instr_count * sizeof(uint32_t));
     }
@@ -248,12 +248,12 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     m->instr_count++;
 
     /* Patch absolute-PC instructions shifted right by 1. */
-    for (size_t pi = 1u; pi < m->instr_count; pi++) {
+    for (size_t pi = 1U; pi < m->instr_count; pi++) {
         UOpcode op = uinstr_op(m->instructions[pi]);
         if (op == OP_TRY_BEGIN || op == OP_PUSH_TAG) {
             uint8_t  a  = uinstr_a(m->instructions[pi]);
             uint16_t bx = uinstr_bx(m->instructions[pi]);
-            m->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1u));
+            m->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1U));
         }
     }
 
@@ -267,9 +267,9 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
         if (fresh == NULL) { e->error = EMIT_OOM; return false; }
         m->line_deltas = fresh;
     }
-    if (m->instr_count > 1u) {
+    if (m->instr_count > 1U) {
         emit_memmove_right(m->line_deltas + 1, m->line_deltas,
-                           (m->instr_count - 1u) * sizeof(int8_t));
+                           (m->instr_count - 1U) * sizeof(int8_t));
     }
     m->line_deltas[0] = (int8_t)-128;
 
@@ -277,19 +277,19 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     for (size_t ai = 0; ai < m->abs_line_count; ai++) {
         m->abs_lines[ai].pc++;
     }
-    uint32_t line0 = 0u;
-    if (m->abs_line_count > 0u && m->abs_lines[0].pc == 1u) {
+    uint32_t line0 = 0U;
+    if (m->abs_line_count > 0U && m->abs_lines[0].pc == 1U) {
         line0 = m->abs_lines[0].line;
     }
     if (!emit_grow(m, (void **)&m->abs_lines, &m->abs_line_cap,
-                   m->abs_line_count + 1u, sizeof(UAbsLine))) {
+                   m->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
-    if (m->abs_line_count > 0u) {
+    if (m->abs_line_count > 0U) {
         emit_memmove_right(m->abs_lines + 1, m->abs_lines,
                            m->abs_line_count * sizeof(UAbsLine));
     }
-    m->abs_lines[0].pc   = 0u;
+    m->abs_lines[0].pc   = 0U;
     m->abs_lines[0].line = line0;
     m->abs_line_count++;
 
@@ -333,7 +333,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * prologue-free (no wasted instruction). */
     if (fs->references_global && e->error == EMIT_OK) {
         uint32_t prologue = uinstr_enc_abc(OP_LOAD_REALM_GLOBAL,
-                                           fs->r_global_slot, 0u, 0u);
+                                           fs->r_global_slot, 0U, 0U);
         prologue_prepend_instr(e, prologue);
     }
 
@@ -348,7 +348,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
          * umodule_alloc_nested_proto time); the resulting array is freed
          * by umodule_proto_destroy_buffers. */
         p->ic_count = fs->ic_next;
-        if (p->ic_count > 0u) {
+        if (p->ic_count > 0U) {
             UModuleAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
             if (palloc == NULL) palloc = emit_alloc_for(e->module);
@@ -376,7 +376,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
     /* M4 follow-up: top-level funcstate (no target_proto) — copy IC names
      * into UModule.ic_count / ic_names so urbi_module_instance_create can
      * populate proto_instances->entries[0].  Mirrors the UProto path above. */
-    if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0u) {
+    if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
         UModule *mod = e->module;
         UModuleAllocFn malloc_fn = emit_alloc_for(e->module);
         if (malloc_fn == NULL) {
@@ -414,7 +414,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * parent emitted after the CLOSURE prelude would compute a delta against
      * the last line of the child body, producing a wrong delta. */
     if (fs->parent != NULL && fs->target_proto != NULL) {
-        e->prev_line = 0u;
+        e->prev_line = 0U;
     }
     e->current_fs = fs->parent;
     return fs;
@@ -487,7 +487,7 @@ bool uemit_close_block(UEmitter *e) {
     /* Per allocator spec: emit OP_CLOSE if any local in this block was
      * captured. base = first slot to close = first_local_idx. */
     if (blk->has_captured) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0u, 0u);
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0U, 0U);
         emit_instr(e, i, e->prev_line);
     }
 
@@ -505,7 +505,7 @@ void uemit_emit_loop_back_close(UEmitter *e) {
     if (fs == NULL || fs->nblocks == 0) return;
     const UBlockCtx *blk = &fs->blocks[fs->nblocks - 1];
     if (blk->is_loop && blk->has_captured) {
-        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0u, 0u);
+        uint32_t i = uinstr_enc_abc(OP_CLOSE, (uint8_t)blk->first_local_idx, 0U, 0U);
         emit_instr(e, i, e->prev_line);
     }
 }

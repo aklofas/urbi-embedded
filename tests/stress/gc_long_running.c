@@ -26,7 +26,7 @@ int main(void)
     for (int i = 0; i < LOOP_COUNT; i++) {
         /* Allocate a small cell and immediately drop the reference.
          * The GC is responsible for collecting unreachable cells. */
-        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32u, UTYPE_OBJECT);
+        UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
         if (c == NULL) {
             fprintf(stderr, "FAIL: urbi_gc_alloc returned NULL at i=%d\n", i);
             uvm_destroy(&vm);

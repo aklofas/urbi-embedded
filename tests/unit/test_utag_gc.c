@@ -84,7 +84,7 @@ UTEST(utag_sizeof_m5)
      *         16 (enter_event + leave_event) + 16 (UValue name) = 56 B raw,
      * padded by compiler to 64 B on 64-bit targets due to alignment.
      * We assert >= 56 to accommodate both 32-bit and 64-bit targets. */
-    UASSERT(sizeof(UTag) >= 56u);
+    UASSERT(sizeof(UTag) >= 56U);
 }
 
 /* ===== Test 3: UTYPE_TAG walker registered ===== */

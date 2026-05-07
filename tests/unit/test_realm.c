@@ -148,7 +148,7 @@ UTEST(realm_flags_default_zero)
 
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
-    UASSERT_EQ((unsigned)r->flags, 0u);
+    UASSERT_EQ((unsigned)r->flags, 0U);
 
     urbi_realm_destroy(&vm, r);
     uvm_destroy(&vm);

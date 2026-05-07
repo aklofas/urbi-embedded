@@ -244,7 +244,7 @@ UTEST(capi_tag_stop_validates_args)
     /* NULL vm: must return URBI_ERR_INVALID_ARG. */
     /* Use a stack-allocated real UTag so dereferencing is safe. */
     struct UTag real_tag;
-    real_tag.type_tag             = 5u; /* UTYPE_TAG */
+    real_tag.type_tag             = 5U; /* UTYPE_TAG */
     real_tag.gc_byte              = 0;
     real_tag.pad0                 = 0;
     real_tag.flags                = 0;
@@ -323,8 +323,8 @@ UTEST(capi_cleanup_stack_init_fails_on_null_alloc)
 
     /* All cleanup fields must be zero on failure. */
     UASSERT(s.cleanup_base  == NULL);
-    UASSERT_EQ((unsigned)s.cleanup_cap,   0u);
-    UASSERT_EQ((unsigned)s.cleanup_depth, 0u);
+    UASSERT_EQ((unsigned)s.cleanup_cap,   0U);
+    UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
     UASSERT(s.cleanup_top   == NULL);
 
     uvm_destroy(&vm);

@@ -126,7 +126,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
     return 0;
 }
 
-#define URBI_REPL_MAX_FILE (1024u * 1024u)
+#define URBI_REPL_MAX_FILE (1024U * 1024U)
 
 /* Slurp a file (or stdin, with path=="-") into a freshly-malloc'd buffer.
    Returns pointer on success, NULL on error (message printed to stderr).

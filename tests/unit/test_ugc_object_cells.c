@@ -83,13 +83,13 @@ UTEST(ugc_object_cells_alloc_each_type) {
     uvm_init(&vm, NULL, NULL);
 
     UCell *o   = urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
-    UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4u * sizeof(UObject *),
+    UCell *up  = urbi_gc_alloc(&vm, sizeof(UProtos) + 4U * sizeof(UObject *),
                                UTYPE_PROTOS);
     UCell *s   = urbi_gc_alloc(&vm, sizeof(UShape),  UTYPE_SHAPE);
     UCell *p   = urbi_gc_alloc(&vm, sizeof(UProps),  UTYPE_PROPS);
-    UCell *sh  = urbi_gc_alloc(&vm, 32u, UTYPE_SLOTHANDLE);
-    UCell *mi  = urbi_gc_alloc(&vm, 32u, UTYPE_MODULE_INSTANCE);
-    UCell *pi  = urbi_gc_alloc(&vm, 32u, UTYPE_PROTO_INSTANCE);
+    UCell *sh  = urbi_gc_alloc(&vm, 32U, UTYPE_SLOTHANDLE);
+    UCell *mi  = urbi_gc_alloc(&vm, 32U, UTYPE_MODULE_INSTANCE);
+    UCell *pi  = urbi_gc_alloc(&vm, 32U, UTYPE_PROTO_INSTANCE);
 
     UASSERT(o  != NULL); UASSERT_EQ(o->type_tag,  (int)UTYPE_OBJECT);
     UASSERT(up != NULL); UASSERT_EQ(up->type_tag, (int)UTYPE_PROTOS);
@@ -113,13 +113,13 @@ UTEST(ugc_object_cells_full_cycle_reclaims_unreferenced) {
     uvm_init(&vm, NULL, NULL);
 
     (void)urbi_gc_alloc(&vm, sizeof(UObject), UTYPE_OBJECT);
-    (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2u * sizeof(UObject *),
+    (void)urbi_gc_alloc(&vm, sizeof(UProtos) + 2U * sizeof(UObject *),
                         UTYPE_PROTOS);
     (void)urbi_gc_alloc(&vm, sizeof(UShape),  UTYPE_SHAPE);
     (void)urbi_gc_alloc(&vm, sizeof(UProps),  UTYPE_PROPS);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_SLOTHANDLE);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_MODULE_INSTANCE);
-    (void)urbi_gc_alloc(&vm, 16u, UTYPE_PROTO_INSTANCE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_SLOTHANDLE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_MODULE_INSTANCE);
+    (void)urbi_gc_alloc(&vm, 16U, UTYPE_PROTO_INSTANCE);
 
     UASSERT_EQ(count_all_cells(&vm), 7);
 
@@ -193,12 +193,12 @@ UTEST(ugc_object_cells_ushape_walker_traces_children) {
     UPropsTable *pt = (UPropsTable *)urbi_gc_alloc(&vm,
         sizeof(UPropsTable) + sizeof(UProps *), UTYPE_PROPS_TABLE);
     UASSERT(pt != NULL);
-    pt->n          = 1u;
-    pt->_pad       = 0u;
+    pt->n          = 1U;
+    pt->_pad       = 0U;
     pt->entries[0] = child_props;
     shape->parent      = parent;
     shape->props_table = pt->entries;
-    shape->count       = 1u;
+    shape->count       = 1U;
 
     /* Install shape as the only test root.  After the cycle, the mark
      * phase shades shape gray, walks it (shading parent + child_props),
@@ -242,10 +242,10 @@ UTEST(ugc_object_cells_uprotos_walker_traces_items) {
     UASSERT(child1 != NULL);
 
     UProtos *up = (UProtos *)urbi_gc_alloc(
-            &vm, sizeof(UProtos) + 3u * sizeof(UObject *),
+            &vm, sizeof(UProtos) + 3U * sizeof(UObject *),
             UTYPE_PROTOS);
     UASSERT(up != NULL);
-    up->n        = 3u;
+    up->n        = 3U;
     up->items[0] = child0;
     up->items[1] = NULL;     /* exercise the NULL-skip path */
     up->items[2] = child1;

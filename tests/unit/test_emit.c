@@ -1196,7 +1196,7 @@ UTEST(disassemble_call_format) {
     m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
     m.instr_cap   = 1;
     m.instr_count = 1;
-    m.instructions[0] = uinstr_enc_abc(OP_CALL, 0u, 3u, 2u);
+    m.instructions[0] = uinstr_enc_abc(OP_CALL, 0U, 3U, 2U);
 
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
@@ -1213,7 +1213,7 @@ UTEST(disassemble_jmp_signed_offset) {
     m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
     m.instr_cap   = 1;
     m.instr_count = 1;
-    m.instructions[0] = uinstr_enc_abx(OP_JMP, 0u, (uint16_t)32760u);
+    m.instructions[0] = uinstr_enc_abx(OP_JMP, 0U, (uint16_t)32760U);
 
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
@@ -1237,11 +1237,11 @@ UTEST(disassemble_closure_with_prelude) {
     emit_ctx_init(&c, "function() { var x = 1; var y = 2; function() { x + y } }");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT(c.module.nested_count >= 2u);
+    UASSERT(c.module.nested_count >= 2U);
     /* The outer proto (nested[0]) captures nothing from the chunk top. */
-    UASSERT(c.module.nested[0]->nupvals == 0u);
+    UASSERT(c.module.nested[0]->nupvals == 0U);
     /* The inner proto (nested[1]) captures x and y as 2 upvalues. */
-    UASSERT(c.module.nested[1]->nupvals == 2u);
+    UASSERT(c.module.nested[1]->nupvals == 2U);
 
     /* Root module disassembly must show at least one instruction and
      * a CLOSURE P0 entry for the outer function proto. */
@@ -1348,8 +1348,8 @@ UTEST(emit_row7_push_tag_round_trip) {
     UASSERT_EQ((int)OP_PUSH_TAG, (int)uinstr_op(w));
     /* A = (flags<<4)|(reg_tag&0xF) = (5<<4)|2 = 0x52 = 82 */
     uint8_t a = uinstr_a(w);
-    UASSERT_EQ((uint8_t)2,  (uint8_t)(a & 0x0Fu));          /* tag_reg */
-    UASSERT_EQ((uint8_t)5,  (uint8_t)((a >> 4) & 0x0Fu));   /* flags */
+    UASSERT_EQ((uint8_t)2,  (uint8_t)(a & 0x0FU));          /* tag_reg */
+    UASSERT_EQ((uint8_t)5,  (uint8_t)((a >> 4) & 0x0FU));   /* flags */
     UASSERT_EQ((uint16_t)300, uinstr_bx(w));                 /* onleave_pc */
 
     uarena_destroy(&arena); umodule_destroy(&module); uvm_destroy(&vm);
@@ -1574,7 +1574,7 @@ UTEST(emit_top_level_member_get_populates_module_ic_count) {
     emit_ctx_init(&c, "var o = nil; o.x");
     UASSERT_EQ(EMIT_OK, emit_ctx_run(&c));
 
-    UASSERT(c.module.ic_count >= 1u);
+    UASSERT(c.module.ic_count >= 1U);
     UASSERT(c.module.ic_names != NULL);
     /* "x" must be present somewhere in the IC name table. */
     const char *xn = ustr_intern(&c.vm, "x", 1);

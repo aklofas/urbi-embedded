@@ -471,7 +471,7 @@ UTEST(resolve_slot_finds_via_protos) {
     UASSERT_EQ(urbi_object_set_local_slot(&vm, gp, deep, v77), 0);
 
     UObject *holder = NULL;
-    uint32_t idx = 0u;
+    uint32_t idx = 0U;
     UASSERT_EQ(urbi_object_resolve_slot(&vm, c, deep, &holder, &idx), 1);
     UASSERT(holder == gp);
     UASSERT_EQ((int)idx, 0);
@@ -590,7 +590,7 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     /* Mutate IC[0] in vm_a; vm_b's IC[0] stays zero. */
     pi_a->ic_table[0].n              = 2;
     pi_a->ic_table[0].replace_cursor = 1;
-    pi_a->ic_table[0].topology_gen[0] = 42u;
+    pi_a->ic_table[0].topology_gen[0] = 42U;
 
     UASSERT_EQ((int)pi_b->ic_table[0].n,              0);
     UASSERT_EQ((int)pi_b->ic_table[0].replace_cursor, 0);
@@ -682,7 +682,7 @@ UTEST(determinism_checksum_includes_ic_state) {
     UProtoInstance *pi = &mi->proto_instances->entries[1];
     pi->ic_table[0].n               = 1;
     pi->ic_table[0].replace_cursor  = 1;
-    pi->ic_table[0].topology_gen[0] = 7u;
+    pi->ic_table[0].topology_gen[0] = 7U;
 
     uint64_t h_after = urbi_get_determinism_checksum(&vm);
 
@@ -720,7 +720,7 @@ UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     uarena_init(&arena, 4096);
 
     const char *src = "var x = 1;";
-    size_t src_len = sizeof("var x = 1;") - 1u;
+    size_t src_len = sizeof("var x = 1;") - 1U;
     ULexer lex;
     ulex_init(&lex, src, src_len);
 

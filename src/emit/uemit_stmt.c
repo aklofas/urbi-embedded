@@ -47,10 +47,10 @@ uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
                     uint8_t dst = e->next_reg;
                     if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
                         e->error = EMIT_REG_EXHAUSTED;
-                        return 0u;
+                        return 0U;
                     }
                     emit_instr(e, uinstr_enc_abc(OP_MOVE, dst,
-                                                 fs->actvars[i].slot, 0u),
+                                                 fs->actvars[i].slot, 0U),
                                (uint32_t)expr->line);
                     e->next_reg++;
                     if (e->next_reg > e->max_reg_seen)
@@ -119,12 +119,12 @@ uint8_t emit_function_literal(UEmitter *e,
 
     /* 1. Allocate a new UProto under the module's nested[] list. */
     UProto *child_proto = umodule_alloc_nested_proto(e->module);
-    if (child_proto == NULL) { e->error = EMIT_OOM; return 0u; }
+    if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(e->module->nested_count - 1);
 
     /* 2. Open a nested FuncState targeting child_proto. */
     UFuncState *child_fs = uemit_open_function(e, parent_fs);
-    if (child_fs == NULL) return 0u;
+    if (child_fs == NULL) return 0U;
     child_fs->target_proto = child_proto;
 
     /* 3. Declare parameters as locals in child_fs. */
@@ -134,9 +134,9 @@ uint8_t emit_function_literal(UEmitter *e,
             UAstNode *pn = params[pi];
             const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
                                             (size_t)pn->u.param.name_len);
-            if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0u; }
+            if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0U; }
             int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
-            if (slot < 0) { uemit_close_function(e); return 0u; }
+            if (slot < 0) { uemit_close_function(e); return 0U; }
             if (pn->kind == AST_LAZY_PARAM) {
                 child_fs->actvars[slot].is_lazy = true;
             }
@@ -171,20 +171,20 @@ uint8_t emit_function_literal(UEmitter *e,
     uint8_t body_reg = emit_expr(e, body);
     if (e->error != EMIT_OK) {
         uemit_close_function(e);
-        return 0u;
+        return 0U;
     }
 
     /* 5. Final OP_RET.  as_expression=true: return body's last result.
      *    as_expression=false: return nil (body runs for side-effects). */
     if (as_expression) {
-        emit_instr(e, uinstr_enc_abc(OP_RET, body_reg, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_RET, body_reg, 0U, 0U),
                    (uint32_t)body->line);
     } else {
         uint8_t nil_reg = e->next_reg;
         if (nil_reg < child_fs->freereg) nil_reg = child_fs->freereg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, nil_reg, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, nil_reg, 0U, 0U),
                    (uint32_t)body->line);
-        emit_instr(e, uinstr_enc_abc(OP_RET, nil_reg, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_RET, nil_reg, 0U, 0U),
                    (uint32_t)body->line);
     }
 
@@ -205,7 +205,7 @@ uint8_t emit_function_literal(UEmitter *e,
         uint8_t dst = e->current_fs->freereg;
         if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
-            return 0u;
+            return 0U;
         }
         e->current_fs->freereg++;
         if (e->current_fs->freereg > e->current_fs->max_reg_seen)
@@ -220,8 +220,8 @@ uint8_t emit_function_literal(UEmitter *e,
             for (ui = 0; ui < nup; ui++) {
                 UUpvalDesc *ud = &upvals_copy[ui];
                 emit_instr(e,
-                    uinstr_enc_abc(OP_MOVE, 0u,
-                                   ud->in_stack ? 1u : 0u,
+                    uinstr_enc_abc(OP_MOVE, 0U,
+                                   ud->in_stack ? 1U : 0U,
                                    (uint8_t)ud->idx),
                     (uint32_t)body->line);
             }
@@ -259,7 +259,7 @@ uint8_t emit_function_literal(UEmitter *e,
 uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
 
     /* 1. rd is the result register; cond is compiled into rx >= rd.
@@ -271,15 +271,15 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* Compile cond starting at rd. */
     uint8_t rx = rd;
     uint8_t cond_reg = emit_expr(e, n->u.if_stmt.cond);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
     (void)cond_reg;  /* rx == cond_reg */
 
     /* 2. TEST rx, 0, 1 — skip next instr (JMP) when cond is truthy. */
-    emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0U, 1U), (uint32_t)n->line);
 
     /* 3. JMP placeholder to else/nil target (patched later). */
     int jmp_to_else = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
 
     /* 4. Reset cursor to rd so then-block allocates starting at rd. */
     e->next_reg = rd;
@@ -288,22 +288,22 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
 
     /* 5. Compile then-block. */
     uint8_t then_r = emit_expr(e, n->u.if_stmt.then_block);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
     if (then_r != rd) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, then_r, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, then_r, 0U),
                    (uint32_t)n->line);
     }
 
     /* 6. JMP past else/nil-load to end (patched later). */
     int jmp_to_end = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
 
     /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
     {
         int alt_target = (int)emit_instr_count(e);
         int alt_offset = alt_target - (jmp_to_else + 1);
         emit_patch_instr(e, jmp_to_else,
-            uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + alt_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + alt_offset)));
     }
 
     /* 8. Reset cursor to rd for else/nil arm. */
@@ -314,13 +314,13 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* 9. Compile else-block or emit LOADNIL. */
     if (n->u.if_stmt.else_block != NULL) {
         uint8_t else_r = emit_expr(e, n->u.if_stmt.else_block);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
         if (else_r != rd) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, else_r, 0u),
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, rd, else_r, 0U),
                        (uint32_t)n->line);
         }
     } else {
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U),
                    (uint32_t)n->line);
     }
 
@@ -329,11 +329,11 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
         int end_target = (int)emit_instr_count(e);
         int end_offset = end_target - (jmp_to_end + 1);
         emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + end_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + end_offset)));
     }
 
     /* Advance past rd so callers can free it as a temp if needed. */
-    e->next_reg = rd + 1u;
+    e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs != NULL) {
         if (e->next_reg > e->current_fs->max_reg_seen)
@@ -358,7 +358,7 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
 
     int loop_start = (int)emit_instr_count(e);
@@ -366,14 +366,14 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     /* 1. Compile cond into rx. */
     uint8_t rx = e->next_reg;
     emit_expr(e, n->u.while_stmt.cond);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
 
     /* 2. TEST rx, 0, 1 — skip JMP-to-exit when cond is truthy. */
-    emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0u, 1u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abc(OP_TEST, rx, 0U, 1U), (uint32_t)n->line);
 
     /* 3. JMP placeholder to exit (patched later). */
     int jmp_to_exit = (int)emit_instr_count(e);
-    emit_instr(e, uinstr_enc_abx(OP_JMP, 0u, 32768u), (uint32_t)n->line);
+    emit_instr(e, uinstr_enc_abx(OP_JMP, 0U, 32768U), (uint32_t)n->line);
 
     /* Free cond temp; locals beneath rx stay. */
     e->current_fs->freereg = fs_temp_floor(e->current_fs);
@@ -383,17 +383,17 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
           which opens with is_loop=false). */
     if (n->u.while_stmt.body->kind != AST_BLOCK) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
     {
         UAstNode *body = n->u.while_stmt.body;
-        if (!uemit_open_block(e, /*is_loop=*/true)) return 0u;
+        if (!uemit_open_block(e, /*is_loop=*/true)) return 0U;
 
         for (int i = 0; i < body->u.block.count; i++) {
             emit_expr(e, body->u.block.stmts[i]);
             if (e->error != EMIT_OK) {
                 uemit_close_block(e);
-                return 0u;
+                return 0U;
             }
             /* Release temps between body statements; locals stay. */
             e->current_fs->freereg = fs_temp_floor(e->current_fs);
@@ -406,14 +406,14 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         /* 6. Back-edge JMP to loop_start. */
         {
             int back_offset = loop_start - ((int)emit_instr_count(e) + 1);
-            emit_instr(e, uinstr_enc_abx(OP_JMP, 0u,
+            emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
                                          (uint16_t)(32768 + back_offset)),
                        (uint32_t)n->line);
         }
 
         /* 7. Close the loop block (emits OP_CLOSE if has_captured, then pops
               actvars back). */
-        if (!uemit_close_block(e)) return 0u;
+        if (!uemit_close_block(e)) return 0U;
     }
 
     /* 8. Patch the exit JMP to current pc. */
@@ -421,14 +421,14 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
         int exit_target = (int)emit_instr_count(e);
         int exit_offset = exit_target - (jmp_to_exit + 1);
         emit_patch_instr(e, jmp_to_exit,
-            uinstr_enc_abx(OP_JMP, 0u, (uint16_t)(32768 + exit_offset)));
+            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(32768 + exit_offset)));
     }
 
     /* while-loop is a statement; it doesn't produce a value.
        Return a register that holds nil to give callers a valid reg. */
     {
         uint8_t r = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0u, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, r, 0U, 0U),
                    (uint32_t)n->line);
         e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
@@ -445,7 +445,7 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
 
     /* T16: Look up callee's function signature when the callee is a
@@ -484,11 +484,11 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
 
     uint8_t callee_reg = e->next_reg;
     uint8_t callee_r   = emit_expr(e, n->u.call.callee);
-    if (e->error != EMIT_OK) return 0u;
+    if (e->error != EMIT_OK) return 0U;
     /* Move callee into callee_reg if emit_expr put it elsewhere
      * (shouldn't happen since next_reg == callee_reg on entry, but be safe). */
     if (callee_r != callee_reg) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0u),
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0U),
                    (uint32_t)n->line);
     }
 
@@ -528,10 +528,10 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
                 arg_r = emit_expr(e, n->u.call.args[ai]);
             }
             e->lazy_arg_context = saved_ctx;
-            if (e->error != EMIT_OK) return 0u;
-            uint8_t expected = callee_reg + 1u + (uint8_t)ai;
+            if (e->error != EMIT_OK) return 0U;
+            uint8_t expected = callee_reg + 1U + (uint8_t)ai;
             if (arg_r != expected) {
-                emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_r, 0u),
+                emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_r, 0U),
                            (uint32_t)n->line);
             }
         }
@@ -539,10 +539,10 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
 
     /* OP_CALL callee_reg, nargs+1, 2 (1 result expected). */
     uint8_t b = (uint8_t)(n->u.call.arg_count + 1);
-    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, 2u),
+    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, 2U),
                (uint32_t)n->line);
     /* Result is written to R[callee_reg] by the called function's OP_RET. */
-    e->next_reg = callee_reg + 1u;
+    e->next_reg = callee_reg + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs != NULL && e->next_reg > e->current_fs->max_reg_seen)
         e->current_fs->max_reg_seen = e->next_reg;
@@ -557,20 +557,20 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_return_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
     uint8_t ret_reg;
     if (n->u.ret.value != NULL) {
         ret_reg = emit_expr(e, n->u.ret.value);
-        if (e->error != EMIT_OK) return 0u;
+        if (e->error != EMIT_OK) return 0U;
     } else {
         /* Bare `return`: return nil. */
         ret_reg = alloc_reg(e);
-        if (e->error != EMIT_OK) return 0u;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, ret_reg, 0u, 0u),
+        if (e->error != EMIT_OK) return 0U;
+        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, ret_reg, 0U, 0U),
                    (uint32_t)n->line);
     }
-    emit_instr(e, uinstr_enc_abc(OP_RET, ret_reg, 0u, 0u),
+    emit_instr(e, uinstr_enc_abc(OP_RET, ret_reg, 0U, 0U),
                (uint32_t)n->line);
     /* Return the register so the block's last-stmt-reg logic works.
      * Any instructions after OP_RET in the same block are unreachable
@@ -585,7 +585,7 @@ uint8_t emit_return_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_function_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL || e->vm == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
-        return 0u;
+        return 0U;
     }
     return emit_function_literal(e,
                                  n->u.func.params,

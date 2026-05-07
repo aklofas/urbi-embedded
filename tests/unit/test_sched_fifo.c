@@ -45,14 +45,14 @@ UTEST(fifo_transition1_dormant_make_runnable_appends_tail)
 
     sched_strand_make_runnable(&a);
     UASSERT(vm.ready_head == &a);
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
     assert_at_tail(&vm, &a);
 
     sched_strand_make_runnable(&b);
     /* b appended after a */
     UASSERT(vm.ready_head == &a);
     UASSERT(vm.ready_tail == &b);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
@@ -85,7 +85,7 @@ UTEST(fifo_transition2_strand_start_goes_to_tail)
     /* second must be at the tail, first still at the head. */
     UASSERT(vm.ready_head == first);
     UASSERT(vm.ready_tail == second);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     urbi_strand_destroy(second);
     urbi_strand_destroy(first);
@@ -116,13 +116,13 @@ UTEST(fifo_transition3_yield_appends_tail)
     /* Simulate dispatch: dequeue a, set RUNNING. */
     sched_dequeue_ready_head(&vm);
     a.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     /* a yields: re-enqueues at tail behind b. */
     sched_strand_yield(&a);
     UASSERT(vm.ready_head == &b);
     UASSERT(vm.ready_tail == &a);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     ustrand_destroy(&a, &vm);
     ustrand_destroy(&b, &vm);
@@ -147,36 +147,36 @@ UTEST(fifo_transition4_unblock_appends_tail)
     /* Enqueue both: head=a, tail=b. */
     sched_strand_make_runnable(&a);
     sched_strand_make_runnable(&b);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
     UASSERT(vm.ready_head == &a);
 
     /* Simulate dispatch: dequeue a, set RUNNING.
      * sched_dequeue_ready_head decrements count (2 → 1). */
     sched_dequeue_ready_head(&vm);
     a.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
     UASSERT(vm.ready_head == &b);
 
     /* a blocks on sleep (RUNNING → WAITING).  sched_strand_block decrements
      * count again because it sees state==RUNNING: count goes 1 → 0. */
-    sched_strand_block(&a, USTRAND_REASON_SLEEP, 999999u);
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 999999U);
     UASSERT(USTRAND_GET_STATE(&a) == USTRAND_WAITING);
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
-    UASSERT_EQ(vm.wakeup_pending_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
 
     /* ustep.c re-increments for WAITING transitions during dispatch; simulate
      * that here to restore the invariant (count should account for a being
      * live-but-waiting). */
     vm.strand_runnable_count++;  /* mirrors ustep.c re-increment after WAITING */
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     /* Unblock a: sleep_q_remove (wakeup_pending 1→0) + make_runnable (count 1→2).
      * a must go to the tail behind b. */
     sched_strand_unblock(&a);
     UASSERT(vm.ready_head == &b);
     UASSERT(vm.ready_tail == &a);
-    UASSERT_EQ(vm.wakeup_pending_count, 0u);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     sched_dequeue_ready_head(&vm);  /* drain b */
     sched_dequeue_ready_head(&vm);  /* drain a */
@@ -206,19 +206,19 @@ UTEST(fifo_transition5_watcher_body_spawn_appends_tail)
     sched_strand_make_runnable(&parent);
     sched_dequeue_ready_head(&vm);
     parent.state = USTRAND_STATE_RUNNING;
-    UASSERT_EQ(vm.strand_runnable_count, 0u);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
 
     /* Watcher body spawned while parent is running: goes to tail. */
     sched_strand_make_runnable(&watcher_body);
     UASSERT(vm.ready_head == &watcher_body);
     UASSERT(vm.ready_tail == &watcher_body);
-    UASSERT_EQ(vm.strand_runnable_count, 1u);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
 
     /* Re-make parent runnable (yield): appends after watcher body. */
     sched_strand_yield(&parent);
     UASSERT(vm.ready_head == &watcher_body);
     UASSERT(vm.ready_tail == &parent);
-    UASSERT_EQ(vm.strand_runnable_count, 2u);
+    UASSERT_EQ(vm.strand_runnable_count, 2U);
 
     ustrand_destroy(&parent, &vm);
     ustrand_destroy(&watcher_body, &vm);

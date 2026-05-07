@@ -38,12 +38,12 @@ UTEST(ugc_two_white_flip)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UASSERT_EQ(vm.current_white, 0u);
+    UASSERT_EQ(vm.current_white, 0U);
 
     /* Manually flip — T24 does this at the IDLE → MARK_ROOTS transition. */
-    vm.current_white ^= 0x01u;
-    UASSERT_EQ(vm.current_white, 1u);
-    UASSERT_EQ(OTHER_WHITE(&vm), 0u);
+    vm.current_white ^= 0x01U;
+    UASSERT_EQ(vm.current_white, 1U);
+    UASSERT_EQ(OTHER_WHITE(&vm), 0U);
 
     uvm_destroy(&vm);
 }
@@ -57,7 +57,7 @@ UTEST(ugc_alloc_born_current_white)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UASSERT(c != NULL);
     UASSERT_EQ((c->gc_byte & UGC_COLOR_MASK), vm.current_white);
     UASSERT_EQ(c->type_tag, (uint8_t)UTYPE_OBJECT);
@@ -75,11 +75,11 @@ UTEST(ugc_dead_color_after_flip)
     UVM vm;
     uvm_init(&vm, NULL, NULL);
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 32U, UTYPE_OBJECT);
     UASSERT(c != NULL);
 
     /* c was born white(0); flip current_white → c is now in OTHER_WHITE. */
-    vm.current_white ^= 0x01u;
+    vm.current_white ^= 0x01U;
     UASSERT(IS_DEAD(&vm, c));
 
     uvm_destroy(&vm);
@@ -97,7 +97,7 @@ UTEST(ugc_alloc_increments_debt)
 
     int64_t debt_before = vm.gc_debt;
 
-    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 100u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 100U, UTYPE_OBJECT);
     UASSERT(c != NULL);
     UASSERT(vm.gc_debt > debt_before);
 
@@ -120,9 +120,9 @@ UTEST(ugc_alloc_triggers_pending_at_threshold)
      * positive.  Note: urbi_gc_alloc with option-B sidecar works for any
      * size >= sizeof(UCell) (header is inside the allocated block).
      * size=100 is fine with option B; sidecar is separate. */
-    UCell *c = urbi_gc_alloc(&vm, 100u, UTYPE_OBJECT);
+    UCell *c = urbi_gc_alloc(&vm, 100U, UTYPE_OBJECT);
     UASSERT(c != NULL);
-    UASSERT_EQ(vm.gc_pending, 1u);
+    UASSERT_EQ(vm.gc_pending, 1U);
 
     uvm_destroy(&vm);
 }
@@ -145,7 +145,7 @@ UTEST(ugc_alloc_returns_null_on_cell_oom)
     UASSERT(c == NULL);
     /* Counters must NOT have been incremented on a failed alloc. */
     UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
     uvm_destroy(&vm);
 }
@@ -167,7 +167,7 @@ UTEST(ugc_alloc_returns_null_on_sidecar_oom)
     UASSERT(c == NULL);
     /* Cell allocation must have been rolled back (freed); counters NOT incremented. */
     UASSERT_EQ(vm.gc_total_allocated, (size_t)0);
-    UASSERT_EQ(vm.gc_pending, 0u);
+    UASSERT_EQ(vm.gc_pending, 0U);
 
     uvm_destroy(&vm);
 }

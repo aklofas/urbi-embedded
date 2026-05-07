@@ -29,7 +29,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     if (vm->last_return_closure != NULL) {
         UClosure *prev = vm->last_return_closure;
         uint8_t nup = prev->nupvals;
-        size_t extra = (nup > 1u) ? (size_t)(nup - 1u) * sizeof(UUpvalCell *) : 0u;
+        size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
         (void)extra;
         vm->alloc_fn(prev, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
@@ -54,7 +54,7 @@ UVMError uvm_run(UVM *vm, const UModule *module, UValue *out) {
     urbi_zero(&strand, sizeof(strand));
     strand.vm                   = vm;
     strand.state                = USTRAND_STATE_DORMANT;
-    strand.is_transient_strand = 1u;  /* T33: discriminator for OP_FORK_* guards */
+    strand.is_transient_strand = 1U;  /* T33: discriminator for OP_FORK_* guards */
 
     /* Allocate the per-strand register stack first (preserves M2 OOM contract:
      * first allocation failure → UVM_OOM with diagnostic before cleanup init).

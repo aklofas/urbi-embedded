@@ -101,7 +101,7 @@ make_body_watcher(struct UVM *vm, struct URealm *realm,
         NULL,         /* condition */
         body_cl,      /* body */
         NULL,         /* onleave */
-        NULL, 0u);
+        NULL, 0U);
     if (w) {
         w->realm = realm;
     }

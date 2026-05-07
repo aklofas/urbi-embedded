@@ -219,7 +219,7 @@ UTEST(attach_ambient_tags_basic)
 
     /* Attach the two-element chain. */
     urbi_strand_attach_ambient_tags(child, chain, n);
-    UASSERT_EQ((unsigned)child->cleanup_depth, 2u);
+    UASSERT_EQ((unsigned)child->cleanup_depth, 2U);
     UASSERT(child->fatal_status == UEXEC_OK);
 
     /* child should appear in realm->tag's member list. */
@@ -316,7 +316,7 @@ UTEST(spawned_strand_inherits_ambient_chain)
     UASSERT(s != NULL);
 
     /* Strand should have exactly one cleanup entry: the synthetic realm->tag. */
-    UASSERT_EQ((unsigned)s->cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 1U);
     UASSERT(s->cleanup_base[0].kind == (uint8_t)UCLEANUP_TAG_SCOPE);
     UASSERT(s->cleanup_base[0].owning_tag  == r->tag);
     UASSERT(s->cleanup_base[0].strand_back == s);
@@ -353,7 +353,7 @@ UTEST(synthetic_entries_no_onleave)
 
     UStrand *s = urbi_strand_create(r, NULL);
     UASSERT(s != NULL);
-    UASSERT(s->cleanup_depth >= 1u);
+    UASSERT(s->cleanup_depth >= 1U);
 
     /* Walk all TAG_SCOPE entries on the cleanup stack. */
     unsigned i;
@@ -361,11 +361,11 @@ UTEST(synthetic_entries_no_onleave)
         UCleanupEntry *e = &s->cleanup_base[i];
         if (e->kind != (uint8_t)UCLEANUP_TAG_SCOPE) continue;
         /* Synthetic entries must have no onleave flag and no handler_pc. */
-        UASSERT_EQ((unsigned)e->flags,          0u);
-        UASSERT_EQ((unsigned)e->handler_pc,     0u);
+        UASSERT_EQ((unsigned)e->flags,          0U);
+        UASSERT_EQ((unsigned)e->handler_pc,     0U);
         /* Register range fields must be zero. */
-        UASSERT_EQ((unsigned)e->register_base,  0u);
-        UASSERT_EQ((unsigned)e->register_count, 0u);
+        UASSERT_EQ((unsigned)e->register_base,  0U);
+        UASSERT_EQ((unsigned)e->register_count, 0U);
     }
 
     urbi_strand_destroy(s);
@@ -394,7 +394,7 @@ UTEST(synthetic_entries_unlink_on_termination)
     /* Add a second synthetic entry for local_tag. */
     tag_init_local(&local_tag);
     UASSERT(push_tag_scope(s, &local_tag) != NULL);
-    UASSERT(s->cleanup_depth == 2u);
+    UASSERT(s->cleanup_depth == 2U);
 
     /* local_tag must now have s in its member list. */
     UASSERT(local_tag.member_strands_head != NULL);

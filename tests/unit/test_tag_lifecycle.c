@@ -53,8 +53,8 @@ UTEST(utag_create_basic)
     /* T29: realm->tag is now a real UTag, not NULL. */
     UASSERT(r->tag != NULL);
     UASSERT_EQ((unsigned)r->tag->type_tag, (unsigned)UTYPE_TAG);
-    UASSERT_EQ((unsigned)r->tag->gc_byte,  0u);
-    UASSERT_EQ((unsigned)r->tag->flags,    0u);
+    UASSERT_EQ((unsigned)r->tag->gc_byte,  0U);
+    UASSERT_EQ((unsigned)r->tag->flags,    0U);
     UASSERT(r->tag->member_strands_head  == NULL);
     UASSERT(r->tag->member_watchers_head == NULL);
     UASSERT_EQ((unsigned)r->tag->name.kind, (unsigned)UVAL_NIL);
@@ -194,7 +194,7 @@ UTEST(strand_scope_tag_null_safe)
 /* 7. utag_type_tag_constant: UTYPE_TAG has value 5. */
 UTEST(utag_type_tag_constant)
 {
-    UASSERT_EQ((unsigned)UTYPE_TAG, 5u);
+    UASSERT_EQ((unsigned)UTYPE_TAG, 5U);
 }
 
 /* ============================================================
@@ -207,7 +207,7 @@ UTEST(utag_type_tag_constant)
 
 /* Bytecode encoding helpers (mirrors test_dispatch_loop.c local helpers). */
 static uint32_t t30_enc_push_tag(uint8_t flags_nibble, uint8_t tag_reg, uint16_t onleave_pc) {
-    uint8_t a = (uint8_t)((flags_nibble << 4) | (tag_reg & 0x0Fu));
+    uint8_t a = (uint8_t)((flags_nibble << 4) | (tag_reg & 0x0FU));
     return uinstr_enc_abx(OP_PUSH_TAG, a, onleave_pc);
 }
 static uint32_t t30_enc_pop_tag(uint8_t tag_reg) {
@@ -265,7 +265,7 @@ strand_setup_cleanup_t30(UStrand *s)
 UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
 {
     static uint32_t instrs[4];
-    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[0] = t30_enc_push_tag(0, 0, 0U);
     instrs[1] = t30_enc_loadnil(1);
     instrs[2] = t30_enc_pop_tag(0);
     instrs[3] = t30_enc_ret();
@@ -284,11 +284,11 @@ UTEST(op_push_tag_inserts_member_strands_and_pop_clears)
     UValue retval = {0};
     s.out_slot = &retval;
 
-    uint64_t consumed = dispatch_loop_until_yield(&s, 10000u);
+    uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand must reach DEAD (top-level RET). */
     UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
-    UASSERT(consumed >= 1u);
+    UASSERT(consumed >= 1U);
     /* Cleanup stack must be empty after POP_TAG. */
     UASSERT_EQ((int)s.cleanup_depth, 0);
 
@@ -310,7 +310,7 @@ UTEST(op_push_tag_member_strands_head_wired)
      * and a deliberate YIELD at pc=1 so the strand pauses with the tag scope open.
      * After the pause, inspect the cleanup entry. */
     static uint32_t instrs[3];
-    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[0] = t30_enc_push_tag(0, 0, 0U);
     instrs[1] = uinstr_enc_abc(OP_YIELD, 0, 0, 0);  /* pause here */
     instrs[2] = t30_enc_ret();
 
@@ -326,7 +326,7 @@ UTEST(op_push_tag_member_strands_head_wired)
     strand_setup_cleanup_t30(&s);
 
     /* Dispatch: PUSH_TAG (executes) + YIELD (pauses). */
-    dispatch_loop_until_yield(&s, 10000u);
+    dispatch_loop_until_yield(&s, 10000U);
 
     /* Strand should be READY (yielded at OP_YIELD). */
     UASSERT_EQ((int)USTRAND_STATE_READY, (int)s.state);
@@ -373,7 +373,7 @@ UTEST(op_push_tag_member_strands_head_wired)
 UTEST(op_push_tag_oom_marks_strand_fatal)
 {
     static uint32_t instrs[2];
-    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[0] = t30_enc_push_tag(0, 0, 0U);
     instrs[1] = t30_enc_ret();
 
     UVM vm;
@@ -392,7 +392,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
     strand_setup_t30(&s, &vm, instrs, reg_stack);
     strand_setup_cleanup_t30(&s);
 
-    dispatch_loop_until_yield(&s, 10000u);
+    dispatch_loop_until_yield(&s, 10000U);
 
     /* OOM during utag_create → fatal_status=UEXEC_THROW, state=DEAD. */
     UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);
@@ -411,7 +411,7 @@ UTEST(op_push_tag_oom_marks_strand_fatal)
 UTEST(op_push_tag_cleanup_overflow_releases_tag)
 {
     static uint32_t instrs[2];
-    instrs[0] = t30_enc_push_tag(0, 0, 0u);
+    instrs[0] = t30_enc_push_tag(0, 0, 0U);
     instrs[1] = t30_enc_ret();
 
     UVM vm;
@@ -428,7 +428,7 @@ UTEST(op_push_tag_cleanup_overflow_releases_tag)
     /* Fill the cleanup stack to capacity so strand_cleanup_push returns NULL. */
     s.cleanup_depth = s.cleanup_cap;
 
-    dispatch_loop_until_yield(&s, 10000u);
+    dispatch_loop_until_yield(&s, 10000U);
 
     /* cleanup_push failure → utag_destroy rollback → fatal, DEAD. */
     UASSERT_EQ((int)s.state,        (int)USTRAND_STATE_DEAD);
@@ -513,7 +513,7 @@ UTEST(nested_tag_membership)
     /* Create strand — inherits realm->tag as depth 0. */
     UStrand *s = urbi_strand_create(r, NULL);
     UASSERT(s != NULL);
-    UASSERT_EQ((unsigned)s->cleanup_depth, 1u);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 1U);
 
     /* Push three more tag scopes. */
     tag_init_local_lifecycle(&tag_a);
@@ -523,7 +523,7 @@ UTEST(nested_tag_membership)
     UASSERT(push_tag_scope_lifecycle(s, &tag_a) != NULL);
     UASSERT(push_tag_scope_lifecycle(s, &tag_b) != NULL);
     UASSERT(push_tag_scope_lifecycle(s, &tag_c) != NULL);
-    UASSERT_EQ((unsigned)s->cleanup_depth, 4u);
+    UASSERT_EQ((unsigned)s->cleanup_depth, 4U);
 
     /* Strand must appear in all four tags' member lists. */
     UASSERT_EQ(count_strand_in_tag_members(r->tag,  s), 1);
@@ -563,7 +563,7 @@ UTEST(realm_root_at_bottom)
     UASSERT(s != NULL);
 
     /* cleanup_depth must be at least 1. */
-    UASSERT(s->cleanup_depth >= 1u);
+    UASSERT(s->cleanup_depth >= 1U);
 
     /* The bottommost entry (index 0) must be a TAG_SCOPE with realm->tag. */
     UCleanupEntry *bottom = &s->cleanup_base[0];

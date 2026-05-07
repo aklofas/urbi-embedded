@@ -63,7 +63,7 @@ UTEST(topology_gen_row_1_remove_slot_bumps) {
      * and per §4.2 row 2 must NOT bump).  Removing then must increment. */
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_remove_slot(&vm, o, foo), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Slot is gone. */
     UASSERT_EQ((int)urbi_shape_find_slot(o->shape, foo), -1);
@@ -98,7 +98,7 @@ UTEST(topology_gen_row_3_setslot_on_proto_shadowing_bumps) {
     uint64_t pre1 = vm.topology_gen;
     UValue v0 = {.kind = UVAL_INT, .v = {.i = 0}};
     UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, foo, v0), 0);
-    UASSERT(vm.topology_gen == pre1 + 1u);
+    UASSERT(vm.topology_gen == pre1 + 1U);
 
     /* Now overwrite parent.foo in-place.  §4.2 row 1 — must NOT bump. */
     uint64_t pre2 = vm.topology_gen;
@@ -130,7 +130,7 @@ UTEST(topology_gen_row_4_install_slot_on_prototype_bumps) {
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
     UValue v1 = {.kind = UVAL_INT, .v = {.i = 1}};
     UASSERT_EQ(urbi_object_set_local_slot(&vm, parent, foo, v1), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Sanity: the slot is on the prototype, not the child. */
     UASSERT_EQ((int)urbi_shape_find_slot(parent->shape, foo), 0);
@@ -164,7 +164,7 @@ UTEST(topology_gen_row_5_install_oget_bumps) {
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_install_property(&vm, o, foo,
                                             URBI_SLOT_FLAG_OGET, getter), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* The shape's flag nibble for slot 0 now has OGET set. */
     UASSERT(o->shape->flags & URBI_SLOT_FLAG_OGET);
@@ -195,7 +195,7 @@ UTEST(topology_gen_row_6_remove_oget_bumps) {
     uint64_t pre = vm.topology_gen;
     UASSERT_EQ(urbi_object_remove_property(&vm, o, foo,
                                            URBI_SLOT_FLAG_OGET), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* OGET bit now clear; props_table entry dropped to NULL (only flag
      * was OGET so all_clear path fires). */
@@ -232,7 +232,7 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
     UValue getter2 = {.kind = UVAL_CLOSURE, .v = {.p = (void *)o2}};
     UASSERT_EQ(urbi_object_set_property_value(&vm, o, foo,
                                               URBI_SLOT_FLAG_OGET, getter2), 0);
-    UASSERT(vm.topology_gen == pre + 1u);
+    UASSERT(vm.topology_gen == pre + 1U);
 
     /* Same UProps pointer, different oget payload. */
     UASSERT(o->shape->props_table[0] == up_before);

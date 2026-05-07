@@ -69,7 +69,7 @@ UTEST(every_state_transition_preserves_strand_in_realm_list)
 
     /* RUNNING → WAITING_SLEEP (sched_strand_block decrements
      * strand_runnable_count for RUNNING strands). */
-    sched_strand_block(s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000u);
+    sched_strand_block(s, USTRAND_REASON_SLEEP, /*wake_us*/ 1000U);
     UASSERT_EQ((int)USTRAND_GET_STATE(s), (int)USTRAND_WAITING);
     UASSERT_EQ((int)USTRAND_GET_REASON(s), (int)USTRAND_REASON_SLEEP);
     UASSERT(strand_on_realm_list(r, s));    /* KEY: still on realm list */
@@ -129,12 +129,12 @@ UTEST(mixed_state_strands_all_remain_on_realm_list)
 
     sched_dequeue_ready_head(&vm);                                /* dequeues b */
     b->state = USTRAND_STATE_RUNNING;
-    sched_strand_block(b, USTRAND_REASON_SLEEP, 5000u);           /* RUNNING → WAITING_SLEEP */
+    sched_strand_block(b, USTRAND_REASON_SLEEP, 5000U);           /* RUNNING → WAITING_SLEEP */
 
     /* The above dequeued b but c was never on the queue.  Park c directly. */
     c->state = USTRAND_STATE_RUNNING;
     vm.strand_runnable_count = 1;                                 /* satisfy block's RUNNING-decrement */
-    sched_strand_block(c, USTRAND_REASON_SLEEP, 200u);            /* RUNNING → WAITING_SLEEP */
+    sched_strand_block(c, USTRAND_REASON_SLEEP, 200U);            /* RUNNING → WAITING_SLEEP */
 
     d->state = USTRAND_STATE_DEAD;                                /* DORMANT → DEAD (manual) */
 

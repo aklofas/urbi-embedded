@@ -55,7 +55,7 @@ static uint64_t default_host_time_us_stub(void) {
     return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 #else
     /* Freestanding or non-POSIX hosted: no clock without platform BSP. */
-    return 0u;
+    return 0U;
 #endif
 }
 
@@ -71,9 +71,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
     vm->intern_table = NULL;
-    vm->topology_gen   = 1ull;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
-    vm->lookup_id      = 1ull;   /* pre-M4 prototype-chain spec §7.1 */
-    vm->next_object_id = 0u;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
+    vm->topology_gen   = 1ULL;   /* pre-M4 topology spec §3.1: init=1, 0 reserved */
+    vm->lookup_id      = 1ULL;   /* pre-M4 prototype-chain spec §7.1 */
+    vm->next_object_id = 0U;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
     vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
 
     /* M4 atom-family singletons (T8): all NULL until first lazy-create. */
@@ -99,30 +99,30 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* --- M3 field zero-init (rows 8, 9, 10, 11) --- */
     /* 5-flag liveness counters (Rule X). */
-    vm->strand_runnable_count   = 0u;
-    vm->strand_suspended_count  = 0u;
-    vm->watcher_active_count    = 0u;
-    vm->event_queue_count       = 0u;
-    vm->wakeup_pending_count    = 0u;
-    vm->host_call_pending_count = 0u;
+    vm->strand_runnable_count   = 0U;
+    vm->strand_suspended_count  = 0U;
+    vm->watcher_active_count    = 0U;
+    vm->event_queue_count       = 0U;
+    vm->wakeup_pending_count    = 0U;
+    vm->host_call_pending_count = 0U;
 
     /* Realm / fatal-strand pointers. */
     vm->realms_head  = NULL;
     vm->global_realm = NULL;
     vm->fatal_strand = NULL;
-    vm->realm_id_seq = 0u;
+    vm->realm_id_seq = 0U;
 
     /* Scheduler queues and step-driver state. */
     vm->ready_head             = NULL;
     vm->ready_tail             = NULL;
     vm->sleep_q_head           = NULL;
-    vm->step_budget_remaining  = 0u;
-    vm->gc_pending             = 0u;
-    vm->watcher_dirty_count    = 0u;
-    vm->flag_preemption        = 0u;
-    vm->flag_reserved[0]       = 0u;
-    vm->flag_reserved[1]       = 0u;
-    vm->flag_reserved[2]       = 0u;
+    vm->step_budget_remaining  = 0U;
+    vm->gc_pending             = 0U;
+    vm->watcher_dirty_count    = 0U;
+    vm->flag_preemption        = 0U;
+    vm->flag_reserved[0]       = 0U;
+    vm->flag_reserved[1]       = 0U;
+    vm->flag_reserved[2]       = 0U;
 
     /* ISR ring: allocate and initialise the SPSC event ring. */
     vm->event_ring = NULL;
@@ -137,12 +137,12 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* GC state machine.
      * gc_phase = 0 = IDLE per row 10 §6.2; named constant lands at T22. */
-    vm->gc_phase            = 0u;
-    vm->current_white       = 0u;
-    vm->gc_paused           = 0u;
-    vm->in_destroy_callback = 0u;
-    vm->gc_live_bytes       = 0u;
-    vm->gc_total_allocated  = 0u;
+    vm->gc_phase            = 0U;
+    vm->current_white       = 0U;
+    vm->gc_paused           = 0U;
+    vm->in_destroy_callback = 0U;
+    vm->gc_live_bytes       = 0U;
+    vm->gc_total_allocated  = 0U;
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
     vm->sweep_cursor        = NULL;
@@ -154,9 +154,9 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->host_log_fn            = NULL;
     vm->callback_warn_us       = URBI_CALLBACK_WARN_US;
     vm->callback_watchdog_mode = URBI_WATCHDOG_WARN;
-    vm->pad_watchdog[0]        = 0u;
-    vm->pad_watchdog[1]        = 0u;
-    vm->pad_watchdog[2]        = 0u;
+    vm->pad_watchdog[0]        = 0U;
+    vm->pad_watchdog[1]        = 0U;
+    vm->pad_watchdog[2]        = 0U;
 
     /* Delegate threshold + debt init to the GC strategy (T23). */
     urbi_gc_init(vm);
@@ -164,11 +164,11 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* GC root provider registry: zero before registering providers. */
     {
         uint8_t i;
-        for (i = 0u; i < (uint8_t)URBI_MAX_ROOT_PROVIDERS; i++) {
+        for (i = 0U; i < (uint8_t)URBI_MAX_ROOT_PROVIDERS; i++) {
             vm->root_providers[i] = NULL;
         }
     }
-    vm->root_provider_count = 0u;
+    vm->root_provider_count = 0U;
 
     /* Register default root providers.
      * Order: scheduler, realm, intern, host-handle, watcher table. */
@@ -185,7 +185,7 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
             vm->type_table[i] = NULL;
         }
     }
-    vm->host_type_count      = 0u;
+    vm->host_type_count      = 0U;
 
     /* Register built-in M4 object-model UType descriptors directly into
      * vm->type_table[].  Built-in tags can't go through urbi_register_type
@@ -212,23 +212,23 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * counts in the affected unit tests will be updated in the same commit. */
 
     vm->handle_table         = NULL;
-    vm->handle_table_cap     = 0u;
-    vm->handle_table_next_id = 0u;
+    vm->handle_table_cap     = 0U;
+    vm->handle_table_next_id = 0U;
 
     /* Watcher pool. */
     vm->watcher_pool_base      = NULL;
     vm->watcher_pool_freelist  = NULL;
     vm->active_watchers_head   = NULL;
-    vm->watcher_pool_in_use    = 0u;
-    vm->watcher_pool_high_water = 0u;
-    vm->in_watcher_eval        = 0u;
-    vm->pad_in_eval[0]         = 0u;
-    vm->pad_in_eval[1]         = 0u;   /* array is [2]; index 2 removed */
-    vm->in_watcher_scratch     = 0u;   /* spec #3 §5.4: re-entrancy guard for sync emit */
+    vm->watcher_pool_in_use    = 0U;
+    vm->watcher_pool_high_water = 0U;
+    vm->in_watcher_eval        = 0U;
+    vm->pad_in_eval[0]         = 0U;
+    vm->pad_in_eval[1]         = 0U;   /* array is [2]; index 2 removed */
+    vm->in_watcher_scratch     = 0U;   /* spec #3 §5.4: re-entrancy guard for sync emit */
     /* spec #2 §5.2 install-time trace state. */
-    vm->in_watcher_install     = 0u;
-    vm->trace_overflow         = 0u;
-    vm->trace_read_set_count   = 0u;
+    vm->in_watcher_install     = 0U;
+    vm->trace_overflow         = 0U;
+    vm->trace_read_set_count   = 0U;
     /* trace_read_set[] is uninitialized: only read when in_watcher_install is set,
      * and entries are written before they are read. */
     vm->test_watcher_condition_hook = NULL;
@@ -249,11 +249,11 @@ void uvm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * vm->watcher_pool_base != NULL post-init. */
 
     /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
-    vm->slot_change_reentrancy_warned = 0u;
-    vm->slot_change_ring_full_warned  = 0u;
-    vm->deferred_slot_changes_head    = 0u;
-    vm->deferred_slot_changes_tail    = 0u;
-    vm->deferred_slot_changes_cap     = 0u;
+    vm->slot_change_reentrancy_warned = 0U;
+    vm->slot_change_ring_full_warned  = 0U;
+    vm->deferred_slot_changes_head    = 0U;
+    vm->deferred_slot_changes_tail    = 0U;
+    vm->deferred_slot_changes_cap     = 0U;
     vm->deferred_slot_changes         = NULL;
     if (vm->alloc_fn) {
         size_t ring_bytes = (size_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE
