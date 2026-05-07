@@ -162,8 +162,18 @@ static UToken scan_radix(ULexer *lex, const char *start, const int base,
     return t;
 }
 
-/* Forward declaration for suffix parsing in scan_decimal. */
-static int is_ident_cont(const char c);
+/* Identifier character classification.  Defined ahead of scan_decimal /
+ * scan_radix so the suffix-parsing fall-throughs can call them without a
+ * forward declaration (LEX-022, Wave 1 v0.5.3-layout). */
+static int is_ident_start(const char c) {
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           c == '_';
+}
+
+static int is_ident_cont(const char c) {
+    return is_ident_start(c) || (c >= '0' && c <= '9');
+}
 
 /* Scan a decimal integer starting at lex->cur.
    Caller has confirmed *lex->cur is a decimal digit. */
@@ -288,16 +298,6 @@ static UToken scan_decimal(ULexer *lex) {
     t.u.i = value;
 
     return t;
-}
-
-static int is_ident_start(const char c) {
-    return (c >= 'a' && c <= 'z') ||
-           (c >= 'A' && c <= 'Z') ||
-           c == '_';
-}
-
-static int is_ident_cont(const char c) {
-    return is_ident_start(c) || (c >= '0' && c <= '9');
 }
 
 typedef struct {
