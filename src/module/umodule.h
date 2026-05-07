@@ -293,6 +293,12 @@ typedef struct UProto {
      * module-instance load to populate UIC.name for each IC site.  Owned by
      * the proto's allocator; freed in umodule_destroy_proto_buffers. */
     USymbol      **ic_names;
+    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
+     * Populated by the emitter (mirroring ic_names) and by the deserializer
+     * (in lieu of ic_names, which stays NULL until module-instance create
+     * interns the strings).  Owned by the proto's allocator; each entry and
+     * the array itself are freed in umodule_destroy_proto_buffers. */
+    char         **ic_name_strs;
 
     /* Allocator hook inherited from the owning module. */
     UModuleAllocFn alloc_fn;
@@ -353,6 +359,12 @@ typedef struct UModule {
      * Capped at 256 (encoding spec §3.4 — uint8 ic_index field). */
     uint16_t       ic_count;
     USymbol      **ic_names;     /* parallel array; len == ic_count; allocator-owned */
+    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
+     * Populated by the emitter (mirroring ic_names) and by the deserializer
+     * (in lieu of ic_names, which stays NULL until module-instance create
+     * interns the strings).  Owned by the module's allocator; each entry and
+     * the array itself are freed in umodule_destroy. */
+    char         **ic_name_strs;
 
     /* === Runtime / transient fields (NOT serialized) =============== */
 

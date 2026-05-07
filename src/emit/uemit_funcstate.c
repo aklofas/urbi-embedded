@@ -373,8 +373,37 @@ UFuncState *uemit_close_function(UEmitter *e) {
                     p->ic_names = dst;
                 }
             }
+            /* T11: parallel char** companion array.  USymbol* is a const-char*
+             * canonical interned pointer (from ustr_intern); each entry is a
+             * NUL-terminated allocator-owned strdup so the deserializer can
+             * populate ic_name_strs without an originating VM intern table. */
+            if (p->ic_names != NULL) {
+                char **dst_strs = (char **)palloc(NULL,
+                    (size_t)p->ic_count * sizeof(char *), p->alloc_ud);
+                if (dst_strs == NULL) {
+                    e->error = EMIT_OOM;
+                } else {
+                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                        dst_strs[i] = NULL;
+                    }
+                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                        const char *name = (const char *)fs->ic_names[i];
+                        size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
+                        char *dup = (char *)palloc(NULL, nlen + 1U, p->alloc_ud);
+                        if (dup == NULL) {
+                            e->error = EMIT_OOM;
+                            break;
+                        }
+                        if (nlen > 0U) emit_memcpy(dup, name, nlen);
+                        dup[nlen] = '\0';
+                        dst_strs[i] = dup;
+                    }
+                    p->ic_name_strs = dst_strs;
+                }
+            }
         } else {
             p->ic_names = NULL;
+            p->ic_name_strs = NULL;
         }
     }
     /* M4 follow-up: top-level funcstate (no target_proto) — copy IC names
@@ -396,6 +425,33 @@ UFuncState *uemit_close_function(UEmitter *e) {
                 }
                 mod->ic_count = fs->ic_next;
                 mod->ic_names = dst;
+            }
+        }
+        /* T11: parallel char** companion array for the root chunk.  Same
+         * shape as the nested-proto branch above. */
+        if (mod->ic_names != NULL) {
+            char **dst_strs = (char **)malloc_fn(NULL,
+                (size_t)mod->ic_count * sizeof(char *), e->module->alloc_ud);
+            if (dst_strs == NULL) {
+                e->error = EMIT_OOM;
+            } else {
+                for (uint16_t i = 0; i < mod->ic_count; i++) {
+                    dst_strs[i] = NULL;
+                }
+                for (uint16_t i = 0; i < mod->ic_count; i++) {
+                    const char *name = (const char *)fs->ic_names[i];
+                    size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
+                    char *dup = (char *)malloc_fn(NULL, nlen + 1U,
+                                                   e->module->alloc_ud);
+                    if (dup == NULL) {
+                        e->error = EMIT_OOM;
+                        break;
+                    }
+                    if (nlen > 0U) emit_memcpy(dup, name, nlen);
+                    dup[nlen] = '\0';
+                    dst_strs[i] = dup;
+                }
+                mod->ic_name_strs = dst_strs;
             }
         }
     }

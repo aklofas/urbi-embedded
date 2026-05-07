@@ -112,6 +112,15 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
     if (proto->ic_names     != NULL) alloc(proto->ic_names,     0, alloc_ud);
+    if (proto->ic_name_strs != NULL) {
+        /* Each entry is a NUL-terminated string allocated separately. */
+        for (uint16_t k = 0; k < proto->ic_count; k++) {
+            if (proto->ic_name_strs[k] != NULL) {
+                alloc(proto->ic_name_strs[k], 0, alloc_ud);
+            }
+        }
+        alloc(proto->ic_name_strs, 0, alloc_ud);
+    }
     /* Zero the proto struct but do not free proto itself (owned by nested[]). */
     urbi_zero(proto, sizeof(*proto));
 }
@@ -718,6 +727,15 @@ void umodule_destroy(UModule *module) {
         if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
         if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
+        if (module->ic_name_strs != NULL) {
+            /* Each entry is a NUL-terminated string allocated separately. */
+            for (uint16_t k = 0; k < module->ic_count; k++) {
+                if (module->ic_name_strs[k] != NULL) {
+                    (void)alloc(module->ic_name_strs[k], 0, module->alloc_ud);
+                }
+            }
+            (void)alloc(module->ic_name_strs, 0, module->alloc_ud);
+        }
     }
     /* Zero the entire struct AFTER all frees complete.  No field is read
      * after this point. */
