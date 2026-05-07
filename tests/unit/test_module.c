@@ -311,6 +311,26 @@ UTEST(deserialize_rejects_wrong_endianness) {
     umodule_destroy(&c);
 }
 
+UTEST(deserialize_rejects_nonzero_reserved_byte) {
+    uint8_t buf[64] = {0};
+    build_good_header(buf);
+    buf[20] = 0xCCU;  /* reserved byte 20 set non-zero */
+    size_t off = 24;
+    buf[off++] = 0;  /* max_reg */
+    buf[off++] = 0;  /* source_name_len = 0 */
+    buf[off++] = 0;  /* n_constants = 0 */
+    buf[off++] = 0;  /* n_instructions = 0 */
+    buf[off++] = 0;  /* n_deltas = 0 */
+    buf[off++] = 0;  /* n_abs_lines = 0 */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    /* errmsg should mention 'reserved' */
+    UASSERT(strstr(errmsg, "reserved") != NULL);
+    umodule_destroy(&c);
+}
+
 /* --- Varint write helpers for building test blobs --- */
 
 /* Append an LEB128 unsigned varint.  Returns new offset. */
@@ -1679,6 +1699,8 @@ void test_module_suite(void) {
               deserialize_rejects_wrong_instr_width);
     utest_run("deserialize rejects wrong endianness",
               deserialize_rejects_wrong_endianness);
+    utest_run("deserialize rejects non-zero reserved byte",
+              deserialize_rejects_nonzero_reserved_byte);
     utest_run("deserialize loads metadata max_reg and source_name",
               deserialize_loads_metadata_max_reg_and_source_name);
     utest_run("deserialize loads integer constant pool",

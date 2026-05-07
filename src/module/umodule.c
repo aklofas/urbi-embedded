@@ -206,7 +206,23 @@ static UModuleLoadError decode_header(MDecCtx *d) {
                    (unsigned)URBI_ENDIANNESS, (unsigned)d->buf[15]);
         return ULOAD_FLAVOR_MISMATCH;
     }
-    /* buf[16..23] reserved — not validated (forward-compat) */
+    /* Strict enforcement of header bytes 16-23 (MOD-038):
+     *
+     * v1.0 defines no flag bits in this region.  Forward-compat tolerance
+     * silently dropped flags that older builds didn't recognize, which is
+     * the wrong policy when the runtime does not promise bytecode stability
+     * before v1.0.  We reject any non-zero reserved byte. */
+    {
+        size_t i;
+        for (i = 16; i < 24; i++) {
+            if (d->buf[i] != 0U) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "non-zero reserved byte 0x%02x at offset %zu",
+                           (unsigned)d->buf[i], i);
+                return ULOAD_CORRUPT;
+            }
+        }
+    }
     d->off = 24;
     return ULOAD_OK;
 }
