@@ -52,7 +52,7 @@ bool at_statement_end(UParser *p);
 UAstNode *parse_inner_tier(UParser *p);
 UAstNode *parse_outer_tier(UParser *p);
 
-/* --- Statement parser (defined in uparse.c residual). --- */
+/* --- Statement parser (defined in uparse_stmt.c). --- */
 UAstNode *parse_statement_or_expr(UParser *p);
 UAstNode *parse_block(UParser *p);
 UAstNode *parse_var_decl(UParser *p);
