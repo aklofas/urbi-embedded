@@ -61,20 +61,25 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    /* M3 baseline: urbi_vm_run drives a transient strand to completion synchronously.
-     * The realm is accepted for API-stability but not yet used to partition
-     * bindings — that wiring lands at T20 with the full strand lifecycle API.
-     * Suppressing unused-variable warning for realm: it is intentionally held
-     * for future use and not yet threaded through urbi_vm_run. */
+    /* realm is accepted for API stability but not yet threaded through
+     * urbi_vm_run, which takes (vm, module, out) — no realm parameter.
+     * Threading requires expanding urbi_vm_run's signature, which is a
+     * Wave-5 boundary change (API-004 carries forward).  At v0.5.5 the
+     * realm argument's role is contract validation: it must belong to
+     * this vm or be NULL.  Wave 5 wires the partitioned-binding path. */
     (void)realm;
 
     UVMError rc = urbi_vm_run(vm, module, out);
 
+    /* Map UVMError to UErrCode.  UVM_TYPE_ERROR collapses to STRAND_FATAL
+     * at v0.5.5 because the public surface has no dedicated type-error
+     * code; M6 stdlib expansion may add one (API-032 review). */
     switch (rc) {
     case UVM_OK:         return URBI_OK;
     case UVM_OOM:        return URBI_ERR_OOM;
-    default:             return URBI_ERR_STRAND_FATAL;
+    case UVM_TYPE_ERROR: return URBI_ERR_STRAND_FATAL;
     }
+    return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
 }
 
 /* ---------------------------------------------------------------------------
