@@ -7,7 +7,7 @@
  * Zero-fill initializes each field explicitly.
  * Assertions use URBI_INTERNAL_ASSERT from umacros.h. */
 
-#include "utag.h"
+#include "tag/utag.h"
 #include "runtime/ucleanup.h"
 #include "sched/ustrand.h"
 #include "vm/uvm.h"

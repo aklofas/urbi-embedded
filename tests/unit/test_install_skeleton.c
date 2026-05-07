@@ -30,7 +30,7 @@
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
 #include "gc/ugc.h"                    /* UCell */
 #include "gc/ugc_incremental.h"        /* UGC_HAS_WATCHER_OBSERVER */
-#include "utag.h"                      /* UTag, member_watchers_head */
+#include "tag/utag.h"                      /* UTag, member_watchers_head */
 #include "realm/urealm.h"              /* urbi_realm_create/destroy */
 #include "urbi/urbi.h"                 /* URBI_LOG_WARN */
 

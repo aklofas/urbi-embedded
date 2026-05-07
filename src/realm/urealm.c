@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "urealm.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "sched/ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */

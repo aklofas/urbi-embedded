@@ -9,7 +9,7 @@
 #include "gc/ugc.h"            /* UTYPE_OBJECT */
 #include "urbi/gc.h"       /* urbi_gc_alloc */
 #include "gc/ugc_incremental.h" /* UGC_HAS_WATCHER_OBSERVER */
-#include "utag.h"           /* utag_create / utag_destroy */
+#include "tag/utag.h"           /* utag_create / utag_destroy */
 #include "module/umodule.h"        /* UVAL_BOOL, UVAL_NIL */
 #include "urbi/urbi.h"           /* urbi_tag_stop, URBI_LOG_WARN */
 

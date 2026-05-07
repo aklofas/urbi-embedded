@@ -28,10 +28,10 @@
 #include "utest.h"
 
 #include "vm/uvm.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "event/uevent.h"
 #include "event/uevent_emit.h"
-#include "tag_native.h"
+#include "tag/utag_native.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "sched/ustrand.h"

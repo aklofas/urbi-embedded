@@ -34,7 +34,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "watcher/uwatcher.h"
 
 #define UTEST(name) static void name(void)

@@ -10,7 +10,7 @@
 
 #include "utest.h"
 
-#include "utag.h"
+#include "tag/utag.h"
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
 #include "vm/uvm.h"

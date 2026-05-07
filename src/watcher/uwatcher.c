@@ -11,7 +11,7 @@
 #include "runtime/uclosure.h"  /* UClosure full definition — proto field + URBI_WATCHER_OWNS_* free path */
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
-#include "utag.h"           /* UTag, member_watchers_head */
+#include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */

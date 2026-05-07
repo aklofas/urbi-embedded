@@ -23,7 +23,7 @@
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "runtime/uunwind.h"
 #include "urbi/urbi.h"
 

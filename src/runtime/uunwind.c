@@ -32,7 +32,7 @@
 #include "urbi/urbi.h"         /* UErrCode, public API declarations */
 #include "sched/usched_cooperative.h" /* sched_strand_unblock, sched_strand_make_runnable */
 #include "runtime/umacros.h"      /* URBI_INTERNAL_ASSERT */
-#include "utag.h"               /* UTag, member_strands_head */
+#include "tag/utag.h"               /* UTag, member_strands_head */
 #include "watcher/uwatcher.h"           /* pending_onleave_queue_push */
 #include "event/uevent_emit.h"        /* uevent_waiter_unregister (spec #3 §6.4) */
 

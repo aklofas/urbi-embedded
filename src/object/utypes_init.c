@@ -45,7 +45,7 @@
 #include "object/utypes_init.h"
 #include "event/uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
 #include "uchanged_node.h"        /* UChangedNode, UTYPE_CHANGED_NODE (spec #4 §3.1) */
-#include "utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
+#include "tag/utag.h"                 /* UTag, UTYPE_TAG (T18 GC promotion) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */

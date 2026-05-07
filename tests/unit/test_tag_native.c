@@ -24,9 +24,9 @@
 #include "utest.h"
 
 #include "vm/uvm.h"
-#include "tag_native.h"
+#include "tag/utag_native.h"
 #include "event/uevent_native.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "event/uevent.h"
 #include "object/uobject.h"
 #include "value/uintern.h"

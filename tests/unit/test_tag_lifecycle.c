@@ -7,7 +7,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
-#include "utag.h"
+#include "tag/utag.h"
 #include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
 #include "module/umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */

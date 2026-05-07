@@ -29,10 +29,10 @@
  *   reachable from C tests; full OP_SETSLOT getter/setter dispatch via
  *   UProps OGET/OSET lands at M6. */
 
-#include "tag_native.h"
+#include "tag/utag_native.h"
 
 #include "vm/uvm.h"
-#include "utag.h"              /* UTag, tag->enter_event / leave_event */
+#include "tag/utag.h"              /* UTag, tag->enter_event / leave_event */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
 #include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
 #include "value/uintern.h"           /* ustr_intern */
