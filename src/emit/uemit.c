@@ -102,11 +102,6 @@ static uint8_t alloc_reg(UEmitter *e) {
     return r;
 }
 
-/* Release the most-recently-allocated register (stack discipline). */
-static void free_reg(UEmitter *e) {
-    if (e->next_reg > 0u) e->next_reg--;
-}
-
 /* Minimum register that freereg/next_reg may be reset to when releasing temps.
  * Normally equals nactvar (frame locals occupy [0, nactvar)).
  * If a global slot register has been pre-reserved (global_slot_reserved), the
@@ -356,10 +351,10 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n);
  * Returns the parent register holding the resulting UVAL_CLOSURE, or 0
  * with e->error set on failure.
  * Requires e->current_fs != NULL and e->vm != NULL. */
-static uint8_t emit_function_literal(UEmitter *e,
-                                     UAstNode **params, int nparams,
-                                     UAstNode  *body,
-                                     bool       as_expression);
+uint8_t emit_function_literal(UEmitter *e,
+                              UAstNode **params, int nparams,
+                              UAstNode  *body,
+                              bool       as_expression);
 
 /* T31: Best-effort compile-time check — returns true when `n` contains a
  * direct write operation (AST_ASSIGN, AST_VAR_DECL, AST_MEMBER_SET,
@@ -415,7 +410,7 @@ bool cond_has_direct_side_effect(UAstNode *n) {
  * lazy local in the current scope, skip re-wrapping and emit a plain
  * OP_MOVE of that slot.  This keeps thunk identity stable across
  * pass-through layers (avoiding thunk-of-a-thunk double-forcing). */
-static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
+uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
     /* Pass-through shortcut: lazy local used as lazy arg — pass the closure
      * register directly without re-wrapping.  Check BEFORE setting
      * lazy_arg_context (which would suppress the is_lazy check in
@@ -489,10 +484,10 @@ static uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
 /* T30: emit_function_literal — shared helper for AST_FUNCTION and (T33+)
  * watcher/waituntil cond/body/onleave closures.  See forward declaration
  * above for parameter semantics. */
-static uint8_t emit_function_literal(UEmitter *e,
-                                     UAstNode **params, int nparams,
-                                     UAstNode  *body,
-                                     bool       as_expression) {
+uint8_t emit_function_literal(UEmitter *e,
+                              UAstNode **params, int nparams,
+                              UAstNode  *body,
+                              bool       as_expression) {
     UFuncState *parent_fs = e->current_fs;
 
     /* 1. Allocate a new UProto under the module's nested[] list. */
@@ -1628,318 +1623,12 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_THROW:      return emit_throw_arm(e, n);
     case AST_TRY:        return emit_try_arm(e, n);
     case AST_TAG_PREFIX: return emit_tag_prefix_arm(e, n);
-    case AST_MEMBER_GET: {
-        /* M4 T20: obj.x → OP_GETSLOT.  Per pre-M4 GETSLOT/SETSLOT encoding
-         * spec §3: ABC layout where A=dst register, B=recv register,
-         * C=IC site index assigned by uemit_assign_ic_index. */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        /* Emit receiver into a temp register. */
-        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
-        if (e->error != EMIT_OK) return 0u;
-
-        /* Intern the slot name to obtain the canonical USymbol pointer. */
-        USymbol *name = (USymbol *)ustr_intern(e->vm,
-                                               n->u.member.name_start,
-                                               (size_t)n->u.member.name_len);
-        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
-
-        /* Assign a per-site IC index (independent monomorphism per site). */
-        int ic_idx = uemit_assign_ic_index(e, name);
-        if (ic_idx < 0) return 0u;
-
-        /* Result reuses recv_reg in place — simple stack discipline. */
-        emit_instr(e, uinstr_enc_abc(OP_GETSLOT, recv_reg, recv_reg,
-                                     (uint8_t)ic_idx),
-                   (uint32_t)n->line);
-        return recv_reg;
-    }
-    case AST_MEMBER_SET: {
-        /* M4 T21: obj.x = v → OP_SETSLOT.  Per encoding spec §3:
-         * ABC layout where A=src register (value to write), B=recv register,
-         * C=IC site index.  Assignment evaluates to the assigned value. */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        /* Emit receiver into a temp, then RHS value into the next temp. */
-        uint8_t recv_reg = emit_expr(e, n->u.member.recv);
-        if (e->error != EMIT_OK) return 0u;
-        uint8_t src_reg = emit_expr(e, n->u.member.value);
-        if (e->error != EMIT_OK) return 0u;
-
-        USymbol *name = (USymbol *)ustr_intern(e->vm,
-                                               n->u.member.name_start,
-                                               (size_t)n->u.member.name_len);
-        if (name == NULL) { e->error = EMIT_OOM; return 0u; }
-
-        int ic_idx = uemit_assign_ic_index(e, name);
-        if (ic_idx < 0) return 0u;
-
-        emit_instr(e, uinstr_enc_abc(OP_SETSLOT, src_reg, recv_reg,
-                                     (uint8_t)ic_idx),
-                   (uint32_t)n->line);
-
-        /* Assignment expression value is the assigned value.  Collapse the
-         * recv temp by moving src down into recv_reg, matching the
-         * AST_BINARY convention (lhs holds the result, top temp freed). */
-        if (src_reg != recv_reg) {
-            emit_instr(e, uinstr_enc_abc(OP_MOVE, recv_reg, src_reg, 0u),
-                       (uint32_t)n->line);
-        }
-        free_reg(e);              /* release the src temp; result in recv_reg */
-        return recv_reg;
-    }
-    case AST_WATCHER: {
-        /* T33: at (cond) body [onleave] / at sync (cond) body /
-         *      whenever (cond) body [onleave]
-         *
-         * Build cond/body/onleave closures via emit_function_literal (T30),
-         * then emit the appropriate install opcode (ABC-encoded).
-         * Side-effect check on cond per spec #2 §9.1. */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        UAstNode *cond_ast    = n->u.watcher.cond;
-        UAstNode *body_ast    = n->u.watcher.body;
-        UAstNode *onleave_ast = n->u.watcher.onleave;  /* NULL if absent */
-        int       mode        = n->u.watcher.mode;
-
-        /* Compile-time best-effort cond side-effect warn (spec #2 Q7b). */
-        if (cond_has_direct_side_effect(cond_ast)) {
-            emit_diag_warn(e, cond_ast,
-                           "watcher condition has direct write/assignment; "
-                           "may cause feedback loop at runtime");
-        }
-
-        uint8_t cond_reg = emit_function_literal(e, NULL, 0,
-                                                 cond_ast, /*as_expression=*/true);
-        if (e->error != EMIT_OK) return 0u;
-
-        uint8_t body_reg = (body_ast != NULL)
-            ? emit_function_literal(e, NULL, 0, body_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        uint8_t onleave_reg = (onleave_ast != NULL)
-            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        UOpcode op;
-        switch (mode) {
-            case UWATCHER_AT:       op = OP_AT_INSTALL;       break;
-            case UWATCHER_AT_SYNC:  op = OP_AT_SYNC_INSTALL;  break;
-            case UWATCHER_WHENEVER: op = OP_WHENEVER_INSTALL; break;
-            default:                op = OP_AT_INSTALL;       break;
-        }
-        emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, onleave_reg),
-                   (uint32_t)n->line);
-
-        /* Release temporary closure regs — watcher install is a statement. */
-        if (onleave_ast != NULL) free_reg(e);
-        if (body_ast    != NULL) free_reg(e);
-        free_reg(e);  /* cond_reg */
-
-        /* Return a nil register as the install expression's value. */
-        uint8_t rd = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-        e->next_reg++;
-        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-        return rd;
-    }
-    case AST_WAITUNTIL: {
-        /* T33: waituntil (cond) — one-shot strand-block primitive.
-         * Build a cond closure, emit OP_WAITUNTIL_INSTALL (=42).
-         * Side-effect check per spec #2 §9.2. */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        UAstNode *cond_ast = n->u.waituntil.cond;
-
-        if (cond_has_direct_side_effect(cond_ast)) {
-            emit_diag_warn(e, cond_ast,
-                           "watcher condition has direct write/assignment; "
-                           "may cause feedback loop at runtime");
-        }
-
-        uint8_t cond_reg = emit_function_literal(e, NULL, 0,
-                                                 cond_ast, /*as_expression=*/true);
-        if (e->error != EMIT_OK) return 0u;
-
-        emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0u, 0u),
-                   (uint32_t)n->line);
-        free_reg(e);  /* cond_reg */
-
-        uint8_t rd = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-        e->next_reg++;
-        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-        return rd;
-    }
-    case AST_AT_EVENT: {
-        /* T45: at (e?) body [onleave] / at sync (e?) body [onleave]
-         *
-         * Emit the event-expression into a register, build a 1-param body
-         * closure (R[0] receives the emit payload per spec #3 §5.5) and an
-         * optional 0-param onleave closure, then emit the appropriate install
-         * opcode: OP_AT_EVENT_INSTALL (=43) or OP_AT_EVENT_SYNC_INSTALL (=44).
-         * 0xFF in the alt_reg slot signals "no onleave" to the runtime. */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        UAstNode *event_ast   = n->u.at_event.event_expr;
-        UAstNode *body_ast    = n->u.at_event.body;
-        UAstNode *onleave_ast = n->u.at_event.onleave;
-        bool      sync_flag   = n->u.at_event.is_sync;
-
-        uint8_t event_reg = emit_expr(e, event_ast);
-        if (e->error != EMIT_OK) return 0u;
-
-        /* Sync freereg up to next_reg before allocating the body closure.
-         * AST_IDENT global-fallback (line ~824) and the chains it feeds
-         * (AST_MEMBER_GET et al.) bump only e->next_reg, leaving freereg
-         * stale.  emit_function_literal allocates body_reg from freereg,
-         * so without this sync body_reg can land on top of event_reg —
-         * OP_CLOSURE then clobbers the event pointer at runtime.
-         * AST_WATCHER avoids this by routing cond through
-         * emit_function_literal symmetrically. */
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-
-        /* Body closure: 1 param (payload). */
-        UAstNode payload_param;
-        urbi_zero(&payload_param, sizeof payload_param);
-        payload_param.kind              = AST_PARAM;
-        payload_param.line              = body_ast ? body_ast->line : n->line;
-        payload_param.col               = 1;
-        payload_param.u.param.name_start = "__payload";
-        payload_param.u.param.name_len   = 9;
-        UAstNode *params_arr[1] = { &payload_param };
-
-        uint8_t body_reg = (body_ast != NULL)
-            ? emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        uint8_t alt_reg = (onleave_ast != NULL)
-            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
-        emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
-                   (uint32_t)n->line);
-
-        if (alt_reg  != 0xFFu) free_reg(e);
-        if (body_reg != 0xFFu) free_reg(e);
-        free_reg(e);  /* event_reg */
-
-        uint8_t rd = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-        e->next_reg++;
-        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-        return rd;
-    }
-    case AST_AT_SLOT_CHANGE: {
-        /* T63: at (obj.x.changed?) body [onleave] / at sync variant.
-         * Spec #4 §4.2: emit GETSLOT_CHANGE_EVENT then AT_EVENT_INSTALL.
-         *
-         *   recv_reg  := emit receiver expression
-         *   ic_idx    := uemit_assign_ic_index for slot name
-         *   event_reg := OP_GETSLOT_CHANGE_EVENT(event_reg, recv_reg, ic_idx)
-         *   body_reg  := emit_function_literal(body, 1 param)
-         *   alt_reg   := emit_function_literal(onleave, 0 params) or 0xFF
-         *                OP_AT_EVENT_INSTALL / OP_AT_EVENT_SYNC_INSTALL
-         */
-        if (e->current_fs == NULL || e->vm == NULL) {
-            e->error = EMIT_UNSUPPORTED_AST;
-            return 0u;
-        }
-
-        UAstNode *recv_ast    = n->u.at_slot_change.receiver;
-        const char *sname     = n->u.at_slot_change.slot_name;
-        size_t      sname_len = n->u.at_slot_change.slot_name_len;
-        UAstNode *body_ast    = n->u.at_slot_change.body;
-        UAstNode *onleave_ast = n->u.at_slot_change.onleave;
-        bool      sync_flag   = n->u.at_slot_change.is_sync;
-
-        uint8_t recv_reg = emit_expr(e, recv_ast);
-        if (e->error != EMIT_OK) return 0u;
-
-        USymbol *slot_sym = (USymbol *)ustr_intern(e->vm, sname, sname_len);
-        if (slot_sym == NULL) { e->error = EMIT_OOM; return 0u; }
-
-        int ic_idx = uemit_assign_ic_index(e, slot_sym);
-        if (ic_idx < 0) return 0u;
-
-        /* Emit the event-lookup; result overwrites recv_reg (same
-         * register reuse as OP_GETSLOT in AST_MEMBER_GET). */
-        uint8_t event_reg = recv_reg;
-        emit_instr(e, uinstr_enc_abc(OP_GETSLOT_CHANGE_EVENT,
-                                     event_reg, recv_reg, (uint8_t)ic_idx),
-                   (uint32_t)n->line);
-
-        /* Sync freereg up to next_reg before allocating the body closure
-         * (mirrors AST_AT_EVENT).  AST_IDENT global-fallback feeding
-         * recv_ast bumps next_reg only, leaving freereg stale, so
-         * emit_function_literal can otherwise allocate body_reg on top
-         * of event_reg. */
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-
-        /* Body closure: 1 param (payload value on event fire). */
-        UAstNode payload_param;
-        urbi_zero(&payload_param, sizeof payload_param);
-        payload_param.kind               = AST_PARAM;
-        payload_param.line               = body_ast ? body_ast->line : n->line;
-        payload_param.col                = 1;
-        payload_param.u.param.name_start = "__payload";
-        payload_param.u.param.name_len   = 9;
-        UAstNode *params_arr[1] = { &payload_param };
-
-        uint8_t body_reg = (body_ast != NULL)
-            ? emit_function_literal(e, params_arr, 1, body_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        uint8_t alt_reg = (onleave_ast != NULL)
-            ? emit_function_literal(e, NULL, 0, onleave_ast, /*as_expression=*/false)
-            : 0xFFu;
-        if (e->error != EMIT_OK) return 0u;
-
-        UOpcode op = sync_flag ? OP_AT_EVENT_SYNC_INSTALL : OP_AT_EVENT_INSTALL;
-        emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
-                   (uint32_t)n->line);
-
-        if (alt_reg  != 0xFFu) free_reg(e);
-        if (body_reg != 0xFFu) free_reg(e);
-        free_reg(e);  /* event_reg */
-
-        uint8_t rd = e->next_reg;
-        emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0u, 0u), (uint32_t)n->line);
-        e->next_reg++;
-        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
-        if (e->current_fs->freereg < e->next_reg)
-            e->current_fs->freereg = e->next_reg;
-        return rd;
-    }
+    case AST_MEMBER_GET:     return emit_member_get_arm(e, n);
+    case AST_MEMBER_SET:     return emit_member_set_arm(e, n);
+    case AST_WATCHER:        return emit_watcher_arm(e, n);
+    case AST_WAITUNTIL:      return emit_waituntil_arm(e, n);
+    case AST_AT_EVENT:       return emit_at_event_arm(e, n);
+    case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:

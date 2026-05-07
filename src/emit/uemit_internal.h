@@ -8,6 +8,7 @@
 #define UEMIT_INTERNAL_H
 
 #include "uemit.h"
+#include "runtime/umacros.h"   /* urbi_zero */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -88,6 +89,24 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_try_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n);
 
+/* Reactive AST arm helpers (defined in uemit_react.c).
+ * Called from emit_expr via forwarding stubs; bodies live in uemit_react.c. */
+uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_waituntil_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_member_get_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_member_set_arm(UEmitter *e, UAstNode *n);
+
+/* Closure + thunk builders (defined in uemit.c).
+ * Promoted from static so that uemit_react.c can build closures for
+ * reactive arms without duplicating the logic. */
+uint8_t emit_function_literal(UEmitter *e,
+                              UAstNode **params, int nparams,
+                              UAstNode  *body,
+                              bool       as_expression);
+uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr);
+
 /* Funcstate ops (defined in uemit_funcstate.c — T8+). */
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent);
 UFuncState *uemit_close_function(UEmitter *e);
@@ -104,5 +123,14 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_NO_OPERAND      ((uint8_t)0xFFu)   /* "no body / no onleave" — replaces inline 0xFFu (EMIT-023) */
 #define UEMIT_JMP_BIAS        32768              /* used by emit_stmt + emit_expr (EMIT-024) */
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
+
+/* --- Register-allocator micro-helpers (inline for zero overhead) ---
+ * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
+ * can use them without implicit-declaration warnings. */
+
+/* Release the most-recently-allocated register (stack discipline). */
+static inline void free_reg(UEmitter *e) {
+    if (e->next_reg > 0u) e->next_reg--;
+}
 
 #endif /* UEMIT_INTERNAL_H */
