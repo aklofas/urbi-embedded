@@ -89,6 +89,8 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
@@ -138,7 +140,7 @@ UTEST(deserialize_rejects_unsupported_version) {
 
 UTEST(deserialize_rejects_v1_0_module) {
     /* Build a 24-byte header with version byte = 0x10 (v1.0). */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -151,6 +153,8 @@ UTEST(deserialize_rejects_v1_0_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
     umodule_destroy(&c);
@@ -160,7 +164,7 @@ UTEST(deserialize_rejects_v1_1_module) {
     /* Version byte 0x11 (M2) must be rejected: OP_RETURN dispatch semantics
        changed between M2 and M3; loading old modules silently would produce
        wrong nested-unwind behaviour.  Hard break is the safe choice. */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -172,6 +176,8 @@ UTEST(deserialize_rejects_v1_1_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -186,7 +192,7 @@ UTEST(deserialize_rejects_v1_2_module) {
     /* Version byte 0x12 (M3) must be rejected by the v1.3 loader: M4 added
        UProto.ic_count + UProto.ic_names side table; loading v1.2 silently
        would leave IC sites uninitialized.  Hard break per encoding spec §7. */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -198,6 +204,8 @@ UTEST(deserialize_rejects_v1_2_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -210,7 +218,7 @@ UTEST(deserialize_rejects_v1_2_module) {
 
 UTEST(deserialize_accepts_v13_module) {
     /* A minimal well-formed v1.3 module must be accepted. */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -222,6 +230,8 @@ UTEST(deserialize_accepts_v13_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -322,6 +332,8 @@ UTEST(deserialize_rejects_nonzero_reserved_byte) {
     buf[off++] = 0;  /* n_instructions = 0 */
     buf[off++] = 0;  /* n_deltas = 0 */
     buf[off++] = 0;  /* n_abs_lines = 0 */
+    buf[off++] = 0;  /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;  /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -368,6 +380,9 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     /* synclines: 0 deltas, 0 abs_lines */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -397,6 +412,9 @@ UTEST(deserialize_loads_integer_constant_pool) {
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
     /* synclines: 0, 0 */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+    /* v1.5: ic_names + nested[] (both empty) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -457,6 +475,9 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 5);          /* abs_line[0].line = 5 */
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -535,6 +556,9 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 10);         /* abs_line[0].line = 10 */
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -613,6 +637,9 @@ static size_t build_module_bytes(uint8_t *buf,
     off = put_varint(buf, off, (uint64_t)n_instr);
     size_t di;
     for (di = 0; di < n_instr; di++) buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    /* v1.5: root-chunk ic_names (count=0) + nested[] (count=0). */
+    off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     return off;
 }
@@ -1059,6 +1086,8 @@ UTEST(deserialize_loads_float_constant) {
     while ((off & 3U) != 0U) buf[off++] = 0;
     off = put_varint(buf, off, 0);              /* n_deltas = 0 */
     off = put_varint(buf, off, 0);              /* n_abs_lines = 0 */
+    off = put_varint(buf, off, 0);              /* ic_count = 0 (v1.5) */
+    off = put_varint(buf, off, 0);              /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1399,6 +1428,8 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;  /* two zero deltas */
     buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1424,6 +1455,8 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1446,6 +1479,8 @@ UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1469,6 +1504,8 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1492,6 +1529,8 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     buf[off++] = 2;          /* n_deltas */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1516,6 +1555,8 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1541,6 +1582,8 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1569,6 +1612,8 @@ static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
     return off;
 }
 
