@@ -66,14 +66,27 @@ static inline UModuleAllocFn emit_alloc_for(const UModule *c) {
 
 /* --- Forward decls for cross-TU functions (extract-driven; added T6-T13) --- */
 
-/* Core instruction emitters (defined in uemit.c).
+/* Core instruction emitters / helpers (defined in uemit.c).
  * Promoted to non-static so that extracted TUs (uemit_unwind.c, etc.)
  * can emit instructions without pulling uemit.c's internal statics. */
-void emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
+void   emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
+void   emit_patch_instr(UEmitter *e, int pc, uint32_t new_instr);
+size_t emit_instr_count(const UEmitter *e);
+uint8_t fs_temp_floor(const UFuncState *fs);
+
+/* Main expression walker (defined in uemit.c); called recursively by
+ * arm helpers in extracted TUs. */
+uint8_t emit_expr(UEmitter *e, UAstNode *n);
 
 /* Diag-emit funnel (defined in uemit_diag.c). */
 void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...);
 void emit_diag_free_all(UEmitter *e);
+
+/* Unwind AST arm helpers (defined in uemit_unwind.c).
+ * Called from emit_expr via forwarding stubs; bodies live in uemit_unwind.c. */
+uint8_t emit_throw_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_try_arm(UEmitter *e, UAstNode *n);
+uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n);
 
 /* Funcstate ops (defined in uemit_funcstate.c — T8+). */
 UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent);
