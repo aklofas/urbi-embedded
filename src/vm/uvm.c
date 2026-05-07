@@ -33,7 +33,7 @@
 #include "object/utypes_init.h" /* urbi_object_builtin_types_init (M4) */
 #include "object/uic.h"         /* UIC + urbi_slot_get_slow / urbi_slot_set_slow (T22-T25) */
 #include "object/uobject.h"     /* UObject — receivers for GETSLOT/SETSLOT (T22-T25) */
-#include "object/umoduleinstance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
+#include "object/umodule_instance.h" /* urbi_get_or_create_module_instance (M4 follow-up) */
 #include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
 
 #if __STDC_HOSTED__

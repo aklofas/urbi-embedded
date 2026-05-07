@@ -19,7 +19,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "object/umoduleinstance.h"  /* T36: walk module_instances_head */
+#include "object/umodule_instance.h"  /* T36: walk module_instances_head */
 #include "value/uintern.h"      /* T40: ustr_intern("fallback", ...) */
 #include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */

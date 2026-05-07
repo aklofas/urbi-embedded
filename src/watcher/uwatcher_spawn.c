@@ -31,7 +31,7 @@
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"              /* UClosure full definition — proto_inst field access */
 #include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */
-#include "object/umoduleinstance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
+#include "object/umodule_instance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
 #include "urbi/urbi.h"             /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"               /* URBI_INTERNAL_ASSERT */
 

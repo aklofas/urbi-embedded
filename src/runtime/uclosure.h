@@ -19,7 +19,7 @@
 
 #include "module/umodule.h"                       /* UProto + forward typedef `UClosure` + UUpvalCell */
 #include "gc/ugc.h"                        /* UCell (2 B) */
-#include "object/umoduleinstance.h"        /* UProtoInstance — M4: IC table per nested proto */
+#include "object/umodule_instance.h"        /* UProtoInstance — M4: IC table per nested proto */
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
  * Heap-allocated by OP_CLOSURE; lives until end-of-run via the strand's

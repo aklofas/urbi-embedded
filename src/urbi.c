@@ -7,7 +7,7 @@
 #include "value/uintern.h"
 #include "runtime/umacros.h"
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #if __STDC_HOSTED__
 #  include <stdio.h>

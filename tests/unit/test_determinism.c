@@ -31,7 +31,7 @@ UTEST(determinism_checksum_smoke)
 #include "realm/urealm.h"
 #include "module/umodule.h"      /* UValue, UValKind */
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #include <stdlib.h>  /* malloc */
 

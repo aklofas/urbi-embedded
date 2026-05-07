@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* umoduleinstance.h — UModuleInstance + UProtoInstance: per-VM IC RAM tier.
+/* umodule_instance.h — UModuleInstance + UProtoInstance: per-VM IC RAM tier.
  *
  * UModule is read-only (flash-resident on freestanding targets); it owns the
  * bytecode + UProto definitions + ic_count / ic_names side tables.  The

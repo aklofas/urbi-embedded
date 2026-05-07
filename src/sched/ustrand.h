@@ -84,7 +84,7 @@ struct UVM;              /* uvm.h — forward-decl to avoid circular include */
 struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
 struct UModule;          /* umodule.h — forward-decl for strand execution context */
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
-struct UModuleInstance;  /* object/umoduleinstance.h — M4 follow-up: per-(vm,module) IC tier */
+struct UModuleInstance;  /* object/umodule_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 
 /* === UStrand struct (M3 baseline) ===

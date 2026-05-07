@@ -21,7 +21,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "value/uvalue.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 #include <stddef.h>    /* size_t */
 
 /* Freestanding-safe byte-copy: copy at most (cap-1) bytes from src into dst,

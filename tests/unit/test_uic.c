@@ -13,7 +13,7 @@
 #include "utest.h"
 
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */

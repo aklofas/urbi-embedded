@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* umoduleinstance.c — UModuleInstance + UProtoInstanceArr lifecycle.
+/* umodule_instance.c — UModuleInstance + UProtoInstanceArr lifecycle.
  *
- * See umoduleinstance.h for the design contract and layout invariants. */
+ * See umodule_instance.h for the design contract and layout invariants. */
 
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
 #include "vm/uvm.h"              /* UVM (for the typed pointer) */

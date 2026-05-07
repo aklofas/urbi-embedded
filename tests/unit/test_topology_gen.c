@@ -31,7 +31,7 @@
 #include "utest.h"
 
 #include "object/uic.h"
-#include "object/umoduleinstance.h"
+#include "object/umodule_instance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "value/uintern.h"

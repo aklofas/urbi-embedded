@@ -25,7 +25,7 @@
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
 #include "object/uic.h"                     /* UIC */
-#include "object/umoduleinstance.h"         /* urbi_module_instance_create,
+#include "object/umodule_instance.h"         /* urbi_module_instance_create,
                                                UModuleInstance, UProtoInstance */
 #include "sched/usched_cooperative.h"       /* sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */

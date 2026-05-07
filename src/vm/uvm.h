@@ -28,7 +28,7 @@ struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
-struct UModuleInstance;   /* M4 T30 — defined in src/object/umoduleinstance.h */
+struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h */
 
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
