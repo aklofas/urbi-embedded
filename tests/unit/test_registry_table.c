@@ -5,7 +5,7 @@
 
 #include <stddef.h>
 
-#include "urealm_globals.h"
+#include "realm/urealm_globals.h"
 #include "vm/uvm.h"
 #include "module/umodule.h"
 

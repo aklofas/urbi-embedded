@@ -8,7 +8,7 @@
 
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "urealm_globals.h"
+#include "realm/urealm_globals.h"
 #include "value/uintern.h"
 #include "object/uobject.h"
 #include "object/ushape.h"

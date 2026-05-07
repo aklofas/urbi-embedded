@@ -23,7 +23,7 @@
 #include "sched/ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
-#include "urealm_globals.h"    /* urbi_populate_realm_globals */
+#include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
 
 /* === Zero-fill helper === */
 

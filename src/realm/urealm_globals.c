@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "urealm_globals.h"
+#include "realm/urealm_globals.h"
 #include "vm/uvm.h"              /* UVM, atom_* fields, event_proto, tag_proto, urbi_native_protos_init */
 #include "realm/urealm.h"     /* URealm, global_object */
 #include "value/uintern.h"          /* ustr_intern */
