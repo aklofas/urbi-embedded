@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — Wave 3 of v0.5.x cleanup ramp (v0.5.5 candidate)
+## Unreleased
+
+## v0.5.5-naming — 2026-05-07
 
 Internal symbol + public C API naming pass per CONTRIBUTING.md §3.2 conventions.
 Last opportunity to settle public API before M6 grows the surface.
