@@ -59,6 +59,33 @@
 #  define URBI_DISPATCH_ASSERT(cond) ((void)0)
 #endif
 
+/* --- ic_resolve_pi: IC-table proto-instance resolver (VM-008) ---
+   Resolves the UProtoInstance* used by OP_GETSLOT and OP_SETSLOT.
+   Three-way dispatch:
+     frame_count == 0 + entry_closure with proto_inst  → entry_closure->proto_inst
+     frame_count == 0 + no entry_closure / no proto_inst → entries[0] of module_instance
+     frame_count >  0                                   → frames[top].closure->proto_inst
+   Returns NULL when no IC table is reachable (megamorphic-bail; caller must HALT).
+   Must inline into the dispatch loop — __attribute__((always_inline)) ensures the
+   compiler never emits a call instruction on the hot path. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline))
+#endif
+static inline UProtoInstance *
+ic_resolve_pi(UStrand *s)
+{
+    if (s->frame_count == 0) {
+        if (s->entry_closure != NULL && s->entry_closure->proto_inst != NULL)
+            return s->entry_closure->proto_inst;
+        if (s->module_instance != NULL
+                && s->module_instance->proto_instances != NULL)
+            return &s->module_instance->proto_instances->entries[0];
+        return NULL;
+    }
+    UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+    return cur_cl ? cur_cl->proto_inst : NULL;
+}
+
 /* --- dispatch_loop_until_yield ---
    The core execution engine (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
@@ -611,28 +638,8 @@ dispatch:
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve IC table:
-             *   frame_count == 0, entry_closure has proto_inst (watcher body strand
-             *     or fork child starting from a nested closure):
-             *       use s->entry_closure->proto_inst directly — the entry closure
-             *       IS the executing context and owns its own IC table.
-             *   frame_count == 0, no entry_closure or no proto_inst (uvm_run transient
-             *     executing root-chunk code):
-             *       use s->module_instance->proto_instances->entries[0]
-             *   frame_count > 0 (nested call):
-             *       use frames[top].closure->proto_inst (set by OP_CLOSURE) */
-            UProtoInstance *pi = NULL;
-            if (s->frame_count == 0) {
-                if (s->entry_closure != NULL && s->entry_closure->proto_inst != NULL) {
-                    pi = s->entry_closure->proto_inst;
-                } else if (s->module_instance != NULL
-                    && s->module_instance->proto_instances != NULL) {
-                    pi = &s->module_instance->proto_instances->entries[0];
-                }
-            } else {
-                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
-                if (cur_cl != NULL) pi = cur_cl->proto_inst;
-            }
+            /* Resolve IC table (ic_resolve_pi, VM-008). */
+            UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT: no IC table bound");
@@ -738,23 +745,8 @@ dispatch:
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            /* Resolve IC table (mirrors OP_GETSLOT logic):
-             *   frame_count == 0 with entry_closure->proto_inst: use that
-             *     (watcher body strand / fork child from nested closure).
-             *   frame_count == 0 without: use entries[0] (uvm_run root chunk).
-             *   frame_count > 0: use frames[top].closure->proto_inst. */
-            UProtoInstance *pi = NULL;
-            if (s->frame_count == 0) {
-                if (s->entry_closure != NULL && s->entry_closure->proto_inst != NULL) {
-                    pi = s->entry_closure->proto_inst;
-                } else if (s->module_instance != NULL
-                    && s->module_instance->proto_instances != NULL) {
-                    pi = &s->module_instance->proto_instances->entries[0];
-                }
-            } else {
-                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
-                if (cur_cl != NULL) pi = cur_cl->proto_inst;
-            }
+            /* Resolve IC table (ic_resolve_pi, VM-008). */
+            UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SETSLOT: no IC table bound");
@@ -1195,7 +1187,8 @@ dispatch:
                 NEXT();
             }
 
-            /* Resolve IC table (same pattern as OP_GETSLOT). */
+            /* Resolve IC table.  NOTE: this site is missing the entry_closure
+             * branch present in ic_resolve_pi — known VM-001 bug; wave-5-fixes. */
             UProtoInstance *pi = NULL;
             if (s->frame_count == 0) {
                 if (s->module_instance != NULL
