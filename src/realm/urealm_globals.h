@@ -8,8 +8,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "module/umodule.h"   /* UValue */
-#include "urbi/urbi.h" /* UErrCode */
+#include "urbi/types.h"  /* UValue (avoids pulling module/umodule.h here) */
+#include "urbi/urbi.h"   /* UErrCode */
 
 #ifdef __cplusplus
 extern "C" {
