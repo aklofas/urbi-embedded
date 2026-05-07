@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "object/uobject.h"
+#include "object/uobject_internal.h"
 #include "object/ushape.h"
 #include "object/umodule_instance.h"  /* T36: walk module_instances_head */
 #include "value/uintern.h"      /* T40: ustr_intern("fallback", ...) */
@@ -42,7 +43,7 @@
  * pseudocode and v1.0 ABI agree on the monotonic-counter semantics; only
  * the initial offset disagrees, and 1-based ids leave 0 as a "no id"
  * sentinel for future debug printing. */
-static uint32_t
+uint32_t
 next_id(UVM *vm)
 {
     if (vm->next_object_id == UINT32_MAX) {
@@ -125,7 +126,7 @@ urbi_atom_family_name(URBIAtomFamily f)
 /* shade_existing_protos — internal helper. Decodes obj->protos's three
  * storage forms (empty/single/heap per spec §4.1) and shades the underlying
  * cell(s) before the field is overwritten. */
-static void
+void
 shade_existing_protos(UVM *vm, UObject *obj)
 {
     uintptr_t raw = obj->protos;
@@ -347,7 +348,7 @@ urbi_object_clone(UVM *vm, UObject *parent)
  * spec §5.5.  An atom can only inherit from its own family OR from the
  * root Object atom.  The root Object never blocks (either side may be
  * URBI_ATOM_OBJECT and the relationship is permitted). */
-static int
+int
 valid_proto(const UObject *obj, const UObject *p)
 {
     URBIAtomFamily ofam = (URBIAtomFamily)(obj->flags & URBI_OBJ_ATOM_MASK);
@@ -360,7 +361,7 @@ valid_proto(const UObject *obj, const UObject *p)
 
 /* urbi_protos_alloc — allocate a fresh UProtos block for `n` items via the
  * GC (UTYPE_PROTOS).  Caller fills items[0..n).  Returns NULL on OOM. */
-static UProtos *
+UProtos *
 urbi_protos_alloc(UVM *vm, uint32_t n)
 {
     UCell *c = urbi_gc_alloc(vm,
@@ -536,7 +537,7 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
  * the proto-walk path on every visit — which is exactly what the cycle and
  * rollover tests need to exercise. */
 
-static int
+int
 lookup_inner(UVM *vm, UObject *obj, USymbol *name, UValue *out)
 {
     /* Cycle / re-visit guard.  Truncating lookup_id to u32 is intentional —
@@ -620,7 +621,7 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
 
 /* clear_lookup_stamp_cb — urbi_gc_walk_all_cells callback that resets
  * UObject.lookup_stamp to 0 on every UObject cell.  Skips non-object cells. */
-static void
+void
 clear_lookup_stamp_cb(UVM *vm, UCell *cell, void *ctx)
 {
     (void)vm; (void)ctx;
