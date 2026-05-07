@@ -74,6 +74,24 @@ static const char * const kErrorNames[] = {
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
 
+/* Compile-time parity check: the kErrorNames / kErrorMessages tables
+ * are indexed by UParseError, so their length must equal the count of
+ * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
+ * enumerator (added in M5 spec #4); update both forms together when
+ * adding a new code.  Closes PARSE-017. */
+_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+               "kErrorNames length must match UParseError enum count");
+_Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
+               == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+               "kErrorMessages length must match UParseError enum count");
+
+/* --- Postfix-emit method name.  Promoted to file scope so the postfix
+ * `e!` desugar in uparse_react.c does not duplicate the literal.
+ * Closes PARSE-016. --- */
+const char kEmitMethodName[] = "emit";
+_Static_assert(sizeof kEmitMethodName - 1U == kEmitMethodNameLen,
+               "kEmitMethodNameLen must equal strlen(kEmitMethodName)");
+
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */
 
 /* Read-only OOM error sentinel returned by parse functions when arena

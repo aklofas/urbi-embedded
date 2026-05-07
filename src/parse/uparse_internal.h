@@ -8,8 +8,39 @@
 #include "uparse.h"
 #include "uast.h"
 
+/* OOM sentinel convention (closes PARSE-003 / PARSE-005):
+ *
+ * Internal AST allocators (make_node and friends) return NULL on
+ * arena OOM. Pratt/recursive-descent parsers propagate NULL upward
+ * unchanged; the top-level entrypoint (uparse_next_statement in
+ * uparse_top.c) converts NULL → uparser_oom_sentinel at its single
+ * exit by re-checking p->arena->oom. Sibling parsers MUST NOT
+ * pre-convert NULL → sentinel within the recursion (avoids
+ * double-reporting and keeps the OOM surface single-sourced).
+ *
+ * Historical note: a few interior sites currently return the sentinel
+ * directly (e.g. parse_outer_tier on arena_grow_node_array failure).
+ * This is harmless — the top-level recheck collapses both forms — but
+ * standardizing on plain NULL inside the recursion is a Wave 5 fix
+ * target.  New code should follow the NULL-propagation rule. */
+
 /* --- OOM sentinel (defined in uparse.c residual). --- */
 extern const UAstNode uparser_oom_sentinel;
+
+/* Postfix precedence level — `expr(args)`, `expr.x`, `expr->x`,
+ * `expr!`, `expr?` all bind tighter than any infix operator
+ * (multiplicative=6 is the tightest infix; postfix=7 sits above).
+ * Used as the `min_prec <=` ceiling check in parse_expression_cont. */
+#define PARSE_PREC_POSTFIX 7
+
+/* Method name used by the postfix `e!` desugar (`e!` → `e.emit()`).
+ * Single source of truth, referenced by AST_MEMBER_GET node construction
+ * in uparse_react.c.  Defined in uparse.c.  Length declared explicitly
+ * so callers can use kEmitMethodNameLen without strlen at runtime
+ * (the array's `extern char kEmitMethodName[];` form has incomplete
+ * type at the use site, so sizeof is unavailable). */
+extern const char kEmitMethodName[];
+#define kEmitMethodNameLen 4  /* strlen("emit") */
 
 /* --- Error-message table (defined in uparse.c residual). --- */
 extern const char * const kErrorMessages[];
@@ -59,7 +90,7 @@ UAstNode *parse_outer_tier(UParser *p);
 UAstNode *parse_statement_or_expr(UParser *p);
 UAstNode *parse_block(UParser *p);
 UAstNode *parse_var_decl(UParser *p);
-UAstNode *parse_assign_from_ident(UParser *p, UToken name);
+UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name);
 UAstNode *parse_if(UParser *p);
 UAstNode *parse_while(UParser *p);
 UAstNode *parse_function(UParser *p);
