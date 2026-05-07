@@ -29,17 +29,15 @@ UAstNode *make_unary(UParser *p, UAstUnaryOp op, UAstNode *operand,
                      int line, int col);
 UAstNode *make_binary(UParser *p, UAstBinaryOp op, UAstNode *lhs, UAstNode *rhs,
                       int line, int col);
+UAstNode *make_error(UParser *p, UParseError code, const char *msg,
+                     int line, int col);
+
+/* --- Arena-array growth helper + expression parser (defined in uparse_expr.c). --- */
+bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);
 UAstNode *make_compare(UParser *p, UAstCompareOp op, UAstNode *lhs, UAstNode *rhs,
                        int line, int col);
 UAstNode *make_bool_node(UParser *p, bool value, int line, int col);
 UAstNode *make_nil_node(UParser *p, int line, int col);
-UAstNode *make_error(UParser *p, UParseError code, const char *msg,
-                     int line, int col);
-
-/* --- Arena-array growth helper (defined in uparse.c residual). --- */
-bool arena_grow_node_array(UParser *p, UAstNode ***arr, int *cap, int count);
-
-/* --- Expression parser (defined in uparse.c residual). --- */
 UAstNode *parse_expression(UParser *p, int min_prec);
 UAstNode *parse_prefix(UParser *p);
 UAstNode *parse_atom(UParser *p);
