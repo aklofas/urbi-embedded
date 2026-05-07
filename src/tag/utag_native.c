@@ -37,13 +37,13 @@
 #include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
-#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OUT_OF_MEMORY */
+#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
 
 /* === throw_oom_for_tag_event ===
  *
  * Shared OOM-throw path for tag_enter_getter / tag_leave_getter.
- * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OUT_OF_MEMORY.
+ * If vm->cur_strand is non-NULL (normal dispatch), throws URBI_ERR_OOM.
  * Returns a NIL UValue for use as the getter's return value on failure. */
 static UValue
 throw_oom_for_tag_event(struct UVM *vm)
@@ -51,7 +51,7 @@ throw_oom_for_tag_event(struct UVM *vm)
     if (vm->cur_strand != NULL) {
         UValue err;
         err.kind = (uint8_t)UVAL_INT;
-        err.v.i  = (int64_t)URBI_ERR_OUT_OF_MEMORY;
+        err.v.i  = (int64_t)URBI_ERR_OOM;
         urbi_throw(vm->cur_strand, err);
     }
     UValue nil = {0};

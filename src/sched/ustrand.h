@@ -61,15 +61,8 @@ extern "C" {
 #define USTRAND_GET_STATE(s)   ((s)->state & USTRAND_STATE_MASK)
 #define USTRAND_GET_REASON(s)  ((s)->state & USTRAND_REASON_MASK)
 
-/* === UExecStatus (row 7 §2; full T8 lands the dispatch transition) === */
-
-typedef enum {
-    UEXEC_OK = 0,
-    UEXEC_RETURN,
-    UEXEC_THROW,
-    UEXEC_TAG_STOP,
-    UEXEC_CANCEL
-} UExecStatus;
+/* === UExecStatus moved to <urbi/types.h> at v0.5.5 (T17) === */
+#include "urbi/types.h"
 
 /* === Cleanup-stack type (T3) ===
    ucleanup.h defines UCleanupEntry and the stack init/destroy ops. */

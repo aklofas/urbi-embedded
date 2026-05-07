@@ -21,6 +21,7 @@
 #include "event/uevent_native.h"
 
 #include "vm/uvm.h"
+#include "sched/ustrand.h"           /* UStrand (was transitively pulled via urbi.h pre-v0.5.5) */
 #include "value/uintern.h"           /* ustr_intern */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
 #include "event/uevent_emit.h"       /* c_event_emit_async, c_event_emit_sync, c_event_waituntil */

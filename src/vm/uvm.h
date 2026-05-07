@@ -41,22 +41,13 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 #  define URBI_MAX_ROOT_PROVIDERS 8U        /* row 10 §5.1; T26 may move to ugc.h */
 #endif
 
-/* --- errors --- */
-
-typedef enum {
-    UVM_OK = 0,
-    UVM_TYPE_ERROR,
-    UVM_OOM,
-} UVMError;
-
-/* --- pluggable allocator (matches umodule pattern) --- */
-
-typedef void *(*UVMAllocFn)(void *ptr, size_t nbytes, void *ud);
-/* Standard realloc semantics:
- *   ptr == NULL && nbytes > 0  : allocate fresh buffer; return non-NULL or NULL on OOM.
- *   ptr != NULL && nbytes == 0 : free ptr; return NULL.
- *   ptr != NULL && nbytes > 0  : reallocate ptr to nbytes (may move); return non-NULL or NULL on OOM.
- *   ptr == NULL && nbytes == 0 : no-op; return NULL. */
+/* --- errors + pluggable allocator ---
+ *
+ * UVMError and UVMAllocFn moved to <urbi/types.h> at v0.5.5 (T17) so
+ * include/urbi/urbi.h can declare urbi_vm_run / urbi_vm_init without
+ * pulling internal headers.  See <urbi/types.h> for the canonical
+ * definitions and the realloc-semantics docstring. */
+#include "urbi/types.h"
 
 /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP are in uframe.h (included above). */
 
