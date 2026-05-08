@@ -122,6 +122,15 @@ static UArenaChunk *new_chunk(UArena *a, size_t min_payload) {
 void *uarena_alloc(UArena *a, size_t nbytes) {
     if (a->oom) return NULL;
 
+    /* FOUND-016: alignment-padding overflow guard.  When nbytes > SIZE_MAX -
+     * (ARENA_ALIGN - 1) the round-up arithmetic below wraps to a smaller
+     * value.  Reject ahead of any chunk allocation and stamp oom so all
+     * future allocations on this arena fail fast. */
+    if (nbytes > SIZE_MAX - (size_t)(ARENA_ALIGN - 1)) {
+        a->oom = true;
+        return NULL;
+    }
+
     /* Round request up to alignment. */
     size_t need = nbytes;
     if (need % ARENA_ALIGN) need += ARENA_ALIGN - (need % ARENA_ALIGN);
