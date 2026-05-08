@@ -9,8 +9,8 @@
 #include "object/uobject_internal.h"
 #include "object/ushape.h"
 #include "vm/uvm.h"
-#include "urbi/gc.h"            /* urbi_gc_alloc */
-#include "gc/ugc_incremental.h" /* gc_shade_gray */
+#include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_write barrier */
+#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_write */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "module/umodule.h"
@@ -41,14 +41,17 @@ uprops_alloc(UVM *vm)
  * Two cases:
  *   1. Slot already exists on this lineage (urbi_shape_find_slot returns
  *      an index >= 0): in-place value update.  No shape transition, no
- *      USlotArray reallocation, no topology_gen bump.  Note: at v1.0
- *      `obj->slots[idx]` is the dense receiver storage — assigning to it
- *      stores the new value directly; no separate slot-write barrier is
- *      needed because the OLD value (about to be overwritten) cannot point
- *      at a black-marked cell that the GC has already scanned (USlot is
- *      reachable via walk_uobject's per-slot UValue cb, which the GC re-
- *      drives in the next slice — same reasoning as the UProps oget/oset
- *      writes in T17).
+ *      USlotArray reallocation, no topology_gen bump.  The new value is
+ *      written through the Dijkstra forward barrier (urbi_gc_slot_write):
+ *      if the receiver UObject is BLACK and the new value is a white
+ *      heap cell, the barrier shades the new value GRAY to maintain the
+ *      tri-color invariant.  The old value (about to be overwritten)
+ *      remains reachable through whichever other paths held it; that's
+ *      the GC's responsibility, not the slot-write site's.
+ *
+ *      OBJ-003: the previous comment asserted "OLD value cannot point at
+ *      a black-marked cell" — backwards reasoning.  Forward Dijkstra
+ *      protects the *new* value, not the old.
  *
  *   2. Slot is new (find_slot returns -1): transition to the child shape
  *      via urbi_shape_transition_add_slot, allocate a fresh USlotArray
@@ -66,9 +69,17 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
         return -1;
     }
 
-    /* Case 1: slot already in this lineage — in-place value update. */
+    /* Case 1: slot already in this lineage — in-place value update.
+     * Route through the Dijkstra forward slot-write barrier: if the
+     * receiver UObject cell is BLACK and the new value is a white
+     * heap cell, the barrier shades the new value gray.  Without the
+     * barrier, the new white child under a black parent would be
+     * unreachable in the mark phase and could be swept while still
+     * reachable via this slot.  The barrier helper is a hook only;
+     * the actual store happens immediately after. */
     int32_t existing = urbi_shape_find_slot(obj->shape, name);
     if (existing >= 0) {
+        urbi_gc_slot_write(vm, (UCell *)obj, (uint32_t)existing, value);
         obj->slots[existing] = value;
         urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
         return 0;

@@ -152,6 +152,7 @@ extern void test_gc_sweep_accounting_suite(void);
 extern void test_sched_state_aliasing_suite(void);
 extern void test_event_runtime_suite(void);
 extern void test_tag_barrier_suite(void);
+extern void test_object_in_place_barrier_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -280,6 +281,7 @@ static const struct suite_entry suites[] = {
     {"sched_state_aliasing",      test_sched_state_aliasing_suite},
     {"event_runtime",             test_event_runtime_suite},
     {"tag_barrier",               test_tag_barrier_suite},
+    {"object_in_place_barrier",   test_object_in_place_barrier_suite},
     /* Add new suites here as test files are added. */
 };
 
