@@ -363,9 +363,16 @@ UFuncState *uemit_close_function(UEmitter *e) {
         /* M4 T15: copy IC names side table into the UProto.  Use the
          * proto's own allocator (inherited from the module at
          * umodule_alloc_nested_proto time); the resulting array is freed
-         * by umodule_destroy_proto_buffers. */
-        p->ic_count = fs->ic_next;
-        if (p->ic_count > 0U) {
+         * by umodule_destroy_proto_buffers.
+         *
+         * T22 (EMIT-005): mirror the module-sibling pattern below — only
+         * write p->ic_count / p->ic_names after the IC-array allocation
+         * succeeds.  Pre-fix, the proto path assigned p->ic_count first,
+         * then reset it to 0 on OOM (silent zeroing).  The new shape
+         * leaves p->ic_count at its zero-init value when allocation
+         * fails and propagates the failure via e->error alone, matching
+         * the module path. */
+        if (fs->ic_next > 0U) {
             UModuleAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
             if (palloc == NULL) palloc = emit_alloc_for(e->module);
@@ -374,15 +381,14 @@ UFuncState *uemit_close_function(UEmitter *e) {
                 e->error = EMIT_OOM;
             } else {
                 USymbol **dst = (USymbol **)palloc(NULL,
-                    (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
+                    (size_t)fs->ic_next * sizeof(USymbol *), p->alloc_ud);
                 if (dst == NULL) {
                     e->error = EMIT_OOM;
-                    p->ic_count = 0;
-                    p->ic_names = NULL;
                 } else {
-                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                    for (uint16_t i = 0; i < fs->ic_next; i++) {
                         dst[i] = fs->ic_names[i];
                     }
+                    p->ic_count = fs->ic_next;
                     p->ic_names = dst;
                 }
             }

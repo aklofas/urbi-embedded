@@ -188,6 +188,44 @@ UTEST(emit_function_literal_clean_on_intern_oom)
     UASSERT(saw_failure);
 }
 
+/* --- T22: IC-array OOM propagation -------------------------------------- */
+
+UTEST(emit_close_function_propagates_ic_array_oom)
+{
+    /* Source with multiple slot accesses to grow ic_next > 0; the
+     * IC-array allocation in uemit_close_function copies fs->ic_names
+     * into target_proto->ic_names.  When that allocation fails, the
+     * emit must propagate EMIT_OOM cleanly.  Pre-T22 fix the proto path
+     * also zeroed p->ic_count (silent zeroing); post-fix p->ic_count
+     * stays at its zero-init value and the error propagates via
+     * e->error alone, matching the module-sibling path. */
+    const char *src = "function f(o) { return o.a + o.b + o.c }";
+
+    int total;
+    {
+        ECtx c;
+        ectx_init(&c, src, -1);
+        UEmitError rc = ectx_run(&c);
+        UASSERT_EQ(EMIT_OK, rc);
+        total = c.spy.alloc_calls;
+        ectx_destroy(&c);
+    }
+    UASSERT(total > 4);
+
+    bool saw_oom = false;
+    for (int fail_at = 0; fail_at <= total + 1; fail_at++) {
+        ECtx c;
+        ectx_init(&c, src, fail_at);
+        UEmitError rc = ectx_run(&c);
+        if (rc == EMIT_OOM) saw_oom = true;
+        if (c.spy.alloc_calls > c.spy.fail_at) {
+            UASSERT(rc != EMIT_OK);
+        }
+        ectx_destroy(&c);
+    }
+    UASSERT(saw_oom);
+}
+
 /* --- Suite registration -------------------------------------------------- */
 
 void
@@ -197,4 +235,6 @@ test_emit_error_paths_suite(void)
               emit_close_function_propagates_prologue_oom);
     utest_run("emit_function_literal clean on intern OOM",
               emit_function_literal_clean_on_intern_oom);
+    utest_run("emit_close_function propagates ic_array OOM",
+              emit_close_function_propagates_ic_array_oom);
 }
