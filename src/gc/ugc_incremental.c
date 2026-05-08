@@ -314,8 +314,13 @@ gc_atomic_finish_step(UVM *vm)
     /* Gray work-list should be fully drained before SWEEP. */
     URBI_INTERNAL_ASSERT(gc_gray_head(vm) == NULL);
 
-    /* Transition to SWEEP; initialise sweep cursor to start of all-cells list. */
+    /* Transition to SWEEP; initialise sweep cursor to start of all-cells list.
+     * Reset gc_surviving_bytes accumulator (closes GC-015): each gc_sweep_step
+     * slice now adds only the cells it processed in that slice.  Mid-sweep
+     * allocations prepend to all_cells_head with current_white color and are
+     * never visited by the cursor walk, so they don't contribute. */
     vm->gc_phase = GC_PHASE_SWEEP;
+    vm->gc_surviving_bytes = 0U;
     gc_set_sweep_cursor(vm, gc_node_head(vm));
     gc_set_sweep_cursor_prev(vm, NULL);
 
@@ -362,39 +367,30 @@ end_of_cycle_threshold_update(UVM *vm)
  *   - IS_DEAD (color == OTHER_WHITE): unlink sidecar, run finalizer if set,
  *     free cell + sidecar.  Increment consumed.
  *   - UGC_IS_FIXED (pool-managed): re-paint to current_white; advance;
- *     accumulate to surviving_bytes.
+ *     accumulate to vm->gc_surviving_bytes.
  *   - UGC_IS_PINNED (host-pinned): re-paint to current_white; advance;
- *     accumulate to surviving_bytes.
+ *     accumulate to vm->gc_surviving_bytes.
  *   - All others: re-paint to current_white; advance; accumulate.
  *
- * Surviving-bytes accumulation is stored locally and written to
- * vm->gc_live_bytes only when the sweep completes (cursor reaches end).
- * Because slices may resume, the accumulator must be re-derived from
- * scratch on each slice entry by scanning from sweep_cursor — simpler
- * than serialising partial sums and correct because freed cells are
- * already unlinked.
+ * Surviving-bytes accumulation persists across slices in vm->gc_surviving_bytes
+ * (initialised to 0 at SWEEP entry by gc_atomic_finish_step).  Each slice adds
+ * only the cells it processed in that slice; mid-slice allocations prepend to
+ * all_cells_head with current_white color and are never visited by the cursor
+ * walk, so they're correctly excluded from the survivor count (closes GC-015).
+ *
+ * The previous shape re-derived surviving_bytes by walking from head to
+ * sweep_cursor at every slice entry; that walk over-counted intra-slice
+ * allocations because they prepended to head between slices and ended up
+ * "before sweep_cursor" in the list.
+ *
+ * vm->gc_surviving_bytes is written to vm->gc_live_bytes only when the sweep
+ * completes (cursor reaches end).
  *
  * Returns bytes of work consumed (used by urbi_gc_slice budget tracking). */
 static size_t
 gc_sweep_step(UVM *vm, size_t budget)
 {
-    size_t consumed  = 0U;
-    size_t surviving = 0U;
-
-    /* Re-derive surviving bytes for cells already processed before this
-     * slice by walking from the list head to the current cursor.  This
-     * accounts for surviving cells freed in previous slices being
-     * unlinked and thus absent from the list. */
-    {
-        UAllCellsNode *scan = gc_node_head(vm);
-        const UAllCellsNode *stop = gc_sweep_node(vm);
-        while (scan != NULL && scan != stop) {
-            /* All nodes before sweep_cursor have already been processed
-             * (survived and re-painted).  Accumulate their sizes. */
-            surviving += scan->size;
-            scan = scan->next;
-        }
-    }
+    size_t consumed = 0U;
 
     UAllCellsNode *prev = gc_sweep_node_prev(vm);
     UAllCellsNode *cur  = gc_sweep_node(vm);
@@ -410,8 +406,8 @@ gc_sweep_step(UVM *vm, size_t budget)
          * to current_white so it survives further cycles too. */
         if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0U) {
             urbi_gc_set_color(cell, vm->current_white);
-            surviving += cur->size;
-            consumed  += cur->size;
+            vm->gc_surviving_bytes += cur->size;
+            consumed              += cur->size;
             prev = cur;
             cur  = next;
 
@@ -448,8 +444,8 @@ gc_sweep_step(UVM *vm, size_t budget)
         } else {
             /* Live cell (marked black): re-paint to current_white. */
             urbi_gc_set_color(cell, vm->current_white);
-            surviving += cur->size;
-            consumed  += cur->size;
+            vm->gc_surviving_bytes += cur->size;
+            consumed              += cur->size;
             prev = cur;
             cur  = next;
         }
@@ -460,8 +456,8 @@ gc_sweep_step(UVM *vm, size_t budget)
     gc_set_sweep_cursor(vm, cur);
 
     if (cur == NULL) {
-        /* Sweep complete: update live-bytes and trigger threshold update. */
-        vm->gc_live_bytes = surviving;
+        /* Sweep complete: publish surviving total and trigger threshold update. */
+        vm->gc_live_bytes = vm->gc_surviving_bytes;
         vm->gc_phase      = GC_PHASE_IDLE;
         end_of_cycle_threshold_update(vm);
     }

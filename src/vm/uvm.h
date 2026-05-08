@@ -236,6 +236,14 @@ typedef struct UVM {
     int64_t  gc_debt;                  /* negative = credit; positive = GC work owed */
     size_t   gc_threshold;             /* debt threshold; default URBI_GC_INITIAL_THRESHOLD */
     size_t   gc_live_bytes;            /* live bytes after last sweep cycle */
+    size_t   gc_surviving_bytes;       /* in-progress sweep accumulator (closes GC-015):
+                                        * reset at SWEEP entry, incremented per cell
+                                        * processed in each gc_sweep_step slice, and
+                                        * written to gc_live_bytes at sweep complete.
+                                        * Persisting across slices avoids re-walking
+                                        * head→cursor each slice (which mis-counted
+                                        * intra-slice allocations that prepended to
+                                        * head between slices). */
     size_t   gc_total_allocated;       /* monotonically increasing allocation counter */
     struct UCell *all_cells_head;      /* intrusive list of all GC-managed cells */
     struct UCell *gray_work_head;      /* mark-phase gray worklist */

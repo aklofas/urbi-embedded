@@ -142,6 +142,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->gc_paused           = 0U;
     vm->in_destroy_callback = 0U;
     vm->gc_live_bytes       = 0U;
+    vm->gc_surviving_bytes  = 0U;
     vm->gc_total_allocated  = 0U;
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
