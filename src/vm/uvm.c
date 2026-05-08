@@ -95,6 +95,34 @@ ic_resolve_pi(UStrand *s)
     return cur_cl ? cur_cl->proto_inst : NULL;
 }
 
+/* --- vm_install_check_closure_operand (VM-003) ---
+   Reactive-install opcode operand-register kind check.  The emitter places
+   UClosure values into the cond / body / onleave registers via
+   OP_CLOSURE before the install opcode dispatches, so under correct
+   bytecode this check is a no-op.  Hand-crafted bytecode (or a future
+   emit bug) could leave a non-closure value there; without the check the
+   dispatcher casts (UClosure *)R[reg].v.p anyway and downstream watcher
+   ops dereference garbage.
+
+   Returns 1 on success.  On failure sets vm->last_error = UVM_TYPE_ERROR
+   with a diagnostic message and returns 0; caller is expected to HALT()
+   immediately.  vm_format_type_error_msg's bounded buffer is sufficient
+   for the longest opcode name + slot name combination here. */
+static int
+vm_install_check_closure_operand(UVM *vm, UStrand *s, uint8_t reg,
+                                 const char *opcode_name, const char *slot_name)
+{
+    if (s->R[reg].kind != (uint8_t)UVAL_CLOSURE) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "reactive install: register operand is not a closure");
+        (void)opcode_name;  /* available for future diagnostic enrichment */
+        (void)slot_name;
+        return 0;
+    }
+    return 1;
+}
+
 /* --- vm_install_result_is_fatal / vm_install_fault (VM-002, VM-012) ---
    Translate a UWatcherInstallResult from install_watcher_runtime /
    install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
@@ -1146,6 +1174,11 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_INSTALL", "body")) HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_INSTALL", "onleave"))
+                HALT();
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
@@ -1161,6 +1194,8 @@ dispatch:
         CASE(OP_AT_SYNC_INSTALL) {
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_SYNC_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_SYNC_INSTALL", "body")) HALT();
             UClosure *cond = (UClosure *)s->R[A].v.p;
             UClosure *body = (UClosure *)s->R[B].v.p;
             UWatcherInstallResult r =
@@ -1176,6 +1211,11 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_WHENEVER_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_INSTALL", "body")) HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_INSTALL", "onleave"))
+                HALT();
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
@@ -1204,6 +1244,8 @@ dispatch:
          * Spec #2 §6.3. */
         CASE(OP_WAITUNTIL_INSTALL) {
             uint8_t A = uinstr_a(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_WAITUNTIL_INSTALL", "cond"))
+                HALT();
             UClosure *cond = (UClosure *)s->R[A].v.p;
             UWatcherInstallResult r = install_watcher_runtime(
                 vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
@@ -1240,6 +1282,11 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_INSTALL", "body"))
+                HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_INSTALL", "onleave"))
+                HALT();
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
@@ -1256,6 +1303,11 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_SYNC_INSTALL", "body"))
+                HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_SYNC_INSTALL", "onleave"))
+                HALT();
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;

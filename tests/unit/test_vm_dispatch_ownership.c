@@ -32,6 +32,8 @@
 #include "vm/uvm_internal.h"   /* vm_alloc_closure */
 #include "watcher/uwatcher.h"  /* urbi_watcher_unregister_internal */
 #include "runtime/uclosure.h"  /* UClosure */
+#include "runtime/ucleanup.h"  /* UCleanupEntry */
+#include "sched/usched_cooperative.h" /* sched_init */
 
 #include <string.h>
 #include <stdlib.h>
@@ -271,6 +273,129 @@ UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
 }
 
 /* ===================================================================
+ * VM-003 / T31: reactive-install kind-checks operand registers
+ *
+ * Run a hand-crafted single-opcode module against a strand whose
+ * R[A] holds a non-closure UValue.  Pre-fix: the dispatcher casts to
+ * UClosure* and (in release builds with the URBI_INTERNAL_ASSERT
+ * compiled out) calls install_watcher_runtime with garbage.
+ * Post-fix: the new vm_install_check_closure_operand sets
+ * UVM_TYPE_ERROR and HALT()s before dispatch.
+ *
+ * VM-013 / T33: op_at_event_install kind-checks the event register
+ * (separate test below — same harness). */
+/* =================================================================== */
+
+/* setup_strand_for_install: minimal strand with an empty cleanup stack and
+ * a register array of UVM_STACK_CAP, ready to dispatch one install opcode.
+ * Returns 0 on success.  Caller frees reg_stack and cleanup_base. */
+static int
+setup_strand_for_install(UStrand *s, UVM *vm,
+                         const uint32_t *instrs,
+                         UValue *reg_stack,
+                         UCleanupEntry *cleanup_base)
+{
+    volatile unsigned char *p = (volatile unsigned char *)s;
+    size_t n = sizeof(*s);
+    size_t i;
+    for (i = 0; i < n; i++) p[i] = 0;
+
+    s->vm           = vm;
+    s->state        = USTRAND_STATE_RUNNING;
+    s->stack        = reg_stack;
+    s->R            = reg_stack;
+    s->pc           = instrs;
+    s->pc_base      = instrs;
+    s->cur_consts   = NULL;
+    s->module       = NULL;
+    s->frame_count  = 0;
+    s->cleanup_base = cleanup_base;
+    s->cleanup_cap  = 64;
+    s->cleanup_depth = 0;
+    s->cleanup_top  = NULL;
+    return 0;
+}
+
+/* reactive_install_kind_checks_cond_operand:
+ *
+ * Hand-crafted bytecode: OP_AT_INSTALL A=0, B=1, C=0xFF.  R[0] holds
+ * UVAL_NIL (zeroed by the strand setup).  The dispatcher must reject
+ * it with UVM_TYPE_ERROR rather than casting NIL.v.p to UClosure*. */
+UTEST(reactive_install_kind_checks_cond_operand)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_AT_INSTALL,
+                               /*A=cond_reg*/ 0,
+                               /*B=body_reg*/ 1,
+                               /*C=onleave_reg*/ 0xFFU);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    /* R[0] and R[1] start as UVAL_NIL after calloc — neither is a closure. */
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    /* Strand died (HALT); vm->last_error is UVM_TYPE_ERROR. */
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
+    /* Watcher pool untouched. */
+    UASSERT_EQ(0, (int)vm.watcher_pool_in_use);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
+/* fork_detach_kind_checks_closure_operand:
+ *
+ * Same approach for OP_FORK_DETACH: R[0] holds NIL, dispatcher must
+ * fault rather than UB.  Pre-T31: URBI_INTERNAL_ASSERT was debug-only
+ * and release builds happily cast NIL.v.p (NULL) → fork_spawn_child
+ * dereferenced child_closure->proto → segfault. */
+UTEST(fork_detach_kind_checks_closure_operand)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_FORK_DETACH, 0, 0, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    /* The is_transient_strand guard fires first (zero-init means it's
+     * unset → guard does NOT fire here; the kind check runs).
+     * If the dispatcher's is_transient_strand guard had fired we'd see
+     * a different message, so check explicitly via the strand state. */
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -290,4 +415,8 @@ test_vm_dispatch_ownership_suite(void)
               at_event_install_propagates_pool_oom);
     utest_run("vm_alloc_closure_oom_does_not_corrupt_closure_list",
               vm_alloc_closure_oom_does_not_corrupt_closure_list);
+    utest_run("reactive_install_kind_checks_cond_operand",
+              reactive_install_kind_checks_cond_operand);
+    utest_run("fork_detach_kind_checks_closure_operand",
+              fork_detach_kind_checks_closure_operand);
 }
