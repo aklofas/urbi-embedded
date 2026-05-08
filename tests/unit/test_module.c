@@ -220,13 +220,72 @@ UTEST(deserialize_rejects_v1_2_module) {
     umodule_destroy(&c);
 }
 
-UTEST(deserialize_accepts_v13_module) {
-    /* A minimal well-formed v1.3 module must be accepted. */
+UTEST(deserialize_rejects_v1_3_module) {
+    /* Version byte 0x13 (M4) must be rejected by the v1.5 loader: M5 added
+       reactive opcodes 38-45, gc_byte bit 7, and 4 new AST node kinds; v0.5.6
+       Wave 4 then completed the wire format with nested protos + ic_name_strs
+       and renumbered M5.  Loading v1.3 silently is unsafe. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = URBI_BYTECODE_VERSION_BYTE;  /* v1.3 */
+    buf[4] = 0x13;  /* version byte (v1.3 — M4; should be rejected by v1.5 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x13") != NULL || strstr(errmsg, "1.3") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_rejects_v1_4_module) {
+    /* Version byte 0x14 (M5) must be rejected by the v1.5 loader.  v0.5.6
+       Wave 4 completed the wire format (nested protos + per-proto + root
+       ic_name_strs) and renumbered M5 reactive opcodes 39-46 → 38-45.
+       Loading v1.4 silently would index past the new sections and read
+       wrong-shape opcodes.  Hard break per §3.8 of the cleanup spec. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x14;  /* version byte (v1.4 — M5; should be rejected by v1.5 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x14") != NULL || strstr(errmsg, "1.4") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_accepts_current_version_module) {
+    /* A minimal well-formed module at the current bytecode version
+     * (URBI_BYTECODE_VERSION_BYTE) must be accepted.  This is the
+     * positive-control twin of the deserialize_rejects_v1_X tests. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -1997,8 +2056,12 @@ void test_module_suite(void) {
               deserialize_rejects_v1_1_module);
     utest_run("deserialize rejects v1.2 module (M4 hard break)",
               deserialize_rejects_v1_2_module);
-    utest_run("deserialize accepts v1.3 module",
-              deserialize_accepts_v13_module);
+    utest_run("deserialize rejects v1.3 module (M5 hard break)",
+              deserialize_rejects_v1_3_module);
+    utest_run("deserialize rejects v1.4 module (v0.5.6 wave-4 break)",
+              deserialize_rejects_v1_4_module);
+    utest_run("deserialize accepts current-version module",
+              deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",
               uproto_alloc_zero_inits_ic_count_and_ic_names);
     utest_run("uproto destroy frees ic_names",
