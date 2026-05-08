@@ -79,8 +79,9 @@ walk_uobject(struct UVM *vm, void *payload,
      * entries[] FAM, so recover the wrapper base via offsetof.  Same trick
      * walk_ushape uses for props_table -> UPropsTable. */
     if (o->slots != NULL && o->shape != NULL) {
-        UCell *wrapper = (UCell *)(void *)
-            ((uint8_t *)o->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) cast avoids casting-through-void. */
+        UCell *wrapper = (UCell *)
+            ((char *)o->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, wrapper);
         uint32_t i;
         for (i = 0U; i < o->shape->count; i++) {
@@ -163,8 +164,9 @@ walk_ushape(struct UVM *vm, void *payload,
      * array (test_ugc_object_cells.c Test 4) MUST allocate via the
      * UPropsTable wrapper to remain compatible with this walker. */
     if (s->props_table != NULL) {
-        UPropsTable *pt = (UPropsTable *)(void *)
-            ((uint8_t *)s->props_table - offsetof(UPropsTable, entries));
+        /* TIDY-006: single (char *) cast avoids casting-through-void. */
+        UPropsTable *pt = (UPropsTable *)
+            ((char *)s->props_table - offsetof(UPropsTable, entries));
         gc_shade_gray(vm, (UCell *)pt);
         uint32_t i;
         for (i = 0U; i < s->count; i++) {

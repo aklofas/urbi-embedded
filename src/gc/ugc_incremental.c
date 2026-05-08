@@ -93,42 +93,54 @@ typedef struct UAllCellsNode {
  * (each accessor body switches to a direct UCell* cast; signatures are
  * load-bearing across the file and stay). */
 static UAllCellsNode *gc_node_head(UVM *vm) {
+    /* Intentional sidecar type laundering; UCell* and UAllCellsNode* alias
+     * the same storage by design.  See file-header on T27 collapse. */
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     return (UAllCellsNode *)(void *)vm->all_cells_head;
 }
 
 /* Accessor: recover the gray-list head from vm->gray_work_head.
  * T27: when sidecar disappears, vm->gray_work_head holds UCell* directly. */
 static UAllCellsNode *gc_gray_head(UVM *vm) {
+    /* See gc_node_head — sidecar laundering. */
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     return (UAllCellsNode *)(void *)vm->gray_work_head;
 }
 
 /* Set the gray-list head in vm->gray_work_head.
  * T27: when sidecar disappears, store UCell* directly. */
 static void gc_set_gray_head(UVM *vm, UAllCellsNode *node) {
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->gray_work_head = (UCell *)(void *)node;
 }
 
 /* Accessor: recover sidecar from vm->sweep_cursor.
  * T27: when sidecar disappears, vm->sweep_cursor holds UCell* directly. */
 static UAllCellsNode *gc_sweep_node(UVM *vm) {
+    /* See gc_node_head — sidecar laundering. */
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     return (UAllCellsNode *)(void *)vm->sweep_cursor;
 }
 
 /* Accessor: recover prev-sidecar from vm->sweep_cursor_prev.
  * T27: when sidecar disappears, vm->sweep_cursor_prev holds UCell* directly. */
 static UAllCellsNode *gc_sweep_node_prev(UVM *vm) {
+    /* See gc_node_head — sidecar laundering. */
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     return (UAllCellsNode *)(void *)vm->sweep_cursor_prev;
 }
 
 /* Set vm->sweep_cursor to a sidecar node (or NULL).
  * T27: when sidecar disappears, store UCell* directly. */
 static void gc_set_sweep_cursor(UVM *vm, UAllCellsNode *node) {
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->sweep_cursor = (UCell *)(void *)node;
 }
 
 /* Set vm->sweep_cursor_prev to a sidecar node (or NULL).
  * T27: when sidecar disappears, store UCell* directly. */
 static void gc_set_sweep_cursor_prev(UVM *vm, UAllCellsNode *node) {
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) — see gc_node_head. */
     vm->sweep_cursor_prev = (UCell *)(void *)node;
 }
 
@@ -416,7 +428,8 @@ gc_sweep_step(UVM *vm, size_t budget)
 
             /* Unlink sidecar. */
             if (prev == NULL) {
-                /* cur was the head. */
+                /* cur was the head.  Sidecar pattern, see file-header. */
+                /* NOLINTNEXTLINE(bugprone-casting-through-void) */
                 vm->all_cells_head = (UCell *)(void *)next;
             } else {
                 prev->next = next;
@@ -589,7 +602,9 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     node->size = size;
     node->next = gc_node_head(vm);
     node->next_gray = NULL;
-    /* Store sidecar head as UCell* (cast convention documented at top of file). */
+    /* Store sidecar head as UCell* (cast convention documented at top of
+     * file).  Sidecar pattern, see file-header. */
+    /* NOLINTNEXTLINE(bugprone-casting-through-void) */
     vm->all_cells_head = (UCell *)(void *)node;
 
     /* Accounting. */

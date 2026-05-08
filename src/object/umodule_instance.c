@@ -166,8 +166,9 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     arr->_pad[2]  = 0U;
 
     /* IC tables live immediately after entries[].  Compute base by
-     * pointer-arithmetic past the FAM. */
-    UIC *ic_cursor = (UIC *)(void *)((uint8_t *)arr->entries + entries_bytes);
+     * pointer-arithmetic past the FAM.
+     * TIDY-006: single (char *) cast avoids casting-through-void. */
+    UIC *ic_cursor = (UIC *)((char *)arr->entries + entries_bytes);
 
     /* entries[0]: root chunk.  ic_table populated from UModule's ic_count /
      * ic_names side table (M4 follow-up — root chunk now carries IC sites

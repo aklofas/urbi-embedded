@@ -125,8 +125,11 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
      * obj->slots is NULL for a freshly allocated UObject (root shape, no
      * slots yet); only shade if there's an existing wrapper. */
     if (obj->slots != NULL) {
-        UCell *old_wrapper = (UCell *)(void *)
-            ((uint8_t *)obj->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) intermediate avoids casting-through-void
+         * on uint8_t * → UCell *.  The container_of offsetof recovery is
+         * alignment-safe by USlotArray's layout. */
+        UCell *old_wrapper = (UCell *)
+            ((char *)obj->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, old_wrapper);
     }
 
@@ -208,8 +211,11 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
 
     /* Shade the OLD wrapper (forward Dijkstra barrier — about to drop). */
     if (obj->slots != NULL) {
-        UCell *old_wrapper = (UCell *)(void *)
-            ((uint8_t *)obj->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) intermediate avoids casting-through-void
+         * on uint8_t * → UCell *.  The container_of offsetof recovery is
+         * alignment-safe by USlotArray's layout. */
+        UCell *old_wrapper = (UCell *)
+            ((char *)obj->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, old_wrapper);
     }
 

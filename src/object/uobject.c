@@ -174,7 +174,13 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
         return NULL;
     }
 
-    UObject **slot = (UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[family]);
+    /* TIDY-006: avoid the (UObject **)(void *) double-cast by routing the
+     * atom-pointer-by-offset access through a single (char *) intermediate.
+     * Per C11 §6.5p7, char-pointer access does not violate strict aliasing,
+     * and (UObject **)(char *) is a single explicit pointer-to-pointer cast
+     * (alignment is guaranteed by the layout of UVM — kAtomFieldOffset
+     * indexes into UObject* fields whose alignment matches UObject **). */
+    UObject **slot = (UObject **)((char *)vm + kAtomFieldOffset[family]);
 
     if (*slot != NULL) {
         return *slot;
@@ -272,9 +278,11 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
 
-    /* Atom-family singletons — loop over the shared kAtomFieldOffset table. */
+    /* Atom-family singletons — loop over the shared kAtomFieldOffset table.
+     * TIDY-006: same (char *) intermediate pattern as urbi_object_atom; see
+     * comment there for the strict-aliasing rationale. */
     for (int i = 0; i < KATOM_TABLE_COUNT; i++) {
-        UObject *a = *(UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[i]);
+        UObject *a = *(UObject **)((char *)vm + kAtomFieldOffset[i]);
         if (a != NULL) {
             gc_shade_gray(vm, (UCell *)a);
         }
