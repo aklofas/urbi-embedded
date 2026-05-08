@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased — Wave 4 of v0.5.x cleanup ramp (v0.5.6 candidate)
+## Unreleased
+
+## v0.5.6-bytecode — 2026-05-07
+
+Wave 4 of v0.5.x cleanup ramp.
 
 ### Changed (bytecode wire format — INTENTIONAL BREAK v1.4 → v1.5)
 
