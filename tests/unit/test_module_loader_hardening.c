@@ -67,6 +67,14 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T73 (MOD-007): deserialize NULL buf returns ULOAD_INVALID_ARG --- */
+UTEST(deserialize_null_buf_returns_invalid_arg) {
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, NULL, 64, NULL, 0);
+    UASSERT_EQ(ULOAD_INVALID_ARG, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T71 (MOD-001 + MOD-002): partial-failure destroy idempotent ---
  *
  * Truncate a serialized module mid-decode at multiple offsets; on
@@ -103,4 +111,6 @@ void test_module_loader_hardening_suite(void);
 void test_module_loader_hardening_suite(void) {
     utest_run("deserialize partial-failure destroy idempotent (T71: MOD-001+002)",
               deserialize_partial_failure_destroy_idempotent);
+    utest_run("deserialize NULL buf returns ULOAD_INVALID_ARG (T73: MOD-007)",
+              deserialize_null_buf_returns_invalid_arg);
 }

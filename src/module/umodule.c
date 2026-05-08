@@ -888,7 +888,7 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
      * supply errcap >= 1. */
     if (module == NULL || buf == NULL) {
         set_errmsg(errmsg, errcap, "null module or buffer");
-        return ULOAD_TRUNCATED;
+        return ULOAD_INVALID_ARG;
     }
 
     /* Zero origin_vm for deserialized modules. */
@@ -988,6 +988,7 @@ const char *umodule_load_error_name(UModuleLoadError code) {
     case ULOAD_CORRUPT_TAG:         return "ULOAD_CORRUPT_TAG";
     case ULOAD_CORRUPT:             return "ULOAD_CORRUPT";
     case ULOAD_OOM:                 return "ULOAD_OOM";
+    case ULOAD_INVALID_ARG:         return "ULOAD_INVALID_ARG";
     }
     return "ULOAD_UNKNOWN";
 }

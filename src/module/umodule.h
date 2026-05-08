@@ -400,7 +400,8 @@ typedef enum {
     ULOAD_CORRUPT_VARINT,
     ULOAD_CORRUPT_TAG,
     ULOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
-    ULOAD_OOM
+    ULOAD_OOM,
+    ULOAD_INVALID_ARG             /* NULL module / NULL buf etc.; distinct from TRUNCATED */
 } UModuleLoadError;
 
 /* --- Proto helpers --- */
@@ -436,10 +437,12 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
  *
  * Error semantics:
  *   - On success returns ULOAD_OK; `module` is fully populated.
- *   - On any failure returns a non-OK code; `module` may hold PARTIAL
- *     buffers from the section that completed before the failure.
- *     `umodule_destroy(module)` is safe in EITHER case and is the
- *     correct cleanup path even after a failed deserialize.
+ *   - NULL `module` or NULL `buf` returns ULOAD_INVALID_ARG (no partial
+ *     state — there is no module to populate).
+ *   - On any other failure returns a non-OK code; `module` may hold
+ *     PARTIAL buffers from the section that completed before the
+ *     failure.  `umodule_destroy(module)` is safe in EITHER case and
+ *     is the correct cleanup path even after a failed deserialize.
  *
  * Coverage at v1.5:
  *   - Header (24 bytes), metadata (max_reg, source_name), constants
