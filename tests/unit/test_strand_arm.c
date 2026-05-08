@@ -146,6 +146,45 @@ strand_arm_null_constants(void)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-005 (T99): urbi_strand_arm_from_closure precondition is s->stack ==
+ * NULL.  Re-arming a strand that already owns a register stack would leak the
+ * prior allocation because the inner urbi_strand_register_stack_alloc
+ * unconditionally overwrites s->stack.  Verify that a fresh strand (the only
+ * legal arm-time state) satisfies the precondition on the hot path used by
+ * fork_spawn_child + the watcher body-spawn path. */
+static void
+strand_arm_from_closure_asserts_stack_null(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    uint32_t instr[1];
+    UValue   consts[1];
+    UProto   proto;
+    UClosure cl;
+    make_trivial_closure(&cl, &proto, instr, consts);
+
+    UStrand *s = urbi_strand_create(realm, &cl);
+    UASSERT(s != NULL);
+    /* Fresh strands have stack == NULL — frame-0 setup is deferred. */
+    UASSERT(s->stack == NULL);
+    UASSERT(s->R == NULL);
+
+    int rc = urbi_strand_arm_from_closure(s, &cl);
+    UASSERT_EQ(0, rc);
+
+    /* After arm, stack is allocated and R points at it. */
+    UASSERT(s->stack != NULL);
+    UASSERT(s->R == s->stack);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -156,4 +195,6 @@ test_strand_arm_suite(void)
     printf("test_strand_arm\n");
     utest_run("strand_arm_sets_exec_fields", strand_arm_sets_exec_fields);
     utest_run("strand_arm_null_constants",   strand_arm_null_constants);
+    utest_run("strand_arm_from_closure_asserts_stack_null",
+              strand_arm_from_closure_asserts_stack_null);
 }

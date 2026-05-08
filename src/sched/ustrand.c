@@ -393,10 +393,18 @@ urbi_strand_register_stack_free(UStrand *s, struct UVM *vm)
  * Shared by urbi_strand_arm_from_closure and urbi_vm_run; each caller wires
  * pc/pc_base/cur_consts/out_slot/state afterward.
  *
+ * Precondition (CHSTR-005): s->stack must be NULL on entry.  Re-arming a
+ * strand that already owns a register stack would leak the prior allocation
+ * because urbi_strand_register_stack_alloc unconditionally overwrites s->stack.
+ * Re-use is supported only via the explicit free → arm sequence (e.g.
+ * urbi_strand_register_stack_free followed by a fresh arm); enforced here
+ * so violations surface in debug builds.
+ *
  * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
 int
 urbi_strand_arm_init(UStrand *s)
 {
+    URBI_INTERNAL_ASSERT(s->stack == NULL);
     if (urbi_strand_register_stack_alloc(s, s->vm) != 0) return -1;
     urbi_strand_register_stack_zero(s);
     return 0;
