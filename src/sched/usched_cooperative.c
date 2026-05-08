@@ -40,6 +40,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
+#include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (SCHED-002/003) */
 #include <stdbool.h>
 #include <stdint.h>
 #include "gc/ugc.h"
@@ -172,6 +173,17 @@ void
 sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
 {
     UVM *vm = s->vm;
+    /* SCHED-002: re-blocking an already-WAITING strand corrupts the queue
+     * accounting (sleep_q_insert would re-insert and double-count
+     * wakeup_pending_count; event/join paths leak prior payloads).  Entry
+     * state must be RUNNING (the normal "I yielded by blocking") or READY
+     * (race-window safety: a strand that had been re-queued but hasn't yet
+     * been dispatched can still be diverted into a wait without harm).
+     * If a future caller legitimately needs to retarget a WAITING strand,
+     * route through an explicit sched_strand_rebind helper that handles
+     * queue-removal-then-re-insert correctly. */
+    URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING ||
+                         s->state == USTRAND_STATE_READY);
     /* RUNNING strands are not on the ready queue; decrement the counter. */
     if (s->state == USTRAND_STATE_RUNNING) {
         if (vm->strand_runnable_count > 0)
