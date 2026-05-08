@@ -67,6 +67,49 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T77 (Wave-4): ic_names cross-validation ---
+ *
+ * Build a v1.5 module whose root-chunk ic_count exceeds the count of
+ * actual OP_GETSLOT / OP_SETSLOT / OP_GETSLOT_CHANGE_EVENT IC sites
+ * in the instruction stream.  decode_verify must reject with
+ * ULOAD_CORRUPT.
+ *
+ * Strategy: claim ic_count=2 with ic_name_strs ["a", "b"] but emit
+ * zero IC-bearing opcodes (OP_RET only).  The mismatch exposes a
+ * forward-confusion-attack surface where a corrupt module could ship
+ * extra ic_name_strs that no instruction references — at a later
+ * milestone (string interning attack, IC-index widening) those
+ * unreferenced names could be mis-bound. */
+UTEST(ic_names_with_invalid_indices_rejected) {
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    off = hard_put_varint(buf, off, 1);      /* n_instr */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    /* OP_RET — no IC site. */
+    uint32_t ret = (uint32_t)OP_RET;
+    buf[off++] = (uint8_t)(ret & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 24) & 0xFFU);
+    off = hard_put_varint(buf, off, 1);      /* n_deltas */
+    buf[off++] = 0;
+    off = hard_put_varint(buf, off, 0);      /* n_abs_lines */
+    /* Root ic_count = 2 (lying — no IC sites in instr stream). */
+    off = hard_put_varint(buf, off, 2);
+    off = hard_put_varint(buf, off, 1); buf[off++] = 'a';
+    off = hard_put_varint(buf, off, 1); buf[off++] = 'b';
+    off = hard_put_varint(buf, off, 0);      /* nested_count */
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T76 (MOD-019): n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
  *
  * Boundary regression: the cap formula in decode_constants_into is
@@ -225,4 +268,6 @@ void test_module_loader_hardening_suite(void) {
               deserialize_rejects_n_abs_exceeding_instr_count);
     utest_run("deserialize n_const cap is strictly > UINT16_MAX (T76: MOD-019)",
               deserialize_n_const_cap_is_strictly_greater_than);
+    utest_run("ic_names with invalid indices rejected (T77: W4 carry)",
+              ic_names_with_invalid_indices_rejected);
 }

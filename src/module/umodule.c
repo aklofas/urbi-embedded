@@ -770,19 +770,36 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
  *   0 <= pc' <= instr_count.  Per-instruction bounds checks would force
  *   the verifier to know absolute PC; we defer to runtime dispatch
  *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
+/* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
+ * Mirror at v0.5.7: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT.
+ * Mirror discipline: any new IC-bearing opcode added in a future
+ * milestone must be added here AND in uemit_assign_ic_index call sites. */
+static bool op_carries_ic_index(uint8_t op) {
+    return op == (uint8_t)OP_GETSLOT
+        || op == (uint8_t)OP_SETSLOT
+        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT;
+}
+
 /* Walk one block of instructions (root chunk OR a nested proto) against
    the opcode-shape table, applying per-block bounds (max_reg /
-   const_count / instr_count / nested_count).  Callers pass the
-   root-level nested_count for both root and per-proto walks since the
-   v1.5 emitter allocates all function literals as flat siblings under
-   the root UModule's nested[] (an OP_CLOSURE inside a nested proto
-   refers to a sibling slot in the same root array). */
+   const_count / instr_count / nested_count / ic_count).  Callers pass
+   the root-level nested_count for both root and per-proto walks since
+   the v1.5 emitter allocates all function literals as flat siblings
+   under the root UModule's nested[] (an OP_CLOSURE inside a nested
+   proto refers to a sibling slot in the same root array). */
 static UModuleLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
                                           size_t instr_count,
                                           size_t nested_count,
+                                          uint16_t ic_count,
                                           const uint32_t *instructions) {
+    /* MOD-016 / W4: count IC-bearing opcodes seen during the walk so we
+     * can cross-validate ic_count after the loop.  Every ic_idx must be
+     * < ic_count (per-instruction); ic_count must be <= ic_seen
+     * (count check; rejects modules that lie about ic_count without
+     * emitting matching IC sites). */
+    size_t ic_seen = 0;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
         uint32_t ins = instructions[vi];
@@ -797,6 +814,18 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
         uint8_t a = uinstr_a(ins);
         UModuleLoadError rc = verify_byte_operand(d, op, a, sh->a_kind, "A", vi, max_reg);
         if (rc != ULOAD_OK) return rc;
+
+        /* Cross-validate IC index for IC-bearing opcodes. */
+        if (op_carries_ic_index(op)) {
+            uint8_t ic_idx = uinstr_c(ins);
+            if ((uint16_t)ic_idx >= ic_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "ic_idx=%u >= ic_count=%u at pc %zu (op=%u)",
+                           (unsigned)ic_idx, (unsigned)ic_count, vi, (unsigned)op);
+                return ULOAD_CORRUPT;
+            }
+            ic_seen++;
+        }
 
         if (sh->format == UOPF_ABC) {
             uint8_t b = uinstr_b(ins);
@@ -874,6 +903,20 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
             return ULOAD_CORRUPT;
         }
     }
+    /* MOD-016 / W4: ic_count must not exceed the count of IC-bearing
+     * opcodes in the instruction stream.  Each ic_name (and the
+     * corresponding runtime UIC entry) is keyed off an emitted
+     * GETSLOT/SETSLOT/GETSLOT_CHANGE_EVENT site; lying about ic_count
+     * would either leave UIC entries unused (waste) or — worse — leave
+     * ic_name_strs[k>=ic_seen] holding a name that no instruction
+     * indexes (eligible for confusion attacks at later milestones when
+     * ic_index becomes wider). */
+    if ((size_t)ic_count > ic_seen) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "ic_count=%u exceeds %zu IC-bearing opcodes seen",
+                   (unsigned)ic_count, ic_seen);
+        return ULOAD_CORRUPT;
+    }
     return ULOAD_OK;
 }
 
@@ -884,6 +927,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
                                             d->module->const_count,
                                             d->module->instr_count,
                                             d->module->nested_count,
+                                            d->module->ic_count,
                                             d->module->instructions);
     if (rc != ULOAD_OK) return rc;
 
@@ -903,6 +947,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
                                p->const_count,
                                p->instr_count,
                                d->module->nested_count,
+                               p->ic_count,
                                p->instructions);
         if (rc != ULOAD_OK) return rc;
     }
