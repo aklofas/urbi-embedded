@@ -150,6 +150,7 @@ extern void test_emit_error_paths_suite(void);
 extern void test_vm_dispatch_ownership_suite(void);
 extern void test_gc_sweep_accounting_suite(void);
 extern void test_sched_state_aliasing_suite(void);
+extern void test_event_runtime_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -276,6 +277,7 @@ static const struct suite_entry suites[] = {
     {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
     {"gc_sweep_accounting",       test_gc_sweep_accounting_suite},
     {"sched_state_aliasing",      test_sched_state_aliasing_suite},
+    {"event_runtime",             test_event_runtime_suite},
     /* Add new suites here as test files are added. */
 };
 

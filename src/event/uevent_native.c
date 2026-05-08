@@ -137,11 +137,19 @@ urbi_native_event_new(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_emit(struct UStrand *s, int argc, UValue *argv)
 {
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+
+    /* EVENT-004: validate argv[0] is a UEvent before casting via uvalue_as_event.
+     * Without this, a misconfigured caller (wrong receiver kind) walks into
+     * c_event_emit_async with garbage cast as UEvent*. */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     c_event_emit_async(vm, e, native_event_optional_payload(argc, argv));
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
     return nil;
 }
 
@@ -151,11 +159,17 @@ urbi_native_event_emit(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_sync_emit(struct UStrand *s, int argc, UValue *argv)
 {
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+
+    /* EVENT-004: validate argv[0] is a UEvent before casting (see emit above). */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     c_event_emit_sync(vm, e, native_event_optional_payload(argc, argv));
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
     return nil;
 }
 
@@ -166,7 +180,13 @@ urbi_native_event_sync_emit(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_waituntil(struct UStrand *s, int argc, UValue *argv)
 {
-    (void)argc;
+    /* EVENT-004: validate argv[0] is a UEvent before casting (see emit above). */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        UValue nil = {0};
+        nil.kind = (uint8_t)UVAL_NIL;
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     return c_event_waituntil(vm, e);
