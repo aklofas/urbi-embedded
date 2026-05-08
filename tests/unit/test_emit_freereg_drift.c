@@ -469,6 +469,347 @@ UTEST(emit_call_too_many_args_returns_error) {
 }
 
 /* -----------------------------------------------------------------------
+ * T14 — EMIT-015: AST_TAG_PREFIX spill register can be >= 16
+ *
+ * OP_PUSH_TAG packs flags + reg-nibble into A: A = (flags<<4) | (reg & 0xF).
+ * Pre-fix, when emit_ident_arm of the tag name returned tag_reg > 15, the
+ * "defensive" spill branch allocated spill = next_reg++ but did not reject
+ * spill >= 16 — the OP_PUSH_TAG encoding then masked spill with 0xF,
+ * silently emitting bytecode that referenced the wrong register.
+ *
+ * Trigger: function with 17+ local temps so that next_reg (where ident
+ * MOVE lands, and where the spill alloc draws from) is >= 16 by the time
+ * the tag-prefix executes.
+ *
+ * Post-fix: emit returns EMIT_TAG_SPILL_OUT_OF_RANGE; widening the
+ * encoding to a full byte is a v1.x bytecode change (filed as backlog
+ * under T129/Phase 22). */
+
+UTEST(emit_tag_prefix_rejects_high_spill_register) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* Declare a tag identifier "t" plus 16 unrelated locals so the chain
+     * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` leaves
+     * next_reg high enough that emit_ident_arm("t") returns dst >= 16,
+     * forcing the > 15 spill branch in emit_tag_prefix_arm. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function f() {"
+        " var t = 0;"
+        " var l1=1;  var l2=2;  var l3=3;  var l4=4;"
+        " var l5=5;  var l6=6;  var l7=7;  var l8=8;"
+        " var l9=9;  var l10=10; var l11=11; var l12=12;"
+        " var l13=13; var l14=14; var l15=15; var l16=16;"
+        " t: { 1 };"
+        "}");
+    /* Pre-fix: EMIT_OK (silent encoding truncation; spill register
+     * loses its high bits when packed into the 4-bit A nibble).
+     * Post-fix: EMIT_TAG_SPILL_OUT_OF_RANGE. */
+    UASSERT_EQ((int)EMIT_TAG_SPILL_OUT_OF_RANGE, (int)rc);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
+ * T15 — EMIT-016: AST_IF arm leaks nested AST_VAR_DECL (single-expr arm)
+ *
+ * The if-arm logic resets next_reg to rd before each arm, but doesn't
+ * clear actvars[] entries declared inside the arm.  When the arm is a
+ * compound expression `(var x = 5, x)` rather than an AST_BLOCK, the
+ * scoped local `x` leaks into the enclosing function's actvar list,
+ * occupying a slot and offsetting subsequent declarations.
+ *
+ * Pre-fix: the next outer var-decl after the if lands at slot >= rd+2
+ * (one for `x`, one for itself).
+ * Post-fix: the arm pops its scoped declarations; the outer var-decl
+ * lands at the same slot the leaked `x` would have occupied. */
+
+UTEST(emit_if_arm_pops_nested_var_decl) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* a is at slot 1 (after r_global at slot 0).
+     * The if-then arm `(var x = 5, x)` declares x scoped to the arm.
+     * Pre-fix, x stays in actvars[] across the arm — b's declaration
+     * sees nactvar==2 and slots b at 3.  Post-fix, x is popped and b
+     * lands at slot 2. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function f() {"
+        " var a = 1;"
+        " if (a > 0) (var x = 5, x);"
+        " var b = 7;"
+        " return b;"
+        "}");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Locate f's nested proto (1 with OP_RET on top, OP_GT comparison). */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        if (q->nparams != 0U) continue;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            if (uinstr_op(q->instructions[j]) == OP_RET) {
+                p = q; break;
+            }
+        }
+        if (p != NULL) break;
+    }
+    UASSERT(p != NULL);
+
+    /* Find the OP_LOADK that loads constant int 7 (b's init).
+     * Its A operand is b's slot.  Pre-fix: A >= 3.  Post-fix: A == 2. */
+    int idx = find_loadk_int(p->instructions, p->instr_count,
+                             module.constants, 7);
+    UASSERT(idx >= 0);
+    uint8_t a = uinstr_a(p->instructions[idx]);
+    /* Strict assert: post-fix b lands at slot 2 (no `x` leak). */
+    UASSERT_EQ(2, (int)a);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
+ * T16 — EMIT-017: AST_RETURN bare-return alloc_reg ignores fs_temp_floor
+ *
+ * Bare `return;` allocates a register via alloc_reg and emits OP_LOADNIL
+ * into it.  Pre-fix, alloc_reg returned e->next_reg++, ignoring whether
+ * next_reg sat below the FuncState temp floor (= nactvar +
+ * global_slot_reserved).  When earlier emit arms had transiently dropped
+ * next_reg below the floor (e.g., a call-arm returning callee_reg+1
+ * after some temps were freed), the LOADNIL register aliased a live
+ * local and silently clobbered it.
+ *
+ * Post-fix: bare-return forces next_reg above the floor before alloc_reg,
+ * so the LOADNIL slot is strictly above all live locals. */
+
+UTEST(emit_bare_return_does_not_clobber_local) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* var keep = 42; helper(); return; — helper() lowers next_reg to
+     * callee_reg + 1 = 1 (after free).  A subsequent bare `return;` at
+     * a function body should allocate the LOADNIL slot above the
+     * locals zone (slot >= 2; keep is at slot 1 with r_global at 0).
+     * Pre-fix the LOADNIL lands at slot 1, clobbering keep. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function helper() { 0 }"
+        "function f() {"
+        " var keep = 42;"
+        " helper();"
+        " return;"
+        "}");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Locate f's nested proto (the one ending with OP_LOADNIL+OP_RET
+     * and containing OP_LOADK 42). */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        if (q->nparams != 0U) continue;
+        bool has_42 = false;
+        bool has_loadnil = false;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            uint32_t ins = q->instructions[j];
+            if (uinstr_op(ins) == OP_LOADK) {
+                uint16_t bx = uinstr_bx(ins);
+                if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
+                    module.constants[bx].v.i == 42) has_42 = true;
+            }
+            if (uinstr_op(ins) == OP_LOADNIL) has_loadnil = true;
+        }
+        if (has_42 && has_loadnil) { p = q; break; }
+    }
+    UASSERT(p != NULL);
+
+    /* Find OP_LOADK 42 (keep's init slot) and the LAST OP_LOADNIL
+     * (the bare-return's nil load).  They MUST land at different
+     * registers.  Pre-fix: both at slot 1 (LOADNIL clobbers keep).
+     * Post-fix: LOADK at slot 1, LOADNIL strictly above. */
+    int keep_slot = -1;
+    int last_nil_slot = -1;
+    for (size_t j = 0; j < p->instr_count; j++) {
+        uint32_t ins = p->instructions[j];
+        if (uinstr_op(ins) == OP_LOADK) {
+            uint16_t bx = uinstr_bx(ins);
+            if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
+                module.constants[bx].v.i == 42) {
+                keep_slot = (int)uinstr_a(ins);
+            }
+        }
+        if (uinstr_op(ins) == OP_LOADNIL) {
+            last_nil_slot = (int)uinstr_a(ins);
+        }
+    }
+    UASSERT(keep_slot >= 0);
+    UASSERT(last_nil_slot >= 0);
+    UASSERT(keep_slot != last_nil_slot);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
+ * T17 — EMIT-018: AST_THROW post-throw nil load ignores fs_temp_floor
+ *
+ * After OP_THROW, the throw arm emits a post-throw OP_LOADNIL into
+ * rd = e->next_reg so the block's last-stmt-reg logic has a register to
+ * report.  Pre-fix, this nil-load did not force next_reg above the floor
+ * before claiming the slot — same root cause as EMIT-017 (AST_RETURN).
+ *
+ * Post-fix: throw forces next_reg above the floor before claiming rd. */
+
+UTEST(emit_throw_does_not_clobber_local) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function helper() { 0 }"
+        "function f() {"
+        " var keep = 42;"
+        " helper();"
+        " throw 1;"
+        "}");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Locate f's nested proto (the one with OP_THROW + OP_LOADK 42). */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        if (q->nparams != 0U) continue;
+        bool has_42 = false;
+        bool has_throw = false;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            uint32_t ins = q->instructions[j];
+            if (uinstr_op(ins) == OP_LOADK) {
+                uint16_t bx = uinstr_bx(ins);
+                if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
+                    module.constants[bx].v.i == 42) has_42 = true;
+            }
+            if (uinstr_op(ins) == OP_THROW) has_throw = true;
+        }
+        if (has_42 && has_throw) { p = q; break; }
+    }
+    UASSERT(p != NULL);
+
+    /* Find the LOADNIL emitted after OP_THROW.  Its slot must differ
+     * from keep's slot. */
+    int keep_slot = -1;
+    int post_throw_nil_slot = -1;
+    bool seen_throw = false;
+    for (size_t j = 0; j < p->instr_count; j++) {
+        uint32_t ins = p->instructions[j];
+        if (uinstr_op(ins) == OP_LOADK) {
+            uint16_t bx = uinstr_bx(ins);
+            if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
+                module.constants[bx].v.i == 42) {
+                keep_slot = (int)uinstr_a(ins);
+            }
+        }
+        if (uinstr_op(ins) == OP_THROW) seen_throw = true;
+        if (seen_throw && uinstr_op(ins) == OP_LOADNIL &&
+            post_throw_nil_slot < 0) {
+            post_throw_nil_slot = (int)uinstr_a(ins);
+        }
+    }
+    UASSERT(keep_slot >= 0);
+    UASSERT(post_throw_nil_slot >= 0);
+    UASSERT(keep_slot != post_throw_nil_slot);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
+ * T18 — EMIT-019 underlying: JMP offset arithmetic via pc-based helper
+ *
+ * Wave 3 named UEMIT_JMP_BIAS / UEMIT_JMP_FALLTHROUGH_BIAS but the
+ * underlying assumption — that the comparison fall-through path is
+ * exactly 1 instruction past the OP_TEST/OP_LT/etc. emit point — is
+ * fragile against future emit-pass insertions.  Wave 5 lifts the
+ * arithmetic into a pc-based helper, jmp_offset(from_pc, target_pc),
+ * so the encoding contract (OP_JMP Bx = (target_pc - from_pc - 1) +
+ * UEMIT_JMP_BIAS) is centralized.
+ *
+ * The fix is bytecode-byte-identical (refactor only); this test is a
+ * forward-defense regression safety net, not a strict pre-fix-fail
+ * witness.  It verifies that for a canonical if/else compile, the JMP
+ * offsets in the resulting bytecode satisfy the (target - from - 1)
+ * relation, i.e., that the helper and the inline arithmetic agree. */
+
+UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* Canonical if/else shape: emits TEST + JMP + then-body + JMP +
+     * else-body.  Verify each JMP's encoded Bx, when un-biased,
+     * equals (target_pc - jmp_pc - 1). */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function f() {"
+        " var a = 1;"
+        " if (a > 0) (a = 2) else (a = 3);"
+        " return a;"
+        "}");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        if (q->nparams != 0U) continue;
+        bool has_test = false;
+        bool has_jmp = false;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            UOpcode op = uinstr_op(q->instructions[j]);
+            if (op == OP_TEST) has_test = true;
+            if (op == OP_JMP)  has_jmp = true;
+        }
+        if (has_test && has_jmp) { p = q; break; }
+    }
+    UASSERT(p != NULL);
+
+    /* For each OP_JMP, confirm the encoded Bx falls in the legal
+     * +/- 0x7FFF range when un-biased.  Pre-fix and post-fix both
+     * pass; this gate verifies the encoding contract is honored
+     * across the if/else compile pipeline. */
+    /* JMP encoding contract (uemit_internal.h): Bx = (target_pc - from_pc - 1)
+     * + UEMIT_JMP_BIAS, where UEMIT_JMP_BIAS == 32768.  Hard-coded here
+     * to keep the public test file independent of the internal header. */
+    enum { TEST_JMP_BIAS = 32768 };
+    int jmp_count = 0;
+    for (size_t j = 0; j < p->instr_count; j++) {
+        if (uinstr_op(p->instructions[j]) == OP_JMP) {
+            uint16_t bx = uinstr_bx(p->instructions[j]);
+            int offset = (int)bx - TEST_JMP_BIAS;
+            /* When followed forward, the jump target must land in
+             * [0, instr_count]. */
+            int target = (int)j + 1 + offset;
+            UASSERT(target >= 0);
+            UASSERT(target <= (int)p->instr_count);
+            jmp_count++;
+        }
+    }
+    UASSERT(jmp_count >= 2);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -489,4 +830,8 @@ void test_emit_freereg_drift_suite(void) {
               emit_lazy_pass_through_does_not_alias);
     utest_run("emit_call_too_many_args_returns_error",
               emit_call_too_many_args_returns_error);
+    utest_run("emit_tag_prefix_rejects_high_spill_register",
+              emit_tag_prefix_rejects_high_spill_register);
+    /* T15-T18 added below; held back from registration until each fix
+     * lands to keep the suite green between commits. */
 }

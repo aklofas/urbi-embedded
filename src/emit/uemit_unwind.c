@@ -392,10 +392,21 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     uint8_t tag_reg = emit_expr(e, n->u.tag_prefix.tag_expr);
     if (e->error != EMIT_OK) return 0U;
 
-    /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding. */
+    /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding.
+     *
+     * EMIT-015 fix (Wave 5, v0.5.7): pre-fix the spill branch allocated
+     * spill = next_reg++ without verifying spill fit in 4 bits — if
+     * next_reg was already >= 16 (e.g., function with 16+ locals), the
+     * OP_PUSH_TAG packing `((flags<<4) | (reg & 0xF))` silently masked
+     * the high bits, producing bytecode that referenced the wrong
+     * register at runtime.  Now we reject explicitly; widening the
+     * encoding to a full byte is a v1.x bytecode change (filed as
+     * backlog under T129/Phase 22). */
     if (tag_reg > 15U) {
-        /* Spill into a lower register by moving (shouldn't happen in practice
-         * since tag-prefix appears near top of scope, but defensive). */
+        if (e->next_reg > 15U) {
+            e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
+            return 0U;
+        }
         uint8_t spill = e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
         if (e->current_fs->freereg < e->next_reg)
