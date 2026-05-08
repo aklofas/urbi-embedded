@@ -16,13 +16,19 @@ fi
 OUT="${1:-build/strict-tidy-out.txt}"
 mkdir -p "$(dirname "$OUT")"
 
+# Run clang-tidy without letting `--warnings-as-errors` propagate via
+# pipefail+set -e (which would terminate the script before our own
+# count-and-summary block runs). Mirror the pattern from
+# run_cppcheck.sh: drop set -e around the pipe, then count ourselves.
 # shellcheck disable=SC2046
+set +e
 "$CLANG_TIDY" --config-file="$CONFIG_FILE" \
    --warnings-as-errors='*' \
    --quiet \
    $(find src -name '*.c' | sort) \
    -- -Iinclude -Isrc -std=c99 \
    2>&1 | tee "$OUT"
+set -e
 
 WARN_COUNT=$(grep -c 'warning:\|error:' "$OUT" || true)
 if [[ "$WARN_COUNT" -gt 0 ]]; then
