@@ -18,7 +18,16 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_VOID:   return false;
         case UVAL_STRAND: return true;   /* strand handle is truthy (matches closure pattern) */
         case UVAL_OBJECT: return true;   /* object reference is truthy (matches closure pattern) */
-        default:          return true;   /* int 0, float 0.0, etc. → truthy */
+        case UVAL_INT:    /* fall through */
+        case UVAL_FLOAT:  /* fall through */
+        case UVAL_STR:    /* fall through */
+        case UVAL_CLOSURE:/* fall through */
+        case UVAL_EVENT:  /* fall through */
+        case UVAL_HOST_FN: return true;
+        default:
+            /* FOUND-039: corrupt kind byte — fail-safe in release. */
+            URBI_INTERNAL_ASSERT(0 && "uvalue_truthy: unknown UValue kind");
+            return false;
     }
 }
 
@@ -39,6 +48,10 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_OBJECT:  return a->v.p == b->v.p;     /* object identity */
             case UVAL_EVENT:   return a->v.p == b->v.p;     /* event identity */
             case UVAL_HOST_FN: return a->v.p == b->v.p;     /* fn-pointer identity */
+            default:
+                /* FOUND-039: corrupt kind byte — fail-safe in release. */
+                URBI_INTERNAL_ASSERT(0 && "uvalue_equal: unknown UValue kind");
+                return false;
         }
     }
 
