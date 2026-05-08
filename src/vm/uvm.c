@@ -123,6 +123,31 @@ vm_install_check_closure_operand(UVM *vm, UStrand *s, uint8_t reg,
     return 1;
 }
 
+/* --- vm_install_check_event_operand (VM-013) ---
+   AT_EVENT install opcode operand-register kind check.  Mirrors
+   vm_install_check_closure_operand but for OP_AT_EVENT_INSTALL /
+   OP_AT_EVENT_SYNC_INSTALL: the A register must hold a UVAL_EVENT
+   (produced by OP_GETSLOT_CHANGE_EVENT or by stdlib Event.new).
+   Without this check the dispatcher casts (UEvent *)R[A].v.p directly
+   and install_at_event_runtime dereferences garbage.
+
+   Routes through uvalue_is_event() rather than a raw kind comparison
+   so the predicate location stays single-source-of-truth (T29's
+   refactor pattern). */
+static int
+vm_install_check_event_operand(UVM *vm, UStrand *s, uint8_t reg,
+                               const char *opcode_name)
+{
+    if (!uvalue_is_event(s->R[reg])) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "AT_EVENT install: register operand is not an event");
+        (void)opcode_name;
+        return 0;
+    }
+    return 1;
+}
+
 /* --- vm_install_result_is_fatal / vm_install_fault (VM-002, VM-012) ---
    Translate a UWatcherInstallResult from install_watcher_runtime /
    install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
@@ -1288,6 +1313,8 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_INSTALL"))
+                HALT();
             if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_INSTALL", "body"))
                 HALT();
             if (C != 0xFFU
@@ -1309,6 +1336,8 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_SYNC_INSTALL"))
+                HALT();
             if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_SYNC_INSTALL", "body"))
                 HALT();
             if (C != 0xFFU

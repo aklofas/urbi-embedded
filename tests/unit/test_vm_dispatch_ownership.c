@@ -369,6 +369,59 @@ UTEST(reactive_install_kind_checks_cond_operand)
     urbi_vm_destroy(&vm);
 }
 
+/* at_event_install_kind_check:
+ *
+ * VM-013 / T33.  OP_AT_EVENT_INSTALL: A=event_reg, B=body_reg, C=onleave_reg.
+ * R[A] must hold UVAL_EVENT, but the dispatcher pre-T33 cast directly to
+ * UEvent*.  This test hand-crafts an OP_AT_EVENT_INSTALL where R[0]
+ * holds UVAL_NIL and R[1] holds a fake UVAL_CLOSURE — without the new
+ * vm_install_check_event_operand, install_at_event_runtime would walk
+ * NIL.v.p (NULL) through e->at_watchers_head and crash.
+ *
+ * NOTE: this is a separate test from T31's
+ * reactive_install_kind_checks_cond_operand because the AT_EVENT branch
+ * was carved out of T31 — its A register is UEvent, not UClosure, so
+ * the kind check uses uvalue_is_event() rather than the closure
+ * predicate.  T31's existing test does NOT subsume this one. */
+UTEST(at_event_install_kind_check)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_AT_EVENT_INSTALL,
+                               /*A=event_reg*/ 0,
+                               /*B=body_reg*/ 1,
+                               /*C=onleave_reg*/ 0xFFU);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    /* R[0] starts as UVAL_NIL — not an event.
+     * R[1] is set to a "valid" UVAL_CLOSURE kind so that the body kind
+     * check (T31) does NOT fire first; the event-kind check (T33) is
+     * the dispatcher's first guard for OP_AT_EVENT_INSTALL and must
+     * trip on R[0]. */
+    reg_stack[1].kind = (uint8_t)UVAL_CLOSURE;
+    reg_stack[1].v.p  = (void *)0xdeadbeefULL;  /* never dereferenced */
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
 /* fork_detach_kind_checks_closure_operand:
  *
  * Same approach for OP_FORK_DETACH: R[0] holds NIL, dispatcher must
@@ -429,6 +482,8 @@ test_vm_dispatch_ownership_suite(void)
               vm_alloc_closure_oom_does_not_corrupt_closure_list);
     utest_run("reactive_install_kind_checks_cond_operand",
               reactive_install_kind_checks_cond_operand);
+    utest_run("at_event_install_kind_check",
+              at_event_install_kind_check);
     utest_run("fork_detach_kind_checks_closure_operand",
               fork_detach_kind_checks_closure_operand);
 }
