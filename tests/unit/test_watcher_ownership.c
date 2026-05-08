@@ -389,7 +389,8 @@ test_watcher_ownership_suite(void)
               scratch_alloc_fail_signals_throw_not_silent_null);
     utest_run("waituntil_immediate_wake_state_explicit",
               waituntil_immediate_wake_state_explicit);
-    /* T46-T47 tests registered as their per-task fixes land. */
-    (void)aliased_proto_closure_unlink_no_double_detach;
+    utest_run("aliased_proto_closure_unlink_no_double_detach",
+              aliased_proto_closure_unlink_no_double_detach);
+    /* T47 test registered as its per-task fix lands. */
     (void)unknown_watcher_mode_does_not_change_state_in_release;
 }
