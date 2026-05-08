@@ -50,8 +50,12 @@ Wave 5 of v0.5.x cleanup ramp.
   baseline) and `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
   (first-ever on-disk wire-byte baseline).
 - Full-corpus sanitizer gate (`make test-corpus-sanitize`) — all 148 `.chk`
-  fixtures × 3 sanitizers (ASan + UBSan + valgrind memcheck) under one target.
-  Promoted to releasetest Phase 2 (solo).
+  fixtures × 2 sanitizers (ASan + UBSan) under one target. Promoted to
+  releasetest Phase 2 (solo). valgrind memcheck is intentionally omitted
+  per the project's "Not valgrind-wrapped" rationale (Makefile:88-90):
+  the run_chk.sh wrapper-bash itself leaks ~520 bytes via yyparse on
+  every fixture, drowning real urbi-side leak signal. Unit-test-binary
+  valgrind coverage stays in `make test-valgrind`.
 - Co-located regression tests for every `src/*.c` fix commit per Wave-5 Gate
   G1 (TDD-per-fix-commit discipline). New test files:
   `test_emit_freereg_drift.c`, `test_emit_error_paths.c`,
