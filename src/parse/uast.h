@@ -143,9 +143,13 @@ typedef enum {
     PARSE_SLOT_CHANGED_EMIT_V1,       /* `obj.x.changed!` — slot-change event cannot be emitted */
 
     /* v0.5.7 additions */
-    PARSE_NAMED_FUNCTION_NOT_SUPPORTED /* `function name(...){...}` — v1.0 has no
-                                           named-function decls; use
-                                           `var name = function(...){...}` */
+    PARSE_NAMED_FUNCTION_NOT_SUPPORTED, /* `function name(...){...}` — v1.0 has no
+                                            named-function decls; use
+                                            `var name = function(...){...}` */
+    PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE /* `at sync (cond) body onleave h` —
+                                              at sync fires inline on the
+                                              changed thread and has no leave
+                                              edge to hook (M5 spec §3) */
 } UParseError;
 
 /*

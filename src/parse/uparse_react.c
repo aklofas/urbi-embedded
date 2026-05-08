@@ -190,13 +190,15 @@ static UAstNode *parse_at_cond_form(UParser *p, UToken kw,
     if (!body) return (UAstNode *)&uparser_oom_sentinel;
     if (body->kind == AST_ERROR) return body;
 
-    /* Optional `onleave` handler — not allowed with `at sync`. */
+    /* Optional `onleave` handler — not allowed with `at sync`.
+     * PARSE-009: report a dedicated code so callers can distinguish this
+     * specific conflict from the generic PARSE_UNEXPECTED_TOKEN. */
     UAstNode *onleave = NULL;
     if (peek(p).type == TOK_KW_ONLEAVE) {
         if (mode == UWATCHER_AT_SYNC) {
             UToken ol = consume(p);
-            return make_error(p, PARSE_UNEXPECTED_TOKEN,
-                              "onleave not allowed with at sync",
+            return make_error(p, PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE,
+                              kErrorMessages[PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE],
                               ol.line, ol.col);
         }
         consume(p);
