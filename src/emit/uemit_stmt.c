@@ -460,6 +460,16 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
         return 0U;
     }
 
+    /* EMIT-014 fix (Wave 5, v0.5.7): the OP_CALL B field is a uint8_t
+     * holding (nargs + 1).  Reject calls with >= 254 args before any
+     * codegen — at 254 args B becomes 255 (the OP_CALL "all-results"
+     * sentinel reserved for tail calls), and at 255+ B wraps to 0
+     * (no args), corrupting the call. */
+    if (n->u.call.arg_count >= 254) {
+        e->error = EMIT_TOO_MANY_ARGS;
+        return 0U;
+    }
+
     /* T16: Look up callee's function signature when the callee is a
      * statically-visible local declared with a function literal.
      * Used below to decide whether to wrap each arg as a lazy thunk.

@@ -53,7 +53,12 @@ typedef enum {
                                      (pre-M4 GETSLOT/SETSLOT encoding §3.4) */
 
     /* M5 additions */
-    EMIT_RESERVED_KEYWORD_AS_IDENT /* T4: `var at = 1` — hard keyword as variable name */
+    EMIT_RESERVED_KEYWORD_AS_IDENT, /* T4: `var at = 1` — hard keyword as variable name */
+
+    /* v0.5.7 Wave 5 additions */
+    EMIT_TOO_MANY_ARGS              /* EMIT-014: AST_CALL with >= 254 args
+                                       (B field encodes nargs+1 as uint8_t,
+                                       wraps at 256) */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */

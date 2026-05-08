@@ -525,6 +525,7 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
     case EMIT_TOO_MANY_IC_SITES:           return "EMIT_TOO_MANY_IC_SITES";
     case EMIT_RESERVED_KEYWORD_AS_IDENT:   return "EMIT_RESERVED_KEYWORD_AS_IDENT";
+    case EMIT_TOO_MANY_ARGS:               return "EMIT_TOO_MANY_ARGS";
     }
     return "EMIT_UNKNOWN";
 }

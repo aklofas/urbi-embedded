@@ -420,6 +420,55 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
 }
 
 /* -----------------------------------------------------------------------
+ * T13 — EMIT-014: AST_CALL uint8_t arg count wraps at 256
+ *
+ * The OP_CALL instruction encodes (nargs + 1) into a uint8_t B field.
+ * At 255+ args the B field wraps to 0; at 254 args it equals 255
+ * (which is reserved/ambiguous).  Pre-fix the emit arm silently cast
+ * the count to uint8_t — corrupting any call with 254+ args.
+ *
+ * Post-fix: emit_call_arm rejects with EMIT_TOO_MANY_ARGS at the
+ * gate before codegen.
+ *
+ * Test builds a synthetic call source with 300 args and verifies
+ * uemit_finish returns EMIT_TOO_MANY_ARGS. */
+
+UTEST(emit_call_too_many_args_returns_error) {
+    /* Build a source string: "var f = function() {0}; f(0,0,0,...,0)"
+     * with 300 zeros.  Use stdlib alloc since tests are not built
+     * -ffreestanding. */
+    const int nargs = 300;
+    /* Worst-case length: prefix + nargs * "0," + ")" + a bit of slack. */
+    size_t cap = 64U + (size_t)nargs * 4U;
+    char *src = (char *)malloc(cap);
+    UASSERT(src != NULL);
+    size_t off = 0;
+    off += (size_t)snprintf(src + off, cap - off,
+                            "var f = function() { 0 };"
+                            "f(");
+    for (int i = 0; i < nargs; i++) {
+        off += (size_t)snprintf(src + off, cap - off, "%s0",
+                                i == 0 ? "" : ",");
+    }
+    off += (size_t)snprintf(src + off, cap - off, ");");
+    UASSERT(off < cap);
+
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 16384);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    UEmitError rc = compile_src(&vm, &arena, &module, src);
+    /* Pre-fix: EMIT_OK (the wrap happens silently).
+     * Post-fix: EMIT_TOO_MANY_ARGS. */
+    UASSERT_EQ((int)EMIT_TOO_MANY_ARGS, (int)rc);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+    free(src);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -438,4 +487,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_free_reg_respects_temp_floor);
     utest_run("emit_lazy_pass_through_does_not_alias",
               emit_lazy_pass_through_does_not_alias);
+    utest_run("emit_call_too_many_args_returns_error",
+              emit_call_too_many_args_returns_error);
 }
