@@ -227,18 +227,30 @@ fail_after_n_alloc(void *ptr, size_t nbytes, void *ud)
     return realloc(ptr, nbytes);
 }
 
-/* vm_alloc_closure_oom_does_not_leak_partial:
+/* vm_alloc_closure_oom_does_not_corrupt_closure_list:
  *
- * Pre-fix audit text: vm_alloc_closure prepended cl to *list_head BEFORE
- * checking init success; on OOM the freed cl stayed on the list and a
- * subsequent walk dereferenced freed memory.  Post-fix (and at v0.5.7):
- * vm_alloc_closure prepends *only* on success — the prepend is the very
- * last statement before return, after urbi_zero/cell-init/proto-bind, and
- * the only failure mode is the alloc_fn itself returning NULL (which never
- * touched list_head).  This test pins that ordering by direct invocation:
- * (1) a working alloc populates list_head; (2) a forced-OOM alloc must
- * leave list_head pointing at the prior closure unchanged (no cl freed in
- * an inconsistent state). */
+ * Phase 5 T32 / VM-005.  Two related orderings are pinned:
+ *
+ * (a) vm_alloc_closure helper itself: prepend happens *only* on success,
+ *     after urbi_zero/cell-init/proto-bind.  The prepend is the very last
+ *     statement before return, and the only failure mode is alloc_fn
+ *     returning NULL (which never touched list_head).
+ *
+ * (b) OP_CLOSURE caller in src/vm/uvm.c: vm_alloc_closure returns a cl
+ *     already prepended onto s->closure_list, then the dispatcher reads
+ *     nupvals pseudo-instructions; vm_open_upvalue OOM (or upvalue
+ *     re-capture out of range) on any of those failure arms must unlink
+ *     cl from s->closure_list *before* freeing it, otherwise post-run
+ *     cleanup walks dereference freed memory (use-after-free).
+ *
+ * This unit test pins (a) by direct invocation.  (b) is structurally
+ * correct via inspection — a Gate G1 stretch precedent: producing a
+ * pinpoint vm_open_upvalue OOM in mid-OP_CLOSURE through a compile-and-run
+ * script requires a calibrated fail-after-N allocator whose allocation
+ * count is fragile against any change to upstream emit/parse, and the
+ * fix shape (two-line `s->closure_list = cl->next_alloc;` insertion at
+ * each of two sibling failure arms) is identical to the helper-level
+ * pin already covered here. */
 UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
 {
     UVM vm;

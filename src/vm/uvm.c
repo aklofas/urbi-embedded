@@ -478,6 +478,10 @@ dispatch:
                     if (in_stack) {
                         UUpvalCell *uvc = vm_open_upvalue(vm, s, &s->R[src_idx]);
                         if (uvc == NULL) {
+                            /* VM-005: cl is at head of s->closure_list (prepended
+                             * by vm_alloc_closure).  Unlink before freeing so
+                             * subsequent walks do not dereference freed memory. */
+                            s->closure_list = cl->next_alloc;
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
                             vm->last_error = UVM_OOM;
                             vm_format_oom(vm, sizeof(UUpvalCell));
@@ -492,6 +496,8 @@ dispatch:
                                          ? s->frames[s->frame_count - 1].closure
                                          : s->entry_closure;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
+                            /* VM-005: same unlink-before-free as the OOM arm. */
+                            s->closure_list = cl->next_alloc;
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
                             vm->last_error = UVM_TYPE_ERROR;
                             vm_format_type_error_msg(vm, "CLOSURE: upvalue re-capture out of range");
