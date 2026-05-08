@@ -140,7 +140,7 @@ urbi_object_add_proto(struct UVM *vm, UObject *obj, UObject *proto)
     }
     UProtos *up = urbi_protos_alloc(vm, new_n);
     if (up == NULL) {
-        return URBI_ERR_INVALID_ARG;   /* OOM — no URBI_ERR_OOM at v1.0 surface */
+        return URBI_ERR_OOM;
     }
     up->items[0] = proto;
     for (uint32_t i = 0; i < old_n; i++) {
@@ -187,7 +187,7 @@ urbi_object_remove_proto(struct UVM *vm, UObject *obj, const UObject *proto)
     /* new_n >= 2: build a fresh UProtos skipping idx. */
     UProtos *up = urbi_protos_alloc(vm, new_n);
     if (up == NULL) {
-        return URBI_ERR_INVALID_ARG;
+        return URBI_ERR_OOM;
     }
     uint32_t out = 0U;
     for (uint32_t i = 0; i < old_n; i++) {
@@ -249,7 +249,7 @@ urbi_object_set_protos(struct UVM *vm, UObject *obj, UObject **list, uint32_t n)
     }
     UProtos *up = urbi_protos_alloc(vm, dn);
     if (up == NULL) {
-        return URBI_ERR_INVALID_ARG;
+        return URBI_ERR_OOM;
     }
     for (uint32_t i = 0; i < dn; i++) {
         up->items[i] = deduped[i];
