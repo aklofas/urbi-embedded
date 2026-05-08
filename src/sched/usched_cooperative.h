@@ -111,6 +111,17 @@ void sched_strand_account_destroy(UVM *vm, UStrand *s);
  * pointing into the sleep queue and wakeup_pending_count stale. */
 void sched_strand_unbind_from_sleep_queue(UStrand *s);
 
+/* REALM-011 / T69: splice a strand out of the cooperative ready queue if
+ * it is on it.  Idempotent (the strand's own ready_next/ready_prev guard
+ * the work).  Decrements vm->strand_runnable_count exactly once if the
+ * strand was actually present.  Safe to call whether the strand is on the
+ * queue (state == READY) or not (DORMANT/RUNNING/WAITING/DEAD).
+ *
+ * Called from urbi_realm_destroy before each strand free so that the
+ * vm->ready_head / ready_tail doubly-linked list never holds dangling
+ * pointers into freed strand memory. */
+void sched_strand_unbind_from_ready_queue(UStrand *s);
+
 #ifdef __cplusplus
 }
 #endif

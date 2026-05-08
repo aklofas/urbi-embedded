@@ -281,6 +281,64 @@ sched_strand_unbind_from_sleep_queue(UStrand *s)
     sleep_q_remove(s->vm, s);
 }
 
+/* === REALM-011 / T69: sched_strand_unbind_from_ready_queue ===
+ *
+ * Splice s out of vm->ready_head / ready_tail's doubly-linked list if
+ * present; clear s->ready_next / s->ready_prev; decrement
+ * vm->strand_runnable_count by one iff the strand was actually present.
+ *
+ * Called from urbi_realm_destroy before freeing each strand so that the
+ * scheduler's queue head/tail pointers + neighbouring strands' ready_*
+ * links never reference freed memory.  Without this, sched_strand_destroy
+ * only zeroes the strand's own pointers — neighbours still point at the
+ * freed cell, and the next dispatch (or sched_walk_roots GC scan) trips
+ * use-after-free under ASan.
+ *
+ * Idempotent: safe whether the strand is on the queue (state == READY)
+ * or not.  Detection uses neighbour-pointer presence rather than state-
+ * byte inspection so it remains correct for any future scheduler that
+ * temporarily detaches READY strands without state churn.  Specifically:
+ *   - If s == vm->ready_head AND s->ready_next == NULL AND ready_tail ==
+ *     s → strand is the sole queue member.  Both head and tail go NULL.
+ *   - If s == vm->ready_head → advance head to s->ready_next.
+ *   - If s == vm->ready_tail → retreat tail to s->ready_prev.
+ *   - If s->ready_prev != NULL → patch prev's next.
+ *   - If s->ready_next != NULL → patch next's prev. */
+void
+sched_strand_unbind_from_ready_queue(UStrand *s)
+{
+    UVM *vm = s->vm;
+    /* Quick guard: detect "definitely not on the queue" cheaply.  A strand
+     * is on the doubly-linked queue iff it has a prev neighbour, OR a next
+     * neighbour, OR it is the queue head (sole member case).  All other
+     * strands have ready_next / ready_prev = NULL AND are not at head. */
+    const bool on_queue = (s->ready_prev != NULL)
+                       || (s->ready_next != NULL)
+                       || (vm->ready_head == s);
+    if (!on_queue) {
+        return;
+    }
+
+    if (s->ready_prev != NULL) {
+        s->ready_prev->ready_next = s->ready_next;
+    } else {
+        /* s was the head. */
+        vm->ready_head = s->ready_next;
+    }
+    if (s->ready_next != NULL) {
+        s->ready_next->ready_prev = s->ready_prev;
+    } else {
+        /* s was the tail. */
+        vm->ready_tail = s->ready_prev;
+    }
+
+    s->ready_next = NULL;
+    s->ready_prev = NULL;
+    if (vm->strand_runnable_count > 0) {
+        vm->strand_runnable_count--;
+    }
+}
+
 /* === T16 step-driver helper === */
 
 void
