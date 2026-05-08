@@ -4,7 +4,12 @@
  * T49 EVENT-004: native event emit/sync_emit/waituntil validate argv[0]
  *                kind before casting via uvalue_as_event.  Misconfigured
  *                callers (wrong receiver kind) must get NIL back, not a
- *                garbage-cast crash inside the emit path. */
+ *                garbage-cast crash inside the emit path.
+ *
+ * T50 EVENT-005: event_native_register propagates urbi_register_fn failures
+ *                instead of dropping them.  When the slot installer OOMs
+ *                on any of the four native slots, the function returns
+ *                UVM_OOM and resets vm->event_proto to NULL. */
 
 #include "utest.h"
 
@@ -19,6 +24,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define UTEST(name) static void name(void)
 
@@ -81,6 +87,64 @@ UTEST(native_event_functions_validate_argv)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T50: event_native_register_propagates_register_oom
+ * Use a failing allocator that OOMs after the proto object + its first
+ * symbol intern have been allocated, so urbi_register_fn for "new" or
+ * one of the later slots returns -1.  Assert that event_native_register
+ * returns UVM_OOM and that vm.event_proto has been reset to NULL.
+ * =================================================================== */
+
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1 means never fail; trigger NULL when alloc_calls > fail_at */
+} EventAllocSpy;
+
+static void *event_spy_alloc(void *ptr, size_t n, void *ud)
+{
+    EventAllocSpy *spy = (EventAllocSpy *)ud;
+    if (n == 0) {
+        free(ptr);
+        return NULL;
+    }
+    if (ptr == NULL) {
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+            return NULL;
+        }
+    }
+    return realloc(ptr, n);
+}
+
+UTEST(event_native_register_propagates_register_oom)
+{
+    /* Step 1: count how many allocations a clean event_native_register costs.
+     * We only need an upper bound on the proto + first slot install. */
+    EventAllocSpy probe = { 0, -1 };
+    UVM probe_vm;
+    urbi_vm_init(&probe_vm, event_spy_alloc, &probe);
+
+    UVMError ok = event_native_register(&probe_vm);
+    UASSERT_EQ((int)ok, (int)UVM_OK);
+    int total_clean_calls = probe.alloc_calls;
+    UASSERT(total_clean_calls > 2);  /* proto + at least one slot */
+    urbi_vm_destroy(&probe_vm);
+
+    /* Step 2: run with fail_at set so that the proto allocates, but a later
+     * urbi_register_fn (intern/slot-install) OOMs.  We pick a fail point
+     * partway through the clean trace, after the proto+root-shape work has
+     * landed but before all four register_fn calls finish. */
+    EventAllocSpy spy = { 0, total_clean_calls - 2 };
+    UVM vm;
+    urbi_vm_init(&vm, event_spy_alloc, &spy);
+
+    UVMError err = event_native_register(&vm);
+    UASSERT_EQ((int)err, (int)UVM_OOM);
+    UASSERT(vm.event_proto == NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -89,4 +153,6 @@ test_event_runtime_suite(void)
     printf("test_event_runtime\n");
     utest_run("native_event_functions_validate_argv",
               native_event_functions_validate_argv);
+    utest_run("event_native_register_propagates_register_oom",
+              event_native_register_propagates_register_oom);
 }

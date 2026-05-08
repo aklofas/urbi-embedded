@@ -211,9 +211,18 @@ event_native_register(struct UVM *vm)
     }
     vm->event_proto = proto;
 
-    urbi_register_fn(vm, proto, "new",       urbi_native_event_new);
-    urbi_register_fn(vm, proto, "emit",      urbi_native_event_emit);
-    urbi_register_fn(vm, proto, "syncEmit",  urbi_native_event_sync_emit);
-    urbi_register_fn(vm, proto, "waituntil", urbi_native_event_waituntil);
+    /* EVENT-005: propagate urbi_register_fn failures.  The previous code
+     * silently dropped the four return values, so an OOM during slot
+     * intern/install left a partially populated event_proto on the VM.
+     * On any failure, reset event_proto to NULL (the proto cell itself is
+     * GC-managed and will be collected at the next sweep) and surface
+     * UVM_OOM to the caller. */
+    if (urbi_register_fn(vm, proto, "new",       urbi_native_event_new)      != 0
+     || urbi_register_fn(vm, proto, "emit",      urbi_native_event_emit)     != 0
+     || urbi_register_fn(vm, proto, "syncEmit",  urbi_native_event_sync_emit) != 0
+     || urbi_register_fn(vm, proto, "waituntil", urbi_native_event_waituntil) != 0) {
+        vm->event_proto = NULL;
+        return UVM_OOM;
+    }
     return UVM_OK;
 }
