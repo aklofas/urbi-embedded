@@ -432,21 +432,22 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
     case AST_PROP_GET:
     case AST_PROP_SET:
-        /* Arrow-access syntax (`obj.x->y` / `obj.x->y = v`) parses to
-         * AST_PROP_GET / AST_PROP_SET.  v0.5.7 has no runtime support
-         * for arrow-access semantics (distinct from dot-access OP_GETSLOT
-         * / OP_SETSLOT); the parser still produces the nodes so a future
-         * milestone can lower them once the semantics are pinned. */
-        e->error = EMIT_UNSUPPORTED_AST;
-        return 0U;
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
-        /* These nodes are produced by the parser/emitter internally; they
-         * are consumed before emit_expr is called (AST_PARAM/AST_LAZY_PARAM
-         * are visited in the AST_FUNCTION arm; AST_LOCAL_REF is handled as
-         * an optimised AST_IDENT).  Reaching this arm means a malformed
-         * AST — treat as unsupported. */
+        /* AST_PROP_GET / AST_PROP_SET: arrow-access syntax (`obj.x->y` /
+         * `obj.x->y = v`).  v0.5.7 has no runtime support for arrow-access
+         * semantics (distinct from dot-access OP_GETSLOT / OP_SETSLOT);
+         * the parser still produces the nodes so a future milestone can
+         * lower them once the semantics are pinned.
+         *
+         * AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
+         * parser/emitter internally and consumed before emit_expr is
+         * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
+         * AST_LOCAL_REF as an optimised AST_IDENT).  Reaching this arm
+         * means a malformed AST.
+         *
+         * All five forms reject as EMIT_UNSUPPORTED_AST. */
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     case AST_ERROR:
