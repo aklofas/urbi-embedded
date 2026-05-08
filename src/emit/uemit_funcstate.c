@@ -334,15 +334,28 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * before any OP_GETSLOT / OP_SETSLOT that targets the global object,
      * even when the first global reference is inside a branch arm that
      * may not be taken at runtime.  Pure-local functions are left
-     * prologue-free (no wasted instruction). */
+     * prologue-free (no wasted instruction).
+     *
+     * T20 (EMIT-003): capture prologue_prepend_instr's return value.  On
+     * OOM (instruction-buffer / line-table grow failure) it sets
+     * e->error = EMIT_OOM internally.  The IC-array branches below gate
+     * on e->error == EMIT_OK so a prologue failure cleanly short-circuits
+     * the rest of close — no wasted IC-array allocation against a proto
+     * whose instructions buffer is in an indeterminate partial-shift
+     * state.  The cleanup-only tail (free fs->ic_names, reset prev_line,
+     * pop e->current_fs) still runs unconditionally. */
     if (fs->references_global && e->error == EMIT_OK) {
         uint32_t prologue = uinstr_enc_abc(OP_LOAD_REALM_GLOBAL,
                                            fs->r_global_slot, 0U, 0U);
-        prologue_prepend_instr(e, prologue);
+        if (!prologue_prepend_instr(e, prologue)) {
+            /* prologue_prepend_instr already set e->error = EMIT_OOM. */
+        }
     }
 
-    /* Roll max_reg_seen into target_proto when closing a nested function. */
-    if (fs->target_proto != NULL) {
+    /* Roll max_reg_seen into target_proto when closing a nested function.
+     * Skipped on prior error to avoid touching a proto whose instructions
+     * buffer may be in a half-prepended state. */
+    if (fs->target_proto != NULL && e->error == EMIT_OK) {
         UProto *p = (UProto *)fs->target_proto;
         p->max_reg  = fs->max_reg_seen;
         p->nupvals  = (uint8_t)fs->nupvalues;
