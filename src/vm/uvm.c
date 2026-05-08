@@ -587,8 +587,9 @@ dispatch:
             s->R        = &s->R[a + 1];
             s->pc       = callee->proto->instructions;
             s->pc_base  = s->pc;
-            s->cur_consts = callee->proto->constants ? callee->proto->constants
-                                                     : s->module->constants;
+            /* FOUND-032: route through the shared helper so OP_CALL and
+             * pop_call_frame cannot drift on the constants-from-closure rule. */
+            s->cur_consts = ustrand_consts_for_closure(s, callee);
 
             /* Zero registers beyond nparams up to max_reg. */
             {

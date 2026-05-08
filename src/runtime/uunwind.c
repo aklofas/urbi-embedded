@@ -115,10 +115,14 @@ pop_call_frame(UStrand *s)
     s->R       = done->base;
     s->pc      = done->pc + 1;   /* advance past the OP_CALL instruction */
     s->pc_base = s->module->instructions;
-    s->cur_consts = (s->frame_count > 0 &&
-                     s->frames[s->frame_count - 1].closure != NULL)
-                    ? s->frames[s->frame_count - 1].closure->proto->constants
-                    : s->module->constants;
+    /* FOUND-032: route through the shared helper so the OP_CALL rule and the
+     * pop-frame rule cannot drift. */
+    {
+        const UClosure *outer = (s->frame_count > 0)
+            ? s->frames[s->frame_count - 1].closure
+            : NULL;
+        s->cur_consts = ustrand_consts_for_closure(s, outer);
+    }
 }
 
 /* ===== deliver_return_value: write retval into caller's result slot =====
