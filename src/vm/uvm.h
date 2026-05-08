@@ -71,13 +71,37 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 
 /* Entry in the deferred slot-change ring (spec #4 §3.5).
  *
- * Pointer lifetime: the per-entry parent pointer is *weak* across GC
- * boundaries.  Safety relies on the cooperative-scheduling invariant that
- * no GC cycle runs between defer and drain — the ring drains at every
- * safepoint, before watcher-eval.  A v1.x preemptive scheduler MUST
- * upgrade these to strong refs (visit them from the GC root walk).
- * NOT GC-managed — entries are transient; drain logic clears each slot
- * after firing. */
+ * GC rooting contract (closes GC-004 — doc-only at v1.0):
+ *   The (parent, key, new_value) triple is NOT walked by any GC root
+ *   provider.  parent (UObject *) and any heap-bearing UValue inside
+ *   new_value are weak references across a GC slice.  Correctness at v1.0
+ *   relies on a strict safepoint-ordered invariant maintained by the
+ *   cooperative scheduler:
+ *
+ *     defer-site (slot-write barrier inside a sync slot-change body)
+ *       --> next safepoint
+ *       --> urbi_drain_deferred_slot_changes (clears head..tail)
+ *       --> watcher_eval_dirty
+ *
+ *   No GC slice runs between defer-site and drain because the cooperative
+ *   scheduler only steps GC at the dispatch-loop safepoint, and the drain
+ *   happens at that same safepoint *before* any potential GC trigger.
+ *   This invariant is implicitly verified by the full 148-fixture .chk
+ *   corpus passing under URBI_GC_INCREMENTAL with stress-mode allocation.
+ *
+ *   v1.x preemption upgrade path (filed; NOT addressed here):
+ *     A preemptive scheduler that can step GC asynchronously between
+ *     defer-site and drain MUST upgrade these to strong refs by visiting
+ *     vm->deferred_slot_changes[head..tail] from the GC root walker (e.g.
+ *     a new urbi_deferred_ring_walk_roots root provider registered with
+ *     urbi_gc_register_root_provider).  Until then, runtime safety is
+ *     contractual on the safepoint ordering.  See the workspace-root
+ *     design-risks register entry "v1.x: deferred slot-change ring
+ *     becomes weak under preemption" for the detailed upgrade plan.
+ *
+ * Storage: heap-allocated ring buffer, one urbi_vm-init calloc, freed in
+ * urbi_vm_destroy.  NOT GC-managed at any tier — the cell entries are
+ * transient and the drain logic zeroes each slot after firing. */
 typedef struct UDeferredSlotChange {
     struct UObject *parent;
     struct USymbol *key;
@@ -312,7 +336,10 @@ typedef struct UVM {
      *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
      * deferred_slot_changes: heap-allocated ring buffer (cap entries),
      *   freed in urbi_vm_destroy.  NOT GC-managed — entries live only while
-     *   head != tail; drain logic (R6) clears each slot after firing.
+     *   head != tail; drain logic (R6) clears each slot after firing.  See
+     *   the contract on `UDeferredSlotChange` (above) for the full GC
+     *   safepoint-ordering invariant that keeps the weak parent + value
+     *   pointers safe at v1.0 (closes GC-004 — doc-only).
      * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
     uint8_t                 slot_change_reentrancy_warned;
