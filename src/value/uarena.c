@@ -77,6 +77,11 @@ void uarena_init_ex(UArena *a, size_t chunk_size,
 }
 
 void uarena_init_static(UArena *a, void *buf, size_t bufsz) {
+    /* FOUND-042: caller-provided buffer must be naturally aligned for the
+     * UArenaChunk header.  ARENA_ALIGN (16) covers all v1.0 targets and
+     * matches the per-allocation alignment quantum below. */
+    URBI_INTERNAL_ASSERT(((uintptr_t)buf & (ARENA_ALIGN - 1U)) == 0U);
+
     a->head = NULL;
     a->first = NULL;
     a->chunk_size = 0;
