@@ -229,6 +229,20 @@ valgrind-tools:
 	    exit 1; \
 	}
 
+# T126: Full-corpus sanitizer gate (Wave 5 spec §3.9 verification G4).
+# Runs every tests/chk/**/*.chk fixture under ASan + UBSan + valgrind
+# memcheck (full leak-check).  Promotes from Wave-5's curated subset to a
+# standing all-fixtures gate.  Solo in releasetest Phase 2 to avoid
+# bandwidth contention (per project_releasetest_perf.md).
+.PHONY: test-corpus-sanitize
+test-corpus-sanitize: build/host-asan/urbi build/host-ubsan/urbi $(BUILDDIR)/urbi valgrind-tools
+	bash tests/integration/test_full_corpus_sanitize.sh
+
+build/host-asan/urbi:
+	$(MAKE) TARGET=host-asan urbi-bin
+build/host-ubsan/urbi:
+	$(MAKE) TARGET=host-ubsan urbi-bin
+
 # --- Release test aggregate --------------------------------------------
 #
 # releasetest runs every host-side gate the CI matrix runs, in parallel.
@@ -277,7 +291,7 @@ RELEASETEST_PHASE1 := \
 # contention).  Phase 2 is sequential — the cumulative wall-clock with
 # Phase 1 first is still substantially faster than the original 15-min
 # fully-sequential design.
-RELEASETEST_PHASE2 := test-valgrind
+RELEASETEST_PHASE2 := test-valgrind test-corpus-sanitize
 
 # test-valgrind-deep is intentionally NOT in releasetest. Per its
 # docstring ("Intended for local triage when test-valgrind reports a hit
