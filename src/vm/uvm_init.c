@@ -359,8 +359,13 @@ urbi_native_protos_init(UVM *vm)
 void
 urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
 {
-    URBI_ASSERT_NOT_ISR(vm);
+    /* API-003: NULL check FIRST.  URBI_ASSERT_NOT_ISR expands to call
+     * urbi_in_isr(vm) which is itself NULL-safe, so the prior order was
+     * not strictly buggy — but the convention across the public surface
+     * is "validate args, then assert invariants", and reading the code
+     * top-down was misleading. */
     if (vm == NULL) return;
+    URBI_ASSERT_NOT_ISR(vm);
     vm->event_drain_handler = h;
 }
 

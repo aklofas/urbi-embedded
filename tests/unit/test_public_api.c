@@ -121,6 +121,35 @@ UTEST(throw_return_val_tag_stop_handle_null_vm)
 }
 
 /* ===================================================================
+ * T110 — API-003: urbi_register_event_drain assert ordering
+ * ===================================================================
+ *
+ * Pre-fix order:
+ *   URBI_ASSERT_NOT_ISR(vm);   // calls urbi_in_isr(vm) which IS NULL-safe
+ *   if (vm == NULL) return;    // dead code in debug builds
+ *
+ * Post-fix order:
+ *   if (vm == NULL) return;
+ *   URBI_ASSERT_NOT_ISR(vm);
+ *
+ * Behavior was correct prior; the swap aligns with the rest of the
+ * public surface ("validate args, then assert invariants").  Test pins
+ * NULL safety and confirms the handler installs/clears correctly. */
+UTEST(register_event_drain_null_check_before_assert)
+{
+    /* NULL vm must be a clean no-op. */
+    urbi_register_event_drain(NULL, NULL);
+    UASSERT(1);
+
+    /* Valid vm with NULL handler clears the handler. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    urbi_register_event_drain(&vm, NULL);
+    UASSERT(vm.event_drain_handler == NULL);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -130,4 +159,6 @@ void test_public_api_suite(void)
               urbi_panic_handles_null_msg);
     utest_run("throw_return_val_tag_stop_handle_null_vm",
               throw_return_val_tag_stop_handle_null_vm);
+    utest_run("register_event_drain_null_check_before_assert",
+              register_event_drain_null_check_before_assert);
 }
