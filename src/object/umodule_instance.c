@@ -11,7 +11,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include "gc/ugc.h"
 #include "module/umodule.h"
 #include "object/uic.h"
@@ -54,6 +53,7 @@ init_ic_slice(UProtoInstance *pi, UProto *proto,
  * builds fall back to stdlib realloc when alloc_fn is NULL; freestanding
  * builds require the caller to supply alloc_fn explicitly. */
 #if __STDC_HOSTED__
+#  include <stdlib.h>
 static void *intern_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
     if (nbytes == 0U) { free(ptr); return NULL; }
