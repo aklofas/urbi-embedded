@@ -80,6 +80,47 @@ UTEST(urbi_panic_handles_null_msg)
 }
 
 /* ===================================================================
+ * T109 — API-002: urbi_throw / return_val / tag_stop_local NULL guard on s->vm
+ * ===================================================================
+ *
+ * The three host-callback helpers used to dereference strand->vm without a
+ * prior NULL check.  Production code never passes a vm-less strand, but the
+ * public C surface MUST be safe against malformed callers.
+ *
+ * Test: build a strand with vm=NULL on the stack and call each helper.
+ * The fix returns early with no side effects; the test asserts pending_unwind
+ * remains UEXEC_OK after the call.
+ */
+UTEST(throw_return_val_tag_stop_handle_null_vm)
+{
+    UStrand s;
+    memset(&s, 0, sizeof(s));
+    s.vm = NULL;
+    s.pending_unwind = UEXEC_OK;
+
+    UValue v;
+    v.kind = UVAL_INT;
+    memset(v._pad, 0, sizeof(v._pad));
+    v.v.i = 42;
+
+    /* All three must be no-ops when s->vm is NULL. */
+    urbi_throw(&s, v);
+    UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
+
+    urbi_return_val(&s, v);
+    UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
+
+    urbi_tag_stop_local(&s, NULL, v);
+    UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
+
+    /* Also verify NULL strand: must not crash. */
+    urbi_throw(NULL, v);
+    urbi_return_val(NULL, v);
+    urbi_tag_stop_local(NULL, NULL, v);
+    UASSERT(1);
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -87,4 +128,6 @@ void test_public_api_suite(void)
 {
     utest_run("urbi_panic_handles_null_msg",
               urbi_panic_handles_null_msg);
+    utest_run("throw_return_val_tag_stop_handle_null_vm",
+              throw_return_val_tag_stop_handle_null_vm);
 }

@@ -552,31 +552,38 @@ urbi_strand_reset(struct UStrand *strand)
  * reads s->pending_unwind when the callback returns and starts unwinding.
  */
 
-/* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW). */
+/* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW).
+ * API-002: NULL strand or NULL strand->vm is a no-op (defensive); the prior
+ * code derefed strand to read strand->vm and would crash on either. */
 void
 urbi_throw(struct UStrand *strand, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_THROW;
     strand->unwind_value   = value;
 }
 
 /* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
  * Named urbi_return_val (not urbi_return) to avoid conflict with the C
- * keyword `return` in macro expansion contexts and to be unambiguous. */
+ * keyword `return` in macro expansion contexts and to be unambiguous.
+ * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
 urbi_return_val(struct UStrand *strand, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_RETURN;
     strand->unwind_value   = value;
 }
 
-/* urbi_tag_stop_local — deposit TAG_STOP from within the same strand. */
+/* urbi_tag_stop_local — deposit TAG_STOP from within the same strand.
+ * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
 urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind  = UEXEC_TAG_STOP;
     strand->unwind_target   = tag;
     strand->unwind_value    = value;
