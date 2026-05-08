@@ -509,6 +509,14 @@ cppcheck: compile_commands.json
 test-cppcheck: ## Run cppcheck --enable=all --inconclusive
 	@bash tools/scripts/run_cppcheck.sh build/cppcheck-out.txt
 
+# Static analysis — clang scan-build over the default `make` build.
+# Closes a Wave-0 deferral (audit ran scan-build but did not wire the
+# target). Emits HTML report under build/scan-build-html/ and a tee'd
+# log at build/scan-build-out.txt. Gate promotion to releasetest in T118.
+.PHONY: test-scan-build
+test-scan-build: ## Run clang scan-build static analyzer
+	@bash tools/scripts/run_scan_build.sh build/scan-build-out.txt build/scan-build-html
+
 # Static analysis — GCC -fanalyzer (advisory).
 # Dedicated build variant so the 20% compile-time penalty only applies
 # when explicitly requested.  Diagnostics go to stderr during compile;
@@ -616,4 +624,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
