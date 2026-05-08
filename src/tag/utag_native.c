@@ -37,6 +37,7 @@
 #include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002) */
 #include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM */
 /* urbi_gc_slot_write (Dijkstra forward barrier) is reached via urbi/gc.h
  * pulled in by vm/uvm.h above. */
@@ -100,30 +101,37 @@ tag_leave_getter(struct UVM *vm, struct UTag *tag)
 
 /* === Native method stubs for proto slot installation === */
 
-/* Enter getter stub: argv[0].v.p points to the UTag receiver.
+/* Enter getter stub: receiver-cast site.
  *
- * TAGCH-011: there is NO UVAL_TAG kind in UValKind (see include/urbi/types.h:62).
- * UTag is a GC-managed cell tagged UTYPE_TAG (see src/gc/ugc.h) but is not a
- * UObject and has no dedicated UValue discriminant.  At T54 baseline the
- * UValue.kind passed via argv[0] is implementation-defined (the C-level
- * tests dispatch this stub directly with argv[0].v.p set; OP_CALL wiring
- * for tag-typed receivers lands at M6).  Until that wiring exists, we read
- * v.p without inspecting v.kind. */
+ * TAGCH-002: at the M5 baseline this stub is unreachable through OP_CALL
+ * dispatch — UVAL_TAG does not exist in UValKind (see include/urbi/types.h)
+ * and tag-typed receivers can only land here via test code that hand-builds
+ * argv[0].v.p.  The earlier shape `(UTag *)argv[0].v.p` was a type-unsafe
+ * receiver cast that would silently mis-dispatch under any future caller
+ * routed through OP_CALL with a wrong argv[0] kind.  Replace with an
+ * URBI_INTERNAL_ASSERT(0) that aborts in URBI_DEBUG and falls through to
+ * NIL in release.  When M6 lands first-class tag-typed receivers, this
+ * stub is replaced by a properly-typed dispatch path; until then the
+ * unreachability is part of the contract. */
 static UValue
 tag_enter_getter_stub(struct UStrand *s, int argc, UValue *argv)
 {
-    (void)argc;
-    UTag *tag = (UTag *)argv[0].v.p;
-    return tag_enter_getter(s->vm, tag);
+    (void)s; (void)argc; (void)argv;
+    URBI_INTERNAL_ASSERT(0 && "unreachable: tag_enter_getter_stub");
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+    return nil;
 }
 
-/* Leave getter stub: same shape and same TAGCH-011 caveat as the enter stub. */
+/* Leave getter stub: same TAGCH-002 contract as the enter stub. */
 static UValue
 tag_leave_getter_stub(struct UStrand *s, int argc, UValue *argv)
 {
-    (void)argc;
-    UTag *tag = (UTag *)argv[0].v.p;
-    return tag_leave_getter(s->vm, tag);
+    (void)s; (void)argc; (void)argv;
+    URBI_INTERNAL_ASSERT(0 && "unreachable: tag_leave_getter_stub");
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+    return nil;
 }
 
 /* Protected setter stub for both enter and leave. */
