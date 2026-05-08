@@ -226,6 +226,34 @@ UTEST(emit_close_function_propagates_ic_array_oom)
     UASSERT(saw_oom);
 }
 
+/* --- T23: AST_PROP_GET / AST_PROP_SET handling -------------------------- */
+
+UTEST(emit_expr_rejects_arrow_prop_get)
+{
+    /* Arrow-access syntax `obj.x->y` parses to AST_PROP_GET.  v0.5.7 has
+     * no runtime support for arrow-access semantics; the emit path
+     * rejects with EMIT_UNSUPPORTED_AST via an explicit case arm rather
+     * than the prior NOLINT-suppressed default fall-through.  This test
+     * locks in that behaviour as a regression seat. */
+    ECtx c;
+    ectx_init(&c, "function f(o) { return o.x->y }", -1);
+    UEmitError rc = ectx_run(&c);
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);
+    ectx_destroy(&c);
+}
+
+UTEST(emit_expr_rejects_arrow_prop_set)
+{
+    /* Arrow-access assignment `obj.x->y = v` parses to AST_PROP_SET. */
+    ECtx c;
+    ectx_init(&c, "function f(o, v) { o.x->y = v }", -1);
+    UEmitError rc = ectx_run(&c);
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
+    UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);
+    ectx_destroy(&c);
+}
+
 /* --- Suite registration -------------------------------------------------- */
 
 void
@@ -237,4 +265,8 @@ test_emit_error_paths_suite(void)
               emit_function_literal_clean_on_intern_oom);
     utest_run("emit_close_function propagates ic_array OOM",
               emit_close_function_propagates_ic_array_oom);
+    utest_run("emit_expr rejects arrow prop_get",
+              emit_expr_rejects_arrow_prop_get);
+    utest_run("emit_expr rejects arrow prop_set",
+              emit_expr_rejects_arrow_prop_set);
 }

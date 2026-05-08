@@ -393,14 +393,15 @@ bool cond_has_direct_side_effect(UAstNode *n) {
  * uemit_unwind.c.  See uemit_internal.h for all their declarations. */
 
 /* AST walker — returns the register holding the result of the expression.
-   Returns 0 and sets e->error on any failure. */
+   Returns 0 and sets e->error on any failure.
+   T23 (SCAN-001): every UAstKind has an explicit case arm so the switch
+   is exhaustive without a NOLINT.  Forms that this milestone does not yet
+   support (arrow-access AST_PROP_GET / AST_PROP_SET) reject with
+   EMIT_UNSUPPORTED_AST; lowering arrow-access to OP_GETSLOT / OP_SETSLOT
+   is filed as a v1.x backlog item once the arrow-vs-dot semantic
+   distinction is pinned. */
 uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
-    /* Default arm returns EMIT_UNSUPPORTED_AST for AST kinds not yet
-       emitted by this milestone. Later tasks will add explicit case arms as
-       each construct's emit lands; the NOLINT suppresses clang's switch-
-       exhaustiveness warning until that work completes. */
-    // NOLINTNEXTLINE(clang-diagnostic-switch)
     switch (n->kind) {
     case AST_INT:        return emit_int_arm(e, n);
     case AST_BOOL:       return emit_bool_arm(e, n);
@@ -429,6 +430,15 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_WAITUNTIL:      return emit_waituntil_arm(e, n);
     case AST_AT_EVENT:       return emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
+    case AST_PROP_GET:
+    case AST_PROP_SET:
+        /* Arrow-access syntax (`obj.x->y` / `obj.x->y = v`) parses to
+         * AST_PROP_GET / AST_PROP_SET.  v0.5.7 has no runtime support
+         * for arrow-access semantics (distinct from dot-access OP_GETSLOT
+         * / OP_SETSLOT); the parser still produces the nodes so a future
+         * milestone can lower them once the semantics are pinned. */
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
@@ -443,6 +453,8 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
         e->error = EMIT_AST_ERROR;
         return 0U;
     }
+    /* Unreachable when n->kind is a valid UAstKind value — the switch is
+     * exhaustive.  Defensive fallback for corrupt-AST scenarios. */
     e->error = EMIT_UNSUPPORTED_AST;
     return 0U;
 }
