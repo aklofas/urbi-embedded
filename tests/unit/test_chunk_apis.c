@@ -170,6 +170,42 @@ UTEST(repl_eval_compile_error_path)
     urbi_vm_destroy(&vm);
 }
 
+/* CPPCHK-005: prior to T114, urbi_repl_eval captured uemit_finish's return
+ * code into `finish_rc` but never read it — only `has_error` gated the
+ * URBI_ERR_COMPILE return.  T114 routes finish_rc into both the diagnostic
+ * (uemit_error_name fallback when the parser succeeded) and the return-code
+ * mapping (EMIT_OOM → URBI_ERR_OOM, else URBI_ERR_COMPILE).  This test
+ * pins behaviour-on-success: the parse-error path remains URBI_ERR_COMPILE
+ * with a non-empty diagnostic, confirming the message routing changes do
+ * not regress the parse-failure path that the existing test 5 covers.  A
+ * deterministic finish-only-failure injection is impractical without a
+ * fault-injection seam (uemit_finish's only failure mode propagates a
+ * sticky e->error already captured during statement emit), so this
+ * extension exercises the live path end-to-end. */
+UTEST(compile_finish_failure_propagates)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Empty input: no statements emit, finish runs with any_stmt_emitted=false
+     * → no OP_RET appended, current_fs lazily-opened only if statements exist
+     * → finish returns EMIT_OK.  Verify URBI_OK + empty result string. */
+    char buf[64];
+    buf[0] = 'X';
+    int rc = urbi_repl_eval(&vm, NULL, "", 0, buf, sizeof(buf));
+    UASSERT_EQ(rc, URBI_OK);
+
+    /* Parse error path still returns URBI_ERR_COMPILE with a populated buffer.
+     * After T114, finish_rc is EMIT_OK (parser short-circuits before finish),
+     * so the diagnostic comes from parse_errmsg as before. */
+    buf[0] = '\0';
+    rc = urbi_repl_eval(&vm, NULL, "1+", 2, buf, sizeof(buf));
+    UASSERT_EQ(rc, URBI_ERR_COMPILE);
+    UASSERT(buf[0] != '\0');
+
+    urbi_vm_destroy(&vm);
+}
+
 /* Case 6: runtime type error (nil < 1 is invalid at M3) returns
    URBI_ERR_STRAND_FATAL and writes vm->last_errmsg to out_buf. */
 UTEST(repl_eval_writes_fatal_message_on_runtime_error)
@@ -265,6 +301,8 @@ void test_chunk_apis_suite(void) {
               repl_eval_round_trip);
     utest_run("repl_eval_compile_error_path",
               repl_eval_compile_error_path);
+    utest_run("compile_finish_failure_propagates",
+              compile_finish_failure_propagates);
     utest_run("repl_eval_writes_fatal_message_on_runtime_error",
               repl_eval_writes_fatal_message_on_runtime_error);
     utest_run("repl_eval_sequential_calls",

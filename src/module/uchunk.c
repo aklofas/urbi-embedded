@@ -167,13 +167,20 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
             } else
 #endif
             {
-                const char *msg = parse_errmsg ? parse_errmsg : "compile error";
+                /* CPPCHK-005: surface uemit_finish's diagnostic when the parser
+                 * succeeded but finalization failed (e.g. EMIT_OOM, constant
+                 * pool exhausted at top-level RET emission).  Falls back to
+                 * the parser's static message when the parse stage errored. */
+                const char *msg = parse_errmsg
+                                ? parse_errmsg
+                                : (finish_rc != EMIT_OK ? uemit_error_name(finish_rc)
+                                                        : "compile error");
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);
-        return URBI_ERR_COMPILE;
+        return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
     /* Run via urbi_run_chunk (which delegates to urbi_vm_run at M3). */
