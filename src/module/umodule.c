@@ -646,6 +646,21 @@ static UModuleLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->max_reg = d->buf[d->off++];
     p->nupvals = d->buf[d->off++];
     p->nparams = d->buf[d->off++];
+    /* W4 / T79: nupvals + nparams cross-check.  Each occupies one byte
+     * (capped at 255 by the wire format) but the sum must fit in the
+     * register frame so the runtime can address every captured upvalue
+     * and parameter via a register slot.  emit_init_funcstate guarantees
+     * this; the check guards against hand-crafted bytecode that
+     * overflows R[0..max_reg].  Forward-looking: if either field is
+     * widened to varint at a future bytecode break, the byte-width cap
+     * goes away and an explicit `<= 256` check is needed. */
+    if ((unsigned)p->nupvals + (unsigned)p->nparams > (unsigned)p->max_reg + 1U) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "proto header: nupvals=%u + nparams=%u exceeds max_reg+1=%u",
+                   (unsigned)p->nupvals, (unsigned)p->nparams,
+                   (unsigned)p->max_reg + 1U);
+        return ULOAD_CORRUPT;
+    }
 
     UModuleLoadError rc;
     rc = decode_constants_into(d, &p->constants, &p->const_count, &p->const_cap,

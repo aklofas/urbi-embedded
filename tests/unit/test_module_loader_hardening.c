@@ -67,6 +67,48 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T79 (Wave-4): nupvals / nparams range check at proto decode ---
+ *
+ * Each of nupvals and nparams is a single byte (capped at 255 by wire
+ * format).  T79 adds a cross-check that nupvals + nparams <= max_reg+1
+ * so the runtime can address every captured upvalue and parameter via
+ * a register slot.  emit_init_funcstate guarantees this; the check
+ * guards against hand-crafted bytecode that overflows R[0..max_reg].
+ *
+ * Test exercises a nested proto with nupvals=200 + nparams=0 against
+ * max_reg=0 — sum 200 > max_reg+1=1 — expect rejection. */
+UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
+    /* Build a root module with one nested proto whose nupvals overflows
+     * the register frame. */
+    uint8_t buf[512];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* root max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* root n_const */
+    off = hard_put_varint(buf, off, 1);      /* root n_instr */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    uint32_t ret = (uint32_t)OP_RET;
+    buf[off++] = (uint8_t)(ret & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 24) & 0xFFU);
+    off = hard_put_varint(buf, off, 1);      /* root n_deltas */
+    buf[off++] = 0;
+    off = hard_put_varint(buf, off, 0);      /* root n_abs_lines */
+    off = hard_put_varint(buf, off, 0);      /* root ic_count */
+    off = hard_put_varint(buf, off, 1);      /* nested_count = 1 */
+    /* nested[0]: max_reg=0, nupvals=200, nparams=0  -- sum > max_reg+1. */
+    buf[off++] = 0;                          /* nested.max_reg */
+    buf[off++] = 200;                        /* nested.nupvals */
+    buf[off++] = 0;                          /* nested.nparams */
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T78 (Wave-4): deeply-nested closure verifier sanity (regression) ---
  *
  * v0.5.6 T5 added Bx range check against nested_count.  Construct a
@@ -314,4 +356,6 @@ void test_module_loader_hardening_suite(void) {
               ic_names_with_invalid_indices_rejected);
     utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",
               deeply_nested_closure_verifier);
+    utest_run("deserialize bounds nupvals + nparams (T79: W4 carry)",
+              deserialize_rejects_unbounded_nupvals_nparams);
 }
