@@ -123,11 +123,30 @@ sched_destroy(UVM *vm)
  * as a forward-compatibility hold for the v1.x scheduler-class abstraction
  * (priority/deadline schedulers will pass per-strand attribute structs
  * through this slot; see USchedClass at include/urbi/sched.h).  The
- * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX. */
+ * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX.
+ *
+ * CHSTR-039 (T106): MUST NOT touch s->state.  The state byte is owned by
+ * the strand-lifecycle layer (urbi_strand_create sets DORMANT,
+ * urbi_strand_arm_from_closure / urbi_vm_run set RUNNING, and the
+ * sched_strand_make_runnable / _block transitions advance it from there).
+ * sched_strand_init runs from two paths in M3+ baselines:
+ *   1. ustrand_init (during urbi_strand_create) — state already DORMANT.
+ *   2. urbi_vm_run's transient-strand setup — state already RUNNING.
+ * If sched_strand_init wrote a state byte here it would clobber the
+ * caller's setup and either re-DORMANT a transient (rejecting the next
+ * dispatch) or worse, drop a RUNNING strand into the ready queue with
+ * stale state.  The contract is: caller wires state, sched_strand_init
+ * wires queue links + budget. */
 void
 sched_strand_init(UStrand *s, void *attrs)
 {
     (void)attrs;  /* RESERVED v1.x — see header docstring */
+    /* CHSTR-039: callers must have set state to a legal initial value
+     * (DORMANT for newly-created strands, RUNNING for the urbi_vm_run
+     * transient path) before calling.  Detect violation in -DURBI_DEBUG
+     * builds; production builds elide the check. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT
+                      || USTRAND_GET_STATE(s) == USTRAND_RUNNING);
     s->ready_next                   = NULL;
     s->ready_prev                   = NULL;
     s->wait_next                    = NULL;

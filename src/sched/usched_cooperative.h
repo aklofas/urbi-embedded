@@ -46,6 +46,14 @@ void sched_destroy(UVM *vm);
  *   not touch the state byte).  `attrs` is reserved for the v1.x scheduler-
  *   class abstraction (priority/deadline schedulers); currently unused.
  *
+ *   CHSTR-039 (T106): the caller MUST have set s->state before calling
+ *   (DORMANT for newly-created strands, RUNNING for the urbi_vm_run
+ *   transient path).  -DURBI_DEBUG asserts the precondition; production
+ *   builds elide the check.  The function is otherwise unchecked and
+ *   would silently de-stabilise queue accounting if called on a READY,
+ *   WAITING, or DEAD strand (re-arming the budget while the strand sits
+ *   on a queue).
+ *
  * sched_strand_destroy: detach the strand from the ready/sleep queue lists
  *   (idempotent — safe to call on an already-detached strand).  Does not
  *   free the strand itself; that is the caller's responsibility. */
