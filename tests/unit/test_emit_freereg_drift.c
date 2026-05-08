@@ -590,26 +590,33 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
  * Bare `return;` allocates a register via alloc_reg and emits OP_LOADNIL
  * into it.  Pre-fix, alloc_reg returned e->next_reg++, ignoring whether
  * next_reg sat below the FuncState temp floor (= nactvar +
- * global_slot_reserved).  When earlier emit arms had transiently dropped
- * next_reg below the floor (e.g., a call-arm returning callee_reg+1
- * after some temps were freed), the LOADNIL register aliased a live
- * local and silently clobbered it.
+ * global_slot_reserved).  Under parser-driven AST, the SEP_SEMI between-
+ * stmt handler in emit_nary_arm and emit_block_arm syncs next_reg to
+ * freereg before each child, so `next_reg < floor` is unreachable; the
+ * bug is dormant against current emit arms but brittle against any
+ * future arm that transiently drops next_reg without also raising
+ * freereg.
  *
- * Post-fix: bare-return forces next_reg above the floor before alloc_reg,
- * so the LOADNIL slot is strictly above all live locals. */
+ * Wave 5 fix: bare-return forces next_reg above fs_temp_floor before
+ * calling alloc_reg, so the LOADNIL slot is guaranteed to be strictly
+ * above all live locals regardless of upstream emit-arm contract.
+ *
+ * The legitimate-syntax test below verifies the post-fix LOADNIL slot
+ * lies at-or-above fs_temp_floor (= nactvar + global_slot_reserved =
+ * 2 for the function below, where r_global = slot 0 and keep = slot 1).
+ * This is a structural-correctness gate per cluster-1 T11 precedent —
+ * the bug is unreachable through current parser-driven AST, but the
+ * invariant is now enforced at the bare-return arm.  The test passes
+ * pre-fix (since the bug isn't exercised) and post-fix (since the
+ * defensive guard preserves the legal behavior). */
 
 UTEST(emit_bare_return_does_not_clobber_local) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UModule module; memset(&module, 0, sizeof(module));
 
-    /* var keep = 42; helper(); return; — helper() lowers next_reg to
-     * callee_reg + 1 = 1 (after free).  A subsequent bare `return;` at
-     * a function body should allocate the LOADNIL slot above the
-     * locals zone (slot >= 2; keep is at slot 1 with r_global at 0).
-     * Pre-fix the LOADNIL lands at slot 1, clobbering keep. */
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function helper() { 0 }"
+        "function helper() { 0 };"
         "function f() {"
         " var keep = 42;"
         " helper();"
@@ -617,8 +624,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
         "}");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* Locate f's nested proto (the one ending with OP_LOADNIL+OP_RET
-     * and containing OP_LOADK 42). */
+    /* Locate f's nested proto (the one with OP_LOADK 42 + OP_LOADNIL +
+     * OP_RET; helper has only OP_LOADK 0 + OP_RET). */
     UProto *p = NULL;
     for (size_t i = 0; i < module.nested_count; i++) {
         UProto *q = module.nested[i];
@@ -639,12 +646,12 @@ UTEST(emit_bare_return_does_not_clobber_local) {
     }
     UASSERT(p != NULL);
 
-    /* Find OP_LOADK 42 (keep's init slot) and the LAST OP_LOADNIL
-     * (the bare-return's nil load).  They MUST land at different
-     * registers.  Pre-fix: both at slot 1 (LOADNIL clobbers keep).
-     * Post-fix: LOADK at slot 1, LOADNIL strictly above. */
+    /* Find OP_LOADK 42 (keep's init slot) and the OP_LOADNIL that
+     * precedes the LAST OP_RET (the bare-return's nil load).  They
+     * must land at different registers — keep's slot is below the
+     * LOADNIL slot. */
     int keep_slot = -1;
-    int last_nil_slot = -1;
+    int bare_nil_slot = -1;
     for (size_t j = 0; j < p->instr_count; j++) {
         uint32_t ins = p->instructions[j];
         if (uinstr_op(ins) == OP_LOADK) {
@@ -655,12 +662,15 @@ UTEST(emit_bare_return_does_not_clobber_local) {
             }
         }
         if (uinstr_op(ins) == OP_LOADNIL) {
-            last_nil_slot = (int)uinstr_a(ins);
+            bare_nil_slot = (int)uinstr_a(ins);
         }
     }
     UASSERT(keep_slot >= 0);
-    UASSERT(last_nil_slot >= 0);
-    UASSERT(keep_slot != last_nil_slot);
+    UASSERT(bare_nil_slot >= 0);
+    UASSERT(keep_slot != bare_nil_slot);
+    /* LOADNIL must land at the floor or above (keep at slot 1; LOADNIL
+     * at slot >= 2). */
+    UASSERT(bare_nil_slot > keep_slot);
 
     umodule_destroy(&module);
     uarena_destroy(&arena);
@@ -843,6 +853,8 @@ void test_emit_freereg_drift_suite(void) {
               emit_tag_prefix_rejects_high_spill_register);
     utest_run("emit_if_arm_pops_nested_var_decl",
               emit_if_arm_pops_nested_var_decl);
-    /* T16-T18 added below; held back from registration until each fix
+    utest_run("emit_bare_return_does_not_clobber_local",
+              emit_bare_return_does_not_clobber_local);
+    /* T17-T18 added below; held back from registration until each fix
      * lands to keep the suite green between commits. */
 }

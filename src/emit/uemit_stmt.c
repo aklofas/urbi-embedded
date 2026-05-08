@@ -603,7 +603,21 @@ uint8_t emit_return_arm(UEmitter *e, UAstNode *n) {
         ret_reg = emit_expr(e, n->u.ret.value);
         if (e->error != EMIT_OK) return 0U;
     } else {
-        /* Bare `return`: return nil. */
+        /* Bare `return`: return nil.
+         *
+         * EMIT-017 fix (Wave 5, v0.5.7): force next_reg above the
+         * funcstate temp floor before alloc_reg.  alloc_reg uses
+         * e->next_reg directly; if a future emit arm transiently drops
+         * next_reg below fs_temp_floor (= nactvar +
+         * global_slot_reserved), the returned slot would alias a live
+         * local and the subsequent OP_LOADNIL would clobber it.
+         * Defensive against new arms; current emit-arm contract syncs
+         * next_reg to freereg between siblings, so the bug is dormant.
+         * Same fix shape as EMIT-018 (AST_THROW). */
+        if (e->current_fs != NULL) {
+            uint8_t floor_val = fs_temp_floor(e->current_fs);
+            if (e->next_reg < floor_val) e->next_reg = floor_val;
+        }
         ret_reg = alloc_reg(e);
         if (e->error != EMIT_OK) return 0U;
         emit_instr(e, uinstr_enc_abc(OP_LOADNIL, ret_reg, 0U, 0U),
