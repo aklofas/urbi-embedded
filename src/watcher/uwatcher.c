@@ -75,7 +75,15 @@ uwatcher_pool_alloc(struct UVM *vm)
  * flags are set by install_watcher_runtime / install_at_event_runtime when
  * they unlink the closures from the strand's pre-GC closure_list so
  * urbi_vm_run's post-run cleanup loop cannot free them prematurely.  The
- * three flags are independent — any subset (including none) may be set. */
+ * three flags are independent — any subset (including none) may be set.
+ *
+ * WATCH-001 (v0.5.7): each free is structured as {free → null pointer →
+ * clear OWNS bit} so the slot's flag byte accurately reflects post-free
+ * ownership state.  This is defensive idempotency: if pool_free were ever
+ * re-entered on the same slot before pool_alloc recycled it, the cleared
+ * bit prevents a double-free; and if a future caller invariant changes to
+ * permit closure aliasing across watchers, the cleared bit on the freeing
+ * watcher accurately reports that this slot no longer claims ownership. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
@@ -94,6 +102,7 @@ pool_free(struct UVM *vm, UWatcher *w)
         }
         vm->alloc_fn(w->condition, 0, vm->alloc_ud);
         w->condition = NULL;
+        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_COND);
     }
     if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
         if (w->body->proto != NULL) {
@@ -103,6 +112,7 @@ pool_free(struct UVM *vm, UWatcher *w)
         }
         vm->alloc_fn(w->body, 0, vm->alloc_ud);
         w->body = NULL;
+        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_BODY);
     }
     if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
         if (w->onleave->proto != NULL) {
@@ -112,6 +122,7 @@ pool_free(struct UVM *vm, UWatcher *w)
         }
         vm->alloc_fn(w->onleave, 0, vm->alloc_ud);
         w->onleave = NULL;
+        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_ONLEAVE);
     }
 
     w->next_active             = vm->watcher_pool_freelist;
