@@ -255,20 +255,6 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
     }
 }
 
-/* === walk_uprotoinstance (T16) ===
- *
- * No children to mark at T16: every UIC entry is zero-init
- * (recv_shapes / slots / uprops all NULL; topology_gen=0 = unfilled
- * sentinel).  TODO(T22+): once IC fill lands, walk each UIC.recv_shapes[e],
- * slots[e] (USlot UValue payload via cb), and uprops[e] for the live n
- * entries per site.  USymbol.name is interned and never collected. */
-static void
-walk_uprotoinstance(struct UVM *vm, void *payload,
-                    UGcRootCallback cb, void *ctx)
-{
-    (void)vm; (void)payload; (void)cb; (void)ctx;
-}
-
 /* === walk_uevent (spec #3 §3.1) ===
  *
  * Yields name (UValue payload via cb) and shades each UWatcher in the
@@ -460,12 +446,20 @@ static const UType type_umodule_instance = {
     .destroy       = NULL,
 };
 
+/* UProtoInstance walker is a no-op: every UIC entry's children
+ * (recv_shapes[e], slots[e], uprops[e]) are reachable through stronger
+ * paths (UModuleInstance owns the UProtoInstanceArr; UShapes used by
+ * IC entries are kept alive via walk_ushape from the receiver-side
+ * UObject; UProps cells are kept alive via walk_ushape's props_table
+ * walk).  The previous walk_uprotoinstance function was an explicit
+ * no-op stub with a stale TODO; retired in v0.5.7-fixes Phase 13
+ * (OBJ-028) — substituted by walk_noop. */
 static const UType type_uproto_instance = {
     .type_tag      = UTYPE_PROTO_INSTANCE,
     .flags         = 0U,
     .payload_size  = 0U,
     .name          = "UProtoInstance",
-    .walk_payload  = walk_uprotoinstance,
+    .walk_payload  = walk_noop,
     .destroy       = NULL,
 };
 

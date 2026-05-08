@@ -258,9 +258,15 @@ urbi_object_clone(UVM *vm, UObject *parent)
  *   - walk_uobject shades shape, slots, and the proto chain
  *   - walk_ushape shades parent + transitions + props_table contents
  *   - walk_umoduleinstance shades the proto_instances UProtoInstanceArr
- * Once a UModuleInstance is alive, its UProtoInstance entries (containing UIC
- * caches) keep the receiver shapes / slot pointers / uprops cached entries
- * reachable through walk_uprotoinstance (T22+ wiring lands on cache fill). */
+ *
+ * UProtoInstance entries (UIC caches) intentionally have a no-op walker
+ * (walk_noop) — every cell referenced by a cached entry (recv_shape,
+ * UProps, USlot pointer's holding object) is already kept alive by a
+ * stronger reachability path: receiver-side UObject's walk_ushape walks
+ * the shape; UProps cells are reachable through the same shape's
+ * props_table walk; USlot pointers point into the holding UObject's
+ * slots[], which the holding UObject's walker covers.  See OBJ-028
+ * (closed v0.5.7-fixes Phase 13). */
 static void
 object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
