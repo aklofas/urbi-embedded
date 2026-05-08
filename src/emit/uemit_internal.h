@@ -160,9 +160,25 @@ static inline uint8_t alloc_reg(UEmitter *e) {
     return r;
 }
 
-/* Release the most-recently-allocated register (stack discipline). */
+/* Release the most-recently-allocated register (stack discipline).
+ *
+ * EMIT-012 fix (Wave 5, v0.5.7): respect fs_temp_floor — temp registers
+ * live at indices [floor, ...) where floor = nactvar + (1 if
+ * global_slot_reserved else 0).  A bare next_reg-- with no floor guard
+ * decrements *into* the local zone when the caller miscounted free_reg
+ * against alloc_reg, then a subsequent alloc_reg returns a slot that
+ * aliases a still-live local.  Guard against the underflow by treating
+ * the call as a no-op when next_reg is already at or below the floor.
+ *
+ * NULL-guard on current_fs: free_reg may be called during the brief
+ * window before uemit_statement opens the lazy top-level FuncState. */
 static inline void free_reg(UEmitter *e) {
-    if (e->next_reg > 0U) e->next_reg--;
+    if (e->next_reg == 0U) return;
+    if (e->current_fs != NULL) {
+        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        if (e->next_reg <= floor_val) return;
+    }
+    e->next_reg--;
 }
 
 /* Release a register that was bumped through *both* next_reg AND the

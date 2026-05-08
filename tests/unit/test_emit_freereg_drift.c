@@ -269,6 +269,77 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
 }
 
 /* -----------------------------------------------------------------------
+ * T11 — EMIT-012: free_reg doesn't respect fs_temp_floor
+ *
+ * Pre-fix free_reg unconditionally decrements next_reg, even when
+ * next_reg has reached the local-zone floor (nactvar + global_slot
+ * reservation).  An unbalanced free_reg/alloc_reg sequence could then
+ * underflow next_reg into the local zone, causing the next alloc_reg
+ * to return a slot aliasing a live local.
+ *
+ * Post-fix free_reg no-ops when next_reg <= fs_temp_floor.
+ *
+ * The fix is defensive — there is no current call site that exhibits
+ * the underflow under normal compilation, so this test verifies that
+ * the guard does not break the legitimate decrement path on a routine
+ * AST_BINARY chain (regression safety net only).  A harder pre-fix
+ * trigger would require an emit-arm-level mismatch that does not
+ * exist in v0.5.7 — adding such a synthetic trigger via a test-only
+ * accessor was judged out of scope vs the cost of exposing the
+ * private helper. */
+
+UTEST(emit_free_reg_respects_temp_floor) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* var a = 1; var b = 2; return a + b — three locals (a, b plus
+     * r_global pre-reserve).  The AST_BINARY's free_reg call after
+     * OP_ADD must release the rhs temp without underflowing into a's
+     * or b's local slot. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function f() { var a = 1; var b = 2; return a + b; }");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Locate f's nested proto (the only one with nparams=0 and an OP_ADD). */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            if (uinstr_op(q->instructions[j]) == OP_ADD) {
+                p = q; break;
+            }
+        }
+        if (p != NULL) break;
+    }
+    UASSERT(p != NULL);
+
+    /* Find the OP_ADD instruction.  Its B and C operands must be
+     * register indices >= the floor (nparams + global_slot pre-reserve
+     * = 0 + 1 = 1).  Since a is at r1 and b at r2, OP_ADD should read
+     * r1 and r2 — guard against the buggy case where free_reg
+     * underflowed into the locals zone (which would have allowed
+     * subsequent re-allocation to overwrite a or b). */
+    int found = 0;
+    for (size_t j = 0; j < p->instr_count; j++) {
+        if (uinstr_op(p->instructions[j]) == OP_ADD) {
+            uint8_t b = uinstr_b(p->instructions[j]);
+            uint8_t c = uinstr_c(p->instructions[j]);
+            UASSERT(b >= 1U);
+            UASSERT(c >= 1U);
+            UASSERT(b != c);
+            found = 1;
+        }
+    }
+    UASSERT(found == 1);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -283,4 +354,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_watcher_install_freereg_balanced_at_event);
     utest_run("emit_nested_proto_max_reg_includes_inner_temps",
               emit_nested_proto_max_reg_includes_inner_temps);
+    utest_run("emit_free_reg_respects_temp_floor",
+              emit_free_reg_respects_temp_floor);
 }
