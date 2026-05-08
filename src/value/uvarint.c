@@ -70,7 +70,15 @@ UVarintError uvarint_decode_zz(const uint8_t *buf, size_t size,
                                int64_t *v, size_t *consumed) {
     uint64_t u = 0;
     UVarintError rc = uvarint_decode_u(buf, size, &u, consumed);
-    if (rc != UVARINT_OK) return rc;
+    if (rc != UVARINT_OK) {
+        /* FOUND-043: defensive — error path must leave *consumed at 0 so
+         * callers that summarily skip the failed varint are not advanced
+         * by a partially-decoded byte count.  uvarint_decode_u writes
+         * *consumed only on success but is documented to leave it untouched
+         * on TRUNCATED/OVERSIZE; clear here to be explicit. */
+        if (consumed) *consumed = 0;
+        return rc;
+    }
     /* FOUND-015: unsigned-only zigzag decode.  The previous form
      *   (uint64_t)(-(int64_t)(u & 1U))
      * incurs implementation-defined behaviour when (u & 1) is 1: the
