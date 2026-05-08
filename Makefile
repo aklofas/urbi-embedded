@@ -235,13 +235,15 @@ valgrind-tools:
 # standing all-fixtures gate.  Solo in releasetest Phase 2 to avoid
 # bandwidth contention (per project_releasetest_perf.md).
 .PHONY: test-corpus-sanitize
-test-corpus-sanitize: build/host-asan/urbi build/host-ubsan/urbi $(BUILDDIR)/urbi valgrind-tools
+test-corpus-sanitize: valgrind-tools
+	@$(MAKE) TARGET=host-asan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address -fno-omit-frame-pointer" \
+		urbi-bin
+	@$(MAKE) TARGET=host-ubsan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
+		urbi-bin
+	@$(MAKE) urbi-bin
 	bash tests/integration/test_full_corpus_sanitize.sh
-
-build/host-asan/urbi:
-	$(MAKE) TARGET=host-asan urbi-bin
-build/host-ubsan/urbi:
-	$(MAKE) TARGET=host-ubsan urbi-bin
 
 # --- Release test aggregate --------------------------------------------
 #
