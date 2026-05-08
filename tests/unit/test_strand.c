@@ -244,6 +244,32 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-013 (T101): ustrand_destroy must not underflow vm->host_call_pending_count
+   when it decrements via sched_strand_account_destroy.  Construct a strand with
+   cross_strand_stop_pending set but vm->host_call_pending_count == 0 and verify
+   the counter stays at 0 (uint32_t underflow would produce 0xFFFFFFFF).  Pins
+   the existing guard at usched_cooperative.c:261 against future reorderings. */
+UTEST(strand_destroy_does_not_underflow_host_call_pending) {
+    setup_vm_realm();
+
+    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UASSERT(s != NULL);
+
+    /* Manually mark the strand as having a cross-strand stop deposited
+       without bumping vm->host_call_pending_count.  This mirrors the
+       hypothetical out-of-balance path: a deposit was rolled back (or the
+       counter was reset by a bug) but the strand-level flag still asserts.
+       Without the guard, ustrand_destroy would underflow. */
+    s->cross_strand_stop_pending = 1U;
+    UASSERT_EQ(g_vm.host_call_pending_count, 0U);
+
+    urbi_strand_destroy(s);
+    /* Counter must NOT have wrapped to UINT32_MAX. */
+    UASSERT_EQ(g_vm.host_call_pending_count, 0U);
+
+    teardown_vm_realm();
+}
+
 /* CHSTR-001 (T98): urbi_strand_create returns NULL when the cleanup-stack
    allocation inside ustrand_init fails (the second alloc, after the strand
    struct itself).  Verifies the post-strand-alloc OOM path frees the partial
@@ -305,4 +331,6 @@ void test_strand_suite(void) {
     utest_run("strand_spawn_two_fifo_order",            strand_spawn_two_fifo_order);
     utest_run("strand_create_returns_null_on_oom",      strand_create_returns_null_on_oom);
     utest_run("strand_create_returns_null_on_cleanup_oom", strand_create_returns_null_on_cleanup_oom);
+    utest_run("strand_destroy_does_not_underflow_host_call_pending",
+              strand_destroy_does_not_underflow_host_call_pending);
 }

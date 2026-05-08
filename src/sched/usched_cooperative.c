@@ -256,7 +256,16 @@ sched_strand_account_destroy(UVM *vm, UStrand *s)
 {
     /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
        decrement the host_call_pending_count so sched_quiescent converges
-       once all tagged strands have been destroyed. */
+       once all tagged strands have been destroyed.
+
+       CHSTR-013 (T101): the inner `if (host_call_pending_count > 0)` guard
+       is load-bearing, not defensive-by-style.  An earlier strand-tear-down
+       path (or a future scheduler that pre-rolls-back deposits before the
+       strand is destroyed) can leave the strand-level
+       cross_strand_stop_pending flag asserted while the VM-level counter
+       is already at 0; without the guard the uint32_t counter wraps to
+       UINT32_MAX and sched_quiescent never returns true again.  Pinned by
+       the strand_destroy_does_not_underflow_host_call_pending unit test. */
     if (s->cross_strand_stop_pending != 0) {
         if (vm->host_call_pending_count > 0)
             vm->host_call_pending_count--;
