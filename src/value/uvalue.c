@@ -172,7 +172,9 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         break;
     }
     case UVAL_STR: {
-        const char *s = (const char *)(uintptr_t)v->v.i;
+        /* FOUND-004: read interned-string pointer via v.p (the union member
+         * that semantically owns the pointer), not via v.i + uintptr_t cast. */
+        const char *s = (const char *)v->v.p;
         size_t w = 0;
         if (w + 1 >= cap) { buf[0] = '\0'; return 0; }
         buf[w++] = '"';
