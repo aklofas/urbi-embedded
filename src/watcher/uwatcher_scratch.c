@@ -102,8 +102,14 @@ run_on_scratch_core(struct UVM       *vm,
      * strand runs closure directly at frame_count==0 (not the root chunk), so
      * entries[0] must expose closure's own IC table.  Allocate a minimal
      * UProtoInstanceArr (one entry) and a stack-local UModuleInstance shell.
-     * Freed in teardown below; GC does not chase strand.module_instance. */
+     * Freed in teardown below; GC does not chase strand.module_instance.
+     *
+     * WATCH-007 (v0.5.7): on alloc failure, signal *out_threw = 1 and skip
+     * dispatch.  Pre-fix the OOM path silently left strand.module_instance
+     * = NULL, then OP_GETSLOT (frame_count==0 path) dereferenced NULL — a
+     * segfault that masqueraded as a soft cond throw. */
     UModuleInstance scratch_mi;
+    int scratch_arr_alloc_failed = 0;
     urbi_zero(&scratch_mi, sizeof(scratch_mi));
     if (closure->proto_inst != NULL) {
         size_t arr_bytes = sizeof(UProtoInstanceArr) + sizeof(UProtoInstance);
@@ -116,6 +122,12 @@ run_on_scratch_core(struct UVM       *vm,
             scratch_mi.vm               = vm;
             scratch_mi.proto_instances  = scratch_arr;
             strand.module_instance      = &scratch_mi;
+        } else {
+            scratch_arr_alloc_failed = 1;
+            if (vm->host_log_fn) {
+                vm->host_log_fn(vm, URBI_LOG_WARN,
+                    "scratch-frame: synthetic module_instance alloc failed");
+            }
         }
     }
 
@@ -151,28 +163,34 @@ run_on_scratch_core(struct UVM       *vm,
     strand.out_slot  = &out_local;
     strand.state     = USTRAND_STATE_RUNNING;
 
-    /* Run with bounded budget.  Cond closures must not yield (spec §6.4),
-     * but we cap dispatch ops as a defensive measure. */
-    (void)dispatch_loop_until_yield(&strand, URBI_SCRATCH_BUDGET_OPS);
-
-    /* Detect unhandled throw / abnormal exit. */
-    if (vm->last_error != UVM_OK) {
+    /* WATCH-007: skip dispatch when scratch_arr alloc failed; OP_GETSLOT at
+     * frame_count==0 would deref strand.module_instance == NULL. */
+    if (scratch_arr_alloc_failed) {
         *out_threw = 1;
-        vm->last_error = UVM_OK;
-        vm->last_errmsg[0] = '\0';
-    } else if (strand.state == USTRAND_STATE_DEAD) {
-        /* Clean OP_RET — capture the return value. */
-        *out_result = out_local;
     } else {
-        /* RUNNING with budget exhausted, READY (yield), or WAITING (block).
-         * The latter two violate the §6.4 no-yield contract; treat as
-         * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
-         * because the same core also handles AT_SYNC bodies, onleave handlers,
-         * and event sync-emit bodies — not just cond closures. */
-        *out_threw = 1;
-        if (vm->host_log_fn) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
-                "scratch-frame body exceeded budget or yielded");
+        /* Run with bounded budget.  Cond closures must not yield (spec §6.4),
+         * but we cap dispatch ops as a defensive measure. */
+        (void)dispatch_loop_until_yield(&strand, URBI_SCRATCH_BUDGET_OPS);
+
+        /* Detect unhandled throw / abnormal exit. */
+        if (vm->last_error != UVM_OK) {
+            *out_threw = 1;
+            vm->last_error = UVM_OK;
+            vm->last_errmsg[0] = '\0';
+        } else if (strand.state == USTRAND_STATE_DEAD) {
+            /* Clean OP_RET — capture the return value. */
+            *out_result = out_local;
+        } else {
+            /* RUNNING with budget exhausted, READY (yield), or WAITING (block).
+             * The latter two violate the §6.4 no-yield contract; treat as
+             * cond-throw so install/eval can fail-soft.  Diagnostic neutralized
+             * because the same core also handles AT_SYNC bodies, onleave handlers,
+             * and event sync-emit bodies — not just cond closures. */
+            *out_threw = 1;
+            if (vm->host_log_fn) {
+                vm->host_log_fn(vm, URBI_LOG_WARN,
+                    "scratch-frame body exceeded budget or yielded");
+            }
         }
     }
 
