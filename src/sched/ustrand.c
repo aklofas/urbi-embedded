@@ -225,6 +225,19 @@ urbi_strand_start(UStrand *s)
     struct UVM *vm = s->vm;
     URBI_ASSERT_NOT_ISR(vm);
     (void)vm;  /* suppress -Wunused-variable in non-debug builds */
+    /* CHSTR-033 (T104): the precondition is "DORMANT only — no double-start".
+     * sched_strand_make_runnable unconditionally tail-inserts into the
+     * cooperative ready queue and bumps strand_runnable_count++; calling
+     * urbi_strand_start twice on the same strand would re-enqueue it
+     * (creating a circular ready_next/ready_prev chain because the strand
+     * is already a list member) and double-count the runnable counter so
+     * sched_quiescent never converges.  The URBI_INTERNAL_ASSERT below
+     * catches this in -DURBI_DEBUG builds, BUT it is a no-op in freestanding
+     * production builds (umacros.h defaults to (void)0 when assert.h is
+     * unavailable).  TODO(v1.x): consider promoting this to urbi_panic so
+     * the violation is fatal in production rather than silently corrupting
+     * the queue accounting.  Current callers (urbi_strand_spawn,
+     * application code) all transition DORMANT → READY exactly once. */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT);
     sched_strand_make_runnable(s);
 }
