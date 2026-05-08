@@ -231,6 +231,36 @@ UTEST(run_chunk_threads_realm_argument_through_vm_run)
 }
 
 /* ===================================================================
+ * T112 — API-010: urbi_call_host_with_watchdog vm/fn defense
+ * ===================================================================
+ *
+ * Pre-fix: urbi_call_host_with_watchdog dereferenced vm->host_time_us
+ * without a NULL check on either vm or fn.
+ *
+ * Post-fix: returns urbi_value_nil() early on NULL vm or fn.  Test only
+ * meaningful in URBI_DEBUG builds (non-debug collapses to a macro that
+ * unconditionally calls fn). */
+UTEST(call_host_with_watchdog_handles_null_vm_fn)
+{
+#ifdef URBI_DEBUG
+    UValue r;
+    /* NULL vm: must return nil without crash. */
+    r = urbi_call_host_with_watchdog(NULL, NULL, NULL, 0, NULL);
+    UASSERT_EQ((int)r.kind, (int)UVAL_NIL);
+
+    /* Valid vm but NULL fn: must return nil. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    r = urbi_call_host_with_watchdog(&vm, NULL, NULL, 0, NULL);
+    UASSERT_EQ((int)r.kind, (int)UVAL_NIL);
+    urbi_vm_destroy(&vm);
+#else
+    /* Non-debug: macro form has no defensive layer. */
+    UASSERT(1);
+#endif
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -244,4 +274,6 @@ void test_public_api_suite(void)
               register_event_drain_null_check_before_assert);
     utest_run("run_chunk_threads_realm_argument_through_vm_run",
               run_chunk_threads_realm_argument_through_vm_run);
+    utest_run("call_host_with_watchdog_handles_null_vm_fn",
+              call_host_with_watchdog_handles_null_vm_fn);
 }
