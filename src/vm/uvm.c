@@ -109,7 +109,7 @@ ic_resolve_pi(UStrand *s)
    immediately.  vm_format_type_error_msg's bounded buffer is sufficient
    for the longest opcode name + slot name combination here. */
 static int
-vm_install_check_closure_operand(UVM *vm, UStrand *s, uint8_t reg,
+vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
                                  const char *opcode_name, const char *slot_name)
 {
     if (s->R[reg].kind != (uint8_t)UVAL_CLOSURE) {
@@ -135,7 +135,7 @@ vm_install_check_closure_operand(UVM *vm, UStrand *s, uint8_t reg,
    so the predicate location stays single-source-of-truth (T29's
    refactor pattern). */
 static int
-vm_install_check_event_operand(UVM *vm, UStrand *s, uint8_t reg,
+vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
                                const char *opcode_name)
 {
     if (!uvalue_is_event(s->R[reg])) {
