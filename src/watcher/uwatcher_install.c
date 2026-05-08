@@ -274,7 +274,15 @@ install_watcher_runtime(
     if (mode == UWATCHER_WAITUNTIL) {
         if (uvalue_truthy(&cond_value)) {
             /* Immediate wake: unregister the just-installed watcher and let
-             * the strand fall through to the next instruction. */
+             * the strand fall through to the next instruction.
+             *
+             * WATCH-013 (v0.5.7): assert the documented contract — install
+             * was entered while the strand is RUNNING (the OP_WAITUNTIL_INSTALL
+             * dispatch context), so the immediate-wake path must leave it
+             * RUNNING so dispatch resumes at the next instruction.  Without
+             * this assertion, a future caller change could pre-park the
+             * strand and silently drop the wake intent. */
+            URBI_INTERNAL_ASSERT(s->state == USTRAND_RUNNING);
             urbi_watcher_unregister_internal(vm, w);
             return URBI_INSTALL_OK;
         }

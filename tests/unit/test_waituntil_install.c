@@ -89,6 +89,10 @@ UTEST(waituntil_immediate_wake_when_cond_starts_true)
 
     urbi_vm_init(&vm, NULL, NULL);
     ustrand_init(&s, &vm);
+    /* OP_WAITUNTIL_INSTALL enters install_watcher_runtime while the strand
+     * is dispatching (RUNNING).  WATCH-013 (v0.5.7) asserts this invariant
+     * on the immediate-wake fast path. */
+    s.state = USTRAND_RUNNING;
     reset_log(&vm);
 
     vm.test_install_cond_hook = hook_true;

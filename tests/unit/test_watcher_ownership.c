@@ -387,8 +387,9 @@ test_watcher_ownership_suite(void)
               tag_less_at_event_watcher_freed_on_pool_destroy);
     utest_run("scratch_alloc_fail_signals_throw_not_silent_null",
               scratch_alloc_fail_signals_throw_not_silent_null);
-    /* T45-T47 tests registered as their per-task fixes land. */
-    (void)waituntil_immediate_wake_state_explicit;
+    utest_run("waituntil_immediate_wake_state_explicit",
+              waituntil_immediate_wake_state_explicit);
+    /* T46-T47 tests registered as their per-task fixes land. */
     (void)aliased_proto_closure_unlink_no_double_detach;
     (void)unknown_watcher_mode_does_not_change_state_in_release;
 }

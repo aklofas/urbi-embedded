@@ -64,7 +64,17 @@ typedef enum {
  * On URBI_INSTALL_OK the watcher is live and will be evaluated on the
  * next watcher_eval_dirty pass.
  * On any error result no watcher is installed; the error is already
- * logged via vm->host_log_fn (if non-NULL). */
+ * logged via vm->host_log_fn (if non-NULL).
+ *
+ * WAITUNTIL contract (spec #2 §7.7):
+ *   - Caller passes cond closure + waiter strand.  Body / onleave are NULL.
+ *   - install enters with `s->state == USTRAND_RUNNING` (dispatch context).
+ *   - If cond evaluates truthy at install time: the rising edge IS the install
+ *     moment.  install unregisters the just-allocated watcher inline and
+ *     returns OK with the strand still RUNNING; dispatch falls through to
+ *     the next instruction (immediate-wake fast path; WATCH-012/-013).
+ *   - Otherwise: install parks the strand at `USTRAND_WAIT_WATCHER` and
+ *     returns OK; OP_WAITUNTIL_INSTALL observes WAITING and yields. */
 
 UWatcherInstallResult install_watcher_runtime(
     struct UVM     *vm,
