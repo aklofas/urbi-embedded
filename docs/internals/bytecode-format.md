@@ -198,10 +198,13 @@ Each proto record:
 The proto's `instructions` stream is verified the same way as the root
 chunk: the opcode-shape walk at `decode_verify` runs once per nested
 proto with that proto's `max_reg`, `const_count`, `instr_count`, and
-`nested_count` (note: nested protos may themselves reference further
-nested protos via `OP_CLOSURE`, but at v1.5 the in-tree emitter does
-not emit deeply-nested closures; see backlog "v1.x: deeply-nested
-closure verification").
+the **root-level** `nested_count` for `OP_CLOSURE Bx` range checks. The
+v1.5 in-tree emitter allocates all function literals as flat siblings
+under the root `UModule`'s `nested[]` array; an `OP_CLOSURE` inside a
+nested proto refers to a sibling slot in the same root array, not into
+a per-proto child array. v1.x backlog "deeply-nested closure
+verification" tracks switching to per-proto child arrays if a future
+emitter shape requires them.
 
 ### Migration from v1.4
 
