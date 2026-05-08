@@ -55,7 +55,7 @@ static UVMError fn_eval(const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = urbi_vm_run(&vm, &module, out);
+        vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
 
     umodule_destroy(&module);
@@ -324,7 +324,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     UASSERT_EQ(EMIT_OK, emit_rc);
 
     UValue out = {0};
-    UVMError vm_rc = urbi_vm_run(&vm, &module, &out);
+    UVMError vm_rc = urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ(UVM_OK, vm_rc);
     UASSERT_EQ(UVAL_CLOSURE, out.kind);
     /* nupvals == 0 on the closure's proto */
@@ -368,7 +368,7 @@ UTEST(vm_function_body_has_instructions) {
     uemit_finish(&e);
 
     UValue out = {0};
-    urbi_vm_run(&vm, &module, &out);
+    urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ(UVAL_CLOSURE, out.kind);
     /* Body should have at least: LOADK(1), GETLOCAL/MOVE(x), ADD, RET */
     UASSERT(((UClosure *)out.v.p)->proto->instr_count >= 2);

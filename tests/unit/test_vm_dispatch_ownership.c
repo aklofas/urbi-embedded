@@ -107,7 +107,7 @@ UTEST(reactive_install_propagates_pool_oom)
     ctx.vm.watcher_pool_freelist = NULL;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OOM, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -123,7 +123,7 @@ UTEST(whenever_install_propagates_pool_oom)
     ctx.vm.watcher_pool_freelist = NULL;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OOM, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -139,7 +139,7 @@ UTEST(at_sync_install_propagates_pool_oom)
     ctx.vm.watcher_pool_freelist = NULL;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OOM, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -162,7 +162,7 @@ UTEST(waituntil_install_propagates_pool_oom)
     ctx.vm.watcher_pool_freelist = NULL;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OOM, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -191,7 +191,7 @@ UTEST(at_event_install_propagates_pool_oom)
     ctx.vm.watcher_pool_freelist = NULL;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OOM, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);

@@ -102,7 +102,7 @@ UTEST(at_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
     /* Watcher installed (cond starts false, no fire). */
     UASSERT(ctx.vm.active_watchers_head != NULL);
@@ -120,7 +120,7 @@ UTEST(whenever_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -136,7 +136,7 @@ UTEST(at_sync_install_runs_to_completion)
     UASSERT_EQ(0, rc);
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
     UASSERT_EQ(UVM_OK, (int)vm_rc);
 
     pipeline_ctx_destroy(&ctx);
@@ -178,7 +178,7 @@ UTEST(waituntil_does_not_yield_when_cond_true)
     ctx.vm.test_install_cond_hook = hook_cond_true;
 
     UValue out;
-    UVMError vm_rc = urbi_vm_run(&ctx.vm, &ctx.module, &out);
+    UVMError vm_rc = urbi_vm_run(&ctx.vm, NULL, &ctx.module, &out);
 
     ctx.vm.test_install_cond_hook = NULL;
 

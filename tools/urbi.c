@@ -189,7 +189,7 @@ static int run_file(UVM *vm, const char *path) {
     char err[256] = {0};
     if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);
         if (vrc == UVM_OK) {
             rc = 0;
         } else {
@@ -242,7 +242,7 @@ static int run_expression(UVM *vm, const char *expr) {
     char err[256] = {0};
     if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {
         UValue out;
-        UVMError vrc = urbi_vm_run(vm, &module, &out);
+        UVMError vrc = urbi_vm_run(vm, NULL, &module, &out);
         if (vrc == UVM_OK) {
             /* 64 bytes fits Int (max 21 chars) and Float (~24 chars).
                M2 string literals may truncate silently — promote to

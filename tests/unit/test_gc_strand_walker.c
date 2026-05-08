@@ -244,7 +244,7 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     UASSERT(uemit_finish(&e) == EMIT_OK);
 
     UValue out = {0};
-    UVMError rc = urbi_vm_run(&vm, &module, &out);
+    UVMError rc = urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ((int)rc, (int)UVM_OK);
 
     /* T33: global_realm was lazy-created during the run. */

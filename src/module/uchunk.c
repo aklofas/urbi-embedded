@@ -65,15 +65,12 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    /* realm is accepted for API stability but not yet threaded through
-     * urbi_vm_run, which takes (vm, module, out) — no realm parameter.
-     * Threading requires expanding urbi_vm_run's signature, which is a
-     * Wave-5 boundary change (API-004 carries forward).  At v0.5.5 the
-     * realm argument's role is contract validation: it must belong to
-     * this vm or be NULL.  Wave 5 wires the partitioned-binding path. */
-    (void)realm;
-
-    UVMError rc = urbi_vm_run(vm, module, out);
+    /* API-004 (Wave 5): thread the caller-supplied Realm through to
+     * urbi_vm_run — pre-Wave-5 the realm argument was silently dropped
+     * via `(void)realm;` and urbi_vm_run always wired the transient to
+     * the global Realm.  After Wave 5, urbi_vm_run accepts a realm
+     * directly (NULL → global, preserving the prior implicit behavior). */
+    UVMError rc = urbi_vm_run(vm, realm, module, out);
 
     /* Map UVMError to UErrCode.  UVM_TYPE_ERROR collapses to STRAND_FATAL
      * at v0.5.5 because the public surface has no dedicated type-error

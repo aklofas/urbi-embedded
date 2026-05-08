@@ -150,6 +150,87 @@ UTEST(register_event_drain_null_check_before_assert)
 }
 
 /* ===================================================================
+ * T111 — API-004: urbi_run_chunk realm-arg threading (signature change)
+ * ===================================================================
+ *
+ * Pre-fix: urbi_run_chunk(vm, realm, module, out) did `(void)realm;` then
+ * called urbi_vm_run(vm, module, out).  urbi_vm_run always wired the
+ * transient strand to the global Realm — so the realm arg was silently
+ * dropped.
+ *
+ * Post-fix: urbi_vm_run accepts a realm (NULL → global, preserving
+ * pre-Wave-5 behavior).  The threading is end-to-end: a binding installed
+ * on a non-default Realm before the run is visible to the bytecode running
+ * in that Realm.
+ *
+ * Setup: create realm A, install global "x" = 7 on A; create realm B,
+ * install global "x" = 9 on B; run "x" through realm A and realm B
+ * separately and verify the values diverge.  Pre-fix would have read
+ * from the global Realm in both cases (returning 0 / SLOT_NOT_FOUND
+ * because nothing installed "x" on global). */
+UTEST(run_chunk_threads_realm_argument_through_vm_run)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm_a = urbi_realm_create(&vm);
+    URealm *realm_b = urbi_realm_create(&vm);
+    UASSERT(realm_a != NULL);
+    UASSERT(realm_b != NULL);
+
+    UValue seven;
+    seven.kind = UVAL_INT;
+    memset(seven._pad, 0, sizeof(seven._pad));
+    seven.v.i = 7;
+
+    UValue nine;
+    nine.kind = UVAL_INT;
+    memset(nine._pad, 0, sizeof(nine._pad));
+    nine.v.i = 9;
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, realm_a, "x", 1, seven));
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, realm_b, "x", 1, nine));
+
+    /* Compile "x" once; reuse for both realms. */
+    const char *src = "x";
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule module;
+    memset(&module, 0, sizeof(module));
+    UEmitter e;
+    uemit_init(&e, &module, &arena, &vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        UASSERT(node->kind != AST_ERROR);
+        UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
+        uarena_reset(&arena);
+    }
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    UValue out_a;
+    out_a.kind = UVAL_NIL;
+    int rc_a = urbi_run_chunk(&vm, realm_a, &module, &out_a);
+    UASSERT_EQ(URBI_OK, rc_a);
+    UASSERT_EQ((int)out_a.kind, (int)UVAL_INT);
+    UASSERT_EQ(out_a.v.i, (int64_t)7);
+
+    UValue out_b;
+    out_b.kind = UVAL_NIL;
+    int rc_b = urbi_run_chunk(&vm, realm_b, &module, &out_b);
+    UASSERT_EQ(URBI_OK, rc_b);
+    UASSERT_EQ((int)out_b.kind, (int)UVAL_INT);
+    UASSERT_EQ(out_b.v.i, (int64_t)9);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -161,4 +242,6 @@ void test_public_api_suite(void)
               throw_return_val_tag_stop_handle_null_vm);
     utest_run("register_event_drain_null_check_before_assert",
               register_event_drain_null_check_before_assert);
+    utest_run("run_chunk_threads_realm_argument_through_vm_run",
+              run_chunk_threads_realm_argument_through_vm_run);
 }

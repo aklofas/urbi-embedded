@@ -77,7 +77,7 @@ static UVMError eval_on_vm(UVM *vm, const char *src, UValue *out) {
     UVMError vm_rc = UVM_OK;
 
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = urbi_vm_run(vm, &module, out);
+        vm_rc = urbi_vm_run(vm, NULL, &module, out);
     }
 
     umodule_destroy(&module);

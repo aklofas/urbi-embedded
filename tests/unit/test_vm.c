@@ -36,7 +36,7 @@ static UVMError vm_pipeline_eval(const char *src, UValue *out) {
     *out = nil;
     UVMError vm_rc = UVM_OK;
     if (uemit_finish(&e) == EMIT_OK) {
-        vm_rc = urbi_vm_run(&vm, &module, out);
+        vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
     umodule_destroy(&module);
     uarena_destroy(&arena);
@@ -132,7 +132,7 @@ UTEST(vm_run_empty_module_returns_nil) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     memset(&out, 0xAA, sizeof(out));  /* pre-dirty to confirm VM writes it */
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     urbi_vm_destroy(&vm);
     /* c has no owned buffers; no destroy needed */
@@ -144,7 +144,7 @@ UTEST(vm_run_ret_on_uninitialized_register_returns_nil) {
     UModule c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free(c.instructions);
     free(c.line_deltas);
@@ -188,7 +188,7 @@ UTEST(vm_loadk_int) {
     UModule c; fab_module_loadk_int_ret(&c, 42);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(42, out.v.i);
     free_fab_module(&c);
@@ -199,7 +199,7 @@ UTEST(vm_loadk_int_large) {
     UModule c; fab_module_loadk_int_ret(&c, INT64_MAX);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MAX);
     free_fab_module(&c);
@@ -210,7 +210,7 @@ UTEST(vm_loadk_float) {
     UModule c; fab_module_loadk_float_ret(&c, 3.14);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.13 && out.v.f < 3.15);
     free_fab_module(&c);
@@ -244,7 +244,7 @@ UTEST(vm_add_int_int_normal) {
     UModule c; fab_module_int_add_int(&c, 2, 3);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(5, out.v.i);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -254,7 +254,7 @@ UTEST(vm_add_int_int_max_plus_one_wraps) {
     UModule c; fab_module_int_add_int(&c, INT64_MAX, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -264,7 +264,7 @@ UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
     UModule c; fab_module_int_add_int(&c, INT64_MAX, INT64_MAX);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == -2);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -288,7 +288,7 @@ UTEST(vm_add_int_float_promotes) {
     UModule c; fab_module_add_mixed(&c, UVAL_INT, 2, 0, UVAL_FLOAT, 0, 1.5);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.49 && out.v.f < 3.51);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -298,7 +298,7 @@ UTEST(vm_add_float_int_promotes) {
     UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 2.5, UVAL_INT, 3, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 5.49 && out.v.f < 5.51);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -308,7 +308,7 @@ UTEST(vm_add_float_float) {
     UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.25, UVAL_FLOAT, 0, 2.75);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 3.99 && out.v.f < 4.01);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -318,7 +318,7 @@ UTEST(vm_add_bool_int_is_type_error) {
     UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -327,7 +327,7 @@ UTEST(vm_add_int_nil_is_type_error) {
     UModule c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -345,7 +345,7 @@ UTEST(vm_sub_int_int_normal) {
     UModule c; fab_module_binop_int(&c, OP_SUB, 5, 3);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(2, out.v.i);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -355,7 +355,7 @@ UTEST(vm_sub_int_int_min_minus_one_wraps) {
     UModule c; fab_module_binop_int(&c, OP_SUB, INT64_MIN, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MAX);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -366,7 +366,7 @@ UTEST(vm_sub_float_float) {
     c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 4.24 && out.v.f < 4.26);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -377,7 +377,7 @@ UTEST(vm_sub_bool_operand_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -387,7 +387,7 @@ UTEST(vm_mul_int_int_normal) {
     UModule c; fab_module_binop_int(&c, OP_MUL, 6, 7);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(42, out.v.i);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -397,7 +397,7 @@ UTEST(vm_mul_int_int_min_times_neg_one_wraps_to_min) {
     UModule c; fab_module_binop_int(&c, OP_MUL, INT64_MIN, -1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -408,7 +408,7 @@ UTEST(vm_mul_float_int_promotes) {
     c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 5.99 && out.v.f < 6.01);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -420,7 +420,7 @@ UTEST(vm_div_int_int_always_float) {
     UModule c; fab_module_binop_int(&c, OP_DIV, 5, 2);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 2.49 && out.v.f < 2.51);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -430,7 +430,7 @@ UTEST(vm_div_int_int_exact_still_float) {
     UModule c; fab_module_binop_int(&c, OP_DIV, 10, 2);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 4.99 && out.v.f < 5.01);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -440,7 +440,7 @@ UTEST(vm_div_by_zero_positive_is_inf) {
     UModule c; fab_module_binop_int(&c, OP_DIV, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     /* +Inf is greater than any finite float. */
     UASSERT(out.v.f > 1e30);
@@ -451,7 +451,7 @@ UTEST(vm_div_by_zero_negative_is_neg_inf) {
     UModule c; fab_module_binop_int(&c, OP_DIV, -5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f < -1e30);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -461,7 +461,7 @@ UTEST(vm_div_zero_by_zero_is_nan) {
     UModule c; fab_module_binop_int(&c, OP_DIV, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     /* NaN is the only float that compares unequal to itself. */
     UASSERT(out.v.f != out.v.f);
@@ -473,7 +473,7 @@ UTEST(vm_div_float_float) {
     c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > 2.99 && out.v.f < 3.01);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -506,7 +506,7 @@ UTEST(vm_move_copies_register) {
     UModule c; fab_module_loadk_move_ret(&c, 99);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(99, out.v.i);
     free_fab_module(&c);
@@ -531,7 +531,7 @@ UTEST(vm_move_self_copy_is_noop) {
 
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(7, out.v.i);
     free_fab_module(&c);
@@ -560,7 +560,7 @@ UTEST(vm_neg_int_normal) {
     UModule c; fab_module_neg_int(&c, 5);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT_EQ(-5, out.v.i);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -570,7 +570,7 @@ UTEST(vm_neg_int64_min_wraps_to_int64_min) {
     UModule c; fab_module_neg_int(&c, INT64_MIN);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_INT, out.kind);
     UASSERT(out.v.i == INT64_MIN);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -582,7 +582,7 @@ UTEST(vm_neg_float) {
     c.constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? 3.25 : (float)3.25;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_FLOAT, out.kind);
     UASSERT(out.v.f > -3.26 && out.v.f < -3.24);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -593,7 +593,7 @@ UTEST(vm_neg_nil_is_type_error) {
     c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
 
@@ -603,7 +603,7 @@ UTEST(vm_type_error_diagnostic_binary_op) {
     UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     /* Without source_name, prefix is "line N:". line_deltas is [1, 0, 0, 0]
        (set by fab_module_int_add_int which fab_module_add_mixed uses as base),
        so ADD at pc=2 reports line 1. */
@@ -624,7 +624,7 @@ UTEST(vm_type_error_diagnostic_with_source_name) {
     memcpy(c.source_name, src, sizeof(src));
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "foo.u:1:") != NULL);
     free(c.source_name);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -635,7 +635,7 @@ UTEST(vm_type_error_diagnostic_unary_op) {
     c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_NEG") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Nil") != NULL);
     UASSERT(strstr(vm.last_errmsg, "operand") != NULL);
@@ -651,7 +651,7 @@ UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
     c.line_deltas = NULL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 2:") != NULL);
     /* free_fab_module would double-free the already-freed line_deltas. */
     free(c.instructions); free(c.constants);
@@ -685,7 +685,7 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
     UModule c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, uvm_alloc_always_null, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT_EQ(UVAL_NIL, out.kind);
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
     UASSERT(strstr(vm.last_errmsg, "register frame") != NULL);
@@ -711,7 +711,7 @@ UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     UModule c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;
-    UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "out of memory") != NULL);
     free(c.instructions);
     free(c.line_deltas);
@@ -726,7 +726,7 @@ UTEST(vm_mul_bool_int_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_MUL") != NULL);
     UASSERT(strstr(vm.last_errmsg, "Bool") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -738,7 +738,7 @@ UTEST(vm_div_bool_int_is_type_error) {
     c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "OP_DIV") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -749,7 +749,7 @@ UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
     UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "Float") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -761,7 +761,7 @@ UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
     c.constants[0].kind = UVAL_STR;  /* override to String */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "String") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -773,7 +773,7 @@ UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
     c.constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "unknown") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
 }
@@ -794,7 +794,7 @@ UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
     /* No line_deltas (NULL) → prefix falls back to "instr 0:". */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     UASSERT(strstr(vm.last_errmsg, "instr 0:") != NULL);
     free(c.instructions);
     urbi_vm_destroy(&vm);
@@ -814,7 +814,7 @@ UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
     memcpy(c.source_name, long_name, name_len);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     size_t msg_len = strlen(vm.last_errmsg);
     UASSERT(msg_len > 0);
     UASSERT(msg_len < UVM_ERRMSG_CAP);
@@ -848,7 +848,7 @@ UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
     c.abs_lines[3].pc = 3; c.abs_lines[3].line = 13;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
     /* ADD is at pc=2; abs_lines[2].line == 12 → prefix "line 12:". */
     UASSERT(strstr(vm.last_errmsg, "line 12:") != NULL);
     free_fab_module(&c); urbi_vm_destroy(&vm);
@@ -864,14 +864,14 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
     /* Run 1 — force TypeError. */
     UModule c1; fab_module_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UValue out;
-    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, &c1, &out));
+    UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c1, &out));
     UASSERT_EQ(UVM_TYPE_ERROR, vm.last_error);
     UASSERT(vm.last_errmsg[0] != '\0');
     free_fab_module(&c1);
 
     /* Run 2 — succeeds. last_error and last_errmsg should be reset. */
     UModule c2; fab_module_loadk_int_ret(&c2, 42);
-    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, &c2, &out));
+    UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c2, &out));
     UASSERT_EQ(UVM_OK, vm.last_error);
     UASSERT_EQ('\0', vm.last_errmsg[0]);
     UASSERT_EQ(UVAL_INT, out.kind);
@@ -1092,7 +1092,7 @@ UTEST(vm_uclosure_carries_proto_inst_field) {
     UValue nil = {0};
     out = nil;
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
-    UASSERT_EQ((int)UVM_OK, (int)urbi_vm_run(&vm, &module, &out));
+    UASSERT_EQ((int)UVM_OK, (int)urbi_vm_run(&vm, NULL, &module, &out));
     UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
     UClosure *cl = (UClosure *)out.v.p;
     UASSERT(cl != NULL);
@@ -1133,7 +1133,7 @@ UTEST(vm_op_closure_binds_proto_inst) {
     UValue nil = {0};
     out = nil;
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
-    UASSERT_EQ((int)UVM_OK, (int)urbi_vm_run(&vm, &module, &out));
+    UASSERT_EQ((int)UVM_OK, (int)urbi_vm_run(&vm, NULL, &module, &out));
     UASSERT_EQ((int)UVAL_CLOSURE, (int)out.kind);
     UClosure *cl = (UClosure *)out.v.p;
     UASSERT(cl != NULL);
@@ -1175,7 +1175,7 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
     }
     UValue out = {0};
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
-    UVMError rc = urbi_vm_run(&vm, &module, &out);
+    UVMError rc = urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
     /* Key assertion: error is from receiver-type check, not IC-table binding.
      * Pre-T9: "no IC table bound (module instance not wired at M4 baseline)"
@@ -1211,7 +1211,7 @@ UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
     }
     UValue out = {0};
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
-    UVMError rc = urbi_vm_run(&vm, &module, &out);
+    UVMError rc = urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
     UASSERT(strstr(vm.last_errmsg, "receiver is not an Object") != NULL);
     UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);

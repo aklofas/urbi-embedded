@@ -403,8 +403,15 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    error, vm->last_error and vm->last_errmsg are populated and *out is
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
-   them after each urbi_vm_run call without stale state from prior runs. */
-UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out);
+   them after each urbi_vm_run call without stale state from prior runs.
+
+   API-004 (Wave 5): the `realm` argument selects which Realm the
+   transient strand runs in.  realm == NULL falls back to the VM's
+   global Realm (the pre-Wave-5 implicit behavior), preserving
+   source-compat for existing callers via the matching update in the
+   public header. */
+UVMError urbi_vm_run(UVM *vm, struct URealm *realm,
+                     const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void urbi_vm_destroy(UVM *vm);
