@@ -195,6 +195,64 @@ UTEST(reblock_already_waiting_strand_aborts_in_debug)
 }
 #endif
 
+/* ===================================================================
+ * T40 — SCHED-003: sched_strand_yield requires entry state RUNNING
+ * ===================================================================
+ *
+ * Re-yielding a READY strand silently re-enqueues, double-counting
+ * runnable_count and producing a circular ready_next/prev chain.
+ * Fix: URBI_INTERNAL_ASSERT(s->state == USTRAND_RUNNING) at entry.
+ * The two live call sites in uvm.c (OP_YIELD and the safepoint
+ * budget-exhaust path) had each pre-set state to READY before the
+ * yield call; that pre-set was redundant (sched_strand_make_runnable
+ * sets state unconditionally) and is removed in the same commit. */
+UTEST(yield_from_running_makes_ready)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    s.state = USTRAND_STATE_RUNNING;
+    sched_strand_yield(&s);
+
+    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT(vm.ready_head == &s);
+    UASSERT(vm.ready_tail == &s);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+#ifdef URBI_DEBUG
+static void
+yield_already_ready(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    /* First yield: legitimate RUNNING → READY. */
+    s.state = USTRAND_STATE_RUNNING;
+    sched_strand_yield(&s);
+    /* state now READY, on ready queue. */
+
+    /* Second yield from READY — must abort. */
+    sched_strand_yield(&s);
+}
+
+UTEST(yield_already_ready_strand_aborts_in_debug)
+{
+    EXPECT_ABORT(yield_already_ready());
+}
+#endif
+
 void test_sched_state_aliasing_suite(void) {
     utest_run("join_blocked_strand_state_distinct_from_wait_event",
               join_blocked_strand_state_distinct_from_wait_event);
@@ -205,5 +263,11 @@ void test_sched_state_aliasing_suite(void) {
 #ifdef URBI_DEBUG
     utest_run("reblock_already_waiting_strand_aborts_in_debug",
               reblock_already_waiting_strand_aborts_in_debug);
+#endif
+    utest_run("yield_from_running_makes_ready",
+              yield_from_running_makes_ready);
+#ifdef URBI_DEBUG
+    utest_run("yield_already_ready_strand_aborts_in_debug",
+              yield_already_ready_strand_aborts_in_debug);
 #endif
 }

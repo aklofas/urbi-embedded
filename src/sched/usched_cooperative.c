@@ -165,6 +165,14 @@ sched_strand_make_runnable(UStrand *s)
 void
 sched_strand_yield(UStrand *s)
 {
+    /* SCHED-003: yielding from a non-RUNNING state silently re-enqueues,
+     * double-counting strand_runnable_count and producing a circular
+     * ready_next/ready_prev chain (sched_strand_make_runnable unconditionally
+     * tail-inserts).  Fix: assert entry state == RUNNING.  Yields from READY
+     * are a programming error (the strand is already on the queue); yields
+     * from WAITING bypass the proper unblock path and break the symmetric
+     * counter contract documented at the top of this file. */
+    URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING);
     /* RUNNING → READY tail: same path as make_runnable. */
     sched_strand_make_runnable(s);
 }

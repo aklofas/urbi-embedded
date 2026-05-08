@@ -688,9 +688,10 @@ dispatch:
         CASE(OP_YIELD) {
             /* Cooperative yield: advance past this opcode, transition to READY,
                and return to the scheduler.  The urbi_vm_run adapter re-enters
-               dispatch_loop_until_yield until strand is DEAD. */
+               dispatch_loop_until_yield until strand is DEAD.
+               sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+               and overwrites with READY on enqueue, so no pre-set here. */
             s->pc++;
-            s->state = USTRAND_STATE_READY;
             sched_strand_yield(s);
             steps_consumed++;
             goto exit_strand;
@@ -1448,7 +1449,8 @@ safepoint:
         if (s->state == USTRAND_STATE_DEAD) goto exit_strand;
     }
     if (s->instruction_budget_remaining == 0) {
-        s->state = USTRAND_STATE_READY;
+        /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+         * and overwrites with READY on enqueue, so no pre-set here. */
         sched_strand_yield(s);
         goto exit_strand;
     }
