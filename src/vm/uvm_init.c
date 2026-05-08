@@ -255,6 +255,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
     vm->slot_change_reentrancy_warned = 0U;
     vm->slot_change_ring_full_warned  = 0U;
+    vm->event_sync_degradation_warned = 0U;  /* EMITR-005 one-shot flag */
     vm->deferred_slot_changes_head    = 0U;
     vm->deferred_slot_changes_tail    = 0U;
     vm->deferred_slot_changes_cap     = 0U;

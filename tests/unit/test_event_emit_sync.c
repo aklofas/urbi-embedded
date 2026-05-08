@@ -198,6 +198,45 @@ UTEST(sync_emit_degrades_when_in_watcher_eval)
 }
 
 /* ===================================================================
+ * EMITR-005: degradation warn is one-shot
+ *
+ * Pre-fix the URBI_LOG_WARN at the degradation site fired on every call.
+ * In a tight loop this floods host_log_fn (the spec #3 §5.4 contract +
+ * the function's own header docstring claim "one-shot URBI_LOG_WARN").
+ * Mirror the urbi_emit_slot_change_slow / slot_change_reentrancy_warned
+ * shape: store the fired-once flag on UVM and gate the warn.
+ * =================================================================== */
+
+UTEST(sync_emit_degradation_warn_is_one_shot)
+{
+    UVM vm;
+
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UEvent *e = urbi_event_create(&vm);
+    UASSERT(e != NULL);
+
+    g_warn_count = 0;
+    g_log_total  = 0;
+    vm.host_log_fn = capture_log;
+
+    /* Call c_event_emit_sync 100 times with the degradation flag set.
+     * Pre-fix: g_warn_count == 100 (warn-flooding).
+     * Post-fix: g_warn_count == 1 (one-shot guard via
+     *           vm->event_sync_degradation_warned). */
+    vm.in_watcher_eval = 1;
+    int i;
+    for (i = 0; i < 100; i++) {
+        c_event_emit_sync(&vm, e, make_int(i));
+    }
+    vm.in_watcher_eval = 0;
+
+    UASSERT_EQ(g_warn_count, 1);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -209,4 +248,6 @@ test_event_emit_sync_suite(void)
               sync_emit_runs_sync_subs_inline);
     utest_run("sync_emit_degrades_when_in_watcher_eval",
               sync_emit_degrades_when_in_watcher_eval);
+    utest_run("sync_emit_degradation_warn_is_one_shot",
+              sync_emit_degradation_warn_is_one_shot);
 }

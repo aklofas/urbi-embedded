@@ -317,6 +317,12 @@ typedef struct UVM {
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
     uint8_t                 slot_change_reentrancy_warned;
     uint8_t                 slot_change_ring_full_warned;
+    /* event_sync_degradation_warned: one-shot flag; set on first
+     * c_event_emit_sync degradation to async (spec #3 §5.4 — call from
+     * within a scratch / eval / install context).  Mirrors the
+     * slot_change_reentrancy_warned shape so a tight loop that triggers
+     * the degradation does not flood URBI_LOG_WARN.  Closes EMITR-005. */
+    uint8_t                 event_sync_degradation_warned;
     UDeferredSlotChange    *deferred_slot_changes;
     uint16_t                deferred_slot_changes_head;
     uint16_t                deferred_slot_changes_tail;
