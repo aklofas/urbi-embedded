@@ -514,60 +514,69 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
 }
 
 /* -----------------------------------------------------------------------
- * T15 — EMIT-016: AST_IF arm leaks nested AST_VAR_DECL (single-expr arm)
+ * T15 — EMIT-016: AST_IF leaked the result-register slot into freereg
  *
- * The if-arm logic resets next_reg to rd before each arm, but doesn't
- * clear actvars[] entries declared inside the arm.  When the arm is a
- * compound expression `(var x = 5, x)` rather than an AST_BLOCK, the
- * scoped local `x` leaks into the enclosing function's actvar list,
- * occupying a slot and offsetting subsequent declarations.
+ * Pre-fix, emit_if_arm's trailer forced `fs->freereg = next_reg` (==
+ * rd + 1).  rd is a TEMP — the if-expr's result register — not a
+ * local.  Bumping freereg up to rd+1 means subsequent var-decls
+ * (whose slot = fs->freereg per uemit_declare_local) land above rd
+ * instead of reusing rd's slot once the if's result is no longer
+ * needed.  Result: every if-as-statement permanently consumes one
+ * additional register slot; the cost compounds across nested ifs and
+ * siblings.
  *
- * Pre-fix: the next outer var-decl after the if lands at slot >= rd+2
- * (one for `x`, one for itself).
- * Post-fix: the arm pops its scoped declarations; the outer var-decl
- * lands at the same slot the leaked `x` would have occupied. */
+ * The bug surfaced via parser-driven AST: in `function f() { var a;
+ * if (a > 0) { var x = 5; x }; var b = 7; return b }`, b landed at
+ * slot 3 (after the if's leaked rd at slot 2) instead of slot 2
+ * (reusing rd).
+ *
+ * Wave 5 fix: drop the freereg bump in emit_if_arm's trailer; rd is
+ * still tracked via next_reg / max_reg_seen, but freereg stays at the
+ * floor so siblings reuse the slot once rd is consumed.  Matches the
+ * Lua-style protocol used by emit_compare_arm (which also leaves rb
+ * as a temp without bumping freereg). */
 
 UTEST(emit_if_arm_pops_nested_var_decl) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
     UModule module; memset(&module, 0, sizeof(module));
 
-    /* a is at slot 1 (after r_global at slot 0).
-     * The if-then arm `(var x = 5, x)` declares x scoped to the arm.
-     * Pre-fix, x stays in actvars[] across the arm — b's declaration
-     * sees nactvar==2 and slots b at 3.  Post-fix, x is popped and b
-     * lands at slot 2. */
     UEmitError rc = compile_src(&vm, &arena, &module,
         "function f() {"
         " var a = 1;"
-        " if (a > 0) (var x = 5, x);"
+        " if (a > 0) { var x = 5; x };"
         " var b = 7;"
         " return b;"
         "}");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* Locate f's nested proto (1 with OP_RET on top, OP_GT comparison). */
+    /* Locate f's nested proto. */
     UProto *p = NULL;
     for (size_t i = 0; i < module.nested_count; i++) {
         UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
+        bool has_ret = false;
         for (size_t j = 0; j < q->instr_count; j++) {
             if (uinstr_op(q->instructions[j]) == OP_RET) {
-                p = q; break;
+                has_ret = true; break;
             }
         }
-        if (p != NULL) break;
+        if (has_ret) { p = q; break; }
     }
     UASSERT(p != NULL);
 
     /* Find the OP_LOADK that loads constant int 7 (b's init).
-     * Its A operand is b's slot.  Pre-fix: A >= 3.  Post-fix: A == 2. */
+     * Its A operand is b's slot.
+     * Pre-fix: b lands at slot 3 (the if's rd at slot 2 leaked into
+     *          freereg, so var-decl picked rd+1 = 3).
+     * Post-fix: b lands at slot 2 (rd's slot is reusable since
+     *           freereg stayed at the floor).
+     * r_global at slot 0; a at slot 1; b at slot 2 (post-fix). */
     int idx = find_loadk_int(p->instructions, p->instr_count,
-                             module.constants, 7);
+                             p->constants, 7);
     UASSERT(idx >= 0);
     uint8_t a = uinstr_a(p->instructions[idx]);
-    /* Strict assert: post-fix b lands at slot 2 (no `x` leak). */
     UASSERT_EQ(2, (int)a);
 
     umodule_destroy(&module);
@@ -621,8 +630,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
             uint32_t ins = q->instructions[j];
             if (uinstr_op(ins) == OP_LOADK) {
                 uint16_t bx = uinstr_bx(ins);
-                if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
-                    module.constants[bx].v.i == 42) has_42 = true;
+                if (q->constants[bx].kind == (uint8_t)UVAL_INT &&
+                    q->constants[bx].v.i == 42) has_42 = true;
             }
             if (uinstr_op(ins) == OP_LOADNIL) has_loadnil = true;
         }
@@ -640,8 +649,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
         uint32_t ins = p->instructions[j];
         if (uinstr_op(ins) == OP_LOADK) {
             uint16_t bx = uinstr_bx(ins);
-            if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
-                module.constants[bx].v.i == 42) {
+            if (p->constants[bx].kind == (uint8_t)UVAL_INT &&
+                p->constants[bx].v.i == 42) {
                 keep_slot = (int)uinstr_a(ins);
             }
         }
@@ -694,8 +703,8 @@ UTEST(emit_throw_does_not_clobber_local) {
             uint32_t ins = q->instructions[j];
             if (uinstr_op(ins) == OP_LOADK) {
                 uint16_t bx = uinstr_bx(ins);
-                if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
-                    module.constants[bx].v.i == 42) has_42 = true;
+                if (q->constants[bx].kind == (uint8_t)UVAL_INT &&
+                    q->constants[bx].v.i == 42) has_42 = true;
             }
             if (uinstr_op(ins) == OP_THROW) has_throw = true;
         }
@@ -712,8 +721,8 @@ UTEST(emit_throw_does_not_clobber_local) {
         uint32_t ins = p->instructions[j];
         if (uinstr_op(ins) == OP_LOADK) {
             uint16_t bx = uinstr_bx(ins);
-            if (module.constants[bx].kind == (uint8_t)UVAL_INT &&
-                module.constants[bx].v.i == 42) {
+            if (p->constants[bx].kind == (uint8_t)UVAL_INT &&
+                p->constants[bx].v.i == 42) {
                 keep_slot = (int)uinstr_a(ins);
             }
         }
@@ -832,6 +841,8 @@ void test_emit_freereg_drift_suite(void) {
               emit_call_too_many_args_returns_error);
     utest_run("emit_tag_prefix_rejects_high_spill_register",
               emit_tag_prefix_rejects_high_spill_register);
-    /* T15-T18 added below; held back from registration until each fix
+    utest_run("emit_if_arm_pops_nested_var_decl",
+              emit_if_arm_pops_nested_var_decl);
+    /* T16-T18 added below; held back from registration until each fix
      * lands to keep the suite green between commits. */
 }

@@ -344,13 +344,30 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
             uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + end_offset)));
     }
 
-    /* Advance past rd so callers can free it as a temp if needed. */
+    /* Advance next_reg past rd so callers can allocate above the result
+     * via alloc_reg.  Match emit_compare_arm's protocol: rd is a TEMP
+     * (the if-expr's value), not a local.  Do NOT bump fs->freereg —
+     * forcing freereg = rd + 1 leaks slot rd into the local-zone floor
+     * for siblings that route through fs->freereg (e.g., subsequent
+     * uemit_declare_local under SEP_SEMI between-stmt handling, which
+     * uses fs->freereg as the next local's slot index).
+     *
+     * EMIT-016 fix (Wave 5, v0.5.7): pre-fix the trailing
+     * `fs->freereg = next_reg` line forced a `var b = init` after
+     * `if (cond) { var x = init; x };` to land at slot rd+1 (e.g., 3)
+     * instead of the actually-free slot rd (e.g., 2), wasting a register
+     * across the function's lifetime — the leak compounds across nested
+     * conditionals, inflating proto.max_reg unnecessarily.
+     *
+     * The if-expr's caller is responsible for the rd register: the
+     * NARY/BLOCK between-stmt reset releases rd via fs_temp_floor; the
+     * assign-arm and similar consumers read rd before allocating new
+     * temps. */
     e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs != NULL) {
         if (e->next_reg > e->current_fs->max_reg_seen)
             e->current_fs->max_reg_seen = e->next_reg;
-        e->current_fs->freereg = e->next_reg;
     }
 
     return rd;
