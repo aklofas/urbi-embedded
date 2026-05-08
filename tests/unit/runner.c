@@ -145,6 +145,7 @@ extern void test_tag_stop_onleave_scripted_suite(void);
 extern void test_event_sync_emit_scripted_suite(void);
 extern void test_emit_freereg_drift_suite(void);
 extern void test_emit_error_paths_suite(void);
+extern void test_vm_dispatch_ownership_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -266,6 +267,7 @@ static const struct suite_entry suites[] = {
     {"event_sync_emit_scripted",  test_event_sync_emit_scripted_suite},
     {"emit_freereg_drift",        test_emit_freereg_drift_suite},
     {"emit_error_paths",          test_emit_error_paths_suite},
+    {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
     /* Add new suites here as test files are added. */
 };
 
