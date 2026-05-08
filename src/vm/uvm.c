@@ -1202,18 +1202,12 @@ dispatch:
                 NEXT();
             }
 
-            /* Resolve IC table.  NOTE: this site is missing the entry_closure
-             * branch present in ic_resolve_pi — known VM-001 bug; wave-5-fixes. */
-            UProtoInstance *pi = NULL;
-            if (s->frame_count == 0) {
-                if (s->module_instance != NULL
-                    && s->module_instance->proto_instances != NULL) {
-                    pi = &s->module_instance->proto_instances->entries[0];
-                }
-            } else {
-                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
-                if (cur_cl != NULL) pi = cur_cl->proto_inst;
-            }
+            /* Resolve IC table.  Mirrors ic_resolve_pi (VM-008): at
+             * frame_count == 0, prefer s->entry_closure->proto_inst when
+             * present so closures imported from a foreign module/chunk
+             * use their own IC table rather than the calling chunk's
+             * entries[0].  VM-001 closed in v0.5.7-fixes Phase 5. */
+            UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT_CHANGE_EVENT: no IC table bound");
