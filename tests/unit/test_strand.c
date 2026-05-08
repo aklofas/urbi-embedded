@@ -244,6 +244,47 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-015 (T103): urbi_strand_destroy on a READY strand must unlink it from
+   the ready queue's neighbour pointers BEFORE clearing local ready_next/prev.
+   Otherwise the queue head/tail or surviving siblings hold dangling pointers
+   into freed memory.  Test: spawn three strands, destroy the middle one, and
+   verify head/tail and the surviving strands' ready_next/prev form a clean
+   2-element list with no references to the freed strand. */
+UTEST(strand_destroy_unlinks_from_ready_queue_first) {
+    setup_vm_realm();
+
+    UStrand *a = urbi_strand_spawn(g_realm, NULL);
+    UStrand *b = urbi_strand_spawn(g_realm, NULL);
+    UStrand *c = urbi_strand_spawn(g_realm, NULL);
+    UASSERT(a != NULL && b != NULL && c != NULL);
+    UASSERT_EQ(g_vm.strand_runnable_count, 3U);
+    UASSERT(g_vm.ready_head == a);
+    UASSERT(g_vm.ready_tail == c);
+    UASSERT(a->ready_next == b);
+    UASSERT(b->ready_prev == a);
+    UASSERT(b->ready_next == c);
+    UASSERT(c->ready_prev == b);
+
+    /* Destroy middle strand b — must splice cleanly out of the queue. */
+    urbi_strand_destroy(b);
+
+    /* Survivors form a 2-element queue: a → c. */
+    UASSERT_EQ(g_vm.strand_runnable_count, 2U);
+    UASSERT(g_vm.ready_head == a);
+    UASSERT(g_vm.ready_tail == c);
+    UASSERT(a->ready_next == c);
+    UASSERT(c->ready_prev == a);
+    UASSERT(a->ready_prev == NULL);
+    UASSERT(c->ready_next == NULL);
+
+    /* Drain remaining strands cleanly. */
+    sched_dequeue_ready_head(&g_vm);
+    sched_dequeue_ready_head(&g_vm);
+    urbi_strand_destroy(a);
+    urbi_strand_destroy(c);
+    teardown_vm_realm();
+}
+
 /* CHSTR-013 (T101): ustrand_destroy must not underflow vm->host_call_pending_count
    when it decrements via sched_strand_account_destroy.  Construct a strand with
    cross_strand_stop_pending set but vm->host_call_pending_count == 0 and verify
@@ -333,4 +374,6 @@ void test_strand_suite(void) {
     utest_run("strand_create_returns_null_on_cleanup_oom", strand_create_returns_null_on_cleanup_oom);
     utest_run("strand_destroy_does_not_underflow_host_call_pending",
               strand_destroy_does_not_underflow_host_call_pending);
+    utest_run("strand_destroy_unlinks_from_ready_queue_first",
+              strand_destroy_unlinks_from_ready_queue_first);
 }

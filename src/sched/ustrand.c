@@ -264,6 +264,22 @@ urbi_strand_destroy(UStrand *s)
         }
     }
 
+    /* CHSTR-015 (T103): unbind the strand from any scheduler queue BEFORE
+     * sched_strand_destroy zeroes the local ready_next/ready_prev pointers
+     * that sched_strand_unbind_from_ready_queue walks to fix up neighbours.
+     * sched_strand_destroy is then a pure local-pointer wipe; the strand's
+     * neighbours and the queue head/tail are already consistent.
+     *
+     * ustrand_destroy follows so that the cleanup-stack unwind / register-
+     * stack free / resource-chain release run with a strand that is no
+     * longer reachable from the scheduler — eliminates the race window
+     * where a concurrent sched_walk_roots (M3 cooperative: not actually
+     * concurrent, but spec-level "the GC sees the strand on the queue
+     * after we started tearing it down") would walk freed memory. */
+    if (vm != NULL) {
+        sched_strand_unbind_from_ready_queue(s);
+        sched_strand_unbind_from_sleep_queue(s);
+    }
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
