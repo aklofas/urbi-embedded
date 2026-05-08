@@ -155,6 +155,7 @@ extern void test_tag_barrier_suite(void);
 extern void test_object_in_place_barrier_suite(void);
 extern void test_module_loader_hardening_suite(void);
 extern void test_foundations_suite(void);
+extern void test_public_api_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -286,6 +287,7 @@ static const struct suite_entry suites[] = {
     {"object_in_place_barrier",   test_object_in_place_barrier_suite},
     {"module_loader_hardening",   test_module_loader_hardening_suite},
     {"foundations",               test_foundations_suite},
+    {"public_api",                test_public_api_suite},
     /* Add new suites here as test files are added. */
 };
 

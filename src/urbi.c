@@ -22,16 +22,21 @@ const char *urbi_version(void) { return URBI_VERSION; }
 
 /* urbi_panic: fatal runtime error.
  * Hosted: writes msg to stderr, then aborts.
- * Freestanding: spins forever (no OS abort). */
+ * Freestanding: spins forever (no OS abort).
+ *
+ * API-001: msg may be NULL (defensive); substituted with "<no diagnostic>"
+ * before fputs.  fputs(NULL, stderr) is undefined behavior on hosted libcs;
+ * the guard makes urbi_panic safe to call from any error path that may not
+ * have a message to attach. */
 URBI_NORETURN void
 urbi_panic(const char *msg)
 {
+    if (!msg) msg = "<no diagnostic>";
 #if __STDC_HOSTED__
     fputs(msg, stderr);
     fputc('\n', stderr);
     abort();
 #else
-    (void)msg;
     /* Freestanding: no abort() available.  Spin to halt execution.
      * Embedded BSPs may override by wrapping or patching this symbol. */
     for (;;) { /* spin */ }
