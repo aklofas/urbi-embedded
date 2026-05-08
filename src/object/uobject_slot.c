@@ -230,6 +230,16 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
  * new_shape->props_table[idx].  set_property_value mutates the existing
  * UProps in-place. */
 
+/* uvalue_eq — bitwise equality on a UValue's tag + payload.  Sufficient
+ * for the v1.0 "is this the same install value?" idempotent-install
+ * detection in urbi_object_install_property: pointer-identity for heap-
+ * bearing kinds, integer/float bit-equality otherwise. */
+static int
+uvalue_eq(UValue a, UValue b)
+{
+    return a.kind == b.kind && a.v.i == b.v.i;
+}
+
 int
 urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                              uint8_t flag_bit, UValue value)
@@ -246,6 +256,40 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
         && flag_bit != URBI_SLOT_FLAG_OSET
         && flag_bit != URBI_SLOT_FLAG_CONSTANT) {
         return -1;
+    }
+
+    /* OBJ-041: detect a TRUE no-op idempotent install — flag bit already
+     * set AND the existing UProps's relevant field already holds the
+     * same value.  In that case the install is observably equivalent to
+     * doing nothing: no shape transition, no UProps allocation, no
+     * topology_gen bump.
+     *
+     * The shape's per-slot 4-bit nibble in `flags` is the cheap source
+     * of truth for "is the bit already set?" — see ushape.c §4.1.  For
+     * indices >= 8 we conservatively skip the no-op detection because
+     * the v1.0 packed nibble doesn't represent those slots. */
+    if (idx < 8) {
+        const uint32_t shift      = (uint32_t)idx * 4U;
+        const uint32_t old_nibble = (obj->shape->flags >> shift) & 0xFU;
+        const int already_set = (old_nibble & ((uint32_t)flag_bit & 0xFU)) != 0U;
+        if (already_set
+            && obj->shape->props_table != NULL
+            && obj->shape->props_table[idx] != NULL) {
+            const UProps *cur = obj->shape->props_table[idx];
+            int same_value = 0;
+            if (flag_bit == URBI_SLOT_FLAG_OGET) {
+                same_value = uvalue_eq(cur->oget, value);
+            } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
+                same_value = uvalue_eq(cur->oset, value);
+            } else {
+                /* CONSTANT carries no payload; the bit-already-set check
+                 * above is sufficient — re-installing is a true no-op. */
+                same_value = 1;
+            }
+            if (same_value) {
+                return 0;   /* idempotent no-op: no allocation, no bump */
+            }
+        }
     }
 
     /* Materialise sibling shape (or clone) FIRST.  OBJ-006: if this
