@@ -205,6 +205,70 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
 }
 
 /* -----------------------------------------------------------------------
+ * T10 — EMIT-011: alloc_reg doesn't bump fs->max_reg_seen
+ *
+ * alloc_reg only updates the EMITTER's high-water (e->max_reg_seen)
+ * and not the per-FuncState fs->max_reg_seen.  uemit_close_function
+ * rolls fs->max_reg_seen into target_proto->max_reg when closing a
+ * nested function — so the nested proto's max_reg can under-report
+ * the actual peak register usage of its body.  At runtime the VM
+ * allocates only (proto->max_reg + 1) slots; under-reporting causes
+ * corruption.
+ *
+ * Trigger: nested function whose body uses multiple temps via
+ * leaf-expr alloc_reg paths (AST_INT, AST_BOOL, AST_NIL, AST_NOOP)
+ * but never goes through emit_compare or emit_ident which already
+ * sync fs->max_reg_seen.
+ * ----------------------------------------------------------------------- */
+
+UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* Inner function body: chained AST_BINARY over integer literals
+     * only — AST_INT goes through alloc_reg, which pre-fix did not
+     * sync fs->max_reg_seen.  No AST_IDENT or AST_COMPARE in the
+     * body, both of which already sync the FuncState high water.
+     *
+     * Pre-fix: peak register usage reaches r2 (LHS=1 at r1, RHS=2 at r2,
+     * OP_ADD r1,r1,r2), but fs->max_reg_seen stays at 1 (the
+     * global_slot pre-reservation).  proto.max_reg = 1 — VM allocates
+     * 2 slots, instruction references r2 → out-of-bounds at runtime.
+     *
+     * Post-fix: alloc_reg syncs fs->max_reg_seen, so proto.max_reg
+     * tracks the actual peak. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "function f() { return function () { return 1 + 2; }; }");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* The inner ()->(1+2) proto: nparams==0.  Both nested protos have
+     * nparams==0 (f and the inner closure); pick the one whose
+     * instructions contain OP_ADD. */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            if (uinstr_op(q->instructions[j]) == OP_ADD) {
+                p = q;
+                break;
+            }
+        }
+        if (p != NULL) break;
+    }
+    UASSERT(p != NULL);
+
+    /* Peak register usage is r2 (OP_ADD's C operand).  proto.max_reg
+     * must be >= 2 so the VM allocates >= 3 slots. */
+    UASSERT(p->max_reg >= 2U);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -217,4 +281,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_watcher_install_freereg_balanced_whenever);
     utest_run("emit_watcher_install_freereg_balanced_at_event",
               emit_watcher_install_freereg_balanced_at_event);
+    utest_run("emit_nested_proto_max_reg_includes_inner_temps",
+              emit_nested_proto_max_reg_includes_inner_temps);
 }

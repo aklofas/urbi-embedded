@@ -137,11 +137,26 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 
 /* Bump the register-allocator cursor and track high-water mark.
  * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
- * all 256 slots are consumed (cursor at 255 before call). */
+ * all 256 slots are consumed (cursor at 255 before call).
+ *
+ * EMIT-011 fix (Wave 5, v0.5.7): also bump the per-FuncState
+ * fs->max_reg_seen.  uemit_close_function rolls fs->max_reg_seen into
+ * the nested proto's max_reg; the VM allocates (proto->max_reg + 1)
+ * register slots at runtime.  Pre-fix, alloc_reg only updated the
+ * EMITTER's global high-water (e->max_reg_seen), so leaf-expression
+ * paths (AST_INT / AST_BOOL / AST_NIL / AST_NOOP) that allocate
+ * temps without going through emit_compare or emit_ident (which sync
+ * fs->max_reg_seen explicitly) caused proto->max_reg to under-report
+ * the actual peak — out-of-bounds register access at runtime.
+ *
+ * NULL-guard on current_fs: alloc_reg may be called during the brief
+ * window before uemit_statement opens the lazy top-level FuncState. */
 static inline uint8_t alloc_reg(UEmitter *e) {
     if (e->next_reg == 255U) { e->error = EMIT_REG_EXHAUSTED; return 0U; }
     uint8_t r = e->next_reg++;
     if (r > e->max_reg_seen) e->max_reg_seen = r;
+    if (e->current_fs != NULL && r > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = r;
     return r;
 }
 
