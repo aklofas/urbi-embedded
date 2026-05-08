@@ -391,6 +391,6 @@ test_watcher_ownership_suite(void)
               waituntil_immediate_wake_state_explicit);
     utest_run("aliased_proto_closure_unlink_no_double_detach",
               aliased_proto_closure_unlink_no_double_detach);
-    /* T47 test registered as its per-task fix lands. */
-    (void)unknown_watcher_mode_does_not_change_state_in_release;
+    utest_run("unknown_watcher_mode_does_not_change_state_in_release",
+              unknown_watcher_mode_does_not_change_state_in_release);
 }
