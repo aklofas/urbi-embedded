@@ -480,6 +480,14 @@ tidy: compile_commands.json
 tidy-fix: compile_commands.json
 	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
 
+# Strict clang-tidy checklist: bug-prone + cert + analyzer + narrowing.
+# Configured via .clang-tidy.strict (parallel to .clang-tidy used by `tidy`).
+# Suppressions catalog at .clang-tidy.suppressions.
+# Informational at v0.5.7 baseline; promoted to releasetest gate in T118.
+.PHONY: test-tidy-strict
+test-tidy-strict: ## Run clang-tidy strict checklist over src/
+	@bash tools/scripts/run_strict_tidy.sh build/strict-tidy-out.txt
+
 # Static analysis — cppcheck (advisory).
 # Different engine from clang-tidy; catches value-flow, UAF, null-deref
 # that clang-tidy's AST-level checks miss.  Exits 0 regardless of
@@ -600,4 +608,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
