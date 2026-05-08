@@ -8,7 +8,10 @@ OUT="${1:-build/scan-build-out.txt}"
 HTML_DIR="${2:-build/scan-build-html}"
 mkdir -p "$(dirname "$OUT")" "$HTML_DIR"
 
-"$SCAN_BUILD" --status-bugs -o "$HTML_DIR" make 2>&1 | tee "$OUT"
+# T118: build into a dedicated tree so concurrent releasetest gates that
+# share build/host/ (test, lint, ...) do not race with scan-build's
+# instrumented compile.
+"$SCAN_BUILD" --status-bugs -o "$HTML_DIR" make TARGET=host-scan-build all 2>&1 | tee "$OUT"
 RC=${PIPESTATUS[0]}
 
 if [[ "$RC" -ne 0 ]]; then

@@ -3,6 +3,7 @@
 ## Unreleased — Wave 5 of v0.5.x cleanup ramp (v0.5.7 candidate)
 
 ### Fixed
+
 - (in progress) 123 audit findings dispositioned `wave-5-fixes` plus 4
   carry-forwards (API-004, WATCH-023, EMIT-019 underlying, FOUND-032)
   plus 3 Wave-4 forward-looking items (ic_names symbol-table verifier
@@ -10,9 +11,12 @@
   nparams range check at proto decode).
 
 ### Added
+
 - Strict-tooling gates: `make test-tidy-strict`, `make test-cppcheck`,
   `make test-scan-build`, `make test-corpus-sanitize`,
-  `make test-branch-coverage`. Promoted to `make releasetest`.
+  `make test-branch-coverage`. `test-scan-build` promoted to
+  `make releasetest` at T118 (clean baseline); `test-tidy-strict` and
+  `test-cppcheck` remain informational pending residual clean-up.
 - `tests/scripts/capture_wire_format_hashes.sh` (filed at v0.5.6
   backlog as a Wave-4 deferral).
 - `tests/golden/v0.5.7-fixes-bytecode-hashes.txt` (post-Wave-5 disasm
@@ -22,6 +26,7 @@
   Wave-5 Gate G1 (TDD-per-fix-commit discipline).
 
 ### Changed
+
 - `urbi_run_chunk` signature: realm argument now threaded through
   `urbi_vm_run` (closes API-004; signature change cascades to all
   callers).

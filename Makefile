@@ -257,9 +257,19 @@ valgrind-tools:
 
 # Phase 1: every CPU-bound gate that doesn't compete badly with valgrind.
 # Runs concurrently under -j$(RELEASETEST_JOBS).
+#
+# T118: test-scan-build promoted into releasetest after Phase 19 closed
+# its known false-positive set ("scan-build: No bugs found." at v0.5.7).
+# test-tidy-strict and test-cppcheck remain informational at v0.5.7
+# (25 / 145 residual violations respectively, all non-trivial categories
+# tracked in docs/urbi-embedded-backlog.md "Strict-tooling residuals" —
+# bugprone-branch-clone, performance-no-int-to-ptr, and clang-analyzer-
+# valist need either targeted refactors or per-site NOLINT review).
+# Promote those two to hard gates after the residuals close.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
-    lint docs-check coverage test-stress test-gc-none-build
+    lint docs-check coverage test-stress test-gc-none-build \
+    test-scan-build
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer

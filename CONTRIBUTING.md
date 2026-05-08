@@ -36,9 +36,7 @@ closes coverage gaps and the gate enables (`--fail-under-branch 75`) once
 baseline exceeds threshold. Drops below threshold flag PRs; either close
 the gap in the same commit or document at the bottom of the affected file:
 
-```c
-// AUDIT: branch <description> covered indirectly via tests/path/test_other.c
-```
+    // AUDIT: branch <description> covered indirectly via tests/path/test_other.c
 
 ## Cross-compile sanity
 
