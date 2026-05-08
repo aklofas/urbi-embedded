@@ -168,7 +168,19 @@ void
 sched_strand_make_runnable(UStrand *s)
 {
     /* Tail-insertion into the FIFO ready queue.
-       Per row 12 §3: single entry point for DORMANT/WAITING → READY. */
+       Per row 12 §3: single entry point for DORMANT/WAITING → READY.
+
+       CHSTR-042 (T107): reject DEAD strands as a production fail-safe.
+       A DEAD strand has had its register stack freed and its cleanup
+       chain unwound; re-enqueueing one would dispatch into freed memory
+       (and double-count strand_runnable_count, blocking quiescence).  In
+       -DURBI_DEBUG the assert below trips at the call site.  In production
+       the early return prevents the corruption silently — the strand
+       simply stays DEAD and the caller's ++count is skipped.  No legitimate
+       caller drives a DEAD → READY transition; the path is purely defensive
+       against future refactors that lose track of strand state. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) != USTRAND_DEAD);
+    if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     s->state      = USTRAND_STATE_READY;
     s->ready_next = NULL;

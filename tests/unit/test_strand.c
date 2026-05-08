@@ -244,6 +244,43 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-042 (T107): sched_strand_make_runnable rejects a DEAD strand silently
+   in production (NDEBUG) builds AND asserts in debug builds.  Without this
+   guard a re-enqueue of a DEAD strand would re-set state to READY, bump
+   strand_runnable_count, and dispatch into a freed register stack.
+
+   Production-build test (NDEBUG): the early return is exercised; default
+   builds (assert enabled) trip the URBI_INTERNAL_ASSERT before the early
+   return.  Compile-guarded so the test runs only under NDEBUG, which is
+   the production-flavour build that observes the silent fail-safe. */
+#ifdef NDEBUG
+UTEST(make_runnable_rejects_dead_strand) {
+    setup_vm_realm();
+
+    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UASSERT(s != NULL);
+    UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
+
+    /* Force-mark DEAD without going through the proper teardown path so
+       we can exercise the make_runnable guard directly. */
+    s->state = USTRAND_STATE_DEAD;
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
+    UASSERT(g_vm.ready_head == NULL);
+
+    /* Production fail-safe: should be a no-op. */
+    sched_strand_make_runnable(s);
+    UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DEAD);  /* state UNCHANGED */
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);       /* counter UNCHANGED */
+    UASSERT(g_vm.ready_head == NULL);                 /* queue still empty */
+    UASSERT(g_vm.ready_tail == NULL);
+
+    /* Reset state so urbi_strand_destroy doesn't trip its own asserts. */
+    s->state = USTRAND_STATE_DORMANT;
+    urbi_strand_destroy(s);
+    teardown_vm_realm();
+}
+#endif
+
 /* CHSTR-015 (T103): urbi_strand_destroy on a READY strand must unlink it from
    the ready queue's neighbour pointers BEFORE clearing local ready_next/prev.
    Otherwise the queue head/tail or surviving siblings hold dangling pointers
@@ -376,4 +413,8 @@ void test_strand_suite(void) {
               strand_destroy_does_not_underflow_host_call_pending);
     utest_run("strand_destroy_unlinks_from_ready_queue_first",
               strand_destroy_unlinks_from_ready_queue_first);
+#ifdef NDEBUG
+    utest_run("make_runnable_rejects_dead_strand",
+              make_runnable_rejects_dead_strand);
+#endif
 }
