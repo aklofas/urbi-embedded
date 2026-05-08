@@ -39,14 +39,16 @@ const char *urbi_version(void) { return URBI_VERSION; }
 URBI_NORETURN void
 urbi_panic(const char *msg)
 {
-    if (!msg) msg = "<no diagnostic>";
 #if __STDC_HOSTED__
+    if (!msg) msg = "<no diagnostic>";
     fputs(msg, stderr);
     fputc('\n', stderr);
     abort();
 #else
-    /* Freestanding: no abort() available.  Spin to halt execution.
+    /* Freestanding: no fputs/abort.  Mark msg consumed (cppcheck would
+     * otherwise flag it as never-read) and spin to halt execution.
      * Embedded BSPs may override by wrapping or patching this symbol. */
+    (void)msg;
     for (;;) { /* spin */ }
 #endif
 }
