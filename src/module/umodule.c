@@ -70,8 +70,21 @@ static bool module_grow_with_alloc(UModuleAllocFn alloc, void *alloc_ud,
                                    size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
     if (alloc == NULL) return false;
+    /* MOD-004: defend against new_cap * elem_size overflow at the helper
+     * boundary, so wire-format count fields that slip past per-section
+     * caps cannot reach the allocator with a wrap-truncated byte count.
+     * Caller-side caps (URBI_MAX_INSTRS_PER_PROTO, n_const cap, etc.)
+     * are the primary line of defense; this is belt-and-braces. */
+    if (elem_size != 0U && new_cap > SIZE_MAX / elem_size) return false;
     size_t target = *cap == 0U ? 8U : *cap;
-    while (target < new_cap) target *= 2U;
+    while (target < new_cap) {
+        /* Doubling-loop overflow guard: if target would wrap, snap to
+         * new_cap (the smallest cap that satisfies the request). */
+        if (target > SIZE_MAX / 2U) { target = new_cap; break; }
+        target *= 2U;
+    }
+    /* Re-verify target * elem_size after the doubling loop. */
+    if (elem_size != 0U && target > SIZE_MAX / elem_size) return false;
     void *fresh = alloc(*data, target * elem_size, alloc_ud);
     if (fresh == NULL) return false;
     *data = fresh;

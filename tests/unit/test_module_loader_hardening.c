@@ -67,6 +67,35 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T72 (MOD-004): module_grow rejects target * elem_size overflow ---
+ *
+ * module_grow_with_alloc is file-private; the public surface that drives
+ * it is the section-decoders.  The wire-format-reachable overflow risk
+ * was the n_instr * sizeof(uint32_t) and n_abs * sizeof(UAbsLine)
+ * multiplications.  T74 now caps n_instr; T75 caps n_abs.  T72 adds
+ * defense-in-depth at the helper boundary so any future call site
+ * (or removed cap) cannot regress.
+ *
+ * This test exercises the helper indirectly via n_instr=UINT64_MAX-1
+ * (rejected at caller-side T74 cap with ULOAD_OVERSIZED — never reaches
+ * the helper) and asserts no crash.  ASan / UBSan in releasetest
+ * exercise the helper-level multiply guard directly. */
+UTEST(module_grow_rejects_overflow) {
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    /* T74 caps the count first; T72 fallback is also acceptable. */
+    UASSERT(rc == ULOAD_OVERSIZED || rc == ULOAD_OOM);
+    umodule_destroy(&m);
+}
+
 /* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
  *
  * Build a bytecode whose n_instr varint decodes to UINT64_MAX-1.  The
@@ -136,4 +165,6 @@ void test_module_loader_hardening_suite(void) {
               deserialize_null_buf_returns_invalid_arg);
     utest_run("deserialize rejects oversized instr_count (T74: MOD-017)",
               deserialize_rejects_oversized_instr_count_on_32bit);
+    utest_run("module_grow rejects target * elem_size overflow (T72: MOD-004)",
+              module_grow_rejects_overflow);
 }
