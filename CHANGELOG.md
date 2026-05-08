@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased
+## Unreleased — Wave 5 of v0.5.x cleanup ramp (v0.5.7 candidate)
+
+### Fixed
+- (in progress) 123 audit findings dispositioned `wave-5-fixes` plus 4
+  carry-forwards (API-004, WATCH-023, EMIT-019 underlying, FOUND-032)
+  plus 3 Wave-4 forward-looking items (ic_names symbol-table verifier
+  cross-validation, deeply-nested closure verifier sanity, nupvals/
+  nparams range check at proto decode).
+
+### Added
+- Strict-tooling gates: `make test-tidy-strict`, `make test-cppcheck`,
+  `make test-scan-build`, `make test-corpus-sanitize`,
+  `make test-branch-coverage`. Promoted to `make releasetest`.
+- `tests/scripts/capture_wire_format_hashes.sh` (filed at v0.5.6
+  backlog as a Wave-4 deferral).
+- `tests/golden/v0.5.7-fixes-bytecode-hashes.txt` (post-Wave-5 disasm
+  baseline) and `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
+  (first-ever on-disk wire-byte baseline).
+- Co-located regression tests for every `src/*.c` fix commit per
+  Wave-5 Gate G1 (TDD-per-fix-commit discipline).
+
+### Changed
+- `urbi_run_chunk` signature: realm argument now threaded through
+  `urbi_vm_run` (closes API-004; signature change cascades to all
+  callers).
+- Full-corpus ASan + UBSan + valgrind gate (all 148 `.chk` fixtures)
+  is now standing CI; was a curated subset.
+- `URBI_VERSION` literal updated to "0.5.7-fixes" (closes API-011).
 
 ## v0.5.6-bytecode — 2026-05-07
 
