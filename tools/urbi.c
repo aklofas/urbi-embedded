@@ -40,6 +40,8 @@ static void print_usage(FILE *out) {
         "  <file>               run <file> as a source script (positional)\n"
         "  --dump-bytecode      print disassembly instead of running\n"
         "                       (combine with -e <expr> or a file)\n"
+        "  --dump-wire-format   print on-disk serialized wire-format bytes (raw binary)\n"
+        "                       to stdout instead of running (combine with -e or file)\n"
         "\n"
         "Options:\n"
         "  --version, -V        print version and exit\n"
@@ -121,6 +123,52 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
     fwrite(buf, 1, n, stdout);
     if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    return 0;
+}
+
+/* Compile src and write the on-disk wire-format bytes to stdout (raw binary).
+   Used by tests/scripts/capture_wire_format_hashes.sh to hash the genuine
+   wire-format shape, complementing capture_bytecode_hashes.sh which hashes
+   the disassembled mnemonic text.  Returns 0 on success, 1 on compile or
+   serialize error. */
+static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
+                                const char *src_name) {
+    UArena arena;
+    UModule module;
+    char err[256] = {0};
+    if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
+        fprintf(stderr, "urbi: %s\n", err);
+        return 1;
+    }
+    /* First-pass: query required size.  umodule_serialize returns a negative
+       value on failure (-(ptrdiff_t)UModuleLoadError code). */
+    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    if (need < 0) {
+        fprintf(stderr, "urbi: serialize size-query failed: %ld\n", (long)-need);
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return 1;
+    }
+    uint8_t *buf = malloc((size_t)need);
+    if (!buf) {
+        fprintf(stderr, "urbi: out of memory\n");
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return 1;
+    }
+    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    if (wrote != need) {
+        fprintf(stderr, "urbi: serialize wrote %ld, expected %ld\n",
+                (long)wrote, (long)need);
+        free(buf);
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return 1;
+    }
+    fwrite(buf, 1, (size_t)need, stdout);
+    free(buf);
     umodule_destroy(&module);
     uarena_destroy(&arena);
     return 0;
@@ -378,16 +426,22 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Scan for --dump-bytecode; incompatible with -i. */
+    /* Scan for --dump-bytecode and --dump-wire-format; both incompatible with -i. */
     bool dump = false;
+    bool dump_wire = false;
     bool want_interactive = false;
     for (int i = 1; i < argc; i++) {
         if (eq(argv[i], "--dump-bytecode")) dump = true;
+        if (eq(argv[i], "--dump-wire-format")) dump_wire = true;
         if (eq(argv[i], "-i")) want_interactive = true;
     }
 
-    if (dump && want_interactive) {
-        fprintf(stderr, "urbi: --dump-bytecode requires -e <expr> or a file\n");
+    if ((dump || dump_wire) && want_interactive) {
+        fprintf(stderr, "urbi: --dump-bytecode/--dump-wire-format requires -e <expr> or a file\n");
+        return 2;
+    }
+    if (dump && dump_wire) {
+        fprintf(stderr, "urbi: --dump-bytecode and --dump-wire-format are mutually exclusive\n");
         return 2;
     }
 
@@ -474,6 +528,51 @@ int main(int argc, char *argv[]) {
             return rc;
         }
         fprintf(stderr, "urbi: --dump-bytecode requires -e <expr> or a file\n");
+        return 2;
+    }
+
+    /* --dump-wire-format dispatch: compile and serialize raw bytes, no execution. */
+    if (dump_wire) {
+        if (expr) {
+            /* Append " |" to terminate the statement, matching run_expression. */
+            size_t len = strlen(expr);
+            char *buf = malloc(len + 3);
+            if (!buf) { fprintf(stderr, "urbi: out of memory\n"); return 1; }
+            memcpy(buf, expr, len);
+
+            size_t t = len;
+            while (t > 0 && (buf[t - 1] == ' ' || buf[t - 1] == '\t' ||
+                             buf[t - 1] == '\n' || buf[t - 1] == '\r')) t--;
+
+            size_t final_len;
+            if (t > 0 && buf[t - 1] == '|') {
+                buf[len] = '\0';
+                final_len = len;
+            } else {
+                buf[len]     = ' ';
+                buf[len + 1] = '|';
+                buf[len + 2] = '\0';
+                final_len = len + 2;
+            }
+            UVM vm;
+            urbi_vm_init(&vm, NULL, NULL);
+            int rc = run_dump_wire_format(&vm, buf, final_len, "<expr>");
+            urbi_vm_destroy(&vm);
+            free(buf);
+            return rc;
+        }
+        if (file_arg) {
+            size_t flen = 0;
+            char *src = slurp(file_arg, &flen);
+            if (!src) return 2;
+            UVM vm;
+            urbi_vm_init(&vm, NULL, NULL);
+            int rc = run_dump_wire_format(&vm, src, flen, file_arg);
+            urbi_vm_destroy(&vm);
+            free(src);
+            return rc;
+        }
+        fprintf(stderr, "urbi: --dump-wire-format requires -e <expr> or a file\n");
         return 2;
     }
 
