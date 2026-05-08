@@ -239,7 +239,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
      * Post-fix: alloc_reg syncs fs->max_reg_seen, so proto.max_reg
      * tracks the actual peak. */
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function f() { return function () { return 1 + 2; }; }");
+        "var f = function() { return function () { return 1 + 2; }; }");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     /* The inner ()->(1+2) proto: nparams==0.  Both nested protos have
@@ -298,7 +298,7 @@ UTEST(emit_free_reg_respects_temp_floor) {
      * OP_ADD must release the rhs temp without underflowing into a's
      * or b's local slot. */
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function f() { var a = 1; var b = 2; return a + b; }");
+        "var f = function() { var a = 1; var b = 2; return a + b; }");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     /* Locate f's nested proto (the only one with nparams=0 and an OP_ADD). */
@@ -495,7 +495,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
      * next_reg high enough that emit_ident_arm("t") returns dst >= 16,
      * forcing the > 15 spill branch in emit_tag_prefix_arm. */
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function f() {"
+        "var f = function() {"
         " var t = 0;"
         " var l1=1;  var l2=2;  var l3=3;  var l4=4;"
         " var l5=5;  var l6=6;  var l7=7;  var l8=8;"
@@ -542,7 +542,7 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
     UModule module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function f() {"
+        "var f = function() {"
         " var a = 1;"
         " if (a > 0) { var x = 5; x };"
         " var b = 7;"
@@ -616,8 +616,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
     UModule module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function helper() { 0 };"
-        "function f() {"
+        "var helper = function() { 0 };"
+        "var f = function() {"
         " var keep = 42;"
         " helper();"
         " return;"
@@ -701,8 +701,8 @@ UTEST(emit_throw_does_not_clobber_local) {
     UModule module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function helper() { 0 };"
-        "function f() {"
+        "var helper = function() { 0 };"
+        "var f = function() {"
         " var keep = 42;"
         " helper();"
         " throw 1;"
@@ -785,7 +785,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
      * else-body.  Verify each JMP's encoded Bx, when un-biased,
      * equals (target_pc - jmp_pc - 1). */
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function f() {"
+        "var f = function() {"
         " var a = 1;"
         " if (a > 0) { a = 2 } else { a = 3 };"
         " return a;"

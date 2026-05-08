@@ -180,9 +180,13 @@ UTEST(parse_function_two_params) {
     UASSERT_EQ(PARSE_OK, fn_parse_error("function(a, b) { a + b }"));
 }
 
-UTEST(parse_function_named_with_parens) {
-    /* function name(...) { body } is still accepted in parser (name ignored) */
-    UASSERT_EQ(PARSE_OK, fn_parse_error("function foo(x) { x + 1 }"));
+UTEST(parse_function_with_name_returns_explicit_error) {
+    /* PARSE-004: v1.0 grammar does not support named-function declarations.
+     * Pre-fix the parser silently consumed and discarded the name; now it
+     * rejects with a dedicated error code.  v1.x backlog: capture the name
+     * and bind it as a local at function entry. */
+    UASSERT_EQ(PARSE_NAMED_FUNCTION_NOT_SUPPORTED,
+               fn_parse_error("function foo(x) { x + 1 }"));
 }
 
 UTEST(parse_function_lazy_param) {
@@ -331,10 +335,11 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     urbi_vm_destroy(&vm);
 }
 
-UTEST(vm_named_function_def_produces_closure) {
-    /* function name(params) { body } — name is ignored at v1.0, still works */
+UTEST(vm_anon_function_def_produces_closure) {
+    /* PARSE-004: named-function syntax is rejected at v1.0; the canonical
+     * way to bind a closure to a name is `var f = function(...){...}`. */
     UValue out;
-    UVMError rc = fn_eval("function add(a, b) { a + b }", &out);
+    UVMError rc = fn_eval("function(a, b) { a + b }", &out);
     UASSERT_EQ(UVM_OK, rc);
     UASSERT_EQ(UVAL_CLOSURE, out.kind);
 }
@@ -489,8 +494,8 @@ void test_function_suite(void) {
               parse_function_one_param);
     utest_run("parse function(a,b): two params accepted",
               parse_function_two_params);
-    utest_run("parse function name(...): named form accepted",
-              parse_function_named_with_parens);
+    utest_run("parse function name(...): rejected PARSE_NAMED_FUNCTION_NOT_SUPPORTED (PARSE-004)",
+              parse_function_with_name_returns_explicit_error);
     utest_run("parse function(lazy x): lazy param accepted",
               parse_function_lazy_param);
     utest_run("parse bare function name{}: rejected PARSE_BARE_FUNCTION",
@@ -515,8 +520,8 @@ void test_function_suite(void) {
               vm_function_zero_param_produces_closure);
     utest_run("vm: non-capturing function has nupvals == 0",
               vm_function_captures_nothing_nupvals_zero);
-    utest_run("vm: named function def → UVAL_CLOSURE",
-              vm_named_function_def_produces_closure);
+    utest_run("vm: anon function def → UVAL_CLOSURE",
+              vm_anon_function_def_produces_closure);
     utest_run("vm: function body proto has instructions",
               vm_function_body_has_instructions);
 

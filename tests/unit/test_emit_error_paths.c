@@ -118,7 +118,7 @@ UTEST(emit_close_function_propagates_prologue_oom)
      * follow must be gated on e->error so they do not extend a proto
      * whose instructions buffer is in an indeterminate partial-shift
      * state. */
-    const char *src = "function f() { return g + 1 }";
+    const char *src = "var f = function() { return g + 1 }";
 
     /* Probe successful run for the alloc count baseline. */
     int total;
@@ -159,7 +159,7 @@ UTEST(emit_function_literal_clean_on_intern_oom)
      * OOM left a half-initialised UProto stuck in module->nested[].  The
      * fix interns all names BEFORE allocating child_proto, so an intern
      * OOM short-circuits with module->nested_count unchanged. */
-    const char *src = "function f(a, b, c) { return a + b + c }";
+    const char *src = "var f = function(a, b, c) { return a + b + c }";
 
     int total;
     {
@@ -199,7 +199,7 @@ UTEST(emit_close_function_propagates_ic_array_oom)
      * also zeroed p->ic_count (silent zeroing); post-fix p->ic_count
      * stays at its zero-init value and the error propagates via
      * e->error alone, matching the module-sibling path. */
-    const char *src = "function f(o) { return o.a + o.b + o.c }";
+    const char *src = "var f = function(o) { return o.a + o.b + o.c }";
 
     int total;
     {
@@ -236,7 +236,7 @@ UTEST(emit_expr_rejects_arrow_prop_get)
      * than the prior NOLINT-suppressed default fall-through.  This test
      * locks in that behaviour as a regression seat. */
     ECtx c;
-    ectx_init(&c, "function f(o) { return o.x->y }", -1);
+    ectx_init(&c, "var f = function(o) { return o.x->y }", -1);
     UEmitError rc = ectx_run(&c);
     UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
     UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);
@@ -247,7 +247,7 @@ UTEST(emit_expr_rejects_arrow_prop_set)
 {
     /* Arrow-access assignment `obj.x->y = v` parses to AST_PROP_SET. */
     ECtx c;
-    ectx_init(&c, "function f(o, v) { o.x->y = v }", -1);
+    ectx_init(&c, "var f = function(o, v) { o.x->y = v }", -1);
     UEmitError rc = ectx_run(&c);
     UASSERT_EQ(EMIT_UNSUPPORTED_AST, rc);
     UASSERT_EQ(EMIT_UNSUPPORTED_AST, c.e.error);

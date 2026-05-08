@@ -46,7 +46,8 @@ const char * const kErrorMessages[] = {
     "postfix '?' is only valid inside at(...); use 'at (e?) body' for event-subscribe",
     "multi-arg e!(x, y, z) is reserved for M6 (UList auto-boxing); use e!(x) with one arg",
     "bare '.changed' outside at(...) is a slot-change event; use: at (obj.x.changed?) body",
-    "slot-change event cannot be emitted; use slot assignment to trigger subscribers"
+    "slot-change event cannot be emitted; use slot assignment to trigger subscribers",
+    "named-function declarations are not supported at v1.0; use 'var name = function(...){...}'"
 };
 
 static const char * const kErrorNames[] = {
@@ -73,7 +74,8 @@ static const char * const kErrorNames[] = {
     "PARSE_QUESTION_OUTSIDE_AT",
     "PARSE_EMIT_MULTI_ARG_V1",
     "PARSE_SLOT_CHANGED_BARE_V1",
-    "PARSE_SLOT_CHANGED_EMIT_V1"
+    "PARSE_SLOT_CHANGED_EMIT_V1",
+    "PARSE_NAMED_FUNCTION_NOT_SUPPORTED"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -83,10 +85,10 @@ static const char * const kErrorNames[] = {
  * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
  * enumerator (added in M5 spec #4); update both forms together when
  * adding a new code.  Closes PARSE-017. */
-_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_NAMED_FUNCTION_NOT_SUPPORTED + 1,
                "kErrorNames length must match UParseError enum count");
 _Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
-               == (int)PARSE_SLOT_CHANGED_EMIT_V1 + 1,
+               == (int)PARSE_NAMED_FUNCTION_NOT_SUPPORTED + 1,
                "kErrorMessages length must match UParseError enum count");
 
 /* --- Postfix-emit method name.  Promoted to file scope so the postfix

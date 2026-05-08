@@ -140,7 +140,12 @@ typedef enum {
 
     /* M5 spec #4 additions */
     PARSE_SLOT_CHANGED_BARE_V1,       /* `obj.x.changed` outside at(?) — use at(obj.x.changed?) */
-    PARSE_SLOT_CHANGED_EMIT_V1        /* `obj.x.changed!` — slot-change event cannot be emitted */
+    PARSE_SLOT_CHANGED_EMIT_V1,       /* `obj.x.changed!` — slot-change event cannot be emitted */
+
+    /* v0.5.7 additions */
+    PARSE_NAMED_FUNCTION_NOT_SUPPORTED /* `function name(...){...}` — v1.0 has no
+                                           named-function decls; use
+                                           `var name = function(...){...}` */
 } UParseError;
 
 /*
