@@ -67,6 +67,48 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T78 (Wave-4): deeply-nested closure verifier sanity (regression) ---
+ *
+ * v0.5.6 T5 added Bx range check against nested_count.  Construct a
+ * v1.5 module with OP_CLOSURE referencing nested[Bx] >= root
+ * nested_count and verify the gate is preserved.
+ *
+ * Encoding note: emit a top-level OP_CLOSURE Bx=99 (root nested_count
+ * = 0).  Verifier walks root chunk first; the OP_CLOSURE Bx-range
+ * check must reject before reaching any nested-proto walk. */
+UTEST(deeply_nested_closure_verifier) {
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    off = hard_put_varint(buf, off, 2);      /* n_instr = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    /* OP_CLOSURE R0, Bx=99 — references nested[99] which doesn't exist. */
+    uint32_t closure = uinstr_enc_abx(OP_CLOSURE, 0, 99);
+    buf[off++] = (uint8_t)(closure & 0xFFU);
+    buf[off++] = (uint8_t)((closure >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((closure >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((closure >> 24) & 0xFFU);
+    /* OP_RET R0. */
+    uint32_t ret = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    buf[off++] = (uint8_t)(ret & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 24) & 0xFFU);
+    off = hard_put_varint(buf, off, 2);      /* n_deltas */
+    buf[off++] = 0; buf[off++] = 0;
+    off = hard_put_varint(buf, off, 0);      /* n_abs_lines */
+    off = hard_put_varint(buf, off, 0);      /* ic_count */
+    off = hard_put_varint(buf, off, 0);      /* nested_count = 0 */
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T77 (Wave-4): ic_names cross-validation ---
  *
  * Build a v1.5 module whose root-chunk ic_count exceeds the count of
@@ -270,4 +312,6 @@ void test_module_loader_hardening_suite(void) {
               deserialize_n_const_cap_is_strictly_greater_than);
     utest_run("ic_names with invalid indices rejected (T77: W4 carry)",
               ic_names_with_invalid_indices_rejected);
+    utest_run("deeply-nested closure verifier (T78: W4 carry, regression)",
+              deeply_nested_closure_verifier);
 }
