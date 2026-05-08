@@ -1299,6 +1299,7 @@ UTEST(module_load_error_name_all_codes) {
     UASSERT_EQ(0, strcmp("ULOAD_CORRUPT",             umodule_load_error_name(ULOAD_CORRUPT)));
     UASSERT_EQ(0, strcmp("ULOAD_OOM",                 umodule_load_error_name(ULOAD_OOM)));
     UASSERT_EQ(0, strcmp("ULOAD_INVALID_ARG",         umodule_load_error_name(ULOAD_INVALID_ARG)));
+    UASSERT_EQ(0, strcmp("ULOAD_OVERSIZED",           umodule_load_error_name(ULOAD_OVERSIZED)));
     /* Out-of-range code falls through to ULOAD_UNKNOWN sentinel. */
     UASSERT(umodule_load_error_name((UModuleLoadError)99) != NULL);
 }

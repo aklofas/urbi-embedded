@@ -383,6 +383,16 @@ static UModuleLoadError decode_instructions_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
+    /* MOD-017: cap instr_count BEFORE the (size_t)n_instr demotion below.
+     * On 32-bit ports a uint64_t > SIZE_MAX silently truncates; also
+     * defends against unbounded allocation request.  URBI_MAX_INSTRS_PER_PROTO
+     * is the documented cap. */
+    if (n_instr > (uint64_t)URBI_MAX_INSTRS_PER_PROTO) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "n_instructions=%llu exceeds URBI_MAX_INSTRS_PER_PROTO=%zu",
+                   (unsigned long long)n_instr, URBI_MAX_INSTRS_PER_PROTO);
+        return ULOAD_OVERSIZED;
+    }
     /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
     while ((d->off & 3U) != 0U) {
         if (d->off >= d->size) {
@@ -989,6 +999,7 @@ const char *umodule_load_error_name(UModuleLoadError code) {
     case ULOAD_CORRUPT:             return "ULOAD_CORRUPT";
     case ULOAD_OOM:                 return "ULOAD_OOM";
     case ULOAD_INVALID_ARG:         return "ULOAD_INVALID_ARG";
+    case ULOAD_OVERSIZED:           return "ULOAD_OVERSIZED";
     }
     return "ULOAD_UNKNOWN";
 }

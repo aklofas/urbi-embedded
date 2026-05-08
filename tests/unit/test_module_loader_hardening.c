@@ -67,6 +67,27 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
+ *
+ * Build a bytecode whose n_instr varint decodes to UINT64_MAX-1.  The
+ * loader must reject with ULOAD_OVERSIZED rather than silently truncate
+ * to size_t (a real concern on 32-bit ports). */
+UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    /* n_instr = UINT64_MAX-1; far above URBI_MAX_INSTRS_PER_PROTO. */
+    off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_OVERSIZED, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T73 (MOD-007): deserialize NULL buf returns ULOAD_INVALID_ARG --- */
 UTEST(deserialize_null_buf_returns_invalid_arg) {
     UModule m = {0};
@@ -113,4 +134,6 @@ void test_module_loader_hardening_suite(void) {
               deserialize_partial_failure_destroy_idempotent);
     utest_run("deserialize NULL buf returns ULOAD_INVALID_ARG (T73: MOD-007)",
               deserialize_null_buf_returns_invalid_arg);
+    utest_run("deserialize rejects oversized instr_count (T74: MOD-017)",
+              deserialize_rejects_oversized_instr_count_on_32bit);
 }

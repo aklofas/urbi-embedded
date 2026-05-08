@@ -401,8 +401,16 @@ typedef enum {
     ULOAD_CORRUPT_TAG,
     ULOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
     ULOAD_OOM,
-    ULOAD_INVALID_ARG             /* NULL module / NULL buf etc.; distinct from TRUNCATED */
+    ULOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
+    ULOAD_OVERSIZED               /* count fields exceed compile-time per-proto caps */
 } UModuleLoadError;
+
+/* Per-proto cap on instruction count.  Bytecode-encoded as varint;
+ * decoded into size_t.  The cap stops a malicious or corrupt module from
+ * requesting an n_instr that would either overflow size_t on 32-bit
+ * ports or balloon allocation past any plausible per-function budget.
+ * 1 MiB instructions is well past any human-authored source. */
+#define URBI_MAX_INSTRS_PER_PROTO ((size_t)(1U << 20))
 
 /* --- Proto helpers --- */
 
