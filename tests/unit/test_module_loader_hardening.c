@@ -67,6 +67,34 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T76 (MOD-019): n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
+ *
+ * Boundary regression: the cap formula in decode_constants_into is
+ * `n_const > (uint64_t)UINT16_MAX + 1U`.  UINT16_MAX = 65535, so cap is
+ * `> 65536`.  n_const = 65536 must be ACCEPTED (max valid value — every
+ * Bx in [0..65535] is in range); n_const = 65537 must be REJECTED.
+ *
+ * We exercise the reject side (65537) directly.  The accept side
+ * (65536) would require the test to actually buffer ~1 MiB of constant
+ * payloads, which is impractical here; the boundary test on the reject
+ * side combined with the existing
+ * deserialize_loads_integer_constant_pool test (which exercises small
+ * accept counts) is sufficient. */
+UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
+    uint8_t buf[256];
+    /* n_const = 65537 (= UINT16_MAX + 2): exceeds cap, must reject. */
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 65537U); /* n_const > cap */
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T75 (MOD-018): n_abs capped at <= instr_count --- */
 UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     /* Build a 1-instruction module where n_abs claims 2 (exceeds n_instr). */
@@ -195,4 +223,6 @@ void test_module_loader_hardening_suite(void) {
               module_grow_rejects_overflow);
     utest_run("deserialize rejects n_abs > instr_count (T75: MOD-018)",
               deserialize_rejects_n_abs_exceeding_instr_count);
+    utest_run("deserialize n_const cap is strictly > UINT16_MAX (T76: MOD-019)",
+              deserialize_n_const_cap_is_strictly_greater_than);
 }
