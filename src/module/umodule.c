@@ -124,7 +124,12 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
-    if (proto->ic_names     != NULL) alloc(proto->ic_names,     0, alloc_ud);
+    /* TIDY-005: explicit (void *) casts on multi-level pointer free paths
+     * (USymbol ** / char ** / UProto ** all decay to void * for alloc's
+     * inout pointer; the implicit conversion violates strict-aliasing
+     * cleanliness even though every modern allocator treats the pointer
+     * as an opaque tag). */
+    if (proto->ic_names     != NULL) alloc((void *)proto->ic_names,     0, alloc_ud);
     if (proto->ic_name_strs != NULL) {
         /* Each entry is a NUL-terminated string allocated separately. */
         for (uint16_t k = 0; k < proto->ic_count; k++) {
@@ -132,7 +137,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                 alloc(proto->ic_name_strs[k], 0, alloc_ud);
             }
         }
-        alloc(proto->ic_name_strs, 0, alloc_ud);
+        alloc((void *)proto->ic_name_strs, 0, alloc_ud);
     }
     /* Zero the proto struct but do not free proto itself (owned by nested[]). */
     urbi_zero(proto, sizeof(*proto));
@@ -145,7 +150,8 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
     /* Grow nested[] array if needed. */
     if (module->nested_count >= module->nested_cap) {
         size_t new_cap = module->nested_cap == 0 ? 4 : module->nested_cap * 2;
-        void *fresh = alloc(module->nested, new_cap * sizeof(UProto *),
+        /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
+        void *fresh = alloc((void *)module->nested, new_cap * sizeof(UProto *),
                             module->alloc_ud);
         if (fresh == NULL) return NULL;
         module->nested     = (UProto **)fresh;
@@ -1047,14 +1053,16 @@ void umodule_destroy(UModule *module) {
                     alloc(p, 0, module->alloc_ud);
                 }
             }
-            alloc(module->nested, 0, module->alloc_ud);
+            /* TIDY-005: UProto ** → void * decay needs explicit cast. */
+            alloc((void *)module->nested, 0, module->alloc_ud);
         }
         if (module->instructions != NULL) (void)alloc(module->instructions, 0, module->alloc_ud);
         if (module->constants    != NULL) (void)alloc(module->constants,    0, module->alloc_ud);
         if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);
         if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
-        if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
+        /* TIDY-005: USymbol ** / char ** → void * decay needs explicit cast. */
+        if (module->ic_names     != NULL) (void)alloc((void *)module->ic_names, 0, module->alloc_ud);
         if (module->ic_name_strs != NULL) {
             /* Each entry is a NUL-terminated string allocated separately. */
             for (uint16_t k = 0; k < module->ic_count; k++) {
@@ -1062,7 +1070,7 @@ void umodule_destroy(UModule *module) {
                     (void)alloc(module->ic_name_strs[k], 0, module->alloc_ud);
                 }
             }
-            (void)alloc(module->ic_name_strs, 0, module->alloc_ud);
+            (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
         }
     }
     /* Zero the entire struct AFTER all frees complete.  No field is read

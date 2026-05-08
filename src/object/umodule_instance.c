@@ -103,7 +103,8 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
         size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
         USymbol *sym = (USymbol *)ustr_intern(vm, name, nlen);
         if (sym == NULL) {
-            (void)alloc(fresh, 0U, alloc_ud);
+            /* TIDY-005: explicit (void *) cast on USymbol ** → void * decay. */
+            (void)alloc((void *)fresh, 0U, alloc_ud);
             return false;
         }
         fresh[k] = sym;

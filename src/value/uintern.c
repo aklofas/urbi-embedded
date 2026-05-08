@@ -100,7 +100,8 @@ static const char *table_lookup(UInternTable *t, const char *bytes, size_t nbyte
 
 static int table_init(UVM *vm, UInternTable *t, size_t cap) {
     size_t bytes = cap * sizeof(UInternStr *);
-    UInternStr **arr = vm_alloc(vm, NULL, bytes);
+    /* TIDY-005: explicit cast on void * → UInternStr ** decay. */
+    UInternStr **arr = (UInternStr **)vm_alloc(vm, NULL, bytes);
     if (arr == NULL) return 0;
     for (size_t i = 0; i < cap; i++) arr[i] = NULL;
     t->entries = arr;
@@ -123,7 +124,8 @@ static int table_grow(UVM *vm, UInternTable *t) {
     UInternStr **old_entries = t->entries;
     size_t new_cap = old_cap * 2;
 
-    UInternStr **new_arr = vm_alloc(vm, NULL, new_cap * sizeof(UInternStr *));
+    /* TIDY-005: explicit cast on void * → UInternStr ** decay. */
+    UInternStr **new_arr = (UInternStr **)vm_alloc(vm, NULL, new_cap * sizeof(UInternStr *));
     if (new_arr == NULL) return 0;
     for (size_t i = 0; i < new_cap; i++) new_arr[i] = NULL;
 
@@ -138,7 +140,8 @@ static int table_grow(UVM *vm, UInternTable *t) {
             t->count++;
         }
     }
-    vm_alloc(vm, old_entries, 0);     /* free old array */
+    /* TIDY-005: explicit (void *) cast on UInternStr ** → void * inout decay. */
+    vm_alloc(vm, (void *)old_entries, 0);     /* free old array */
     return 1;
 }
 
@@ -203,7 +206,8 @@ void uintern_destroy(UVM *vm) {
             vm_alloc(vm, e, 0);
         }
     }
-    vm_alloc(vm, t->entries, 0);
+    /* TIDY-005: explicit (void *) cast on UInternStr ** → void * inout decay. */
+    vm_alloc(vm, (void *)t->entries, 0);
     vm_alloc(vm, t, 0);
     vm->intern_table = NULL;
 }

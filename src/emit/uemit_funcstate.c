@@ -142,7 +142,10 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
             : (fs->ic_names_cap < 128U ? (uint16_t)(fs->ic_names_cap * 2U) : 256U);
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
-        USymbol **fresh = (USymbol **)alloc(fs->ic_names,
+        /* TIDY-005: explicit (void *) cast on the inout pointer prevents
+         * bugprone-multi-level-implicit-pointer-conversion from firing on
+         * USymbol ** → void * decay through alloc's first argument. */
+        USymbol **fresh = (USymbol **)alloc((void *)fs->ic_names,
                                             (size_t)new_cap * sizeof(USymbol *),
                                             e->module->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return -1; }
@@ -481,7 +484,8 @@ UFuncState *uemit_close_function(UEmitter *e) {
     if (fs->ic_names != NULL) {
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc != NULL) {
-            alloc(fs->ic_names, 0, e->module->alloc_ud);
+            /* TIDY-005: explicit (void *) cast on free path. */
+            alloc((void *)fs->ic_names, 0, e->module->alloc_ud);
         }
         fs->ic_names = NULL;
         fs->ic_names_cap = 0;
