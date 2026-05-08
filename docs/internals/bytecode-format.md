@@ -3,29 +3,31 @@
 ## Overview
 
 `.urb` is the on-disk serialized form of a `UModule` — the interface between the
-front end (emitter) and the back end (VM). The format is pinned to the v1.0
+front end (emitter) and the back end (VM). The format is pinned to the v1.5
 flavor descriptor in the header; the loader rejects any field mismatch with a
 field-specific diagnostic. No run-time coercion is attempted.
 
-Source: `src/umodule.c` (deserializer + verifier), `src/uemit.c` (serializer),
-`src/umodule.h` (structs, enums, error codes).
+Source: `src/module/umodule.c` (deserializer + verifier),
+`src/emit/uemit_serialize.c` (serializer), `src/module/umodule.h` (structs,
+enums, error codes), `src/module/uopcode_shape.{h,c}` (verifier shape table).
 
 ---
 
 ## Header (24 bytes)
 
 ```text
-Offset  Size  Field         Value at v1.0
+Offset  Size  Field         Value at v1.5
 ------  ----  ----------    -----------------------------------------------
      0     4  magic         0x55 0x52 0x42 0x49  ("URBI")
-     4     1  version       16·major + minor;  v1.0 = 0x10
-     5     1  flags         0x00 at v1.0; loader ignores for forward-compat
+     4     1  version       16·major + minor;  v1.5 = 0x15
+     5     1  flags         0x00 at v1.5; loader ignores for forward-compat
      6     6  canary        0x19 0x93 0x0D 0x0A 0x1A 0x0A
     12     1  int_width     8  (i64 on every v1 target)
     13     1  float_type    4 (f32) or 8 (f64); per-target pin
     14     1  instr_width   4  (uint32 always)
     15     1  endianness    0  (little-endian; v1 ships little-endian only)
-    16     8  reserved      zero at write; not validated by loader
+    16     8  reserved      zero at write; loader strictly enforces all-zero
+                            (any non-zero byte returns ULOAD_CORRUPT)
 ```
 
 The canary at offsets 6–11 is the sequence `\x19\x93\r\n\x1a\n`. It detects
@@ -35,9 +37,28 @@ The flavor descriptor fields (offsets 12–15) are checked one at a time. On any
 mismatch the loader returns `ULOAD_FLAVOR_MISMATCH` and writes a diagnostic
 that names the field (e.g. `"flavor mismatch: float_type expected 8, got 4"`).
 
+### Bytecode version history
+
+Each release that changes wire format bumps the version byte; loading an
+older module is a hard error (`ULOAD_UNSUPPORTED_VERSION`) — there is no
+forward- or backward-compatibility tolerance at v1.x.
+
+| Byte | Version | Release           | Wire-format additions                  |
+|------|---------|-------------------|-----------------------------------------|
+| 0x10 | v1.0    | v0.1.0-skeleton   | Initial M1 8-opcode walking-skeleton   |
+| 0x11 | v1.1    | v0.2.0-expressions| M2 closures, locals, control flow      |
+| 0x12 | v1.2    | v0.3.0-concurrency| M3 control transfer + chunk lifecycle  |
+| 0x13 | v1.3    | v0.4.0-objects    | M4 objects: UProto + ic_count/ic_names |
+| 0x14 | v1.4    | v0.5.0-reactive   | M5 reactive: 8 new opcodes, UEvent etc.|
+| 0x15 | v1.5    | v0.5.6-bytecode   | Wave 4 wire-format completion: nested  |
+|      |         |                   | protos + per-proto + root ic_name_strs |
+|      |         |                   | + opcode renumber (OP_INVOKE retired;  |
+|      |         |                   | M5 reactive 38-45; OP_MAX shrinks 47   |
+|      |         |                   | → 46) + verifier shape table.          |
+
 ---
 
-## v1.0 Supported Flavor Combinations
+## v1.5 Supported Flavor Combinations
 
 The loader accepts exactly these combinations:
 
@@ -50,8 +71,9 @@ The loader accepts exactly these combinations:
 
 Any other combination produces `ULOAD_FLAVOR_MISMATCH`.
 
-The compile-time macros that pin these values are defined in `src/umodule.h`:
-`URBI_INT_WIDTH`, `URBI_FLOAT_TYPE`, `URBI_INSTR_WIDTH`, `URBI_ENDIANNESS`.
+The compile-time macros that pin these values are defined in
+`src/module/umodule.h`: `URBI_INT_WIDTH`, `URBI_FLOAT_TYPE`,
+`URBI_INSTR_WIDTH`, `URBI_ENDIANNESS`.
 
 ---
 
@@ -83,17 +105,19 @@ Each record starts with a 1-byte kind tag (`UValKind`):
 
 | Kind byte | Enum        | Payload                                        |
 |---|---|---|
-| 0         | `UVAL_NIL`  | none (rejected at v1.0 — `ULOAD_CORRUPT_TAG`)  |
+| 0         | `UVAL_NIL`  | none (rejected at v1.5 — `ULOAD_CORRUPT_TAG`)  |
 | 1         | `UVAL_INT`  | zigzag-varint i64                              |
 | 2         | `UVAL_FLOAT`| raw `float_type` bytes (4 or 8)               |
-| 3         | `UVAL_BOOL` | none (rejected at v1.0 — `ULOAD_CORRUPT_TAG`)  |
-| 4         | `UVAL_STR`  | none (rejected at v1.0 — `ULOAD_CORRUPT_TAG`)  |
+| 3         | `UVAL_BOOL` | none (rejected at v1.5 — `ULOAD_CORRUPT_TAG`)  |
+| 4         | `UVAL_STR`  | none (rejected at v1.5 — `ULOAD_CORRUPT_TAG`)  |
 
-Kind bytes above 4 are rejected with `ULOAD_CORRUPT_TAG`. At v1.0 only
-`UVAL_INT` and `UVAL_FLOAT` constants are produced by the emitter.
+Kind bytes above 4 are rejected with `ULOAD_CORRUPT_TAG`. At v1.5 only
+`UVAL_INT` and `UVAL_FLOAT` constants are produced by the emitter; the
+remaining tags are reserved for M6 stdlib (`UVAL_STR` will become live
+when string literals land) and have no payload encoding yet.
 
 Float constants are stored as raw bytes in the target's native byte order
-(always little-endian at v1.0). 4-byte floats use IEEE 754 single precision;
+(always little-endian at v1.5). 4-byte floats use IEEE 754 single precision;
 8-byte floats use IEEE 754 double precision.
 
 ### Instructions
@@ -118,6 +142,79 @@ Instruction encoding is described in [internals/opcodes.md](opcodes.md).
 | delta stream  | raw int8 bytes    | one byte per instruction                   |
 | `n_abs_lines` | uvarint           | count of absolute-line checkpoint records |
 | checkpoints   | pairs of uvarints | `(pc, line)` per record                   |
+
+### IC name table (root chunk)
+
+Mirrors UModule.ic_count + ic_names.  At v1.5 the loader stores raw
+strings in a transient `ic_name_strs` array; module-instance create
+interns each into a USymbol via the receiving VM.
+
+| Field           | Encoding | Notes                                |
+|---|---|---|
+| `n_ic_names`    | uvarint  | count of root-chunk IC sites        |
+| name records    | see below | one per IC site, in OP_GETSLOT order |
+
+Each name record:
+
+| Field        | Encoding | Notes                                       |
+|---|---|---|
+| `name_len`   | uvarint  | UTF-8 byte length of the IC name           |
+| `name_bytes` | raw      | UTF-8, not NUL-terminated on wire           |
+
+A v1.5 module emitted by the in-tree emitter has
+`n_ic_names == ic_count` of the root chunk; loader rejects mismatch
+with `ULOAD_CORRUPT`.
+
+### Nested protos
+
+After the root chunk's IC name table, the wire format encodes the
+`nested[]` UProto array.  Each nested proto is a function definition
+referenced by `OP_CLOSURE Bx`.
+
+| Field           | Encoding | Notes                                |
+|---|---|---|
+| `n_nested`      | uvarint  | count of nested protos              |
+| proto records   | see below | one per proto, in nested[] order   |
+
+Each proto record:
+
+| Field            | Encoding   | Notes                                  |
+|---|---|---|
+| `max_reg`        | 1 byte     | proto's register window                |
+| `nupvals`        | 1 byte     | count of upvalues captured             |
+| `nparams`        | 1 byte     | count of formal parameters             |
+| `n_constants`    | uvarint    | per-proto constant count               |
+| constant records | see Constants section above | same encoding |
+| `n_instructions` | uvarint    | per-proto instruction count            |
+| alignment pad    | 0-3 bytes  | zero bytes to 4-byte boundary          |
+| instruction stream | raw      | `n_instructions × 4` bytes             |
+| `n_deltas`       | uvarint    | must equal `n_instructions`            |
+| delta stream     | raw int8   | one byte per instruction               |
+| `n_abs_lines`    | uvarint    | absolute-line checkpoint count         |
+| checkpoints      | pairs of uvarints | `(pc, line)` per record         |
+| `n_ic_names`     | uvarint    | per-proto IC site count               |
+| ic name records  | see IC name table | same encoding                  |
+
+The proto's `instructions` stream is verified the same way as the root
+chunk: the opcode-shape walk at `decode_verify` runs once per nested
+proto with that proto's `max_reg`, `const_count`, `instr_count`, and
+the **root-level** `nested_count` for `OP_CLOSURE Bx` range checks. The
+v1.5 in-tree emitter allocates all function literals as flat siblings
+under the root `UModule`'s `nested[]` array; an `OP_CLOSURE` inside a
+nested proto refers to a sibling slot in the same root array, not into
+a per-proto child array. v1.x backlog "deeply-nested closure
+verification" tracks switching to per-proto child arrays if a future
+emitter shape requires them.
+
+### Migration from v1.4
+
+A v1.4 module loaded into a v1.5 build is rejected with
+`ULOAD_UNSUPPORTED_VERSION` (exact-match policy retained from v1.0).
+No live-system upgrade tooling exists at v0.5.6; rebuild from source.
+
+A future v1.x revision may relax this; see
+`docs/urbi-embedded-design-risks.md` row "v1.x: live-system bytecode
+upgrade tooling" for the planning sketch.
 
 ---
 
@@ -161,13 +258,13 @@ or `ULOAD_FLAVOR_MISMATCH`):
 
 - Buffer is at least 24 bytes (`ULOAD_TRUNCATED`).
 - Bytes 0–3 equal `"URBI"` (`ULOAD_BAD_MAGIC`).
-- Version byte equals `0x10` (`ULOAD_UNSUPPORTED_VERSION`).
+- Version byte equals `0x15` (`ULOAD_UNSUPPORTED_VERSION`).
 - Bytes 6–11 equal the canary sequence exactly (`ULOAD_BAD_MAGIC`).
 - `int_width` (byte 12) equals `URBI_INT_WIDTH` (`ULOAD_FLAVOR_MISMATCH`).
 - `float_type` (byte 13) equals `URBI_FLOAT_TYPE` (`ULOAD_FLAVOR_MISMATCH`).
 - `instr_width` (byte 14) equals `URBI_INSTR_WIDTH` (`ULOAD_FLAVOR_MISMATCH`).
 - `endianness` (byte 15) equals `URBI_ENDIANNESS` (`ULOAD_FLAVOR_MISMATCH`).
-- Reserved bytes 16–23 are not validated.
+- Reserved bytes 16–23 are strictly all-zero (`ULOAD_CORRUPT`).
 
 **Section checks:**
 
@@ -177,7 +274,7 @@ or `ULOAD_FLAVOR_MISMATCH`):
 - `n_constants` does not exceed `UINT16_MAX + 1` (`ULOAD_CORRUPT`).
 - Each constant kind byte is `<= UVAL_STR` (4); unknown kinds produce
   `ULOAD_CORRUPT_TAG`.
-- Only `UVAL_INT` and `UVAL_FLOAT` constants decode successfully at v1.0;
+- Only `UVAL_INT` and `UVAL_FLOAT` constants decode successfully at v1.5;
   all other kinds produce `ULOAD_CORRUPT_TAG`.
 - Float constant payload fits in remaining buffer (`ULOAD_TRUNCATED`).
 - Instruction alignment pad bytes are zero (`ULOAD_CORRUPT`).
@@ -185,17 +282,40 @@ or `ULOAD_FLAVOR_MISMATCH`):
 - Delta stream fits in remaining buffer (`ULOAD_TRUNCATED`).
 - Each absolute-line checkpoint `pc` is within `[0, n_instructions)` (`ULOAD_CORRUPT`).
 - Checkpoint PCs are strictly monotonically increasing (`ULOAD_CORRUPT`).
-- No trailing bytes remain after the syncline section (`ULOAD_CORRUPT`).
+- The IC name table count `n_ic_names` equals the root chunk `ic_count`
+  (`ULOAD_CORRUPT`).
+- Each per-proto record's `n_ic_names` equals that proto's `ic_count`
+  (`ULOAD_CORRUPT`).
+- No trailing bytes remain after the final section (`ULOAD_CORRUPT`).
 
 **Verifier sweep** (after deserializing all sections):
 
-- Every opcode is `< OP_MAX` (`ULOAD_CORRUPT`).
-- Register A is `<= max_reg` for every instruction (`ULOAD_CORRUPT`).
-- For `OP_LOADK`: Bx is `< n_constants` (`ULOAD_CORRUPT`).
-- For arithmetic ops (`OP_ADD`, `OP_SUB`, `OP_MUL`, `OP_DIV`): registers B
-  and C are `<= max_reg` (`ULOAD_CORRUPT`).
-- For `OP_MOVE` and `OP_NEG`: register B is `<= max_reg` (`ULOAD_CORRUPT`).
-- The last instruction is `OP_RET` (`ULOAD_CORRUPT`).
+The verifier walks every instruction in the root chunk plus each non-NULL
+nested proto, consulting the file-private `urbi_opcode_shapes[]` table
+declared in `src/module/uopcode_shape.h`.  Each operand byte is
+interpreted per its `UOperandKind` (register / immediate / packed-nibble /
+unused / upvalue index / frame-guard base or count) and range-checked
+accordingly.  The Bx field of ABx-format opcodes is interpreted per
+`UBxKind` (constant pool index / nested-proto index / signed jump /
+handler PC / symbol id) and validated against the matching section count.
+
+The walk lives in `decode_verify` (`src/module/umodule.c`); per-block work
+is delegated to `verify_walk_block` so the same code path covers the
+root chunk and every nested proto.  Adding a new opcode requires adding
+exactly one row to `urbi_opcode_shapes[]` — no per-opcode `switch` exists
+in the verifier any more.
+
+Specific cross-byte invariants enforced outside the shape walk:
+
+- The last instruction of the root chunk must be `OP_RET` (no other
+  terminator is currently produced by the in-tree emitter; v1.x backlog
+  may relax this).
+- `OP_PUSH_FRAME_GUARD` requires `A + B <= max_reg + 1` (base + count
+  must not exceed the register window).
+
+`OP_JMP` Bx is intentionally NOT range-checked at load time: the
+legitimate range depends on absolute PC, and runtime dispatch surfaces
+out-of-range jumps as `URBI_ERR_RUNTIME_FATAL`.
 
 On success the function returns `ULOAD_OK`.
 

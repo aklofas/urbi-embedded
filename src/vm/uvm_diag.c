@@ -63,7 +63,6 @@ const char *op_name(uint8_t op) {
         case OP_PUSH_FRAME_GUARD:     return "OP_PUSH_FRAME_GUARD";
         case OP_RESUME:               return "OP_RESUME";
         case OP_LOAD_CATCH_VALUE:     return "OP_LOAD_CATCH_VALUE";
-        case OP_INVOKE:               return "OP_INVOKE";
         /* M5 reactive runtime stubs */
         case OP_AT_INSTALL:           return "OP_AT_INSTALL";
         case OP_AT_SYNC_INSTALL:      return "OP_AT_SYNC_INSTALL";

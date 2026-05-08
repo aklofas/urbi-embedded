@@ -37,7 +37,11 @@ extern "C" {
    Encoding: VERSION_BYTE = (major << 4) | minor.  Hard breaks require a minor bump.
    v1.0 = 0x10 (M1), v1.1 = 0x11 (M2), v1.2 = 0x12 (M3 — control transfer),
    v1.3 = 0x13 (M4 — UProto.ic_count + UProto.ic_names side table),
-   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds).
+   v1.4 = 0x14 (M5 — reactive opcodes 39-46, gc_byte bit 7, 4 new AST node kinds),
+   v1.5 = 0x15 (v0.5.6 Wave 4 — wire-format completion: nested protos + per-proto
+                + root ic_name_strs, header reserved bytes 16-23 strictly zero,
+                opcode-shape table verifier, OP_INVOKE retired, M5 reactive
+                opcodes renumbered 39-46 -> 38-45).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -46,8 +50,23 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  4U
+#define URBI_BYTECODE_VERSION_MINOR  5U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
+
+/* --- Header canary bytes (offsets 6-11) ---
+ *
+ * The 6-byte sequence detects FTP/Windows-paste corruption on transfer.
+ * `\x19\x93` is binary noise; `\r\n` is munged to `\n` by FTP ASCII
+ * mode; `\x1A\n` is the DOS EOF + LF.  Any text-mode mangling of the
+ * file produces a canary mismatch, returned as ULOAD_BAD_MAGIC.
+ *
+ * Defined as a static-const-array initializer in the header so both
+ * the serializer (uemit_serialize.c) and deserializer (umodule.c)
+ * consume the same constant rather than duplicating the byte sequence. */
+#define URBI_BYTECODE_CANARY_LEN 6U
+static const uint8_t URBI_BYTECODE_CANARY[URBI_BYTECODE_CANARY_LEN] = {
+    0x19U, 0x93U, '\r', '\n', 0x1AU, '\n'
+};
 
 /* --- bytecode flavor knobs (compile-time-pinned to host or cross target) --- */
 
@@ -176,24 +195,29 @@ typedef enum {
      * so that the catch variable `e` receives the thrown value. */
     OP_LOAD_CATCH_VALUE = 37,   /* A:    R[A] := s->catch_value             */
 
-    /* M4 reserves; v1.x backlog implements (collapsed GETSLOT+CALL). */
-    OP_INVOKE           = 38,
+    /* Slot 38 was OP_INVOKE (M4 reserve for collapsed GETSLOT+CALL).
+     * Retired at v0.5.6 T16; the gap was collapsed at v0.5.6 T17 by
+     * renumbering M5 reactive opcodes 39-46 down to 38-45.  Opcode space
+     * is now contiguous 0-45; OP_MAX = 46. */
 
     /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
-    OP_AT_INSTALL              = 39,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_AT_SYNC_INSTALL         = 40,  /* ABC: same shape as OP_AT_INSTALL        */
-    OP_WHENEVER_INSTALL        = 41,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
-    OP_WAITUNTIL_INSTALL       = 42,  /* ABC: cond_reg, 0, 0                     */
+    OP_AT_INSTALL              = 38,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_AT_SYNC_INSTALL         = 39,  /* ABC: same shape as OP_AT_INSTALL        */
+    OP_WHENEVER_INSTALL        = 40,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
+    OP_WAITUNTIL_INSTALL       = 41,  /* ABC: cond_reg, 0, 0                     */
 
     /* M5 reactive runtime — pre-M5 spec #3 (event syncEmit + tag.enter/leave) */
-    OP_AT_EVENT_INSTALL        = 43,  /* ABC: event_reg, body_reg, onleave_or_FF */
-    OP_AT_EVENT_SYNC_INSTALL   = 44,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
+    OP_AT_EVENT_INSTALL        = 42,  /* ABC: event_reg, body_reg, onleave_or_FF */
+    OP_AT_EVENT_SYNC_INSTALL   = 43,  /* ABC: same shape as OP_AT_EVENT_INSTALL  */
 
     /* M5 reactive runtime — pre-M5 spec #4 (slot-change events) */
-    OP_GETSLOT_CHANGE_EVENT    = 45,  /* ABC: dst_reg, recv_reg, name_sym_id     */
+    OP_GETSLOT_CHANGE_EVENT    = 44,  /* ABC: dst_reg, recv_reg, name_sym_id     */
 
     /* M5 reactive runtime — pre-M5 spec #5 (globals exposure) */
-    OP_LOAD_REALM_GLOBAL       = 46,  /* ABC: dst_reg, sym_id_hi, sym_id_lo      */
+    OP_LOAD_REALM_GLOBAL       = 45,  /* A: dst_reg; B,C reserved (sym_id wire
+                                         extension deferred — needs concrete
+                                         realm symbol-table layout, see
+                                         backlog) */
 
     OP_MAX
 } UOpcode;
@@ -276,6 +300,12 @@ typedef struct UProto {
      * module-instance load to populate UIC.name for each IC site.  Owned by
      * the proto's allocator; freed in umodule_destroy_proto_buffers. */
     USymbol      **ic_names;
+    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
+     * Populated by the emitter (mirroring ic_names) and by the deserializer
+     * (in lieu of ic_names, which stays NULL until module-instance create
+     * interns the strings).  Owned by the proto's allocator; each entry and
+     * the array itself are freed in umodule_destroy_proto_buffers. */
+    char         **ic_name_strs;
 
     /* Allocator hook inherited from the owning module. */
     UModuleAllocFn alloc_fn;
@@ -299,7 +329,7 @@ typedef struct UClosure UClosure;
  * runtime fields; they are the caller's responsibility to initialize. */
 
 typedef struct UModule {
-    /* === Serialized fields (bytecode wire format v1.4) ============= */
+    /* === Serialized fields (bytecode wire format v1.5) ============= */
 
     uint32_t  *instructions;
     size_t     instr_count;
@@ -336,6 +366,12 @@ typedef struct UModule {
      * Capped at 256 (encoding spec §3.4 — uint8 ic_index field). */
     uint16_t       ic_count;
     USymbol      **ic_names;     /* parallel array; len == ic_count; allocator-owned */
+    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
+     * Populated by the emitter (mirroring ic_names) and by the deserializer
+     * (in lieu of ic_names, which stays NULL until module-instance create
+     * interns the strings).  Owned by the module's allocator; each entry and
+     * the array itself are freed in umodule_destroy. */
+    char         **ic_name_strs;
 
     /* === Runtime / transient fields (NOT serialized) =============== */
 
@@ -389,11 +425,33 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 
 /* --- API --- */
 
-/* Populate module from buf.  module must be zero-initialized before call;
-   if module->alloc_fn is NULL on entry, the stdlib realloc is used
-   (hosted builds only).  errmsg/errcap receive a human-readable
-   diagnostic on failure; pass (NULL, 0) to suppress.
-   On error the module is left empty (destroy is safe but a no-op). */
+/* Populate `module` from `buf`.  `module` MUST be zero-initialized before
+ * call.  If `module->alloc_fn` is NULL on entry, the stdlib `realloc` is
+ * used (hosted builds only); freestanding callers MUST set `alloc_fn`
+ * before calling.
+ *
+ * `errmsg` / `errcap` receive a human-readable diagnostic on failure.
+ * Pass `(NULL, 0)` to suppress.  A non-NULL `errmsg` with `errcap == 0`
+ * is silently treated as suppression.
+ *
+ * Error semantics:
+ *   - On success returns ULOAD_OK; `module` is fully populated.
+ *   - On any failure returns a non-OK code; `module` may hold PARTIAL
+ *     buffers from the section that completed before the failure.
+ *     `umodule_destroy(module)` is safe in EITHER case and is the
+ *     correct cleanup path even after a failed deserialize.
+ *
+ * Coverage at v1.5:
+ *   - Header (24 bytes), metadata (max_reg, source_name), constants
+ *     (UVAL_INT + UVAL_FLOAT only — see decode_constants comments),
+ *     instructions (LE uint32 stream), syncline tables, nested[] proto
+ *     section + per-proto + root-chunk ic_name_strs.
+ *   - Verifier walks every instruction against the opcode-shape table
+ *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
+ *     range-checked per UBxKind, last instruction must be OP_RET.
+ *   - ic_names interning is deferred to urbi_module_instance_create
+ *     (see object/umoduleinstance.h); deserialize itself does not need
+ *     a VM. */
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 

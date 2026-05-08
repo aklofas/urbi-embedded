@@ -5,7 +5,11 @@
 #include "module/umodule.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
+#include "value/uintern.h"
 #include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
+#include "object/umodule_instance.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -89,6 +93,8 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
@@ -138,7 +144,7 @@ UTEST(deserialize_rejects_unsupported_version) {
 
 UTEST(deserialize_rejects_v1_0_module) {
     /* Build a 24-byte header with version byte = 0x10 (v1.0). */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -151,6 +157,8 @@ UTEST(deserialize_rejects_v1_0_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
     umodule_destroy(&c);
@@ -160,7 +168,7 @@ UTEST(deserialize_rejects_v1_1_module) {
     /* Version byte 0x11 (M2) must be rejected: OP_RETURN dispatch semantics
        changed between M2 and M3; loading old modules silently would produce
        wrong nested-unwind behaviour.  Hard break is the safe choice. */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -172,6 +180,8 @@ UTEST(deserialize_rejects_v1_1_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -186,7 +196,7 @@ UTEST(deserialize_rejects_v1_2_module) {
     /* Version byte 0x12 (M3) must be rejected by the v1.3 loader: M4 added
        UProto.ic_count + UProto.ic_names side table; loading v1.2 silently
        would leave IC sites uninitialized.  Hard break per encoding spec §7. */
-    uint8_t buf[30];
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
@@ -198,6 +208,8 @@ UTEST(deserialize_rejects_v1_2_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -208,13 +220,16 @@ UTEST(deserialize_rejects_v1_2_module) {
     umodule_destroy(&c);
 }
 
-UTEST(deserialize_accepts_v13_module) {
-    /* A minimal well-formed v1.3 module must be accepted. */
-    uint8_t buf[30];
+UTEST(deserialize_rejects_v1_3_module) {
+    /* Version byte 0x13 (M4) must be rejected by the v1.5 loader: M5 added
+       reactive opcodes 38-45, gc_byte bit 7, and 4 new AST node kinds; v0.5.6
+       Wave 4 then completed the wire format with nested protos + ic_name_strs
+       and renumbered M5.  Loading v1.3 silently is unsafe. */
+    uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = URBI_BYTECODE_VERSION_BYTE;  /* v1.3 */
+    buf[4] = 0x13;  /* version byte (v1.3 — M4; should be rejected by v1.5 loader) */
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -222,6 +237,64 @@ UTEST(deserialize_accepts_v13_module) {
     buf[offset++] = 0;  /* varint n_instructions = 0 */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x13") != NULL || strstr(errmsg, "1.3") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_rejects_v1_4_module) {
+    /* Version byte 0x14 (M5) must be rejected by the v1.5 loader.  v0.5.6
+       Wave 4 completed the wire format (nested protos + per-proto + root
+       ic_name_strs) and renumbered M5 reactive opcodes 39-46 → 38-45.
+       Loading v1.4 silently would index past the new sections and read
+       wrong-shape opcodes.  Hard break per §3.8 of the cleanup spec. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x14;  /* version byte (v1.4 — M5; should be rejected by v1.5 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x14") != NULL || strstr(errmsg, "1.4") != NULL);
+    umodule_destroy(&c);
+}
+
+UTEST(deserialize_accepts_current_version_module) {
+    /* A minimal well-formed module at the current bytecode version
+     * (URBI_BYTECODE_VERSION_BYTE) must be accepted.  This is the
+     * positive-control twin of the deserialize_rejects_v1_X tests. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -311,6 +384,28 @@ UTEST(deserialize_rejects_wrong_endianness) {
     umodule_destroy(&c);
 }
 
+UTEST(deserialize_rejects_nonzero_reserved_byte) {
+    uint8_t buf[64] = {0};
+    build_good_header(buf);
+    buf[20] = 0xCCU;  /* reserved byte 20 set non-zero */
+    size_t off = 24;
+    buf[off++] = 0;  /* max_reg */
+    buf[off++] = 0;  /* source_name_len = 0 */
+    buf[off++] = 0;  /* n_constants = 0 */
+    buf[off++] = 0;  /* n_instructions = 0 */
+    buf[off++] = 0;  /* n_deltas = 0 */
+    buf[off++] = 0;  /* n_abs_lines = 0 */
+    buf[off++] = 0;  /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;  /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    /* errmsg should mention 'reserved' */
+    UASSERT(strstr(errmsg, "reserved") != NULL);
+    umodule_destroy(&c);
+}
+
 /* --- Varint write helpers for building test blobs --- */
 
 /* Append an LEB128 unsigned varint.  Returns new offset. */
@@ -348,6 +443,9 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     /* synclines: 0 deltas, 0 abs_lines */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -377,6 +475,9 @@ UTEST(deserialize_loads_integer_constant_pool) {
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
     /* synclines: 0, 0 */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
+    /* v1.5: ic_names + nested[] (both empty) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -437,6 +538,9 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 5);          /* abs_line[0].line = 5 */
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -515,6 +619,9 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 10);         /* abs_line[0].line = 10 */
+    /* v1.5: ic_names + nested[] (both empty) */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);
 
     UModule c = {0};
     char errmsg[128];
@@ -593,6 +700,9 @@ static size_t build_module_bytes(uint8_t *buf,
     off = put_varint(buf, off, (uint64_t)n_instr);
     size_t di;
     for (di = 0; di < n_instr; di++) buf[off++] = 0;
+    off = put_varint(buf, off, 0);
+    /* v1.5: root-chunk ic_names (count=0) + nested[] (count=0). */
+    off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     return off;
 }
@@ -809,13 +919,276 @@ UTEST(roundtrip_ast_unary_neg_5) {
     roundtrip_ast(&neg, "a/b/c.u");
 }
 
+/* T12+T13 follow-up regression test: round-trip of a module with one
+ * (or more) nested function literal protos.  Pre-fix proto_wire_size
+ * disagreed with write_proto on instruction-pad alignment (C1); pre-fix
+ * decode_verify per-proto walks passed nested_count=0 and rejected
+ * legitimate OP_CLOSURE Bx in nested protos (C2).  The source produces
+ * two nested protos: nested[0] is the outer function, nested[1] is the
+ * inner one; the outer's body contains `OP_CLOSURE Bx=1` referring to
+ * nested[1] in the SAME root-level nested[] array (the v1.5 emitter
+ * allocates all function literals as flat siblings).  Post-fix the
+ * round-trip succeeds and decode_verify accepts the bytecode. */
+UTEST(roundtrip_module_with_nested_closure_proto) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Two-level closure: the outer function body holds `function() {x+y}`
+     * which in turn captures x and y as upvalues.  Same source pattern as
+     * test_emit.c::disassemble_closure_with_prelude — known to produce
+     * nested_count >= 2. */
+    const char *src = "function() { var x = 1; var y = 2; function() { x + y } }";
+
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+
+    UArena arena;
+    uarena_init(&arena, 0);
+
+    UModule a = {0};
+    UEmitter e;
+    uemit_init(&e, &a, &arena, &vm, "test");
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        UASSERT(node->kind != AST_ERROR);
+        UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
+    }
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+    UASSERT(a.nested_count >= (size_t)2);
+
+    /* Two-pass serialize: query size, then write.  The contract is
+     * that the wrote count equals the queried size (C1 violates this). */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    /* Deserialize buf -> b and verify shape preservation (C2 makes
+     * decode_verify reject the bytecode). */
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ(a.nested_count, b.nested_count);
+    UASSERT(b.nested[0] != NULL);
+    UASSERT(b.nested[1] != NULL);
+    UASSERT(b.nested[0]->instr_count > (size_t)0);
+    UASSERT(b.nested[1]->instr_count > (size_t)0);
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* T15 (a): Round-trip a module that emits an IC site (OP_GETSLOT) and
+ * verify the v1.5 ic_name_strs survive serialize+deserialize, then
+ * exercise the T14 lazy-intern path by calling
+ * urbi_module_instance_create on the deserialized module — which on
+ * input has ic_name_strs populated but ic_names == NULL.  After
+ * instance create, ic_names must be a fully populated USymbol** array
+ * that resolves to the same canonical pointer as a direct
+ * ustr_intern() of the same byte content.
+ *
+ * Source `Object` produces a bare global ref at chunk-top, which T71's
+ * realm-global fallback compiles to OP_GETSLOT — adding one root-chunk
+ * IC site whose name is "Object". */
+UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
+    UVM vm_a;
+    urbi_vm_init(&vm_a, NULL, NULL);
+
+    const char *src = "Object";
+
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+    UArena arena;
+    uarena_init(&arena, 0);
+
+    UModule a = {0};
+    UEmitter e;
+    uemit_init(&e, &a, &arena, &vm_a, "test_ic");
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        UASSERT(node->kind != AST_ERROR);
+        UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
+    }
+    UASSERT_EQ(EMIT_OK, uemit_finish(&e));
+
+    /* Sanity: emitter populated the root-chunk ic_count + ic_name_strs. */
+    UASSERT(a.ic_count >= (uint16_t)1U);
+    UASSERT(a.ic_name_strs != NULL);
+    UASSERT(a.ic_name_strs[0] != NULL);
+
+    /* Round-trip. */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((unsigned)a.ic_count, (unsigned)b.ic_count);
+    UASSERT(b.ic_name_strs != NULL);
+    UASSERT_EQ(0, strcmp(a.ic_name_strs[0], b.ic_name_strs[0]));
+
+    /* Pre-condition for the T14 lazy-intern path: the deserialized
+     * module has no ic_names yet.  Loader cannot intern (no VM in
+     * scope at decode time). */
+    UASSERT_EQ((void *)NULL, (void *)b.ic_names);
+
+    /* Drive the lazy-intern.  Use a fresh VM to confirm the helper
+     * interns into the receiving VM, not the originating one. */
+    UVM vm_b;
+    urbi_vm_init(&vm_b, NULL, NULL);
+
+    UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
+    UASSERT(mi != NULL);
+
+    /* Post-condition: ic_names is now populated; each entry equals the
+     * canonical interned pointer for the matching ic_name_strs entry. */
+    UASSERT(b.ic_names != NULL);
+    for (uint16_t k = 0; k < b.ic_count; k++) {
+        const char *name = b.ic_name_strs[k];
+        size_t nlen = strlen(name);
+        const char *canon = ustr_intern(&vm_b, name, nlen);
+        UASSERT_EQ((const void *)canon, (const void *)b.ic_names[k]);
+    }
+
+    /* Idempotency: a second call must not re-allocate.  The helper's
+     * fast path returns immediately when ic_names is already populated. */
+    USymbol **before = b.ic_names;
+    UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
+    UASSERT(mi2 != NULL);
+    UASSERT_EQ((void *)before, (void *)b.ic_names);
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm_a);
+    urbi_vm_destroy(&vm_b);
+}
+
+/* T15 (b): Pin that the v1.5 wire format preserves UVAL_FLOAT
+ * constants in nested-proto constant pools.  The lex+parse+emit
+ * pipeline at v0.5.6 only produces UVAL_INT constants (no AST_FLOAT
+ * yet — see test_emit.c::serialize_module_with_float_constant_round_trips
+ * for the existing manual-build pattern used here too).  Hand-build
+ * a module with one nested proto whose constant pool holds a single
+ * UVAL_FLOAT, round-trip, and assert the FLOAT survives. */
+UTEST(roundtrip_preserves_nested_proto_float_constant) {
+    UModule a = {0};
+    UProto *p = umodule_alloc_nested_proto(&a);
+    UASSERT(p != NULL);
+
+    /* One UVAL_FLOAT in the nested proto's constant pool. */
+    p->constants = (UValue *)malloc(sizeof(UValue));
+    UASSERT(p->constants != NULL);
+    p->const_cap   = 1;
+    p->const_count = 1;
+    p->constants[0].kind = (uint8_t)UVAL_FLOAT;
+    {
+        int q;
+        for (q = 0; q < 7; q++) p->constants[0]._pad[q] = 0;
+    }
+#if URBI_FLOAT_TYPE == 8
+    p->constants[0].v.f = 2.718281828;
+#else
+    p->constants[0].v.f = 2.718f;
+#endif
+
+    /* Minimum viable proto body: one OP_RET + one syncline checkpoint.
+     * write_proto requires line_deltas[i] for each instruction and
+     * accepts INT8_MIN as the abs-line-checkpoint sentinel. */
+    p->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(p->instructions != NULL);
+    p->instr_cap = 1;
+    p->instr_count = 1;
+    p->instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    p->line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(p->line_deltas != NULL);
+    p->line_deltas[0] = (int8_t)-128;       /* INT8_MIN: abs-line sentinel */
+    p->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(p->abs_lines != NULL);
+    p->abs_line_cap   = 1;
+    p->abs_line_count = 1;
+    p->abs_lines[0].pc   = 0;
+    p->abs_lines[0].line = 1;
+    p->max_reg = 0;
+
+    /* Likewise, the root chunk needs at least one OP_RET. */
+    a.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(a.instructions != NULL);
+    a.instr_cap = 1;
+    a.instr_count = 1;
+    a.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    a.line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(a.line_deltas != NULL);
+    a.line_deltas[0] = (int8_t)-128;
+    a.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(a.abs_lines != NULL);
+    a.abs_line_cap   = 1;
+    a.abs_line_count = 1;
+    a.abs_lines[0].pc   = 0;
+    a.abs_lines[0].line = 1;
+    a.max_reg = 0;
+
+    /* Round-trip. */
+    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    UASSERT(need > (ptrdiff_t)0);
+    uint8_t *buf = (uint8_t *)malloc((size_t)need);
+    UASSERT(buf != NULL);
+    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    UASSERT_EQ(need, wrote);
+
+    UModule b = {0};
+    char errmsg[256];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
+                                              errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ(a.nested_count, b.nested_count);
+    UASSERT(b.nested[0] != NULL);
+    UASSERT_EQ(p->const_count, b.nested[0]->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, b.nested[0]->constants[0].kind);
+#if URBI_FLOAT_TYPE == 8
+    UASSERT(b.nested[0]->constants[0].v.f == 2.718281828);
+#else
+    UASSERT(b.nested[0]->constants[0].v.f == 2.718f);
+#endif
+
+    free(buf);
+    umodule_destroy(&a);
+    umodule_destroy(&b);
+}
+
 /* --- Serializer tests (Task 14) --- */
 
 UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
-    /* Empty module (no statements): 24-byte header + 6 body bytes.
+    /* Empty module (no statements): 24-byte header + 8 body bytes.
        Body = max_reg(1) + src_len varint 0(1) + n_const varint 0(1)
             + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
-            + n_abs varint 0(1) = 6 bytes.  Total = 30. */
+            + n_abs varint 0(1) + ic_count varint 0(1) + nested_count
+            varint 0(1) = 8 bytes.  Total = 32. */
     UModule module = {0};
     UArena arena;
     UEmitter e;
@@ -825,14 +1198,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 
     /* Size query (buf == NULL) */
     ptrdiff_t n = umodule_serialize(&module, NULL, 0);
-    UASSERT_EQ((ptrdiff_t)30, n);
+    UASSERT_EQ((ptrdiff_t)32, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
     ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
-    UASSERT_EQ((ptrdiff_t)30, written);
+    UASSERT_EQ((ptrdiff_t)32, written);
 
     /* Header field checks */
     UASSERT_EQ((uint8_t)'U', buf[0]);
@@ -1038,6 +1411,8 @@ UTEST(deserialize_loads_float_constant) {
     while ((off & 3U) != 0U) buf[off++] = 0;
     off = put_varint(buf, off, 0);              /* n_deltas = 0 */
     off = put_varint(buf, off, 0);              /* n_abs_lines = 0 */
+    off = put_varint(buf, off, 0);              /* ic_count = 0 (v1.5) */
+    off = put_varint(buf, off, 0);              /* nested_count = 0 (v1.5) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1327,6 +1702,337 @@ UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
     umodule_destroy(&m);
 }
 
+/* --- T4 verifier resync regression tests (MOD-009) --- */
+
+/* Helper: write a 24-byte good header into buf and return next offset. */
+static size_t write_good_header_to(uint8_t *buf) {
+    build_good_header(buf);
+    return 24U;
+}
+
+/* Helper: write one ABC-shape uint32 instruction (LE) starting at *off. */
+static void write_instr_abc(uint8_t *buf, size_t *off, UOpcode op,
+                            uint8_t a, uint8_t b, uint8_t c) {
+    uint32_t ins = (uint32_t)op
+                 | ((uint32_t)a << 8)
+                 | ((uint32_t)b << 16)
+                 | ((uint32_t)c << 24);
+    buf[(*off)++] = (uint8_t)(ins         & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 8)  & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 16) & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 24) & 0xFFU);
+}
+
+/* Helper: write one ABx-shape uint32 instruction (LE) starting at *off. */
+static void write_instr_abx(uint8_t *buf, size_t *off, UOpcode op,
+                            uint8_t a, uint16_t bx) {
+    uint32_t ins = (uint32_t)op
+                 | ((uint32_t)a << 8)
+                 | ((uint32_t)bx << 16);
+    buf[(*off)++] = (uint8_t)(ins         & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 8)  & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 16) & 0xFFU);
+    buf[(*off)++] = (uint8_t)((ins >> 24) & 0xFFU);
+}
+
+UTEST(verify_accepts_loadbool_b_as_immediate) {
+    /* Build a 2-instruction module: OP_LOADBOOL R[0] := true; OP_RET R[0].
+     * OP_LOADBOOL encodes B=1 as the boolean-true IMMEDIATE.  Pre-T4
+     * verifier rejects with "register B=1 > max_reg=0" because B is
+     * checked as a register without consulting opcode shape.  Post-T4
+     * the shape table flags B as UOPK_IMM_BOOL and the verifier accepts. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;  /* 4-byte align */
+    write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/1, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET,      /*A=*/0, /*B=*/0, /*C=*/0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;  /* two zero deltas */
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
+    /* OP_PUSH_TAG A[7:4] = flags nibble, A[3:0] = tag_reg nibble.
+     * tag_reg=0 + flags=0xF gives A=0xF0.  Pre-T4 verifier reads A as
+     * a single register and rejects A=240 > max_reg=0; post-T4 the
+     * shape's UOPK_IMM_REG_NIBBLE only checks the low nibble. */
+    uint8_t buf[80] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_PUSH_TAG, /*A=*/0xF0, /*Bx=*/0);
+    /* Bx=0 is a valid handler PC at instr_count=2 (Bx<2 acceptable). */
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
+    /* OP_LOADBOOL with B=2 is malformed: B is the 0/1 boolean
+     * immediate.  Post-T4 verifier rejects via UOPK_IMM_BOOL. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/2, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_op_getupval_a_above_max_reg) {
+    /* OP_GETUPVAL R[A] := upvalue[B] — A is destination register;
+     * must be <= max_reg.  A=99 with max_reg=0 should reject as a
+     * register-A overflow per UOPK_REG. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_GETUPVAL, /*A=*/99, /*B=*/0, /*C=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
+    /* Pre-fix the OP_AT_INSTALL row marked C as a register; encoding the
+     * 0xFF no-onleave sentinel as C tripped the register check.  Post-fix
+     * (T4 follow-up) C is UOPK_UNUSED and the sentinel verifies clean. */
+    uint8_t buf[80] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 2;          /* max_reg = 2 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abc(buf, &off, OP_AT_INSTALL, /*A=*/0, /*B=*/1, /*C=*/0xFFU);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_op_closure_bx_above_nested_count) {
+    /* OP_CLOSURE Bx must be < nested_count.  At v0.5.5 nested_count is 0
+     * (root-only modules); a hand-rolled OP_CLOSURE with Bx=0 should
+     * therefore reject with ULOAD_CORRUPT.  Pre-T4/T5 verifier accepted
+     * this silently; runtime would index past nested[] and read garbage. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_CLOSURE, /*A=*/0, /*Bx=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&c);
+}
+
+UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
+    /* OP_JMP Bx is signed-with-32768-bias; verifier intentionally does
+     * NOT range-check Bx.  Build a module with OP_JMP Bx=0 (offset
+     * -32768) followed by OP_RET; verifier accepts even though the
+     * jump target is "out of range" — runtime surfaces the issue at
+     * dispatch, not at load. */
+    uint8_t buf[64] = {0};
+    size_t off = write_good_header_to(buf);
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 2;
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    write_instr_abx(buf, &off, OP_JMP, /*A=*/0, /*Bx=*/0);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[256];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    umodule_destroy(&c);
+}
+
+/* Helper: build a serialized 2-instruction module with the given test
+ * instruction first and OP_RET as the second instruction.  Returns the
+ * total serialized length and writes into buf.  buf must be >= 80 bytes. */
+static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
+                                     uint8_t max_reg,
+                                     uint32_t test_instr) {
+    UASSERT(bufcap >= 80U);
+    size_t off = write_good_header_to(buf);
+    buf[off++] = max_reg;
+    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    buf[off++] = (uint8_t)(test_instr         & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 8)  & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((test_instr >> 24) & 0xFFU);
+    write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
+    buf[off++] = 2;          /* n_deltas = 2 */
+    buf[off++] = 0; buf[off++] = 0;
+    buf[off++] = 0;          /* n_abs_lines = 0 */
+    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
+    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    return off;
+}
+
+#define ENC_ABC(op, a, b, c) \
+    ((uint32_t)(op) | ((uint32_t)(a) << 8) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 24))
+#define ENC_ABX(op, a, bx) \
+    ((uint32_t)(op) | ((uint32_t)(a) << 8) | ((uint32_t)(bx) << 16))
+
+UTEST(verify_rejects_arith_c_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, /*max_reg=*/0,
+                                        ENC_ABC(OP_ADD, 0, 0, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_neg_b_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_NEG, 0, 99, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_test_a_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_TEST, 99, 0, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_eq_b_above_max_reg) {
+    /* OP_EQ A=0 (bool flag), B=99 (register), C=0 — B is the register, reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_EQ, 0, 99, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_setupval_a_above_max_reg) {
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_SETUPVAL, 99, 0, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
+    /* base=0, count=2, max_reg=0 — base+count=2 > max_reg+1=1, reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABC(OP_PUSH_FRAME_GUARD, 0, 2, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
+    /* instr_count=2; handler PC must be < 2.  Use Bx=99 to overshoot. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_TRY_BEGIN, 0, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
+    /* A[3:0] = tag_reg = 1; max_reg = 0 — reject on UOPK_IMM_REG_NIBBLE. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_PUSH_TAG, 0x01, 0));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
+UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
+    /* PUSH_TAG Bx=99 with instr_count=2 — UBXK_HANDLER_PC reject. */
+    uint8_t buf[80] = {0};
+    size_t off = build_two_instr_module(buf, sizeof buf, 0,
+                                        ENC_ABX(OP_PUSH_TAG, 0x00, 99));
+    UModule c = {0};
+    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
+    umodule_destroy(&c);
+}
+
 void test_module_suite(void);
 
 void test_module_suite(void) {
@@ -1350,8 +2056,12 @@ void test_module_suite(void) {
               deserialize_rejects_v1_1_module);
     utest_run("deserialize rejects v1.2 module (M4 hard break)",
               deserialize_rejects_v1_2_module);
-    utest_run("deserialize accepts v1.3 module",
-              deserialize_accepts_v13_module);
+    utest_run("deserialize rejects v1.3 module (M5 hard break)",
+              deserialize_rejects_v1_3_module);
+    utest_run("deserialize rejects v1.4 module (v0.5.6 wave-4 break)",
+              deserialize_rejects_v1_4_module);
+    utest_run("deserialize accepts current-version module",
+              deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",
               uproto_alloc_zero_inits_ic_count_and_ic_names);
     utest_run("uproto destroy frees ic_names",
@@ -1364,6 +2074,8 @@ void test_module_suite(void) {
               deserialize_rejects_wrong_instr_width);
     utest_run("deserialize rejects wrong endianness",
               deserialize_rejects_wrong_endianness);
+    utest_run("deserialize rejects non-zero reserved byte",
+              deserialize_rejects_nonzero_reserved_byte);
     utest_run("deserialize loads metadata max_reg and source_name",
               deserialize_loads_metadata_max_reg_and_source_name);
     utest_run("deserialize loads integer constant pool",
@@ -1406,6 +2118,12 @@ void test_module_suite(void) {
               roundtrip_ast_binary_1_plus_2);
     utest_run("roundtrip AST_UNARY -5 emit-serialize-deserialize",
               roundtrip_ast_unary_neg_5);
+    utest_run("roundtrip module with nested closure proto",
+              roundtrip_module_with_nested_closure_proto);
+    utest_run("roundtrip module with IC sites lazy-interns ic_name_strs",
+              roundtrip_module_with_ic_sites_lazy_interns);
+    utest_run("roundtrip preserves nested-proto FLOAT constant",
+              roundtrip_preserves_nested_proto_float_constant);
     utest_run("destroy NULL module is a no-op",
               destroy_null_module_is_noop);
     utest_run("module load error name covers all codes",
@@ -1440,4 +2158,36 @@ void test_module_suite(void) {
               deserialize_module_grow_reuses_existing_cap);
     utest_run("umodule_init zeroes ic_count and ic_names",
               umodule_init_zeroes_ic_count_and_ic_names);
+    utest_run("verify accepts OP_LOADBOOL B as immediate",
+              verify_accepts_loadbool_b_as_immediate);
+    utest_run("verify accepts OP_PUSH_TAG A packs flags and reg nibble",
+              verify_accepts_push_tag_a_packs_flags_and_reg_nibble);
+    utest_run("verify rejects OP_LOADBOOL B > 1",
+              verify_rejects_op_loadbool_b_greater_than_one);
+    utest_run("verify rejects OP_GETUPVAL A > max_reg",
+              verify_rejects_op_getupval_a_above_max_reg);
+    utest_run("verify accepts OP_AT_INSTALL with no-onleave 0xFF sentinel",
+              verify_accepts_at_install_with_no_onleave_sentinel);
+    utest_run("verify rejects OP_CLOSURE Bx >= nested_count",
+              verify_rejects_op_closure_bx_above_nested_count);
+    utest_run("verify accepts OP_JMP with arbitrary Bx",
+              verify_accepts_op_jmp_with_arbitrary_bx);
+    utest_run("verify rejects OP_ADD C > max_reg",
+              verify_rejects_arith_c_above_max_reg);
+    utest_run("verify rejects OP_NEG B > max_reg",
+              verify_rejects_neg_b_above_max_reg);
+    utest_run("verify rejects OP_TEST A > max_reg",
+              verify_rejects_test_a_above_max_reg);
+    utest_run("verify rejects OP_EQ B > max_reg",
+              verify_rejects_eq_b_above_max_reg);
+    utest_run("verify rejects OP_SETUPVAL A > max_reg",
+              verify_rejects_setupval_a_above_max_reg);
+    utest_run("verify rejects OP_PUSH_FRAME_GUARD base+count overflow",
+              verify_rejects_push_frame_guard_base_plus_count_overflow);
+    utest_run("verify rejects OP_TRY_BEGIN handler PC >= instr_count",
+              verify_rejects_try_begin_handler_pc_above_instr_count);
+    utest_run("verify rejects OP_PUSH_TAG low nibble > max_reg",
+              verify_rejects_push_tag_low_nibble_above_max_reg);
+    utest_run("verify rejects OP_PUSH_TAG handler PC >= instr_count",
+              verify_rejects_push_tag_handler_pc_above_instr_count);
 }

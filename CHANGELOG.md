@@ -2,6 +2,75 @@
 
 ## Unreleased
 
+## v0.5.6-bytecode — 2026-05-07
+
+Wave 4 of v0.5.x cleanup ramp.
+
+### Changed (bytecode wire format — INTENTIONAL BREAK v1.4 → v1.5)
+
+- (T18) Bytecode header version byte advances `0x14 → 0x15`. v1.4 modules
+  are rejected with `ULOAD_UNSUPPORTED_VERSION`; rebuild from source to
+  migrate. No live-system v1.4 → v1.5 upgrade path; this runtime does
+  not promise bytecode stability before v1.0.
+- (T16-T17) `OP_INVOKE` retired; M5 reactive opcodes 39-46 renumbered to
+  38-45. `OP_MAX` shrinks from 47 to 46. Computed-goto + opcode-name +
+  disassembler tables updated in lockstep.
+- (T12-T14) Wire format extended: `nested[]` UProto array + per-proto +
+  root-chunk `ic_count` + `ic_names` are now persisted. Pre-v1.5 modules
+  silently dropped these on round-trip; the in-process emit-then-run
+  path masked the gap (closures and IC names re-populated from emit
+  state, not load).
+
+### Fixed
+
+- (T4 / MOD-009) Verifier replaces hardcoded M1-shaped operand checks
+  with an opcode-shape table; legitimate v1.5 modules with `OP_LOADBOOL`,
+  `OP_PUSH_TAG`, `OP_GETUPVAL`, etc. no longer wrongly flagged as
+  `ULOAD_CORRUPT`.
+- (T5 / MOD-010) `Bx` range checks added for `OP_CLOSURE` (against
+  `nested_count`) and `OP_LOAD_REALM_GLOBAL` (against the runtime symbol
+  table sentinel). `OP_JMP` Bx is signed and intentionally unbounded.
+- (T8 / MOD-038) Header bytes 16-23 are now strictly enforced as zero
+  on load. Forward-compat flags can no longer slip through silently.
+
+### Internal
+
+- (T3 / pre-T4) New file-private `src/module/uopcode_shape.h` data
+  structure consumed by the verifier; future M6+ opcodes register here
+  rather than extending an inline switch.
+- (T7 / MOD-029) `kCanary[6]` consolidated into shared header
+  `src/module/umodule.h`; serializer + deserializer share the
+  definition.
+- (T11) `UProto.ic_name_strs` + `UModule.ic_name_strs` companion fields
+  added — populated at emit time by the emitter and at load time by the
+  deserializer; lazily interned into `USymbol *` at first
+  `urbi_module_instance_create`.
+
+### Documentation
+
+- (T9 / MOD-008 + MOD-039) `umodule_deserialize` docstring rewritten to
+  state actual error-state behavior (the partial-state-on-error rough
+  edge from MOD-001/MOD-002 is documented honestly; "module is left
+  empty on error" is replaced with "module may hold partial buffers on
+  error; `umodule_destroy` is safe in either case"). Stale "M1" pool
+  comment retired.
+- (T21) `docs/internals/bytecode-format.md` updated for v1.5 sections;
+  `docs/internals/opcodes.md` reflects renumber + OP_INVOKE retirement.
+- (T22) REVIVAL.md §14 gains S-bytecode-v1.5 row.
+
+### Verification
+
+- New golden baseline at `tests/golden/v0.5.6-bytecode-hashes.txt` (148
+  fixture hashes) replaces `v0.5.3-bytecode-hashes.txt` as the operative
+  gate going forward. `v0.5.5-bytecode-hashes.txt` retained as a
+  historical anchor.
+- All `make releasetest` gates green: host + ASan + UBSan +
+  valgrind-fast + tidy + docs-check + coverage 85% + GC stress +
+  URBI_GC_NONE smoke + 3-preset × 100-run determinism + cross-arm +
+  cross-riscv + LOC-cap.
+- Round-trip unit tests added (T6 + T15) covering verifier rejections
+  for every shape-table category + nested-proto + ic_names persistence.
+
 ## v0.5.5-naming — 2026-05-07
 
 Internal symbol + public C API naming pass per CONTRIBUTING.md §3.2 conventions.

@@ -74,9 +74,9 @@ typedef enum {
                              * spec #2. Emits OP_WAITUNTIL_INSTALL. */
     AST_AT_EVENT     = 31,  /* at (e?) / at sync (e?) — event-subscribe form.
                              * spec #3. Distinct from AST_WATCHER because dispatch goes
-                             * through OP_AT_EVENT_INSTALL (=43), not OP_AT_INSTALL. */
+                             * through OP_AT_EVENT_INSTALL (=42), not OP_AT_INSTALL. */
     AST_AT_SLOT_CHANGE = 32 /* at (obj.x.changed?) / sync variant — slot-change subscribe.
-                             * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=45) prefix
+                             * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=44) prefix
                              * followed by OP_AT_EVENT_INSTALL. */
 } UAstKind;
 
