@@ -112,7 +112,9 @@ typedef enum {
     URBI_ERR_PROTECTED_SLOT             = -9,
     URBI_ERR_RESERVED_10                = -10,
     URBI_ERR_CONST_SLOT_WRITE           = -11,
-    URBI_ERR_SLOT_NOT_FOUND             = -12
+    URBI_ERR_SLOT_NOT_FOUND             = -12,
+    URBI_ERR_SHAPE_BOUNDS               = -13,  /* T68: slot index past v1.0 packed-flag cap */
+    URBI_ERR_PROTO_DEPTH                = -14   /* T68: prototype-graph resolve-stack overflow */
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===

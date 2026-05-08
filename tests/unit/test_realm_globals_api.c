@@ -27,6 +27,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"   /* URealm.global_object */
+#include "object/uobject.h" /* T68: deep prototype-graph build for PROTO_DEPTH test */
 
 #define UTEST(name) static void name(void)
 
@@ -178,6 +179,64 @@ UTEST(set_global_const_rejects_existing_const_overwrite) {
     urbi_vm_destroy(&vm);
 }
 
+UTEST(get_global_distinguishes_overflow_from_oom) {
+    /* T68 (REALM-010): urbi_realm_get_global on a name absent from a
+     * prototype graph that exceeds the 64-deep resolve stack must return
+     * URBI_ERR_PROTO_DEPTH — NOT URBI_ERR_OOM (the pre-T68 mapping).
+     *
+     * To trigger overflow, the DFS at uobject_slot.c needs sp >= 64 at a
+     * push.  Plain linear depth doesn't suffice (DFS pops before pushing
+     * children).  The minimal trigger is 64 siblings at one level plus 2+
+     * children at a sibling that's popped while sp is still 63 — the
+     * second push then fails the cap check.
+     *
+     * Build: global_object adds 64 protos.  Then add 2 extra protos to
+     * proto_at(0) (the first-popped sibling).  After popping global_object
+     * (sp=0), 64 are pushed (sp=64).  Pop proto_at(0) (sp=63), push its
+     * first child (sp=64 OK), push the second — `if (sp >= 64) return -1`. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    /* Make 64 fresh objects, register each as a proto on global_object.
+     * urbi_object_add_proto PREPENDS — so after the loop the proto_list
+     * order is reversed: siblings[63] sits at proto_at(0), siblings[0]
+     * sits at proto_at(63).  The DFS pushes in proto_at(n-1)..proto_at(0)
+     * order, so proto_at(0) = siblings[63] is on the top of the stack and
+     * pops FIRST.  To trigger overflow we need the first-popped sibling
+     * (sp=63 at pop time) to have 2+ children — pushing the second one
+     * fails the cap check at sp >= 64. */
+    UObject *siblings[64];
+    for (int i = 0; i < 64; i++) {
+        siblings[i] = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+        UASSERT(siblings[i] != NULL);
+        int rc = urbi_object_add_proto(&vm, realm->global_object, siblings[i]);
+        UASSERT_EQ(URBI_OK, rc);
+    }
+
+    /* Add 2 protos to siblings[63] — last-prepended → proto_at(0) on
+     * global_object → popped first when sp = 63.  Pushing the second
+     * grandchild then trips `if (sp >= URBI_RESOLVE_STACK_CAP) return -1`. */
+    UObject *grand_a = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UObject *grand_b = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(grand_a != NULL);
+    UASSERT(grand_b != NULL);
+    UASSERT_EQ(URBI_OK, urbi_object_add_proto(&vm, siblings[63], grand_a));
+    UASSERT_EQ(URBI_OK, urbi_object_add_proto(&vm, siblings[63], grand_b));
+
+    /* get_global on a name absent from the entire graph must overflow. */
+    UValue out = {0};
+    int rc = urbi_realm_get_global(&vm, realm,
+                                   "absent_in_deep_graph", 20, &out);
+    UASSERT_EQ(URBI_ERR_PROTO_DEPTH, rc);
+    /* The error code MUST NOT be OOM — pre-T68 returned OOM here. */
+    UASSERT(rc != URBI_ERR_OOM);
+
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(get_global_returns_slot_not_found_when_absent) {
     /* urbi_realm_get_global on a name that doesn't exist must return
      * URBI_ERR_SLOT_NOT_FOUND (not a crash, not URBI_OK). */
@@ -191,6 +250,33 @@ UTEST(get_global_returns_slot_not_found_when_absent) {
     int rc = urbi_realm_get_global(&vm, realm,
                                    "totally_absent_xyz", 18, &out);
     UASSERT_EQ(URBI_ERR_SLOT_NOT_FOUND, rc);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(set_global_distinguishes_const_reject_from_oom) {
+    /* T68 (REALM-004): set_global on an existing CONSTANT slot must return
+     * URBI_ERR_CONST_SLOT_WRITE — distinct from URBI_ERR_OOM (which the
+     * pre-T68 code emitted indiscriminately for any non-OK path).
+     *
+     * "Object" is at slot index 0 and CONSTANT after populate; set_global
+     * (non-const variant) must NOT bypass the CONSTANT bit. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    int rc = urbi_realm_set_global(&vm, realm, "Object", 6, make_int(99));
+    UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
+    /* The error code MUST NOT be OOM — pre-T68 returned OOM here. */
+    UASSERT(rc != URBI_ERR_OOM);
+
+    /* set_global_const path: same disambiguation — already-const rejection
+     * comes back as URBI_ERR_CONST_SLOT_WRITE, not URBI_ERR_OOM. */
+    rc = urbi_realm_set_global_const(&vm, realm, "Object", 6, make_int(99));
+    UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
+    UASSERT(rc != URBI_ERR_OOM);
 
     urbi_vm_destroy(&vm);
 }
@@ -232,6 +318,10 @@ test_realm_globals_api_suite(void)
               set_global_const_blocks_script_write);
     utest_run("set_global_const: rejects existing CONSTANT overwrite (T67)",
               set_global_const_rejects_existing_const_overwrite);
+    utest_run("set_global: distinguishes const-reject from OOM (T68)",
+              set_global_distinguishes_const_reject_from_oom);
+    utest_run("get_global: distinguishes proto-depth overflow from OOM (T68)",
+              get_global_distinguishes_overflow_from_oom);
     utest_run("get_global: absent slot returns URBI_ERR_SLOT_NOT_FOUND",
               get_global_returns_slot_not_found_when_absent);
     utest_run("set_global: overwrites existing non-const slot",

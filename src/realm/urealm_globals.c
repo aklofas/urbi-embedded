@@ -311,6 +311,27 @@ urbi_realm_set_global(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
+    /* REALM-004 / T68: a non-const set_global on an existing CONSTANT slot
+     * must also reject — otherwise the host could bypass CONSTANT via the
+     * non-const variant.  Same packed-nibble + UProps inspection as
+     * set_global_const (T67). */
+    int32_t existing = urbi_shape_find_slot(realm->global_object->shape, sym);
+    if (existing >= 0) {
+        bool already_const = false;
+        if (existing < 8) {
+            const uint32_t shift      = (uint32_t)existing * 4U;
+            const uint32_t old_nibble =
+                (realm->global_object->shape->flags >> shift) & 0xFU;
+            already_const = (old_nibble & URBI_SLOT_FLAG_CONSTANT) != 0U;
+        } else if (realm->global_object->shape->props_table != NULL) {
+            const UProps *p =
+                realm->global_object->shape->props_table[existing];
+            already_const = (p != NULL) && (p->constant != 0U);
+        }
+        if (already_const) {
+            return URBI_ERR_CONST_SLOT_WRITE;
+        }
+    }
     int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
     return (rc == 0) ? URBI_OK : URBI_ERR_OOM;
 }
@@ -398,6 +419,10 @@ urbi_realm_get_global(UVM *vm, URealm *realm,
     if (found == 0) {
         return URBI_ERR_SLOT_NOT_FOUND;
     }
-    /* found == -1: resolve-stack depth overflow or other error */
-    return URBI_ERR_OOM;
+    /* found == -1: prototype-graph DFS exhausted the fixed 64-deep resolve
+     * stack at uobject_slot.c:561.  REALM-010 / T68: this is distinct from
+     * OOM (no allocation has been attempted on this path) — surface it as
+     * URBI_ERR_PROTO_DEPTH so callers can disambiguate "your prototype
+     * graph is too wide/deep" from "the host is out of memory". */
+    return URBI_ERR_PROTO_DEPTH;
 }
