@@ -9,13 +9,18 @@
  * T50 EVENT-005: event_native_register propagates urbi_register_fn failures
  *                instead of dropping them.  When the slot installer OOMs
  *                on any of the four native slots, the function returns
- *                UVM_OOM and resets vm->event_proto to NULL. */
+ *                UVM_OOM and resets vm->event_proto to NULL.
+ *
+ * T51 EVENT-008: uevent_ring_drain bound matches the SPSC max-usable depth
+ *                (DEPTH-1, not DEPTH).  Filling the ring to capacity and
+ *                draining must consume every entry exactly once. */
 
 #include "utest.h"
 
 #include "vm/uvm.h"
 #include "event/uevent_native.h"
 #include "event/uevent.h"
+#include "event/uevent_ring.h"
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
@@ -145,6 +150,55 @@ UTEST(event_native_register_propagates_register_oom)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T51: ring_drain_handles_max_capacity_correctly
+ * Fill the ring to its DEPTH-1 max usable entries; drain; assert all
+ * were consumed (read index advanced to write index).  This exercises
+ * the corrected `drained < URBI_EVENT_RING_DEPTH - 1` bound.
+ * =================================================================== */
+
+static int g_drain_count;
+static void counting_drain_handler(struct UVM *vm, uint32_t event_id,
+                                   UValue payload)
+{
+    (void)vm; (void)event_id; (void)payload;
+    g_drain_count++;
+}
+
+UTEST(ring_drain_handles_max_capacity_correctly)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UASSERT(vm.event_ring != NULL);
+    if (vm.event_ring == NULL) { urbi_vm_destroy(&vm); return; }
+
+    urbi_register_event_drain(&vm, counting_drain_handler);
+    g_drain_count = 0;
+
+    /* Fill the ring to its max-usable depth (DEPTH-1: SPSC reserves one slot
+     * to distinguish full from empty). */
+    int filled = 0;
+    int i;
+    for (i = 0; i < URBI_EVENT_RING_DEPTH - 1; i++) {
+        if (urbi_inject_event(&vm, (uint32_t)i, NULL, 0U) == URBI_OK) {
+            filled++;
+        }
+    }
+    UASSERT_EQ(filled, URBI_EVENT_RING_DEPTH - 1);
+
+    /* The ring should now refuse one more inject. */
+    int rc = urbi_inject_event(&vm, 0xDEADBEEFU, NULL, 0U);
+    UASSERT_EQ(rc, URBI_ERR_EVENT_RING_FULL);
+
+    /* Drain: every filled entry must reach the handler exactly once. */
+    uevent_ring_drain(&vm);
+    UASSERT_EQ(g_drain_count, URBI_EVENT_RING_DEPTH - 1);
+    UASSERT(!uevent_ring_has_pending(vm.event_ring));
+
+    urbi_register_event_drain(&vm, NULL);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -155,4 +209,6 @@ test_event_runtime_suite(void)
               native_event_functions_validate_argv);
     utest_run("event_native_register_propagates_register_oom",
               event_native_register_propagates_register_oom);
+    utest_run("ring_drain_handles_max_capacity_correctly",
+              ring_drain_handles_max_capacity_correctly);
 }

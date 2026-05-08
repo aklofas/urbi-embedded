@@ -97,7 +97,10 @@ uevent_ring_drain(struct UVM *vm)
     rd  = __atomic_load_n(&r->read_idx,  __ATOMIC_RELAXED);
 
     drained = 0U;
-    while (rd != w && drained < (uint32_t)URBI_EVENT_RING_DEPTH) {
+    /* EVENT-008: SPSC ring max-usable depth is DEPTH-1 (one slot reserved
+     * to distinguish full from empty).  Bound the drain at DEPTH-1, not
+     * DEPTH, so the iteration count cannot exceed the actual capacity. */
+    while (rd != w && drained < (uint32_t)(URBI_EVENT_RING_DEPTH - 1U)) {
         UEventRingEntry *e = &r->ring[rd];
 
         /* T57: if a drain handler is registered, call it with the entry's
