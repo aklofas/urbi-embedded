@@ -244,6 +244,53 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-001 (T98): urbi_strand_create returns NULL when the cleanup-stack
+   allocation inside ustrand_init fails (the second alloc, after the strand
+   struct itself).  Verifies the post-strand-alloc OOM path frees the partial
+   allocation rather than returning a DEAD-but-allocated strand.  Closes the
+   "fully-functional strand or NULL" contract pinned at urbi.h:194. */
+UTEST(strand_create_returns_null_on_cleanup_oom) {
+    UVM vm;
+    URealm *realm;
+    UStrand *s;
+    int allocs_after_realm;
+
+    /* Count baseline allocs needed for VM + realm setup. */
+    AllocSpy spy1 = { 0, -1 };
+    urbi_vm_init(&vm, spy_alloc, &spy1);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    allocs_after_realm = spy1.alloc_calls;
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+
+    /* Real test: succeed on the strand struct alloc, fail on the cleanup-
+       stack alloc that follows it inside ustrand_init.  fail_at = N means
+       "fail starting on alloc N+1"; here we want to succeed for the strand
+       struct (alloc allocs_after_realm + 1) and fail on the cleanup-stack
+       alloc (allocs_after_realm + 2). */
+    AllocSpy spy2 = { 0, allocs_after_realm + 1 };
+    urbi_vm_init(&vm, spy_alloc, &spy2);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
+
+    s = urbi_strand_create(realm, NULL);
+    UASSERT(s == NULL);  /* cleanup-stack alloc failed → strand_create returns NULL */
+    /* Two allocs were attempted: the strand struct (success) + cleanup
+       stack (failure).  Anything else means the failure path leaked allocs. */
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm + 2);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    /* realm->strands_head must NOT contain a partial strand. */
+    UASSERT(realm->strands_head == NULL);
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_strand_suite(void) {
     utest_run("strand_state_dormant_at_init",          strand_state_dormant_at_init);
     utest_run("strand_state_waiting_macros_round_trip", strand_state_waiting_macros_round_trip);
@@ -257,4 +304,5 @@ void test_strand_suite(void) {
     utest_run("strand_create_destroy_round_trip",       strand_create_destroy_round_trip);
     utest_run("strand_spawn_two_fifo_order",            strand_spawn_two_fifo_order);
     utest_run("strand_create_returns_null_on_oom",      strand_create_returns_null_on_oom);
+    utest_run("strand_create_returns_null_on_cleanup_oom", strand_create_returns_null_on_cleanup_oom);
 }

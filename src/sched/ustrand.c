@@ -190,6 +190,23 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
         UTag *chain[1];
         chain[0] = realm->tag;
         urbi_strand_attach_ambient_tags(s, chain, 1);
+
+        /* CHSTR-018 + CHSTR-040: enforce the "fully-functional strand or NULL"
+         * contract documented at urbi.h:194.  attach_ambient_tags transitions
+         * the strand to DEAD on cleanup-stack overflow; without this guard
+         * urbi_strand_create would return a DEAD-but-allocated strand that
+         * is already linked into realm->strands_head, leaking the partial
+         * allocation onto callers that only check the return value for NULL.
+         * Unlink from realm, tear the strand down, and return NULL so the
+         * single OOM/overflow path mirrors the other failure modes. */
+        if (USTRAND_GET_STATE(s) == USTRAND_DEAD) {
+            URBI_INTERNAL_ASSERT(realm->strands_head == s);
+            realm->strands_head = s->next_in_realm;
+            s->next_in_realm    = NULL;
+            ustrand_destroy(s, vm);
+            vm->alloc_fn(s, 0, vm->alloc_ud);
+            return NULL;
+        }
     }
 
     sched_strand_init(s, NULL);
