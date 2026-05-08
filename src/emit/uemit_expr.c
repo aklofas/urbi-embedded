@@ -676,12 +676,22 @@ uint8_t emit_bin_sep_arm(UEmitter *e, UAstNode *n) {
         return result_reg;
     }
     /* SEP_PIPE: lhs then rhs in sequence, no yield.
-       LHS value is discarded; result is rhs. */
+       LHS value is discarded; result is rhs.
+
+       EMIT-009 fix (Wave 5, v0.5.7): sync next_reg to the FuncState
+       freereg before emitting RHS, mirroring the v0.5.2 AST_NARY shape
+       (commit 882fbb8).  The bare next_reg-- is wrong when LHS leaves
+       freereg promoted (e.g., LHS ends in a function literal, which
+       lifts freereg via emit_function_literal's `freereg++`); after
+       next_reg-- the cursor sits BELOW freereg and RHS allocation
+       clobbers a still-live LHS temp.  See
+       tests/unit/test_emit_freereg_drift.c::
+       emit_sep_pipe_does_not_alias_lhs_temp_with_rhs. */
     uint8_t lhs_r = emit_expr(e, n->u.bin_sep.lhs);
     if (e->error != EMIT_OK) return 0U;
     /* Release lhs register before rhs so rhs may reuse the slot. */
     (void)lhs_r;
-    if (e->next_reg > 0U) e->next_reg--;
+    e->next_reg = e->current_fs->freereg;
     uint8_t rhs_r = emit_expr(e, n->u.bin_sep.rhs);
     return rhs_r;
 }
