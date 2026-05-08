@@ -79,6 +79,23 @@ bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
     s->catch_value = val;
 }
 
+/* SCHED-001: discriminate "is parked on Event waiter chain?" by class+reason
+ * rather than by full state-byte equality.  Pre-v0.5.5 the JOIN reason byte
+ * collided with EVENT (both 0x03), making `s->state == USTRAND_WAIT_EVENT`
+ * ambiguous; v0.5.5 (CHSTR-016) renumbered JOIN to 0x04 so the literal
+ * composite is now distinct, but the architectural pattern of comparing
+ * full-state bytes is fragile against any future reason renumbering.  This
+ * helper isolates the predicate so additions to the WAITING reason space
+ * cannot re-introduce an alias.
+ *
+ * Closes SCHED-001 (and the architectural follow-up to EMITR-001). */
+static inline int
+is_event_parked_strand(const UStrand *s)
+{
+    return ((s->state & USTRAND_STATE_MASK) == USTRAND_WAITING) &&
+           ((s->state & USTRAND_REASON_MASK) == USTRAND_REASON_EVENT);
+}
+
 /* ===== pop_call_frame: restore caller's execution context =====
    Called from CALL_FRAME branch and the backward-compat direct-pop path.
    After this returns, s->R points to the caller's register base and
@@ -389,8 +406,10 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
         /* Unlink from event waiter chain before waking (spec #3 §6.4).
          * Must happen before state transition so the waiter list is consistent
-         * when the strand next runs.  Idempotent if not on an event chain. */
-        if (s->state == USTRAND_WAIT_EVENT)
+         * when the strand next runs.  Idempotent if not on an event chain.
+         * Use the class+reason discriminator (SCHED-001) rather than full-
+         * state byte equality so future reason-byte additions cannot alias. */
+        if (is_event_parked_strand(s))
             uevent_waiter_unregister(s);
 
         /* Wake any blocked strand so it can consume the unwind. */
@@ -430,9 +449,10 @@ urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason)
     strand->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
      * unwind.  USTRAND_IS_WAITING checks the upper nibble of strand->state.
-     * Unlink from event waiter chain first (spec #3 §6.4). */
+     * Unlink from event waiter chain first (spec #3 §6.4).  Use the class+
+     * reason discriminator (SCHED-001) rather than full-state byte equality. */
     if (USTRAND_IS_WAITING(strand)) {
-        if (strand->state == USTRAND_WAIT_EVENT)
+        if (is_event_parked_strand(strand))
             uevent_waiter_unregister(strand);
         strand->state = USTRAND_STATE_READY;
     }
@@ -455,8 +475,9 @@ urbi_strand_panic(struct UStrand *strand, const char *msg)
     (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
     /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
      * Prevents stale pointers in e->waiters_head if the strand is freed
-     * without ever being woken by an emit. */
-    if (strand->state == USTRAND_WAIT_EVENT)
+     * without ever being woken by an emit.  Use the class+reason
+     * discriminator (SCHED-001) rather than full-state byte equality. */
+    if (is_event_parked_strand(strand))
         uevent_waiter_unregister(strand);
     strand->fatal_status = UEXEC_CANCEL;
     strand->fatal_value  = nil;
