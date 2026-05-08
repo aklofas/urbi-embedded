@@ -313,9 +313,9 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
     {
         int alt_target = (int)emit_instr_count(e);
-        int alt_offset = alt_target - (jmp_to_else + 1);
         emit_patch_instr(e, jmp_to_else,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + alt_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_else, alt_target)));
     }
 
     /* 8. Reset cursor to rd for else/nil arm. */
@@ -339,9 +339,9 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* 10. Patch jmp_to_end → current pc. */
     {
         int end_target = (int)emit_instr_count(e);
-        int end_offset = end_target - (jmp_to_end + 1);
         emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + end_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_end, end_target)));
     }
 
     /* Advance next_reg past rd so callers can allocate above the result
@@ -434,9 +434,9 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 
         /* 6. Back-edge JMP to loop_start. */
         {
-            int back_offset = loop_start - ((int)emit_instr_count(e) + 1);
+            int from_pc = (int)emit_instr_count(e);
             emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
-                                         (uint16_t)(UEMIT_JMP_BIAS + back_offset)),
+                                         uemit_jmp_offset(from_pc, loop_start)),
                        (uint32_t)n->line);
         }
 
@@ -448,9 +448,9 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     /* 8. Patch the exit JMP to current pc. */
     {
         int exit_target = (int)emit_instr_count(e);
-        int exit_offset = exit_target - (jmp_to_exit + 1);
         emit_patch_instr(e, jmp_to_exit,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + exit_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_exit, exit_target)));
     }
 
     /* while-loop is a statement; it doesn't produce a value.

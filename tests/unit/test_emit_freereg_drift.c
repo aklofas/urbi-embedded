@@ -787,7 +787,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
     UEmitError rc = compile_src(&vm, &arena, &module,
         "function f() {"
         " var a = 1;"
-        " if (a > 0) (a = 2) else (a = 3);"
+        " if (a > 0) { a = 2 } else { a = 3 };"
         " return a;"
         "}");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
@@ -865,5 +865,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_bare_return_does_not_clobber_local);
     utest_run("emit_throw_does_not_clobber_local",
               emit_throw_does_not_clobber_local);
-    /* T18 added below; held back from registration until the fix lands. */
+    utest_run("emit_jmp_offset_resilient_to_intervening_instructions",
+              emit_jmp_offset_resilient_to_intervening_instructions);
 }

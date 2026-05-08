@@ -183,9 +183,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_catch → here (past_catch_pc) */
         {
             int past_catch_target = (int)emit_instr_count(e);
-            int off = past_catch_target - (jmp_past_catch_pc + 1);
             emit_patch_instr(e, jmp_past_catch_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_catch_pc,
+                                                past_catch_target)));
         }
 
         /* OP_TRY_END (outer) */
@@ -219,9 +220,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_finally → here */
         {
             int past_finally_target = (int)emit_instr_count(e);
-            int off = past_finally_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_finally_pc,
+                                                past_finally_target)));
         }
 
     } else if (has_catch) {
@@ -260,9 +262,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_handler → here */
         {
             int past_target = (int)emit_instr_count(e);
-            int off = past_target - (jmp_past_handler_pc + 1);
             emit_patch_instr(e, jmp_past_handler_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_handler_pc,
+                                                past_target)));
         }
 
     } else {
@@ -308,9 +311,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_finally → here */
         {
             int past_target = (int)emit_instr_count(e);
-            int off = past_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_finally_pc,
+                                                past_target)));
         }
     }
 
@@ -465,9 +469,10 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     /* Past-handler: JMP lands here. */
     {
         int past_handler_target = (int)emit_instr_count(e);
-        int off = past_handler_target - (jmp_past_handler_pc + 1);
         emit_patch_instr(e, jmp_past_handler_pc,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_past_handler_pc,
+                                            past_handler_target)));
     }
 
     /* Return a nil register as the tag-prefix's value. */

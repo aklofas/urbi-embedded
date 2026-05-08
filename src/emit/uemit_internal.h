@@ -131,6 +131,21 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
+/* EMIT-019 fix (Wave 5, v0.5.7): centralize OP_JMP Bx encoding in a
+ * pc-based helper.  The VM dispatches OP_JMP as `pc += signed(Bx) -
+ * UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an OP_JMP at
+ * from_pc landing at target_pc requires Bx = (target_pc - from_pc - 1)
+ * + UEMIT_JMP_BIAS.  Wave 3 named UEMIT_JMP_BIAS / FALLTHROUGH_BIAS but
+ * left the arithmetic inline at every site; this helper centralizes
+ * the encoding contract so future peephole / extra-instr insertions
+ * cannot silently miscompute fall-through.  Returns the biased Bx value
+ * ready for uinstr_enc_abx.  Bytecode-byte-identical with the pre-
+ * extract inline form. */
+static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
+    int offset = target_pc - from_pc - 1;
+    return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
+}
+
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
  * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
  * can use them without implicit-declaration warnings. */
