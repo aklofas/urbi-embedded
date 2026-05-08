@@ -1,42 +1,108 @@
 # Changelog
 
-## Unreleased — Wave 5 of v0.5.x cleanup ramp (v0.5.7 candidate)
+## Unreleased
+
+## v0.5.7-fixes — 2026-05-08
+
+Wave 5 of v0.5.x cleanup ramp.
 
 ### Fixed
 
-- (in progress) 123 audit findings dispositioned `wave-5-fixes` plus 4
-  carry-forwards (API-004, WATCH-023, EMIT-019 underlying, FOUND-032)
-  plus 3 Wave-4 forward-looking items (ic_names symbol-table verifier
-  cross-validation, deeply-nested closure verifier sanity, nupvals/
-  nparams range check at proto decode).
+- 123 audit findings dispositioned `wave-5-fixes` (53 bug + 39 unsafe + 11 cov +
+  12 smell + 5 doc + 3 dead). Closing-commit table at
+  `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-audit-findings.md` Wave-5
+  Resolutions section.
+- 4 prior-wave carry-forwards: API-004 (`urbi_run_chunk` realm threading),
+  WATCH-023 (test-seam removal — 47 call sites lifted to
+  `tests/unit/twatcher_install_helper`), EMIT-019 underlying (JMP offset
+  pc-based helper), FOUND-032 (`ustrand_consts_for_closure` shared helper).
+- 3 Wave-4 forward-looking items: ic_names symbol-table verifier
+  cross-validation (T77), deeply-nested closure verifier sanity (T78),
+  nupvals/nparams range check at proto decode (T79).
+- Emit register-allocation drift cluster (Phase 2): EMIT-009 through EMIT-018
+  closed via the M2-NaryEmit pattern (replace `next_reg--` with
+  `next_reg = freereg`). New helper `free_reg_freereg_synced` for
+  watcher-install teardowns; new `uemit_jmp_offset` PC-based helper.
+- VM dispatch ownership (Phase 5): VM-001/002/003/005/012/013 closed; new
+  `vm_install_check_closure_operand` / `vm_install_check_event_operand` /
+  `vm_install_fault` helpers centralize kind-checking and fault propagation.
+- Object-model fixes (Phase 13): in-place barrier writes (OBJ-003), shape-clone
+  on aliased mutation (OBJ-005), CoW props_table on cross-shape mutation
+  (OBJ-018), idempotent install short-circuit (OBJ-041).
+- Module loader hardening (Phase 15): MOD-001/002/004/007/017/018/019 closed;
+  new `ULOAD_INVALID_ARG` and `ULOAD_OVERSIZED` error codes; explicit
+  `URBI_MAX_INSTRS_PER_PROTO = 1<<20` cap.
+- Foundations (Phase 16): 17 of 18 audit IDs closed (T89/FOUND-028 BLOCKED —
+  audit assumption inverted; filed as backlog). New `urbi_value_nil()` helper
+  in `<urbi/types.h>`.
 
 ### Added
 
 - Strict-tooling gates: `make test-tidy-strict`, `make test-cppcheck`,
   `make test-scan-build`, `make test-corpus-sanitize`,
-  `make test-branch-coverage`. `test-scan-build` promoted to
-  `make releasetest` at T118 (clean baseline); `test-tidy-strict` and
-  `test-cppcheck` remain informational pending residual clean-up.
-- `tests/scripts/capture_wire_format_hashes.sh` (filed at v0.5.6
-  backlog as a Wave-4 deferral).
-- `tests/golden/v0.5.7-fixes-bytecode-hashes.txt` (post-Wave-5 disasm
+  `make test-branch-coverage`. `test-scan-build` and `test-corpus-sanitize`
+  promoted to `make releasetest`; `test-tidy-strict` (25 residuals) and
+  `test-cppcheck` (145 residuals) remain informational pending v1.x
+  close-out (filed as backlog under "Strict-tooling residuals").
+- `tests/scripts/capture_wire_format_hashes.sh` (Wave-4 deferral landed) +
+  `--dump-wire-format` flag on `tools/urbi`.
+- `tests/golden/v0.5.7-fixes-bytecode-hashes.txt` (post-Wave-5 disasm-text
   baseline) and `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
   (first-ever on-disk wire-byte baseline).
-- Co-located regression tests for every `src/*.c` fix commit per
-  Wave-5 Gate G1 (TDD-per-fix-commit discipline).
-- Phase 20 coverage-gap tests (T119-T125, audit IDs COV-001..008):
+- Full-corpus sanitizer gate (`make test-corpus-sanitize`) — all 148 `.chk`
+  fixtures × 3 sanitizers (ASan + UBSan + valgrind memcheck) under one target.
+  Promoted to releasetest Phase 2 (solo).
+- Co-located regression tests for every `src/*.c` fix commit per Wave-5 Gate
+  G1 (TDD-per-fix-commit discipline). New test files:
+  `test_emit_freereg_drift.c`, `test_emit_error_paths.c`,
+  `test_vm_dispatch_ownership.c`, `test_gc_scratch_rooting.c`,
+  `test_gc_sweep_accounting.c`, `test_sched_state_aliasing.c`,
+  `test_watcher_ownership.c`, `test_event_runtime.c`, `test_tag_barrier.c`,
+  `test_object_in_place_barrier.c`, `test_realm_globals.c`,
+  `test_module_loader_hardening.c`, `test_foundations.c`,
+  `test_chunk_strand.c`, `test_public_api.c`.
+- Coverage-gap tests (Phase 20, T119-T125, audit IDs COV-001..008):
   `src/urbi.c` 8 % → 100 %, `src/vm/uop_fork.c` 60 % → 91 %,
   `src/changed/uchanged.c` 77 % → 86 %, `src/emit/*` 84.1 % → 87.1 %.
-  Overall line coverage 87 % → 88 %.
+- Two new `UErrCode` values: `URBI_ERR_SHAPE_BOUNDS`, `URBI_ERR_PROTO_DEPTH`
+  (Phase 14 T68 — distinct error codes for `set_global` / `get_global`).
+- Two new `UEmitError` values: `EMIT_TOO_MANY_ARGS` (T13/EMIT-014),
+  `EMIT_TAG_SPILL_OUT_OF_RANGE` (T14/EMIT-015).
+- Two new `UModuleLoadResult` values: `ULOAD_INVALID_ARG` (T73/MOD-007),
+  `ULOAD_OVERSIZED` (T74/MOD-017).
+- New scheduler helpers: `sched_strand_unbind_from_ready_queue`,
+  `sched_strand_unbind_from_sleep_queue` (Phase 14 T69 + Phase 8 T41).
+- New realm helper: `realm_install_const` (Phase 14 T70).
+- New emit helpers: `uemit_jmp_offset`, `free_reg_freereg_synced`.
+- New VM helpers: `vm_install_check_closure_operand`,
+  `vm_install_check_event_operand`, `vm_install_result_is_fatal`,
+  `vm_install_fault`.
+- `event_sync_degradation_warned` UVM field (T28/EMITR-005 — one-shot warn).
+- `gc_surviving_bytes` UVM field (T37/GC-015 — persistent sweep accumulator).
+- `tests/unit/twatcher_install_helper.{c,h}` — test-only seam lifted from
+  `src/watcher/uwatcher.c` per WATCH-023.
+- `docs/internals/emit-correctness-notes.md` — verified-clean rationale for
+  the OP_CLOSURE-clobber-event family (EMIT-043).
 
 ### Changed
 
-- `urbi_run_chunk` signature: realm argument now threaded through
-  `urbi_vm_run` (closes API-004; signature change cascades to all
-  callers).
-- Full-corpus ASan + UBSan + valgrind gate (all 148 `.chk` fixtures)
-  is now standing CI; was a curated subset.
+- `urbi_run_chunk` and `urbi_vm_run` signatures: realm argument now threaded
+  through (closes API-004; signature change cascades to ~80 callers across
+  test files + `tools/urbi.c`).
 - `URBI_VERSION` literal updated to "0.5.7-fixes" (closes API-011).
+- Full-corpus ASan + UBSan + valgrind gate (all 148 `.chk` fixtures) is now
+  standing CI; was a curated subset.
+- AST_PROP_GET / AST_PROP_SET (arrow-access `obj.x->y`) now reject explicitly
+  with `EMIT_UNSUPPORTED_AST` rather than fall through silently (T23/SCAN-001).
+  Resolution B (lower to OP_GETSLOT/OP_SETSLOT) filed as v1.x backlog —
+  legacy stdlib `profile.u`, `object.u`, `run-test.u` and third-party
+  `jouve gsrapi.u` actively use this syntax.
+- Named-function decl (`function f() { ... }` at top level) now rejected with
+  `PARSE_NAMED_FUNCTION_NOT_SUPPORTED` (T25/PARSE-004; was silently discarded).
+  Resolution B filed as v1.x backlog.
+- `async` keyword consistently rejected as identifier in both var-decl and
+  assignment contexts (T26/PARSE-007; was inconsistent — accepted in
+  `var async = 1` but rejected at `async = 2`).
 
 ## v0.5.6-bytecode — 2026-05-07
 
