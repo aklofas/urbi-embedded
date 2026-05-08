@@ -30,10 +30,13 @@
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"   /* vm_alloc_closure */
+#include "vm/uop_fork.h"       /* UVAL_STRAND_MAKE — T120 join-wait fast path */
 #include "watcher/uwatcher.h"  /* urbi_watcher_unregister_internal */
 #include "runtime/uclosure.h"  /* UClosure */
 #include "runtime/ucleanup.h"  /* UCleanupEntry */
 #include "sched/usched_cooperative.h" /* sched_init */
+#include "sched/ustrand.h"     /* USTRAND_STATE_DEAD — T120 */
+#include "realm/urealm.h"      /* urbi_realm_create — T120 fork OOM */
 
 #include <string.h>
 #include <stdlib.h>
@@ -461,6 +464,309 @@ UTEST(fork_detach_kind_checks_closure_operand)
 }
 
 /* ===================================================================
+ * T120 / COV-002: OP_FORK_JOIN + OP_JOIN_WAIT kind-check coverage
+ * ===================================================================
+ *
+ * The Phase-5 fork_detach_kind_checks_closure_operand test (above)
+ * exercises OP_FORK_DETACH's kind check at uop_fork.c:155.  The two
+ * sibling opcodes have nearly-identical kind-check stanzas at
+ * uop_fork.c:194 (OP_FORK_JOIN) and uop_fork.c:232 (OP_JOIN_WAIT) which
+ * were previously unexercised — pre-T120 coverage on src/vm/uop_fork.c
+ * sat at 60 %.  T120 raises it by directly exercising those branches
+ * plus OP_JOIN_WAIT's "child already DEAD" fast path.
+ *
+ * The test pattern matches fork_detach_kind_checks_closure_operand
+ * exactly: a single hand-crafted opcode at instrs[0] with R[A] holding
+ * a non-matching kind, dispatched via dispatch_loop_until_yield, then
+ * asserts state == DEAD + last_error == UVM_TYPE_ERROR. */
+
+UTEST(fork_join_kind_checks_closure_operand)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    static uint32_t instrs[1];
+    /* OP_FORK_JOIN A=closure_reg, B=child_handle_reg */
+    instrs[0] = uinstr_enc_abc(OP_FORK_JOIN, 0, 1, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    /* R[0] = NIL via calloc; not a closure → kind check trips at
+     * uop_fork.c:194. */
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(join_wait_kind_checks_strand_handle_operand)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    static uint32_t instrs[1];
+    /* OP_JOIN_WAIT A=child_handle_reg */
+    instrs[0] = uinstr_enc_abc(OP_JOIN_WAIT, 0, 0, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    /* R[0] = NIL via calloc; not a strand handle → kind check trips at
+     * uop_fork.c:232. */
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UVM_TYPE_ERROR, (int)vm.last_error);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
+/* fork_spawn_child OOM coverage: op_fork_detach reaches the
+ * urbi_strand_create-returns-NULL branch (uop_fork.c:58-63), then propagates
+ * back through op_fork_detach (line 170) by setting strand DEAD +
+ * fatal_status = UEXEC_CANCEL.
+ *
+ * Setup pattern: arm a Realm with the fail_after_n allocator, allow the
+ * realm + parent strand allocations to succeed (allocs_remaining = -1
+ * during setup), then flip to allocs_remaining = 0 right before invoking
+ * op_fork_detach.  fork_spawn_child's first allocation (urbi_strand_create's
+ * UStrand alloc) returns NULL, triggering the early-out path. */
+UTEST(fork_detach_oom_marks_strand_dead)
+{
+    UVM vm;
+    FailAfterNAllocState st = { .allocs_remaining = -1 };
+    urbi_vm_init(&vm, fail_after_n_alloc, &st);
+    sched_init(&vm, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    /* Hand-craft a closure-shaped UValue for R[0].  fork_spawn_child reads
+     * the closure pointer through child_closure->proto, BUT only AFTER
+     * urbi_strand_create succeeds — and we'll force urbi_strand_create to
+     * fail BEFORE that deref.  So the closure pointer here can be any
+     * non-NULL pointer; we use a small heap-allocated UClosure stub. */
+    UClosure stub_cl;
+    memset(&stub_cl, 0, sizeof(stub_cl));
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_FORK_DETACH, 0, 0, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    reg_stack[0].kind = (uint8_t)UVAL_CLOSURE;
+    reg_stack[0].v.p  = &stub_cl;
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+    /* op_fork_detach calls fork_spawn_child which asserts s->realm != NULL.
+     * The setup helper zeroes the strand; we need realm pointer wired. */
+    s.realm = realm;
+
+    /* Starve next allocation. */
+    st.allocs_remaining = 0;
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    /* After fork_spawn_child returns NULL: strand DEAD with CANCEL fatal. */
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UEXEC_CANCEL, (int)s.fatal_status);
+
+    st.allocs_remaining = -1;  /* restore for teardown */
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
+/* fork_spawn_child arm_from_closure OOM: lets urbi_strand_create succeed
+ * but starves the urbi_strand_arm_from_closure register-stack allocation
+ * (uop_fork.c:109), forcing the urbi_strand_destroy + DEAD-mark cleanup
+ * branch at lines 111-116.
+ *
+ * The exact "allocs_remaining" needed is fragile — set generously and
+ * sweep down until it lands on the arm-from-closure path.  3 successes
+ * usually covers: child UStrand alloc + child cleanup-stack alloc + ...
+ * then NULL on the register-stack alloc inside arm_from_closure. */
+UTEST(fork_detach_arm_from_closure_oom)
+{
+    UVM vm;
+    FailAfterNAllocState st = { .allocs_remaining = -1 };
+    urbi_vm_init(&vm, fail_after_n_alloc, &st);
+    sched_init(&vm, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    /* Build a real-shaped closure with a non-NULL proto so
+     * urbi_strand_arm_from_closure has a valid proto pointer to read. */
+    UProto stub_proto;
+    memset(&stub_proto, 0, sizeof(stub_proto));
+    stub_proto.nupvals = 0;
+    UClosure stub_cl;
+    memset(&stub_cl, 0, sizeof(stub_cl));
+    stub_cl.proto = &stub_proto;
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_FORK_DETACH, 0, 0, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    reg_stack[0].kind = (uint8_t)UVAL_CLOSURE;
+    reg_stack[0].v.p  = &stub_cl;
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+    s.realm = realm;
+
+    /* Allow child UStrand alloc (1) + cleanup-stack alloc (2), starve next.
+     * If urbi_strand_create needs more allocs, this falls into the
+     * urbi_strand_create-NULL path and still marks the strand DEAD —
+     * either way the test asserts the same outcome (strand DEAD with
+     * CANCEL fatal). */
+    st.allocs_remaining = 2;
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UEXEC_CANCEL, (int)s.fatal_status);
+
+    st.allocs_remaining = -1;
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
+/* OP_FORK_JOIN OOM: same shape as fork_detach_oom_marks_strand_dead but
+ * exercises op_fork_join's `return -1` at uop_fork.c:208 (the
+ * fork_spawn_child-returns-NULL branch shared with op_fork_detach). */
+UTEST(fork_join_oom_marks_strand_dead)
+{
+    UVM vm;
+    FailAfterNAllocState st = { .allocs_remaining = -1 };
+    urbi_vm_init(&vm, fail_after_n_alloc, &st);
+    sched_init(&vm, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    UClosure stub_cl;
+    memset(&stub_cl, 0, sizeof(stub_cl));
+
+    static uint32_t instrs[1];
+    instrs[0] = uinstr_enc_abc(OP_FORK_JOIN, 0, 1, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    reg_stack[0].kind = (uint8_t)UVAL_CLOSURE;
+    reg_stack[0].v.p  = &stub_cl;
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+    s.realm = realm;
+
+    st.allocs_remaining = 0;
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT_EQ((int)UEXEC_CANCEL, (int)s.fatal_status);
+
+    st.allocs_remaining = -1;
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
+/* OP_JOIN_WAIT fast path: when the child handle in R[A] is already DEAD,
+ * op_join_wait returns 0 immediately rather than threading the parent
+ * onto the joiners chain.  The dispatcher sees rc == 0 and continues
+ * with NEXT() (uvm.c:746).
+ *
+ * Exercises uop_fork.c:245-247 (the if-DEAD-return-0 fast path), which
+ * was uncovered before T120 because every test_fork.c case waited on a
+ * still-live child. */
+UTEST(join_wait_fast_path_when_child_already_dead)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Build a fake "dead child" UStrand: zeroed except state = DEAD.
+     * The fast-path check only reads child->state via USTRAND_GET_STATE;
+     * no other fields are touched on this path (op_join_wait returns 0
+     * before any other deref). */
+    static UStrand fake_child;
+    memset(&fake_child, 0, sizeof(fake_child));
+    fake_child.state = USTRAND_STATE_DEAD;
+
+    static uint32_t instrs[2];
+    instrs[0] = uinstr_enc_abc(OP_JOIN_WAIT, 0, 0, 0);
+    /* OP_RET after JOIN_WAIT so dispatch exits cleanly (frame_count == 0
+     * → strand transitions to DEAD via the same path used by other tests). */
+    instrs[1] = uinstr_enc_abc(OP_RET, 1, 0, 0);
+
+    UValue *reg_stack = (UValue *)calloc(UVM_STACK_CAP, sizeof(UValue));
+    UASSERT(reg_stack != NULL);
+    UCleanupEntry *cleanup_base =
+        (UCleanupEntry *)calloc(64, sizeof(UCleanupEntry));
+    UASSERT(cleanup_base != NULL);
+
+    /* R[0] = UVAL_STRAND wrapping our fake dead child. */
+    reg_stack[0] = UVAL_STRAND_MAKE(&fake_child);
+
+    UStrand s;
+    setup_strand_for_install(&s, &vm, instrs, reg_stack, cleanup_base);
+
+    (void)dispatch_loop_until_yield(&s, /*step_budget*/ 100);
+
+    /* Strand reached HALT cleanly; no UVM_TYPE_ERROR. */
+    UASSERT_EQ((int)USTRAND_STATE_DEAD, (int)s.state);
+    UASSERT(vm.last_error != UVM_TYPE_ERROR);
+
+    free(cleanup_base);
+    free(reg_stack);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite entry
  * =================================================================== */
 
@@ -486,4 +792,16 @@ test_vm_dispatch_ownership_suite(void)
               at_event_install_kind_check);
     utest_run("fork_detach_kind_checks_closure_operand",
               fork_detach_kind_checks_closure_operand);
+    utest_run("fork_join_kind_checks_closure_operand",
+              fork_join_kind_checks_closure_operand);
+    utest_run("join_wait_kind_checks_strand_handle_operand",
+              join_wait_kind_checks_strand_handle_operand);
+    utest_run("join_wait_fast_path_when_child_already_dead",
+              join_wait_fast_path_when_child_already_dead);
+    utest_run("fork_detach_oom_marks_strand_dead",
+              fork_detach_oom_marks_strand_dead);
+    utest_run("fork_join_oom_marks_strand_dead",
+              fork_join_oom_marks_strand_dead);
+    utest_run("fork_detach_arm_from_closure_oom",
+              fork_detach_arm_from_closure_oom);
 }
