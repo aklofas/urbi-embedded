@@ -117,6 +117,17 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     }
 
     child->module = s->module;   /* diagnostics + nested-proto lookup */
+    /* CHSTR-014 (T102): inherit the parent's UModuleInstance pointer so that
+     * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
+     * frame_count == 0 (which reads s->module_instance->proto_instances
+     * ->entries[0].ic_table).  ,-spawned and &-spawned siblings execute in
+     * the same module as their parent, so the IC RAM tier is shared.
+     * Without this assignment, the child runs with module_instance == NULL
+     * and the first OP_GETSLOT in the child closure would dereference NULL.
+     * The watcher body-spawn path (uwatcher_spawn.c) handles this differently
+     * because the body closure's owning module may differ from the installing
+     * strand's module; fork siblings have no such ambiguity. */
+    child->module_instance = s->module_instance;
     /* child_closure is owned by parent's closure_list; do not double-free it.
      * If the child creates sub-closures via OP_CLOSURE they are added to
      * child->closure_list naturally. */
