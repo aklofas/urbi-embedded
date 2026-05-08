@@ -1,0 +1,151 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Phase 7 regression tests for v0.5.7-fixes:
+ *   T36 / GC-009 — gc_shade_gray's silent NULL-sidecar return is now
+ *                  documented (DOCUMENT-only resolution): three legitimate
+ *                  cell-allocation regimes coexist at v0.5.x and only one
+ *                  enrolls a sidecar.  Tests pin both expected paths.
+ *
+ * T37 sweep accounting tests land in this same suite when GC-015 lands.
+ *
+ * Tests exercise the GC state machine directly via urbi_gc_force_full and
+ * gc_shade_gray; they don't go through the VM dispatch loop.  The same
+ * sidecar mirror trick used in test_ugc_state_machine.c is used here to
+ * count cells on vm->all_cells_head without coupling to the private
+ * UAllCellsNode struct. */
+
+#include "utest.h"
+#include "urbi/gc.h"
+#include "gc/ugc_incremental.h"
+#include "vm/uvm.h"
+#include <stdlib.h>
+
+#define UTEST(name) static void name(void)
+
+/* Mirror of UAllCellsNode for sidecar-list counting (matches the private
+ * layout in src/gc/ugc_incremental.c — cell, size, next, next_gray). */
+typedef struct MirrorNode {
+    void   *cell;
+    size_t  size;
+    struct MirrorNode *next;
+    struct MirrorNode *next_gray;
+} MirrorNode;
+
+static int count_all_cells(UVM *vm) {
+    MirrorNode *n = (MirrorNode *)(void *)vm->all_cells_head;
+    int count = 0;
+    while (n != NULL) {
+        count++;
+        n = n->next;
+    }
+    return count;
+}
+
+/* ===================================================================
+ * T36 / GC-009 — gc_shade_gray NULL-sidecar contract
+ *
+ * Test 1 (regime 1 — tracked cell): gc_shade_gray on an urbi_gc_alloc'd
+ *   cell pushes it onto the gray work-list normally.  Positive regression.
+ *
+ * Test 2 (regime 2 — FIXED pool cell): gc_shade_gray on a hand-built
+ *   FIXED cell (no sidecar in vm->all_cells_head) silently no-ops the
+ *   work-list push without aborting or crashing.  This mirrors the
+ *   walk_uevent / walk_utag chain-shade path against UWatcher pool slots.
+ *
+ * Test 3 (regime 3 — UClosure cell): gc_shade_gray on a non-FIXED
+ *   non-PINNED cell whose backing struct lives outside all_cells_head
+ *   (mirrors UClosure: header-only UCell, allocated via vm->alloc_fn
+ *   directly rather than urbi_gc_alloc) silently no-ops without
+ *   aborting.  This is the at_onleave.chk pattern: closures created by
+ *   OP_CLOSURE land in this regime until v1.x promotes them to
+ *   urbi_gc_alloc-tracked cells.
+ *
+ * Together these three pin the GC-009 contract documented at
+ * gc_shade_gray's NULL-return guard.
+ * =================================================================== */
+
+UTEST(gc_shade_gray_walks_alloced_cell)
+{
+    /* Positive regression: normal alloc + shade + force_full path. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell *c = urbi_gc_alloc(&vm, 64U, UTYPE_OBJECT);
+    UASSERT(c != NULL);
+
+    /* Pin so it survives sweep — exercises the sidecar lookup + work-list
+     * push path inside gc_shade_gray indirectly via the cycle. */
+    c->gc_byte |= UGC_IS_PINNED;
+
+    urbi_gc_force_full(&vm);
+
+    /* Cell survived (pinned), and we finished a clean cycle. */
+    UASSERT_EQ(count_all_cells(&vm), 1);
+    UASSERT_EQ(urbi_gc_phase(&vm), (uint8_t)GC_PHASE_IDLE);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
+{
+    /* Build a FIXED cell on the stack — no sidecar, never inserted into
+     * vm->all_cells_head.  Mirrors the UWatcher pool-slot pattern that
+     * walk_uevent / walk_utag exercise via gc_shade_gray. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell standalone;
+    standalone.type_tag = UTYPE_OBJECT;
+    standalone.gc_byte  = (uint8_t)(vm.current_white | UGC_IS_FIXED);
+
+    /* Per the GC-009 contract documented in gc_shade_gray, the NULL-return
+     * from find_sidecar_for_cell is an expected path for FIXED cells: the
+     * function silently no-ops the work-list push and just leaves the
+     * color flag set as an idempotency marker. */
+    gc_shade_gray(&vm, &standalone);
+
+    /* Color advanced to GRAY (idempotency marker for re-entry). */
+    UASSERT_EQ((standalone.gc_byte & UGC_COLOR_MASK), (uint8_t)UGC_COLOR_GRAY);
+
+    /* All-cells list never had this cell — count stays 0. */
+    UASSERT_EQ(count_all_cells(&vm), 0);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(gc_shade_gray_silent_on_uclosure_regime_cell)
+{
+    /* Build a non-FIXED non-PINNED stack cell — mirrors the UClosure
+     * regime where vm_alloc_closure stamps a UCell header for write-
+     * barrier safety but doesn't enroll the closure on all_cells_head
+     * (lifetime stays with the strand closure_list legacy free-list).
+     *
+     * This is the path that fires from at_onleave.chk in M5 reactive
+     * fixtures: a UClosure passed through the upvalue write barrier or
+     * shaded as a slot child reaches gc_shade_gray and must NOT crash. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell uclosure_like;
+    uclosure_like.type_tag = UTYPE_CLOSURE;
+    uclosure_like.gc_byte  = vm.current_white;  /* no FIXED, no PINNED */
+
+    /* Per the GC-009 contract: silent no-op for the work-list push. */
+    gc_shade_gray(&vm, &uclosure_like);
+
+    UASSERT_EQ((uclosure_like.gc_byte & UGC_COLOR_MASK), (uint8_t)UGC_COLOR_GRAY);
+    UASSERT_EQ(count_all_cells(&vm), 0);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ===== Suite entry point ===== */
+
+void test_gc_sweep_accounting_suite(void)
+{
+    utest_run("gc_shade_gray_walks_alloced_cell",
+              gc_shade_gray_walks_alloced_cell);
+    utest_run("gc_shade_gray_silent_on_fixed_cell_without_sidecar",
+              gc_shade_gray_silent_on_fixed_cell_without_sidecar);
+    utest_run("gc_shade_gray_silent_on_uclosure_regime_cell",
+              gc_shade_gray_silent_on_uclosure_regime_cell);
+}

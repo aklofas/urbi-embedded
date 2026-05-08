@@ -635,9 +635,53 @@ gc_shade_gray(UVM *vm, UCell *cell)
     urbi_gc_set_color(cell, UGC_COLOR_GRAY);
 
     /* Find sidecar — O(N) at T24.
-     * T27: replace with back-pointer lookup once sidecar disappears. */
+     * T27: replace with back-pointer lookup once sidecar disappears.
+     *
+     * NULL contract (closes GC-009 — DOCUMENT-only resolution):
+     *
+     * v0.5.x has THREE distinct cell-allocation regimes; only one of them
+     * adds a sidecar to vm->all_cells_head.  A NULL return here is a
+     * legitimate, expected outcome for the other two — NOT a bug:
+     *
+     *   1. urbi_gc_alloc cells (UObject, UEvent, UTag, UChangedNode,
+     *      UShape, UProtos, USlots, UModuleInstance ...): sidecar
+     *      enrolled at alloc; sweep walks via cursor; gc_shade_gray
+     *      pushes onto the gray work-list via the sidecar so the
+     *      drain_gray loop reaches walk_payload.
+     *
+     *   2. UWatcher pool slots (UGC_IS_FIXED): pool-managed via
+     *      vm->alloc_fn at uwatcher_pool_init; never freed by sweep
+     *      (spec §3.6); payload references walked via the dedicated
+     *      watcher_table_walk_roots root provider, not via the type
+     *      walker.  No sidecar; gc_shade_gray called from walk_uevent /
+     *      walk_utag for chain shading sets the color flag (idempotency)
+     *      but the work-list push is correctly a no-op.
+     *
+     *   3. UClosure cells (vm_alloc_closure): direct vm->alloc_fn alloc
+     *      with a well-formed UCell header for write-barrier safety, but
+     *      NOT enrolled on all_cells_head.  Lifetime is bound to the
+     *      strand closure_list (legacy free-list).  GC-managed promotion
+     *      is tracked as a follow-up M4 task at vm_alloc_closure() — see
+     *      its docstring.  Until then, gc_shade_gray on a UClosure cell
+     *      sets the color but performs a silent NULL-return for the
+     *      work-list push.
+     *
+     * Pre-GC-009-fix shape: silent `if (!node) return;` covered all three
+     * cases but obscured which were intentional.  The audit asked for
+     * either an explicit guard (early-return per regime) or a thorough
+     * comment.  We keep silent-return + thorough comment because:
+     *   - regime (2) FIXED-skip would still leave (3) UClosure unhandled
+     *     without a parallel UCell-header-only fast-path,
+     *   - upgrading (3) to GC-managed is the right v1.x fix and will
+     *     eliminate this class of NULL altogether (sidecar enrolled,
+     *     work-list push proceeds normally).
+     *
+     * Future-proof: the symmetric T27 sidecar-collapse drops this lookup
+     * entirely (back-pointer in UCell payload makes it O(1) and makes the
+     * NULL question moot for regime 1; regimes 2 and 3 will still take
+     * the silent-return path until they migrate to urbi_gc_alloc). */
     UAllCellsNode *node = find_sidecar_for_cell(vm, cell);
-    if (node == NULL) return;  /* shouldn't happen; defensive guard */
+    if (node == NULL) return;  /* expected for FIXED + UClosure regimes; see contract above */
 
     /* Push onto gray work-list if not already on it.
      * Guard: next_gray == NULL means "not on gray list".  A node that's
