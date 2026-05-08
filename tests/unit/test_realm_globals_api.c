@@ -148,33 +148,46 @@ UTEST(set_global_const_blocks_script_write) {
 }
 
 UTEST(set_global_const_rejects_existing_const_overwrite) {
-    /* T67 (REALM-003): freshly install a CONSTANT slot via set_global_const,
-     * then attempt to install it again — the second call must reject with
-     * URBI_ERR_CONST_SLOT_WRITE (the slot is already CONSTANT, can't overwrite).
-     * Verify the original value is preserved (no silent mutation). */
+    /* T67 (REALM-003): set_global_const on an already-CONSTANT slot must
+     * reject with URBI_ERR_CONST_SLOT_WRITE.  Use "Object" (slot index 0,
+     * within the v1.0 packed-flag enforcement range 0..7).  The original
+     * value must be preserved across rejected overwrites — no silent
+     * mutation through the public C API.
+     *
+     * Note: this test uses a builtin pre-installed by populate.  Testing
+     * fresh-install-then-reject would require a slot in the 0..7 range
+     * but those are all consumed by populate at v1.0.  M6 will land the
+     * spill side-table that lifts the cap; the parallel test for slot
+     * indices >= 8 lands then. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Initial install of a fresh CONSTANT slot — succeeds (slot didn't exist
-     * before; sits at index 15, beyond the packed-flag IC enforcement range
-     * of 0-7, but the CONSTANT bit is still tracked via UProps for the C-API
-     * gating in T67). */
-    int rc = urbi_realm_set_global_const(&vm, realm, "PI", 2, make_int(314));
+    /* Read the populate-installed value of "Object" so we can check it
+     * is unchanged after the rejected overwrite. */
+    UValue before = {0};
+    int rc = urbi_realm_get_global(&vm, realm, "Object", 6, &before);
     UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((uint8_t)UVAL_OBJECT, before.kind);
 
     /* Attempt to overwrite — must reject with URBI_ERR_CONST_SLOT_WRITE. */
-    rc = urbi_realm_set_global_const(&vm, realm, "PI", 2, make_int(999));
+    rc = urbi_realm_set_global_const(&vm, realm, "Object", 6, make_int(999));
     UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
 
-    /* Read back via C API — value must still be 314 (no silent overwrite). */
-    UValue out = {0};
-    rc = urbi_realm_get_global(&vm, realm, "PI", 2, &out);
+    /* Read back via C API — value must still be the populate-installed
+     * Object proto (kind UVAL_OBJECT, same pointer payload). */
+    UValue after = {0};
+    rc = urbi_realm_get_global(&vm, realm, "Object", 6, &after);
     UASSERT_EQ(URBI_OK, rc);
-    UASSERT_EQ((uint8_t)UVAL_INT, out.kind);
-    UASSERT_EQ((int64_t)314, out.v.i);
+    UASSERT_EQ((uint8_t)UVAL_OBJECT, after.kind);
+    UASSERT(before.v.p == after.v.p);
+
+    /* Re-attempt rejection — the slot is still CONSTANT after the
+     * rejected first overwrite, so the second call also rejects. */
+    rc = urbi_realm_set_global_const(&vm, realm, "Object", 6, make_int(42));
+    UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
 
     urbi_vm_destroy(&vm);
 }
@@ -281,6 +294,55 @@ UTEST(set_global_distinguishes_const_reject_from_oom) {
     urbi_vm_destroy(&vm);
 }
 
+UTEST(populate_and_set_global_const_share_reject_logic) {
+    /* T70 (REALM-023): both code paths that install CONSTANT slots on
+     * realm->global_object route through the shared realm_install_const
+     * helper.  Verify the share: every registry entry installed by
+     * populate within the v1.0 packed-flag enforcement range (slots 0..7)
+     * is rejected by set_global_const.  This is the regression-guard
+     * against the helper's reject-already-CONSTANT predicate diverging
+     * from populate's install path.
+     *
+     * Slots >= 8 are not covered by this test — populate's
+     * install_property path short-circuits at urbi_shape_transition_property
+     * because the packed-nibble shift is out of range past 31 bits, so
+     * UProps[idx] stays NULL and the helper's UProps fallback can't see
+     * a CONSTANT mark.  M6 spill-side-table will lift the cap; until
+     * then this is a documented v1.0 limitation (REVIVAL.md §14
+     * S-globals-cap-8).  The 7 names below cover the entire enforced
+     * range — "Object" (slot 0) through "List" (slot 7) — so any future
+     * helper divergence from populate's transition-property behaviour
+     * surfaces here. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    /* Registry order: Object, Integer, Float, String, Bool, Nil, Void,
+     * List → slots 0..7.  Each must be CONSTANT-rejected. */
+    static const struct { const char *name; size_t len; } slot_0_to_7[] = {
+        { "Object",  6 },
+        { "Integer", 7 },
+        { "Float",   5 },
+        { "String",  6 },
+        { "Bool",    4 },
+        { "Nil",     3 },
+        { "Void",    4 },
+        { "List",    4 },
+    };
+    for (size_t i = 0;
+         i < sizeof(slot_0_to_7) / sizeof(slot_0_to_7[0]); i++) {
+        int rc = urbi_realm_set_global_const(&vm, realm,
+                                             slot_0_to_7[i].name,
+                                             slot_0_to_7[i].len,
+                                             make_int(123));
+        UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(set_global_overwrites_non_const) {
     /* urbi_realm_set_global on a name that was already installed (non-const)
      * must update the value, and urbi_realm_get_global must return the
@@ -322,6 +384,8 @@ test_realm_globals_api_suite(void)
               set_global_distinguishes_const_reject_from_oom);
     utest_run("get_global: distinguishes proto-depth overflow from OOM (T68)",
               get_global_distinguishes_overflow_from_oom);
+    utest_run("populate + set_global_const share reject logic (T70)",
+              populate_and_set_global_const_share_reject_logic);
     utest_run("get_global: absent slot returns URBI_ERR_SLOT_NOT_FOUND",
               get_global_returns_slot_not_found_when_absent);
     utest_run("set_global: overwrites existing non-const slot",
