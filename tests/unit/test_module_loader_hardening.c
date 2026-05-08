@@ -67,6 +67,32 @@ static size_t hard_build_minimal_module(uint8_t *buf) {
     return off;
 }
 
+/* --- T75 (MOD-018): n_abs capped at <= instr_count --- */
+UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
+    /* Build a 1-instruction module where n_abs claims 2 (exceeds n_instr). */
+    uint8_t buf[256];
+    hard_build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 0;                          /* max_reg */
+    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    off = hard_put_varint(buf, off, 0);      /* n_const */
+    off = hard_put_varint(buf, off, 1);      /* n_instr = 1 */
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    uint32_t ret = (uint32_t)OP_RET;
+    buf[off++] = (uint8_t)(ret & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 8) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 16) & 0xFFU);
+    buf[off++] = (uint8_t)((ret >> 24) & 0xFFU);
+    off = hard_put_varint(buf, off, 1);      /* n_deltas = 1 (matches n_instr) */
+    buf[off++] = 0;
+    off = hard_put_varint(buf, off, 2);      /* n_abs = 2 (> n_instr=1) */
+
+    UModule m = {0};
+    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    umodule_destroy(&m);
+}
+
 /* --- T72 (MOD-004): module_grow rejects target * elem_size overflow ---
  *
  * module_grow_with_alloc is file-private; the public surface that drives
@@ -167,4 +193,6 @@ void test_module_loader_hardening_suite(void) {
               deserialize_rejects_oversized_instr_count_on_32bit);
     utest_run("module_grow rejects target * elem_size overflow (T72: MOD-004)",
               module_grow_rejects_overflow);
+    utest_run("deserialize rejects n_abs > instr_count (T75: MOD-018)",
+              deserialize_rejects_n_abs_exceeding_instr_count);
 }

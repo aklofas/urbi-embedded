@@ -498,6 +498,16 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
+    /* MOD-018: n_abs is bounded by instr_count — every checkpoint
+     * references a unique pc < instr_count, and the existing monotonic
+     * check rejects duplicates.  Without this cap a corrupt module
+     * could request an arbitrarily large abs_lines allocation. */
+    if (n_abs > (uint64_t)instr_count) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "n_abs_lines=%llu exceeds instr_count=%zu",
+                   (unsigned long long)n_abs, instr_count);
+        return ULOAD_CORRUPT;
+    }
     if (n_abs > 0U) {
         if (!module_grow_with_alloc(alloc, alloc_ud,
                                     (void **)abs_lines_out, abs_line_cap_out,
