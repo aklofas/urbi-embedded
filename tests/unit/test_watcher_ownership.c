@@ -15,6 +15,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "watcher/uwatcher_install.h"
 #include "runtime/uclosure.h"
 #include "module/umodule.h"
@@ -87,7 +88,7 @@ UTEST(pool_free_aliased_closure_sets_only_owning_slot)
     urbi_vm_init(&vm, count_alloc, &spy);
 
     /* Install a watcher (no closures — keeps install path clean). */
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w != NULL);
 
@@ -294,7 +295,7 @@ UTEST(waituntil_immediate_wake_state_explicit)
  * second time the same closure is presented).
  *
  * This test is a regression-net for the alias-handling contract: drive
- * the install seam through urbi_watcher_install_internal twice with the
+ * the install seam through urbi_watcher_install_for_test twice with the
  * same body pointer, set OWNS_BODY only on the FIRST (matches what
  * strand_closure_unlink would have done at install time — the second
  * install observes already-unlinked closure and returns 0).  Free both
@@ -311,9 +312,9 @@ UTEST(aliased_proto_closure_unlink_no_double_detach)
     UClosure *body = make_heap_closure(&vm);
     UASSERT(body != NULL);
 
-    UWatcher *w1 = urbi_watcher_install_internal(
+    UWatcher *w1 = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
-    UWatcher *w2 = urbi_watcher_install_internal(
+    UWatcher *w2 = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w1 != NULL && w2 != NULL);
 
@@ -353,7 +354,7 @@ UTEST(unknown_watcher_mode_does_not_change_state_in_release)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w != NULL);
 

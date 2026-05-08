@@ -5,6 +5,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED */
 
@@ -72,7 +73,7 @@ UTEST(pool_alloc_returns_active_watcher)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm,
         UWATCHER_AT,  /* mode */
         NULL,         /* owning_tag — NULL for this stub test */
@@ -116,14 +117,14 @@ UTEST(pool_exhaustion_returns_null)
     urbi_vm_init(&vm, NULL, NULL);
 
     for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
-        watchers[i] = urbi_watcher_install_internal(
+        watchers[i] = urbi_watcher_install_for_test(
             &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
         UASSERT(watchers[i] != NULL);
     }
 
     /* Pool is exhausted — next install must fail. */
     {
-        UWatcher *extra = urbi_watcher_install_internal(
+        UWatcher *extra = urbi_watcher_install_for_test(
             &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
         UASSERT(extra == NULL);
     }
@@ -150,9 +151,9 @@ UTEST(pool_high_water_tracks_peak)
 
     urbi_vm_init(&vm, NULL, NULL);
 
-    w[0] = urbi_watcher_install_internal(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
-    w[1] = urbi_watcher_install_internal(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
-    w[2] = urbi_watcher_install_internal(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
+    w[0] = urbi_watcher_install_for_test(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
+    w[1] = urbi_watcher_install_for_test(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
+    w[2] = urbi_watcher_install_for_test(&vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
 
     UASSERT(w[0] != NULL && w[1] != NULL && w[2] != NULL);
     UASSERT_EQ((int)vm.watcher_pool_in_use,    3);
