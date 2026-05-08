@@ -349,7 +349,7 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
      * bare-return).  Defensive against future arms; current emit-arm
      * contract syncs next_reg to freereg between siblings, so the bug is
      * dormant.  Same fix shape as EMIT-017. */
-    if (e->current_fs != NULL) {
+    {
         uint8_t floor_val = fs_temp_floor(e->current_fs);
         if (e->next_reg < floor_val) e->next_reg = floor_val;
     }
