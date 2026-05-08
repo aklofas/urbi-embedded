@@ -114,10 +114,13 @@ urbi_register_type(UVM *vm, const UType *type)
         return 0U;
     }
 
-    /* Detect collision: explicit-tag must point at a free slot.  Auto-assign
-     * doesn't bump host_type_count past explicit registrations, so mixing the
-     * two patterns can collide.  Catch in URBI_DEBUG. */
-    URBI_INTERNAL_ASSERT(vm->type_table[tag] == NULL);
+    /* FOUND-037: collision returns 0 unconditionally in both debug and
+     * release.  Previously the URBI_INTERNAL_ASSERT(== NULL) fired in debug
+     * and the slot was overwritten silently in release — inconsistent
+     * behaviour across build modes is a poor public-API contract. */
+    if (vm->type_table[tag] != NULL) {
+        return 0U;
+    }
 
     vm->type_table[tag] = (UType *)type;
     return tag;
