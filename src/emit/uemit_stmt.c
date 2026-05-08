@@ -63,6 +63,12 @@ uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
                         e->max_reg_seen = e->next_reg;
                     if (e->next_reg > fs->max_reg_seen)
                         fs->max_reg_seen = e->next_reg;
+                    /* EMIT-013 fix (Wave 5): also raise freereg to
+                     * next_reg so a subsequent emit_function_literal
+                     * call (which pulls dst from freereg) does not
+                     * alias the thunk-pass-through slot at dst. */
+                    if (fs->freereg < e->next_reg)
+                        fs->freereg = e->next_reg;
                     return dst;
                 }
                 /* Stop if we found the name but it's not lazy (normal local). */

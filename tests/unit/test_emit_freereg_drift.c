@@ -340,6 +340,86 @@ UTEST(emit_free_reg_respects_temp_floor) {
 }
 
 /* -----------------------------------------------------------------------
+ * T12 — EMIT-013: emit_lazy_thunk pass-through bumps next_reg only
+ *
+ * The pass-through optimization in emit_lazy_thunk (used when a lazy
+ * local appears in a lazy arg position) emits OP_MOVE of the local
+ * into next_reg and bumps next_reg++.  Pre-fix it left freereg behind,
+ * so a subsequent emit_function_literal (which pulls dst from freereg)
+ * could overwrite a still-live register — including the call's own
+ * callee_reg.
+ *
+ * Trigger: consumer with (lazy a, eager b) signature, called with
+ * caller's lazy local as a and a function literal as b.  Pre-fix the
+ * function-literal closure dst lands at the leaked freereg, clobbering
+ * the callee register and corrupting the OP_CALL target. */
+
+UTEST(emit_lazy_pass_through_does_not_alias) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "var caller = function (lazy x) {"
+        "  var consumer = function (lazy a, b) { return a; };"
+        "  return consumer(x, function() { 99 });"
+        "};");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Locate caller's nested proto (1 param, contains OP_CALL). */
+    UProto *p = NULL;
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
+        if (q == NULL) continue;
+        if (q->nparams != 1U) continue;
+        for (size_t j = 0; j < q->instr_count; j++) {
+            if (uinstr_op(q->instructions[j]) == OP_CALL) {
+                p = q; break;
+            }
+        }
+        if (p != NULL) break;
+    }
+    UASSERT(p != NULL);
+
+    /* Walk caller's instructions to find the final OP_CALL (consumer
+     * call) and its inputs.  Just before the OP_CALL, an OP_MOVE
+     * loads the lazy-arg pass-through (x) into a temp slot, then an
+     * OP_CLOSURE allocates a slot for the function-literal arg.  Pre-
+     * fix the closure dst lands at the SAME slot as the pass-through
+     * MOVE (because freereg never advanced past it), corrupting the
+     * pass-through value.  Post-fix the closure dst lands strictly
+     * above. */
+    int passthrough_move_dst = -1;
+    int arg_closure_dst      = -1;
+    int call_a               = -1;
+    int closures_seen        = 0;
+    for (size_t j = 0; j < p->instr_count; j++) {
+        uint32_t ins = p->instructions[j];
+        UOpcode op = uinstr_op(ins);
+        if (op == OP_CLOSURE) {
+            closures_seen++;
+            if (closures_seen == 2) arg_closure_dst = (int)uinstr_a(ins);
+        }
+        if (op == OP_MOVE) {
+            uint8_t b = uinstr_b(ins);
+            /* MOVE from r0 (the lazy x param) is the pass-through. */
+            if (b == 0U) passthrough_move_dst = (int)uinstr_a(ins);
+        }
+        if (op == OP_CALL) { call_a = (int)uinstr_a(ins); break; }
+    }
+    UASSERT(passthrough_move_dst >= 0);
+    UASSERT(arg_closure_dst >= 0);
+    UASSERT(call_a >= 0);
+    /* The pass-through MOVE and the function-literal CLOSURE must land
+     * at DIFFERENT slots. */
+    UASSERT(passthrough_move_dst != arg_closure_dst);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -356,4 +436,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_nested_proto_max_reg_includes_inner_temps);
     utest_run("emit_free_reg_respects_temp_floor",
               emit_free_reg_respects_temp_floor);
+    utest_run("emit_lazy_pass_through_does_not_alias",
+              emit_lazy_pass_through_does_not_alias);
 }
