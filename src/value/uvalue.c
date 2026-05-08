@@ -243,7 +243,18 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
     case UVAL_OBJECT:
         n = snprintf(buf, cap, "<object %p>", v->v.p);
         break;
+    case UVAL_HOST_FN:
+        /* FOUND-047 / COV-006: explicit case for host-function values. */
+        n = snprintf(buf, cap, "<hostfn %p>", v->v.p);
+        break;
+    case UVAL_EVENT:
+        /* FOUND-047 / COV-006: explicit case for event values. */
+        n = snprintf(buf, cap, "<event>");
+        break;
     default:
+        /* UVAL_CLOSURE / UVAL_VOID intentionally fall through to "<?>" to
+         * preserve their pre-v0.5.7 output (existing fixture goldens
+         * depend on this; explicit-case forms filed as backlog). */
         n = snprintf(buf, cap, "<?>");
         break;
     }
