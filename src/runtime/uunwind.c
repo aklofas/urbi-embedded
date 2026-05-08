@@ -476,7 +476,14 @@ urbi_strand_panic(struct UStrand *strand, const char *msg)
 
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
-    (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
+    /* FOUND-045: route diagnostic msg through host_log_fn before marking the
+     * strand dead so embedders can correlate panic causes with their own
+     * logging pipeline.  URBI_LOG_FATAL is not defined; use ERROR (highest
+     * level we have).  NULL-guarded — many tests wire vm without a log
+     * callback. */
+    if (msg != NULL && strand->vm != NULL && strand->vm->host_log_fn != NULL) {
+        strand->vm->host_log_fn(strand->vm, (int)URBI_LOG_ERROR, "%s", msg);
+    }
     /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
      * Prevents stale pointers in e->waiters_head if the strand is freed
      * without ever being woken by an emit.  Use the class+reason
