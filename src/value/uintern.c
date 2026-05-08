@@ -159,15 +159,24 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
         vm->intern_table = t;
     }
 
-    /* Grow if load factor exceeded BEFORE insertion to keep probing bounded. */
-    if ((t->count + 1) * INTERN_LOAD_DEN > t->cap * INTERN_LOAD_NUM) {
-        if (!table_grow(vm, t)) return NULL;
-    }
-
+    /* FOUND-008: lookup-first ordering.  Compute hash, probe the table once;
+     * if the string is already interned, return the canonical pointer
+     * unconditionally — the lookup-only fast path must never trigger a
+     * grow.  Only when an insertion is actually needed do we re-check the
+     * load factor and grow if required. */
     uint32_t hash = fnv1a(bytes, nbytes);
     size_t empty_idx;
     const char *existing = table_lookup(t, bytes, nbytes, hash, &empty_idx);
     if (existing != NULL) return existing;
+
+    /* Insertion path: grow if load factor would be exceeded. */
+    if ((t->count + 1) * INTERN_LOAD_DEN > t->cap * INTERN_LOAD_NUM) {
+        if (!table_grow(vm, t)) return NULL;
+        /* Re-probe in the resized table — the empty slot index from the
+         * pre-grow lookup is invalid against the new cap. */
+        existing = table_lookup(t, bytes, nbytes, hash, &empty_idx);
+        if (existing != NULL) return existing;
+    }
 
     /* Allocate new entry: header + nbytes + NUL terminator. */
     size_t alloc_bytes = sizeof(UInternStr) + nbytes;   /* +1 NUL absorbed by bytes[1] */
