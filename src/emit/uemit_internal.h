@@ -150,6 +150,26 @@ static inline void free_reg(UEmitter *e) {
     if (e->next_reg > 0U) e->next_reg--;
 }
 
+/* Release a register that was bumped through *both* next_reg AND the
+ * FuncState freereg cursor (the pattern that emit_function_literal
+ * leaves behind on the parent FuncState — closure dst pulled from
+ * freereg, then `freereg++` and `next_reg = freereg`).
+ *
+ * EMIT-010 fix (Wave 5, v0.5.7): watcher / waituntil / at-event install
+ * arms compile their cond/body/onleave/event closures via
+ * emit_function_literal, which raises freereg in lockstep with next_reg.
+ * Plain free_reg() decrements only next_reg, leaving freereg promoted
+ * 1-N slots above the now-decremented next_reg.  Subsequent
+ * declarations / temp allocations then land at the leaked freereg
+ * floor instead of the actual top of the live stack, wasting register
+ * slots and inflating proto.max_reg.  Use free_reg_freereg_synced at
+ * each install-site teardown to symmetrically unwind both cursors. */
+static inline void free_reg_freereg_synced(UEmitter *e) {
+    if (e->next_reg > 0U) e->next_reg--;
+    if (e->current_fs != NULL && e->current_fs->freereg > e->next_reg)
+        e->current_fs->freereg = e->next_reg;
+}
+
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_stmt.c. */
 uint8_t emit_if_arm(UEmitter *e, UAstNode *n);

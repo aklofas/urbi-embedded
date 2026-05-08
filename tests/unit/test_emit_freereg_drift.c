@@ -106,10 +106,115 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
 }
 
 /* -----------------------------------------------------------------------
+ * T9 — EMIT-010: Watcher-install free_reg leaves freereg stale
+ *
+ * emit_function_literal raises BOTH next_reg and freereg in lockstep
+ * when compiling the cond / body / onleave closures.  The plain free_reg
+ * called by the install arms only decrements next_reg, leaving freereg
+ * promoted 1-3 slots above next_reg.  Subsequent var-decls then land at
+ * slot freereg+0 instead of next_reg+0, wasting register slots.
+ *
+ * Fix: install arms use free_reg_freereg_synced, which clamps freereg
+ * down in lockstep with next_reg.
+ *
+ * Each test compiles a function whose body issues a watcher install
+ * followed by `var c = 99;`, then asserts that c lands at the expected
+ * slot (immediately above any pre-existing locals + the LOADNIL slot
+ * that watcher install writes).
+ * ----------------------------------------------------------------------- */
+
+/* The leak is observable at chunk-top: emit_function_literal called
+ * during install raises freereg in lockstep with next_reg, but plain
+ * free_reg() decrements only next_reg.  At chunk-top, statements are
+ * NOT wrapped in an AST_BLOCK that resets freereg between siblings, so
+ * uemit_statement's sync (next_reg = freereg) carries the leaked value
+ * forward.  module.max_reg ends up inflated by the closure depth.
+ *
+ * Inside a function-body block, the leak is masked by emit_block_arm's
+ * `freereg = fs_temp_floor(...)` reset between statements — so these
+ * tests use chunk-top form. */
+
+UTEST(emit_watcher_install_freereg_balanced_at) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "var a = 1; var b = 2;"
+        "at (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
+        "var c = function() { 99 };");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Pre-fix: module.max_reg leaks 2 slots (one per emit_function_literal
+     * call: cond, body).  Post-fix: leak gone.  Use 6 as a strict ceiling
+     * post-fix; pre-fix routinely exceeds this. */
+    UASSERT(module.max_reg <= 3U);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(emit_watcher_install_freereg_balanced_whenever) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "var a = 1; var b = 2;"
+        "whenever (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
+        "var c = function() { 99 };");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+    UASSERT(module.max_reg <= 3U);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* waituntil intentionally has no max_reg-observable test: it compiles a
+ * single cond closure, so the install's one free_reg + LOADNIL sequence
+ * is self-clamping (LOADNIL bumps freereg back up to next_reg).  The
+ * fix at the WAITUNTIL_INSTALL site is symmetry-only — same shape as
+ * AT_INSTALL but no measurable defect.  Coverage at the
+ * free_reg_freereg_synced helper level (via the AT/whenever/at-event
+ * tests) is sufficient. */
+
+UTEST(emit_watcher_install_freereg_balanced_at_event) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* at-event leaks event_reg+body_reg+alt_reg slots (alt 0xFF skipped).
+     * Stack two at-event installs to amplify the leak above the inner
+     * body-closure compilation's natural max_reg. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "var a = 1; var b = 2;"
+        "at (Realm.evt?) Realm.a = Realm.a + 1;"
+        "at (Realm.evt2?) Realm.b = Realm.b + 1;"
+        "var c = function() { 99 };");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+    /* Pre-fix: each at-event leaks 1-2 slots; two installs push max_reg
+     * past the post-fix ceiling.  Post-fix: max_reg stays at the inner
+     * body-closure compilation high water (= 4). */
+    UASSERT(module.max_reg <= 4U);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
 void test_emit_freereg_drift_suite(void) {
     utest_run("emit_sep_pipe_does_not_alias_lhs_temp_with_rhs",
               emit_sep_pipe_does_not_alias_lhs_temp_with_rhs);
+    utest_run("emit_watcher_install_freereg_balanced_at",
+              emit_watcher_install_freereg_balanced_at);
+    utest_run("emit_watcher_install_freereg_balanced_whenever",
+              emit_watcher_install_freereg_balanced_whenever);
+    utest_run("emit_watcher_install_freereg_balanced_at_event",
+              emit_watcher_install_freereg_balanced_at_event);
 }

@@ -154,10 +154,15 @@ uint8_t emit_watcher_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(op, cond_reg, body_reg, onleave_reg),
                (uint32_t)n->line);
 
-    /* Release temporary closure regs — watcher install is a statement. */
-    if (onleave_ast != NULL) free_reg(e);
-    if (body_ast    != NULL) free_reg(e);
-    free_reg(e);  /* cond_reg */
+    /* Release temporary closure regs — watcher install is a statement.
+     * EMIT-010 (Wave 5): use free_reg_freereg_synced so freereg unwinds
+     * symmetrically with next_reg.  emit_function_literal raised both
+     * cursors when compiling the cond/body/onleave closures; plain
+     * free_reg() would leave freereg promoted, leaking 1-3 register
+     * slots past the install statement. */
+    if (onleave_ast != NULL) free_reg_freereg_synced(e);
+    if (body_ast    != NULL) free_reg_freereg_synced(e);
+    free_reg_freereg_synced(e);  /* cond_reg */
 
     /* Return a nil register as the install expression's value. */
     uint8_t rd = e->next_reg;
@@ -196,7 +201,7 @@ uint8_t emit_waituntil_arm(UEmitter *e, UAstNode *n) {
 
     emit_instr(e, uinstr_enc_abc(OP_WAITUNTIL_INSTALL, cond_reg, 0U, 0U),
                (uint32_t)n->line);
-    free_reg(e);  /* cond_reg */
+    free_reg_freereg_synced(e);  /* cond_reg — EMIT-010 (Wave 5) */
 
     uint8_t rd = e->next_reg;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
@@ -268,9 +273,10 @@ uint8_t emit_at_event_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    if (alt_reg  != 0xFFU) free_reg(e);
-    if (body_reg != 0xFFU) free_reg(e);
-    free_reg(e);  /* event_reg */
+    /* EMIT-010 (Wave 5): unwind both cursors symmetrically. */
+    if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
+    if (body_reg != 0xFFU) free_reg_freereg_synced(e);
+    free_reg_freereg_synced(e);  /* event_reg */
 
     uint8_t rd = e->next_reg;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
@@ -357,9 +363,10 @@ uint8_t emit_at_slot_change_arm(UEmitter *e, UAstNode *n) {
     emit_instr(e, uinstr_enc_abc(op, event_reg, body_reg, alt_reg),
                (uint32_t)n->line);
 
-    if (alt_reg  != 0xFFU) free_reg(e);
-    if (body_reg != 0xFFU) free_reg(e);
-    free_reg(e);  /* event_reg */
+    /* EMIT-010 (Wave 5): unwind both cursors symmetrically. */
+    if (alt_reg  != 0xFFU) free_reg_freereg_synced(e);
+    if (body_reg != 0xFFU) free_reg_freereg_synced(e);
+    free_reg_freereg_synced(e);  /* event_reg */
 
     uint8_t rd = e->next_reg;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
