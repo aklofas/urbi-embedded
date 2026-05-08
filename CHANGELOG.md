@@ -24,6 +24,10 @@
   (first-ever on-disk wire-byte baseline).
 - Co-located regression tests for every `src/*.c` fix commit per
   Wave-5 Gate G1 (TDD-per-fix-commit discipline).
+- Phase 20 coverage-gap tests (T119-T125, audit IDs COV-001..008):
+  `src/urbi.c` 8 % → 100 %, `src/vm/uop_fork.c` 60 % → 91 %,
+  `src/changed/uchanged.c` 77 % → 86 %, `src/emit/*` 84.1 % → 87.1 %.
+  Overall line coverage 87 % → 88 %.
 
 ### Changed
 
