@@ -338,7 +338,17 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
     uint8_t val_reg = emit_expr(e, n->u.throw_expr.value);
     if (e->error != EMIT_OK) return 0U;
     uemit_throw(e, val_reg, (uint32_t)n->line);
-    /* throw is a statement; return a nil reg for the block's last-stmt logic. */
+    /* throw is a statement; return a nil reg for the block's last-stmt logic.
+     *
+     * EMIT-018 fix (Wave 5, v0.5.7): force next_reg above fs_temp_floor
+     * before claiming rd.  Same root cause as EMIT-017 (AST_RETURN
+     * bare-return).  Defensive against future arms; current emit-arm
+     * contract syncs next_reg to freereg between siblings, so the bug is
+     * dormant.  Same fix shape as EMIT-017. */
+    if (e->current_fs != NULL) {
+        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        if (e->next_reg < floor_val) e->next_reg = floor_val;
+    }
     uint8_t rd = e->next_reg;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
     e->next_reg++;

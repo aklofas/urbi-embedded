@@ -681,11 +681,19 @@ UTEST(emit_bare_return_does_not_clobber_local) {
  * T17 — EMIT-018: AST_THROW post-throw nil load ignores fs_temp_floor
  *
  * After OP_THROW, the throw arm emits a post-throw OP_LOADNIL into
- * rd = e->next_reg so the block's last-stmt-reg logic has a register to
- * report.  Pre-fix, this nil-load did not force next_reg above the floor
- * before claiming the slot — same root cause as EMIT-017 (AST_RETURN).
+ * rd = e->next_reg so the block's last-stmt-reg logic has a register
+ * to report.  Pre-fix, this nil-load claimed `rd = e->next_reg`
+ * without enforcing fs_temp_floor — same root cause as EMIT-017
+ * (AST_RETURN).
  *
- * Post-fix: throw forces next_reg above the floor before claiming rd. */
+ * Like the bare-return case, current parser-driven AST never reaches
+ * the bug (between-stmt resets sync next_reg to freereg before the
+ * throw arm runs).  Wave 5 lands the defensive guard so a future emit
+ * arm dropping next_reg below the floor cannot make the throw's
+ * LOADNIL alias a live local.  Same fix shape as EMIT-017.
+ *
+ * Test passes pre-fix and post-fix (structural-correctness gate per
+ * cluster-1 T11 precedent). */
 
 UTEST(emit_throw_does_not_clobber_local) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
@@ -693,7 +701,7 @@ UTEST(emit_throw_does_not_clobber_local) {
     UModule module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
-        "function helper() { 0 }"
+        "function helper() { 0 };"
         "function f() {"
         " var keep = 42;"
         " helper();"
@@ -855,6 +863,7 @@ void test_emit_freereg_drift_suite(void) {
               emit_if_arm_pops_nested_var_decl);
     utest_run("emit_bare_return_does_not_clobber_local",
               emit_bare_return_does_not_clobber_local);
-    /* T17-T18 added below; held back from registration until each fix
-     * lands to keep the suite green between commits. */
+    utest_run("emit_throw_does_not_clobber_local",
+              emit_throw_does_not_clobber_local);
+    /* T18 added below; held back from registration until the fix lands. */
 }
