@@ -107,7 +107,12 @@ void uarena_init_static(UArena *a, void *buf, size_t bufsz) {
 static UArenaChunk *new_chunk(UArena *a, size_t min_payload) {
     size_t want = a->chunk_size;
     if (min_payload > want) want = min_payload;
+    /* FOUND-017: defensive capacity invariants.  These should always hold
+     * by construction (`want` is at least max(chunk_size, min_payload)) but
+     * the assert pins the contract against future refactors. */
+    URBI_INTERNAL_ASSERT(want >= min_payload);
     size_t raw = sizeof(UArenaChunk) + ARENA_ALIGN + want;
+    URBI_INTERNAL_ASSERT(raw > want);   /* additive overflow guard */
     void *mem = a->alloc_fn(raw, a->alloc_ud);
     if (!mem) return NULL;
     UArenaChunk *c = mem;
@@ -116,6 +121,7 @@ static UArenaChunk *new_chunk(UArena *a, size_t min_payload) {
     unsigned char *payload = chunk_payload(c);
     uintptr_t payload_off = (uintptr_t)payload - (uintptr_t)mem;
     c->capacity = raw - payload_off;
+    URBI_INTERNAL_ASSERT(c->capacity >= min_payload);
     return c;
 }
 
