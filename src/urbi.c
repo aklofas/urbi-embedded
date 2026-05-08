@@ -16,7 +16,15 @@
 #  include <string.h>
 #endif
 
-#define URBI_VERSION "0.3.0-concurrency"
+/* URBI_VERSION: source-of-truth string returned by urbi_version().
+ *
+ * API-011: stale at "0.3.0-concurrency" since M3 (2026-04-28), unchanged
+ * through v0.4.0/v0.5.0/v0.5.1/v0.5.2/v0.5.3/v0.5.4/v0.5.5/v0.5.6.  The
+ * release ritual (CHANGELOG cadence in WORKFLOW.md §8) updates this
+ * literal before every annotated tag; the regression test in
+ * tests/unit/test_public_api.c::urbi_version_matches_release_tag pins
+ * the expected value so a forgotten bump surfaces as a test failure. */
+#define URBI_VERSION "0.5.7-fixes"
 
 const char *urbi_version(void) { return URBI_VERSION; }
 

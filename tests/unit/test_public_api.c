@@ -261,6 +261,25 @@ UTEST(call_host_with_watchdog_handles_null_vm_fn)
 }
 
 /* ===================================================================
+ * T113 — API-011: URBI_VERSION literal updated to current release
+ * ===================================================================
+ *
+ * The URBI_VERSION literal in src/urbi.c had been stale at "0.3.0-concurrency"
+ * since M3 (2026-04-28), unchanged through every subsequent release.  Wave 5
+ * catches it up to the current target ("0.5.7-fixes") and adds this regression
+ * so the release ritual surfaces a test failure if a future ship is forgotten.
+ *
+ * The expected literal must be updated in this test alongside any URBI_VERSION
+ * change in src/urbi.c.  WORKFLOW.md §8 documents this as part of the release
+ * tag ritual. */
+UTEST(urbi_version_matches_release_tag)
+{
+    const char *v = urbi_version();
+    UASSERT(v != NULL);
+    UASSERT(strcmp(v, "0.5.7-fixes") == 0);
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -276,4 +295,6 @@ void test_public_api_suite(void)
               run_chunk_threads_realm_argument_through_vm_run);
     utest_run("call_host_with_watchdog_handles_null_vm_fn",
               call_host_with_watchdog_handles_null_vm_fn);
+    utest_run("urbi_version_matches_release_tag",
+              urbi_version_matches_release_tag);
 }

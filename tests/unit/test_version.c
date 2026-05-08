@@ -16,8 +16,12 @@ static void version_starts_with_zero(void) {
 }
 
 static void version_contains_milestone_suffix(void) {
+    /* The version literal carries a milestone or wave suffix.  Wave 5 fixes
+     * the v0.5.7 carry-forward (API-011); pre-Wave-5 the suffix was the
+     * stale "concurrency" inherited from M3.  Both forms include a hyphen,
+     * so the assertion checks for the format rather than a fixed suffix. */
     const char *v = urbi_version();
-    UASSERT(strstr(v, "concurrency") != NULL);
+    UASSERT(strchr(v, '-') != NULL);
 }
 
 static void urbi_bytecode_version_byte_is_v1_5(void) {
