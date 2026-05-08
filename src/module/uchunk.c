@@ -21,7 +21,6 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "value/uvalue.h"
-#include "object/umodule_instance.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include <stddef.h>    /* size_t */
 
@@ -52,11 +51,16 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         if (!realm) return URBI_ERR_OOM;
     }
 
-    /* M4 follow-up: bind UModuleInstance so OP_GETSLOT/SETSLOT find IC table.
-     * Cache lookup on vm->module_instances_head; lazy create.  OOM here is
-     * not fatal — urbi_vm_run will surface a clean diagnostic on first GETSLOT
-     * if the binding never happened. */
-    (void)urbi_get_or_create_module_instance(vm, (UModule *)module);
+    /* CHSTR-008 + CHSTR-027 (T100): the M4-follow-up precreate of UModuleInstance
+     * was redundant.  urbi_vm_run unconditionally calls urbi_module_instance_create
+     * (uvm_run.c:114) which builds a fresh instance and prepends it to
+     * vm->module_instances_head; the precreate's instance was never read on
+     * this path (the strand's module_instance is wired from the fresh-create
+     * result, not from the cache lookup).  Keeping the precreate left a
+     * dead instance head-inserted into the GC-managed list with no useful
+     * effect; the GC reaps it on the next sweep but the work is wasted.
+     * Removed.  vm->strand_runnable_count and module_instance_count for
+     * .chk fixtures unchanged after the removal. */
 
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
