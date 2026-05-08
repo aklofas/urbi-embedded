@@ -71,6 +71,13 @@ UVarintError uvarint_decode_zz(const uint8_t *buf, size_t size,
     uint64_t u = 0;
     UVarintError rc = uvarint_decode_u(buf, size, &u, consumed);
     if (rc != UVARINT_OK) return rc;
-    *v = (int64_t)((u >> 1) ^ (uint64_t)(-(int64_t)(u & 1U)));
+    /* FOUND-015: unsigned-only zigzag decode.  The previous form
+     *   (uint64_t)(-(int64_t)(u & 1U))
+     * incurs implementation-defined behaviour when (u & 1) is 1: the
+     * intermediate (int64_t)1 is negated to -1, then cast through uint64_t,
+     * relying on two's-complement representation.  The unsigned form
+     *   (0u - (u & 1u))
+     * is defined for all inputs (modulo-2^64 arithmetic). */
+    *v = (int64_t)((u >> 1) ^ (uint64_t)(0U - (u & 1U)));
     return UVARINT_OK;
 }
