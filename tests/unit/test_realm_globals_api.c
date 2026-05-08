@@ -117,9 +117,11 @@ UTEST(set_global_then_script_reads) {
 }
 
 UTEST(set_global_const_blocks_script_write) {
-    /* urbi_realm_set_global_const on an existing built-in constant slot
-     * ("Object", slot index 0) updates its value while preserving the
-     * CONSTANT flag.  A subsequent script "var Object = 99" must still fail.
+    /* T67 (REALM-003): urbi_realm_set_global_const on an existing built-in
+     * constant slot ("Object", slot index 0) MUST reject the overwrite with
+     * URBI_ERR_CONST_SLOT_WRITE — the prior bypass (silent overwrite of the
+     * value while preserving the CONSTANT flag) is gone.  A subsequent script
+     * "var Object = 42" still fails because "Object" remained CONSTANT.
      *
      * "Object" is at slot index 0 in the global object (populated by
      * urbi_populate_realm_globals).  The IC checks packed shape flags for
@@ -130,17 +132,48 @@ UTEST(set_global_const_blocks_script_write) {
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Re-install "Object" via set_global_const (no-op on value matters less
-     * than confirming the call returns URBI_OK and const stays in effect). */
+    /* Re-install "Object" via set_global_const must now reject. */
     UValue sentinel = make_int(99);
     int rc = urbi_realm_set_global_const(&vm, realm, "Object", 6, sentinel);
-    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
 
-    /* Script write must fail: "Object" is const (slot index 0). */
+    /* Script write must still fail: "Object" is still const (slot index 0). */
     int run_rc = compile_and_run(&vm, "var Object = 42", NULL);
     UASSERT(run_rc != URBI_OK);
     /* Error message must mention the slot name. */
     UASSERT(strstr(vm.last_errmsg, "Object") != NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(set_global_const_rejects_existing_const_overwrite) {
+    /* T67 (REALM-003): freshly install a CONSTANT slot via set_global_const,
+     * then attempt to install it again — the second call must reject with
+     * URBI_ERR_CONST_SLOT_WRITE (the slot is already CONSTANT, can't overwrite).
+     * Verify the original value is preserved (no silent mutation). */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    /* Initial install of a fresh CONSTANT slot — succeeds (slot didn't exist
+     * before; sits at index 15, beyond the packed-flag IC enforcement range
+     * of 0-7, but the CONSTANT bit is still tracked via UProps for the C-API
+     * gating in T67). */
+    int rc = urbi_realm_set_global_const(&vm, realm, "PI", 2, make_int(314));
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Attempt to overwrite — must reject with URBI_ERR_CONST_SLOT_WRITE. */
+    rc = urbi_realm_set_global_const(&vm, realm, "PI", 2, make_int(999));
+    UASSERT_EQ(URBI_ERR_CONST_SLOT_WRITE, rc);
+
+    /* Read back via C API — value must still be 314 (no silent overwrite). */
+    UValue out = {0};
+    rc = urbi_realm_get_global(&vm, realm, "PI", 2, &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((uint8_t)UVAL_INT, out.kind);
+    UASSERT_EQ((int64_t)314, out.v.i);
 
     urbi_vm_destroy(&vm);
 }
@@ -197,6 +230,8 @@ test_realm_globals_api_suite(void)
               set_global_then_script_reads);
     utest_run("set_global_const: const-flagged slot rejects script write",
               set_global_const_blocks_script_write);
+    utest_run("set_global_const: rejects existing CONSTANT overwrite (T67)",
+              set_global_const_rejects_existing_const_overwrite);
     utest_run("get_global: absent slot returns URBI_ERR_SLOT_NOT_FOUND",
               get_global_returns_slot_not_found_when_absent);
     utest_run("set_global: overwrites existing non-const slot",

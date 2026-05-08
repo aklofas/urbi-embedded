@@ -327,6 +327,45 @@ urbi_realm_set_global_const(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
+    /* REALM-003 / T67: if the slot already exists locally on global_object
+     * AND its CONSTANT bit is set, reject the install with
+     * URBI_ERR_CONST_SLOT_WRITE.  Without this guard the public C API would
+     * silently bypass the CONSTANT flag (urbi_object_set_local_slot does an
+     * unchecked in-place value update), letting host code overwrite
+     * built-in constants like "Object" / "Integer".
+     *
+     * Two sources of truth for "is this slot CONSTANT?":
+     *   - UShape.flags packed 4-bit nibble (slots 0..7) — what uic.c:187
+     *     consults on the IC slow path for script writes.
+     *   - The per-slot UProps's `constant` bit — written in lockstep with
+     *     the nibble by urbi_object_install_property at uobject_slot.c:370.
+     *
+     * Both are kept in sync; we check the packed nibble for slots 0..7
+     * (cheap arithmetic, no pointer chase), and fall through to UProps for
+     * slots >= 8 (the IC enforcement is gated on the packed range, but
+     * the C-API gate here covers the full slot range so a CONSTANT slot
+     * past index 8 — registered, e.g., via this very API — also rejects
+     * subsequent overwrites).  The guard is intentionally local-only: a
+     * CONSTANT slot on a prototype is not preempted because the public
+     * API installs on realm->global_object directly. */
+    int32_t existing = urbi_shape_find_slot(realm->global_object->shape, sym);
+    if (existing >= 0) {
+        bool already_const = false;
+        if (existing < 8) {
+            const uint32_t shift      = (uint32_t)existing * 4U;
+            const uint32_t old_nibble =
+                (realm->global_object->shape->flags >> shift) & 0xFU;
+            already_const = (old_nibble & URBI_SLOT_FLAG_CONSTANT) != 0U;
+        } else if (realm->global_object->shape->props_table != NULL) {
+            const UProps *p =
+                realm->global_object->shape->props_table[existing];
+            already_const = (p != NULL) && (p->constant != 0U);
+        }
+        if (already_const) {
+            return URBI_ERR_CONST_SLOT_WRITE;
+        }
+    }
+
     int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
     if (rc != 0) {
         return URBI_ERR_OOM;
