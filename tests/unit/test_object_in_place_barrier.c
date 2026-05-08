@@ -622,6 +622,128 @@ UTEST(install_property_no_op_does_not_bump_topology_gen)
 }
 
 /* ===================================================================
+ * T121 / COV-003: change-event creation Dijkstra barrier on BLACK parent
+ * ===================================================================
+ *
+ * urbi_object_get_or_create_change_event prepends a fresh UChangedNode
+ * onto obj->changed_events_head.  Because the prepend is a field write
+ * (not a UCell-slot write), the slot-write barrier doesn't fire — the
+ * function instead manually shades the new node gray when the parent
+ * object is BLACK (uchanged.c:70-71).
+ *
+ * Pre-T121 src/changed/uchanged.c sat at 77 % line coverage; the BLACK
+ * barrier branch (line 71) was the largest individually-uncovered path.
+ *
+ * Test forces obj BLACK, calls urbi_object_get_or_create_change_event,
+ * and asserts the returned node is at least GRAY. */
+
+#include "changed/uchanged_node.h" /* urbi_object_get_or_create_change_event,
+                                    * UChangedNode */
+#include "event/uevent.h"          /* UEvent */
+
+UTEST(get_or_create_change_event_shades_gray_under_black_parent)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+    if (o == NULL) { urbi_vm_destroy(&vm); return; }
+
+    USymbol *name = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(name != NULL);
+    if (name == NULL) { urbi_vm_destroy(&vm); return; }
+
+    /* Force the parent UObject BLACK before the prepend. */
+    UCell *parent = (UCell *)o;
+    parent->gc_byte = (uint8_t)((parent->gc_byte & ~UGC_COLOR_MASK)
+                                | UGC_COLOR_BLACK);
+    UASSERT(IS_BLACK(parent));
+
+    UEvent *e = urbi_object_get_or_create_change_event(&vm, o, name);
+    UASSERT(e != NULL);
+
+    /* The new UChangedNode is at obj->changed_events_head.  After the
+     * Dijkstra forward barrier (uchanged.c:71), it must be gray-or-black. */
+    UChangedNode *node = o->changed_events_head;
+    UASSERT(node != NULL);
+    UCell *child = (UCell *)node;
+    UASSERT(IS_GRAY(child) || IS_BLACK(child));
+
+    /* Idempotent re-call: same event returned, no new node prepended. */
+    UEvent *e2 = urbi_object_get_or_create_change_event(&vm, o, name);
+    UASSERT(e2 == e);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* T121 OOM coverage: starve alloc_fn after the parent UObject + USymbol
+ * are constructed, then call urbi_object_get_or_create_change_event.
+ * urbi_gc_alloc returns NULL on the UChangedNode allocation; the OOM
+ * branch at uchanged.c:42-46 fires and (when host_log_fn is set) the
+ * log callback is invoked. */
+typedef struct {
+    int alloc_calls;
+    int fail_at;
+} ChangeEventOomSpy;
+
+/* File-scope counter so the host_log_fn (which lacks a per-call ud) can
+ * record invocations; reset by the test before the OOM call. */
+static int g_change_event_log_calls;
+
+static void *
+change_event_oom_alloc(void *ptr, size_t n, void *ud)
+{
+    ChangeEventOomSpy *spy = (ChangeEventOomSpy *)ud;
+    if (n == 0) { free(ptr); return NULL; }
+    if (ptr == NULL && n == 0) return NULL;
+    spy->alloc_calls++;
+    if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+        return NULL;
+    }
+    return realloc(ptr, n);
+}
+
+static void
+change_event_oom_log(struct UVM *vm, int level, const char *fmt, ...)
+{
+    (void)vm; (void)level; (void)fmt;
+    g_change_event_log_calls++;
+}
+
+UTEST(get_or_create_change_event_oom_logs_warning)
+{
+    ChangeEventOomSpy spy = { 0, -1 };
+    UVM vm;
+    urbi_vm_init(&vm, change_event_oom_alloc, &spy);
+    vm.host_log_fn = change_event_oom_log;
+
+    UObject *o = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(o != NULL);
+    if (o == NULL) {
+        spy.fail_at = -1;
+        urbi_vm_destroy(&vm);
+        return;
+    }
+
+    USymbol *name = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(name != NULL);
+
+    /* Cap further allocations: the next urbi_gc_alloc inside
+     * urbi_object_get_or_create_change_event must return NULL.  Setting
+     * fail_at to the current alloc count traps the very next allocation. */
+    spy.fail_at = spy.alloc_calls;
+    g_change_event_log_calls = 0;
+
+    UEvent *e = urbi_object_get_or_create_change_event(&vm, o, name);
+    UASSERT(e == NULL);                       /* OOM short-circuit */
+    UASSERT(g_change_event_log_calls > 0);    /* host_log_fn invoked */
+
+    spy.fail_at = -1;
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -645,4 +767,8 @@ void test_object_in_place_barrier_suite(void)
               transition_remove_slot_depth_cap_includes_dropped_name);
     utest_run("object: install_property no-op does not bump topology_gen (T66)",
               install_property_no_op_does_not_bump_topology_gen);
+    utest_run("object: get_or_create_change_event shades gray under black (T121)",
+              get_or_create_change_event_shades_gray_under_black_parent);
+    utest_run("object: get_or_create_change_event OOM logs warning (T121)",
+              get_or_create_change_event_oom_logs_warning);
 }
