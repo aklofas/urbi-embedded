@@ -141,7 +141,9 @@ UTEST(tag_less_at_event_watcher_freed_on_pool_destroy)
     /* Pool-alloc + manually wire as a tag-less AT_EVENT watcher to bypass
      * install_at_event_runtime's resolve_owning_tag (which always returns
      * realm->tag for fully-initialised VMs).  Mirrors the production state
-     * where install_at_event_runtime ran with owning_tag == NULL. */
+     * where install_at_event_runtime ran with owning_tag == NULL: not on
+     * active_watchers_head (only cond watchers walk there), not on any
+     * tag's member chain, only on event->at_watchers_head. */
     UWatcher *w = uwatcher_pool_alloc(&vm);
     UASSERT(w != NULL);
     w->mode       = UWATCHER_AT_EVENT;
@@ -149,12 +151,6 @@ UTEST(tag_less_at_event_watcher_freed_on_pool_destroy)
     w->owning_tag = NULL;
     uevent_at_watchers_append(&ev, w);
     vm.watcher_active_count++;
-    /* Place the watcher onto active_watchers_head for accounting symmetry —
-     * pool_destroy walks active_watchers_head; without the AT_EVENT-aware
-     * unlink (WATCH-002 fix), pool_destroy would leave ev.at_watchers_head
-     * dangling at the freed slab. */
-    w->next_active = vm.active_watchers_head;
-    vm.active_watchers_head = w;
 
     /* Pre-condition: ev.at_watchers_head points at w. */
     UASSERT(ev.at_watchers_head == w);
@@ -387,8 +383,9 @@ test_watcher_ownership_suite(void)
     printf("test_watcher_ownership\n");
     utest_run("pool_free_aliased_closure_sets_only_owning_slot",
               pool_free_aliased_closure_sets_only_owning_slot);
-    /* T43-T47 tests registered as their per-task fixes land. */
-    (void)tag_less_at_event_watcher_freed_on_pool_destroy;
+    utest_run("tag_less_at_event_watcher_freed_on_pool_destroy",
+              tag_less_at_event_watcher_freed_on_pool_destroy);
+    /* T44-T47 tests registered as their per-task fixes land. */
     (void)scratch_alloc_fail_signals_throw_not_silent_null;
     (void)waituntil_immediate_wake_state_explicit;
     (void)aliased_proto_closure_unlink_no_double_detach;

@@ -125,6 +125,11 @@ pool_free(struct UVM *vm, UWatcher *w)
         w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_ONLEAVE);
     }
 
+    /* Clear URBI_WATCHER_ACTIVE so a slab walk (uwatcher_pool_destroy,
+     * WATCH-002 v0.5.7) can distinguish allocated-but-orphaned slots from
+     * recycled ones.  Per-slot OWNS_* bits were already cleared above. */
+    w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_ACTIVE);
+
     w->next_active             = vm->watcher_pool_freelist;
     vm->watcher_pool_freelist  = w;
     vm->watcher_pool_in_use--;
@@ -210,6 +215,35 @@ uwatcher_pool_destroy(struct UVM *vm)
      * flags are unchanged by the push).  pool_free frees those closures. */
     drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
+
+    /* WATCH-002 + WATCH-006 (v0.5.7): walk the slab for tag-less
+     * AT_EVENT / AT_EVENT_SYNC watchers that are still allocated.  Tagged
+     * AT_EVENT watchers are torn down via the tag-stop cascade before this
+     * function runs; tag-less ones (install_at_event_runtime called with
+     * resolve_owning_tag returning NULL) are not on active_watchers_head
+     * (only cond watchers walk there), not on pending_onleave_head, and
+     * not on any tag's member chain.  Without this slab walk they remain
+     * linked to event->at_watchers_head pointing at slab memory we are
+     * about to free below.  Walk every slot, identify active AT_EVENT
+     * mode watchers, unlink from event->at_watchers_head, and release the
+     * slot.  Slots on the freelist have URBI_WATCHER_ACTIVE cleared by
+     * pool_free; slots never allocated have flags == 0 (slab pre-zeroed). */
+    {
+        uint16_t i;
+        for (i = 0; i < (uint16_t)URBI_WATCHER_POOL_SIZE; i++) {
+            UWatcher *w = &vm->watcher_pool_base[i];
+            if ((w->flags & URBI_WATCHER_ACTIVE) == 0U) continue;
+            if (w->mode != UWATCHER_AT_EVENT &&
+                w->mode != UWATCHER_AT_EVENT_SYNC) continue;
+            if (w->event != NULL) {
+                uevent_at_watchers_remove(w->event, w);
+                w->event = NULL;
+            }
+            vm->watcher_active_count = vm->watcher_active_count > 0
+                                       ? vm->watcher_active_count - 1U : 0U;
+            pool_free(vm, w);
+        }
+    }
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
 
