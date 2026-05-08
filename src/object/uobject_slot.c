@@ -278,38 +278,50 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
     if (new_shape == NULL) {
         return -1;
     }
-    /* If the sibling is the same shape (idempotent no-op), it has no
-     * props_table of its own — the existing one (which may be NULL) stays
-     * in place.  We still need to publish the freshly-allocated UProps,
-     * because we just mutated its oget/oset/constant fields.  Allocate a
-     * UPropsTable wrapper if the parent had none; otherwise mutate in place
-     * (in-place mutation is the §5 cache-invalidation point — bumping
-     * topology_gen below covers any IC entries). */
+    /* OBJ-005: if the transition is idempotent (flag bit already set),
+     * `new_shape == obj->shape` and the existing shape is potentially
+     * shared with other UObjects (siblings created via transition_add_slot
+     * dedup, or other holders that arrived at this same shape).  Mutating
+     * `obj->shape->props_table[idx]` in place would corrupt those aliases'
+     * view of the slot's UProps cell.  Allocate a fresh sibling clone
+     * (same lineage, same flags, fresh identity, fresh props_table) and
+     * write the new UProps into the clone's props_table[idx].  obj->shape
+     * is then re-published to the clone, leaving the original shape
+     * unchanged for any aliasing holder. */
     if (new_shape == obj->shape) {
-        /* Idempotent flag transition.  Need a props_table if there isn't
-         * one; otherwise overwrite the per-slot UProps* pointer. */
-        if (obj->shape->props_table == NULL) {
-            /* Allocate a wrapper cell with all NULL entries, then write
-             * fresh into the slot's index. */
-            UCell *c = urbi_gc_alloc(vm,
-                                     sizeof(UPropsTable)
-                                     + (size_t)obj->shape->count
-                                       * sizeof(UProps *),
-                                     UTYPE_PROPS_TABLE);
-            if (c == NULL) {
-                return -1;
-            }
-            UPropsTable *pt = (UPropsTable *)c;
-            pt->n    = obj->shape->count;
-            pt->_pad = 0U;
-            for (uint32_t i = 0U; i < pt->n; i++) {
-                pt->entries[i] = NULL;
-            }
-            pt->entries[idx] = fresh;
-            obj->shape->props_table = pt->entries;
-        } else {
-            obj->shape->props_table[idx] = fresh;
+        UCell *sc = urbi_gc_alloc(vm, sizeof(UShape), UTYPE_SHAPE);
+        if (sc == NULL) {
+            return -1;
         }
+        UShape *clone = (UShape *)sc;
+        clone->name        = obj->shape->name;
+        clone->index       = obj->shape->index;
+        clone->count       = obj->shape->count;
+        clone->flags       = obj->shape->flags;
+        clone->_pad        = 0U;
+        clone->parent      = obj->shape->parent;
+        clone->transitions = NULL;
+        clone->props_table = NULL;
+
+        UCell *pc = urbi_gc_alloc(vm,
+                                  sizeof(UPropsTable)
+                                  + (size_t)obj->shape->count
+                                    * sizeof(UProps *),
+                                  UTYPE_PROPS_TABLE);
+        if (pc == NULL) {
+            return -1;
+        }
+        UPropsTable *pt = (UPropsTable *)pc;
+        pt->n    = obj->shape->count;
+        pt->_pad = 0U;
+        for (uint32_t i = 0U; i < pt->n; i++) {
+            pt->entries[i] = (obj->shape->props_table != NULL)
+                           ? obj->shape->props_table[i]
+                           : NULL;
+        }
+        pt->entries[idx] = fresh;
+        clone->props_table = pt->entries;
+        obj->shape = clone;
     } else {
         /* Genuine sibling.  transition_property already allocated its
          * props_table; write the new UProps into the slot's index. */
