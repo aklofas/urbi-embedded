@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+#ifndef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 200809L  /* sigaction, fork, waitpid, _exit */
+#endif
 /* Phase 18 (T108-T113): public C API NULL-safety + signature carry-forwards.
+ * Phase 20 (T119): src/urbi.c coverage — setters + panic body in non-DEBUG.
  *
  * Audit IDs closed:
  *   API-001 — urbi_panic NULL guard on msg
@@ -8,6 +12,7 @@
  *   API-004 — urbi_run_chunk realm-arg threading (signature change carry from Wave 3)
  *   API-010 — urbi_call_host_with_watchdog vm/fn defense
  *   API-011 — URBI_VERSION literal stale at "0.3.0-concurrency"
+ *   COV-001 — src/urbi.c line coverage 8 % → ≥85 % (setters + panic body)
  */
 
 #include "utest.h"
@@ -26,19 +31,43 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>     /* exit() — used by abort_gcov_flush_handler */
 
-#ifdef URBI_DEBUG
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <signal.h>
+
+/* SIGABRT handler.  Coverage builds register a .gcda writer via atexit;
+ * abort() does NOT run atexit handlers, so any line hit before abort() is
+ * lost in the child unless we run atexit explicitly.  exit() (lowercase)
+ * does run atexit then _exit — so swapping abort's terminate-with-SIGABRT
+ * for exit(non-zero) preserves the "child exits abnormally" signal seen by
+ * EXPECT_ABORT (WIFEXITED && WEXITSTATUS != 0) AND lets the gcov atexit
+ * hook flush counters. */
+static void abort_gcov_flush_handler(int sig) {
+    (void)sig;
+    exit(134);  /* runs atexit (writes .gcda); WEXITSTATUS sees 134, so the
+                  * EXPECT_ABORT-detection (WIFEXITED && exit != 0) still
+                  * fires — abort is still detected. */
+}
 
 /* EXPECT_ABORT: assert that expr causes abort (signal or non-zero exit).
- * Used to verify urbi_panic on a path that must trap fatal. */
+ * Used to verify urbi_panic on a path that must trap fatal.  Available in
+ * both URBI_DEBUG and non-DEBUG builds; the host is hosted-POSIX in either
+ * case (only freestanding cross-builds lack <sys/wait.h>, and unit tests
+ * only run on host).  T119 (COV-001) ungated this from URBI_DEBUG and
+ * added the gcov-flush SIGABRT handler so coverage builds (non-DEBUG)
+ * record the urbi_panic hosted-abort branch. */
 #define EXPECT_ABORT(expr)                                               \
     do {                                                                 \
         utest_checks++;                                                  \
         pid_t _pid = fork();                                             \
         if (_pid == 0) {                                                 \
+            struct sigaction _sa;                                        \
+            memset(&_sa, 0, sizeof(_sa));                                \
+            _sa.sa_handler = abort_gcov_flush_handler;                   \
+            sigaction(SIGABRT, &_sa, NULL);                              \
             (expr);                                                      \
             _exit(0);                                                    \
         }                                                                \
@@ -53,7 +82,6 @@
             fflush(stdout);                                              \
         }                                                                \
     } while (0)
-#endif /* URBI_DEBUG */
 
 #define UTEST(name) static void name(void)
 
@@ -68,15 +96,11 @@
  * Test forks a child, calls urbi_panic(NULL), and verifies the child
  * exits via abort (not via SIGSEGV from fputs).  Under ASan/UBSan this
  * catches the prior NULL deref; under glibc release builds it confirms
- * abort is reached.  Test is URBI_DEBUG-only because fork-based death
- * tests need <sys/wait.h> and the EXPECT_ABORT shim is debug-gated. */
+ * abort is reached.  T119 (COV-001) ungated this test from URBI_DEBUG so
+ * coverage builds (non-DEBUG) exercise urbi_panic's hosted abort branch. */
 UTEST(urbi_panic_handles_null_msg)
 {
-#ifdef URBI_DEBUG
     EXPECT_ABORT(urbi_panic(NULL));
-#else
-    UASSERT(1);
-#endif
 }
 
 /* ===================================================================
@@ -280,6 +304,74 @@ UTEST(urbi_version_matches_release_tag)
 }
 
 /* ===================================================================
+ * T119 — COV-001: src/urbi.c setters + panic body (non-DEBUG coverage)
+ * ===================================================================
+ *
+ * The coverage build is non-DEBUG, so the URBI_DEBUG-gated body of
+ * urbi_in_isr / urbi_call_host_with_watchdog / urbi_get_determinism_checksum
+ * is excluded from instrumentation.  What remains in src/urbi.c at non-DEBUG:
+ *
+ *   urbi_version          (line 29)            — already covered by T113
+ *   urbi_panic            (lines 40, 43-46)    — covered by ungating T108
+ *   urbi_set_isr_check_fn (lines 59, 61-62)    — covered by T119 below
+ *   urbi_set_callback_watchdog_mode (80, 82-83)— covered by T119 below
+ *
+ * Both setters have a NULL-vm early-return then a single field assignment.
+ * Test calls each with NULL (early-return path) and a real vm (assignment). */
+
+static bool stub_isr_predicate(void) { return false; }
+
+UTEST(set_isr_check_fn_null_safe_and_assigns)
+{
+    /* NULL vm: must early-return without crashing. */
+    urbi_set_isr_check_fn(NULL, stub_isr_predicate);
+
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Default state after init: no predicate registered. */
+    UASSERT(vm.isr_check_fn == NULL);
+
+    /* Real vm: assigns the predicate. */
+    urbi_set_isr_check_fn(&vm, stub_isr_predicate);
+    UASSERT(vm.isr_check_fn == stub_isr_predicate);
+
+    /* Re-assigning NULL clears it (the documented "disable ISR checking"
+     * default behaviour referenced in src/urbi.c:57). */
+    urbi_set_isr_check_fn(&vm, NULL);
+    UASSERT(vm.isr_check_fn == NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(set_callback_watchdog_mode_null_safe_and_assigns)
+{
+    /* NULL vm: must early-return without crashing. */
+    urbi_set_callback_watchdog_mode(NULL, URBI_WATCHDOG_WARN);
+
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Real vm: WARN and ASSERT both round-trip through the field. */
+    urbi_set_callback_watchdog_mode(&vm, URBI_WATCHDOG_WARN);
+    UASSERT_EQ((int)vm.callback_watchdog_mode, (int)URBI_WATCHDOG_WARN);
+
+    urbi_set_callback_watchdog_mode(&vm, URBI_WATCHDOG_ASSERT);
+    UASSERT_EQ((int)vm.callback_watchdog_mode, (int)URBI_WATCHDOG_ASSERT);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* urbi_panic with a non-NULL message — exercises the hosted-libc path
+ * (fputs(msg, stderr); fputc('\n', stderr); abort()) without going through
+ * the NULL-substitution branch already covered by urbi_panic_handles_null_msg.
+ * Both fork-and-abort tests together cover the full body of urbi_panic. */
+UTEST(urbi_panic_handles_real_msg)
+{
+    EXPECT_ABORT(urbi_panic("test panic — coverage exercise"));
+}
+
+/* ===================================================================
  * Suite registration
  * =================================================================== */
 
@@ -297,4 +389,10 @@ void test_public_api_suite(void)
               call_host_with_watchdog_handles_null_vm_fn);
     utest_run("urbi_version_matches_release_tag",
               urbi_version_matches_release_tag);
+    utest_run("set_isr_check_fn_null_safe_and_assigns",
+              set_isr_check_fn_null_safe_and_assigns);
+    utest_run("set_callback_watchdog_mode_null_safe_and_assigns",
+              set_callback_watchdog_mode_null_safe_and_assigns);
+    utest_run("urbi_panic_handles_real_msg",
+              urbi_panic_handles_real_msg);
 }
