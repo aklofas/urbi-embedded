@@ -534,6 +534,33 @@ coverage-tools:
 	    exit 1; \
 	}
 
+# Branch coverage — same instrumentation as `coverage`, with branch + decision
+# tracking. Closes COV-009 audit finding. Uses gcovr's native --branches flag
+# rather than lcov (cited by audit) — gcovr is already in PATH and the
+# existing coverage target uses it; lcov would add a dep without functional
+# benefit.
+#
+# Threshold gating: informational-only at v0.5.7 baseline (69.4%). Phase 20
+# (T119-T125) closes coverage gaps; the gate enables in T118 / T126 once
+# the baseline is above 75%. Currently the target reports + writes the
+# HTML but does not fail-under.
+test-branch-coverage: coverage-tools
+	rm -f build/host-coverage/src/*.gcda build/host-coverage/tests/unit/*.gcda
+	$(MAKE) TARGET=host-coverage \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
+		test
+	gcovr --root . \
+	      --object-directory build/host-coverage \
+	      --filter 'src/' \
+	      --merge-mode-functions=merge-use-line-min \
+	      --branches \
+	      --decisions \
+	      --txt \
+	      --html-details build/host-coverage/branch-report.html
+	@echo ""
+	@echo "Branch + decision coverage report: build/host-coverage/branch-report.html"
+	@echo "(gate enables in v0.5.7-fixes Phase 20 once baseline exceeds 75%)"
+
 # Aggregate: gating audit-globals, tidy, advisory cppcheck, advisory analyzer.
 # CI invokes this as one step per-target so failures clearly name
 # which tool caught the issue.
@@ -573,4 +600,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap

@@ -23,6 +23,23 @@ they coexist and no `make clean` is required when switching between them.
 `test-valgrind` is enforced in CI but runs ~20–50× slower than a plain build
 — run it periodically and always before a milestone tag, not on every commit.
 
+## Coverage
+
+`make coverage` produces a line-coverage HTML report at
+`build/host-coverage/report.html` via gcovr. Threshold ≥85% line coverage
+(enforced in `make releasetest`).
+
+`make test-branch-coverage` reports branch + decision coverage via gcovr's
+`--branches` + `--decisions` flags. As of v0.5.7-fixes the gate is
+informational-only at 69% baseline; Phase 20 of the v0.5.7-fixes plan
+closes coverage gaps and the gate enables (`--fail-under-branch 75`) once
+baseline exceeds threshold. Drops below threshold flag PRs; either close
+the gap in the same commit or document at the bottom of the affected file:
+
+```c
+// AUDIT: branch <description> covered indirectly via tests/path/test_other.c
+```
+
 ## Cross-compile sanity
 
 If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
