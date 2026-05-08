@@ -112,7 +112,12 @@ void diag_write_u32(UDiagWriter *w, uint32_t n) {
         tmp[i++] = '0';
     } else {
         while (n > 0 && i < sizeof(tmp)) {
-            tmp[i++] = '0' + (char)(n % 10);
+            /* TIDY-007: route int→char through unsigned to make the
+             * narrowing well-defined and silence
+             * bugprone-narrowing-conversions.  '0' + (n % 10) computes in
+             * int; (unsigned char) gives a defined low-byte truncation, then
+             * (char) is a value-preserving same-width store. */
+            tmp[i++] = (char)(unsigned char)('0' + (n % 10U));
             n /= 10;
         }
     }
