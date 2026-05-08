@@ -124,7 +124,19 @@ run_on_scratch_core(struct UVM       *vm,
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
     /* Thread onto global_realm->strands_head so the GC walker sees the
-     * strand's register window (mirrors urbi_vm_run's transient-strand dance). */
+     * strand's register window (mirrors urbi_vm_run's transient-strand dance).
+     *
+     * GC-006 + GC-038 (audit findings closed by construction):
+     * Before this linkage step, no GC slice can fire — every prior allocation
+     * uses vm->alloc_fn directly (register-stack alloc, scratch_arr, cleanup
+     * stack), none of which trigger GC.  Once linked, sched_walk_roots
+     * (src/sched/usched_cooperative.c) iterates vm->realms_head →
+     * realm.strands_head → strand_walk_roots and visits the full register
+     * window via the existing s->stack scan — so any UValue placed in
+     * strand.R[k] (including the payload write at line 94 below) is rooted
+     * for the duration of dispatch.  Unlinking happens below in the teardown
+     * block, after dispatch_loop_until_yield returns and *out_result has been
+     * captured into the caller's local. */
     {
         URealm *gr = urbi_realm_global(vm);
         if (gr != NULL) {

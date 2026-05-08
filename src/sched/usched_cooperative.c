@@ -280,7 +280,19 @@ sched_dequeue_ready_head(UVM *vm)
  *   extent requires bytecode metadata not available at M3.  We walk the
  *   entire allocated array (conservative over-mark; never under-marks).
  *   TODO(T26+ opt): tighten to active-frame register window when bytecode
- *   emits frame-extent metadata (proposed for M4/M5). */
+ *   emits frame-extent metadata (proposed for M4/M5).
+ *
+ * Scratch-strand coverage (closes GC-006 + GC-038):
+ *   The watcher cond/body/onleave scratch path (urbi_run_closure_on_scratch
+ *   in src/watcher/uwatcher_scratch.c) builds a transient UStrand on the C
+ *   stack and threads it onto vm->global_realm->strands_head BEFORE entering
+ *   dispatch.  That strand's register window is therefore visited here just
+ *   like any persistent strand — no separate "scratch frame" walker is
+ *   required.  The audit IDs GC-006 and GC-038 were filed against an earlier
+ *   (pre-v0.5.1) design that used a vm->watcher_scratch_frame field; the
+ *   transient-strand architecture closes both findings by construction.  The
+ *   structural invariant is regression-pinned by
+ *   tests/unit/test_gc_scratch_rooting.c. */
 static void
 strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 {
