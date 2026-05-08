@@ -21,7 +21,14 @@
  *                instead of dropping them.  When the slot installer OOMs on
  *                any of the four slots, vm->tag_proto is reset to NULL and
  *                the function returns UVM_OOM.  Mirrors the Phase-11 T50
- *                pattern for event_native_register. */
+ *                pattern for event_native_register.
+ *
+ * T56 TAGCH-016: URBI_ASSERT_NOT_ISR is asserted at every gc_alloc-bearing
+ *                callsite in utag_native.c (tag_enter_getter, tag_leave_getter,
+ *                tag_native_register).  Mirrors src/changed/uchanged.c:32.
+ *                Test asserts the happy path under no ISR — the assertion
+ *                fires only when an ISR-check function reports true (Gate G1
+ *                stretch, URBI_DEBUG-only). */
 
 #include "utest.h"
 
@@ -213,6 +220,46 @@ UTEST(tag_native_register_propagates_failures)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T56: tag_native_calls_assert_not_isr
+ *
+ * After T56 every gc_alloc-bearing path in utag_native.c is prefixed by
+ * URBI_ASSERT_NOT_ISR(vm).  In release builds the macro collapses to
+ * ((void)0) so all three callers behave normally.  Gate G1 (URBI_DEBUG
+ * with an isr_check_fn that returns true) would trip the assertion;
+ * we cover the happy path here.
+ * =================================================================== */
+
+UTEST(tag_native_calls_assert_not_isr)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* tag_native_register: must complete without tripping the macro
+     * because no ISR check function is registered (urbi_in_isr returns
+     * false in that case). */
+    UVMError err = tag_native_register(&vm);
+    UASSERT_EQ((int)err, (int)UVM_OK);
+    UASSERT(vm.tag_proto != NULL);
+    if (vm.tag_proto == NULL) { urbi_vm_destroy(&vm); return; }
+
+    /* tag_enter_getter / tag_leave_getter: lazy-alloc paths must also
+     * complete without panic in the no-ISR case. */
+    UTag *t = utag_create(&vm);
+    UASSERT(t != NULL);
+    if (t == NULL) { urbi_vm_destroy(&vm); return; }
+
+    UValue re = tag_enter_getter(&vm, t);
+    UASSERT_EQ((int)re.kind, (int)UVAL_EVENT);
+    UASSERT(t->enter_event != NULL);
+
+    UValue rl = tag_leave_getter(&vm, t);
+    UASSERT_EQ((int)rl.kind, (int)UVAL_EVENT);
+    UASSERT(t->leave_event != NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -227,4 +274,6 @@ test_tag_barrier_suite(void)
               stubs_assert_unreachable_in_debug);
     utest_run("tag_native_register_propagates_failures",
               tag_native_register_propagates_failures);
+    utest_run("tag_native_calls_assert_not_isr",
+              tag_native_calls_assert_not_isr);
 }

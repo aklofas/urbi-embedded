@@ -69,6 +69,9 @@ throw_oom_for_tag_event(struct UVM *vm)
 UValue
 tag_enter_getter(struct UVM *vm, struct UTag *tag)
 {
+    /* TAGCH-016: lazy-alloc path drives urbi_gc_alloc via urbi_event_create —
+     * not ISR-safe.  Mirror src/changed/uchanged.c:32. */
+    URBI_ASSERT_NOT_ISR(vm);
     if (tag->enter_event == NULL) {
         UEvent *e = urbi_event_create(vm);
         if (e == NULL) return throw_oom_for_tag_event(vm);
@@ -88,6 +91,8 @@ tag_enter_getter(struct UVM *vm, struct UTag *tag)
 UValue
 tag_leave_getter(struct UVM *vm, struct UTag *tag)
 {
+    /* TAGCH-016: lazy-alloc path — see tag_enter_getter rationale above. */
+    URBI_ASSERT_NOT_ISR(vm);
     if (tag->leave_event == NULL) {
         UEvent *e = urbi_event_create(vm);
         if (e == NULL) return throw_oom_for_tag_event(vm);
@@ -153,6 +158,9 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
 UVMError
 tag_native_register(struct UVM *vm)
 {
+    /* TAGCH-016: drives urbi_object_alloc + urbi_register_fn slot installs,
+     * neither of which is ISR-safe.  Mirror src/changed/uchanged.c:32. */
+    URBI_ASSERT_NOT_ISR(vm);
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
     if (proto == NULL) {
         return UVM_OOM;   /* OOM: leave tag_proto NULL */
