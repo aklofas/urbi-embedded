@@ -113,10 +113,28 @@ static void var_sync_as_ident_fails(void) {
                (int)parse_var_error("var sync = 1"));
 }
 
-static void var_async_as_ident_ok(void) {
-    /* `async` is a soft keyword — allowed as identifier at v1.0. */
-    UASSERT_EQ((int)PARSE_OK,
+static void var_async_as_ident_fails(void) {
+    /* PARSE-007: `async` was inconsistently a half-soft keyword pre-fix —
+     * `var async = 1` succeeded but `async = 2` failed because
+     * parse_statement_or_expr's TOK_KW_ASYNC is not in the IDENT-handling
+     * arm.  Post-fix `async` is uniformly reserved; both forms now report
+     * PARSE_RESERVED_KEYWORD_AS_IDENT. */
+    UASSERT_EQ((int)PARSE_RESERVED_KEYWORD_AS_IDENT,
                (int)parse_var_error("var async = 1"));
+}
+
+static void assign_async_as_ident_fails(void) {
+    /* PARSE-007: `async = 2` must fail consistently with `var async = 1`.
+     * Pre-fix the assignment site reported a generic
+     * PARSE_EXPECTED_EXPRESSION because TOK_KW_ASYNC fell through to
+     * parse_inner_tier; post-fix the var-decl arm rejects, and the
+     * assignment-or-expr arm correctly never had a handler for the
+     * keyword in the first place. */
+    /* The exact code reported at the assign site can be either
+     * RESERVED_KEYWORD_AS_IDENT (if we add a top-level reservation
+     * check) or any other non-OK error.  This test only asserts the
+     * shape that BOTH forms fail (consistency invariant). */
+    UASSERT(parse_var_error("async = 2") != PARSE_OK);
 }
 
 static void var_reserved_keyword_has_diagnostic(void) {
@@ -139,6 +157,7 @@ void test_lex_keywords_suite(void) {
     utest_run("var waituntil as ident: PARSE_RESERVED_KEYWORD_AS_IDENT", var_waituntil_as_ident_fails);
     utest_run("var onleave as ident: PARSE_RESERVED_KEYWORD_AS_IDENT",  var_onleave_as_ident_fails);
     utest_run("var sync as ident: PARSE_RESERVED_KEYWORD_AS_IDENT",     var_sync_as_ident_fails);
-    utest_run("var async as ident: soft keyword, PARSE_OK",             var_async_as_ident_ok);
+    utest_run("var async as ident: PARSE_RESERVED_KEYWORD_AS_IDENT (PARSE-007)", var_async_as_ident_fails);
+    utest_run("assign async = 2: rejected (PARSE-007 consistency)",     assign_async_as_ident_fails);
     utest_run("var reserved keyword: non-NULL diagnostic message",      var_reserved_keyword_has_diagnostic);
 }

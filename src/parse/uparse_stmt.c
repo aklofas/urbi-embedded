@@ -15,20 +15,23 @@ UAstNode *parse_var_decl(UParser *p) {
     UToken kw = consume(p);          /* consume TOK_KW_VAR */
     UToken name = peek(p);
 
-    /* Detect hard reserved keywords used as variable names (T4, spec #2 §3.11).
-     * TOK_KW_ASYNC is soft — allowed as identifier at v1.0. */
+    /* Detect reserved keywords used as variable names (T4, spec #2 §3.11).
+     * PARSE-007: `async` was previously treated as soft (allowed in
+     * var-decl) but `async = 2` failed at the assignment site because
+     * parse_statement_or_expr has no IDENT-fallthrough for TOK_KW_ASYNC.
+     * That asymmetry meant `var async = 1` succeeded but the variable
+     * could never be re-assigned — silently un-usable.  Resolution: treat
+     * TOK_KW_ASYNC as fully reserved (matches its modifier role in
+     * `at async (...)` per parse_react.c). */
     if (name.type == TOK_KW_AT       || name.type == TOK_KW_WHENEVER  ||
         name.type == TOK_KW_WAITUNTIL || name.type == TOK_KW_ONLEAVE  ||
-        name.type == TOK_KW_SYNC) {
+        name.type == TOK_KW_SYNC      || name.type == TOK_KW_ASYNC) {
         return make_error(p, PARSE_RESERVED_KEYWORD_AS_IDENT,
                           kErrorMessages[PARSE_RESERVED_KEYWORD_AS_IDENT],
                           name.line, name.col);
     }
 
-    /* TOK_KW_ASYNC is a soft keyword — accepted as an identifier at v1.0.
-     * The lexer always populates u.str for keyword tokens, so u.str.start
-     * and u.str.len are valid even when type == TOK_KW_ASYNC. */
-    if (name.type != TOK_IDENT && name.type != TOK_KW_ASYNC) {
+    if (name.type != TOK_IDENT) {
         return make_error(p, PARSE_EXPECTED_IDENT,
                           kErrorMessages[PARSE_EXPECTED_IDENT],
                           name.line, name.col);
