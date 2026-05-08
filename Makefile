@@ -501,6 +501,14 @@ cppcheck: compile_commands.json
 	         --inline-suppr \
 	         --quiet
 
+# Strict cppcheck — --enable=all --inconclusive over src/ via wrapper script.
+# Parallel to the existing `cppcheck` target above (which gates `make lint`
+# and uses a narrower checklist). The strict gate uses .cppcheck.suppressions
+# for audit-ID-blessed exceptions; closes lock in T118 (releasetest gate).
+.PHONY: test-cppcheck
+test-cppcheck: ## Run cppcheck --enable=all --inconclusive
+	@bash tools/scripts/run_cppcheck.sh build/cppcheck-out.txt
+
 # Static analysis — GCC -fanalyzer (advisory).
 # Dedicated build variant so the 20% compile-time penalty only applies
 # when explicitly requested.  Diagnostics go to stderr during compile;
@@ -608,4 +616,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
