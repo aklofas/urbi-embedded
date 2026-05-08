@@ -253,6 +253,105 @@ UTEST(yield_already_ready_strand_aborts_in_debug)
 }
 #endif
 
+/* ===================================================================
+ * T41 — SCHED-004: re-stamp through sched_strand_unbind_from_sleep_queue
+ * ===================================================================
+ *
+ * Direct exercise of the helper.  c_event_waituntil's full path requires
+ * a constructed UEvent + cur_strand wiring (covered by existing
+ * test_event_waituntil suite); here we focus on the load-bearing helper
+ * contract: idempotence + correct counter decrement. */
+UTEST(unbind_from_sleep_queue_clears_links_when_present)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    /* Setup: place strand on sleep queue (sole occupant). */
+    s.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
+    sched_strand_block(&s, USTRAND_REASON_SLEEP, 5000U);
+    UASSERT(vm.sleep_q_head == &s);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
+
+    /* Helper unbinds the strand: queue empty, counter zero, wait_next NULL. */
+    sched_strand_unbind_from_sleep_queue(&s);
+    UASSERT(vm.sleep_q_head == NULL);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
+    UASSERT(s.wait_next == NULL);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(unbind_from_sleep_queue_idempotent_when_not_on_queue)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+    /* Strand never put on sleep queue — wait_next is NULL by ustrand_init. */
+
+    /* No-op: counter must not underflow, wait_next stays NULL. */
+    sched_strand_unbind_from_sleep_queue(&s);
+    UASSERT(vm.sleep_q_head == NULL);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
+    UASSERT(s.wait_next == NULL);
+
+    /* Repeated call still no-op (counter stays at 0, no underflow). */
+    sched_strand_unbind_from_sleep_queue(&s);
+    UASSERT_EQ(vm.wakeup_pending_count, 0U);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* When a sleep-blocked strand is "manually" re-stamped to WAIT_EVENT (the
+ * pathological pattern SCHED-004 guards against), the unbind helper must
+ * splice it out cleanly so the sleep queue's invariants hold afterwards.
+ * This simulates the worst case the audit identified: a stale wait_next
+ * pointer that would otherwise survive into the WAIT_EVENT state. */
+UTEST(unbind_then_restamp_clears_stale_sleep_queue_link)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Two sleep-blocked strands so unbind exercises the mid-list splice. */
+    UStrand a, b;
+    ustrand_init(&a, &vm);
+    ustrand_init(&b, &vm);
+
+    a.state = USTRAND_STATE_RUNNING;
+    b.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 2;
+
+    sched_strand_block(&a, USTRAND_REASON_SLEEP, 100U);
+    sched_strand_block(&b, USTRAND_REASON_SLEEP, 200U);
+    UASSERT(vm.sleep_q_head == &a);
+    UASSERT(a.wait_next == &b);
+    UASSERT_EQ(vm.wakeup_pending_count, 2U);
+
+    /* Pathological: re-stamp a's state to WAIT_EVENT.  Without unbind a
+     * would still link to b on the sleep queue. */
+    sched_strand_unbind_from_sleep_queue(&a);
+    a.state = USTRAND_WAIT_EVENT;
+
+    UASSERT(a.wait_next == NULL);
+    UASSERT_EQ(vm.wakeup_pending_count, 1U);
+    UASSERT(vm.sleep_q_head == &b);
+    UASSERT(b.wait_next == NULL);  /* still tail of queue */
+
+    ustrand_destroy(&a, &vm);
+    ustrand_destroy(&b, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_sched_state_aliasing_suite(void) {
     utest_run("join_blocked_strand_state_distinct_from_wait_event",
               join_blocked_strand_state_distinct_from_wait_event);
@@ -270,4 +369,10 @@ void test_sched_state_aliasing_suite(void) {
     utest_run("yield_already_ready_strand_aborts_in_debug",
               yield_already_ready_strand_aborts_in_debug);
 #endif
+    utest_run("unbind_from_sleep_queue_clears_links_when_present",
+              unbind_from_sleep_queue_clears_links_when_present);
+    utest_run("unbind_from_sleep_queue_idempotent_when_not_on_queue",
+              unbind_from_sleep_queue_idempotent_when_not_on_queue);
+    utest_run("unbind_then_restamp_clears_stale_sleep_queue_link",
+              unbind_then_restamp_clears_stale_sleep_queue_link);
 }

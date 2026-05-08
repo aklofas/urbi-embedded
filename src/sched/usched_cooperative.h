@@ -97,6 +97,20 @@ void sched_dequeue_ready_head(UVM *vm);
  * scheduler rather than the strand teardown code. */
 void sched_strand_account_destroy(UVM *vm, UStrand *s);
 
+/* SCHED-004: detach a strand from the sleep queue if it is on it.
+ *
+ * Idempotent: no-op when the strand is not on the queue (wait_next == NULL
+ * is the typical guard, but the helper walks the queue anyway so callers
+ * can pass any strand without first checking state).  Clears s->wait_next
+ * and decrements vm->wakeup_pending_count exactly once if the strand was
+ * actually present.
+ *
+ * Used by re-stamp paths (e.g. c_event_waituntil) that change a strand's
+ * state byte from one WAITING reason to another.  Without this helper,
+ * a SLEEP-blocked strand re-stamped to WAIT_EVENT would leave wait_next
+ * pointing into the sleep queue and wakeup_pending_count stale. */
+void sched_strand_unbind_from_sleep_queue(UStrand *s);
+
 #ifdef __cplusplus
 }
 #endif
