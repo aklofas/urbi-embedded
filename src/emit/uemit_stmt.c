@@ -129,7 +129,35 @@ uint8_t emit_function_literal(UEmitter *e,
                               bool       as_expression) {
     UFuncState *parent_fs = e->current_fs;
 
-    /* 1. Allocate a new UProto under the module's nested[] list. */
+    /* T21 (EMIT-004): intern all parameter names BEFORE allocating the
+     * child UProto.  Pre-fix, child_proto was pushed to module->nested[]
+     * first and a mid-loop ustr_intern OOM left a half-initialised proto
+     * stuck in the array (nested_count incremented, name slots not yet
+     * declared, body never compiled).  By interning into a stack-local
+     * cache up front, an intern OOM short-circuits with no module-state
+     * mutation.  UFS_MAX_LOCALS bounds nparams (the parser caps the
+     * formal-list length at 16 today; the bound here is conservative). */
+    const char *param_names[UFS_MAX_LOCALS];
+    if (nparams > UFS_MAX_LOCALS) {
+        e->error = EMIT_REG_EXHAUSTED;
+        return 0U;
+    }
+    for (int pi = 0; pi < nparams; pi++) {
+        const UAstNode *pn = params[pi];
+        const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
+                                        (size_t)pn->u.param.name_len);
+        if (cname == NULL) {
+            e->error = EMIT_OOM;
+            return 0U;
+        }
+        param_names[pi] = cname;
+    }
+
+    /* 1. Allocate a new UProto under the module's nested[] list.  All
+     * parameter interns have already succeeded; from here on, any failure
+     * leaves child_proto in nested[] but at least it is consistently a
+     * fully-allocated empty proto (umodule_destroy walks NULL slots
+     * cleanly). */
     UProto *child_proto = umodule_alloc_nested_proto(e->module);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(e->module->nested_count - 1);
@@ -139,15 +167,15 @@ uint8_t emit_function_literal(UEmitter *e,
     if (child_fs == NULL) return 0U;
     child_fs->target_proto = child_proto;
 
-    /* 3. Declare parameters as locals in child_fs. */
+    /* 3. Declare parameters as locals in child_fs using the pre-interned
+     * names.  uemit_declare_local can still fail (EMIT_REG_EXHAUSTED /
+     * EMIT_LOCAL_REDECLARE) but no longer competes with intern OOM. */
     {
         int pi;
         for (pi = 0; pi < nparams; pi++) {
             const UAstNode *pn = params[pi];
-            const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
-                                            (size_t)pn->u.param.name_len);
-            if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0U; }
-            int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
+            int slot = uemit_declare_local(e, param_names[pi],
+                                           pn->u.param.name_len);
             if (slot < 0) { uemit_close_function(e); return 0U; }
             if (pn->kind == AST_LAZY_PARAM) {
                 child_fs->actvars[slot].is_lazy = true;

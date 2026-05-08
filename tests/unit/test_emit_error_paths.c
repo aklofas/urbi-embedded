@@ -150,6 +150,44 @@ UTEST(emit_close_function_propagates_prologue_oom)
     UASSERT(saw_oom);
 }
 
+/* --- T21: emit_function_literal cleanup on intern OOM ------------------- */
+
+UTEST(emit_function_literal_clean_on_intern_oom)
+{
+    /* A function with multiple parameters: emit_function_literal interns
+     * each parameter name in sequence.  Pre-T21, a mid-loop ustr_intern
+     * OOM left a half-initialised UProto stuck in module->nested[].  The
+     * fix interns all names BEFORE allocating child_proto, so an intern
+     * OOM short-circuits with module->nested_count unchanged. */
+    const char *src = "function f(a, b, c) { return a + b + c }";
+
+    int total;
+    {
+        ECtx c;
+        ectx_init(&c, src, -1);
+        UEmitError rc = ectx_run(&c);
+        UASSERT_EQ(EMIT_OK, rc);
+        total = c.spy.alloc_calls;
+        ectx_destroy(&c);
+    }
+    UASSERT(total > 4);
+
+    /* For any injection that fails: emit must report failure and the
+     * module must destroy cleanly (no double-free, no use-after-free). */
+    bool saw_failure = false;
+    for (int fail_at = 0; fail_at <= total + 1; fail_at++) {
+        ECtx c;
+        ectx_init(&c, src, fail_at);
+        UEmitError rc = ectx_run(&c);
+        if (rc != EMIT_OK) saw_failure = true;
+        if (c.spy.alloc_calls > c.spy.fail_at) {
+            UASSERT(rc != EMIT_OK);
+        }
+        ectx_destroy(&c);
+    }
+    UASSERT(saw_failure);
+}
+
 /* --- Suite registration -------------------------------------------------- */
 
 void
@@ -157,4 +195,6 @@ test_emit_error_paths_suite(void)
 {
     utest_run("emit_close_function propagates prologue OOM",
               emit_close_function_propagates_prologue_oom);
+    utest_run("emit_function_literal clean on intern OOM",
+              emit_function_literal_clean_on_intern_oom);
 }
