@@ -111,11 +111,12 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     if (name == fb) {
         return -1;
     }
-    if (wrapped_in_first_pass) {
-        /* Stamps were cleared by force_wrap; lookup_id is currently >= 1.
-         * Pre-bump unconditionally — no need to re-check wrap. */
-        vm->lookup_id++;
-    } else if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
+    /* OBJ-014: skip the wrap-check on the second pass when force_wrap
+     * already fired in the first pass — stamps were cleared and
+     * lookup_id is currently >= 1, so a plain pre-bump is unconditionally
+     * fresh.  Otherwise apply the standard rollover guard. */
+    if (!wrapped_in_first_pass
+        && (uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {
         vm->lookup_id++;
