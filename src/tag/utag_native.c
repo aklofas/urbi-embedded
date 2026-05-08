@@ -150,23 +150,36 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
 
 /* === tag_native_register === */
 
-void
+UVMError
 tag_native_register(struct UVM *vm)
 {
     UObject *proto = urbi_object_alloc(vm, URBI_ATOM_TAG);
     if (proto == NULL) {
-        return;   /* OOM: leave tag_proto NULL */
+        return UVM_OOM;   /* OOM: leave tag_proto NULL */
     }
     vm->tag_proto = proto;
 
-    /* Install getter stubs as plain UVAL_HOST_FN slots.
+    /* TAGCH-004: propagate urbi_register_fn failures.  Mirrors the
+     * Phase-11 EVENT-005 pattern in event_native_register: the previous
+     * code dropped the four return values, so an OOM during slot
+     * intern/install left a partially populated tag_proto on the VM —
+     * lookups for the missing slot names would return UVAL_NIL and
+     * silently mis-dispatch.  Chain with || short-circuit; on any
+     * non-zero return clear vm->tag_proto and surface UVM_OOM.  The
+     * proto cell itself stays GC-managed and is collected at the next
+     * sweep.
+     *
      * Full OGET/OSET property dispatch via urbi_object_install_property
      * (which sets URBI_SLOT_FLAG_OGET and wires UProps) requires the
      * IC-aware property infrastructure to be plumbed through OP_GETSLOT's
-     * uprops[] fast path.  That's a T56-onwards task.  For now, plain
-     * UVAL_HOST_FN slots work for C-level tests and basic slot reads. */
-    urbi_register_fn(vm, proto, "enter",        tag_enter_getter_stub);
-    urbi_register_fn(vm, proto, "leave",        tag_leave_getter_stub);
-    urbi_register_fn(vm, proto, "_enter_set",   tag_enter_leave_setter_protected);
-    urbi_register_fn(vm, proto, "_leave_set",   tag_enter_leave_setter_protected);
+     * uprops[] fast path.  For now, plain UVAL_HOST_FN slots work for
+     * C-level tests and basic slot reads. */
+    if (urbi_register_fn(vm, proto, "enter",      tag_enter_getter_stub)            != 0
+     || urbi_register_fn(vm, proto, "leave",      tag_leave_getter_stub)            != 0
+     || urbi_register_fn(vm, proto, "_enter_set", tag_enter_leave_setter_protected) != 0
+     || urbi_register_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0) {
+        vm->tag_proto = NULL;
+        return UVM_OOM;
+    }
+    return UVM_OK;
 }

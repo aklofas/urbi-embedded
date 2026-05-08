@@ -15,7 +15,13 @@
  *                replaced by URBI_INTERNAL_ASSERT(0 && "unreachable: stub"),
  *                no-op in release.  Test asserts the slots remain installed
  *                on vm.tag_proto so the proto is correctly populated; the
- *                actual abort fires only with URBI_DEBUG on (Gate G1 stretch). */
+ *                actual abort fires only with URBI_DEBUG on (Gate G1 stretch).
+ *
+ * T55 TAGCH-004: tag_native_register propagates urbi_register_fn failures
+ *                instead of dropping them.  When the slot installer OOMs on
+ *                any of the four slots, vm->tag_proto is reset to NULL and
+ *                the function returns UVM_OOM.  Mirrors the Phase-11 T50
+ *                pattern for event_native_register. */
 
 #include "utest.h"
 
@@ -32,6 +38,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define UTEST(name) static void name(void)
 
@@ -146,6 +153,66 @@ UTEST(stubs_assert_unreachable_in_debug)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * T55: tag_native_register_propagates_failures
+ *
+ * Run with a failing allocator that succeeds long enough for the proto
+ * object to allocate but OOMs on a later urbi_register_fn slot install.
+ * After T55, tag_native_register clears vm->tag_proto on any failure
+ * and returns UVM_OOM.  Mirrors the Phase-11
+ * event_native_register_propagates_register_oom test pattern.
+ * =================================================================== */
+
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1 means never fail; trigger NULL when alloc_calls > fail_at */
+} TagAllocSpy;
+
+static void *tag_spy_alloc(void *ptr, size_t n, void *ud)
+{
+    TagAllocSpy *spy = (TagAllocSpy *)ud;
+    if (n == 0) {
+        free(ptr);
+        return NULL;
+    }
+    if (ptr == NULL) {
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+            return NULL;
+        }
+    }
+    return realloc(ptr, n);
+}
+
+UTEST(tag_native_register_propagates_failures)
+{
+    /* Step 1: count clean allocations.  We need an upper bound on the
+     * proto + first slot install. */
+    TagAllocSpy probe = { 0, -1 };
+    UVM probe_vm;
+    urbi_vm_init(&probe_vm, tag_spy_alloc, &probe);
+
+    UVMError ok = tag_native_register(&probe_vm);
+    UASSERT_EQ((int)ok, (int)UVM_OK);
+    UASSERT(probe_vm.tag_proto != NULL);
+    int total_clean_calls = probe.alloc_calls;
+    UASSERT(total_clean_calls > 2);  /* proto + at least one slot */
+    urbi_vm_destroy(&probe_vm);
+
+    /* Step 2: re-run with fail_at set partway through, after the proto
+     * lands but before all four slot installs succeed.  After T55,
+     * tag_proto must be NULL on return and the error must be UVM_OOM. */
+    TagAllocSpy spy = { 0, total_clean_calls - 2 };
+    UVM vm;
+    urbi_vm_init(&vm, tag_spy_alloc, &spy);
+
+    UVMError err = tag_native_register(&vm);
+    UASSERT_EQ((int)err, (int)UVM_OOM);
+    UASSERT(vm.tag_proto == NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -158,4 +225,6 @@ test_tag_barrier_suite(void)
               tag_leave_event_creation_triggers_dijkstra_barrier);
     utest_run("stubs_assert_unreachable_in_debug",
               stubs_assert_unreachable_in_debug);
+    utest_run("tag_native_register_propagates_failures",
+              tag_native_register_propagates_failures);
 }

@@ -5,6 +5,7 @@
 #define TAG_NATIVE_H
 
 #include "module/umodule.h"    /* UValue */
+#include "vm/uvm.h"            /* UVMError */
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,8 +25,12 @@ UValue tag_enter_getter(struct UVM *vm, struct UTag *tag);
 UValue tag_leave_getter(struct UVM *vm, struct UTag *tag);
 
 /* tag_native_register: allocate vm->tag_proto and install getter/setter slots.
- *   Called from urbi_vm_init after urbi_object_register_gc_roots. */
-void tag_native_register(struct UVM *vm);
+ *   Called from urbi_vm_init after urbi_object_register_gc_roots.
+ *   Returns UVM_OK on success, UVM_OOM if the proto allocation or any of
+ *   the four slot installs fail.  On failure, vm->tag_proto is reset to
+ *   NULL; the proto cell itself is GC-managed and is collected at the
+ *   next sweep. */
+UVMError tag_native_register(struct UVM *vm);
 
 #ifdef __cplusplus
 }

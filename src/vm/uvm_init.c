@@ -334,14 +334,19 @@ void
 urbi_native_protos_init(UVM *vm)
 {
     /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
-     * tag_native_register OOM is handled identically via its void signature
-     * (leaves tag_proto NULL; guards in callers check for NULL). */
+     * Both event_native_register and tag_native_register (TAGCH-004) now
+     * return UVMError so partial-init OOM is surfaced rather than silently
+     * leaving NULL protos behind. */
     UVMError err = event_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
         return;
     }
-    tag_native_register(vm);
+    err = tag_native_register(vm);
+    if (err != UVM_OK) {
+        vm->last_error = err;
+        return;
+    }
 }
 
 /* === urbi_register_event_drain (T57 — spec #3 §9) ===
