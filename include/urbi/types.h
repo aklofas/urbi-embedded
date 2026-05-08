@@ -91,6 +91,23 @@ typedef struct {
     } v;
 } UValue;
 
+/* === urbi_value_nil: canonical zero-init UValue ===
+ *
+ * Sole nil constructor: explicitly clears kind + pad + union payload so the
+ * resulting UValue is bit-equivalent across compilers (some C99 aggregate-
+ * init forms can leave _pad in implementation-defined state when the union
+ * is partially initialised).
+ *
+ * Use this helper everywhere a "nil" UValue is needed instead of
+ * `UValue v = {0};` aggregate init.  Closes FOUND-019 + FOUND-048 (Wave 5). */
+static inline UValue urbi_value_nil(void) {
+    UValue v;
+    v.kind = (uint8_t)UVAL_NIL;
+    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
+    v.v.i = 0;
+    return v;
+}
+
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
