@@ -66,21 +66,31 @@ urbi_object_alloc(UVM *vm, URBIAtomFamily family)
     }
     UObject *o = (UObject *)c;
 
+    /* OBJ-004: zero all GC-visible fields BEFORE the urbi_shape_root call
+     * that may itself OOM.  If shape-root fails after we return NULL, the
+     * UObject stays in the all-cells list until the next sweep reclaims
+     * it; until then walk_uobject may visit it.  With zeroed fields the
+     * walker sees shape=NULL, slots=NULL, protos=empty, changed_events=
+     * NULL — observably nil-shaped and safe to walk. */
+    o->shape               = NULL;
+    o->slots               = NULL;
+    o->protos              = 0U;   /* empty form per spec §4.1 */
+    o->object_id           = 0U;
+    o->lookup_stamp        = 0U;
+    o->flags               = 0U;
+    o->reserved            = 0U;
+    o->changed_events_head = NULL;
+
     /* shape: lazy-allocate the per-VM root if it hasn't been touched.
      * urbi_shape_root may itself OOM; if so, the UObject we just allocated
-     * stays half-initialised — but it's a fresh GC cell, so the next sweep
-     * reclaims it.  Returning NULL signals OOM to the caller. */
+     * is left zero-initialised so a GC walker visiting before the next
+     * sweep reclaims it sees a well-defined nil-shaped cell. */
     o->shape = urbi_shape_root(vm);
     if (o->shape == NULL) {
         return NULL;
     }
-    o->slots               = NULL;  /* zero-slot at construction; T15 lands slot transitions */
-    o->protos              = 0U;   /* empty form per spec §4.1 */
     o->object_id           = next_id(vm);
-    o->lookup_stamp        = 0U;
     o->flags               = (uint32_t)((uint32_t)family & URBI_OBJ_ATOM_MASK);
-    o->reserved            = 0U;
-    o->changed_events_head = NULL; /* lazy-alloc at first `obj.x.changed?` install (R6) */
     return o;
 }
 
@@ -164,7 +174,13 @@ urbi_object_atom(struct UVM *vm, URBIAtomFamily family)
         return NULL;
     }
 
-    UObject **slot = (UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[family]);
+    /* TIDY-006: avoid the (UObject **)(void *) double-cast by routing the
+     * atom-pointer-by-offset access through a single (char *) intermediate.
+     * Per C11 §6.5p7, char-pointer access does not violate strict aliasing,
+     * and (UObject **)(char *) is a single explicit pointer-to-pointer cast
+     * (alignment is guaranteed by the layout of UVM — kAtomFieldOffset
+     * indexes into UObject* fields whose alignment matches UObject **). */
+    UObject **slot = (UObject **)((char *)vm + kAtomFieldOffset[family]);
 
     if (*slot != NULL) {
         return *slot;
@@ -248,17 +264,25 @@ urbi_object_clone(UVM *vm, UObject *parent)
  *   - walk_uobject shades shape, slots, and the proto chain
  *   - walk_ushape shades parent + transitions + props_table contents
  *   - walk_umoduleinstance shades the proto_instances UProtoInstanceArr
- * Once a UModuleInstance is alive, its UProtoInstance entries (containing UIC
- * caches) keep the receiver shapes / slot pointers / uprops cached entries
- * reachable through walk_uprotoinstance (T22+ wiring lands on cache fill). */
+ *
+ * UProtoInstance entries (UIC caches) intentionally have a no-op walker
+ * (walk_noop) — every cell referenced by a cached entry (recv_shape,
+ * UProps, USlot pointer's holding object) is already kept alive by a
+ * stronger reachability path: receiver-side UObject's walk_ushape walks
+ * the shape; UProps cells are reachable through the same shape's
+ * props_table walk; USlot pointers point into the holding UObject's
+ * slots[], which the holding UObject's walker covers.  See OBJ-028
+ * (closed v0.5.7-fixes Phase 13). */
 static void
 object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     (void)cb; (void)ctx;   /* direct gc_shade_gray; cb only handles UValue slots */
 
-    /* Atom-family singletons — loop over the shared kAtomFieldOffset table. */
+    /* Atom-family singletons — loop over the shared kAtomFieldOffset table.
+     * TIDY-006: same (char *) intermediate pattern as urbi_object_atom; see
+     * comment there for the strict-aliasing rationale. */
     for (int i = 0; i < KATOM_TABLE_COUNT; i++) {
-        UObject *a = *(UObject **)(void *)((uint8_t *)vm + kAtomFieldOffset[i]);
+        UObject *a = *(UObject **)((char *)vm + kAtomFieldOffset[i]);
         if (a != NULL) {
             gc_shade_gray(vm, (UCell *)a);
         }

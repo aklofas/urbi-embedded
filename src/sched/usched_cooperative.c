@@ -40,6 +40,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"  /* URealm; realms_head → strands_head walk (T32) */
+#include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT (SCHED-002/003) */
 #include <stdbool.h>
 #include <stdint.h>
 #include "gc/ugc.h"
@@ -122,11 +123,30 @@ sched_destroy(UVM *vm)
  * as a forward-compatibility hold for the v1.x scheduler-class abstraction
  * (priority/deadline schedulers will pass per-strand attribute structs
  * through this slot; see USchedClass at include/urbi/sched.h).  The
- * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX. */
+ * cooperative scheduler ignores it and always assigns URBI_STRAND_BUDGET_MAX.
+ *
+ * CHSTR-039 (T106): MUST NOT touch s->state.  The state byte is owned by
+ * the strand-lifecycle layer (urbi_strand_create sets DORMANT,
+ * urbi_strand_arm_from_closure / urbi_vm_run set RUNNING, and the
+ * sched_strand_make_runnable / _block transitions advance it from there).
+ * sched_strand_init runs from two paths in M3+ baselines:
+ *   1. ustrand_init (during urbi_strand_create) — state already DORMANT.
+ *   2. urbi_vm_run's transient-strand setup — state already RUNNING.
+ * If sched_strand_init wrote a state byte here it would clobber the
+ * caller's setup and either re-DORMANT a transient (rejecting the next
+ * dispatch) or worse, drop a RUNNING strand into the ready queue with
+ * stale state.  The contract is: caller wires state, sched_strand_init
+ * wires queue links + budget. */
 void
 sched_strand_init(UStrand *s, void *attrs)
 {
     (void)attrs;  /* RESERVED v1.x — see header docstring */
+    /* CHSTR-039: callers must have set state to a legal initial value
+     * (DORMANT for newly-created strands, RUNNING for the urbi_vm_run
+     * transient path) before calling.  Detect violation in -DURBI_DEBUG
+     * builds; production builds elide the check. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT
+                      || USTRAND_GET_STATE(s) == USTRAND_RUNNING);
     s->ready_next                   = NULL;
     s->ready_prev                   = NULL;
     s->wait_next                    = NULL;
@@ -148,7 +168,19 @@ void
 sched_strand_make_runnable(UStrand *s)
 {
     /* Tail-insertion into the FIFO ready queue.
-       Per row 12 §3: single entry point for DORMANT/WAITING → READY. */
+       Per row 12 §3: single entry point for DORMANT/WAITING → READY.
+
+       CHSTR-042 (T107): reject DEAD strands as a production fail-safe.
+       A DEAD strand has had its register stack freed and its cleanup
+       chain unwound; re-enqueueing one would dispatch into freed memory
+       (and double-count strand_runnable_count, blocking quiescence).  In
+       -DURBI_DEBUG the assert below trips at the call site.  In production
+       the early return prevents the corruption silently — the strand
+       simply stays DEAD and the caller's ++count is skipped.  No legitimate
+       caller drives a DEAD → READY transition; the path is purely defensive
+       against future refactors that lose track of strand state. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) != USTRAND_DEAD);
+    if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     s->state      = USTRAND_STATE_READY;
     s->ready_next = NULL;
@@ -164,6 +196,14 @@ sched_strand_make_runnable(UStrand *s)
 void
 sched_strand_yield(UStrand *s)
 {
+    /* SCHED-003: yielding from a non-RUNNING state silently re-enqueues,
+     * double-counting strand_runnable_count and producing a circular
+     * ready_next/ready_prev chain (sched_strand_make_runnable unconditionally
+     * tail-inserts).  Fix: assert entry state == RUNNING.  Yields from READY
+     * are a programming error (the strand is already on the queue); yields
+     * from WAITING bypass the proper unblock path and break the symmetric
+     * counter contract documented at the top of this file. */
+    URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING);
     /* RUNNING → READY tail: same path as make_runnable. */
     sched_strand_make_runnable(s);
 }
@@ -172,6 +212,17 @@ void
 sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
 {
     UVM *vm = s->vm;
+    /* SCHED-002: re-blocking an already-WAITING strand corrupts the queue
+     * accounting (sleep_q_insert would re-insert and double-count
+     * wakeup_pending_count; event/join paths leak prior payloads).  Entry
+     * state must be RUNNING (the normal "I yielded by blocking") or READY
+     * (race-window safety: a strand that had been re-queued but hasn't yet
+     * been dispatched can still be diverted into a wait without harm).
+     * If a future caller legitimately needs to retarget a WAITING strand,
+     * route through an explicit sched_strand_rebind helper that handles
+     * queue-removal-then-re-insert correctly. */
+    URBI_INTERNAL_ASSERT(s->state == USTRAND_STATE_RUNNING ||
+                         s->state == USTRAND_STATE_READY);
     /* RUNNING strands are not on the ready queue; decrement the counter. */
     if (s->state == USTRAND_STATE_RUNNING) {
         if (vm->strand_runnable_count > 0)
@@ -236,11 +287,95 @@ sched_strand_account_destroy(UVM *vm, UStrand *s)
 {
     /* T31: if urbi_tag_stop deposited a cross-strand stop on this strand,
        decrement the host_call_pending_count so sched_quiescent converges
-       once all tagged strands have been destroyed. */
+       once all tagged strands have been destroyed.
+
+       CHSTR-013 (T101): the inner `if (host_call_pending_count > 0)` guard
+       is load-bearing, not defensive-by-style.  An earlier strand-tear-down
+       path (or a future scheduler that pre-rolls-back deposits before the
+       strand is destroyed) can leave the strand-level
+       cross_strand_stop_pending flag asserted while the VM-level counter
+       is already at 0; without the guard the uint32_t counter wraps to
+       UINT32_MAX and sched_quiescent never returns true again.  Pinned by
+       the strand_destroy_does_not_underflow_host_call_pending unit test. */
     if (s->cross_strand_stop_pending != 0) {
         if (vm->host_call_pending_count > 0)
             vm->host_call_pending_count--;
         s->cross_strand_stop_pending = 0U;
+    }
+}
+
+/* === SCHED-004: sched_strand_unbind_from_sleep_queue ===
+ *
+ * Splice s out of vm->sleep_q_head if present; clear s->wait_next; decrement
+ * vm->wakeup_pending_count by one iff the strand was actually on the queue.
+ * Idempotent: safe to call on a strand never inserted (no-op).
+ *
+ * Used by paths that re-stamp a strand's state from one WAITING reason to
+ * another (e.g. c_event_waituntil — though under the cooperative scheduler
+ * a strand cannot legitimately be on the sleep queue when it begins event-
+ * waiting; the helper exists as defence-in-depth against future schedulers
+ * or buggy callers that bypass the dispatch loop). */
+void
+sched_strand_unbind_from_sleep_queue(UStrand *s)
+{
+    sleep_q_remove(s->vm, s);
+}
+
+/* === REALM-011 / T69: sched_strand_unbind_from_ready_queue ===
+ *
+ * Splice s out of vm->ready_head / ready_tail's doubly-linked list if
+ * present; clear s->ready_next / s->ready_prev; decrement
+ * vm->strand_runnable_count by one iff the strand was actually present.
+ *
+ * Called from urbi_realm_destroy before freeing each strand so that the
+ * scheduler's queue head/tail pointers + neighbouring strands' ready_*
+ * links never reference freed memory.  Without this, sched_strand_destroy
+ * only zeroes the strand's own pointers — neighbours still point at the
+ * freed cell, and the next dispatch (or sched_walk_roots GC scan) trips
+ * use-after-free under ASan.
+ *
+ * Idempotent: safe whether the strand is on the queue (state == READY)
+ * or not.  Detection uses neighbour-pointer presence rather than state-
+ * byte inspection so it remains correct for any future scheduler that
+ * temporarily detaches READY strands without state churn.  Specifically:
+ *   - If s == vm->ready_head AND s->ready_next == NULL AND ready_tail ==
+ *     s → strand is the sole queue member.  Both head and tail go NULL.
+ *   - If s == vm->ready_head → advance head to s->ready_next.
+ *   - If s == vm->ready_tail → retreat tail to s->ready_prev.
+ *   - If s->ready_prev != NULL → patch prev's next.
+ *   - If s->ready_next != NULL → patch next's prev. */
+void
+sched_strand_unbind_from_ready_queue(UStrand *s)
+{
+    UVM *vm = s->vm;
+    /* Quick guard: detect "definitely not on the queue" cheaply.  A strand
+     * is on the doubly-linked queue iff it has a prev neighbour, OR a next
+     * neighbour, OR it is the queue head (sole member case).  All other
+     * strands have ready_next / ready_prev = NULL AND are not at head. */
+    const bool on_queue = (s->ready_prev != NULL)
+                       || (s->ready_next != NULL)
+                       || (vm->ready_head == s);
+    if (!on_queue) {
+        return;
+    }
+
+    if (s->ready_prev != NULL) {
+        s->ready_prev->ready_next = s->ready_next;
+    } else {
+        /* s was the head. */
+        vm->ready_head = s->ready_next;
+    }
+    if (s->ready_next != NULL) {
+        s->ready_next->ready_prev = s->ready_prev;
+    } else {
+        /* s was the tail. */
+        vm->ready_tail = s->ready_prev;
+    }
+
+    s->ready_next = NULL;
+    s->ready_prev = NULL;
+    if (vm->strand_runnable_count > 0) {
+        vm->strand_runnable_count--;
     }
 }
 
@@ -280,7 +415,19 @@ sched_dequeue_ready_head(UVM *vm)
  *   extent requires bytecode metadata not available at M3.  We walk the
  *   entire allocated array (conservative over-mark; never under-marks).
  *   TODO(T26+ opt): tighten to active-frame register window when bytecode
- *   emits frame-extent metadata (proposed for M4/M5). */
+ *   emits frame-extent metadata (proposed for M4/M5).
+ *
+ * Scratch-strand coverage (closes GC-006 + GC-038):
+ *   The watcher cond/body/onleave scratch path (urbi_run_closure_on_scratch
+ *   in src/watcher/uwatcher_scratch.c) builds a transient UStrand on the C
+ *   stack and threads it onto vm->global_realm->strands_head BEFORE entering
+ *   dispatch.  That strand's register window is therefore visited here just
+ *   like any persistent strand — no separate "scratch frame" walker is
+ *   required.  The audit IDs GC-006 and GC-038 were filed against an earlier
+ *   (pre-v0.5.1) design that used a vm->watcher_scratch_frame field; the
+ *   transient-strand architecture closes both findings by construction.  The
+ *   structural invariant is regression-pinned by
+ *   tests/unit/test_gc_scratch_rooting.c. */
 static void
 strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 {

@@ -1,0 +1,9 @@
+# Suppression entries: one per intentional violation. Each entry MUST
+# reference an audit ID (or "no-audit-id; rationale: <text>") and explain
+# why the violation is acceptable.
+#
+# Format (NolintBeginEnd-style preferred where possible; this file is
+# the catalog for global suppressions where in-source NOLINT is awkward).
+#
+# Initial contents: empty. Suppressions are added here only when an
+# audit-ID-blessed exception requires them.

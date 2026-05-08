@@ -14,7 +14,8 @@ SRC := $(wildcard src/*.c) \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c)
-TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c
+TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
+            tests/unit/twatcher_install_helper.c
 
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
@@ -228,6 +229,21 @@ valgrind-tools:
 	    exit 1; \
 	}
 
+# T126: Full-corpus sanitizer gate (Wave 5 spec §3.9 verification G4).
+# Runs every tests/chk/**/*.chk fixture under ASan + UBSan + valgrind
+# memcheck (full leak-check).  Promotes from Wave-5's curated subset to a
+# standing all-fixtures gate.  Solo in releasetest Phase 2 to avoid
+# bandwidth contention (per project_releasetest_perf.md).
+.PHONY: test-corpus-sanitize
+test-corpus-sanitize:
+	@$(MAKE) TARGET=host-asan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address -fno-omit-frame-pointer" \
+		urbi-bin
+	@$(MAKE) TARGET=host-ubsan \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
+		urbi-bin
+	bash tests/integration/test_full_corpus_sanitize.sh
+
 # --- Release test aggregate --------------------------------------------
 #
 # releasetest runs every host-side gate the CI matrix runs, in parallel.
@@ -256,9 +272,19 @@ valgrind-tools:
 
 # Phase 1: every CPU-bound gate that doesn't compete badly with valgrind.
 # Runs concurrently under -j$(RELEASETEST_JOBS).
+#
+# T118: test-scan-build promoted into releasetest after Phase 19 closed
+# its known false-positive set ("scan-build: No bugs found." at v0.5.7).
+# test-tidy-strict and test-cppcheck remain informational at v0.5.7
+# (25 / 145 residual violations respectively, all non-trivial categories
+# tracked in docs/urbi-embedded-backlog.md "Strict-tooling residuals" —
+# bugprone-branch-clone, performance-no-int-to-ptr, and clang-analyzer-
+# valist need either targeted refactors or per-site NOLINT review).
+# Promote those two to hard gates after the residuals close.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
-    lint docs-check coverage test-stress test-gc-none-build
+    lint docs-check coverage test-stress test-gc-none-build \
+    test-scan-build
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -266,7 +292,7 @@ RELEASETEST_PHASE1 := \
 # contention).  Phase 2 is sequential — the cumulative wall-clock with
 # Phase 1 first is still substantially faster than the original 15-min
 # fully-sequential design.
-RELEASETEST_PHASE2 := test-valgrind
+RELEASETEST_PHASE2 := test-valgrind test-corpus-sanitize
 
 # test-valgrind-deep is intentionally NOT in releasetest. Per its
 # docstring ("Intended for local triage when test-valgrind reports a hit
@@ -480,6 +506,14 @@ tidy: compile_commands.json
 tidy-fix: compile_commands.json
 	run-clang-tidy -p . -j $$(nproc) -fix -format -style=file -quiet $(SRC)
 
+# Strict clang-tidy checklist: bug-prone + cert + analyzer + narrowing.
+# Configured via .clang-tidy.strict (parallel to .clang-tidy used by `tidy`).
+# Suppressions catalog at .clang-tidy.suppressions.
+# Informational at v0.5.7 baseline; promoted to releasetest gate in T118.
+.PHONY: test-tidy-strict
+test-tidy-strict: ## Run clang-tidy strict checklist over src/
+	@bash tools/scripts/run_strict_tidy.sh build/strict-tidy-out.txt
+
 # Static analysis — cppcheck (advisory).
 # Different engine from clang-tidy; catches value-flow, UAF, null-deref
 # that clang-tidy's AST-level checks miss.  Exits 0 regardless of
@@ -492,6 +526,22 @@ cppcheck: compile_commands.json
 	         --suppress=missingIncludeSystem \
 	         --inline-suppr \
 	         --quiet
+
+# Strict cppcheck — --enable=all --inconclusive over src/ via wrapper script.
+# Parallel to the existing `cppcheck` target above (which gates `make lint`
+# and uses a narrower checklist). The strict gate uses .cppcheck.suppressions
+# for audit-ID-blessed exceptions; closes lock in T118 (releasetest gate).
+.PHONY: test-cppcheck
+test-cppcheck: ## Run cppcheck --enable=all --inconclusive
+	@bash tools/scripts/run_cppcheck.sh build/cppcheck-out.txt
+
+# Static analysis — clang scan-build over the default `make` build.
+# Closes a Wave-0 deferral (audit ran scan-build but did not wire the
+# target). Emits HTML report under build/scan-build-html/ and a tee'd
+# log at build/scan-build-out.txt. Gate promotion to releasetest in T118.
+.PHONY: test-scan-build
+test-scan-build: ## Run clang scan-build static analyzer
+	@bash tools/scripts/run_scan_build.sh build/scan-build-out.txt build/scan-build-html
 
 # Static analysis — GCC -fanalyzer (advisory).
 # Dedicated build variant so the 20% compile-time penalty only applies
@@ -534,6 +584,33 @@ coverage-tools:
 	    exit 1; \
 	}
 
+# Branch coverage — same instrumentation as `coverage`, with branch + decision
+# tracking. Closes COV-009 audit finding. Uses gcovr's native --branches flag
+# rather than lcov (cited by audit) — gcovr is already in PATH and the
+# existing coverage target uses it; lcov would add a dep without functional
+# benefit.
+#
+# Threshold gating: informational-only at v0.5.7 baseline (69.4%). Phase 20
+# (T119-T125) closes coverage gaps; the gate enables in T118 / T126 once
+# the baseline is above 75%. Currently the target reports + writes the
+# HTML but does not fail-under.
+test-branch-coverage: coverage-tools
+	rm -f build/host-coverage/src/*.gcda build/host-coverage/tests/unit/*.gcda
+	$(MAKE) TARGET=host-coverage \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g --coverage" \
+		test
+	gcovr --root . \
+	      --object-directory build/host-coverage \
+	      --filter 'src/' \
+	      --merge-mode-functions=merge-use-line-min \
+	      --branches \
+	      --decisions \
+	      --txt \
+	      --html-details build/host-coverage/branch-report.html
+	@echo ""
+	@echo "Branch + decision coverage report: build/host-coverage/branch-report.html"
+	@echo "(gate enables in v0.5.7-fixes Phase 20 once baseline exceeds 75%)"
+
 # Aggregate: gating audit-globals, tidy, advisory cppcheck, advisory analyzer.
 # CI invokes this as one step per-target so failures clearly name
 # which tool caught the issue.
@@ -573,4 +650,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix cppcheck analyzer lint docs-check docs-check-tools coverage coverage-tools test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap

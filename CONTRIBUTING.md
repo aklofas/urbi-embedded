@@ -23,6 +23,21 @@ they coexist and no `make clean` is required when switching between them.
 `test-valgrind` is enforced in CI but runs ~20–50× slower than a plain build
 — run it periodically and always before a milestone tag, not on every commit.
 
+## Coverage
+
+`make coverage` produces a line-coverage HTML report at
+`build/host-coverage/report.html` via gcovr. Threshold ≥85% line coverage
+(enforced in `make releasetest`).
+
+`make test-branch-coverage` reports branch + decision coverage via gcovr's
+`--branches` + `--decisions` flags. As of v0.5.7-fixes the gate is
+informational-only at 69% baseline; Phase 20 of the v0.5.7-fixes plan
+closes coverage gaps and the gate enables (`--fail-under-branch 75`) once
+baseline exceeds threshold. Drops below threshold flag PRs; either close
+the gap in the same commit or document at the bottom of the affected file:
+
+    // AUDIT: branch <description> covered indirectly via tests/path/test_other.c
+
 ## Cross-compile sanity
 
 If you have `arm-none-eabi-gcc` or `riscv64-unknown-elf-gcc` installed:
@@ -181,9 +196,81 @@ Or push and let CI catch it.
 
 Bytecode-byte-identical contract: any commit that touches `src/lex/`,
 `src/parse/`, `src/emit/`, `src/value/`, `src/module/`, `src/object/`, or
-`src/runtime/` should reproduce `tests/golden/v0.5.3-bytecode-hashes.txt`
+`src/runtime/` should reproduce `tests/golden/v0.5.7-fixes-bytecode-hashes.txt`
 exactly unless a deliberate codegen change is being made (which requires
 re-capturing the golden table and bumping bytecode version).
+
+The wire-format gate at `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
+provides complementary coverage: the disasm-text hash is stable across
+opcode renumber + version-byte advance and is blind to genuine wire-format
+breaks; the wire-format hash is sensitive to header bytes, opcode-shape
+table, varint encoding, and nested-proto round-trip.  Re-capture both
+golden tables in lockstep when a codegen change is intentional.
+
+### TDD per fix commit (Wave 5 onward)
+
+Every fix commit (a commit that closes an audit-finding ID or fixes a
+bug found during development) MUST follow strict test-driven development:
+
+1. **Test demonstrates the bug**: write a failing unit test or `.chk`
+   fixture that exercises the bug *before* applying the fix.  Verify the
+   test fails on `main` (or the pre-fix branch state).
+2. **Fix passes the test**: apply the fix; verify the test now passes.
+3. **Both land in the same commit**: the fix + the regression test land
+   together so the test cannot be silently disabled in a future
+   regression.  No "test-only" or "fix-only" commits for fix work.
+
+This standing requirement was codified during Wave 5 (`v0.5.7-fixes`).
+Discipline notes:
+
+- Internal-assertion paths that abort the test runner are a known gap;
+  the URBI_TEST_ONLY assert-fire macro (filed in
+  `docs/urbi-embedded-backlog.md` test-infrastructure section) will
+  close it.  Until then, those paths land with a doc-only assertion fix
+  combined with an audit-ID note on the test-coverage limitation.
+- Coverage-only commits (closing COV-* IDs) are allowed without a
+  paired bug fix — they are TDD's symmetric case (test demonstrates an
+  *un*-exercised path; the path is verified correct).
+
+Refactor commits, naming sweeps, and dead-code removal commits are
+exempt — they ship under the existing bytecode-byte-identical or
+test-suite-passes gates.
+
+### Strict-tooling baselines
+
+Three strict-tooling targets gate at three different tiers:
+
+- **`make test-scan-build`** — Clang static analyzer.  **Hard gate
+  in releasetest.**  Must be 0 bugs.  Runs on every PR.
+- **`make test-tidy-strict`** — clang-tidy with bug-prone /
+  cert-ish checklist.  **Hard gate in releasetest** for the
+  bug-prone categories only.  Informational-tier residuals (~25 at
+  v0.5.7-fixes shipping) cover false-positive or design-pin
+  categories: `bugprone-branch-clone` (legitimate parallel arms in
+  unwind dispatch), `performance-no-int-to-ptr` (UProtos high-bit
+  pointer encoding), `clang-analyzer-valist-uninitialized` (vararg
+  log helpers under `-fanalyzer`).
+- **`make test-cppcheck-strict`** — cppcheck with strict checklist.
+  **Hard gate in releasetest** for bug-prone categories.
+  Informational-tier residuals (~145 at v0.5.7-fixes shipping)
+  dominantly `unusedFunction` false positives in public C API
+  consumed only from `tests/`.  Suppression strategy filed in
+  `docs/urbi-embedded-backlog.md` for follow-up.
+
+The informational-tier residuals are visible in CI output but do not
+fail the build.  Ratchet target: each cleanup wave should drive the
+informational counts down by retiring at least 5 sites or recategorizing
+each remaining site as a documented design pin.
+
+### Full-corpus sanitizer gate
+
+`make test-corpus-sanitize` runs every `.chk` fixture under ASan, UBSan,
+and valgrind memcheck (full leak-check).  **Promoted to releasetest at
+v0.5.7-fixes Phase 21.**  148 fixtures × 3 sanitizers; ~5-7 minutes
+wall-clock under the 2-phase parallelization scheme (see
+`Makefile:releasetest`).  Replaces the previous unit-test-only sanitizer
+gate, which missed every bug surfacing only at fixture-level or
+through specific .chk reactive runtime paths.
 
 ## Tag conventions
 

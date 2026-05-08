@@ -137,11 +137,19 @@ urbi_native_event_new(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_emit(struct UStrand *s, int argc, UValue *argv)
 {
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+
+    /* EVENT-004: validate argv[0] is a UEvent before casting via uvalue_as_event.
+     * Without this, a misconfigured caller (wrong receiver kind) walks into
+     * c_event_emit_async with garbage cast as UEvent*. */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     c_event_emit_async(vm, e, native_event_optional_payload(argc, argv));
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
     return nil;
 }
 
@@ -151,11 +159,17 @@ urbi_native_event_emit(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_sync_emit(struct UStrand *s, int argc, UValue *argv)
 {
+    UValue nil = {0};
+    nil.kind = (uint8_t)UVAL_NIL;
+
+    /* EVENT-004: validate argv[0] is a UEvent before casting (see emit above). */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     c_event_emit_sync(vm, e, native_event_optional_payload(argc, argv));
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
     return nil;
 }
 
@@ -166,7 +180,13 @@ urbi_native_event_sync_emit(struct UStrand *s, int argc, UValue *argv)
 static UValue
 urbi_native_event_waituntil(struct UStrand *s, int argc, UValue *argv)
 {
-    (void)argc;
+    /* EVENT-004: validate argv[0] is a UEvent before casting (see emit above). */
+    if (argc < 1 || !uvalue_is_event(argv[0])) {
+        UValue nil = {0};
+        nil.kind = (uint8_t)UVAL_NIL;
+        return nil;
+    }
+
     struct UVM *vm = s->vm;
     UEvent *e = uvalue_as_event(argv[0]);
     return c_event_waituntil(vm, e);
@@ -191,9 +211,18 @@ event_native_register(struct UVM *vm)
     }
     vm->event_proto = proto;
 
-    urbi_register_fn(vm, proto, "new",       urbi_native_event_new);
-    urbi_register_fn(vm, proto, "emit",      urbi_native_event_emit);
-    urbi_register_fn(vm, proto, "syncEmit",  urbi_native_event_sync_emit);
-    urbi_register_fn(vm, proto, "waituntil", urbi_native_event_waituntil);
+    /* EVENT-005: propagate urbi_register_fn failures.  The previous code
+     * silently dropped the four return values, so an OOM during slot
+     * intern/install left a partially populated event_proto on the VM.
+     * On any failure, reset event_proto to NULL (the proto cell itself is
+     * GC-managed and will be collected at the next sweep) and surface
+     * UVM_OOM to the caller. */
+    if (urbi_register_fn(vm, proto, "new",       urbi_native_event_new)      != 0
+     || urbi_register_fn(vm, proto, "emit",      urbi_native_event_emit)     != 0
+     || urbi_register_fn(vm, proto, "syncEmit",  urbi_native_event_sync_emit) != 0
+     || urbi_register_fn(vm, proto, "waituntil", urbi_native_event_waituntil) != 0) {
+        vm->event_proto = NULL;
+        return UVM_OOM;
+    }
     return UVM_OK;
 }

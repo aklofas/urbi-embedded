@@ -21,6 +21,7 @@
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "urbi/urbi.h"
 
 #include <stdint.h>
@@ -54,7 +55,7 @@ make_trivial_closure_c(UClosure *cl, UProto *proto, uint32_t *instr_buf)
 static UWatcher *
 test_make_dummy_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
 {
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         vm, UWATCHER_AT,
         realm->tag,   /* owning_tag == realm->tag → no extra attach */
         NULL,         /* condition */

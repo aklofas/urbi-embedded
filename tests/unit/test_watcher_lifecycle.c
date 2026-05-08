@@ -23,6 +23,7 @@
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "urbi/urbi.h"
 
 #include <stdint.h>
@@ -61,7 +62,7 @@ make_ret_closure(UClosure *cl, UProto *proto, uint32_t *instr_buf)
 static UWatcher *
 install_body_watcher(struct UVM *vm, struct URealm *realm, UClosure *body_cl)
 {
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         vm, UWATCHER_AT,
         realm->tag,   /* owning_tag == realm->tag */
         NULL,         /* condition: NULL (no condition closure) */

@@ -63,6 +63,12 @@ uint8_t emit_lazy_thunk(UEmitter *e, UAstNode *expr) {
                         e->max_reg_seen = e->next_reg;
                     if (e->next_reg > fs->max_reg_seen)
                         fs->max_reg_seen = e->next_reg;
+                    /* EMIT-013 fix (Wave 5): also raise freereg to
+                     * next_reg so a subsequent emit_function_literal
+                     * call (which pulls dst from freereg) does not
+                     * alias the thunk-pass-through slot at dst. */
+                    if (fs->freereg < e->next_reg)
+                        fs->freereg = e->next_reg;
                     return dst;
                 }
                 /* Stop if we found the name but it's not lazy (normal local). */
@@ -123,7 +129,35 @@ uint8_t emit_function_literal(UEmitter *e,
                               bool       as_expression) {
     UFuncState *parent_fs = e->current_fs;
 
-    /* 1. Allocate a new UProto under the module's nested[] list. */
+    /* T21 (EMIT-004): intern all parameter names BEFORE allocating the
+     * child UProto.  Pre-fix, child_proto was pushed to module->nested[]
+     * first and a mid-loop ustr_intern OOM left a half-initialised proto
+     * stuck in the array (nested_count incremented, name slots not yet
+     * declared, body never compiled).  By interning into a stack-local
+     * cache up front, an intern OOM short-circuits with no module-state
+     * mutation.  UFS_MAX_LOCALS bounds nparams (the parser caps the
+     * formal-list length at 16 today; the bound here is conservative). */
+    const char *param_names[UFS_MAX_LOCALS];
+    if (nparams > UFS_MAX_LOCALS) {
+        e->error = EMIT_REG_EXHAUSTED;
+        return 0U;
+    }
+    for (int pi = 0; pi < nparams; pi++) {
+        const UAstNode *pn = params[pi];
+        const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
+                                        (size_t)pn->u.param.name_len);
+        if (cname == NULL) {
+            e->error = EMIT_OOM;
+            return 0U;
+        }
+        param_names[pi] = cname;
+    }
+
+    /* 1. Allocate a new UProto under the module's nested[] list.  All
+     * parameter interns have already succeeded; from here on, any failure
+     * leaves child_proto in nested[] but at least it is consistently a
+     * fully-allocated empty proto (umodule_destroy walks NULL slots
+     * cleanly). */
     UProto *child_proto = umodule_alloc_nested_proto(e->module);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(e->module->nested_count - 1);
@@ -133,15 +167,15 @@ uint8_t emit_function_literal(UEmitter *e,
     if (child_fs == NULL) return 0U;
     child_fs->target_proto = child_proto;
 
-    /* 3. Declare parameters as locals in child_fs. */
+    /* 3. Declare parameters as locals in child_fs using the pre-interned
+     * names.  uemit_declare_local can still fail (EMIT_REG_EXHAUSTED /
+     * EMIT_LOCAL_REDECLARE) but no longer competes with intern OOM. */
     {
         int pi;
         for (pi = 0; pi < nparams; pi++) {
             const UAstNode *pn = params[pi];
-            const char *cname = ustr_intern(e->vm, pn->u.param.name_start,
-                                            (size_t)pn->u.param.name_len);
-            if (cname == NULL) { e->error = EMIT_OOM; uemit_close_function(e); return 0U; }
-            int slot = uemit_declare_local(e, cname, pn->u.param.name_len);
+            int slot = uemit_declare_local(e, param_names[pi],
+                                           pn->u.param.name_len);
             if (slot < 0) { uemit_close_function(e); return 0U; }
             if (pn->kind == AST_LAZY_PARAM) {
                 child_fs->actvars[slot].is_lazy = true;
@@ -307,9 +341,9 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* 7. Patch jmp_to_else → current pc (start of else/nil arm). */
     {
         int alt_target = (int)emit_instr_count(e);
-        int alt_offset = alt_target - (jmp_to_else + 1);
         emit_patch_instr(e, jmp_to_else,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + alt_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_else, alt_target)));
     }
 
     /* 8. Reset cursor to rd for else/nil arm. */
@@ -333,18 +367,35 @@ uint8_t emit_if_arm(UEmitter *e, UAstNode *n) {
     /* 10. Patch jmp_to_end → current pc. */
     {
         int end_target = (int)emit_instr_count(e);
-        int end_offset = end_target - (jmp_to_end + 1);
         emit_patch_instr(e, jmp_to_end,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + end_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_end, end_target)));
     }
 
-    /* Advance past rd so callers can free it as a temp if needed. */
+    /* Advance next_reg past rd so callers can allocate above the result
+     * via alloc_reg.  Match emit_compare_arm's protocol: rd is a TEMP
+     * (the if-expr's value), not a local.  Do NOT bump fs->freereg —
+     * forcing freereg = rd + 1 leaks slot rd into the local-zone floor
+     * for siblings that route through fs->freereg (e.g., subsequent
+     * uemit_declare_local under SEP_SEMI between-stmt handling, which
+     * uses fs->freereg as the next local's slot index).
+     *
+     * EMIT-016 fix (Wave 5, v0.5.7): pre-fix the trailing
+     * `fs->freereg = next_reg` line forced a `var b = init` after
+     * `if (cond) { var x = init; x };` to land at slot rd+1 (e.g., 3)
+     * instead of the actually-free slot rd (e.g., 2), wasting a register
+     * across the function's lifetime — the leak compounds across nested
+     * conditionals, inflating proto.max_reg unnecessarily.
+     *
+     * The if-expr's caller is responsible for the rd register: the
+     * NARY/BLOCK between-stmt reset releases rd via fs_temp_floor; the
+     * assign-arm and similar consumers read rd before allocating new
+     * temps. */
     e->next_reg = rd + 1U;
     if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
     if (e->current_fs != NULL) {
         if (e->next_reg > e->current_fs->max_reg_seen)
             e->current_fs->max_reg_seen = e->next_reg;
-        e->current_fs->freereg = e->next_reg;
     }
 
     return rd;
@@ -411,9 +462,9 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 
         /* 6. Back-edge JMP to loop_start. */
         {
-            int back_offset = loop_start - ((int)emit_instr_count(e) + 1);
+            int from_pc = (int)emit_instr_count(e);
             emit_instr(e, uinstr_enc_abx(OP_JMP, 0U,
-                                         (uint16_t)(UEMIT_JMP_BIAS + back_offset)),
+                                         uemit_jmp_offset(from_pc, loop_start)),
                        (uint32_t)n->line);
         }
 
@@ -425,9 +476,9 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
     /* 8. Patch the exit JMP to current pc. */
     {
         int exit_target = (int)emit_instr_count(e);
-        int exit_offset = exit_target - (jmp_to_exit + 1);
         emit_patch_instr(e, jmp_to_exit,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + exit_offset)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_to_exit, exit_target)));
     }
 
     /* while-loop is a statement; it doesn't produce a value.
@@ -451,6 +502,16 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    /* EMIT-014 fix (Wave 5, v0.5.7): the OP_CALL B field is a uint8_t
+     * holding (nargs + 1).  Reject calls with >= 254 args before any
+     * codegen — at 254 args B becomes 255 (the OP_CALL "all-results"
+     * sentinel reserved for tail calls), and at 255+ B wraps to 0
+     * (no args), corrupting the call. */
+    if (n->u.call.arg_count >= 254) {
+        e->error = EMIT_TOO_MANY_ARGS;
         return 0U;
     }
 
@@ -570,7 +631,21 @@ uint8_t emit_return_arm(UEmitter *e, UAstNode *n) {
         ret_reg = emit_expr(e, n->u.ret.value);
         if (e->error != EMIT_OK) return 0U;
     } else {
-        /* Bare `return`: return nil. */
+        /* Bare `return`: return nil.
+         *
+         * EMIT-017 fix (Wave 5, v0.5.7): force next_reg above the
+         * funcstate temp floor before alloc_reg.  alloc_reg uses
+         * e->next_reg directly; if a future emit arm transiently drops
+         * next_reg below fs_temp_floor (= nactvar +
+         * global_slot_reserved), the returned slot would alias a live
+         * local and the subsequent OP_LOADNIL would clobber it.
+         * Defensive against new arms; current emit-arm contract syncs
+         * next_reg to freereg between siblings, so the bug is dormant.
+         * Same fix shape as EMIT-018 (AST_THROW). */
+        {
+            uint8_t floor_val = fs_temp_floor(e->current_fs);
+            if (e->next_reg < floor_val) e->next_reg = floor_val;
+        }
         ret_reg = alloc_reg(e);
         if (e->error != EMIT_OK) return 0U;
         emit_instr(e, uinstr_enc_abc(OP_LOADNIL, ret_reg, 0U, 0U),

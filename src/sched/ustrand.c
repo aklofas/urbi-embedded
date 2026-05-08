@@ -190,6 +190,23 @@ urbi_strand_create(struct URealm *realm, struct UClosure *entry)
         UTag *chain[1];
         chain[0] = realm->tag;
         urbi_strand_attach_ambient_tags(s, chain, 1);
+
+        /* CHSTR-018 + CHSTR-040: enforce the "fully-functional strand or NULL"
+         * contract documented at urbi.h:194.  attach_ambient_tags transitions
+         * the strand to DEAD on cleanup-stack overflow; without this guard
+         * urbi_strand_create would return a DEAD-but-allocated strand that
+         * is already linked into realm->strands_head, leaking the partial
+         * allocation onto callers that only check the return value for NULL.
+         * Unlink from realm, tear the strand down, and return NULL so the
+         * single OOM/overflow path mirrors the other failure modes. */
+        if (USTRAND_GET_STATE(s) == USTRAND_DEAD) {
+            URBI_INTERNAL_ASSERT(realm->strands_head == s);
+            realm->strands_head = s->next_in_realm;
+            s->next_in_realm    = NULL;
+            ustrand_destroy(s, vm);
+            vm->alloc_fn(s, 0, vm->alloc_ud);
+            return NULL;
+        }
     }
 
     sched_strand_init(s, NULL);
@@ -208,6 +225,19 @@ urbi_strand_start(UStrand *s)
     struct UVM *vm = s->vm;
     URBI_ASSERT_NOT_ISR(vm);
     (void)vm;  /* suppress -Wunused-variable in non-debug builds */
+    /* CHSTR-033 (T104): the precondition is "DORMANT only — no double-start".
+     * sched_strand_make_runnable unconditionally tail-inserts into the
+     * cooperative ready queue and bumps strand_runnable_count++; calling
+     * urbi_strand_start twice on the same strand would re-enqueue it
+     * (creating a circular ready_next/ready_prev chain because the strand
+     * is already a list member) and double-count the runnable counter so
+     * sched_quiescent never converges.  The URBI_INTERNAL_ASSERT below
+     * catches this in -DURBI_DEBUG builds, BUT it is a no-op in freestanding
+     * production builds (umacros.h defaults to (void)0 when assert.h is
+     * unavailable).  TODO(v1.x): consider promoting this to urbi_panic so
+     * the violation is fatal in production rather than silently corrupting
+     * the queue accounting.  Current callers (urbi_strand_spawn,
+     * application code) all transition DORMANT → READY exactly once. */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) == USTRAND_DORMANT);
     sched_strand_make_runnable(s);
 }
@@ -247,6 +277,22 @@ urbi_strand_destroy(UStrand *s)
         }
     }
 
+    /* CHSTR-015 (T103): unbind the strand from any scheduler queue BEFORE
+     * sched_strand_destroy zeroes the local ready_next/ready_prev pointers
+     * that sched_strand_unbind_from_ready_queue walks to fix up neighbours.
+     * sched_strand_destroy is then a pure local-pointer wipe; the strand's
+     * neighbours and the queue head/tail are already consistent.
+     *
+     * ustrand_destroy follows so that the cleanup-stack unwind / register-
+     * stack free / resource-chain release run with a strand that is no
+     * longer reachable from the scheduler — eliminates the race window
+     * where a concurrent sched_walk_roots (M3 cooperative: not actually
+     * concurrent, but spec-level "the GC sees the strand on the queue
+     * after we started tearing it down") would walk freed memory. */
+    if (vm != NULL) {
+        sched_strand_unbind_from_ready_queue(s);
+        sched_strand_unbind_from_sleep_queue(s);
+    }
     sched_strand_destroy(s);
     ustrand_destroy(s, vm);
     if (vm) vm->alloc_fn(s, 0, vm->alloc_ud);
@@ -376,10 +422,18 @@ urbi_strand_register_stack_free(UStrand *s, struct UVM *vm)
  * Shared by urbi_strand_arm_from_closure and urbi_vm_run; each caller wires
  * pc/pc_base/cur_consts/out_slot/state afterward.
  *
+ * Precondition (CHSTR-005): s->stack must be NULL on entry.  Re-arming a
+ * strand that already owns a register stack would leak the prior allocation
+ * because urbi_strand_register_stack_alloc unconditionally overwrites s->stack.
+ * Re-use is supported only via the explicit free → arm sequence (e.g.
+ * urbi_strand_register_stack_free followed by a fresh arm); enforced here
+ * so violations surface in debug builds.
+ *
  * Returns 0 on success, -1 on allocation failure (s->stack remains NULL). */
 int
 urbi_strand_arm_init(UStrand *s)
 {
+    URBI_INTERNAL_ASSERT(s->stack == NULL);
     if (urbi_strand_register_stack_alloc(s, s->vm) != 0) return -1;
     urbi_strand_register_stack_zero(s);
     return 0;

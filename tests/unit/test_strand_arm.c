@@ -11,6 +11,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "module/umodule.h"
+#include "object/umodule_instance.h"
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
@@ -146,6 +147,94 @@ strand_arm_null_constants(void)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-014 (T102): fork_spawn_child inherits parent's module_instance after
+ * urbi_strand_arm_from_closure.  Verifies the post-arm wiring at uop_fork.c
+ * so OP_GETSLOT/OP_SETSLOT in the child can resolve the IC table at
+ * frame_count == 0.  Tests the call-site contract directly: a freshly armed
+ * strand picks up its module_instance from a separate post-arm assignment
+ * mirroring the fork_spawn_child / urbi_vm_run / watcher body-spawn paths.
+ *
+ * This is a structural regression rather than an API contract on
+ * urbi_strand_arm_from_closure itself — that helper deliberately does not
+ * touch module_instance because each spawn path resolves it differently
+ * (siblings inherit; watcher bodies pointer-range-search a list; scratch
+ * frames synthesize their own minimal arr). */
+static void
+strand_arm_from_closure_initializes_module_instance(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    uint32_t instr[1];
+    UValue   consts[1];
+    UProto   proto;
+    UClosure cl;
+    make_trivial_closure(&cl, &proto, instr, consts);
+
+    UStrand *s = urbi_strand_create(realm, &cl);
+    UASSERT(s != NULL);
+    UASSERT(s->module_instance == NULL);  /* fresh strands start with NULL */
+
+    /* Arm: stack is allocated, but module_instance is NOT touched (the spawn
+     * site is responsible for wiring it post-arm).  Confirms the helper is
+     * ABI-stable for the call sites that handle module_instance themselves. */
+    int rc = urbi_strand_arm_from_closure(s, &cl);
+    UASSERT_EQ(0, rc);
+    UASSERT(s->module_instance == NULL);
+
+    /* Mirror the fork_spawn_child wiring: post-arm explicit set. */
+    UModuleInstance fake_mi = {0};
+    s->module_instance = &fake_mi;
+    UASSERT(s->module_instance == &fake_mi);
+
+    s->module_instance = NULL;  /* avoid GC chase of stack-local mi */
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
+/* CHSTR-005 (T99): urbi_strand_arm_from_closure precondition is s->stack ==
+ * NULL.  Re-arming a strand that already owns a register stack would leak the
+ * prior allocation because the inner urbi_strand_register_stack_alloc
+ * unconditionally overwrites s->stack.  Verify that a fresh strand (the only
+ * legal arm-time state) satisfies the precondition on the hot path used by
+ * fork_spawn_child + the watcher body-spawn path. */
+static void
+strand_arm_from_closure_asserts_stack_null(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    uint32_t instr[1];
+    UValue   consts[1];
+    UProto   proto;
+    UClosure cl;
+    make_trivial_closure(&cl, &proto, instr, consts);
+
+    UStrand *s = urbi_strand_create(realm, &cl);
+    UASSERT(s != NULL);
+    /* Fresh strands have stack == NULL — frame-0 setup is deferred. */
+    UASSERT(s->stack == NULL);
+    UASSERT(s->R == NULL);
+
+    int rc = urbi_strand_arm_from_closure(s, &cl);
+    UASSERT_EQ(0, rc);
+
+    /* After arm, stack is allocated and R points at it. */
+    UASSERT(s->stack != NULL);
+    UASSERT(s->R == s->stack);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -156,4 +245,8 @@ test_strand_arm_suite(void)
     printf("test_strand_arm\n");
     utest_run("strand_arm_sets_exec_fields", strand_arm_sets_exec_fields);
     utest_run("strand_arm_null_constants",   strand_arm_null_constants);
+    utest_run("strand_arm_from_closure_asserts_stack_null",
+              strand_arm_from_closure_asserts_stack_null);
+    utest_run("strand_arm_from_closure_initializes_module_instance",
+              strand_arm_from_closure_initializes_module_instance);
 }

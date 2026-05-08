@@ -11,11 +11,23 @@
 #include "event/uevent_subscribe.h"
 #include "event/uevent.h"
 #include "watcher/uwatcher.h"  /* UWatcher, next_in_event */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
 #include <stddef.h>
 
 void
 uevent_at_watchers_append(UEvent *e, UWatcher *w)
 {
+#ifdef URBI_DEBUG
+    /* EVENT-009: guard against double-insert.  Walking the chain once on
+     * append is O(N), but installs are rare and N is tiny (chain depth =
+     * subscriber count), so the cost is negligible.  Catches the worst
+     * class of subscribe bugs (same watcher linked twice → infinite loop
+     * during dispatch when next_in_event self-references). */
+    for (UWatcher *p = e->at_watchers_head; p != NULL; p = p->next_in_event) {
+        URBI_INTERNAL_ASSERT(p != w);
+    }
+#endif
+
     w->next_in_event = NULL;
     if (!e->at_watchers_head) {
         e->at_watchers_head = w;

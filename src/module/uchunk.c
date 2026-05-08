@@ -21,7 +21,6 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "value/uvalue.h"
-#include "object/umodule_instance.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include <stddef.h>    /* size_t */
 
@@ -52,24 +51,26 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         if (!realm) return URBI_ERR_OOM;
     }
 
-    /* M4 follow-up: bind UModuleInstance so OP_GETSLOT/SETSLOT find IC table.
-     * Cache lookup on vm->module_instances_head; lazy create.  OOM here is
-     * not fatal — urbi_vm_run will surface a clean diagnostic on first GETSLOT
-     * if the binding never happened. */
-    (void)urbi_get_or_create_module_instance(vm, (UModule *)module);
+    /* CHSTR-008 + CHSTR-027 (T100): the M4-follow-up precreate of UModuleInstance
+     * was redundant.  urbi_vm_run unconditionally calls urbi_module_instance_create
+     * (uvm_run.c:114) which builds a fresh instance and prepends it to
+     * vm->module_instances_head; the precreate's instance was never read on
+     * this path (the strand's module_instance is wired from the fresh-create
+     * result, not from the cache lookup).  Keeping the precreate left a
+     * dead instance head-inserted into the GC-managed list with no useful
+     * effect; the GC reaps it on the next sweep but the work is wasted.
+     * Removed.  vm->strand_runnable_count and module_instance_count for
+     * .chk fixtures unchanged after the removal. */
 
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    /* realm is accepted for API stability but not yet threaded through
-     * urbi_vm_run, which takes (vm, module, out) — no realm parameter.
-     * Threading requires expanding urbi_vm_run's signature, which is a
-     * Wave-5 boundary change (API-004 carries forward).  At v0.5.5 the
-     * realm argument's role is contract validation: it must belong to
-     * this vm or be NULL.  Wave 5 wires the partitioned-binding path. */
-    (void)realm;
-
-    UVMError rc = urbi_vm_run(vm, module, out);
+    /* API-004 (Wave 5): thread the caller-supplied Realm through to
+     * urbi_vm_run — pre-Wave-5 the realm argument was silently dropped
+     * via `(void)realm;` and urbi_vm_run always wired the transient to
+     * the global Realm.  After Wave 5, urbi_vm_run accepts a realm
+     * directly (NULL → global, preserving the prior implicit behavior). */
+    UVMError rc = urbi_vm_run(vm, realm, module, out);
 
     /* Map UVMError to UErrCode.  UVM_TYPE_ERROR collapses to STRAND_FATAL
      * at v0.5.5 because the public surface has no dedicated type-error
@@ -166,13 +167,20 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
             } else
 #endif
             {
-                const char *msg = parse_errmsg ? parse_errmsg : "compile error";
+                /* CPPCHK-005: surface uemit_finish's diagnostic when the parser
+                 * succeeded but finalization failed (e.g. EMIT_OOM, constant
+                 * pool exhausted at top-level RET emission).  Falls back to
+                 * the parser's static message when the parse stage errored. */
+                const char *msg = parse_errmsg
+                                ? parse_errmsg
+                                : (finish_rc != EMIT_OK ? uemit_error_name(finish_rc)
+                                                        : "compile error");
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
         umodule_destroy(&module);
         uarena_destroy(&arena);
-        return URBI_ERR_COMPILE;
+        return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
     /* Run via urbi_run_chunk (which delegates to urbi_vm_run at M3). */

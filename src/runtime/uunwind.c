@@ -79,6 +79,23 @@ bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
     s->catch_value = val;
 }
 
+/* SCHED-001: discriminate "is parked on Event waiter chain?" by class+reason
+ * rather than by full state-byte equality.  Pre-v0.5.5 the JOIN reason byte
+ * collided with EVENT (both 0x03), making `s->state == USTRAND_WAIT_EVENT`
+ * ambiguous; v0.5.5 (CHSTR-016) renumbered JOIN to 0x04 so the literal
+ * composite is now distinct, but the architectural pattern of comparing
+ * full-state bytes is fragile against any future reason renumbering.  This
+ * helper isolates the predicate so additions to the WAITING reason space
+ * cannot re-introduce an alias.
+ *
+ * Closes SCHED-001 (and the architectural follow-up to EMITR-001). */
+static inline int
+is_event_parked_strand(const UStrand *s)
+{
+    return ((s->state & USTRAND_STATE_MASK) == USTRAND_WAITING) &&
+           ((s->state & USTRAND_REASON_MASK) == USTRAND_REASON_EVENT);
+}
+
 /* ===== pop_call_frame: restore caller's execution context =====
    Called from CALL_FRAME branch and the backward-compat direct-pop path.
    After this returns, s->R points to the caller's register base and
@@ -98,10 +115,14 @@ pop_call_frame(UStrand *s)
     s->R       = done->base;
     s->pc      = done->pc + 1;   /* advance past the OP_CALL instruction */
     s->pc_base = s->module->instructions;
-    s->cur_consts = (s->frame_count > 0 &&
-                     s->frames[s->frame_count - 1].closure != NULL)
-                    ? s->frames[s->frame_count - 1].closure->proto->constants
-                    : s->module->constants;
+    /* FOUND-032: route through the shared helper so the OP_CALL rule and the
+     * pop-frame rule cannot drift. */
+    {
+        const UClosure *outer = (s->frame_count > 0)
+            ? s->frames[s->frame_count - 1].closure
+            : NULL;
+        s->cur_consts = ustrand_consts_for_closure(s, outer);
+    }
 }
 
 /* ===== deliver_return_value: write retval into caller's result slot =====
@@ -389,8 +410,10 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
 
         /* Unlink from event waiter chain before waking (spec #3 §6.4).
          * Must happen before state transition so the waiter list is consistent
-         * when the strand next runs.  Idempotent if not on an event chain. */
-        if (s->state == USTRAND_WAIT_EVENT)
+         * when the strand next runs.  Idempotent if not on an event chain.
+         * Use the class+reason discriminator (SCHED-001) rather than full-
+         * state byte equality so future reason-byte additions cannot alias. */
+        if (is_event_parked_strand(s))
             uevent_waiter_unregister(s);
 
         /* Wake any blocked strand so it can consume the unwind. */
@@ -430,9 +453,10 @@ urbi_strand_cancel(struct UStrand *strand, UValue cancel_reason)
     strand->unwind_value   = cancel_reason;
     /* If the strand is sleeping/waiting, unblock it so it can process the
      * unwind.  USTRAND_IS_WAITING checks the upper nibble of strand->state.
-     * Unlink from event waiter chain first (spec #3 §6.4). */
+     * Unlink from event waiter chain first (spec #3 §6.4).  Use the class+
+     * reason discriminator (SCHED-001) rather than full-state byte equality. */
     if (USTRAND_IS_WAITING(strand)) {
-        if (strand->state == USTRAND_WAIT_EVENT)
+        if (is_event_parked_strand(strand))
             uevent_waiter_unregister(strand);
         strand->state = USTRAND_STATE_READY;
     }
@@ -452,11 +476,19 @@ urbi_strand_panic(struct UStrand *strand, const char *msg)
 
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
-    (void)msg;  /* stored as nil at M3; T16/T19 will emit a diagnostic string */
+    /* FOUND-045: route diagnostic msg through host_log_fn before marking the
+     * strand dead so embedders can correlate panic causes with their own
+     * logging pipeline.  URBI_LOG_FATAL is not defined; use ERROR (highest
+     * level we have).  NULL-guarded — many tests wire vm without a log
+     * callback. */
+    if (msg != NULL && strand->vm != NULL && strand->vm->host_log_fn != NULL) {
+        strand->vm->host_log_fn(strand->vm, (int)URBI_LOG_ERROR, "%s", msg);
+    }
     /* Unlink from event waiter chain before marking dead (spec #3 §6.4).
      * Prevents stale pointers in e->waiters_head if the strand is freed
-     * without ever being woken by an emit. */
-    if (strand->state == USTRAND_WAIT_EVENT)
+     * without ever being woken by an emit.  Use the class+reason
+     * discriminator (SCHED-001) rather than full-state byte equality. */
+    if (is_event_parked_strand(strand))
         uevent_waiter_unregister(strand);
     strand->fatal_status = UEXEC_CANCEL;
     strand->fatal_value  = nil;
@@ -520,31 +552,38 @@ urbi_strand_reset(struct UStrand *strand)
  * reads s->pending_unwind when the callback returns and starts unwinding.
  */
 
-/* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW). */
+/* urbi_throw — deposit THROW unwind (equiv to bytecode OP_THROW).
+ * API-002: NULL strand or NULL strand->vm is a no-op (defensive); the prior
+ * code derefed strand to read strand->vm and would crash on either. */
 void
 urbi_throw(struct UStrand *strand, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_THROW;
     strand->unwind_value   = value;
 }
 
 /* urbi_return_val — deposit RETURN unwind (equiv to bytecode OP_RETURN).
  * Named urbi_return_val (not urbi_return) to avoid conflict with the C
- * keyword `return` in macro expansion contexts and to be unambiguous. */
+ * keyword `return` in macro expansion contexts and to be unambiguous.
+ * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
 urbi_return_val(struct UStrand *strand, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind = UEXEC_RETURN;
     strand->unwind_value   = value;
 }
 
-/* urbi_tag_stop_local — deposit TAG_STOP from within the same strand. */
+/* urbi_tag_stop_local — deposit TAG_STOP from within the same strand.
+ * API-002: NULL strand or NULL strand->vm is a no-op. */
 void
 urbi_tag_stop_local(struct UStrand *strand, struct UTag *tag, UValue value)
 {
-    if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
+    if (!strand || !strand->vm) return;
+    URBI_ASSERT_NOT_ISR(strand->vm);
     strand->pending_unwind  = UEXEC_TAG_STOP;
     strand->unwind_target   = tag;
     strand->unwind_value    = value;

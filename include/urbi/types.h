@@ -91,6 +91,23 @@ typedef struct {
     } v;
 } UValue;
 
+/* === urbi_value_nil: canonical zero-init UValue ===
+ *
+ * Sole nil constructor: explicitly clears kind + pad + union payload so the
+ * resulting UValue is bit-equivalent across compilers (some C99 aggregate-
+ * init forms can leave _pad in implementation-defined state when the union
+ * is partially initialised).
+ *
+ * Use this helper everywhere a "nil" UValue is needed instead of
+ * `UValue v = {0};` aggregate init.  Closes FOUND-019 + FOUND-048 (Wave 5). */
+static inline UValue urbi_value_nil(void) {
+    UValue v;
+    v.kind = (uint8_t)UVAL_NIL;
+    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
+    v.v.i = 0;
+    return v;
+}
+
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
@@ -112,7 +129,9 @@ typedef enum {
     URBI_ERR_PROTECTED_SLOT             = -9,
     URBI_ERR_RESERVED_10                = -10,
     URBI_ERR_CONST_SLOT_WRITE           = -11,
-    URBI_ERR_SLOT_NOT_FOUND             = -12
+    URBI_ERR_SLOT_NOT_FOUND             = -12,
+    URBI_ERR_SHAPE_BOUNDS               = -13,  /* T68: slot index past v1.0 packed-flag cap */
+    URBI_ERR_PROTO_DEPTH                = -14   /* T68: prototype-graph resolve-stack overflow */
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===

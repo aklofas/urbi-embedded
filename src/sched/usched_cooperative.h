@@ -46,6 +46,14 @@ void sched_destroy(UVM *vm);
  *   not touch the state byte).  `attrs` is reserved for the v1.x scheduler-
  *   class abstraction (priority/deadline schedulers); currently unused.
  *
+ *   CHSTR-039 (T106): the caller MUST have set s->state before calling
+ *   (DORMANT for newly-created strands, RUNNING for the urbi_vm_run
+ *   transient path).  -DURBI_DEBUG asserts the precondition; production
+ *   builds elide the check.  The function is otherwise unchecked and
+ *   would silently de-stabilise queue accounting if called on a READY,
+ *   WAITING, or DEAD strand (re-arming the budget while the strand sits
+ *   on a queue).
+ *
  * sched_strand_destroy: detach the strand from the ready/sleep queue lists
  *   (idempotent — safe to call on an already-detached strand).  Does not
  *   free the strand itself; that is the caller's responsibility. */
@@ -96,6 +104,31 @@ void sched_dequeue_ready_head(UVM *vm);
  * deposited.  Called by ustrand_destroy so the bookkeeping lives in the
  * scheduler rather than the strand teardown code. */
 void sched_strand_account_destroy(UVM *vm, UStrand *s);
+
+/* SCHED-004: detach a strand from the sleep queue if it is on it.
+ *
+ * Idempotent: no-op when the strand is not on the queue (wait_next == NULL
+ * is the typical guard, but the helper walks the queue anyway so callers
+ * can pass any strand without first checking state).  Clears s->wait_next
+ * and decrements vm->wakeup_pending_count exactly once if the strand was
+ * actually present.
+ *
+ * Used by re-stamp paths (e.g. c_event_waituntil) that change a strand's
+ * state byte from one WAITING reason to another.  Without this helper,
+ * a SLEEP-blocked strand re-stamped to WAIT_EVENT would leave wait_next
+ * pointing into the sleep queue and wakeup_pending_count stale. */
+void sched_strand_unbind_from_sleep_queue(UStrand *s);
+
+/* REALM-011 / T69: splice a strand out of the cooperative ready queue if
+ * it is on it.  Idempotent (the strand's own ready_next/ready_prev guard
+ * the work).  Decrements vm->strand_runnable_count exactly once if the
+ * strand was actually present.  Safe to call whether the strand is on the
+ * queue (state == READY) or not (DORMANT/RUNNING/WAITING/DEAD).
+ *
+ * Called from urbi_realm_destroy before each strand free so that the
+ * vm->ready_head / ready_tail doubly-linked list never holds dangling
+ * pointers into freed strand memory. */
+void sched_strand_unbind_from_ready_queue(UStrand *s);
 
 #ifdef __cplusplus
 }

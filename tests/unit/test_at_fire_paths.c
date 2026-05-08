@@ -38,6 +38,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"        /* USTRAND_WAIT_WATCHER, USTRAND_STATE_READY */
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "sched/usched_cooperative.h"  /* sched_strand_block */
 #include "urbi/urbi.h"
 
@@ -116,7 +117,7 @@ UTEST(at_rising_edge_fires_body)
     g_cond_truthy  = 0;   /* start false — seed will be NIL */
 
     /* Install with condition hook off so seed is NIL (falsy). */
-    w = urbi_watcher_install_internal(
+    w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
@@ -165,7 +166,7 @@ UTEST(at_with_onleave_fires_on_falling_edge)
     g_cond_truthy  = 0;   /* seed false */
 
     /* body=NULL so fire is observed via test_watcher_fire_hook (no realm needed). */
-    w = urbi_watcher_install_internal(
+    w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
         NULL,
         /*onleave=*/(UClosure *)3,
@@ -221,7 +222,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
     vm.test_watcher_condition_hook = hook_cond_toggle;
     vm.test_watcher_fire_hook      = hook_fire_count;
 
-    w = urbi_watcher_install_internal(
+    w = urbi_watcher_install_for_test(
         &vm, UWATCHER_WHENEVER, NULL, (UClosure *)1,
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
@@ -258,7 +259,7 @@ UTEST(at_sync_runs_inline)
 
     /* body=(UClosure*)2 to exercise invoke_body_inline path.
      * AT_SYNC uses invoke_body_inline (no spawn, no realm needed). */
-    w = urbi_watcher_install_internal(
+    w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT_SYNC, NULL, (UClosure *)1,
         /*body=*/(UClosure *)2,
         NULL, NULL, 0U);
@@ -306,7 +307,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
     vm.test_watcher_condition_hook = hook_cond_toggle;
 
     /* Install WAITUNTIL with waiter_strand wired. */
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_WAITUNTIL, NULL, (UClosure *)1,
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
@@ -354,7 +355,7 @@ UTEST(at_no_onleave_falling_edge_no_crash)
     g_fire_count  = 0;
     g_cond_truthy = 0;
 
-    w = urbi_watcher_install_internal(
+    w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, (UClosure *)1,
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);

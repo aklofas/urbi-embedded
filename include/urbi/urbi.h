@@ -379,7 +379,8 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  * codes are byte-identical to the pre-v0.5.5 internal forms. */
 void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
-UVMError urbi_vm_run    (struct UVM *vm, const struct UModule *module, UValue *out);
+UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
+                         const struct UModule *module, UValue *out);
 
 #ifdef URBI_DEBUG
 /* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.

@@ -183,9 +183,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_catch → here (past_catch_pc) */
         {
             int past_catch_target = (int)emit_instr_count(e);
-            int off = past_catch_target - (jmp_past_catch_pc + 1);
             emit_patch_instr(e, jmp_past_catch_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_catch_pc,
+                                                past_catch_target)));
         }
 
         /* OP_TRY_END (outer) */
@@ -219,9 +220,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_finally → here */
         {
             int past_finally_target = (int)emit_instr_count(e);
-            int off = past_finally_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_finally_pc,
+                                                past_finally_target)));
         }
 
     } else if (has_catch) {
@@ -260,9 +262,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_handler → here */
         {
             int past_target = (int)emit_instr_count(e);
-            int off = past_target - (jmp_past_handler_pc + 1);
             emit_patch_instr(e, jmp_past_handler_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_handler_pc,
+                                                past_target)));
         }
 
     } else {
@@ -308,9 +311,10 @@ static uint8_t emit_try_frame(UEmitter *e, UAstNode *n, uint8_t rd) {
         /* Patch jmp_past_finally → here */
         {
             int past_target = (int)emit_instr_count(e);
-            int off = past_target - (jmp_past_finally_pc + 1);
             emit_patch_instr(e, jmp_past_finally_pc,
-                uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+                uinstr_enc_abx(OP_JMP, 0U,
+                               uemit_jmp_offset(jmp_past_finally_pc,
+                                                past_target)));
         }
     }
 
@@ -338,7 +342,17 @@ uint8_t emit_throw_arm(UEmitter *e, UAstNode *n) {
     uint8_t val_reg = emit_expr(e, n->u.throw_expr.value);
     if (e->error != EMIT_OK) return 0U;
     uemit_throw(e, val_reg, (uint32_t)n->line);
-    /* throw is a statement; return a nil reg for the block's last-stmt logic. */
+    /* throw is a statement; return a nil reg for the block's last-stmt logic.
+     *
+     * EMIT-018 fix (Wave 5, v0.5.7): force next_reg above fs_temp_floor
+     * before claiming rd.  Same root cause as EMIT-017 (AST_RETURN
+     * bare-return).  Defensive against future arms; current emit-arm
+     * contract syncs next_reg to freereg between siblings, so the bug is
+     * dormant.  Same fix shape as EMIT-017. */
+    {
+        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        if (e->next_reg < floor_val) e->next_reg = floor_val;
+    }
     uint8_t rd = e->next_reg;
     emit_instr(e, uinstr_enc_abc(OP_LOADNIL, rd, 0U, 0U), (uint32_t)n->line);
     e->next_reg++;
@@ -392,10 +406,21 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     uint8_t tag_reg = emit_expr(e, n->u.tag_prefix.tag_expr);
     if (e->error != EMIT_OK) return 0U;
 
-    /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding. */
+    /* tag_reg must fit in 4 bits for OP_PUSH_TAG encoding.
+     *
+     * EMIT-015 fix (Wave 5, v0.5.7): pre-fix the spill branch allocated
+     * spill = next_reg++ without verifying spill fit in 4 bits — if
+     * next_reg was already >= 16 (e.g., function with 16+ locals), the
+     * OP_PUSH_TAG packing `((flags<<4) | (reg & 0xF))` silently masked
+     * the high bits, producing bytecode that referenced the wrong
+     * register at runtime.  Now we reject explicitly; widening the
+     * encoding to a full byte is a v1.x bytecode change (filed as
+     * backlog under T129/Phase 22). */
     if (tag_reg > 15U) {
-        /* Spill into a lower register by moving (shouldn't happen in practice
-         * since tag-prefix appears near top of scope, but defensive). */
+        if (e->next_reg > 15U) {
+            e->error = EMIT_TAG_SPILL_OUT_OF_RANGE;
+            return 0U;
+        }
         uint8_t spill = e->next_reg++;
         if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
         if (e->current_fs->freereg < e->next_reg)
@@ -444,9 +469,10 @@ uint8_t emit_tag_prefix_arm(UEmitter *e, UAstNode *n) {
     /* Past-handler: JMP lands here. */
     {
         int past_handler_target = (int)emit_instr_count(e);
-        int off = past_handler_target - (jmp_past_handler_pc + 1);
         emit_patch_instr(e, jmp_past_handler_pc,
-            uinstr_enc_abx(OP_JMP, 0U, (uint16_t)(UEMIT_JMP_BIAS + off)));
+            uinstr_enc_abx(OP_JMP, 0U,
+                           uemit_jmp_offset(jmp_past_handler_pc,
+                                            past_handler_target)));
     }
 
     /* Return a nil register as the tag-prefix's value. */

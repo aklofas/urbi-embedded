@@ -1,8 +1,8 @@
 # Milestone: M2
 # Covers: function definition syntax; OP_CLOSURE in root chunk;
-#         closure values displayed as <?>; bare-function and closure-keyword
-#         rejection errors; zero-param, single-param, multi-param forms;
-#         named function definition (name ignored at v1.0).
+#         closure values displayed as <?>; bare-function, named-function, and
+#         closure-keyword rejection errors; zero-param, single-param,
+#         multi-param forms.
 
 # --- zero-param function produces a closure value
 function() { 42 }
@@ -16,9 +16,9 @@ function(x) { x + 1 }
 function(a, b) { a + b }
 [00000003] <?>
 
-# --- named function (name is accepted but ignored at v1.0)
+# --- named function decl is rejected at v1.0 (PARSE-004); use var = function
 function add(a, b) { a + b }
-[00000004] <?>
+[00000004] !!! <stdin>:1:10: named-function declarations are not supported at v1.0; use 'var name = function(...){...}'
 
 # --- function stored in a var (var statement yields the assigned value)
 var f = function(x) { x * 2 }

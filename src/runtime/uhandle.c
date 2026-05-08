@@ -13,12 +13,16 @@
 
 #define INITIAL_CAP  16U
 
-/* Grow the handle table.  Returns 0 on success, -1 on OOM. */
+/* Grow the handle table.  Returns 0 on success, -1 on OOM or overflow. */
 static int
 handle_table_grow(UVM *vm)
 {
     uint32_t old_cap = vm->handle_table_cap;
     uint32_t new_cap = old_cap ? old_cap * 2U : INITIAL_CAP;
+    /* FOUND-002: doubling overflow check.  At old_cap > UINT32_MAX/2 the
+     * `* 2U` wraps to a smaller value than old_cap; reject rather than
+     * silently shrink the table. */
+    if (old_cap != 0U && new_cap < old_cap) return -1;
     /* vm->alloc_fn with (ptr, n>0) == realloc semantics (umodule.h comment). */
     UValue *grown = (UValue *)vm->alloc_fn(vm->handle_table,
                                            new_cap * sizeof(UValue),
@@ -35,6 +39,12 @@ UHandle
 urbi_handle_create(UVM *vm, UValue v)
 {
     URBI_ASSERT_NOT_ISR(vm);
+    /* FOUND-002: pre-check next_id wraparound.  If the post-increment below
+     * would wrap to 0, the returned (slot+1) collides with URBI_HANDLE_INVALID
+     * AND the indexed write goes to a non-existent slot.  Reject here. */
+    if (vm->handle_table_next_id == 0xFFFFFFFFU) {
+        return URBI_HANDLE_INVALID;
+    }
     /* Grow if the next slot would be out of range. */
     if (vm->handle_table_next_id >= vm->handle_table_cap) {
         if (handle_table_grow(vm) != 0) return URBI_HANDLE_INVALID;
@@ -47,8 +57,9 @@ urbi_handle_create(UVM *vm, UValue v)
 UValue
 urbi_handle_get(UVM *vm, UHandle h)
 {
-    UValue nil = {0};
-    nil.kind = UVAL_NIL;
+    /* FOUND-010: ISR-safety symmetry with urbi_handle_create / _release. */
+    URBI_ASSERT_NOT_ISR(vm);
+    UValue nil = urbi_value_nil();
     if (h == URBI_HANDLE_INVALID) return nil;
     /* h is 1-indexed; slot = h - 1. */
     uint32_t slot = h - 1U;
@@ -63,9 +74,8 @@ urbi_handle_release(UVM *vm, UHandle h)
     if (h == URBI_HANDLE_INVALID) return;
     uint32_t slot = h - 1U;
     if (slot >= vm->handle_table_cap) return;
-    UValue nil = {0};
-    nil.kind = UVAL_NIL;
-    vm->handle_table[slot] = nil;
+    /* FOUND-019 + FOUND-048: zero-init UValue via canonical helper. */
+    vm->handle_table[slot] = urbi_value_nil();
     /* Slot is logically free but not reused at M3 — no free-list.
      * v1.x adds slot reuse by threading nil slots as a free-list. */
 }

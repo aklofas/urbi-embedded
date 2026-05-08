@@ -79,8 +79,9 @@ walk_uobject(struct UVM *vm, void *payload,
      * entries[] FAM, so recover the wrapper base via offsetof.  Same trick
      * walk_ushape uses for props_table -> UPropsTable. */
     if (o->slots != NULL && o->shape != NULL) {
-        UCell *wrapper = (UCell *)(void *)
-            ((uint8_t *)o->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) cast avoids casting-through-void. */
+        UCell *wrapper = (UCell *)
+            ((char *)o->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, wrapper);
         uint32_t i;
         for (i = 0U; i < o->shape->count; i++) {
@@ -163,8 +164,9 @@ walk_ushape(struct UVM *vm, void *payload,
      * array (test_ugc_object_cells.c Test 4) MUST allocate via the
      * UPropsTable wrapper to remain compatible with this walker. */
     if (s->props_table != NULL) {
-        UPropsTable *pt = (UPropsTable *)(void *)
-            ((uint8_t *)s->props_table - offsetof(UPropsTable, entries));
+        /* TIDY-006: single (char *) cast avoids casting-through-void. */
+        UPropsTable *pt = (UPropsTable *)
+            ((char *)s->props_table - offsetof(UPropsTable, entries));
         gc_shade_gray(vm, (UCell *)pt);
         uint32_t i;
         for (i = 0U; i < s->count; i++) {
@@ -253,20 +255,6 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
     if (mi->proto_instances != NULL) {
         gc_shade_gray(vm, (UCell *)mi->proto_instances);
     }
-}
-
-/* === walk_uprotoinstance (T16) ===
- *
- * No children to mark at T16: every UIC entry is zero-init
- * (recv_shapes / slots / uprops all NULL; topology_gen=0 = unfilled
- * sentinel).  TODO(T22+): once IC fill lands, walk each UIC.recv_shapes[e],
- * slots[e] (USlot UValue payload via cb), and uprops[e] for the live n
- * entries per site.  USymbol.name is interned and never collected. */
-static void
-walk_uprotoinstance(struct UVM *vm, void *payload,
-                    UGcRootCallback cb, void *ctx)
-{
-    (void)vm; (void)payload; (void)cb; (void)ctx;
 }
 
 /* === walk_uevent (spec #3 §3.1) ===
@@ -460,12 +448,20 @@ static const UType type_umodule_instance = {
     .destroy       = NULL,
 };
 
+/* UProtoInstance walker is a no-op: every UIC entry's children
+ * (recv_shapes[e], slots[e], uprops[e]) are reachable through stronger
+ * paths (UModuleInstance owns the UProtoInstanceArr; UShapes used by
+ * IC entries are kept alive via walk_ushape from the receiver-side
+ * UObject; UProps cells are kept alive via walk_ushape's props_table
+ * walk).  The previous walk_uprotoinstance function was an explicit
+ * no-op stub with a stale TODO; retired in v0.5.7-fixes Phase 13
+ * (OBJ-028) — substituted by walk_noop. */
 static const UType type_uproto_instance = {
     .type_tag      = UTYPE_PROTO_INSTANCE,
     .flags         = 0U,
     .payload_size  = 0U,
     .name          = "UProtoInstance",
-    .walk_payload  = walk_uprotoinstance,
+    .walk_payload  = walk_noop,
     .destroy       = NULL,
 };
 

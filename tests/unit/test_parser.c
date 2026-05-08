@@ -858,6 +858,27 @@ UTEST(parse_bare_function_with_name_errors) {
     ctx_destroy(&c);
 }
 
+UTEST(parse_at_sync_with_onleave_returns_dedicated_error) {
+    /* PARSE-009: pre-fix the at-sync arm rejected `onleave` with the
+     * generic PARSE_UNEXPECTED_TOKEN code and a free-form message; the
+     * dedicated PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE code names the
+     * conflict explicitly so callers can match on it programmatically. */
+    ParseCtx c;
+    ctx_init(&c, "var cond = 0; var body = 0; var h = 0; "
+                  "at sync (cond) body onleave h");
+    /* Drain leading var-decls. */
+    UAstNode *n = NULL;
+    for (int i = 0; i < 4; i++) {
+        n = uparse_next_statement(&c.p);
+        UASSERT(n != NULL);
+        if (n->kind == AST_ERROR) break;
+    }
+    UASSERT_EQ((int)AST_ERROR, (int)n->kind);
+    UASSERT_EQ((int)PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE,
+               (int)n->u.err.code);
+    ctx_destroy(&c);
+}
+
 UTEST(parse_closure_keyword_errors) {
     ParseCtx c;
     ctx_init(&c, "closure(x) { x + 1 }");
@@ -1148,6 +1169,8 @@ void test_parser_suite(void) {
               parse_bare_function_with_name_errors);
     utest_run("parse: 'closure(x) { x + 1 }' is PARSE_CLOSURE_KEYWORD error",
               parse_closure_keyword_errors);
+    utest_run("parse: 'at sync (cond) body onleave h' is PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE (PARSE-009)",
+              parse_at_sync_with_onleave_returns_dedicated_error);
     /* T10 — try/catch/finally + throw */
     utest_run("parse: 'try { 42 } finally { 1 }' → AST_TRY with finally_body, no catch",
               parse_try_finally_basic);

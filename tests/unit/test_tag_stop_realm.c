@@ -17,6 +17,7 @@
 #include "runtime/ucleanup.h"
 #include "tag/utag.h"
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
@@ -278,7 +279,7 @@ UTEST(realm_destroy_cascade_watchers)
     UASSERT(r->tag != NULL);
 
     /* Install a watcher owned by realm->tag. */
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, r->tag, NULL, NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT(r->tag->member_watchers_head == w);
@@ -318,7 +319,7 @@ UTEST(realm_destroy_drain_ordering)
      * effects, so hook semantics don't matter. */
     vm.test_watcher_onleave_hook = onleave_drain_noop;
 
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
         /*onleave=*/(UClosure *)1, NULL, 0U);
     UASSERT(w != NULL);

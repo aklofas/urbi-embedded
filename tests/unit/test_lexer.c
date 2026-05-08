@@ -890,6 +890,73 @@ static void lex_1ms_at_eof_consumed(void) {
     UASSERT_EQ(t.len, 3);
 }
 
+/* LEX-006: time-suffix multiplications must check for int64 overflow.  The
+   accumulator already guards digit-by-digit overflow, but the post-digit
+   suffix multiply was unguarded — a value just under INT64_MAX could still
+   overflow silently when scaled by 1000 (ms) ... 86400000000 (d).
+   For each suffix the boundary is value > INT64_MAX / mul. */
+static void lex_time_suffix_ms_overflows(void) {
+    /* INT64_MAX / 1000 = 9223372036854775; +1 must overflow. */
+    const char s[] = "9223372036854776ms";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+static void lex_time_suffix_s_overflows(void) {
+    /* INT64_MAX / 1000000 = 9223372036854; +1 must overflow. */
+    const char s[] = "9223372036855s";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+static void lex_time_suffix_m_overflows(void) {
+    /* INT64_MAX / 60000000 = 153722867280; +1 must overflow. */
+    const char s[] = "153722867281m";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+static void lex_time_suffix_h_overflows(void) {
+    /* INT64_MAX / 3600000000 = 2562047788; +1 must overflow. */
+    const char s[] = "2562047789h";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+static void lex_time_suffix_d_overflows(void) {
+    /* INT64_MAX / 86400000000 = 106751991; +1 must overflow.  This is the
+       smallest pre-suffix value that triggers overflow, and well below
+       what the digit accumulator catches on its own. */
+    const char s[] = "106751992d";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+}
+
+static void lex_time_suffix_d_at_boundary_succeeds(void) {
+    /* INT64_MAX / 86400000000 = 106751991; this exact value must NOT overflow. */
+    const char s[] = "106751991d";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_INT);
+    UASSERT_EQ(t.u.i, 106751991LL * 86400000000LL);
+}
+
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
@@ -995,4 +1062,10 @@ void test_lexer_suite(void) {
     utest_run("lex_1d_yields_86400000000", lex_1d_yields_86400000000);
     utest_run("lex_1mfoo_does_not_consume_suffix", lex_1mfoo_does_not_consume_suffix);
     utest_run("lex_1ms_at_eof_consumed", lex_1ms_at_eof_consumed);
+    utest_run("lex_time_suffix_ms_overflows", lex_time_suffix_ms_overflows);
+    utest_run("lex_time_suffix_s_overflows", lex_time_suffix_s_overflows);
+    utest_run("lex_time_suffix_m_overflows", lex_time_suffix_m_overflows);
+    utest_run("lex_time_suffix_h_overflows", lex_time_suffix_h_overflows);
+    utest_run("lex_time_suffix_d_overflows", lex_time_suffix_d_overflows);
+    utest_run("lex_time_suffix_d_at_boundary_succeeds", lex_time_suffix_d_at_boundary_succeeds);
 }

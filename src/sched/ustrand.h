@@ -309,8 +309,25 @@ int urbi_strand_arm_init(struct UStrand *s);
  * Returns 0 on success, -1 on allocation failure (s is left unarmed; caller
  * is responsible for tearing down s).
  *
+ * Precondition (CHSTR-005): s->stack must be NULL on entry.  Re-arming a
+ * strand that already owns a register stack would leak the prior allocation
+ * because urbi_strand_register_stack_alloc unconditionally overwrites s->stack.
+ * Asserted in -DURBI_DEBUG builds via URBI_INTERNAL_ASSERT inside the inner
+ * urbi_strand_arm_init helper.
+ *
  * NOTE: does NOT set s->module — callers that need module for diagnostics or
- * nested-proto lookup must set it explicitly after this call returns 0. */
+ * nested-proto lookup must set it explicitly after this call returns 0.
+ *
+ * NOTE (CHSTR-014, CHSTR-037 / T102 + T105): does NOT set s->module_instance
+ * either.  The M4-follow-up per-(vm, module) IC RAM tier requires each spawn
+ * site to wire module_instance differently:
+ *   - fork_spawn_child inherits parent's s->module_instance (siblings share
+ *     modules);
+ *   - the watcher body-spawn path pointer-range-searches vm->module_instances_head
+ *     to find the closure's owning UModuleInstance;
+ *   - the scratch-frame path synthesizes a one-entry UProtoInstanceArr shell.
+ * Without a post-arm assignment, OP_GETSLOT / OP_SETSLOT at frame_count == 0
+ * would dereference NULL via s->module_instance->proto_instances. */
 int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
 
 #ifdef __cplusplus

@@ -32,7 +32,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     urbi_vm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
 
     UValue result;
-    (void)urbi_vm_run(&vm, &module, &result);
+    (void)urbi_vm_run(&vm, NULL, &module, &result);
     /* Touch result so the compiler keeps the run-path live. */
     if ((int)result.kind < 0) {
         /* unreachable; UValKind is unsigned */

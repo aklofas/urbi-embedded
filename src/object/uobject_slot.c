@@ -9,8 +9,8 @@
 #include "object/uobject_internal.h"
 #include "object/ushape.h"
 #include "vm/uvm.h"
-#include "urbi/gc.h"            /* urbi_gc_alloc */
-#include "gc/ugc_incremental.h" /* gc_shade_gray */
+#include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_write barrier */
+#include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_write */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
 #include "module/umodule.h"
@@ -41,14 +41,17 @@ uprops_alloc(UVM *vm)
  * Two cases:
  *   1. Slot already exists on this lineage (urbi_shape_find_slot returns
  *      an index >= 0): in-place value update.  No shape transition, no
- *      USlotArray reallocation, no topology_gen bump.  Note: at v1.0
- *      `obj->slots[idx]` is the dense receiver storage — assigning to it
- *      stores the new value directly; no separate slot-write barrier is
- *      needed because the OLD value (about to be overwritten) cannot point
- *      at a black-marked cell that the GC has already scanned (USlot is
- *      reachable via walk_uobject's per-slot UValue cb, which the GC re-
- *      drives in the next slice — same reasoning as the UProps oget/oset
- *      writes in T17).
+ *      USlotArray reallocation, no topology_gen bump.  The new value is
+ *      written through the Dijkstra forward barrier (urbi_gc_slot_write):
+ *      if the receiver UObject is BLACK and the new value is a white
+ *      heap cell, the barrier shades the new value GRAY to maintain the
+ *      tri-color invariant.  The old value (about to be overwritten)
+ *      remains reachable through whichever other paths held it; that's
+ *      the GC's responsibility, not the slot-write site's.
+ *
+ *      OBJ-003: the previous comment asserted "OLD value cannot point at
+ *      a black-marked cell" — backwards reasoning.  Forward Dijkstra
+ *      protects the *new* value, not the old.
  *
  *   2. Slot is new (find_slot returns -1): transition to the child shape
  *      via urbi_shape_transition_add_slot, allocate a fresh USlotArray
@@ -66,9 +69,17 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
         return -1;
     }
 
-    /* Case 1: slot already in this lineage — in-place value update. */
+    /* Case 1: slot already in this lineage — in-place value update.
+     * Route through the Dijkstra forward slot-write barrier: if the
+     * receiver UObject cell is BLACK and the new value is a white
+     * heap cell, the barrier shades the new value gray.  Without the
+     * barrier, the new white child under a black parent would be
+     * unreachable in the mark phase and could be swept while still
+     * reachable via this slot.  The barrier helper is a hook only;
+     * the actual store happens immediately after. */
     int32_t existing = urbi_shape_find_slot(obj->shape, name);
     if (existing >= 0) {
+        urbi_gc_slot_write(vm, (UCell *)obj, (uint32_t)existing, value);
         obj->slots[existing] = value;
         urbi_emit_slot_change_if_subscribed(vm, obj, name, value);
         return 0;
@@ -114,8 +125,11 @@ urbi_object_set_local_slot(UVM *vm, UObject *obj, USymbol *name, UValue value)
      * obj->slots is NULL for a freshly allocated UObject (root shape, no
      * slots yet); only shade if there's an existing wrapper. */
     if (obj->slots != NULL) {
-        UCell *old_wrapper = (UCell *)(void *)
-            ((uint8_t *)obj->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) intermediate avoids casting-through-void
+         * on uint8_t * → UCell *.  The container_of offsetof recovery is
+         * alignment-safe by USlotArray's layout. */
+        UCell *old_wrapper = (UCell *)
+            ((char *)obj->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, old_wrapper);
     }
 
@@ -197,8 +211,11 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
 
     /* Shade the OLD wrapper (forward Dijkstra barrier — about to drop). */
     if (obj->slots != NULL) {
-        UCell *old_wrapper = (UCell *)(void *)
-            ((uint8_t *)obj->slots - offsetof(USlotArray, entries));
+        /* TIDY-006: single (char *) intermediate avoids casting-through-void
+         * on uint8_t * → UCell *.  The container_of offsetof recovery is
+         * alignment-safe by USlotArray's layout. */
+        UCell *old_wrapper = (UCell *)
+            ((char *)obj->slots - offsetof(USlotArray, entries));
         gc_shade_gray(vm, old_wrapper);
     }
 
@@ -219,6 +236,16 @@ urbi_object_remove_slot(UVM *vm, UObject *obj, const USymbol *name)
  * new_shape->props_table[idx].  set_property_value mutates the existing
  * UProps in-place. */
 
+/* uvalue_eq — bitwise equality on a UValue's tag + payload.  Sufficient
+ * for the v1.0 "is this the same install value?" idempotent-install
+ * detection in urbi_object_install_property: pointer-identity for heap-
+ * bearing kinds, integer/float bit-equality otherwise. */
+static int
+uvalue_eq(UValue a, UValue b)
+{
+    return a.kind == b.kind && a.v.i == b.v.i;
+}
+
 int
 urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                              uint8_t flag_bit, UValue value)
@@ -230,10 +257,105 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
     if (idx < 0) {
         return -1;   /* slot must exist before installing a property on it */
     }
+    /* Reject unsupported flag_bit BEFORE any allocation. */
+    if (flag_bit != URBI_SLOT_FLAG_OGET
+        && flag_bit != URBI_SLOT_FLAG_OSET
+        && flag_bit != URBI_SLOT_FLAG_CONSTANT) {
+        return -1;
+    }
 
-    /* Allocate a fresh UProps if the slot doesn't have one yet, or copy
-     * the existing one (immutability — the existing UProps may be shared
-     * with another shape; see USlot/UProps spec §5.1). */
+    /* OBJ-041: detect a TRUE no-op idempotent install — flag bit already
+     * set AND the existing UProps's relevant field already holds the
+     * same value.  In that case the install is observably equivalent to
+     * doing nothing: no shape transition, no UProps allocation, no
+     * topology_gen bump.
+     *
+     * The shape's per-slot 4-bit nibble in `flags` is the cheap source
+     * of truth for "is the bit already set?" — see ushape.c §4.1.  For
+     * indices >= 8 we conservatively skip the no-op detection because
+     * the v1.0 packed nibble doesn't represent those slots. */
+    if (idx < 8) {
+        const uint32_t shift      = (uint32_t)idx * 4U;
+        const uint32_t old_nibble = (obj->shape->flags >> shift) & 0xFU;
+        const int already_set = (old_nibble & ((uint32_t)flag_bit & 0xFU)) != 0U;
+        if (already_set
+            && obj->shape->props_table != NULL
+            && obj->shape->props_table[idx] != NULL) {
+            const UProps *cur = obj->shape->props_table[idx];
+            int same_value = 0;
+            if (flag_bit == URBI_SLOT_FLAG_OGET) {
+                same_value = uvalue_eq(cur->oget, value);
+            } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
+                same_value = uvalue_eq(cur->oset, value);
+            } else {
+                /* CONSTANT carries no payload; the bit-already-set check
+                 * above is sufficient — re-installing is a true no-op. */
+                same_value = 1;
+            }
+            if (same_value) {
+                return 0;   /* idempotent no-op: no allocation, no bump */
+            }
+        }
+    }
+
+    /* Materialise sibling shape (or clone) FIRST.  OBJ-006: if this
+     * step OOMs, no UProps cell is left dangling.
+     *
+     * Two cases — non-idempotent transition vs idempotent (flag already
+     * set).  In the idempotent case `urbi_shape_transition_property`
+     * returns parent unchanged; we fork a fresh sibling clone in line
+     * with OBJ-005 so the publish step never mutates `obj->shape`. */
+    UShape *new_shape = urbi_shape_transition_property(vm, obj->shape,
+                                                       (uint32_t)idx,
+                                                       flag_bit, 1);
+    if (new_shape == NULL) {
+        return -1;
+    }
+
+    UPropsTable *clone_pt = NULL;
+    UShape *clone = NULL;
+    if (new_shape == obj->shape) {
+        /* OBJ-005: idempotent transition — the existing shape is
+         * potentially shared with other UObjects.  Allocate a fresh
+         * sibling clone (same lineage / flags / identity-fresh / fresh
+         * props_table) BEFORE the UProps so that an OOM at any point
+         * leaks nothing GC-managed but a sibling shape (which the next
+         * sweep reclaims). */
+        UCell *sc = urbi_gc_alloc(vm, sizeof(UShape), UTYPE_SHAPE);
+        if (sc == NULL) {
+            return -1;
+        }
+        clone = (UShape *)sc;
+        clone->name        = obj->shape->name;
+        clone->index       = obj->shape->index;
+        clone->count       = obj->shape->count;
+        clone->flags       = obj->shape->flags;
+        clone->_pad        = 0U;
+        clone->parent      = obj->shape->parent;
+        clone->transitions = NULL;
+        clone->props_table = NULL;
+
+        UCell *pc = urbi_gc_alloc(vm,
+                                  sizeof(UPropsTable)
+                                  + (size_t)obj->shape->count
+                                    * sizeof(UProps *),
+                                  UTYPE_PROPS_TABLE);
+        if (pc == NULL) {
+            return -1;
+        }
+        clone_pt = (UPropsTable *)pc;
+        clone_pt->n    = obj->shape->count;
+        clone_pt->_pad = 0U;
+        for (uint32_t i = 0U; i < clone_pt->n; i++) {
+            clone_pt->entries[i] = (obj->shape->props_table != NULL)
+                                 ? obj->shape->props_table[i]
+                                 : NULL;
+        }
+    }
+
+    /* Allocate the fresh UProps now that the shape transition has
+     * succeeded.  OBJ-006: this allocation order ensures that a
+     * transition-failure path leaves no UProps cell dangling. */
     const UProps *existing = (obj->shape->props_table != NULL)
                        ? obj->shape->props_table[idx]
                        : NULL;
@@ -246,59 +368,21 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
         fresh->oset     = existing->oset;
         fresh->constant = existing->constant;
     }
-    /* Apply the install per flag_bit. */
     if (flag_bit == URBI_SLOT_FLAG_OGET) {
         fresh->oget = value;
     } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
         fresh->oset = value;
-    } else if (flag_bit == URBI_SLOT_FLAG_CONSTANT) {
+    } else {
         fresh->constant = 1U;
         (void)value;   /* CONSTANT carries no payload */
-    } else {
-        return -1;   /* unsupported flag bit */
     }
 
-    /* Materialise sibling shape with the new flag bit.  install=1 even when
-     * the bit is already set; transition_property is idempotent and will
-     * return parent unchanged in that case. */
-    UShape *new_shape = urbi_shape_transition_property(vm, obj->shape,
-                                                       (uint32_t)idx,
-                                                       flag_bit, 1);
-    if (new_shape == NULL) {
-        return -1;
-    }
-    /* If the sibling is the same shape (idempotent no-op), it has no
-     * props_table of its own — the existing one (which may be NULL) stays
-     * in place.  We still need to publish the freshly-allocated UProps,
-     * because we just mutated its oget/oset/constant fields.  Allocate a
-     * UPropsTable wrapper if the parent had none; otherwise mutate in place
-     * (in-place mutation is the §5 cache-invalidation point — bumping
-     * topology_gen below covers any IC entries). */
-    if (new_shape == obj->shape) {
-        /* Idempotent flag transition.  Need a props_table if there isn't
-         * one; otherwise overwrite the per-slot UProps* pointer. */
-        if (obj->shape->props_table == NULL) {
-            /* Allocate a wrapper cell with all NULL entries, then write
-             * fresh into the slot's index. */
-            UCell *c = urbi_gc_alloc(vm,
-                                     sizeof(UPropsTable)
-                                     + (size_t)obj->shape->count
-                                       * sizeof(UProps *),
-                                     UTYPE_PROPS_TABLE);
-            if (c == NULL) {
-                return -1;
-            }
-            UPropsTable *pt = (UPropsTable *)c;
-            pt->n    = obj->shape->count;
-            pt->_pad = 0U;
-            for (uint32_t i = 0U; i < pt->n; i++) {
-                pt->entries[i] = NULL;
-            }
-            pt->entries[idx] = fresh;
-            obj->shape->props_table = pt->entries;
-        } else {
-            obj->shape->props_table[idx] = fresh;
-        }
+    /* Publish: write the new UProps into the destination shape's
+     * props_table[idx]. */
+    if (clone != NULL) {
+        clone_pt->entries[idx] = fresh;
+        clone->props_table     = clone_pt->entries;
+        obj->shape             = clone;
     } else {
         /* Genuine sibling.  transition_property already allocated its
          * props_table; write the new UProps into the slot's index. */
@@ -394,19 +478,37 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
         || obj->shape->props_table[idx] == NULL) {
         return -1;   /* no UProps to mutate */
     }
-    UProps *p = obj->shape->props_table[idx];
-    if (flag_bit == URBI_SLOT_FLAG_OGET) {
-        p->oget = value;
-    } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
-        p->oset = value;
-    } else {
+    if (flag_bit != URBI_SLOT_FLAG_OGET
+        && flag_bit != URBI_SLOT_FLAG_OSET) {
         return -1;
     }
+
+    /* OBJ-018: copy-on-write the UProps cell before mutation.  The
+     * existing UProps* may be shared via UPropsTable seeding with a
+     * sibling shape (see ushape.c::alloc_props_table); an in-place
+     * write of `oget`/`oset` would propagate the mutation to every
+     * shape that aliased this UProps pointer.  Allocating a fresh
+     * UProps and rewriting the props_table[idx] entry isolates this
+     * shape's view from any aliasing sibling. */
+    UProps *existing = obj->shape->props_table[idx];
+    UProps *fresh = uprops_alloc(vm);
+    if (fresh == NULL) {
+        return -1;
+    }
+    fresh->oget     = existing->oget;
+    fresh->oset     = existing->oset;
+    fresh->constant = existing->constant;
+    if (flag_bit == URBI_SLOT_FLAG_OGET) {
+        fresh->oget = value;
+    } else {
+        fresh->oset = value;
+    }
+    obj->shape->props_table[idx] = fresh;
+
     /* Bumping topology_gen here is the load-bearing invariant per topology
-     * spec §4.1 row 7: cached IC uprops[] entries point at this same UProps
-     * pointer, so the pointer itself is still live — but the value behind it
-     * just changed and IC dispatch must re-fetch via the slow path to pick
-     * up the new getter/setter. */
+     * spec §4.1 row 7: cached IC uprops[] entries point at the old UProps
+     * pointer, which is now stale — IC dispatch must re-fetch via the
+     * slow path to pick up the new UProps cell. */
     vm->topology_gen++;
     return 0;
 }

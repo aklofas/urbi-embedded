@@ -175,37 +175,19 @@ void uwatcher_pool_destroy(struct UVM *vm);
  * inserting the result into the active and tag member lists. */
 struct UWatcher *uwatcher_pool_alloc(struct UVM *vm);
 
-/* === Install / unregister (C-internal; not in public urbi headers) ===
+/* === Unregister (C-internal; not in public urbi headers) ===
  *
- * Install:
- *   - allocate from pool + wire active_watchers_head.
- *   - copy read_set (cells[] + bit-6 UGC_HAS_WATCHER_OBSERVER).
- *   - insert into owning_tag->member_watchers_head.
- *
- * Unregister:
+ * urbi_watcher_unregister_internal:
  *   - clear bit-6 on cells no other watcher observes.
  *   - unlink from active_watchers_head + owning_tag->member_watchers_head.
  *   - return slot to pool.
  *
- * **Test-only seam:** `urbi_watcher_install_internal` is the low-level pool
- * + wiring path used by unit tests (`tests/unit/test_watcher_*.c` etc.).  It
- * does NOT run real bytecode dispatch on the condition closure — install-
- * time seeding short-circuits via `test_watcher_condition_hook` when set,
- * else seeds nil.  Production install goes through
- * `install_watcher_runtime` (uwatcher_install.c), which uses the real
- * scratch-frame helper.  Tests passing fake `(UClosure *)1` sentinels MUST
- * also set `test_watcher_condition_hook` before any subsequent eval, since
- * eval *does* dispatch real bytecode (since v0.5.1-cond-unstub). */
-
-struct UWatcher *urbi_watcher_install_internal(
-    struct UVM       *vm,
-    uint8_t           mode,
-    struct UTag      *owning_tag,
-    UClosure         *condition,
-    UClosure         *body,
-    UClosure         *onleave,
-    UCell           **read_set,
-    size_t            read_set_count);
+ * Production install entry points live in src/watcher/uwatcher_install.c
+ * (`install_watcher_runtime`, `install_at_event_runtime`); both inline their
+ * own pool-alloc + list-wiring sequence.  Unit tests that exercise the pool
+ * primitive directly use `urbi_watcher_install_for_test`
+ * (tests/unit/twatcher_install_helper.{c,h}); WATCH-023 retired the former
+ * `urbi_watcher_install_internal` test seam from this header. */
 
 void urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w);
 

@@ -142,7 +142,10 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
             : (fs->ic_names_cap < 128U ? (uint16_t)(fs->ic_names_cap * 2U) : 256U);
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
-        USymbol **fresh = (USymbol **)alloc(fs->ic_names,
+        /* TIDY-005: explicit (void *) cast on the inout pointer prevents
+         * bugprone-multi-level-implicit-pointer-conversion from firing on
+         * USymbol ** → void * decay through alloc's first argument. */
+        USymbol **fresh = (USymbol **)alloc((void *)fs->ic_names,
                                             (size_t)new_cap * sizeof(USymbol *),
                                             e->module->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return -1; }
@@ -334,15 +337,28 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * before any OP_GETSLOT / OP_SETSLOT that targets the global object,
      * even when the first global reference is inside a branch arm that
      * may not be taken at runtime.  Pure-local functions are left
-     * prologue-free (no wasted instruction). */
+     * prologue-free (no wasted instruction).
+     *
+     * T20 (EMIT-003): capture prologue_prepend_instr's return value.  On
+     * OOM (instruction-buffer / line-table grow failure) it sets
+     * e->error = EMIT_OOM internally.  The IC-array branches below gate
+     * on e->error == EMIT_OK so a prologue failure cleanly short-circuits
+     * the rest of close — no wasted IC-array allocation against a proto
+     * whose instructions buffer is in an indeterminate partial-shift
+     * state.  The cleanup-only tail (free fs->ic_names, reset prev_line,
+     * pop e->current_fs) still runs unconditionally. */
     if (fs->references_global && e->error == EMIT_OK) {
         uint32_t prologue = uinstr_enc_abc(OP_LOAD_REALM_GLOBAL,
                                            fs->r_global_slot, 0U, 0U);
-        prologue_prepend_instr(e, prologue);
+        if (!prologue_prepend_instr(e, prologue)) {
+            /* prologue_prepend_instr already set e->error = EMIT_OOM. */
+        }
     }
 
-    /* Roll max_reg_seen into target_proto when closing a nested function. */
-    if (fs->target_proto != NULL) {
+    /* Roll max_reg_seen into target_proto when closing a nested function.
+     * Skipped on prior error to avoid touching a proto whose instructions
+     * buffer may be in a half-prepended state. */
+    if (fs->target_proto != NULL && e->error == EMIT_OK) {
         UProto *p = (UProto *)fs->target_proto;
         p->max_reg  = fs->max_reg_seen;
         p->nupvals  = (uint8_t)fs->nupvalues;
@@ -350,9 +366,16 @@ UFuncState *uemit_close_function(UEmitter *e) {
         /* M4 T15: copy IC names side table into the UProto.  Use the
          * proto's own allocator (inherited from the module at
          * umodule_alloc_nested_proto time); the resulting array is freed
-         * by umodule_destroy_proto_buffers. */
-        p->ic_count = fs->ic_next;
-        if (p->ic_count > 0U) {
+         * by umodule_destroy_proto_buffers.
+         *
+         * T22 (EMIT-005): mirror the module-sibling pattern below — only
+         * write p->ic_count / p->ic_names after the IC-array allocation
+         * succeeds.  Pre-fix, the proto path assigned p->ic_count first,
+         * then reset it to 0 on OOM (silent zeroing).  The new shape
+         * leaves p->ic_count at its zero-init value when allocation
+         * fails and propagates the failure via e->error alone, matching
+         * the module path. */
+        if (fs->ic_next > 0U) {
             UModuleAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
             if (palloc == NULL) palloc = emit_alloc_for(e->module);
@@ -361,15 +384,14 @@ UFuncState *uemit_close_function(UEmitter *e) {
                 e->error = EMIT_OOM;
             } else {
                 USymbol **dst = (USymbol **)palloc(NULL,
-                    (size_t)p->ic_count * sizeof(USymbol *), p->alloc_ud);
+                    (size_t)fs->ic_next * sizeof(USymbol *), p->alloc_ud);
                 if (dst == NULL) {
                     e->error = EMIT_OOM;
-                    p->ic_count = 0;
-                    p->ic_names = NULL;
                 } else {
-                    for (uint16_t i = 0; i < p->ic_count; i++) {
+                    for (uint16_t i = 0; i < fs->ic_next; i++) {
                         dst[i] = fs->ic_names[i];
                     }
+                    p->ic_count = fs->ic_next;
                     p->ic_names = dst;
                 }
             }
@@ -462,7 +484,8 @@ UFuncState *uemit_close_function(UEmitter *e) {
     if (fs->ic_names != NULL) {
         UModuleAllocFn alloc = emit_alloc_for(e->module);
         if (alloc != NULL) {
-            alloc(fs->ic_names, 0, e->module->alloc_ud);
+            /* TIDY-005: explicit (void *) cast on free path. */
+            alloc((void *)fs->ic_names, 0, e->module->alloc_ud);
         }
         fs->ic_names = NULL;
         fs->ic_names_cap = 0;

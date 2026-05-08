@@ -95,6 +95,118 @@ ic_resolve_pi(UStrand *s)
     return cur_cl ? cur_cl->proto_inst : NULL;
 }
 
+/* --- vm_install_check_closure_operand (VM-003) ---
+   Reactive-install opcode operand-register kind check.  The emitter places
+   UClosure values into the cond / body / onleave registers via
+   OP_CLOSURE before the install opcode dispatches, so under correct
+   bytecode this check is a no-op.  Hand-crafted bytecode (or a future
+   emit bug) could leave a non-closure value there; without the check the
+   dispatcher casts (UClosure *)R[reg].v.p anyway and downstream watcher
+   ops dereference garbage.
+
+   Returns 1 on success.  On failure sets vm->last_error = UVM_TYPE_ERROR
+   with a diagnostic message and returns 0; caller is expected to HALT()
+   immediately.  vm_format_type_error_msg's bounded buffer is sufficient
+   for the longest opcode name + slot name combination here. */
+static int
+vm_install_check_closure_operand(UVM *vm, const UStrand *s, uint8_t reg,
+                                 const char *opcode_name, const char *slot_name)
+{
+    if (s->R[reg].kind != (uint8_t)UVAL_CLOSURE) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "reactive install: register operand is not a closure");
+        (void)opcode_name;  /* available for future diagnostic enrichment */
+        (void)slot_name;
+        return 0;
+    }
+    return 1;
+}
+
+/* --- vm_install_check_event_operand (VM-013) ---
+   AT_EVENT install opcode operand-register kind check.  Mirrors
+   vm_install_check_closure_operand but for OP_AT_EVENT_INSTALL /
+   OP_AT_EVENT_SYNC_INSTALL: the A register must hold a UVAL_EVENT
+   (produced by OP_GETSLOT_CHANGE_EVENT or by stdlib Event.new).
+   Without this check the dispatcher casts (UEvent *)R[A].v.p directly
+   and install_at_event_runtime dereferences garbage.
+
+   Routes through uvalue_is_event() rather than a raw kind comparison
+   so the predicate location stays single-source-of-truth (T29's
+   refactor pattern). */
+static int
+vm_install_check_event_operand(UVM *vm, const UStrand *s, uint8_t reg,
+                               const char *opcode_name)
+{
+    if (!uvalue_is_event(s->R[reg])) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "AT_EVENT install: register operand is not an event");
+        (void)opcode_name;
+        return 0;
+    }
+    return 1;
+}
+
+/* --- vm_install_result_is_fatal / vm_install_fault (VM-002, VM-012) ---
+   Translate a UWatcherInstallResult from install_watcher_runtime /
+   install_at_event_runtime into a VM fault.  Prior to v0.5.7-fixes Phase 5
+   the install opcodes ignored the return value entirely, so OOM-pool /
+   trace-fault / recursive-install errors became silent no-ops: the strand
+   sailed past a watcher that was never armed, with no observable diagnostic
+   beyond a host_log_fn warning.  This pair makes the dispatcher promote
+   those errors to UVM faults so the program halts cleanly instead of
+   continuing with broken reactive semantics.
+
+   READSET_OVER is currently treated as fatal as well: today
+   install_watcher_runtime returns it from Phase 4 (before pool_alloc) so
+   the watcher is not actually installed; treating it as recoverable would
+   diverge from the spec #2 §7.4 "fires on any slot write — conservative
+   but correct" intent without the matching install path.  When that path
+   lands (filed as backlog), demote READSET_OVER here to a non-fatal log
+   and continue to NEXT(). */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline))
+#endif
+static inline int
+vm_install_result_is_fatal(UWatcherInstallResult r)
+{
+    return r != URBI_INSTALL_OK;
+}
+
+static void
+vm_install_fault(UVM *vm, UWatcherInstallResult r, const char *opcode_name)
+{
+    switch (r) {
+        case URBI_INSTALL_OOM_POOL:
+            vm->last_error = UVM_OOM;
+            vm_format_oom(vm, sizeof(struct UWatcher));
+            break;
+        case URBI_INSTALL_READSET_OVER:
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm,
+                "watcher install: read-set exceeds URBI_WATCHER_READSET_MAX");
+            break;
+        case URBI_INSTALL_TRACE_FAULT:
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm,
+                "watcher install: condition threw during trace");
+            break;
+        case URBI_INSTALL_RECURSIVE:
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm,
+                "watcher install attempted from within scratch-frame eval");
+            break;
+        case URBI_INSTALL_OK:
+        default:
+            /* Caller should not invoke this on URBI_INSTALL_OK.  Defensive. */
+            vm->last_error = UVM_TYPE_ERROR;
+            vm_format_type_error_msg(vm, "watcher install: unknown result");
+            break;
+    }
+    (void)opcode_name;  /* available for future diagnostic enrichment */
+}
+
 /* --- dispatch_loop_until_yield ---
    The core execution engine (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
@@ -391,6 +503,10 @@ dispatch:
                     if (in_stack) {
                         UUpvalCell *uvc = vm_open_upvalue(vm, s, &s->R[src_idx]);
                         if (uvc == NULL) {
+                            /* VM-005: cl is at head of s->closure_list (prepended
+                             * by vm_alloc_closure).  Unlink before freeing so
+                             * subsequent walks do not dereference freed memory. */
+                            s->closure_list = cl->next_alloc;
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
                             vm->last_error = UVM_OOM;
                             vm_format_oom(vm, sizeof(UUpvalCell));
@@ -405,6 +521,8 @@ dispatch:
                                          ? s->frames[s->frame_count - 1].closure
                                          : s->entry_closure;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
+                            /* VM-005: same unlink-before-free as the OOM arm. */
+                            s->closure_list = cl->next_alloc;
                             vm->alloc_fn(cl, 0, vm->alloc_ud);
                             vm->last_error = UVM_TYPE_ERROR;
                             vm_format_type_error_msg(vm, "CLOSURE: upvalue re-capture out of range");
@@ -469,8 +587,9 @@ dispatch:
             s->R        = &s->R[a + 1];
             s->pc       = callee->proto->instructions;
             s->pc_base  = s->pc;
-            s->cur_consts = callee->proto->constants ? callee->proto->constants
-                                                     : s->module->constants;
+            /* FOUND-032: route through the shared helper so OP_CALL and
+             * pop_call_frame cannot drift on the constants-from-closure rule. */
+            s->cur_consts = ustrand_consts_for_closure(s, callee);
 
             /* Zero registers beyond nparams up to max_reg. */
             {
@@ -570,9 +689,10 @@ dispatch:
         CASE(OP_YIELD) {
             /* Cooperative yield: advance past this opcode, transition to READY,
                and return to the scheduler.  The urbi_vm_run adapter re-enters
-               dispatch_loop_until_yield until strand is DEAD. */
+               dispatch_loop_until_yield until strand is DEAD.
+               sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+               and overwrites with READY on enqueue, so no pre-set here. */
             s->pc++;
-            s->state = USTRAND_STATE_READY;
             sched_strand_yield(s);
             steps_consumed++;
             goto exit_strand;
@@ -1087,19 +1207,36 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_INSTALL", "body")) HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_INSTALL", "onleave"))
+                HALT();
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
+            UWatcherInstallResult r =
+                install_watcher_runtime(vm, s, UWATCHER_AT, cond, body, onleave, NULL);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_AT_INSTALL");
+                HALT();
+            }
             NEXT();
         }
 
         CASE(OP_AT_SYNC_INSTALL) {
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_AT_SYNC_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_SYNC_INSTALL", "body")) HALT();
             UClosure *cond = (UClosure *)s->R[A].v.p;
             UClosure *body = (UClosure *)s->R[B].v.p;
-            install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
+            UWatcherInstallResult r =
+                install_watcher_runtime(vm, s, UWATCHER_AT_SYNC, cond, body, NULL, NULL);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_AT_SYNC_INSTALL");
+                HALT();
+            }
             NEXT();
         }
 
@@ -1107,10 +1244,20 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_WHENEVER_INSTALL", "cond")) HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_WHENEVER_INSTALL", "body")) HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_WHENEVER_INSTALL", "onleave"))
+                HALT();
             UClosure *cond    = (UClosure *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
+            UWatcherInstallResult r =
+                install_watcher_runtime(vm, s, UWATCHER_WHENEVER, cond, body, onleave, NULL);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_WHENEVER_INSTALL");
+                HALT();
+            }
             NEXT();
         }
 
@@ -1130,9 +1277,15 @@ dispatch:
          * Spec #2 §6.3. */
         CASE(OP_WAITUNTIL_INSTALL) {
             uint8_t A = uinstr_a(*s->pc);
+            if (!vm_install_check_closure_operand(vm, s, A, "OP_WAITUNTIL_INSTALL", "cond"))
+                HALT();
             UClosure *cond = (UClosure *)s->R[A].v.p;
             UWatcherInstallResult r = install_watcher_runtime(
                 vm, s, UWATCHER_WAITUNTIL, cond, NULL, NULL, s);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_WAITUNTIL_INSTALL");
+                HALT();
+            }
             if (r == URBI_INSTALL_OK && USTRAND_IS_WAITING(s)) {
                 /* Strand parked by T40 (cond started false).  Advance pc past
                  * this instruction so resume lands at the correct next opcode.
@@ -1162,10 +1315,22 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_INSTALL"))
+                HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_INSTALL", "body"))
+                HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_INSTALL", "onleave"))
+                HALT();
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
+            UWatcherInstallResult r =
+                install_at_event_runtime(vm, s, UWATCHER_AT_EVENT, e, body, onleave);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_AT_EVENT_INSTALL");
+                HALT();
+            }
             NEXT();
         }
 
@@ -1173,10 +1338,22 @@ dispatch:
             uint8_t A = uinstr_a(*s->pc);
             uint8_t B = uinstr_b(*s->pc);
             uint8_t C = uinstr_c(*s->pc);
+            if (!vm_install_check_event_operand(vm, s, A, "OP_AT_EVENT_SYNC_INSTALL"))
+                HALT();
+            if (!vm_install_check_closure_operand(vm, s, B, "OP_AT_EVENT_SYNC_INSTALL", "body"))
+                HALT();
+            if (C != 0xFFU
+                && !vm_install_check_closure_operand(vm, s, C, "OP_AT_EVENT_SYNC_INSTALL", "onleave"))
+                HALT();
             UEvent   *e       = (UEvent *)s->R[A].v.p;
             UClosure *body    = (UClosure *)s->R[B].v.p;
             UClosure *onleave = (C == 0xFFU) ? NULL : (UClosure *)s->R[C].v.p;
-            install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
+            UWatcherInstallResult r =
+                install_at_event_runtime(vm, s, UWATCHER_AT_EVENT_SYNC, e, body, onleave);
+            if (vm_install_result_is_fatal(r)) {
+                vm_install_fault(vm, r, "OP_AT_EVENT_SYNC_INSTALL");
+                HALT();
+            }
             NEXT();
         }
 
@@ -1202,18 +1379,12 @@ dispatch:
                 NEXT();
             }
 
-            /* Resolve IC table.  NOTE: this site is missing the entry_closure
-             * branch present in ic_resolve_pi — known VM-001 bug; wave-5-fixes. */
-            UProtoInstance *pi = NULL;
-            if (s->frame_count == 0) {
-                if (s->module_instance != NULL
-                    && s->module_instance->proto_instances != NULL) {
-                    pi = &s->module_instance->proto_instances->entries[0];
-                }
-            } else {
-                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
-                if (cur_cl != NULL) pi = cur_cl->proto_inst;
-            }
+            /* Resolve IC table.  Mirrors ic_resolve_pi (VM-008): at
+             * frame_count == 0, prefer s->entry_closure->proto_inst when
+             * present so closures imported from a foreign module/chunk
+             * use their own IC table rather than the calling chunk's
+             * entries[0].  VM-001 closed in v0.5.7-fixes Phase 5. */
+            UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT_CHANGE_EVENT: no IC table bound");
@@ -1279,7 +1450,8 @@ safepoint:
         if (s->state == USTRAND_STATE_DEAD) goto exit_strand;
     }
     if (s->instruction_budget_remaining == 0) {
-        s->state = USTRAND_STATE_READY;
+        /* sched_strand_yield asserts entry state == RUNNING (SCHED-003)
+         * and overwrites with READY on enqueue, so no pre-set here. */
         sched_strand_yield(s);
         goto exit_strand;
     }

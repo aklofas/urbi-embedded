@@ -31,6 +31,7 @@
 #include "urbi/urbi.h"        /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "vm/uvm.h"         /* UVM, UVM_STACK_CAP, vm->alloc_fn */
+#include "vm/uvm_internal.h" /* vm_format_type_error_msg (VM-003) */
 #include "runtime/uframe.h"      /* UVM_STACK_CAP (also in uvm.h → uframe.h) */
 #include <stddef.h>
 #include <stdint.h>
@@ -116,6 +117,17 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     }
 
     child->module = s->module;   /* diagnostics + nested-proto lookup */
+    /* CHSTR-014 (T102): inherit the parent's UModuleInstance pointer so that
+     * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
+     * frame_count == 0 (which reads s->module_instance->proto_instances
+     * ->entries[0].ic_table).  ,-spawned and &-spawned siblings execute in
+     * the same module as their parent, so the IC RAM tier is shared.
+     * Without this assignment, the child runs with module_instance == NULL
+     * and the first OP_GETSLOT in the child closure would dereference NULL.
+     * The watcher body-spawn path (uwatcher_spawn.c) handles this differently
+     * because the body closure's owning module may differ from the installing
+     * strand's module; fork siblings have no such ambiguity. */
+    child->module_instance = s->module_instance;
     /* child_closure is owned by parent's closure_list; do not double-free it.
      * If the child creates sub-closures via OP_CLOSURE they are added to
      * child->closure_list naturally. */
@@ -135,10 +147,21 @@ op_fork_detach(UStrand *s, UVM *vm, uint32_t instr)
     UStrand *child;
 
     URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;  /* suppress -Wunused-parameter in non-debug builds */
 
-    /* R[A] must hold a UVAL_CLOSURE (emitter guarantees this). */
-    URBI_INTERNAL_ASSERT(s->R[a].kind == (uint8_t)UVAL_CLOSURE);
+    /* R[A] must hold a UVAL_CLOSURE (emitter guarantees this — VM-003).
+     * Hand-crafted bytecode could leave a non-closure value here; without
+     * this kind check release builds happily cast NIL.v.p (NULL) and
+     * fork_spawn_child dereferences child_closure->proto. */
+    if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "OP_FORK_DETACH: register operand is not a closure");
+        s->fatal_status     = UEXEC_CANCEL;
+        s->fatal_value.kind = (uint8_t)UVAL_NIL;
+        s->fatal_value.v.i  = 0;
+        s->state            = USTRAND_STATE_DEAD;
+        return -1;
+    }
     child_closure = (UClosure *)s->R[a].v.p;
 
     child = fork_spawn_child(s, child_closure);
@@ -167,9 +190,17 @@ op_fork_join(UStrand *s, UVM *vm, uint32_t instr)
     UStrand *child;
 
     URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;  /* suppress -Wunused-parameter in non-debug builds */
 
-    URBI_INTERNAL_ASSERT(s->R[a].kind == (uint8_t)UVAL_CLOSURE);
+    if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "OP_FORK_JOIN: register operand is not a closure");
+        s->fatal_status     = UEXEC_CANCEL;
+        s->fatal_value.kind = (uint8_t)UVAL_NIL;
+        s->fatal_value.v.i  = 0;
+        s->state            = USTRAND_STATE_DEAD;
+        return -1;
+    }
     child_closure = (UClosure *)s->R[a].v.p;
 
     child = fork_spawn_child(s, child_closure);
@@ -197,9 +228,17 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
     UStrand *child;
 
     URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;  /* suppress -Wunused-parameter in non-debug builds */
 
-    URBI_INTERNAL_ASSERT(s->R[a].kind == (uint8_t)UVAL_STRAND);
+    if (s->R[a].kind != (uint8_t)UVAL_STRAND) {
+        vm->last_error = UVM_TYPE_ERROR;
+        vm_format_type_error_msg(vm,
+            "OP_JOIN_WAIT: register operand is not a strand handle");
+        s->fatal_status     = UEXEC_CANCEL;
+        s->fatal_value.kind = (uint8_t)UVAL_NIL;
+        s->fatal_value.v.i  = 0;
+        s->state            = USTRAND_STATE_DEAD;
+        return -1;
+    }
     child = UVAL_AS_STRAND(s->R[a]);
 
     /* Fast path: child already terminated. */

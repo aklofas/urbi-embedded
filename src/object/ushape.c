@@ -300,9 +300,15 @@ int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
  * matching `name`, then rebuilds from the root via add_slot over the
  * surviving names (preserves declaration order of the survivors).
  *
- * Cap at URBI_SHAPE_REMOVE_DEPTH_CAP names (256) — deeper lineages return
- * NULL so callers can surface a diagnostic.  Same depth-bound discipline
- * as urbi_object_resolve_slot's resolve stack. */
+ * Cap at URBI_SHAPE_REMOVE_DEPTH_CAP survivors (256) — deeper survivor
+ * lineages return NULL so callers can surface a diagnostic.  Same
+ * depth-bound discipline as urbi_object_resolve_slot's resolve stack.
+ *
+ * OBJ-019: the lineage walk encounters at most (CAP + 1) shapes — CAP
+ * surviving names plus the one being dropped.  The total buffer is
+ * sized for the survivors only, but the loop iterates over the full
+ * lineage; the depth check guards the survivor count, not the iteration
+ * count. */
 #define URBI_SHAPE_REMOVE_DEPTH_CAP  256U
 
 UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
@@ -316,19 +322,23 @@ UShape *urbi_shape_transition_remove_slot(struct UVM *vm, UShape *parent,
     }
 
     /* Walk parent-ward, recording the (name) at each shape hop.  Order:
-     * names[0] is the leaf (last-added), names[depth-1] is the first-added. */
+     * names[0] is the leaf (last-added), names[depth-1] is the first-added.
+     * Per OBJ-019: the depth check bounds the SURVIVOR count, allowing
+     * the dropped name to be encountered after CAP survivors have been
+     * recorded — so a lineage of (CAP + 1) names where the dropped name
+     * is anywhere in the chain still succeeds. */
     USymbol *names[URBI_SHAPE_REMOVE_DEPTH_CAP];
     uint32_t depth = 0U;
     int found = 0;
     for (UShape *cur = parent; cur != NULL && cur->name != NULL;
          cur = cur->parent) {
-        if (depth >= URBI_SHAPE_REMOVE_DEPTH_CAP) {
-            return NULL;        /* cap exceeded */
-        }
         if (cur->name == name) {
             found = 1;
-            /* Don't record the dropped name. */
+            /* Don't record the dropped name; depth not bumped. */
         } else {
+            if (depth >= URBI_SHAPE_REMOVE_DEPTH_CAP) {
+                return NULL;    /* survivor cap exceeded */
+            }
             names[depth++] = cur->name;
         }
     }

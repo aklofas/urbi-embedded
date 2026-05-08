@@ -70,8 +70,21 @@ static bool module_grow_with_alloc(UModuleAllocFn alloc, void *alloc_ud,
                                    size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
     if (alloc == NULL) return false;
+    /* MOD-004: defend against new_cap * elem_size overflow at the helper
+     * boundary, so wire-format count fields that slip past per-section
+     * caps cannot reach the allocator with a wrap-truncated byte count.
+     * Caller-side caps (URBI_MAX_INSTRS_PER_PROTO, n_const cap, etc.)
+     * are the primary line of defense; this is belt-and-braces. */
+    if (elem_size != 0U && new_cap > SIZE_MAX / elem_size) return false;
     size_t target = *cap == 0U ? 8U : *cap;
-    while (target < new_cap) target *= 2U;
+    while (target < new_cap) {
+        /* Doubling-loop overflow guard: if target would wrap, snap to
+         * new_cap (the smallest cap that satisfies the request). */
+        if (target > SIZE_MAX / 2U) { target = new_cap; break; }
+        target *= 2U;
+    }
+    /* Re-verify target * elem_size after the doubling loop. */
+    if (elem_size != 0U && target > SIZE_MAX / elem_size) return false;
     void *fresh = alloc(*data, target * elem_size, alloc_ud);
     if (fresh == NULL) return false;
     *data = fresh;
@@ -111,7 +124,12 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
-    if (proto->ic_names     != NULL) alloc(proto->ic_names,     0, alloc_ud);
+    /* TIDY-005: explicit (void *) casts on multi-level pointer free paths
+     * (USymbol ** / char ** / UProto ** all decay to void * for alloc's
+     * inout pointer; the implicit conversion violates strict-aliasing
+     * cleanliness even though every modern allocator treats the pointer
+     * as an opaque tag). */
+    if (proto->ic_names     != NULL) alloc((void *)proto->ic_names,     0, alloc_ud);
     if (proto->ic_name_strs != NULL) {
         /* Each entry is a NUL-terminated string allocated separately. */
         for (uint16_t k = 0; k < proto->ic_count; k++) {
@@ -119,7 +137,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                 alloc(proto->ic_name_strs[k], 0, alloc_ud);
             }
         }
-        alloc(proto->ic_name_strs, 0, alloc_ud);
+        alloc((void *)proto->ic_name_strs, 0, alloc_ud);
     }
     /* Zero the proto struct but do not free proto itself (owned by nested[]). */
     urbi_zero(proto, sizeof(*proto));
@@ -132,7 +150,8 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
     /* Grow nested[] array if needed. */
     if (module->nested_count >= module->nested_cap) {
         size_t new_cap = module->nested_cap == 0 ? 4 : module->nested_cap * 2;
-        void *fresh = alloc(module->nested, new_cap * sizeof(UProto *),
+        /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
+        void *fresh = alloc((void *)module->nested, new_cap * sizeof(UProto *),
                             module->alloc_ud);
         if (fresh == NULL) return NULL;
         module->nested     = (UProto **)fresh;
@@ -383,6 +402,16 @@ static UModuleLoadError decode_instructions_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
+    /* MOD-017: cap instr_count BEFORE the (size_t)n_instr demotion below.
+     * On 32-bit ports a uint64_t > SIZE_MAX silently truncates; also
+     * defends against unbounded allocation request.  URBI_MAX_INSTRS_PER_PROTO
+     * is the documented cap. */
+    if (n_instr > (uint64_t)URBI_MAX_INSTRS_PER_PROTO) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "n_instructions=%llu exceeds URBI_MAX_INSTRS_PER_PROTO=%zu",
+                   (unsigned long long)n_instr, URBI_MAX_INSTRS_PER_PROTO);
+        return ULOAD_OVERSIZED;
+    }
     /* 4-byte alignment: skip 0..3 padding bytes, all must be zero. */
     while ((d->off & 3U) != 0U) {
         if (d->off >= d->size) {
@@ -475,6 +504,16 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
         return rc;
     }
     d->off += consumed;
+    /* MOD-018: n_abs is bounded by instr_count — every checkpoint
+     * references a unique pc < instr_count, and the existing monotonic
+     * check rejects duplicates.  Without this cap a corrupt module
+     * could request an arbitrarily large abs_lines allocation. */
+    if (n_abs > (uint64_t)instr_count) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "n_abs_lines=%llu exceeds instr_count=%zu",
+                   (unsigned long long)n_abs, instr_count);
+        return ULOAD_CORRUPT;
+    }
     if (n_abs > 0U) {
         if (!module_grow_with_alloc(alloc, alloc_ud,
                                     (void **)abs_lines_out, abs_line_cap_out,
@@ -613,6 +652,21 @@ static UModuleLoadError decode_proto(MDecCtx *d, UProto *p) {
     p->max_reg = d->buf[d->off++];
     p->nupvals = d->buf[d->off++];
     p->nparams = d->buf[d->off++];
+    /* W4 / T79: nupvals + nparams cross-check.  Each occupies one byte
+     * (capped at 255 by the wire format) but the sum must fit in the
+     * register frame so the runtime can address every captured upvalue
+     * and parameter via a register slot.  emit_init_funcstate guarantees
+     * this; the check guards against hand-crafted bytecode that
+     * overflows R[0..max_reg].  Forward-looking: if either field is
+     * widened to varint at a future bytecode break, the byte-width cap
+     * goes away and an explicit `<= 256` check is needed. */
+    if ((unsigned)p->nupvals + (unsigned)p->nparams > (unsigned)p->max_reg + 1U) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "proto header: nupvals=%u + nparams=%u exceeds max_reg+1=%u",
+                   (unsigned)p->nupvals, (unsigned)p->nparams,
+                   (unsigned)p->max_reg + 1U);
+        return ULOAD_CORRUPT;
+    }
 
     UModuleLoadError rc;
     rc = decode_constants_into(d, &p->constants, &p->const_count, &p->const_cap,
@@ -737,19 +791,36 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
  *   0 <= pc' <= instr_count.  Per-instruction bounds checks would force
  *   the verifier to know absolute PC; we defer to runtime dispatch
  *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
+/* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
+ * Mirror at v0.5.7: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT.
+ * Mirror discipline: any new IC-bearing opcode added in a future
+ * milestone must be added here AND in uemit_assign_ic_index call sites. */
+static bool op_carries_ic_index(uint8_t op) {
+    return op == (uint8_t)OP_GETSLOT
+        || op == (uint8_t)OP_SETSLOT
+        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT;
+}
+
 /* Walk one block of instructions (root chunk OR a nested proto) against
    the opcode-shape table, applying per-block bounds (max_reg /
-   const_count / instr_count / nested_count).  Callers pass the
-   root-level nested_count for both root and per-proto walks since the
-   v1.5 emitter allocates all function literals as flat siblings under
-   the root UModule's nested[] (an OP_CLOSURE inside a nested proto
-   refers to a sibling slot in the same root array). */
+   const_count / instr_count / nested_count / ic_count).  Callers pass
+   the root-level nested_count for both root and per-proto walks since
+   the v1.5 emitter allocates all function literals as flat siblings
+   under the root UModule's nested[] (an OP_CLOSURE inside a nested
+   proto refers to a sibling slot in the same root array). */
 static UModuleLoadError verify_walk_block(MDecCtx *d,
                                           uint8_t max_reg,
                                           size_t const_count,
                                           size_t instr_count,
                                           size_t nested_count,
+                                          uint16_t ic_count,
                                           const uint32_t *instructions) {
+    /* MOD-016 / W4: count IC-bearing opcodes seen during the walk so we
+     * can cross-validate ic_count after the loop.  Every ic_idx must be
+     * < ic_count (per-instruction); ic_count must be <= ic_seen
+     * (count check; rejects modules that lie about ic_count without
+     * emitting matching IC sites). */
+    size_t ic_seen = 0;
     size_t vi;
     for (vi = 0; vi < instr_count; vi++) {
         uint32_t ins = instructions[vi];
@@ -764,6 +835,18 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
         uint8_t a = uinstr_a(ins);
         UModuleLoadError rc = verify_byte_operand(d, op, a, sh->a_kind, "A", vi, max_reg);
         if (rc != ULOAD_OK) return rc;
+
+        /* Cross-validate IC index for IC-bearing opcodes. */
+        if (op_carries_ic_index(op)) {
+            uint8_t ic_idx = uinstr_c(ins);
+            if ((uint16_t)ic_idx >= ic_count) {
+                set_errmsg(d->errmsg, d->errcap,
+                           "ic_idx=%u >= ic_count=%u at pc %zu (op=%u)",
+                           (unsigned)ic_idx, (unsigned)ic_count, vi, (unsigned)op);
+                return ULOAD_CORRUPT;
+            }
+            ic_seen++;
+        }
 
         if (sh->format == UOPF_ABC) {
             uint8_t b = uinstr_b(ins);
@@ -841,6 +924,20 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
             return ULOAD_CORRUPT;
         }
     }
+    /* MOD-016 / W4: ic_count must not exceed the count of IC-bearing
+     * opcodes in the instruction stream.  Each ic_name (and the
+     * corresponding runtime UIC entry) is keyed off an emitted
+     * GETSLOT/SETSLOT/GETSLOT_CHANGE_EVENT site; lying about ic_count
+     * would either leave UIC entries unused (waste) or — worse — leave
+     * ic_name_strs[k>=ic_seen] holding a name that no instruction
+     * indexes (eligible for confusion attacks at later milestones when
+     * ic_index becomes wider). */
+    if ((size_t)ic_count > ic_seen) {
+        set_errmsg(d->errmsg, d->errcap,
+                   "ic_count=%u exceeds %zu IC-bearing opcodes seen",
+                   (unsigned)ic_count, ic_seen);
+        return ULOAD_CORRUPT;
+    }
     return ULOAD_OK;
 }
 
@@ -851,6 +948,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
                                             d->module->const_count,
                                             d->module->instr_count,
                                             d->module->nested_count,
+                                            d->module->ic_count,
                                             d->module->instructions);
     if (rc != ULOAD_OK) return rc;
 
@@ -870,6 +968,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
                                p->const_count,
                                p->instr_count,
                                d->module->nested_count,
+                               p->ic_count,
                                p->instructions);
         if (rc != ULOAD_OK) return rc;
     }
@@ -888,7 +987,7 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
      * supply errcap >= 1. */
     if (module == NULL || buf == NULL) {
         set_errmsg(errmsg, errcap, "null module or buffer");
-        return ULOAD_TRUNCATED;
+        return ULOAD_INVALID_ARG;
     }
 
     /* Zero origin_vm for deserialized modules. */
@@ -954,14 +1053,16 @@ void umodule_destroy(UModule *module) {
                     alloc(p, 0, module->alloc_ud);
                 }
             }
-            alloc(module->nested, 0, module->alloc_ud);
+            /* TIDY-005: UProto ** → void * decay needs explicit cast. */
+            alloc((void *)module->nested, 0, module->alloc_ud);
         }
         if (module->instructions != NULL) (void)alloc(module->instructions, 0, module->alloc_ud);
         if (module->constants    != NULL) (void)alloc(module->constants,    0, module->alloc_ud);
         if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);
         if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
         if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
-        if (module->ic_names     != NULL) (void)alloc(module->ic_names,     0, module->alloc_ud);
+        /* TIDY-005: USymbol ** / char ** → void * decay needs explicit cast. */
+        if (module->ic_names     != NULL) (void)alloc((void *)module->ic_names, 0, module->alloc_ud);
         if (module->ic_name_strs != NULL) {
             /* Each entry is a NUL-terminated string allocated separately. */
             for (uint16_t k = 0; k < module->ic_count; k++) {
@@ -969,7 +1070,7 @@ void umodule_destroy(UModule *module) {
                     (void)alloc(module->ic_name_strs[k], 0, module->alloc_ud);
                 }
             }
-            (void)alloc(module->ic_name_strs, 0, module->alloc_ud);
+            (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
         }
     }
     /* Zero the entire struct AFTER all frees complete.  No field is read
@@ -988,6 +1089,8 @@ const char *umodule_load_error_name(UModuleLoadError code) {
     case ULOAD_CORRUPT_TAG:         return "ULOAD_CORRUPT_TAG";
     case ULOAD_CORRUPT:             return "ULOAD_CORRUPT";
     case ULOAD_OOM:                 return "ULOAD_OOM";
+    case ULOAD_INVALID_ARG:         return "ULOAD_INVALID_ARG";
+    case ULOAD_OVERSIZED:           return "ULOAD_OVERSIZED";
     }
     return "ULOAD_UNKNOWN";
 }

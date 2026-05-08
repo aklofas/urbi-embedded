@@ -84,6 +84,7 @@ extern void test_uic_suite(void);
 extern void test_topology_gen_suite(void);
 extern void test_ugc_object_cells_suite(void);
 extern void test_gc_strand_walker_suite(void);
+extern void test_gc_scratch_rooting_suite(void);
 extern void test_scheduler_invariant_suite(void);
 extern void test_op_allocation_suite(void);
 extern void test_disasm_suite(void);
@@ -101,6 +102,7 @@ extern void test_watcher_spawn_suite(void);
 extern void test_watcher_completed_suite(void);
 extern void test_watcher_lifecycle_suite(void);
 extern void test_watcher_gc_invariants_suite(void);
+extern void test_watcher_ownership_suite(void);
 extern void test_emit_function_literal_suite(void);
 extern void test_cond_side_effect_suite(void);
 extern void test_emit_diag_suite(void);
@@ -143,6 +145,17 @@ extern void test_at_scripted_e2e_suite(void);
 extern void test_at_sync_scripted_suite(void);
 extern void test_tag_stop_onleave_scripted_suite(void);
 extern void test_event_sync_emit_scripted_suite(void);
+extern void test_emit_freereg_drift_suite(void);
+extern void test_emit_error_paths_suite(void);
+extern void test_vm_dispatch_ownership_suite(void);
+extern void test_gc_sweep_accounting_suite(void);
+extern void test_sched_state_aliasing_suite(void);
+extern void test_event_runtime_suite(void);
+extern void test_tag_barrier_suite(void);
+extern void test_object_in_place_barrier_suite(void);
+extern void test_module_loader_hardening_suite(void);
+extern void test_foundations_suite(void);
+extern void test_public_api_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -203,6 +216,7 @@ static const struct suite_entry suites[] = {
     {"topology_gen",               test_topology_gen_suite},
     {"ugc_object_cells",           test_ugc_object_cells_suite},
     {"gc_strand_walker",           test_gc_strand_walker_suite},
+    {"gc_scratch_rooting",         test_gc_scratch_rooting_suite},
     {"scheduler_invariant",        test_scheduler_invariant_suite},
     {"op_allocation",              test_op_allocation_suite},
     {"disasm",                     test_disasm_suite},
@@ -220,6 +234,7 @@ static const struct suite_entry suites[] = {
     {"watcher_completed",          test_watcher_completed_suite},
     {"watcher_lifecycle",          test_watcher_lifecycle_suite},
     {"watcher_gc_invariants",      test_watcher_gc_invariants_suite},
+    {"watcher_ownership",          test_watcher_ownership_suite},
     {"emit_function_literal",      test_emit_function_literal_suite},
     {"cond_side_effect",           test_cond_side_effect_suite},
     {"emit_diag",                  test_emit_diag_suite},
@@ -262,6 +277,17 @@ static const struct suite_entry suites[] = {
     {"at_sync_scripted",          test_at_sync_scripted_suite},
     {"tag_stop_onleave_scripted", test_tag_stop_onleave_scripted_suite},
     {"event_sync_emit_scripted",  test_event_sync_emit_scripted_suite},
+    {"emit_freereg_drift",        test_emit_freereg_drift_suite},
+    {"emit_error_paths",          test_emit_error_paths_suite},
+    {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
+    {"gc_sweep_accounting",       test_gc_sweep_accounting_suite},
+    {"sched_state_aliasing",      test_sched_state_aliasing_suite},
+    {"event_runtime",             test_event_runtime_suite},
+    {"tag_barrier",               test_tag_barrier_suite},
+    {"object_in_place_barrier",   test_object_in_place_barrier_suite},
+    {"module_loader_hardening",   test_module_loader_hardening_suite},
+    {"foundations",               test_foundations_suite},
+    {"public_api",                test_public_api_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -28,6 +28,7 @@
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"        /* UVM_STACK_CAP */
 #include "watcher/uwatcher.h"
+#include "twatcher_install_helper.h"
 #include "urbi/urbi.h"     /* URBI_LOG_WARN */
 
 #include <stdint.h>
@@ -95,7 +96,7 @@ static UWatcher *
 make_body_watcher(struct UVM *vm, struct URealm *realm,
                   UClosure *body_cl)
 {
-    UWatcher *w = urbi_watcher_install_internal(
+    UWatcher *w = urbi_watcher_install_for_test(
         vm, UWATCHER_AT,
         realm->tag,   /* owning_tag == realm->tag → no extra attach */
         NULL,         /* condition */
@@ -294,7 +295,7 @@ UTEST(watcher_spawn_oom_stack_alloc)
     UASSERT(w != NULL);
 
     /* Calibrate: count allocs consumed by urbi_vm_init + urbi_realm_create +
-     * urbi_watcher_install_internal.  We'll allow that many allocs plus
+     * urbi_watcher_install_for_test.  We'll allow that many allocs plus
      * enough for urbi_strand_create (UStrand + cleanup-stack) but deny
      * the register-stack alloc.
      *

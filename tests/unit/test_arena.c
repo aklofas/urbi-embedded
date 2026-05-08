@@ -158,9 +158,13 @@ UTEST(arena_oom_via_failing_allocator) {
 }
 
 UTEST(arena_init_static_does_not_call_allocator) {
-    unsigned char buf[256];
+    /* FOUND-042: uarena_init_static now requires buf to be ARENA_ALIGN-
+     * aligned in URBI_DEBUG; align via uint64_t backing storage. */
+    static uint64_t backing[256/sizeof(uint64_t)];
+    unsigned char *buf = (unsigned char *)backing;
+    size_t bufsz = sizeof backing;
     UArena a;
-    uarena_init_static(&a, buf, sizeof buf);
+    uarena_init_static(&a, buf, bufsz);
     /* Prove the allocator fn pointers are not stored. */
     UASSERT(a.alloc_fn == NULL);
     UASSERT(a.free_fn == NULL);
@@ -169,14 +173,15 @@ UTEST(arena_init_static_does_not_call_allocator) {
     void *p = uarena_alloc(&a, 32);
     UASSERT(p != NULL);
     UASSERT(p >= (void *)buf);
-    UASSERT(p < (void *)(buf + sizeof buf));
+    UASSERT(p < (void *)(buf + bufsz));
     uarena_destroy(&a);
 }
 
 UTEST(arena_static_oom_when_buffer_full) {
-    unsigned char buf[128];
+    static uint64_t backing[128/sizeof(uint64_t)];
+    unsigned char *buf = (unsigned char *)backing;
     UArena a;
-    uarena_init_static(&a, buf, sizeof buf);
+    uarena_init_static(&a, buf, sizeof backing);
     /* One large allocation consumes the buffer. */
     void *p1 = uarena_alloc(&a, 64);
     UASSERT(p1 != NULL);
@@ -189,9 +194,10 @@ UTEST(arena_static_oom_when_buffer_full) {
 }
 
 UTEST(arena_static_destroy_is_noop) {
-    unsigned char buf[256];
+    static uint64_t backing[256/sizeof(uint64_t)];
+    unsigned char *buf = (unsigned char *)backing;
     UArena a;
-    uarena_init_static(&a, buf, sizeof buf);
+    uarena_init_static(&a, buf, sizeof backing);
     (void)uarena_alloc(&a, 64);
     uarena_destroy(&a);
     /* Caller still owns buf; writing to it must remain safe. */
@@ -202,10 +208,13 @@ UTEST(arena_static_destroy_is_noop) {
 UTEST(arena_static_too_small_buffer_triggers_oom) {
     /* Buffer too small to even hold the chunk header + alignment.
        uarena_init_static must leave head=NULL, and the first alloc
-       must OOM cleanly instead of dereferencing garbage. */
-    unsigned char buf[8];
+       must OOM cleanly instead of dereferencing garbage.
+       FOUND-042: buf must be ARENA_ALIGN-aligned in URBI_DEBUG. */
+    static uint64_t backing_small[2];   /* 16 bytes — aligned, too small */
+    unsigned char *buf = (unsigned char *)backing_small;
+    size_t bufsz = sizeof backing_small;
     UArena a;
-    uarena_init_static(&a, buf, sizeof buf);
+    uarena_init_static(&a, buf, bufsz);
     UASSERT(a.head == NULL);
     UASSERT(a.is_static == true);
     UASSERT(a.oom == false); /* not yet — OOM fires on the alloc attempt */

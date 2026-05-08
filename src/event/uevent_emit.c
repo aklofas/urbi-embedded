@@ -147,9 +147,15 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
     URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->in_watcher_scratch || vm->in_watcher_eval || vm->in_watcher_install) {
-        if (vm->host_log_fn)
-            vm->host_log_fn(vm, URBI_LOG_WARN,
-                "sync emit on event degraded to async (nested in scratch context)");
+        /* EMITR-005: one-shot warn (mirrors urbi_emit_slot_change_slow's
+         * slot_change_reentrancy_warned shape).  Pre-fix the warn fired on
+         * every degraded call; in a tight loop that flooded host_log_fn. */
+        if (!vm->event_sync_degradation_warned) {
+            vm->event_sync_degradation_warned = 1;
+            if (vm->host_log_fn)
+                vm->host_log_fn(vm, URBI_LOG_WARN,
+                    "sync emit on event degraded to async (nested in scratch context)");
+        }
         c_event_emit_async(vm, e, payload);
         return;
     }
@@ -229,6 +235,12 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
      * restoring balance. */
     if (s->state == USTRAND_STATE_RUNNING && vm->strand_runnable_count > 0)
         vm->strand_runnable_count--;
+    /* SCHED-004: defence-in-depth — if a strand somehow has stale sleep-queue
+     * links at re-stamp time (would happen only if a buggy caller bypassed
+     * the dispatch loop's unblock contract), splice it out before changing
+     * the state byte so wait_next does not point into the sleep queue with
+     * the wrong reason.  Idempotent for the normal path (RUNNING strand). */
+    sched_strand_unbind_from_sleep_queue(s);
     s->state = USTRAND_WAIT_EVENT;
 
     /* EMITR-002: this return value is *always* NIL.  c_event_waituntil parks

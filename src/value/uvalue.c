@@ -18,7 +18,16 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_VOID:   return false;
         case UVAL_STRAND: return true;   /* strand handle is truthy (matches closure pattern) */
         case UVAL_OBJECT: return true;   /* object reference is truthy (matches closure pattern) */
-        default:          return true;   /* int 0, float 0.0, etc. → truthy */
+        case UVAL_INT:    /* fall through */
+        case UVAL_FLOAT:  /* fall through */
+        case UVAL_STR:    /* fall through */
+        case UVAL_CLOSURE:/* fall through */
+        case UVAL_EVENT:  /* fall through */
+        case UVAL_HOST_FN: return true;
+        default:
+            /* FOUND-039: corrupt kind byte — fail-safe in release. */
+            URBI_INTERNAL_ASSERT(0 && "uvalue_truthy: unknown UValue kind");
+            return false;
     }
 }
 
@@ -39,6 +48,10 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_OBJECT:  return a->v.p == b->v.p;     /* object identity */
             case UVAL_EVENT:   return a->v.p == b->v.p;     /* event identity */
             case UVAL_HOST_FN: return a->v.p == b->v.p;     /* fn-pointer identity */
+            default:
+                /* FOUND-039: corrupt kind byte — fail-safe in release. */
+                URBI_INTERNAL_ASSERT(0 && "uvalue_equal: unknown UValue kind");
+                return false;
         }
     }
 
@@ -114,10 +127,13 @@ urbi_register_type(UVM *vm, const UType *type)
         return 0U;
     }
 
-    /* Detect collision: explicit-tag must point at a free slot.  Auto-assign
-     * doesn't bump host_type_count past explicit registrations, so mixing the
-     * two patterns can collide.  Catch in URBI_DEBUG. */
-    URBI_INTERNAL_ASSERT(vm->type_table[tag] == NULL);
+    /* FOUND-037: collision returns 0 unconditionally in both debug and
+     * release.  Previously the URBI_INTERNAL_ASSERT(== NULL) fired in debug
+     * and the slot was overwritten silently in release — inconsistent
+     * behaviour across build modes is a poor public-API contract. */
+    if (vm->type_table[tag] != NULL) {
+        return 0U;
+    }
 
     vm->type_table[tag] = (UType *)type;
     return tag;
@@ -172,7 +188,9 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
         break;
     }
     case UVAL_STR: {
-        const char *s = (const char *)(uintptr_t)v->v.i;
+        /* FOUND-004: read interned-string pointer via v.p (the union member
+         * that semantically owns the pointer), not via v.i + uintptr_t cast. */
+        const char *s = (const char *)v->v.p;
         size_t w = 0;
         if (w + 1 >= cap) { buf[0] = '\0'; return 0; }
         buf[w++] = '"';
@@ -194,16 +212,19 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
                 if (c >= 0x20 && c < 0x7f) { single = (char)c; }
                 break;
             }
+            /* FOUND-005: every escape branch must reserve room for the
+             * trailing closing quote.  Reserved bytes = escape length + 1
+             * (for the trailing '"'). */
             if (esc) {
-                if (w + 2 >= cap) break;
+                if (w + 2 + 1 >= cap) break;   /* 2 escape + 1 trailing quote */
                 buf[w++] = esc[0];
                 buf[w++] = esc[1];
             } else if (single) {
-                if (w + 1 >= cap) break;
+                if (w + 1 + 1 >= cap) break;   /* 1 char + 1 trailing quote */
                 buf[w++] = single;
             } else {
                 /* \xNN hex escape for non-printable bytes */
-                if (w + 4 >= cap) break;
+                if (w + 4 + 1 >= cap) break;   /* 4 escape + 1 trailing quote */
                 static const char hex[] = "0123456789abcdef";
                 buf[w++] = '\\';
                 buf[w++] = 'x';
@@ -222,7 +243,18 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
     case UVAL_OBJECT:
         n = snprintf(buf, cap, "<object %p>", v->v.p);
         break;
+    case UVAL_HOST_FN:
+        /* FOUND-047 / COV-006: explicit case for host-function values. */
+        n = snprintf(buf, cap, "<hostfn %p>", v->v.p);
+        break;
+    case UVAL_EVENT:
+        /* FOUND-047 / COV-006: explicit case for event values. */
+        n = snprintf(buf, cap, "<event>");
+        break;
     default:
+        /* UVAL_CLOSURE / UVAL_VOID intentionally fall through to "<?>" to
+         * preserve their pre-v0.5.7 output (existing fixture goldens
+         * depend on this; explicit-case forms filed as backlog). */
         n = snprintf(buf, cap, "<?>");
         break;
     }

@@ -244,6 +244,157 @@ UTEST(strand_create_returns_null_on_oom) {
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-042 (T107): sched_strand_make_runnable rejects a DEAD strand silently
+   in production (NDEBUG) builds AND asserts in debug builds.  Without this
+   guard a re-enqueue of a DEAD strand would re-set state to READY, bump
+   strand_runnable_count, and dispatch into a freed register stack.
+
+   Production-build test (NDEBUG): the early return is exercised; default
+   builds (assert enabled) trip the URBI_INTERNAL_ASSERT before the early
+   return.  Compile-guarded so the test runs only under NDEBUG, which is
+   the production-flavour build that observes the silent fail-safe. */
+#ifdef NDEBUG
+UTEST(make_runnable_rejects_dead_strand) {
+    setup_vm_realm();
+
+    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UASSERT(s != NULL);
+    UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DORMANT);
+
+    /* Force-mark DEAD without going through the proper teardown path so
+       we can exercise the make_runnable guard directly. */
+    s->state = USTRAND_STATE_DEAD;
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);
+    UASSERT(g_vm.ready_head == NULL);
+
+    /* Production fail-safe: should be a no-op. */
+    sched_strand_make_runnable(s);
+    UASSERT_EQ(USTRAND_GET_STATE(s), USTRAND_DEAD);  /* state UNCHANGED */
+    UASSERT_EQ(g_vm.strand_runnable_count, 0U);       /* counter UNCHANGED */
+    UASSERT(g_vm.ready_head == NULL);                 /* queue still empty */
+    UASSERT(g_vm.ready_tail == NULL);
+
+    /* Reset state so urbi_strand_destroy doesn't trip its own asserts. */
+    s->state = USTRAND_STATE_DORMANT;
+    urbi_strand_destroy(s);
+    teardown_vm_realm();
+}
+#endif
+
+/* CHSTR-015 (T103): urbi_strand_destroy on a READY strand must unlink it from
+   the ready queue's neighbour pointers BEFORE clearing local ready_next/prev.
+   Otherwise the queue head/tail or surviving siblings hold dangling pointers
+   into freed memory.  Test: spawn three strands, destroy the middle one, and
+   verify head/tail and the surviving strands' ready_next/prev form a clean
+   2-element list with no references to the freed strand. */
+UTEST(strand_destroy_unlinks_from_ready_queue_first) {
+    setup_vm_realm();
+
+    UStrand *a = urbi_strand_spawn(g_realm, NULL);
+    UStrand *b = urbi_strand_spawn(g_realm, NULL);
+    UStrand *c = urbi_strand_spawn(g_realm, NULL);
+    UASSERT(a != NULL && b != NULL && c != NULL);
+    UASSERT_EQ(g_vm.strand_runnable_count, 3U);
+    UASSERT(g_vm.ready_head == a);
+    UASSERT(g_vm.ready_tail == c);
+    UASSERT(a->ready_next == b);
+    UASSERT(b->ready_prev == a);
+    UASSERT(b->ready_next == c);
+    UASSERT(c->ready_prev == b);
+
+    /* Destroy middle strand b — must splice cleanly out of the queue. */
+    urbi_strand_destroy(b);
+
+    /* Survivors form a 2-element queue: a → c. */
+    UASSERT_EQ(g_vm.strand_runnable_count, 2U);
+    UASSERT(g_vm.ready_head == a);
+    UASSERT(g_vm.ready_tail == c);
+    UASSERT(a->ready_next == c);
+    UASSERT(c->ready_prev == a);
+    UASSERT(a->ready_prev == NULL);
+    UASSERT(c->ready_next == NULL);
+
+    /* Drain remaining strands cleanly. */
+    sched_dequeue_ready_head(&g_vm);
+    sched_dequeue_ready_head(&g_vm);
+    urbi_strand_destroy(a);
+    urbi_strand_destroy(c);
+    teardown_vm_realm();
+}
+
+/* CHSTR-013 (T101): ustrand_destroy must not underflow vm->host_call_pending_count
+   when it decrements via sched_strand_account_destroy.  Construct a strand with
+   cross_strand_stop_pending set but vm->host_call_pending_count == 0 and verify
+   the counter stays at 0 (uint32_t underflow would produce 0xFFFFFFFF).  Pins
+   the existing guard at usched_cooperative.c:261 against future reorderings. */
+UTEST(strand_destroy_does_not_underflow_host_call_pending) {
+    setup_vm_realm();
+
+    UStrand *s = urbi_strand_create(g_realm, NULL);
+    UASSERT(s != NULL);
+
+    /* Manually mark the strand as having a cross-strand stop deposited
+       without bumping vm->host_call_pending_count.  This mirrors the
+       hypothetical out-of-balance path: a deposit was rolled back (or the
+       counter was reset by a bug) but the strand-level flag still asserts.
+       Without the guard, ustrand_destroy would underflow. */
+    s->cross_strand_stop_pending = 1U;
+    UASSERT_EQ(g_vm.host_call_pending_count, 0U);
+
+    urbi_strand_destroy(s);
+    /* Counter must NOT have wrapped to UINT32_MAX. */
+    UASSERT_EQ(g_vm.host_call_pending_count, 0U);
+
+    teardown_vm_realm();
+}
+
+/* CHSTR-001 (T98): urbi_strand_create returns NULL when the cleanup-stack
+   allocation inside ustrand_init fails (the second alloc, after the strand
+   struct itself).  Verifies the post-strand-alloc OOM path frees the partial
+   allocation rather than returning a DEAD-but-allocated strand.  Closes the
+   "fully-functional strand or NULL" contract pinned at urbi.h:194. */
+UTEST(strand_create_returns_null_on_cleanup_oom) {
+    UVM vm;
+    URealm *realm;
+    UStrand *s;
+    int allocs_after_realm;
+
+    /* Count baseline allocs needed for VM + realm setup. */
+    AllocSpy spy1 = { 0, -1 };
+    urbi_vm_init(&vm, spy_alloc, &spy1);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    allocs_after_realm = spy1.alloc_calls;
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+
+    /* Real test: succeed on the strand struct alloc, fail on the cleanup-
+       stack alloc that follows it inside ustrand_init.  fail_at = N means
+       "fail starting on alloc N+1"; here we want to succeed for the strand
+       struct (alloc allocs_after_realm + 1) and fail on the cleanup-stack
+       alloc (allocs_after_realm + 2). */
+    AllocSpy spy2 = { 0, allocs_after_realm + 1 };
+    urbi_vm_init(&vm, spy_alloc, &spy2);
+    sched_init(&vm, NULL);
+    realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm);
+
+    s = urbi_strand_create(realm, NULL);
+    UASSERT(s == NULL);  /* cleanup-stack alloc failed → strand_create returns NULL */
+    /* Two allocs were attempted: the strand struct (success) + cleanup
+       stack (failure).  Anything else means the failure path leaked allocs. */
+    UASSERT_EQ(spy2.alloc_calls, allocs_after_realm + 2);
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    /* realm->strands_head must NOT contain a partial strand. */
+    UASSERT(realm->strands_head == NULL);
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_strand_suite(void) {
     utest_run("strand_state_dormant_at_init",          strand_state_dormant_at_init);
     utest_run("strand_state_waiting_macros_round_trip", strand_state_waiting_macros_round_trip);
@@ -257,4 +408,13 @@ void test_strand_suite(void) {
     utest_run("strand_create_destroy_round_trip",       strand_create_destroy_round_trip);
     utest_run("strand_spawn_two_fifo_order",            strand_spawn_two_fifo_order);
     utest_run("strand_create_returns_null_on_oom",      strand_create_returns_null_on_oom);
+    utest_run("strand_create_returns_null_on_cleanup_oom", strand_create_returns_null_on_cleanup_oom);
+    utest_run("strand_destroy_does_not_underflow_host_call_pending",
+              strand_destroy_does_not_underflow_host_call_pending);
+    utest_run("strand_destroy_unlinks_from_ready_queue_first",
+              strand_destroy_unlinks_from_ready_queue_first);
+#ifdef NDEBUG
+    utest_run("make_runnable_rejects_dead_strand",
+              make_runnable_rejects_dead_strand);
+#endif
 }

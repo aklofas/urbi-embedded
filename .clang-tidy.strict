@@ -1,0 +1,43 @@
+---
+# Strict checklist for `make test-tidy-strict`. The standard `make tidy`
+# target runs the smaller default checklist documented at
+# CONTRIBUTING.md.
+#
+# Suppressions for known/intentional violations live at
+# .clang-tidy.suppressions and are referenced by audit ID + rationale.
+Checks: >
+  -*,
+  bugprone-assert-side-effect,
+  bugprone-branch-clone,
+  bugprone-casting-through-void,
+  bugprone-implicit-widening-of-multiplication-result,
+  bugprone-integer-division,
+  bugprone-macro-parentheses,
+  bugprone-misplaced-widening-cast,
+  bugprone-multi-level-implicit-pointer-conversion,
+  bugprone-narrowing-conversions,
+  bugprone-not-null-terminated-result,
+  bugprone-signed-char-misuse,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-string-compare,
+  bugprone-too-small-loop-variable,
+  bugprone-undefined-memory-manipulation,
+  cert-arr39-c,
+  cert-err34-c,
+  cert-flp30-c,
+  cert-int30-c,
+  cert-int32-c,
+  cert-msc30-c,
+  cert-msc32-c,
+  cert-str34-c,
+  clang-analyzer-*,
+  cppcoreguidelines-narrowing-conversions,
+  misc-static-assert,
+  misc-redundant-expression,
+  performance-no-int-to-ptr,
+  portability-restrict-system-includes,
+  readability-implicit-bool-conversion
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'src/.*\.h$|include/urbi/.*\.h$'

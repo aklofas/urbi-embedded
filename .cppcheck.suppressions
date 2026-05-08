@@ -1,0 +1,10 @@
+// cppcheck suppressions: one per intentional violation.
+// Format: <id>:<file>:<line>  followed by `// audit:<ID> <rationale>`.
+//
+// Initial contents: empty. Suppressions added only when an audit-ID-blessed
+// exception requires it.
+//
+// Common categories to expect:
+//   missingIncludeSystem  — system includes intentionally not parsed
+//   constParameter*       — public C API mutates via callback, doc-known
+//   variableScope         — when keeping scope wide aids debugging

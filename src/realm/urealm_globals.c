@@ -207,6 +207,88 @@ const URegistryEntry urbi_builtin_registry[] = {
 const size_t urbi_builtin_registry_count =
     sizeof(urbi_builtin_registry) / sizeof(urbi_builtin_registry[0]);
 
+/* === REALM-023 / T70: realm_install_const shared helper ===
+ *
+ * Common CONSTANT-install logic shared by urbi_populate_realm_globals (the
+ * 15-row registry-driven realm boot path) and urbi_realm_set_global_const
+ * (the public C API).  Both call sites previously open-coded the same
+ * three-step pattern (already-CONSTANT check → set_local_slot →
+ * install_property with URBI_SLOT_FLAG_CONSTANT) — keeping them in lockstep
+ * is important because the T67 CONST-overwrite guard MUST apply to BOTH
+ * paths consistently (the public API can be called BEFORE populate
+ * finishes via host-supplied UVMAllocFn callbacks; future v1.x multi-realm
+ * extension may also re-enter populate after public installs).
+ *
+ * Behaviour:
+ *   1. If `reject_if_already_const` is true and the slot already exists
+ *      and its CONSTANT bit is set (packed-nibble for slots 0..7,
+ *      UProps.constant for slots >= 8), return URBI_ERR_CONST_SLOT_WRITE.
+ *      The populate path passes false here — populate iterates a fresh
+ *      global_object whose slots do not pre-exist; the public API passes
+ *      true so host overwrites of registry-installed constants like
+ *      "Object" are rejected.
+ *   2. Call urbi_object_set_local_slot to materialise / update the slot.
+ *      OOM here returns URBI_ERR_OOM.
+ *   3. Call urbi_object_install_property with URBI_SLOT_FLAG_CONSTANT to
+ *      flag the slot as constant.  At slots 0..7 this writes the CONSTANT
+ *      bit into the packed shape nibble (IC-enforced for script writes);
+ *      at slots >= 8 the bit lives only in UProps (not IC-enforced at
+ *      v1.0 baseline; M6 spill side-table will lift the cap).  OOM here
+ *      returns URBI_ERR_OOM. */
+static int
+realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
+                    bool reject_if_already_const)
+{
+    if (reject_if_already_const) {
+        int32_t existing =
+            urbi_shape_find_slot(realm->global_object->shape, sym);
+        if (existing >= 0) {
+            bool already_const = false;
+            if (existing < 8) {
+                const uint32_t shift      = (uint32_t)existing * 4U;
+                const uint32_t old_nibble =
+                    (realm->global_object->shape->flags >> shift) & 0xFU;
+                already_const = (old_nibble & URBI_SLOT_FLAG_CONSTANT) != 0U;
+            } else if (realm->global_object->shape->props_table != NULL) {
+                const UProps *p =
+                    realm->global_object->shape->props_table[existing];
+                already_const = (p != NULL) && (p->constant != 0U);
+            }
+            if (already_const) {
+                return URBI_ERR_CONST_SLOT_WRITE;
+            }
+        }
+    }
+
+    int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
+    if (rc != 0) {
+        return URBI_ERR_OOM;
+    }
+    /* Gate install_property on slot < 8: the v1.0 packed-nibble form of
+     * UShape.flags is only 4 bits/slot across a single uint32_t (8 slots
+     * worth).  urbi_shape_transition_property's bit-shift arithmetic
+     * (shift = slot_index * 4) is undefined behaviour at slot_index >= 8
+     * — UB that pre-T70 populate's `idx < 8` gate suppressed.  The M6
+     * spill side-table will lift the cap; until then this gate is the
+     * single source of truth.
+     *
+     * Caller observability: the slot is still locally installed via
+     * set_local_slot above (its value is reachable by name); only the
+     * CONSTANT bit is dropped on the floor.  Public-API callers that
+     * need true CONSTANT enforcement past slot 7 must wait for M6 — the
+     * v1.0 limitation is documented at REVIVAL.md §14 row S-globals-
+     * cap-8 / docs/urbi-embedded-design-risks.md. */
+    int32_t idx = urbi_shape_find_slot(realm->global_object->shape, sym);
+    if (idx >= 0 && idx < 8) {
+        rc = urbi_object_install_property(vm, realm->global_object, sym,
+                                          URBI_SLOT_FLAG_CONSTANT, value);
+        if (rc != 0) {
+            return URBI_ERR_OOM;
+        }
+    }
+    return URBI_OK;
+}
+
 /* === urbi_populate_realm_globals (spec #5 §4) ===
  *
  * Iterates the registry, resolves each value, interns the name,
@@ -262,29 +344,26 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
             return URBI_ERR_OOM;
         }
 
-        /* Install the slot. */
-        int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, v);
-        if (rc != 0) {
-            return URBI_ERR_OOM;
-        }
-
-        /* Mark constant via the packed flags (slots 0..7 only).
-         * UShape.flags packs 4 bits/slot in a 32-bit word — the v1.0 cap of
-         * 8 slots in packed form (T15 spill side-table deferred to later).
-         * For slot indices 0..7 we set CONSTANT via install_property which
-         * uses UProps; for indices >= 8 we defer the const marking to the
-         * M6 side-table tier.  The is_const flag in the registry is the
-         * authoritative source; the runtime IC path only checks packed flags
-         * so indices 8..14 are not write-protected at M5 baseline. */
+        /* T70: route CONSTANT installs through the shared helper so the
+         * populate path and the public set_global_const API share the
+         * same set_local_slot → install_property sequence.  populate
+         * iterates a fresh global_object whose slots do not pre-exist
+         * yet, so the already-const check is unnecessary here and we
+         * pass reject_if_already_const = false.  Non-const entries
+         * (none in the v1.0 registry — every row has is_const = true,
+         * but the field is honoured for forward-compat) take the simple
+         * set_local_slot path. */
         if (e->is_const) {
-            int32_t idx = urbi_shape_find_slot(realm->global_object->shape, sym);
-            if (idx >= 0 && idx < 8) {
-                rc = urbi_object_install_property(vm, realm->global_object, sym,
-                                                  URBI_SLOT_FLAG_CONSTANT,
-                                                  v /* payload unused for CONSTANT */);
-                if (rc != 0) {
-                    return URBI_ERR_OOM;
-                }
+            int rc = realm_install_const(vm, realm, sym, v,
+                                         /*reject_if_already_const=*/false);
+            if (rc != URBI_OK) {
+                return rc;
+            }
+        } else {
+            int rc = urbi_object_set_local_slot(vm, realm->global_object,
+                                                sym, v);
+            if (rc != 0) {
+                return URBI_ERR_OOM;
             }
         }
     }
@@ -311,6 +390,27 @@ urbi_realm_set_global(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
+    /* REALM-004 / T68: a non-const set_global on an existing CONSTANT slot
+     * must also reject — otherwise the host could bypass CONSTANT via the
+     * non-const variant.  Same packed-nibble + UProps inspection as
+     * set_global_const (T67). */
+    int32_t existing = urbi_shape_find_slot(realm->global_object->shape, sym);
+    if (existing >= 0) {
+        bool already_const = false;
+        if (existing < 8) {
+            const uint32_t shift      = (uint32_t)existing * 4U;
+            const uint32_t old_nibble =
+                (realm->global_object->shape->flags >> shift) & 0xFU;
+            already_const = (old_nibble & URBI_SLOT_FLAG_CONSTANT) != 0U;
+        } else if (realm->global_object->shape->props_table != NULL) {
+            const UProps *p =
+                realm->global_object->shape->props_table[existing];
+            already_const = (p != NULL) && (p->constant != 0U);
+        }
+        if (already_const) {
+            return URBI_ERR_CONST_SLOT_WRITE;
+        }
+    }
     int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
     return (rc == 0) ? URBI_OK : URBI_ERR_OOM;
 }
@@ -327,13 +427,12 @@ urbi_realm_set_global_const(UVM *vm, URealm *realm,
     if (sym == NULL) {
         return URBI_ERR_OOM;
     }
-    int rc = urbi_object_set_local_slot(vm, realm->global_object, sym, value);
-    if (rc != 0) {
-        return URBI_ERR_OOM;
-    }
-    rc = urbi_object_install_property(vm, realm->global_object, sym,
-                                      URBI_SLOT_FLAG_CONSTANT, value);
-    return (rc == 0) ? URBI_OK : URBI_ERR_OOM;
+    /* T70: shared helper does the already-CONSTANT check (T67),
+     * set_local_slot, and install_property in lockstep.  Public-API
+     * callers MUST reject overwrites of existing CONSTANT slots —
+     * otherwise host code could silently bypass the CONSTANT flag. */
+    return realm_install_const(vm, realm, sym, value,
+                               /*reject_if_already_const=*/true);
 }
 
 int
@@ -359,6 +458,10 @@ urbi_realm_get_global(UVM *vm, URealm *realm,
     if (found == 0) {
         return URBI_ERR_SLOT_NOT_FOUND;
     }
-    /* found == -1: resolve-stack depth overflow or other error */
-    return URBI_ERR_OOM;
+    /* found == -1: prototype-graph DFS exhausted the fixed 64-deep resolve
+     * stack at uobject_slot.c:561.  REALM-010 / T68: this is distinct from
+     * OOM (no allocation has been attempted on this path) — surface it as
+     * URBI_ERR_PROTO_DEPTH so callers can disambiguate "your prototype
+     * graph is too wide/deep" from "the host is out of memory". */
+    return URBI_ERR_PROTO_DEPTH;
 }

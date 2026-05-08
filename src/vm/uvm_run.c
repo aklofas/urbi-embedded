@@ -23,7 +23,7 @@
    - Returns UVM_OK with *out set on success, or the error code on failure.
    - Keeps vm->last_return_closure alive for the caller to inspect. */
 
-UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out) {
+UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out) {
     /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
@@ -77,20 +77,27 @@ UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out) {
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
-    /* T33: route this transient onto vm->global_realm->strands_head so the
-     * GC realm-hierarchy walker (T32) visits its register window.  Lazy-create
-     * the global realm on first use; failure here is non-fatal — the strand
-     * stays realm=NULL and the GC walker simply skips it (M3 baseline behavior).
-     * The strand stays a stack-local UStrand and is unlinked again before the
-     * matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
+    /* API-004 (Wave 5): route this transient onto realm->strands_head — the
+     * caller-supplied realm if given, else the VM's global Realm (lazy-created
+     * on first use).  Failure here is non-fatal — the strand stays realm=NULL
+     * and the GC walker simply skips it.  The strand is unlinked again before
+     * the matching ustrand_destroy below.  Per pre-M4 GC strand-walker spec §5.1.
      * entry_closure stays NULL — that is the discriminator the OP_FORK_DETACH
-     * / OP_FORK_JOIN guards now use to reject forks from a urbi_vm_run transient. */
+     * / OP_FORK_JOIN guards now use to reject forks from a urbi_vm_run transient.
+     *
+     * Pre-Wave-5: this branch unconditionally bound the transient to the global
+     * Realm regardless of any realm argument the caller might have intended;
+     * the realm argument was added at Wave 5 to thread urbi_run_chunk's
+     * caller-supplied Realm through here.  NULL → global preserves the
+     * implicit pre-Wave-5 behavior for callers that don't care which Realm
+     * they run in. */
     {
-        URealm *gr = urbi_realm_global(vm);
-        if (gr != NULL) {
-            strand.realm         = gr;
-            strand.next_in_realm = gr->strands_head;
-            gr->strands_head     = &strand;
+        URealm *target_realm = realm;
+        if (target_realm == NULL) target_realm = urbi_realm_global(vm);
+        if (target_realm != NULL) {
+            strand.realm         = target_realm;
+            strand.next_in_realm = target_realm->strands_head;
+            target_realm->strands_head = &strand;
         }
     }
 

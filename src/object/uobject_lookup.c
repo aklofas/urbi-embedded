@@ -71,9 +71,18 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
     /* Rollover check: if the next u32 truncation of (lookup_id + 1) would
      * be 0 (the "no stamp" sentinel), force a clear-pass and reset to 1
      * BEFORE doing the increment.  Otherwise pre-bump so the new id is
-     * fresh against every UObject's previous stamp. */
+     * fresh against every UObject's previous stamp.
+     *
+     * OBJ-014: track whether this entry already triggered a force_wrap.
+     * If so, the second-pass fallback retry can safely bump lookup_id
+     * without re-checking the wrap condition (force_wrap left lookup_id
+     * at 1 and cleared every UObject's stamp, so a second bump to id=2
+     * is unconditionally fresh).  This avoids a redundant walk-all-cells
+     * pass in the wrap-during-first-pass scenario. */
+    int wrapped_in_first_pass = 0;
     if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
+        wrapped_in_first_pass = 1;
         /* force_wrap leaves lookup_id == 1, which is fresh after the
          * just-cleared stamps. */
     } else {
@@ -96,12 +105,18 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * otherwise lookup of "fallback" missing on an object without one
      * would recurse forever.  Bump lookup_id again so the second pass
      * uses a fresh stamp against UObjects that were marked during the
-     * first pass; rollover-guard is identical to the entry path. */
+     * first pass; rollover-guard mirrors the entry path EXCEPT when the
+     * first pass already triggered a wrap (cf. OBJ-014). */
     USymbol *fb = (USymbol *)ustr_intern(vm, "fallback", 8);
     if (name == fb) {
         return -1;
     }
-    if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
+    /* OBJ-014: skip the wrap-check on the second pass when force_wrap
+     * already fired in the first pass — stamps were cleared and
+     * lookup_id is currently >= 1, so a plain pre-bump is unconditionally
+     * fresh.  Otherwise apply the standard rollover guard. */
+    if (!wrapped_in_first_pass
+        && (uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {
         vm->lookup_id++;

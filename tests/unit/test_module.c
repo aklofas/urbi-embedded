@@ -1298,17 +1298,21 @@ UTEST(module_load_error_name_all_codes) {
     UASSERT_EQ(0, strcmp("ULOAD_CORRUPT_TAG",         umodule_load_error_name(ULOAD_CORRUPT_TAG)));
     UASSERT_EQ(0, strcmp("ULOAD_CORRUPT",             umodule_load_error_name(ULOAD_CORRUPT)));
     UASSERT_EQ(0, strcmp("ULOAD_OOM",                 umodule_load_error_name(ULOAD_OOM)));
+    UASSERT_EQ(0, strcmp("ULOAD_INVALID_ARG",         umodule_load_error_name(ULOAD_INVALID_ARG)));
+    UASSERT_EQ(0, strcmp("ULOAD_OVERSIZED",           umodule_load_error_name(ULOAD_OVERSIZED)));
     /* Out-of-range code falls through to ULOAD_UNKNOWN sentinel. */
     UASSERT(umodule_load_error_name((UModuleLoadError)99) != NULL);
 }
 
 UTEST(deserialize_null_module_returns_truncated) {
-    /* umodule_deserialize(NULL, ...) must not crash — covers the null guard. */
+    /* umodule_deserialize(NULL, ...) must not crash — covers the null guard.
+     * v0.5.7 T73: NULL module / NULL buf now returns ULOAD_INVALID_ARG; the
+     * test name is preserved for git-blame continuity. */
     uint8_t buf[24];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     UModuleLoadError rc = umodule_deserialize(NULL, buf, sizeof buf, NULL, 0);
-    UASSERT_EQ(ULOAD_TRUNCATED, rc);
+    UASSERT_EQ(ULOAD_INVALID_ARG, rc);
 }
 
 UTEST(deserialize_oom_on_constants_allocation) {

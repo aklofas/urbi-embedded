@@ -10,7 +10,9 @@
 #ifndef UUNWIND_H
 #define UUNWIND_H
 
-#include "sched/ustrand.h"  /* UStrand */
+#include "sched/ustrand.h"        /* UStrand */
+#include "runtime/uclosure.h"     /* UClosure */
+#include "module/umodule.h"       /* UModule, UValue */
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +22,20 @@ extern "C" {
  * On return, s->pending_unwind == UEXEC_OK (transfer absorbed)
  * or s->state == USTRAND_STATE_DEAD (unhandled / fatal escalation). */
 void urbi_unwind(UStrand *s);
+
+/* ustrand_consts_for_closure — single source of truth for the
+ * "constants pool from closure (or module fall-back)" rule.  Used by both
+ * OP_CALL (entering callee) and pop_call_frame (returning to caller) so
+ * the two sites cannot drift.  cl may be NULL when the calling frame is
+ * the module's top-level.  Closes FOUND-032 (Wave 2 carry). */
+static inline const UValue *
+ustrand_consts_for_closure(const UStrand *s, const UClosure *cl)
+{
+    if (cl != NULL && cl->proto != NULL && cl->proto->constants != NULL) {
+        return cl->proto->constants;
+    }
+    return s->module->constants;
+}
 
 #ifdef __cplusplus
 }

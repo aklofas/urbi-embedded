@@ -71,13 +71,37 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 
 /* Entry in the deferred slot-change ring (spec #4 §3.5).
  *
- * Pointer lifetime: the per-entry parent pointer is *weak* across GC
- * boundaries.  Safety relies on the cooperative-scheduling invariant that
- * no GC cycle runs between defer and drain — the ring drains at every
- * safepoint, before watcher-eval.  A v1.x preemptive scheduler MUST
- * upgrade these to strong refs (visit them from the GC root walk).
- * NOT GC-managed — entries are transient; drain logic clears each slot
- * after firing. */
+ * GC rooting contract (closes GC-004 — doc-only at v1.0):
+ *   The (parent, key, new_value) triple is NOT walked by any GC root
+ *   provider.  parent (UObject *) and any heap-bearing UValue inside
+ *   new_value are weak references across a GC slice.  Correctness at v1.0
+ *   relies on a strict safepoint-ordered invariant maintained by the
+ *   cooperative scheduler:
+ *
+ *     defer-site (slot-write barrier inside a sync slot-change body)
+ *       --> next safepoint
+ *       --> urbi_drain_deferred_slot_changes (clears head..tail)
+ *       --> watcher_eval_dirty
+ *
+ *   No GC slice runs between defer-site and drain because the cooperative
+ *   scheduler only steps GC at the dispatch-loop safepoint, and the drain
+ *   happens at that same safepoint *before* any potential GC trigger.
+ *   This invariant is implicitly verified by the full 148-fixture .chk
+ *   corpus passing under URBI_GC_INCREMENTAL with stress-mode allocation.
+ *
+ *   v1.x preemption upgrade path (filed; NOT addressed here):
+ *     A preemptive scheduler that can step GC asynchronously between
+ *     defer-site and drain MUST upgrade these to strong refs by visiting
+ *     vm->deferred_slot_changes[head..tail] from the GC root walker (e.g.
+ *     a new urbi_deferred_ring_walk_roots root provider registered with
+ *     urbi_gc_register_root_provider).  Until then, runtime safety is
+ *     contractual on the safepoint ordering.  See the workspace-root
+ *     design-risks register entry "v1.x: deferred slot-change ring
+ *     becomes weak under preemption" for the detailed upgrade plan.
+ *
+ * Storage: heap-allocated ring buffer, one urbi_vm-init calloc, freed in
+ * urbi_vm_destroy.  NOT GC-managed at any tier — the cell entries are
+ * transient and the drain logic zeroes each slot after firing. */
 typedef struct UDeferredSlotChange {
     struct UObject *parent;
     struct USymbol *key;
@@ -212,6 +236,14 @@ typedef struct UVM {
     int64_t  gc_debt;                  /* negative = credit; positive = GC work owed */
     size_t   gc_threshold;             /* debt threshold; default URBI_GC_INITIAL_THRESHOLD */
     size_t   gc_live_bytes;            /* live bytes after last sweep cycle */
+    size_t   gc_surviving_bytes;       /* in-progress sweep accumulator (closes GC-015):
+                                        * reset at SWEEP entry, incremented per cell
+                                        * processed in each gc_sweep_step slice, and
+                                        * written to gc_live_bytes at sweep complete.
+                                        * Persisting across slices avoids re-walking
+                                        * head→cursor each slice (which mis-counted
+                                        * intra-slice allocations that prepended to
+                                        * head between slices). */
     size_t   gc_total_allocated;       /* monotonically increasing allocation counter */
     struct UCell *all_cells_head;      /* intrusive list of all GC-managed cells */
     struct UCell *gray_work_head;      /* mark-phase gray worklist */
@@ -312,11 +344,20 @@ typedef struct UVM {
      *   is full and an entry is dropped; gates URBI_LOG_WARN (spec §5.3).
      * deferred_slot_changes: heap-allocated ring buffer (cap entries),
      *   freed in urbi_vm_destroy.  NOT GC-managed — entries live only while
-     *   head != tail; drain logic (R6) clears each slot after firing.
+     *   head != tail; drain logic (R6) clears each slot after firing.  See
+     *   the contract on `UDeferredSlotChange` (above) for the full GC
+     *   safepoint-ordering invariant that keeps the weak parent + value
+     *   pointers safe at v1.0 (closes GC-004 — doc-only).
      * head/tail: SPSC ring indices (mod cap).  head == tail → empty.
      * cap: URBI_DEFERRED_SLOT_CHANGE_RING_SIZE at init. */
     uint8_t                 slot_change_reentrancy_warned;
     uint8_t                 slot_change_ring_full_warned;
+    /* event_sync_degradation_warned: one-shot flag; set on first
+     * c_event_emit_sync degradation to async (spec #3 §5.4 — call from
+     * within a scratch / eval / install context).  Mirrors the
+     * slot_change_reentrancy_warned shape so a tight loop that triggers
+     * the degradation does not flood URBI_LOG_WARN.  Closes EMITR-005. */
+    uint8_t                 event_sync_degradation_warned;
     UDeferredSlotChange    *deferred_slot_changes;
     uint16_t                deferred_slot_changes_head;
     uint16_t                deferred_slot_changes_tail;
@@ -362,8 +403,15 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    error, vm->last_error and vm->last_errmsg are populated and *out is
    set to UVAL_NIL (kind = UVAL_NIL, value payload zeroed).
    last_error and last_errmsg are reset at entry — a caller may inspect
-   them after each urbi_vm_run call without stale state from prior runs. */
-UVMError urbi_vm_run(UVM *vm, const UModule *module, UValue *out);
+   them after each urbi_vm_run call without stale state from prior runs.
+
+   API-004 (Wave 5): the `realm` argument selects which Realm the
+   transient strand runs in.  realm == NULL falls back to the VM's
+   global Realm (the pre-Wave-5 implicit behavior), preserving
+   source-compat for existing callers via the matching update in the
+   public header. */
+UVMError urbi_vm_run(UVM *vm, struct URealm *realm,
+                     const UModule *module, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void urbi_vm_destroy(UVM *vm);

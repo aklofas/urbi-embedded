@@ -16,24 +16,39 @@
 #  include <string.h>
 #endif
 
-#define URBI_VERSION "0.3.0-concurrency"
+/* URBI_VERSION: source-of-truth string returned by urbi_version().
+ *
+ * API-011: stale at "0.3.0-concurrency" since M3 (2026-04-28), unchanged
+ * through v0.4.0/v0.5.0/v0.5.1/v0.5.2/v0.5.3/v0.5.4/v0.5.5/v0.5.6.  The
+ * release ritual (CHANGELOG cadence in WORKFLOW.md §8) updates this
+ * literal before every annotated tag; the regression test in
+ * tests/unit/test_public_api.c::urbi_version_matches_release_tag pins
+ * the expected value so a forgotten bump surfaces as a test failure. */
+#define URBI_VERSION "0.5.7-fixes"
 
 const char *urbi_version(void) { return URBI_VERSION; }
 
 /* urbi_panic: fatal runtime error.
  * Hosted: writes msg to stderr, then aborts.
- * Freestanding: spins forever (no OS abort). */
+ * Freestanding: spins forever (no OS abort).
+ *
+ * API-001: msg may be NULL (defensive); substituted with "<no diagnostic>"
+ * before fputs.  fputs(NULL, stderr) is undefined behavior on hosted libcs;
+ * the guard makes urbi_panic safe to call from any error path that may not
+ * have a message to attach. */
 URBI_NORETURN void
 urbi_panic(const char *msg)
 {
 #if __STDC_HOSTED__
+    if (!msg) msg = "<no diagnostic>";
     fputs(msg, stderr);
     fputc('\n', stderr);
     abort();
 #else
-    (void)msg;
-    /* Freestanding: no abort() available.  Spin to halt execution.
+    /* Freestanding: no fputs/abort.  Mark msg consumed (cppcheck would
+     * otherwise flag it as never-read) and spin to halt execution.
      * Embedded BSPs may override by wrapping or patching this symbol. */
+    (void)msg;
     for (;;) { /* spin */ }
 #endif
 }
@@ -70,12 +85,17 @@ urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)
 
 /* urbi_call_host_with_watchdog: URBI_DEBUG build implementation.
  * Times fn() using vm->host_time_us; logs or panics if elapsed exceeds
- * vm->callback_warn_us.  Non-debug builds use the macro in urbi.h. */
+ * vm->callback_warn_us.  Non-debug builds use the macro in urbi.h.
+ *
+ * API-010: NULL vm or NULL fn returns urbi_value_nil() defensively rather
+ * than dereferencing.  Non-debug builds use the macro form which has no
+ * defensive layer — those callers are expected to validate args themselves. */
 #ifdef URBI_DEBUG
 UValue
 urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
                              UHostFn fn, int argc, UValue *argv)
 {
+    if (!vm || !fn) return urbi_value_nil();
     uint64_t t0      = vm->host_time_us();
     UValue   r       = fn(s, argc, argv);
     uint64_t elapsed = vm->host_time_us() - t0;

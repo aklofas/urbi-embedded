@@ -142,6 +142,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->gc_paused           = 0U;
     vm->in_destroy_callback = 0U;
     vm->gc_live_bytes       = 0U;
+    vm->gc_surviving_bytes  = 0U;
     vm->gc_total_allocated  = 0U;
     vm->all_cells_head      = NULL;
     vm->gray_work_head      = NULL;
@@ -255,6 +256,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
     vm->slot_change_reentrancy_warned = 0U;
     vm->slot_change_ring_full_warned  = 0U;
+    vm->event_sync_degradation_warned = 0U;  /* EMITR-005 one-shot flag */
     vm->deferred_slot_changes_head    = 0U;
     vm->deferred_slot_changes_tail    = 0U;
     vm->deferred_slot_changes_cap     = 0U;
@@ -332,14 +334,19 @@ void
 urbi_native_protos_init(UVM *vm)
 {
     /* Propagate UVM_OOM via vm->last_error so callers can detect failure.
-     * tag_native_register OOM is handled identically via its void signature
-     * (leaves tag_proto NULL; guards in callers check for NULL). */
+     * Both event_native_register and tag_native_register (TAGCH-004) now
+     * return UVMError so partial-init OOM is surfaced rather than silently
+     * leaving NULL protos behind. */
     UVMError err = event_native_register(vm);
     if (err != UVM_OK) {
         vm->last_error = err;
         return;
     }
-    tag_native_register(vm);
+    err = tag_native_register(vm);
+    if (err != UVM_OK) {
+        vm->last_error = err;
+        return;
+    }
 }
 
 /* === urbi_register_event_drain (T57 — spec #3 §9) ===
@@ -352,8 +359,13 @@ urbi_native_protos_init(UVM *vm)
 void
 urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
 {
-    URBI_ASSERT_NOT_ISR(vm);
+    /* API-003: NULL check FIRST.  URBI_ASSERT_NOT_ISR expands to call
+     * urbi_in_isr(vm) which is itself NULL-safe, so the prior order was
+     * not strictly buggy — but the convention across the public surface
+     * is "validate args, then assert invariants", and reading the code
+     * top-down was misleading. */
     if (vm == NULL) return;
+    URBI_ASSERT_NOT_ISR(vm);
     vm->event_drain_handler = h;
 }
 

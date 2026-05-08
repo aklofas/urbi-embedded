@@ -393,14 +393,15 @@ bool cond_has_direct_side_effect(UAstNode *n) {
  * uemit_unwind.c.  See uemit_internal.h for all their declarations. */
 
 /* AST walker — returns the register holding the result of the expression.
-   Returns 0 and sets e->error on any failure. */
+   Returns 0 and sets e->error on any failure.
+   T23 (SCAN-001): every UAstKind has an explicit case arm so the switch
+   is exhaustive without a NOLINT.  Forms that this milestone does not yet
+   support (arrow-access AST_PROP_GET / AST_PROP_SET) reject with
+   EMIT_UNSUPPORTED_AST; lowering arrow-access to OP_GETSLOT / OP_SETSLOT
+   is filed as a v1.x backlog item once the arrow-vs-dot semantic
+   distinction is pinned. */
 uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
-    /* Default arm returns EMIT_UNSUPPORTED_AST for AST kinds not yet
-       emitted by this milestone. Later tasks will add explicit case arms as
-       each construct's emit lands; the NOLINT suppresses clang's switch-
-       exhaustiveness warning until that work completes. */
-    // NOLINTNEXTLINE(clang-diagnostic-switch)
     switch (n->kind) {
     case AST_INT:        return emit_int_arm(e, n);
     case AST_BOOL:       return emit_bool_arm(e, n);
@@ -429,20 +430,32 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_WAITUNTIL:      return emit_waituntil_arm(e, n);
     case AST_AT_EVENT:       return emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
+    case AST_PROP_GET:
+    case AST_PROP_SET:
     case AST_LOCAL_REF:
     case AST_PARAM:
     case AST_LAZY_PARAM:
-        /* These nodes are produced by the parser/emitter internally; they
-         * are consumed before emit_expr is called (AST_PARAM/AST_LAZY_PARAM
-         * are visited in the AST_FUNCTION arm; AST_LOCAL_REF is handled as
-         * an optimised AST_IDENT).  Reaching this arm means a malformed
-         * AST — treat as unsupported. */
+        /* AST_PROP_GET / AST_PROP_SET: arrow-access syntax (`obj.x->y` /
+         * `obj.x->y = v`).  v0.5.7 has no runtime support for arrow-access
+         * semantics (distinct from dot-access OP_GETSLOT / OP_SETSLOT);
+         * the parser still produces the nodes so a future milestone can
+         * lower them once the semantics are pinned.
+         *
+         * AST_LOCAL_REF / AST_PARAM / AST_LAZY_PARAM: produced by
+         * parser/emitter internally and consumed before emit_expr is
+         * called (AST_PARAM/AST_LAZY_PARAM in the AST_FUNCTION arm;
+         * AST_LOCAL_REF as an optimised AST_IDENT).  Reaching this arm
+         * means a malformed AST.
+         *
+         * All five forms reject as EMIT_UNSUPPORTED_AST. */
         e->error = EMIT_UNSUPPORTED_AST;
         return 0U;
     case AST_ERROR:
         e->error = EMIT_AST_ERROR;
         return 0U;
     }
+    /* Unreachable when n->kind is a valid UAstKind value — the switch is
+     * exhaustive.  Defensive fallback for corrupt-AST scenarios. */
     e->error = EMIT_UNSUPPORTED_AST;
     return 0U;
 }
@@ -525,6 +538,8 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_LAZY_PARAM_ASSIGN:  return "EMIT_LAZY_PARAM_ASSIGN";
     case EMIT_TOO_MANY_IC_SITES:           return "EMIT_TOO_MANY_IC_SITES";
     case EMIT_RESERVED_KEYWORD_AS_IDENT:   return "EMIT_RESERVED_KEYWORD_AS_IDENT";
+    case EMIT_TOO_MANY_ARGS:               return "EMIT_TOO_MANY_ARGS";
+    case EMIT_TAG_SPILL_OUT_OF_RANGE:      return "EMIT_TAG_SPILL_OUT_OF_RANGE";
     }
     return "EMIT_UNKNOWN";
 }

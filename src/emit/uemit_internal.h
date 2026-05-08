@@ -131,23 +131,89 @@ int find_or_install_upvalue(UEmitter *e, UFuncState *fs,
 #define UEMIT_JMP_FALLTHROUGH_BIAS    (UEMIT_JMP_BIAS + 1U)
 #define UEMIT_REG_LIMIT       UFS_MAX_REGS       /* alias for clarity at exhaustion-guard sites (EMIT-025) */
 
+/* EMIT-019 fix (Wave 5, v0.5.7): centralize OP_JMP Bx encoding in a
+ * pc-based helper.  The VM dispatches OP_JMP as `pc += signed(Bx) -
+ * UEMIT_JMP_BIAS` AFTER the dispatch's pc++, so an OP_JMP at
+ * from_pc landing at target_pc requires Bx = (target_pc - from_pc - 1)
+ * + UEMIT_JMP_BIAS.  Wave 3 named UEMIT_JMP_BIAS / FALLTHROUGH_BIAS but
+ * left the arithmetic inline at every site; this helper centralizes
+ * the encoding contract so future peephole / extra-instr insertions
+ * cannot silently miscompute fall-through.  Returns the biased Bx value
+ * ready for uinstr_enc_abx.  Bytecode-byte-identical with the pre-
+ * extract inline form. */
+static inline uint16_t uemit_jmp_offset(int from_pc, int target_pc) {
+    int offset = target_pc - from_pc - 1;
+    return (uint16_t)((int)UEMIT_JMP_BIAS + offset);
+}
+
 /* --- Register-allocator micro-helpers (inline for zero overhead) ---
  * Promoted from static in uemit.c so that extracted TUs (uemit_react.c, etc.)
  * can use them without implicit-declaration warnings. */
 
 /* Bump the register-allocator cursor and track high-water mark.
  * Returns the allocated register index.  Sets EMIT_REG_EXHAUSTED if
- * all 256 slots are consumed (cursor at 255 before call). */
+ * all 256 slots are consumed (cursor at 255 before call).
+ *
+ * EMIT-011 fix (Wave 5, v0.5.7): also bump the per-FuncState
+ * fs->max_reg_seen.  uemit_close_function rolls fs->max_reg_seen into
+ * the nested proto's max_reg; the VM allocates (proto->max_reg + 1)
+ * register slots at runtime.  Pre-fix, alloc_reg only updated the
+ * EMITTER's global high-water (e->max_reg_seen), so leaf-expression
+ * paths (AST_INT / AST_BOOL / AST_NIL / AST_NOOP) that allocate
+ * temps without going through emit_compare or emit_ident (which sync
+ * fs->max_reg_seen explicitly) caused proto->max_reg to under-report
+ * the actual peak — out-of-bounds register access at runtime.
+ *
+ * NULL-guard on current_fs: alloc_reg may be called during the brief
+ * window before uemit_statement opens the lazy top-level FuncState. */
 static inline uint8_t alloc_reg(UEmitter *e) {
     if (e->next_reg == 255U) { e->error = EMIT_REG_EXHAUSTED; return 0U; }
     uint8_t r = e->next_reg++;
     if (r > e->max_reg_seen) e->max_reg_seen = r;
+    if (e->current_fs != NULL && r > e->current_fs->max_reg_seen)
+        e->current_fs->max_reg_seen = r;
     return r;
 }
 
-/* Release the most-recently-allocated register (stack discipline). */
+/* Release the most-recently-allocated register (stack discipline).
+ *
+ * EMIT-012 fix (Wave 5, v0.5.7): respect fs_temp_floor — temp registers
+ * live at indices [floor, ...) where floor = nactvar + (1 if
+ * global_slot_reserved else 0).  A bare next_reg-- with no floor guard
+ * decrements *into* the local zone when the caller miscounted free_reg
+ * against alloc_reg, then a subsequent alloc_reg returns a slot that
+ * aliases a still-live local.  Guard against the underflow by treating
+ * the call as a no-op when next_reg is already at or below the floor.
+ *
+ * NULL-guard on current_fs: free_reg may be called during the brief
+ * window before uemit_statement opens the lazy top-level FuncState. */
 static inline void free_reg(UEmitter *e) {
+    if (e->next_reg == 0U) return;
+    if (e->current_fs != NULL) {
+        uint8_t floor_val = fs_temp_floor(e->current_fs);
+        if (e->next_reg <= floor_val) return;
+    }
+    e->next_reg--;
+}
+
+/* Release a register that was bumped through *both* next_reg AND the
+ * FuncState freereg cursor (the pattern that emit_function_literal
+ * leaves behind on the parent FuncState — closure dst pulled from
+ * freereg, then `freereg++` and `next_reg = freereg`).
+ *
+ * EMIT-010 fix (Wave 5, v0.5.7): watcher / waituntil / at-event install
+ * arms compile their cond/body/onleave/event closures via
+ * emit_function_literal, which raises freereg in lockstep with next_reg.
+ * Plain free_reg() decrements only next_reg, leaving freereg promoted
+ * 1-N slots above the now-decremented next_reg.  Subsequent
+ * declarations / temp allocations then land at the leaked freereg
+ * floor instead of the actual top of the live stack, wasting register
+ * slots and inflating proto.max_reg.  Use free_reg_freereg_synced at
+ * each install-site teardown to symmetrically unwind both cursors. */
+static inline void free_reg_freereg_synced(UEmitter *e) {
     if (e->next_reg > 0U) e->next_reg--;
+    if (e->current_fs != NULL && e->current_fs->freereg > e->next_reg)
+        e->current_fs->freereg = e->next_reg;
 }
 
 /* Statement / control-flow AST arm helpers (defined in uemit_stmt.c).

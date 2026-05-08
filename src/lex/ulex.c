@@ -299,8 +299,12 @@ static UDigitAccResult scan_decimal_digits(ULexer *lex, const char *start,
    Suffix table is ordered longest-first so "ms" beats bare "m"; the
    ident-cont boundary check is uniform across all entries (LEX-008
    structurally closed by the table rewrite — both two-char and one-char
-   paths now share one predicate). */
-static void apply_duration_suffix(ULexer *lex, int64_t *value) {
+   paths now share one predicate).
+
+   Returns 1 on overflow (the multiply by mul would exceed INT64_MAX); the
+   caller is responsible for emitting a LEX_INT_OVERFLOW token.  The division
+   path (ns) cannot overflow.  Returns 0 on success or no-suffix (LEX-006). */
+static int apply_duration_suffix(ULexer *lex, int64_t *value) {
     for (const UDurationSuffix *e = kDurationSuffixes; e->suffix != NULL; e++) {
         if (lex->cur + e->sufflen > lex->end) continue;
         if (!urbi_memeq(lex->cur, e->suffix, e->sufflen)) continue;
@@ -308,10 +312,18 @@ static void apply_duration_suffix(ULexer *lex, int64_t *value) {
         if (lex->cur + e->sufflen < lex->end &&
             is_ident_cont(lex->cur[e->sufflen])) continue;
         lex->cur += e->sufflen;
-        if (e->mul >= 0) *value *= e->mul;
-        else             *value /= -e->mul;
-        return;
+        if (e->mul >= 0) {
+            /* Pre-check: the digit accumulator only guards INT64_MAX during
+               digit-by-digit accumulation; a value that fits as a bare int
+               can still wrap when scaled by 1000…86_400_000_000. */
+            if (e->mul > 0 && *value > INT64_MAX / e->mul) return 1;
+            *value *= e->mul;
+        } else {
+            *value /= -e->mul;
+        }
+        return 0;
     }
+    return 0;
 }
 
 /* Scan a numeric literal starting at lex->cur.  Caller has confirmed
@@ -330,7 +342,10 @@ static UToken scan_number(ULexer *lex) {
     if (!dr.ok) return dr.err;
     int64_t value = dr.value;
 
-    apply_duration_suffix(lex, &value);
+    if (apply_duration_suffix(lex, &value)) {
+        return make_error(LEX_INT_OVERFLOW, start_line, start_col,
+                          (int)(lex->cur - start));
+    }
 
     UToken t = make_tok_base(TOK_INT, start_line, start_col);
     t.len = (int)(lex->cur - start);

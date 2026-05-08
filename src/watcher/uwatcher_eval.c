@@ -265,7 +265,16 @@ watcher_eval_dirty(struct UVM *vm)
                 break;
 
             default:
-                /* Unknown mode — update cache and skip. */
+                /* WATCH-016 (v0.5.7): unknown mode is a structural invariant
+                 * violation — pool_alloc + install paths only ever set mode to
+                 * one of UWATCHER_AT / _WHENEVER / _AT_SYNC / _WAITUNTIL /
+                 * _AT_EVENT / _AT_EVENT_SYNC.  An out-of-range value at this
+                 * point indicates memory corruption or a future caller
+                 * forgetting to gate a new mode value through the eval switch.
+                 * URBI_INTERNAL_ASSERT aborts in URBI_DEBUG; release builds
+                 * fall through to update the cache (legacy soft-fail behavior)
+                 * so production stays running. */
+                URBI_INTERNAL_ASSERT(0 && "watcher_eval_dirty: unknown watcher mode");
                 w->last_value_cache = new_val;
                 break;
         }

@@ -22,6 +22,8 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "value/uintern.h"
+#include "sched/ustrand.h"   /* T69: UStrand layout + ready_next/ready_prev fields */
+#include "urbi/urbi.h"       /* T69: urbi_strand_create / urbi_strand_start (public API) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -371,6 +373,53 @@ UTEST(realm_create_oom_returns_null)
     urbi_vm_destroy(&vm);
 }
 
+/* 16. realm_destroy_does_not_free_strand_on_ready_queue (T69 / REALM-011)
+ *
+ * Reproducer: create a realm, spawn two strands so they land on the
+ * cooperative scheduler's ready_queue (state == READY), then destroy the
+ * realm.  Pre-fix, urbi_strand_destroy would free each strand without
+ * splicing it out of vm->ready_head / ready_tail's doubly-linked list,
+ * leaving the queue head/tail and the surviving strand's ready_prev /
+ * ready_next dangling — caught immediately by ASan on the next access.
+ * Post-fix, sched_strand_unbind_from_ready_queue runs before each free,
+ * so the queue is fully drained and ready_head / ready_tail are NULL.
+ *
+ * The test deliberately runs the destroy without invoking the dispatch
+ * loop — the strand's entry_closure is NULL, but the strand never
+ * actually runs.  Only its membership on the ready_queue matters here. */
+UTEST(realm_destroy_does_not_free_strand_on_ready_queue)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    UStrand *s1 = urbi_strand_create(r, NULL);
+    UASSERT(s1 != NULL);
+    urbi_strand_start(s1);
+    UStrand *s2 = urbi_strand_create(r, NULL);
+    UASSERT(s2 != NULL);
+    urbi_strand_start(s2);
+
+    /* Sanity: both strands must be on the ready_queue before destroy. */
+    UASSERT(vm.ready_head != NULL);
+    UASSERT(vm.ready_tail != NULL);
+    UASSERT_EQ((uint32_t)2, vm.strand_runnable_count);
+
+    /* Destroy realm — under the bug, freed strand memory remains
+     * referenced by vm->ready_head / ready_tail.  Under ASan this would
+     * surface as use-after-free on any subsequent ready_queue access. */
+    urbi_realm_destroy(&vm, r);
+
+    /* Post-condition: queue head/tail cleared; runnable count drained. */
+    UASSERT(vm.ready_head == NULL);
+    UASSERT(vm.ready_tail == NULL);
+    UASSERT_EQ((uint32_t)0, vm.strand_runnable_count);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -394,4 +443,6 @@ test_realm_suite(void)
     utest_run("realm_walk_roots_invokes_callback_per_namespace_entry",
               realm_walk_roots_invokes_callback_per_namespace_entry);
     utest_run("realm_create_oom_returns_null",                      realm_create_oom_returns_null);
+    utest_run("realm_destroy_does_not_free_strand_on_ready_queue (T69)",
+              realm_destroy_does_not_free_strand_on_ready_queue);
 }
