@@ -196,16 +196,19 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
                 if (c >= 0x20 && c < 0x7f) { single = (char)c; }
                 break;
             }
+            /* FOUND-005: every escape branch must reserve room for the
+             * trailing closing quote.  Reserved bytes = escape length + 1
+             * (for the trailing '"'). */
             if (esc) {
-                if (w + 2 >= cap) break;
+                if (w + 2 + 1 >= cap) break;   /* 2 escape + 1 trailing quote */
                 buf[w++] = esc[0];
                 buf[w++] = esc[1];
             } else if (single) {
-                if (w + 1 >= cap) break;
+                if (w + 1 + 1 >= cap) break;   /* 1 char + 1 trailing quote */
                 buf[w++] = single;
             } else {
                 /* \xNN hex escape for non-printable bytes */
-                if (w + 4 >= cap) break;
+                if (w + 4 + 1 >= cap) break;   /* 4 escape + 1 trailing quote */
                 static const char hex[] = "0123456789abcdef";
                 buf[w++] = '\\';
                 buf[w++] = 'x';
