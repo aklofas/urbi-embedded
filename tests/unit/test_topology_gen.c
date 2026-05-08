@@ -205,9 +205,14 @@ UTEST(topology_gen_row_6_remove_oget_bumps) {
 }
 
 UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
-    /* §4.1 row 7: rewriting an existing UProps's oget value in place bumps
-     * because cached IC uprops[] pointer is the same but the value behind
-     * it has changed.  Subsequent dispatches must re-fetch. */
+    /* §4.1 row 7: rewriting a UProps's oget value via set_property_value
+     * bumps topology_gen because cached IC uprops[] entries pointing at
+     * the OLD UProps cell are now stale.  Per OBJ-018 (closed in
+     * v0.5.7-fixes Phase 13), set_property_value copy-on-writes the
+     * UProps cell to isolate the mutation from any aliasing sibling
+     * shape; the props_table[idx] entry is rewritten to point at the
+     * fresh UProps with the new oget payload.  Subsequent IC dispatch
+     * re-fetches and observes the new pointer. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
@@ -221,8 +226,7 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
     UASSERT_EQ(urbi_object_install_property(&vm, o, foo,
                                             URBI_SLOT_FLAG_OGET, getter1), 0);
 
-    /* In-place mutation: pass a different UValue.  Same UProps cell stays
-     * in props_table[0]; only oget's payload changes. */
+    /* Snapshot the old UProps; CoW will replace it with a fresh cell. */
     UProps *up_before = o->shape->props_table[0];
     UASSERT(up_before != NULL);
 
@@ -234,9 +238,11 @@ UTEST(topology_gen_row_7_in_place_oget_mutation_bumps) {
                                               URBI_SLOT_FLAG_OGET, getter2), 0);
     UASSERT(vm.topology_gen == pre + 1U);
 
-    /* Same UProps pointer, different oget payload. */
-    UASSERT(o->shape->props_table[0] == up_before);
-    UASSERT(up_before->oget.v.p == (void *)o2);
+    /* Fresh UProps cell published; its oget payload is the new getter. */
+    UProps *up_after = o->shape->props_table[0];
+    UASSERT(up_after != NULL);
+    UASSERT(up_after != up_before);   /* CoW: new cell */
+    UASSERT(up_after->oget.v.p == (void *)o2);
 
     urbi_vm_destroy(&vm);
 }

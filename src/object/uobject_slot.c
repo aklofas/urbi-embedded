@@ -428,19 +428,37 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
         || obj->shape->props_table[idx] == NULL) {
         return -1;   /* no UProps to mutate */
     }
-    UProps *p = obj->shape->props_table[idx];
-    if (flag_bit == URBI_SLOT_FLAG_OGET) {
-        p->oget = value;
-    } else if (flag_bit == URBI_SLOT_FLAG_OSET) {
-        p->oset = value;
-    } else {
+    if (flag_bit != URBI_SLOT_FLAG_OGET
+        && flag_bit != URBI_SLOT_FLAG_OSET) {
         return -1;
     }
+
+    /* OBJ-018: copy-on-write the UProps cell before mutation.  The
+     * existing UProps* may be shared via UPropsTable seeding with a
+     * sibling shape (see ushape.c::alloc_props_table); an in-place
+     * write of `oget`/`oset` would propagate the mutation to every
+     * shape that aliased this UProps pointer.  Allocating a fresh
+     * UProps and rewriting the props_table[idx] entry isolates this
+     * shape's view from any aliasing sibling. */
+    UProps *existing = obj->shape->props_table[idx];
+    UProps *fresh = uprops_alloc(vm);
+    if (fresh == NULL) {
+        return -1;
+    }
+    fresh->oget     = existing->oget;
+    fresh->oset     = existing->oset;
+    fresh->constant = existing->constant;
+    if (flag_bit == URBI_SLOT_FLAG_OGET) {
+        fresh->oget = value;
+    } else {
+        fresh->oset = value;
+    }
+    obj->shape->props_table[idx] = fresh;
+
     /* Bumping topology_gen here is the load-bearing invariant per topology
-     * spec §4.1 row 7: cached IC uprops[] entries point at this same UProps
-     * pointer, so the pointer itself is still live — but the value behind it
-     * just changed and IC dispatch must re-fetch via the slow path to pick
-     * up the new getter/setter. */
+     * spec §4.1 row 7: cached IC uprops[] entries point at the old UProps
+     * pointer, which is now stale — IC dispatch must re-fetch via the
+     * slow path to pick up the new UProps cell. */
     vm->topology_gen++;
     return 0;
 }
