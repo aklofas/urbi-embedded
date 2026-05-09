@@ -175,7 +175,7 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
  * shipped here. */
 
 UObject *
-urbi_proto_list_create(UVM *vm, const UObject *recv)
+urbi_proto_list_create(UVM *vm, UObject *recv)
 {
     if (vm == NULL || recv == NULL) return NULL;
 
@@ -199,12 +199,9 @@ urbi_proto_list_create(UVM *vm, const UObject *recv)
     if (sym_owner == NULL) return NULL;
     UValue owner = urbi_value_nil();
     owner.kind = (uint8_t)UVAL_OBJECT;
-    /* Cast away const — the _owner slot is the receiver-side owner that
-     * insertFront mutates.  obj_protos's caller passes a non-const recv
-     * UObject down the call chain; this synthetic-list helper takes
-     * const for the read-only proto-count purposes, but the underlying
-     * UObject is itself non-const through the script's reference. */
-    owner.v.p = (void *)(uintptr_t)recv;
+    /* Owner is a live UObject; insertFront on the synthetic list mutates
+     * its proto chain in place via urbi_object_set_protos. */
+    owner.v.p = recv;
     if (urbi_object_set_local_slot(vm, list, sym_owner, owner) != 0) return NULL;
 
     /* T63: install insertFront on this synthetic list.  Each protos call
@@ -456,7 +453,7 @@ obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "protos: self must be a UObject", out);
 
-    const UObject *recv = (const UObject *)self.v.p;
+    UObject *recv = (UObject *)self.v.p;
     UObject *list = urbi_proto_list_create(vm, recv);
     if (list == NULL) return urbi_raise_oom(vm, out);
     *out = uval_obj(list);
