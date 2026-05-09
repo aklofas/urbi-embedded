@@ -380,7 +380,11 @@ bool cond_has_direct_side_effect(UAstNode *n) {
                 if (cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
             return false;
         }
-        case AST_CALL:   return false;  /* opaque — best-effort only */
+        /* TIDY-008: AST_CALL is opaque (read-only methods are common; we avoid
+         * false positives by treating calls as no-side-effect at compile time).
+         * The default arm returns false for every other unhandled kind too,
+         * so a separate `case AST_CALL: return false;` was a byte-identical
+         * branch clone — collapsed into the default with this comment. */
         default:         return false;
     }
 }
