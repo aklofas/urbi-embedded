@@ -926,6 +926,45 @@ static void lex_1d_yields_86400000000(void) {
     UASSERT_EQ(t.len, 2);
 }
 
+/* LEX-033: 123ms_x and 123sfoo coverage gap.  The duration-suffix table
+ * boundary check rejects a suffix when the byte after the suffix is
+ * ident-cont — both '_' and any letter qualify.  These two edge cases
+ * pin the post-suffix ident-boundary contract:
+ *
+ *   "123ms_x" — 'ms' is two chars; the byte after ('_') is ident-cont so
+ *   'ms' is NOT consumed; the next applicable single-char suffix 'm' is
+ *   followed by 's' (ident-cont) so also NOT consumed.  Result: TOK_INT
+ *   123 then TOK_IDENT "ms_x".
+ *
+ *   "123sfoo" — 's' is one char; the byte after ('f') is ident-cont so
+ *   's' is NOT consumed.  Result: TOK_INT 123 then TOK_IDENT "sfoo".
+ *
+ * Both shapes flag the trap that whitespace (or its absence) determines
+ * whether the literal carries time semantics. */
+static void lex_123ms_underscore_x_is_int_then_ident(void) {
+    ULexer l;
+    ulex_init(&l, "123ms_x", 7);
+    const UToken t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 123);
+    UASSERT_EQ(t1.len, 3);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 4);
+}
+
+static void lex_123sfoo_is_int_then_ident(void) {
+    ULexer l;
+    ulex_init(&l, "123sfoo", 7);
+    const UToken t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 123);
+    UASSERT_EQ(t1.len, 3);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 4);
+}
+
 static void lex_1mfoo_does_not_consume_suffix(void) {
     ULexer l;
     ulex_init(&l, "1mfoo", 5);
@@ -1124,6 +1163,8 @@ void test_lexer_suite(void) {
     utest_run("lex_1m_yields_60000000", lex_1m_yields_60000000);
     utest_run("lex_1h_yields_3600000000", lex_1h_yields_3600000000);
     utest_run("lex_1d_yields_86400000000", lex_1d_yields_86400000000);
+    utest_run("lex_123ms_underscore_x_is_int_then_ident", lex_123ms_underscore_x_is_int_then_ident);
+    utest_run("lex_123sfoo_is_int_then_ident", lex_123sfoo_is_int_then_ident);
     utest_run("lex_1mfoo_does_not_consume_suffix", lex_1mfoo_does_not_consume_suffix);
     utest_run("lex_1ms_at_eof_consumed", lex_1ms_at_eof_consumed);
     utest_run("lex_time_suffix_ms_overflows", lex_time_suffix_ms_overflows);
