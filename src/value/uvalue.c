@@ -192,7 +192,7 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
                 break;
             }
         }
-        if (needs_dot_zero && (size_t)(n + 2) < cap) {
+        if (needs_dot_zero && (size_t)n + 2U < cap) {
             buf[n++] = '.';
             buf[n++] = '0';
             buf[n] = '\0';

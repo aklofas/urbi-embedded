@@ -192,7 +192,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
      * slice of the trailing IC region; unfilled sites have topology_gen == 0
      * (the sentinel per pre-M4 topology-generation spec §3.1). */
-    for (uint16_t i = 0U; i < m->nested_count; i++) {
+    for (size_t i = 0U; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
         if (p != NULL &&
             !intern_ic_names_from_strs(vm, p->ic_count, &p->ic_names,

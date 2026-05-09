@@ -45,7 +45,11 @@
 #endif
 
 #if UVM_USE_COMPUTED_GOTO
-#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]
+   /* Computed-goto dispatch — DISPATCH expands to a `goto *<expr>` statement;
+    * the replacement list cannot be wrapped in parentheses (you can't
+    * parenthesize a statement), so bugprone-macro-parentheses is suppressed
+    * here.  CASE(op) expands to a label, also unparenthesizable. */
+#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]  /* NOLINT(bugprone-macro-parentheses) — `goto *expr` cannot be parenthesized */
 #  define CASE(op)    label_##op:
 #  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
 #  define HALT()      goto halt_error

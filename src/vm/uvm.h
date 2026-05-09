@@ -112,7 +112,21 @@ typedef struct UDeferredSlotChange {
 
 #define UVM_ERRMSG_CAP 128
 
-typedef struct UVM {
+/* Field order is intentional and load-bearing:
+ *  - The early fields (alloc_fn, alloc_ud, last_error, last_errmsg) form the
+ *    init-by-zero error-handling prefix used by urbi_vm_init's failure paths.
+ *  - The M2/M3/M4/M5 sections cluster fields by lifecycle (M2 intern table,
+ *    M4 prototype/atom singletons, M5 reactive runtime) so reviewing each
+ *    milestone's contribution stays local to one block.
+ *  - Six _Static_assert layout pins (in src/vm/uvm.c, guarded on
+ *    __SIZEOF_POINTER__ == 8) cement specific field offsets for cross-arch
+ *    parity verification.
+ * Reordering by clang-analyzer-optin.performance.Padding's optimal-pack
+ * suggestion would shrink the struct by ~40 bytes (host) but break the
+ * layout pins and scatter related fields across milestones, costing far
+ * more in maintainability than the saved bytes are worth on a struct
+ * allocated once per VM.  Suppress per-line. */
+typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — field order is intentional, see comment above */
     UVMAllocFn alloc_fn;
     void      *alloc_ud;
     UVMError   last_error;
