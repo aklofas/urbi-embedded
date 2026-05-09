@@ -35,13 +35,15 @@ struct UEvent;
  * Pure scope-nesting topology: member lists, no parent/child tree.
  * The "hierarchy" emerges from scope nesting via the cleanup-stack.
  *
- * Layout at M5: ~64 bytes on 64-bit host.
+ * Layout at M5 (64-bit host): pinned at exactly 56 B by _Static_assert below.
  *   Cell header  : type_tag(1) + gc_byte(1) + pad0(2) = 4 B
  *   Flags + pad  : flags(1) + pad1[3] = 4 B
  *   Pointers     : member_strands_head(8) + member_watchers_head(8) = 16 B
  *   Event ptrs   : enter_event(8) + leave_event(8) = 16 B    (spec #3 §3.4)
  *   Name UValue  : 16 B
- *   Total        : 56 B + natural padding = ~64 B
+ *   Total        : 56 B  (TAGCH-006: no trailing compiler pad — pad1[3] +
+ *                         pad0 already absorb alignment to the first 8 B
+ *                         pointer; UValue ends on an 8 B boundary).
  *
  * type_tag = UTYPE_TAG (5); gc_byte = current_white (set by urbi_gc_alloc).
  * enter_event / leave_event are NULL at create; lazy-allocated by getter
