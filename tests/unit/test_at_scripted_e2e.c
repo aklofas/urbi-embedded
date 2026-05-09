@@ -15,110 +15,19 @@
  * OP_GETSLOT), and async body strand completion through the M5 scheduler. */
 
 #include "utest.h"
+#include "utest_e2e_helpers.h"
 
 #include <stddef.h>
-#include <string.h>
 
-#include "value/uarena.h"
-#include "parse/uast.h"
-#include "emit/uemit.h"
-#include "lex/ulex.h"
-#include "module/umodule.h"
-#include "parse/uparse.h"
-#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 
 #define UTEST(name) static void name(void)
 
-/* ===================================================================
- * Helpers
- * =================================================================== */
-
-/* make_int: construct an integer UValue without <string.h>. */
-static UValue
-make_int(int64_t n)
-{
-    UValue v;
-    v.kind = UVAL_INT;
-    v.v.i  = n;
-    return v;
-}
-
-/* compile_and_run: lex+parse+emit+run source under the VM's global realm.
- * Returns URBI_OK on success, error code otherwise.
- * out_result may be NULL (result discarded). */
-static int
-compile_and_run(UVM *vm, const char *src, UValue *out_result)
-{
-    URealm *realm = urbi_realm_global(vm);
-    if (realm == NULL) return URBI_ERR_OOM;
-
-    ULexer   lex;
-    UArena   arena;
-    UModule  module = {0};
-    UEmitter e;
-    UParser  p;
-    UAstNode *node;
-
-    ulex_init(&lex, src, strlen(src));
-    uarena_init(&arena, 4096);
-    uemit_init(&e, &module, &arena, vm, NULL);
-    uparse_init(&p, &lex, &arena);
-
-    while ((node = uparse_next_statement(&p)) != NULL) {
-        if (node->kind == AST_ERROR) {
-            uarena_destroy(&arena);
-            umodule_destroy(&module);
-            return URBI_ERR_COMPILE;
-        }
-        if (uemit_statement(&e, node) != EMIT_OK) {
-            uarena_destroy(&arena);
-            umodule_destroy(&module);
-            return URBI_ERR_COMPILE;
-        }
-        uarena_reset(&arena);
-    }
-    if (uemit_finish(&e) != EMIT_OK) {
-        uarena_destroy(&arena);
-        umodule_destroy(&module);
-        return URBI_ERR_COMPILE;
-    }
-
-    UValue result = {0};
-    int rc = urbi_run_chunk(vm, realm, &module, &result);
-    if (out_result != NULL) {
-        *out_result = result;
-    }
-    uarena_destroy(&arena);
-    umodule_destroy(&module);
-    return rc;
-}
-
-/* run_to_no_runnable: drive the VM until strand_runnable_count == 0, a
- * fatal strand is detected, or the iteration cap is hit.
- *
- * Returns 1 if strand_runnable_count reached 0 (quiescent enough for tests
- * that leave active watchers installed — watchers keep watcher_active_count > 0
- * which prevents URBI_STEP_QUIESCENT even after all body strands complete).
- * Returns -1 on URBI_STEP_FATAL.
- * Returns 0 on cap exhaustion (timeout). */
-#define E2E_MAX_ITERS 1000
-
-static int
-run_to_no_runnable(UVM *vm)
-{
-    int i;
-    for (i = 0; i < E2E_MAX_ITERS; i++) {
-        UStepResult sr = urbi_step(vm, 1000, NULL);
-        if (sr == URBI_STEP_FATAL)     return -1;
-        if (sr == URBI_STEP_WAKE_AT)   return 1;   /* no time-sleeping strands */
-        if (sr == URBI_STEP_QUIESCENT) return 1;
-        if (vm->strand_runnable_count == 0) return 1;
-    }
-    return 0;  /* timeout */
-}
+/* compile_and_run / run_to_no_runnable / make_int now live in
+ * utest_e2e_helpers.{h,c}; see that header for documentation. */
 
 /* ===================================================================
  * Test: scripted_at_fires_on_rising_edge
@@ -144,9 +53,9 @@ UTEST(scripted_at_fires_on_rising_edge)
     if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc;
-    rc = urbi_realm_set_global(&vm, gr, "x",     1, make_int(0));
+    rc = urbi_realm_set_global(&vm, gr, "x",     1, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
-    rc = urbi_realm_set_global(&vm, gr, "fired", 5, make_int(0));
+    rc = urbi_realm_set_global(&vm, gr, "fired", 5, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
 
     /* === Phase 1: install the at-watcher ===
@@ -159,7 +68,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * (the cell that holds Realm.x), setting UGC_HAS_WATCHER_OBSERVER
      * on it so any future OP_SETSLOT write to global_object triggers
      * observer_dirty => watcher_dirty_count++. */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "at (Realm.x > 5) Realm.fired = Realm.fired + 1",
         NULL);
     UASSERT_EQ(URBI_OK, rc);
@@ -208,7 +117,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * The nested function call pattern ensures the safepoint fires AFTER
      * the write (at non-top-frame OP_RET), making watcher_eval_dirty run
      * within the same compile_and_run invocation. */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "var __trigger__ = function() { Realm.x = 10 }; __trigger__()",
         NULL);
     /* compile_and_run itself may return OK even if the watcher eval
@@ -229,7 +138,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      *
      * The body strand (if spawned) is now in the ready queue.
      * run_to_no_runnable drives urbi_step until no runnable strands remain. */
-    int step_rc = run_to_no_runnable(&vm);
+    int step_rc = utest_e2e_run_to_no_runnable(&vm);
     UASSERT(step_rc != -1);  /* URBI_STEP_FATAL → body strand crashed */
 
     /* === Phase 4: verify body fired exactly once ===
@@ -247,12 +156,12 @@ UTEST(scripted_at_fires_on_rising_edge)
      * Write Realm.x = 20.  The watcher is AT mode: the rising edge
      * already fired (last_value_cache is truthy), so this same-direction
      * write must not spawn another body strand. */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "var __trigger2__ = function() { Realm.x = 20 }; __trigger2__()",
         NULL);
     (void)rc;
 
-    (void)run_to_no_runnable(&vm);
+    (void)utest_e2e_run_to_no_runnable(&vm);
 
     rc = urbi_realm_get_global(&vm, gr, "fired", 5, &fired);
     UASSERT_EQ(URBI_OK, rc);
