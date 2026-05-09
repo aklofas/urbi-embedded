@@ -148,6 +148,7 @@ extern void test_tag_stop_onleave_scripted_suite(void);
 extern void test_event_sync_emit_scripted_suite(void);
 extern void test_utest_e2e_helpers_suite(void);
 extern void test_emit_freereg_drift_suite(void);
+extern void test_emit_line_delta_suite(void);
 extern void test_emit_error_paths_suite(void);
 extern void test_vm_dispatch_ownership_suite(void);
 extern void test_gc_sweep_accounting_suite(void);
@@ -282,6 +283,7 @@ static const struct suite_entry suites[] = {
     {"event_sync_emit_scripted",  test_event_sync_emit_scripted_suite},
     {"utest_e2e_helpers",         test_utest_e2e_helpers_suite},
     {"emit_freereg_drift",        test_emit_freereg_drift_suite},
+    {"emit_line_delta",           test_emit_line_delta_suite},
     {"emit_error_paths",          test_emit_error_paths_suite},
     {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
     {"gc_sweep_accounting",       test_gc_sweep_accounting_suite},
