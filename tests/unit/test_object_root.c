@@ -17,6 +17,7 @@
 #include "utest.h"
 
 #include "object/uobject.h"
+#include "object/uic.h"
 #include "module/umodule.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
@@ -333,6 +334,77 @@ UTEST(object_new_returns_clone) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T57: clone can overwrite a const-inherited slot =====================
+ *
+ * Touchstone for legacy/repos/aldebaran-urbi/tests/2.x/slot-cow-const.chk:
+ *
+ *   class a { const var x = 0 } |;
+ *   var b = a.new() |;
+ *   b.x = 12;     // [00000001] 12   — accepted
+ *   a.x;          // [00000002] 0    — unchanged
+ *
+ * The semantic: a's `x` is const; b inherits via clone; b can override its
+ * own slot for x, leaving a's x untouched.  The COW write SUCCEEDS for the
+ * derived even though the source slot is constant — const-ness is an
+ * attribute of the source slot, not a constraint on derivations.
+ *
+ * Pre-T57 baseline urbi_slot_set_slow rejected the write with
+ * URBI_ERR_CONST_SLOT_WRITE because the const-flag check came before the
+ * holder == recv discrimination.  T57 narrows the const check to the
+ * holder == recv case so COW writes proceed for derived objects. */
+
+UTEST(clone_can_overwrite_const_inherited_slot) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    UObject *p = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(p != NULL);
+
+    USymbol *sym_x = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(sym_x != NULL);
+
+    UValue zero = urbi_value_nil();
+    zero.kind = (uint8_t)UVAL_INT;
+    zero.v.i = 0;
+    UASSERT_EQ(urbi_object_set_local_slot(&vm, p, sym_x, zero), 0);
+    UASSERT_EQ(urbi_object_install_property(&vm, p, sym_x,
+                                            URBI_SLOT_FLAG_CONSTANT, zero),
+               URBI_OK);
+
+    /* Clone: b.x should COW-clone the const slot but the local copy must
+     * be mutable. */
+    UObject *b = urbi_object_clone(&vm, p);
+    UASSERT(b != NULL);
+
+    UIC ic;
+    memset(&ic, 0, sizeof(ic));
+    ic.name = sym_x;
+
+    UValue twelve = urbi_value_nil();
+    twelve.kind = (uint8_t)UVAL_INT;
+    twelve.v.i = 12;
+    UASSERT_EQ(urbi_slot_set_slow(&vm, b, &ic, twelve), URBI_OK);
+
+    /* Reset the IC for the read-back; the prior set_slow may have left a
+     * cached entry but that doesn't matter here since urbi_slot_get_slow
+     * also writes into the cache from scratch (by re-resolving on miss). */
+    memset(&ic, 0, sizeof(ic));
+    ic.name = sym_x;
+
+    UValue pv = urbi_value_nil();
+    UASSERT_EQ(urbi_slot_get_slow(&vm, p, &ic, &pv), 0);
+    UASSERT_EQ((int)pv.v.i, 0);
+
+    memset(&ic, 0, sizeof(ic));
+    ic.name = sym_x;
+    UValue bv = urbi_value_nil();
+    UASSERT_EQ(urbi_slot_get_slow(&vm, b, &ic, &bv), 0);
+    UASSERT_EQ((int)bv.v.i, 12);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T56: COW semantics through .new() ===================================
  *
  * The M4 COW machinery handles writes-on-clones: c.setSlot writes a fresh
@@ -435,6 +507,8 @@ void test_object_root_suite(void) {
               object_set_protos_single);
     utest_run("object_root: Object.new returns a clone",
               object_new_returns_clone);
+    utest_run("object_root: clone can overwrite const-inherited slot",
+              clone_can_overwrite_const_inherited_slot);
     utest_run("object_root: .new() then local write does not modify proto",
               new_then_local_write_does_not_modify_proto);
     utest_run("object_root: .new() and .clone() are equivalent",

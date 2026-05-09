@@ -152,7 +152,11 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
  *       - otherwise    → COW: install a local slot on recv with the new
  *                        value (no IC fill — the receiver's shape just
  *                        transitioned, so the next access misses by shape
- *                        and the slow path re-resolves to the local copy)
+ *                        and the slow path re-resolves to the local copy).
+ *                        The source's CONSTANT flag does NOT carry through
+ *                        to the COW'd local slot — const-ness binds the
+ *                        source slot, not derivations (touchstone: legacy
+ *                        slot-cow-const.chk; T57).
  *
  * OBJ-009: distinct error codes — URBI_OK on success, URBI_ERR_INVALID_ARG
  * for NULL args, URBI_ERR_CONST_SLOT_WRITE on constant overwrite,
@@ -196,15 +200,14 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
         return URBI_OK;
     }
 
-    if (flags & URBI_SLOT_FLAG_CONSTANT) {
-        /* Constant slot — write rejected.  Whether the slot lives on the
-         * receiver or a prototype, attempting to write a CONSTANT slot is
-         * an error per pre-M2 §8.1.  No IC fill (would just reject again
-         * on the next access).  OBJ-009 / API-007: distinct from OOM. */
-        return URBI_ERR_CONST_SLOT_WRITE;
-    }
-
     if (holder == recv) {
+        /* Local slot on the receiver: const-ness is binding here. */
+        if (flags & URBI_SLOT_FLAG_CONSTANT) {
+            /* Constant slot on the receiver — write rejected per pre-M2
+             * §8.1.  No IC fill (would just reject again on the next
+             * access).  OBJ-009 / API-007: distinct from OOM. */
+            return URBI_ERR_CONST_SLOT_WRITE;
+        }
         /* In-place write on the local slot.  Fill the IC so subsequent
          * writes hit the fast path. */
         recv->slots[idx] = value;
@@ -212,12 +215,18 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
         return URBI_OK;
     }
 
-    /* COW: holder != recv and no setter / not constant.  Install a local
-     * slot on recv with the new value; the prototype's slot is untouched.
+    /* holder != recv — slot resolves on a prototype.  COW per pre-M2
+     * §6.1: install a fresh local slot on recv with the new value.  The
+     * SOURCE slot's CONSTANT flag does NOT carry through: const-ness is
+     * an attribute of the source slot, not a constraint on derivations
+     * (touchstone: legacy slot-cow-const.chk — `var b = a.new(); b.x =
+     * 12;` succeeds even when a.x is const).  The new local slot is
+     * mutable; the prototype's slot is untouched.
+     *
      * No IC fill — the receiver's shape just transitioned (or, if recv
      * already had `name` locally, find_slot in resolve would have hit
-     * recv first); subsequent accesses will miss by shape and the slow
-     * path will resolve to the new local copy. */
+     * recv first); subsequent accesses miss by shape and the slow path
+     * resolves to the new local copy. */
     if (urbi_object_set_local_slot(vm, recv, ic->name, value) != 0) {
         return URBI_ERR_OOM;
     }
