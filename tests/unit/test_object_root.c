@@ -435,6 +435,32 @@ UTEST(new_then_local_write_does_not_modify_proto) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T61: getSlotValue legacy alias ========================================
+ *
+ * Object.getSlotValue is a legacy alias for getSlot used in the 2014
+ * inheritance.chk fixture (line 17).  Same semantics — walk the proto
+ * chain and return the resolved value. */
+
+UTEST(object_get_slot_value_alias) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var p = Object.clone();"
+        "p.setSlot(\"foo\", 100);"
+        "var c = p.new();"
+        "var v = c.getSlotValue(\"foo\")";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue out = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT_EQ((int)out.v.i, 100);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T60: three-level clone chain lookup =================================
  *
  * a.new() → b; b.new() → c.  c.x must resolve through the chain back to
@@ -572,6 +598,8 @@ void test_object_root_suite(void) {
               atom_new_returns_self);
     utest_run("object_root: clone-chain three-level lookup",
               clone_chain_three_levels);
+    utest_run("object_root: getSlotValue is a legacy alias for getSlot",
+              object_get_slot_value_alias);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }

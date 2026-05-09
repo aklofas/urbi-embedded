@@ -46,16 +46,17 @@
 
 /* === Forward declarations =================================================== */
 
-static int obj_setSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_getSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_hasSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeSlot  (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_clone       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_new         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_addProto    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeProto (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_protos      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_setProtos   (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlotValue (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_hasSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeSlot   (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_clone        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_new          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_addProto     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeProto  (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_protos       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setProtos    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
 
@@ -237,6 +238,22 @@ obj_getSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_lookup(vm, name, out);
     *out = holder->slots[slot_idx];
     return UEXEC_OK;
+}
+
+/* === Object.getSlotValue(name) ============================================
+ *
+ * T61: legacy alias for getSlot.  The 2014 inheritance.chk fixture uses
+ * `getSlotValue("foo")` (line 17 in legacy/repos/aldebaran-urbi/tests/2.x/
+ * inheritance.chk).  Same semantics — walk the prototype chain and return
+ * the slot's value.  The legacy split between getSlot (returns the slot
+ * descriptor) and getSlotValue (unwraps to the underlying value) doesn't
+ * apply at v1.0 because USlot collapses onto UValue (pre-M4 design); both
+ * names map to the same C body. */
+
+static int
+obj_getSlotValue(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return obj_getSlot(vm, self, args, nargs, out);
 }
 
 /* === Object.hasSlot(name) ================================================== */
@@ -436,16 +453,17 @@ typedef struct {
 } ObjectMethodEntry;
 
 static const ObjectMethodEntry OBJECT_METHODS[] = {
-    { "setSlot",     obj_setSlot     },
-    { "getSlot",     obj_getSlot     },
-    { "hasSlot",     obj_hasSlot     },
-    { "removeSlot",  obj_removeSlot  },
-    { "clone",       obj_clone       },
-    { "new",         obj_new         },
-    { "addProto",    obj_addProto    },
-    { "removeProto", obj_removeProto },
-    { "protos",      obj_protos      },
-    { "setProtos",   obj_setProtos   }
+    { "setSlot",      obj_setSlot      },
+    { "getSlot",      obj_getSlot      },
+    { "getSlotValue", obj_getSlotValue },   /* T61: legacy alias for getSlot */
+    { "hasSlot",      obj_hasSlot      },
+    { "removeSlot",   obj_removeSlot   },
+    { "clone",        obj_clone        },
+    { "new",          obj_new          },
+    { "addProto",     obj_addProto     },
+    { "removeProto",  obj_removeProto  },
+    { "protos",       obj_protos       },
+    { "setProtos",    obj_setProtos    }
 };
 
 #define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))
