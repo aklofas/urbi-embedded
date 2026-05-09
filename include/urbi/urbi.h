@@ -352,6 +352,11 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  *
  * urbi_module_instance_destroy is a no-op at v1.0 — both cells are
  * GC-managed and reaped by sweep when no roots reach the instance.
+ * (AUDIT: OBJ-027 — function body is dead at v1.0; symbol kept for
+ * public-API stability.  M7 module-instance lifecycle work may give
+ * the call host-visible side-effects (e.g. detaching from a host-owned
+ * registry); until then, callers should still pair create/destroy so
+ * the symbol can grow semantics without source churn.)
  *
  * Thread safety: none at M4; same single-threaded constraint as the rest
  * of the v1.0 API. */

@@ -223,10 +223,11 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
 void
 urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
 {
-    /* GC-managed; sweep reaps both cells when no roots reach mi.  No
-     * explicit teardown at T16 — IC entries hold no host-owned resources
-     * yet (T22+ may revisit if IC fill installs anything that needs an
-     * explicit finalizer). */
+    /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
+     * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
+     * because the public-API contract (paired create/destroy) survives
+     * into M7, where this hook may grow semantics (host-visible registry
+     * detach, etc.).  No churn for callers when that lands. */
     (void)vm;
     (void)mi;
 }
