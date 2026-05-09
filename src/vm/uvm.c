@@ -1182,17 +1182,21 @@ dispatch:
             NEXT();
         }
 
-        /* OP_TAG_STOP stays as a stub — T31 (urbi_tag_stop) wires the runtime.
-         * No syntax emits this opcode yet at T11. */
+        /* OP_TAG_STOP: runtime path is host-callable urbi_tag_stop (M3 row 7),
+         * which runs no bytecode.  The bytecode opcode is reserved for a
+         * future emit path; no parser produces it today.  The dispatch entry
+         * stays as a typed-error stub so that any rogue OP_TAG_STOP that
+         * leaks into a chunk (e.g. via the test_emit round-trip) faults
+         * cleanly instead of executing undefined behaviour. */
 #if UVM_USE_COMPUTED_GOTO
         label_row7_stub:
 #else
         case OP_TAG_STOP:
 #endif
         {
-            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP runtime owned by T31");
+            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP at runtime: emit path reserved for v1.x");
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "OP_TAG_STOP: not yet implemented (T31)");
+            vm_format_type_error_msg(vm, "OP_TAG_STOP: bytecode emit path is reserved; use urbi_tag_stop host call");
             HALT();
         }
 
