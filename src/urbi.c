@@ -147,9 +147,16 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
     FNV1A_MIX(c->h, root->kind);
     switch (root->kind) {
         case UVAL_INT:
-        case UVAL_BOOL:
-            FNV1A_MIX(c->h, (uint64_t)root->v.i);
+        case UVAL_BOOL: {
+            /* Reinterpret the int payload via memcpy for symmetry with the
+             * UVAL_FLOAT arm.  (uint64_t)root->v.i would also produce the
+             * same bits on two's-complement (universal in C), but the
+             * memcpy form is uniform across all numeric arms.  API-026. */
+            uint64_t bits;
+            memcpy(&bits, &root->v.i, sizeof(bits));
+            FNV1A_MIX(c->h, bits);
             break;
+        }
         case UVAL_FLOAT: {
             /* Mix the float's bit pattern at its actual width.  Reading v.i would
              * include stale upper bytes for f32 (URBI_FLOAT_TYPE==4) when a slot
@@ -170,7 +177,8 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
             FNV1A_MIX(c->h, (uintptr_t)root->v.p);
             break;
         default:
-            /* NIL, CLOSURE, VOID, STRAND: kind already mixed above. */
+            /* All remaining kinds (NIL, VOID, CLOSURE, STRAND, OBJECT,
+             * EVENT, HOST_FN): kind already mixed above; payload dropped. */
             break;
     }
 }
