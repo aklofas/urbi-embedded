@@ -97,11 +97,23 @@ urbi_defer_slot_change(UVM *vm, UObject *parent,
  *
  * Pop each entry from head to tail and re-emit at top level (no scratch
  * context now, so c_event_emit_sync runs normally).  Called at every
- * safepoint BEFORE watcher_eval_dirty per spec §5.4 ordering. */
+ * safepoint BEFORE watcher_eval_dirty per spec §5.4 ordering.
+ *
+ * VM-016: the empty-ring fast path returns before any work.  Every
+ * safepoint calls this drain unconditionally; the typical safepoint
+ * has nothing pending (deferred entries are pushed only from within
+ * watcher-scratch context — vm->in_watcher_scratch != 0 — and drained
+ * once the scratch frame returns).  An explicit head-equals-tail early
+ * return makes the no-work path two loads + a branch and avoids the
+ * cost of entering the while loop's condition + post-condition cleanup
+ * tail.  The earlier `while` self-guard remains as a defense for the
+ * normal multi-entry case. */
 void
 urbi_drain_deferred_slot_changes(UVM *vm)
 {
     if (vm->deferred_slot_changes == NULL) return;
+    if (vm->deferred_slot_changes_head == vm->deferred_slot_changes_tail)
+        return;
 
     while (vm->deferred_slot_changes_head != vm->deferred_slot_changes_tail) {
         UDeferredSlotChange d =
