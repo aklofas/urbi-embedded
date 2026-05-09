@@ -2,29 +2,251 @@
 
 ## Unreleased
 
-## v0.5.8-cleanup — 2026-05-08 — Pre-M6 cleanup ramp final wave (Wave 6 of 6)
+## v0.5.8-cleanup — 2026-05-09 — Pre-M6 cleanup ramp final wave (Wave 6 of 6)
 
-**Theme:** Polish + dead-code + docs. Closes ~104 `wave-6-cleanup` audit IDs from the v0.5.x cleanup audit. Reactive runtime polish bundle landed. Footprint overage from Wave 5 addressed where cheap. Strict-tooling residuals (cppcheck 145 + tidy-strict 25) driven to zero — both gates now hard-fail across all categories. Docstring coverage gate enforced on every header-exposed symbol. Design-risks register reaches a coherent state. Cleanup-ramp final retrospective at `docs/milestones/v0.5.x-cleanup.md` (workspace root).
+**Theme:** Polish + dead-code + docs. Closes ~104 `wave-6-cleanup` audit IDs
+from the v0.5.x cleanup audit. Reactive runtime polish bundle landed.
+Footprint overage from Wave 5 addressed. Strict-tooling residuals
+(cppcheck 135 + tidy-strict 23 informational tier at v0.5.7-fixes) driven
+to zero — both gates now hard-fail across all categories in
+`make releasetest`. Docstring coverage gate enforced on every
+header-exposed declaration in `include/urbi/*.h`. Design-risks register
+reaches a coherent state. Cleanup-ramp retrospective at
+`docs/milestones/v0.5.x-cleanup.md` (workspace root).
 
 ### Reactive runtime
 
-(populated as Phase 1-2 commits land)
+- (Phase 1, REACT-POLISH-001) Test-helper extraction: new
+  `tests/unit/utest_e2e_helpers.{c,h}` consolidates the four scripted
+  reactive end-to-end test setups (`test_at_scripted_e2e`,
+  `test_at_sync_scripted`, `test_tag_stop_onleave_scripted`,
+  `test_event_sync_emit_scripted`) onto a single helper API. Self-test
+  covers the helper itself.
+- (Phase 2, REACT-POLISH-002/004/005/006/007/008/009) Identifier
+  naturalization (`__trigger__` / `__trigger2__` / `__post__` →
+  natural test-fixture names; no-op onleave hooks substituted in
+  walker-presence tests; comment + display-name normalization;
+  `whenever_level.chk` fixture header corrected — three safepoints,
+  not two; documentation of `run_event_body_on_scratch`
+  in_watcher_scratch asymmetry; throwing-cond rationale captured in
+  source). REACT-POLISH-003 retired (no `__trigger*__` left to rename
+  in `test_event_sync_emit_scripted.c`).
 
 ### Bug fixes
 
-(populated as Phase 4 commits land — TDD per fix)
+- (Phase 4, CHSTR-019) `sched_strand_init` now always resets
+  `s->cur_consts` on strand arm; previously a re-armed strand could
+  observe stale per-closure const buffer pointers from the prior arm
+  (TDD: `test_strand_consts_reset_on_arm`).
+- (Phase 4, CPPCHK-002) Symbol-id rollover false-positive in object
+  lookup explicitly suppressed at the call site with rationale
+  pinning the documented behavior (32-bit lookup_id wraparound is
+  a deliberate non-issue at v1.0 working-set scales).
+- (Phase 4, MOD-014) `abs_lines` monotonic-check simplification:
+  retire `first_checkpoint` flag; the `prev` initial value of `0` is
+  itself the sentinel for the first call (TDD covers both
+  first-call + monotonicity-violation paths).
+- (Phase 4, TIDY-008) `cond_has_direct_side_effect`: AST_CALL collapses
+  into the default branch (was a redundant duplicate of fallthrough).
 
 ### Unsafe-pattern hardening
 
-(populated as Phase 5 commits land — TDD per fix)
+Phase 5 used a "contract-pin TDD" pattern: each fix pins documented
+post-condition behavior with a regression test rather than chasing a
+crash. All six findings were benign-but-undocumented at audit time.
 
-### Lex / parse / emit / vm / sched / gc / watcher / event / tag / mod / obj / realm / api / chstr cleanup
+- (CHSTR-004) `ustrand_destroy` guards already-NULL stack; double-free
+  no longer hits an undefined-behavior path on early-error teardown.
+- (EMIT-001) `emit_push_line_delta` no-ops on `instr_count==0`; debug
+  line table no longer emits a phantom delta before the first
+  instruction.
+- (EVENT-001) `gc_byte` allocator-ownership contract documented at
+  the field declaration; allocator zero-init is the source of truth.
+- (EVENT-007) `atomic_load` on `drain_handler` reads; observer
+  registration is sequenced through release-store / acquire-load.
+- (GC-007) `UGC_IS_FIXED` sweep re-paint contract documented; the
+  flag's interaction with the next-cycle white tag is now explicit.
+- (MOD-003) Documents nested[] grow-without-commit on UProto OOM;
+  partial-state behavior of `umodule_deserialize` is the contract,
+  not a bug (paired with v0.5.6 MOD-039 docstring rewrite).
 
-(populated as Phase 6-16 commits land)
+### Lex
+
+12 IDs closed (Phase 6, LEX-001..036).
+
+- (LEX-001) `ulex_init` asserts `lex` and `src` preconditions.
+- (LEX-002) `line_start == src + cur` invariant asserted on init.
+- (LEX-003) Line/col are 1-based in caller-visible reports.
+- (LEX-004) Unterminated block comment error spans the full comment.
+- (LEX-012) Leading-zero path entry asserts `cur == start`.
+- (LEX-013) `scan_radix` overflow recovery contract documented +
+  test-pinned.
+- (LEX-027/028/029) Docstring polish for `ulex_init` / `ulex_next` /
+  `UToken` lifetime.
+- (LEX-033) Regression test for `123ms_x` / `123sfoo` identifier-time
+  interaction.
+- (LEX-034) **New fixture** `tests/chk/lex/block_comment_no_nest.chk`
+  documents and locks in the C-style (non-nesting) block-comment
+  semantics. **Only diff against v0.5.7-fixes wire-format goldens.**
+- (LEX-036) `var_async_as_ident_fails` comment matches v0.5.7
+  lex/parse contract.
+
+### Parse
+
+(Closed in Phase 3 via dead-code sweep; Phase 7 a placeholder.)
+
+- (PARSE-018) Empty `udesugar.c` retired.
+- (PARSE-019) `PARSE_LAZY_PARAM_DEFAULT` unused error code removed.
+
+### Emit
+
+- (Phase 8, EMIT-021) `global_slot_reserved` / `references_global`
+  state machine documented (audit's "three-flags-one-concept" claim
+  was wrong; documented as tri-state lock-in instead of collapsed).
+- (Phase 8, EMITR-003) `run_event_body_on_scratch` asserts
+  pre-condition on entry.
+- (Phase 8, EMITR-012) Rationale documented at `URBI_ASSERT_NOT_ISR`
+  sites in `uevent_emit.c`.
+- (Phase 8, EMITR-013) `urbi_emit_slot_change_slow` silent-return
+  contract documented in header.
+
+### VM / scheduler
+
+7 IDs (Phase 9, VM-015/016, SCHED-005/007/009/010/012).
+
+- (VM-015) `op_push_tag` enter_event branch promoted to assertion.
+- (VM-016) `drain_deferred_slot_changes` early-returns on empty
+  queue (avoids spurious atomic-load on the hot drain path).
+- (SCHED-005) `sched_strand_make_runnable` asserts non-READY entry.
+- (SCHED-007) `sched_strand_block` documented default arm + assert.
+- (SCHED-009) `sched_destroy` zeros internal counters before free.
+- (SCHED-010) `URBI_SCHED_RT` / `URBI_SCHED_DEADLINE` marked v1.x
+  reserved.
+- (SCHED-012) `strand_walk_roots` TODOs refreshed post-M5.
+
+### GC
+
+- (Phase 10, GC-011) `gc_atomic_finish_step` return-value sentinel
+  documented (caller distinguishes "still working" from "atomic
+  finish complete" via a documented sentinel value).
+
+### Watcher
+
+10 IDs (Phase 11, WATCH-003/004/005/009/010/011/029/031/032/036).
+
+- (WATCH-003) `pool_destroy` explicitly NULLs `pending_head`.
+- (WATCH-004) `proto_inst` contiguity at scratch range walk pinned
+  with a `URBI_DEBUG`-only assertion (cross-MI pointer-range walk
+  is allowed but fragile; assertion documents the invariant).
+- (WATCH-005) `urbi_watcher_install` resets trace on pool-alloc
+  fall-through.
+- (WATCH-009) `observer_dirty` asserts non-ISR.
+- (WATCH-010) `in_watcher_eval` drain-routing dependency documented;
+  ghost `vm->dirty_set` reference removed from the WATCH-010
+  invariant phrasing in a follow-up `4573f9c`.
+- (WATCH-011) `urbi_run_closure_on_scratch` `in_watcher_scratch`
+  caller-owned contract documented.
+- (WATCH-029) `pool_init` zero-loop freestanding rationale expanded.
+- (WATCH-031) `invoke_body_inline` yield-degrade contract documented.
+- (WATCH-032) WATCH-023 historical note relocated to file header.
+- (WATCH-036) `in_watcher_scratch` caller-owned contract documented
+  at field decl (paired with WATCH-011 site).
+
+### Event / tag / changed
+
+13 IDs (Phase 12, EVENT-010/011/021/022/023/026,
+TAGCH-003/006/007/008/009/010/017).
+
+- (EVENT-010) `uevent_at_watchers_remove` `next_in_event` contract
+  documented for miss-case.
+- (EVENT-011) `urbi_native_event_new` uses `urbi_value_nil()` helper.
+- (EVENT-021) `uevent.h` layout claim matches `_Static_assert`.
+- (EVENT-022) `urbi_register_event_drain` asserts not-in-step.
+- (EVENT-023) `uevent_subscribe` iteration-during-emit safety
+  documented.
+- (EVENT-026) Native dispatch exempt from v0.5.2 fix rationale
+  documented.
+- (TAGCH-003) Redundant zero-loop in `utag_create` retired
+  (paired with EVENT-016 dropping pad0 in `urbi_event_create`).
+- (TAGCH-006) UTag layout note matches `_Static_assert(sizeof == 56)`.
+- (TAGCH-007) `UTag.gc_byte` GC-managed since M5 documented.
+- (TAGCH-008) `UTag.flags` lists active `UTAG_FLAG_*` values.
+- (TAGCH-009) `urbi_object_get_or_create_change_node` shade scope
+  correction.
+- (TAGCH-010) `UGC_HAS_SLOT_CHANGE_EVENT` sticky-bit semantics
+  documented at call sites.
+- (TAGCH-017) `walk_utag` double-visit is correctness, not perf
+  (documents why the second visit is load-bearing for color-flip
+  during sweep).
+
+### Module
+
+- (Phase 13, MOD-032) Helper extraction: `module_buf_free` shared
+  static-inline replaces three slightly-divergent inline frees in
+  `umodule_destroy`.
+
+### Realm
+
+4 IDs (Phase 14, REALM-008/025/026/034).
+
+- (REALM-008) `realm_list_walk_roots` asserts UTag layout invariant
+  via `_Static_assert(offsetof(UTag, type_tag) == 0)`.
+- (REALM-025) `realm.c` row-reference cleanup post-M3.
+- (REALM-026) UStrand GC-walker contract relocated to file-level
+  comment.
+- (REALM-034) `urbi_realm_has_live_work` NULL out-param test
+  coverage.
+
+### Public C API
+
+6 IDs (Phase 15, API-024/025/026/028/029/030).
+
+- (API-024) Consecutive `URBI_DEBUG` blocks merged.
+- (API-025) `urbi_get_determinism_checksum` handles `UVAL_OBJECT` /
+  `UVAL_EVENT` explicitly.
+- (API-026) **int/float checksum hash unified via `memcpy`** —
+  pointer-cast asymmetry between INT and FLOAT in the determinism
+  checksum eliminated.
+- (API-028) `urbi_get_determinism_checksum` documents 6 inputs in
+  its docstring.
+- (API-029) Module loader doc cites `ULOAD_UNSUPPORTED_VERSION`.
+- (API-030) README public API surface claim corrected.
+
+### Sched / strand (chstr)
+
+6 IDs (Phase 16, CHSTR-025/032/034/035/036/043).
+
+- (CHSTR-025) `wait_payload` reason-discriminator contract
+  documented + `_Static_assert`-pinned.
+- (CHSTR-032) `urbi_strand_attach_ambient_tags` zero-init via
+  shared `urbi_zero` helper (replaces field-by-field volatile-byte
+  loop).
+- (CHSTR-034) `uchunk.c` M3-baseline comment refreshed (M3-era
+  jargon replaced with current architecture text).
+- (CHSTR-035) `ustrand.h` M2-field landing comment refreshed.
+- (CHSTR-036) `ustrand.h` init/destroy described as live (was
+  marked stub).
+- (CHSTR-043) `ustrand` `module_instance` field GC-managed contract
+  documented.
 
 ### Strict tooling
 
-(populated as Phase 19-20 commits land)
+- (Phase 19) `make test-cppcheck` driven from 135 informational
+  residuals to 0 and **promoted to releasetest hard-fail gate**
+  (commit `2532858`). New project-level `.cppcheck.suppressions`
+  for `unusedFunction`, `unusedLabelConfiguration`, and
+  `assignBoolToPointer` (computed-goto false positives in
+  `src/vm/uvm.c`). Per-line suppression `2952abc` documents an
+  intentional `bugprone-branch-clone`. Const-pointer sweep across
+  6 sites (`c0c6eb8`); see Compatibility note below.
+- (Phase 20) `make test-tidy-strict` driven from 23 informational
+  residuals to 0 and **promoted to releasetest hard-fail gate**
+  (commit `54bfb61`). `bugprone-branch-clone` sweep (`2952abc`),
+  per-line `TIDY-003` design pin for `UProtos` pointer encoding
+  (`1469d3a`), `valist` false-positive suppress with rationale
+  (`ad025dd`), residual fixes for loop-var / widening cast / macro
+  parens / UVM padding (`3915f64`), CPPCHK-012 line-number realign
+  (`afdb1b2`).
 
 ### Footprint
 
@@ -47,23 +269,79 @@ arm 62 378 B, riscv 80 084 B.
 
 ### Documentation
 
-(populated as Phase 21-22 commits land — docstring coverage; design-risks triage)
+- (Phase 21) **Docstring coverage gate** at
+  `tests/scripts/check_docstring_coverage.sh` enforces a `/** ... */`
+  block above every header-exposed declaration in `include/urbi/*.h`
+  (functions, structs, enums, macros). Awk-based; tracks brace
+  depth, cascade rule for grouped docstrings, skips `_internal.h`.
+  11 missing docstrings filled in `include/urbi/{gc,sched}.h`
+  (`c6d78e5`); script (`7302690`); promoted to releasetest hard-fail
+  gate (`6f36457`).
+- (Phase 22) Design-risks register triaged: every row either
+  closed-with-SHA or milestone-tagged. Workspace-root only;
+  no urbi-embedded commits.
+- (Phase 24) **CONTRIBUTING.md final read-through** (3 commits:
+  strict-tooling all-categories hard-fail rewrite `b6503bb`,
+  v0.5.x cleanup ramp summary `4061c09`, final read-through
+  `02a4e7b`). Documents the four hard-fail gates (cppcheck-strict,
+  tidy-strict, scan-build, docstring-coverage) joining the existing
+  ASan / UBSan / valgrind / cross-arm / cross-riscv / determinism
+  / docs-check / coverage gates.
 
 ### Build / tests / tools
 
-(populated as Phase 17, 23, 24 commits land)
+- (Phase 17, CPPCHK-006) `urbi_object_install_property`: silence
+  cppcheck `unreadVariable` on debug-only `found`.
+- (Phase 17, CPPCHK-008) Variable scope narrowed at 5 cppcheck-flagged
+  sites. Phase 17 T141 + T142 SKIPPED — `bugprone-switch-missing-default`
+  + `readability-redundant-casting` not in `.clang-tidy.strict`.
+- (Phase 18, footprint) `UValue ↔ UEvent` kind predicates inlined
+  in header (`4ec563f`); the only Phase 18 codegen-change commit.
+- (Phase 23) Manual REPL sanity confirmed via cross-arm + cross-riscv
+  + 7 representative .chk fixtures; no commits.
 
 ### Dead code removed
 
-(populated as Phase 3 commits land)
+13 IDs closed in Phase 3.
+
+- (CHSTR-028) Duplicate UTag forward decl in `ustrand.h`.
+- (EVENT-015) `UEVENT_FLAG_RESERVED` dead macro.
+- (EVENT-016) Redundant `pad0` zero-loop in `urbi_event_create`.
+- (GC-023) `TYPE_HOST_BACKED` unused flag.
+- (GC-024) `UType.payload_size` unused field.
+- (GC-025) `walk_vm_globals` no-op stub.
+- (GC-034) `UGC_IS_WEAK` defined to 0 under `URBI_GC_NONE`
+  (eliminates compile-time mention from the `URBI_GC_NONE` profile).
+- (MOD-030) `proto` NULL guard converted to
+  `URBI_INTERNAL_ASSERT`.
+- (OBJ-027) `urbi_module_instance_destroy` annotated as M7-reserved.
+- (OBJ-029) `walk_noop` comment refreshed post-M4.
+- (PARSE-018) Empty `udesugar.c` retired.
+- (PARSE-019) `PARSE_LAZY_PARAM_DEFAULT` unused error code removed.
+- (VM-023) `OP_TAG_STOP` stub comment refreshed post-M3.
+
+T32 PARSE-020 + T33 VM-022 verified already-resolved upstream
+(`label_m5_stub` retired with OP_INVOKE in v0.5.6).
 
 ### Bytecode
 
-Bytecode-byte-identical AND wire-format-byte-identical against v0.5.7.1 baseline. No emitter changes.
+Bytecode-byte-identical AND wire-format-byte-identical against
+`v0.5.7.1` for all 148 pre-existing `.chk` fixtures. The only diff in
+the Wave-6 wire-format gate is the **new** `LEX-034` fixture
+(`tests/chk/lex/block_comment_no_nest.chk`) which adds a 149th
+hash entry.
 
 ### Compatibility
 
-Public C API unchanged. No new symbols, no signature changes, no enum-value renumbering. Module wire format unchanged at v1.5.
+- Module wire format unchanged at v1.5 (no version bump).
+- `urbi_run_chunk` / `urbi_run_script` parameter `module` widened
+  to `const struct UModule *module` as part of the Phase 19
+  cppcheck-driven const-pointer sweep (closes API-026 in spirit;
+  technically source-breaking for any external caller that passes
+  a non-const pointer; M7 will revisit the embedding ABI surface
+  formally).
+- All other public symbols, signatures, and enum values are
+  source-compatible with `v0.5.7-fixes` / `v0.5.7.1`.
 
 ## v0.5.7.1 — 2026-05-08 — Wire-format hash gate determinism hotfix
 
