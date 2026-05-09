@@ -124,9 +124,13 @@ static UAstNode *parse_string_literal(UParser *p) {
      * buffer when concat needs more room and copy from the current one.
      * The discarded buffer space is leaked into the arena but the arena is
      * reset per top-level statement so the total waste is bounded. */
-    int cap = first.u.str.len;
-    char *buf = (cap > 0) ? (char *)uarena_alloc(p->arena, (size_t)cap) : NULL;
-    if (cap > 0 && buf == NULL) return NULL;
+    /* Always allocate at least 1 byte so write paths don't dereference NULL
+     * (clang-tidy clang-analyzer-core.NullDereference flags the cap==0
+     * branch otherwise; the inner while loop is a no-op for "" so no bytes
+     * land in the buffer, but the analyzer can't prove that statically). */
+    int cap = first.u.str.len > 0 ? first.u.str.len : 1;
+    char *buf = (char *)uarena_alloc(p->arena, (size_t)cap);
+    if (buf == NULL) return NULL;
     int len = 0;
 
     UToken cur = first;
