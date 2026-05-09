@@ -84,6 +84,13 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
 
+    /* EMITR-012: ISR re-entry would be unsafe here because do_spawn_body_coroutine
+     * allocates a fresh UStrand from the scheduler's strand pool (potentially
+     * via urbi_gc_alloc) and links it onto the runnable queue.  ISR-safe event
+     * delivery uses the SPSC ring (uevent_ring) drained from the main loop,
+     * which routes back through this function on the main thread.  An ISR
+     * caller that hits this path would race with the main-thread strand
+     * allocator and corrupt the runnable queue. */
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Walk at_watchers_head FIFO: snapshot next before potential modification. */
@@ -165,6 +172,13 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
 
+    /* EMITR-012: ISR re-entry would be unsafe here because the sync path
+     * may run subscriber bodies inline on the watcher scratch frame
+     * (run_event_body_on_scratch), which dispatches arbitrary bytecode
+     * including allocator-touching opcodes (OP_NEW_OBJECT, OP_GETSLOT
+     * slow-path) and may call host_log_fn.  ISR contexts must use the
+     * uevent_ring SPSC enqueue path; the main-loop drainer eventually
+     * reaches this function with no ISR re-entry possible. */
     URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->in_watcher_scratch || vm->in_watcher_eval || vm->in_watcher_install) {
@@ -219,6 +233,14 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     struct UStrand *s;
     UValue payload = {0};   /* EMITR-007: file convention is `{0}` for NIL. */
 
+    /* EMITR-012: ISR re-entry would be unsafe here because waituntil parks
+     * the calling strand (vm->cur_strand) onto e->waiters_head and calls
+     * sched_strand_block, which mutates the scheduler's wait queues and
+     * decrements strand_runnable_count.  An ISR has no cur_strand (no
+     * scripting context) so the read at the function body would NULL-deref;
+     * even if guarded, mutating scheduler state from an ISR would race the
+     * main-loop dispatcher.  Hosts that need event-driven wakes from ISR
+     * use the uevent_ring path instead. */
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Scratch / eval context guard (spec §7.1 safety note). */
