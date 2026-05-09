@@ -1,13 +1,45 @@
 // cppcheck suppressions: one per intentional violation.
 // Format: <id>:<file>:<line>  followed by `// audit:<ID> <rationale>`.
-//
-// Initial contents: empty. Suppressions added only when an audit-ID-blessed
-// exception requires it.
+// File-wide form `<id>:<file>` and project-wide `<id>:*` also accepted.
 //
 // Common categories to expect:
 //   missingIncludeSystem  — system includes intentionally not parsed
-//   constParameter*       — public C API mutates via callback, doc-known
-//   variableScope         — when keeping scope wide aids debugging
+//   unusedFunction        — public C API consumed by tests/ + external embedders
+//                           (cppcheck scans src/ only — every public-API entry
+//                           point looks unused from its perspective)
+//   constParameterCallback— argv const-cast would cascade into every callback
+//                           function-pointer site; cppcheck flags this itself
+
+// =============================================================================
+// Project-wide: unusedFunction (Phase 19)
+// =============================================================================
+// audit:CPPCHK-009 (Phase 19) — cppcheck scans src/ only; the public C API
+// surface (urbi_*, helper definitions used by tests/, native callbacks invoked
+// via function-pointer tables) is structurally unreachable from cppcheck's
+// call-graph view.  Suppressing the whole category project-wide is correct
+// here: removing or marking-static any public-API symbol would break
+// test/ binaries or external embedders.  Re-evaluate if cppcheck gains
+// cross-TU resolution for header-declared exports.
+unusedFunction
+
+// =============================================================================
+// src/vm/uvm.c — computed-goto dispatch table
+// =============================================================================
+// audit:CPPCHK-010 (Phase 19) — cppcheck cannot parse GCC's label-address
+// operator `&&label` (it sees `&&` as logical-and producing a bool), so it
+// flags every dispatch_table entry as `assignBoolToPointer` and every
+// `label_OP_*:` target as `unusedLabelConfiguration` (claiming the labels
+// only exist under preprocessor branches).  Both are correctness-stable
+// false positives: UVM_USE_COMPUTED_GOTO=1 is the host build mode, the
+// labels are jumped to via `goto *dispatch_table[opcode]` at the dispatch
+// hot loop (src/vm/uvm.c near line 290).  Suppressing file-wide because
+// every opcode handler is affected.
+assignBoolToPointer:src/vm/uvm.c
+unusedLabelConfiguration:src/vm/uvm.c
+
+// =============================================================================
+// Per-site suppressions
+// =============================================================================
 
 // audit:CPPCHK-002 lookup_id rollover guard — three sites where cppcheck's
 // static analysis assumes 32-bit lookup_id and reports the (uint32_t) cast on
@@ -19,3 +51,31 @@
 knownConditionTrueFalse:src/object/uobject_lookup.c:86
 knownConditionTrueFalse:src/object/uobject_lookup.c:124
 knownConditionTrueFalse:src/object/uobject_slot.c:543
+
+// audit:CPPCHK-011 (Phase 19) — pattern_matches() is an M3 catch-everything
+// stub that always returns 1 (src/runtime/uunwind.c:65 docstring); cppcheck
+// correctly flags the call-site as `always true`.  M5 refines pattern dispatch
+// to actual exception-class matching (see comment block at uunwind.c:55-62);
+// suppressing keeps the gate green until that lands.
+knownConditionTrueFalse:src/runtime/uunwind.c:275
+
+// audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
+// dictated by the native-event callback function-pointer type registered
+// via event_native_register; declaring `argv` const here would cascade
+// into casts at every callback registration site.  cppcheck itself notes
+// the callback caveat in the diagnostic.  Equivalent native callbacks
+// in src/event/uevent_native.c don't trigger this because they're called
+// directly (not via function-pointer table); only this one is.
+constParameterCallback:src/event/uevent_native.c:170
+
+// audit:CPPCHK-013 (Phase 19) — parse_err_line / parse_err_col are written
+// in the parse-error breakout (lines 141-142) and read inside the
+// `__STDC_HOSTED__` guarded snprintf at line 164-167.  Under freestanding
+// builds the read-side is preprocessed out, leaving the write apparently
+// dead — cppcheck doesn't track the configuration-conditional read.
+// The values are correctness-needed under hosted builds (REPL diagnostics)
+// and dead under freestanding builds (where the only outcome is a fixed
+// "compile error" string fallback).
+unreadVariable:src/module/uchunk.c:136
+unreadVariable:src/module/uchunk.c:141
+unreadVariable:src/module/uchunk.c:142
