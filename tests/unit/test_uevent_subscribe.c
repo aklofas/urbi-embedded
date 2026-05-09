@@ -6,7 +6,10 @@
  *   1. uevent_at_watchers_append_preserves_fifo:
  *      Three appends produce w1→w2→w3 in order; w3->next_in_event is NULL.
  *   2. uevent_at_watchers_remove_unlinks:
- *      Append w1 + w2; remove w1; head becomes w2; w1->next_in_event cleared. */
+ *      Append w1 + w2; remove w1; head becomes w2; w1->next_in_event cleared.
+ *   3. uevent_at_watchers_remove_miss_preserves_next (EVENT-010):
+ *      Removing a watcher NOT in the list leaves target->next_in_event in its
+ *      prior state — clearing happens only on the found path. */
 
 #include "utest.h"
 
@@ -89,6 +92,45 @@ UTEST(uevent_at_watchers_remove_unlinks)
     urbi_vm_destroy(&vm);
 }
 
+/* ===== Test 3: remove on miss leaves target->next_in_event alone ======== */
+/* EVENT-010: documents the contract that uevent_at_watchers_remove only
+ * clears target->next_in_event when target is found in the list.  If the
+ * caller passes a watcher that's not on this event, the field is left as-is.
+ * Regression case: relying on remove() to scrub a stale pointer that was
+ * already detached by another path. */
+
+UTEST(uevent_at_watchers_remove_miss_preserves_next)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UEvent *e = urbi_event_create(&vm);
+    UASSERT(e != NULL);
+
+    UWatcher *w1 = make_watcher(&vm);
+    UWatcher *w2 = make_watcher(&vm);
+    UWatcher *stranger = make_watcher(&vm);
+    UASSERT(w1 != NULL);
+    UASSERT(w2 != NULL);
+    UASSERT(stranger != NULL);
+
+    uevent_at_watchers_append(e, w1);
+    uevent_at_watchers_append(e, w2);
+
+    /* stranger is not in the event's list; pre-set its next_in_event to a
+     * non-NULL sentinel and verify remove() leaves it untouched. */
+    stranger->next_in_event = w1;  /* arbitrary non-NULL sentinel */
+
+    uevent_at_watchers_remove(e, stranger);
+
+    UASSERT(stranger->next_in_event == w1);  /* unchanged */
+    /* And the list itself is intact. */
+    UASSERT(e->at_watchers_head == w1);
+    UASSERT(w1->next_in_event   == w2);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point =============================================== */
 
 void
@@ -99,4 +141,6 @@ test_uevent_subscribe_suite(void)
               uevent_at_watchers_append_preserves_fifo);
     utest_run("uevent_at_watchers_remove_unlinks",
               uevent_at_watchers_remove_unlinks);
+    utest_run("uevent_at_watchers_remove_miss_preserves_next",
+              uevent_at_watchers_remove_miss_preserves_next);
 }
