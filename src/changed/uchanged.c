@@ -70,7 +70,18 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
     node->next  = obj->changed_events_head;
     obj->changed_events_head = node;
 
-    /* Mark the object: at least one slot now has a change-event subscriber. */
+    /* Mark the object: at least one slot now has a change-event subscriber.
+     *
+     * TAGCH-010 — sticky-bit semantics:
+     *   UGC_HAS_SLOT_CHANGE_EVENT is monotonically set; the v0.5.x runtime
+     *   has NO clearing path.  Once any slot on `obj` ever had a watcher,
+     *   the bit stays set for the lifetime of the object — even if every
+     *   subscriber is later removed.  Effect: the slow path
+     *   urbi_emit_slot_change_slow stays reachable on every slot write of
+     *   that object; it tolerates an empty / unmatched chain by silent
+     *   return (see uchanged_emit.c "no chain entry matches" branch).
+     *   The cost is one chain walk per slot write on detached objects.
+     *   Clearing on full chain detach is filed for v1.x — audit row GC-002. */
     ((UCell *)obj)->gc_byte |= UGC_HAS_SLOT_CHANGE_EVENT;
 
     /* Dijkstra forward barrier: if the parent object is BLACK, the newly

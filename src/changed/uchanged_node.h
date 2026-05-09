@@ -129,6 +129,15 @@ void urbi_emit_slot_change_slow(struct UVM    *vm,
  * Call site pattern (all slot-write callsites):
  *   store(obj, idx, v);
  *   urbi_emit_slot_change_if_subscribed(vm, obj, key_sym, v);
+ *
+ * TAGCH-010 — sticky bit:
+ *   The bit-7 read here is monotonically rising with respect to the lifetime
+ *   of `parent` — UGC_HAS_SLOT_CHANGE_EVENT is set on first chain prepend in
+ *   urbi_object_get_or_create_change_event and never cleared.  Therefore a
+ *   "true" outcome on this branch means "obj has had at least one
+ *   subscriber at some point", not "obj currently has a live subscriber".
+ *   The slow path tolerates the latter case via silent return on chain
+ *   miss.  Clearing-on-detach is a v1.x design item — audit row GC-002.
  */
 static inline void
 urbi_emit_slot_change_if_subscribed(struct UVM    *vm,
