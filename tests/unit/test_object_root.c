@@ -435,6 +435,36 @@ UTEST(new_then_local_write_does_not_modify_proto) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T59: atom .new() returns self (S-atom-clone-perf) ===================
+ *
+ * For non-UVAL_OBJECT receivers, .new() short-circuits via obj_clone's
+ * atom path and returns the receiver itself with zero allocation.  This
+ * mirrors the .clone() contract; the legacy fixture
+ * legacy/repos/aldebaran-urbi/tests/2.x/atom-clone.chk drove the
+ * underlying urbi_object_clone semantics. */
+
+UTEST(atom_new_returns_self) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    UASSERT_EQ(compile_and_run(&vm, "var v = 7.new()"), URBI_OK);
+
+    UValue out = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT_EQ((int)out.v.i, 7);
+
+    /* String literal: identity-preserving (the interned USymbol pointer
+     * is the same as the source 1-shot literal). */
+    UASSERT_EQ(compile_and_run(&vm, "var s = \"foo\".new()"), URBI_OK);
+    UValue sout = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "s", 1, &sout), URBI_OK);
+    UASSERT_EQ((int)sout.kind, (int)UVAL_STR);
+
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(new_and_clone_are_equivalent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -511,6 +541,8 @@ void test_object_root_suite(void) {
               clone_can_overwrite_const_inherited_slot);
     utest_run("object_root: .new() then local write does not modify proto",
               new_then_local_write_does_not_modify_proto);
+    utest_run("object_root: atom .new() returns self",
+              atom_new_returns_self);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }
