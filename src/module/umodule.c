@@ -524,8 +524,11 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
             return ULOAD_OOM;
         }
     }
+    /* MOD-014: monotonic abs_line invariant — pc values must form a strictly
+     * increasing sequence (each later checkpoint references a higher pc than
+     * the prior).  Skip the comparison on i==0 since there is no prior to
+     * compare against; the first checkpoint may legitimately reference pc=0. */
     uint32_t prev_pc_checkpoint = 0;
-    bool first_checkpoint = true;
     for (uint64_t i = 0; i < n_abs; i++) {
         uint64_t pc64 = 0;
         uint64_t line64 = 0;
@@ -547,7 +550,7 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
                        (unsigned long long)pc64, instr_count);
             return ULOAD_CORRUPT;
         }
-        if (!first_checkpoint && (uint32_t)pc64 <= prev_pc_checkpoint) {
+        if (i > 0 && (uint32_t)pc64 <= prev_pc_checkpoint) {
             set_errmsg(d->errmsg, d->errcap,
                        "abs_lines not monotonic in pc at %llu",
                        (unsigned long long)pc64);
@@ -557,7 +560,6 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
         (*abs_lines_out)[*abs_line_count_out].line = (uint32_t)line64;
         (*abs_line_count_out)++;
         prev_pc_checkpoint = (uint32_t)pc64;
-        first_checkpoint = false;
     }
     return ULOAD_OK;
 }

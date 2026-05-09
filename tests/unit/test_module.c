@@ -1699,6 +1699,56 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     umodule_destroy(&c);
 }
 
+/* MOD-014: simplification regression — the abs_lines monotonic check must
+ * accept the first checkpoint at pc=0 (since the per-iteration "is this the
+ * first?" gate is now an `i > 0` check rather than a `first_checkpoint` flag).
+ * Without the first-iteration skip, the comparison `pc <= prev=0` would reject
+ * a legitimate pc=0 first entry. */
+UTEST(deserialize_accepts_first_abs_line_pc_zero) {
+    uint8_t buf[256];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    size_t off = 24;
+    buf[off++] = 1;                             /* max_reg=1 */
+    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* 0 constants */
+    /* 2 instructions */
+    off = put_varint(buf, off, 2);
+    while ((off & 3U) != 0U) buf[off++] = 0;
+    {
+        int j;
+        for (j = 0; j < 2; j++) {
+            const uint32_t ins = (uint32_t)OP_RET;
+            buf[off + 0] = (uint8_t)(ins & 0xFF);
+            buf[off + 1] = (uint8_t)((ins >> 8)  & 0xFF);
+            buf[off + 2] = (uint8_t)((ins >> 16) & 0xFF);
+            buf[off + 3] = (uint8_t)((ins >> 24) & 0xFF);
+            off += 4;
+        }
+    }
+    /* 2 deltas */
+    off = put_varint(buf, off, 2);
+    buf[off++] = (uint8_t)(int8_t)-128;
+    buf[off++] = (uint8_t)(int8_t)-128;
+    /* 2 abs_line checkpoints — first pc=0 (legitimate), second pc=1 (>0). */
+    off = put_varint(buf, off, 2);
+    off = put_varint(buf, off, 0);              /* abs_line[0].pc = 0 */
+    off = put_varint(buf, off, 5);
+    off = put_varint(buf, off, 1);              /* abs_line[1].pc = 1 */
+    off = put_varint(buf, off, 10);
+    off = put_varint(buf, off, 0);              /* ic_count = 0 (v1.5) */
+    off = put_varint(buf, off, 0);              /* nested_count = 0 (v1.5) */
+    UModule c = {0};
+    char errmsg[128];
+    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c.abs_line_count);
+    UASSERT_EQ((uint32_t)0, c.abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, c.abs_lines[1].pc);
+    umodule_destroy(&c);
+}
+
 UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
     UModule m = {0};
     UASSERT_EQ(0U, (unsigned)m.ic_count);
@@ -2142,6 +2192,8 @@ void test_module_suite(void) {
               deserialize_loads_float_constant);
     utest_run("deserialize rejects non-monotonic abs_line checkpoints",
               deserialize_rejects_non_monotonic_abs_lines);
+    utest_run("deserialize accepts first abs_line pc=0 (MOD-014)",
+              deserialize_accepts_first_abs_line_pc_zero);
     utest_run("deserialize rejects NIL/BOOL/STR constant tag as corrupt",
               deserialize_rejects_nil_bool_str_constant_tag);
     utest_run("deserialize truncated at line_deltas returns ULOAD_TRUNCATED",
