@@ -560,6 +560,30 @@ dispatch:
                 HALT();
             }
             UClosure *callee = (UClosure *)s->R[a].v.p;
+
+            /* M6 Phase 3: C-native dispatch.  When native_fn is set, the
+             * closure has no bytecode body — invoke the C function instead.
+             * The receiver (`self`) comes from vm->last_recv (set by the
+             * most recent OP_GETSLOT load).  Result lands in R[A]; nargs
+             * supplied to the native via the caller's existing argument
+             * registers R[A+1..A+B-1]. */
+            if (callee->native_fn != NULL) {
+                UValue *args_ptr = (nargs > 0) ? &s->R[a + 1] : NULL;
+                UValue native_out;
+                int rc = callee->native_fn(vm, vm->last_recv, args_ptr,
+                                           (uint8_t)nargs, &native_out);
+                if (rc == UEXEC_OK) {
+                    s->R[a] = native_out;
+                    NEXT();
+                }
+                /* Native raised: propagate as a TypeError to surface the
+                 * Phase-3 baseline error printed by urbi_raise_*.  Wave 2
+                 * swaps in proper Exception-class wiring. */
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "CALL: native method raised");
+                HALT();
+            }
+
             if (nargs != (int)callee->proto->nparams) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: wrong argument count");
@@ -796,6 +820,17 @@ dispatch:
                 }
             }
 
+            /* M6 Phase 3: snapshot the user-visible receiver in case this
+             * GETSLOT is loading a native-method UClosure.  The receiver
+             * is stored into vm->last_recv ONLY when the loaded value
+             * turns out to be a UClosure with native_fn != NULL — see the
+             * post-resolve branches below.  This guards against unrelated
+             * OP_GETSLOT instructions (e.g., reading a global between
+             * binding and call) clobbering the recv that the next OP_CALL
+             * needs.  The snapshot here is local; it's published only on
+             * the native-method branches. */
+            UValue pending_recv = s->R[recv_reg];
+
             /* Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
              * tracing reads, record the receiver's GC cell.
              * UNLIKELY: this branch is taken only during install-time cond eval
@@ -836,7 +871,17 @@ dispatch:
                         vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
                         HALT();
                     }
-                    s->R[dst_reg] = *ic->slots[k];
+                    UValue loaded = *ic->slots[k];
+                    /* M6 Phase 3: publish receiver if this is a native
+                     * method dispatch.  Reading closure->native_fn here
+                     * is safe because UClosure is heap-stable post-OP_GETSLOT
+                     * (the slot's UValue holds a pointer to it). */
+                    if (loaded.kind == (uint8_t)UVAL_CLOSURE
+                        && loaded.v.p != NULL
+                        && ((UClosure *)loaded.v.p)->native_fn != NULL) {
+                        vm->last_recv = pending_recv;
+                    }
+                    s->R[dst_reg] = loaded;
                     NEXT();
                 }
             }
@@ -864,6 +909,13 @@ dispatch:
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
                 HALT();
+            }
+            /* M6 Phase 3: publish receiver if the resolved value is a
+             * native method. */
+            if (v.kind == (uint8_t)UVAL_CLOSURE
+                && v.v.p != NULL
+                && ((UClosure *)v.v.p)->native_fn != NULL) {
+                vm->last_recv = pending_recv;
             }
             s->R[dst_reg] = v;
             NEXT();

@@ -14,6 +14,7 @@
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"
 #include "runtime/umacros.h"      /* urbi_zero */
+#include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
 #include "value/uintern.h"        /* uintern_destroy */
@@ -286,6 +287,15 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
     vm->event_drain_handler = NULL;
+
+    /* M6 Phase 3: stdlib state. */
+    vm->stdlib_closures = NULL;
+    vm->stdlib_booted   = 0U;
+    {
+        int i;
+        for (i = 0; i < 7; i++) vm->pad_stdlib[i] = 0U;
+    }
+    vm->last_recv = urbi_value_nil();
 }
 
 void urbi_vm_destroy(UVM *vm) {
@@ -323,6 +333,19 @@ void urbi_vm_destroy(UVM *vm) {
     if (vm->last_return_closure != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
         vm->last_return_closure = NULL;
+    }
+    /* M6 Phase 3: free stdlib native closures (UClosure objects allocated
+     * by urbi_native_closure_create; threaded via next_alloc).  These are
+     * VM-lifetime allocations, not strand-scoped, so the strand teardown
+     * does NOT touch them. */
+    if (vm->alloc_fn != NULL) {
+        UClosure *cl = vm->stdlib_closures;
+        while (cl != NULL) {
+            UClosure *next = cl->next_alloc;
+            vm->alloc_fn(cl, 0, vm->alloc_ud);
+            cl = next;
+        }
+        vm->stdlib_closures = NULL;
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */

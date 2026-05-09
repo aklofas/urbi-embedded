@@ -411,6 +411,25 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint32_t   callback_warn_us;
     uint8_t    callback_watchdog_mode;
     uint8_t    pad_watchdog[3];        /* padding; zeroed */
+
+    /* === M6 Phase 3 stdlib state ===
+     * stdlib_closures: linked list of native UClosures registered by
+     *   urbi_object_root_register (and future stdlib boot phases).  Threaded
+     *   via UClosure.next_alloc; freed in urbi_vm_destroy.  Distinct from
+     *   strand closure_lists (those are short-lived, freed on strand teardown).
+     * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
+     *   successful boot; subsequent calls are no-ops.
+     * last_recv: receiver UValue from the most recent OP_GETSLOT load.
+     *   Read by OP_CALL when invoking a closure with native_fn != NULL —
+     *   that closure's `self` argument comes from here.  No bytecode
+     *   change required: native methods are only stored as slot values and
+     *   are therefore loaded via OP_GETSLOT, which writes here unconditionally.
+     *   Stale on non-method calls (where native_fn is NULL); the OP_CALL
+     *   arm reads this only on the native_fn != NULL branch. */
+    UClosure  *stdlib_closures;
+    uint8_t    stdlib_booted;
+    uint8_t    pad_stdlib[7];          /* padding; zeroed */
+    UValue     last_recv;
 } UVM;
 
 /* --- API --- */
