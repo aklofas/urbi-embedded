@@ -316,15 +316,15 @@ UAstNode *parse_member_access(UParser *p, UAstNode *recv,
    Called by parse_expression (after parse_prefix) and by
    parse_inner_tier_from_lhs (after an already-produced lhs node). --- */
 
-UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
+UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
     for (;;) {
         UToken op = peek(p);
 
         /* Postfix call: `expr(args)` — highest precedence (postfix). */
         if (op.type == TOK_LPAREN && min_prec <= PARSE_PREC_POSTFIX) {
-            left = parse_call_args(p, left);
-            if (!left) return NULL;
-            if (left->kind == AST_ERROR) return left;
+            lhs = parse_call_args(p, lhs);
+            if (!lhs) return NULL;
+            if (lhs->kind == AST_ERROR) return lhs;
             continue;
         }
 
@@ -334,15 +334,15 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
            keep looping so chains like `a.b.c` and `a.b()` keep building. */
         if ((op.type == TOK_DOT || op.type == TOK_ARROW) && min_prec <= PARSE_PREC_POSTFIX) {
             bool is_assign = false;
-            left = parse_member_access(p, left, &is_assign);
-            if (!left) return NULL;
-            if (left->kind == AST_ERROR) return left;
+            lhs = parse_member_access(p, lhs, &is_assign);
+            if (!lhs) return NULL;
+            if (lhs->kind == AST_ERROR) return lhs;
             if (is_assign) break;
             /* Spec #4 §4.4–§4.6: bare/emit `.changed` outside at(...). */
             if (!p->at_event_cond
-                && left->kind == AST_MEMBER_GET
-                && ident_equals(left->u.member.name_start,
-                                left->u.member.name_len,
+                && lhs->kind == AST_MEMBER_GET
+                && ident_equals(lhs->u.member.name_start,
+                                lhs->u.member.name_len,
                                 "changed", 7)) {
                 UToken nxt = peek(p);
                 if (nxt.type == TOK_BANG) {
@@ -352,20 +352,20 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
                 }
                 return make_error(p, PARSE_SLOT_CHANGED_BARE_V1,
                                   kErrorMessages[PARSE_SLOT_CHANGED_BARE_V1],
-                                  left->line, left->col);
+                                  lhs->line, lhs->col);
             }
             continue;
         }
 
         /* Postfix `e!` — desugar to `e.emit([arg])`.
-           `e!`        → AST_CALL { callee=left, method="emit", args=[] }
-           `e!(p)`     → AST_CALL { callee=left, method="emit", args=[p] }
+           `e!`        → AST_CALL { callee=lhs, method="emit", args=[] }
+           `e!(p)`     → AST_CALL { callee=lhs, method="emit", args=[p] }
            `e!(x,y,z)` → PARSE_EMIT_MULTI_ARG_V1 error */
         if (op.type == TOK_BANG && min_prec <= PARSE_PREC_POSTFIX) {
             consume(p);  /* consume '!' */
-            left = desugar_postfix_emit(p, left, op);
-            if (!left) return NULL;
-            if (left->kind == AST_ERROR) return left;
+            lhs = desugar_postfix_emit(p, lhs, op);
+            if (!lhs) return NULL;
+            if (lhs->kind == AST_ERROR) return lhs;
             continue;
         }
 
@@ -392,22 +392,22 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *left, int min_prec) {
         if (right->kind == AST_ERROR) return right;
 
         if (is_compare_token(op.type)) {
-            left = make_compare(p, compare_op(op.type), left, right,
-                                op.line, op.col);
-        } else {
-            left = make_binary(p, infix_binop(op.type), left, right,
+            lhs = make_compare(p, compare_op(op.type), lhs, right,
                                op.line, op.col);
+        } else {
+            lhs = make_binary(p, infix_binop(op.type), lhs, right,
+                              op.line, op.col);
         }
-        if (!left) return NULL;
+        if (!lhs) return NULL;
     }
-    return left;
+    return lhs;
 }
 
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
 UAstNode *parse_expression(UParser *p, int min_prec) {
-    UAstNode *left = parse_prefix(p);
-    if (!left) return NULL;
-    if (left->kind == AST_ERROR) return left;
-    return parse_expression_cont(p, left, min_prec);
+    UAstNode *lhs = parse_prefix(p);
+    if (!lhs) return NULL;
+    if (lhs->kind == AST_ERROR) return lhs;
+    return parse_expression_cont(p, lhs, min_prec);
 }
