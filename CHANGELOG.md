@@ -30,7 +30,13 @@ co-located regression tests for cleanup-ID closures)
 ### Cleanup
 
 (populated as Phase 9 commits land — TAGCH-013, EVENT-013, OBJ-007/009/
-017/030/033, REALM-016/017, FOUND-026/027, API-005/007/021, LEX-035, etc.)
+017/030/033, REALM-016/017, FOUND-026/027, API-005/007/021, etc.)
+
+- LEX-035 (partial closure): string-literal lex landed as Phase 1 (lifts the
+  immediate "lex needs string literals" need). REVIVAL §14.1 L5 angle literals
+  (`180deg`, `200grad`) and `pi` constant remain deferred — angle literals to
+  v1.x backlog (literal-suffix lex extension); `pi` becomes a `Math.pi` symbol
+  at Wave 2 stdlib (no lex change required).
 
 ### Bytecode
 
