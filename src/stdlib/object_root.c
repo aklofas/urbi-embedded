@@ -1,0 +1,452 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* object_root.c — M6 Phase 3 stdlib: Object root C-native methods.
+ *
+ * The nine root-level methods are the v1.0 surface for slot manipulation
+ * + clone + proto graph mutation.  Each is registered as a UClosure with
+ * native_fn pointing at the C body; the OP_CALL arm dispatches through
+ * native_fn instead of pushing a bytecode frame when this field is set
+ * (runtime/uclosure.h).
+ *
+ * Receiver routing: the OP_CALL native arm reads vm->last_recv (set by
+ * OP_GETSLOT each time a slot is loaded) and passes it as `self` to the
+ * native function.  This avoids any bytecode/wire-format change at the
+ * cost of a single 16-byte UVM field.  Stale-`last_recv` is harmless on
+ * non-method calls because the native_fn != NULL branch is the only one
+ * that reads it.
+ *
+ * Phase 3 baseline error handling: urbi_raise_arity / _type / _oom /
+ * _lookup print to stderr (when stderr is available; freestanding builds
+ * silently drop) and return UEXEC_THROW to signal a fault to OP_CALL.
+ * Wave 2 swaps these for proper Exception class wiring; the call sites
+ * here keep a stable ABI so the swap is mechanical. */
+
+#include "stdlib/object_root.h"
+
+#include "gc/ugc.h"                /* UTYPE_CLOSURE */
+#include "module/umodule.h"        /* UValue, UVAL_*, UClosure typedef */
+#include "object/uobject.h"        /* urbi_object_*, urbi_object_root */
+#include "object/ushape.h"         /* urbi_shape_root */
+#include "runtime/uclosure.h"      /* struct UClosure full def */
+#include "runtime/umacros.h"       /* urbi_zero, urbi_strlen */
+#include "sched/ustrand.h"         /* UEXEC_OK, UEXEC_THROW */
+#include "urbi/types.h"            /* UErrCode, urbi_value_nil */
+#include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
+#include "value/uintern.h"         /* ustr_intern */
+#include "vm/uvm.h"                /* UVM, vm->stdlib_closures */
+#include "object/uic.h"            /* urbi_slot_get_slow */
+
+#include <stdint.h>
+#include <stddef.h>
+
+#if !defined(URBI_FREESTANDING)
+#  include <stdio.h>
+#endif
+
+/* === Forward declarations =================================================== */
+
+static int obj_setSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_hasSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeSlot  (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_clone       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_addProto    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeProto (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_protos      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setProtos   (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+
+/* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
+
+static UValue
+uval_obj(UObject *o)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_OBJECT;
+    v.v.p = o;
+    return v;
+}
+
+static UValue
+uval_bool(int b)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_BOOL;
+    v.v.i = b ? 1 : 0;
+    return v;
+}
+
+/* === urbi_native_closure_create ============================================ */
+
+UClosure *
+urbi_native_closure_create(UVM *vm, urbi_native_method_fn fn)
+{
+    if (vm == NULL || vm->alloc_fn == NULL || fn == NULL) return NULL;
+
+    /* Native closures never carry upvals; the trailing flexible array gets
+     * one slot like the minimum bytecode closure (it is unread when
+     * nupvals == 0, but the allocator's sizing convention assumes it). */
+    size_t nbytes = sizeof(UClosure);
+    UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
+    if (cl == NULL) return NULL;
+    urbi_zero(cl, nbytes);
+
+    /* Cell header — well-formed for write-barrier safety even though native
+     * closures (like ordinary closures) are not on vm->all_cells_head; they
+     * are owned by vm->stdlib_closures (M6 Phase 3) and freed at
+     * urbi_vm_destroy. */
+    cl->cell.type_tag = UTYPE_CLOSURE;
+    cl->cell.gc_byte  = vm->current_white;
+    cl->proto         = NULL;
+    cl->proto_inst    = NULL;
+    cl->upvals[0]     = NULL;
+    cl->nupvals       = 0;
+    cl->native_fn     = fn;
+
+    /* Thread onto vm-level stdlib closure list. */
+    cl->next_alloc       = vm->stdlib_closures;
+    vm->stdlib_closures  = cl;
+    return cl;
+}
+
+/* === Native error helpers (Phase 3 baseline) =============================== */
+
+int
+urbi_raise_arity(UVM *vm, const char *fn_name, uint8_t expected,
+                 uint8_t got, UValue *out)
+{
+    (void)vm;
+    if (out != NULL) *out = urbi_value_nil();
+#if !defined(URBI_FREESTANDING)
+    fprintf(stderr, "ArityError: %s expected %u args, got %u\n",
+            (fn_name != NULL ? fn_name : "<unknown>"),
+            (unsigned)expected, (unsigned)got);
+#else
+    (void)fn_name; (void)expected; (void)got;
+#endif
+    return UEXEC_THROW;
+}
+
+int
+urbi_raise_type(UVM *vm, const char *msg, UValue *out)
+{
+    (void)vm;
+    if (out != NULL) *out = urbi_value_nil();
+#if !defined(URBI_FREESTANDING)
+    fprintf(stderr, "TypeError: %s\n", (msg != NULL ? msg : "<unspecified>"));
+#else
+    (void)msg;
+#endif
+    return UEXEC_THROW;
+}
+
+int
+urbi_raise_oom(UVM *vm, UValue *out)
+{
+    (void)vm;
+    if (out != NULL) *out = urbi_value_nil();
+#if !defined(URBI_FREESTANDING)
+    fprintf(stderr, "OutOfMemoryError\n");
+#endif
+    return UEXEC_THROW;
+}
+
+int
+urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
+{
+    (void)vm; (void)name;
+    if (out != NULL) *out = urbi_value_nil();
+#if !defined(URBI_FREESTANDING)
+    fprintf(stderr, "LookupError: slot not found\n");
+#endif
+    return UEXEC_THROW;
+}
+
+/* === urbi_proto_list_create ================================================
+ *
+ * Phase 3 synthetic proto-list helper: returns a fresh UObject carrying a
+ * `size` slot.  Wave 2 replaces this with a proper List atom (currently
+ * the M6 stdlib roadmap row).  For Phase 3, fixtures that read
+ * `obj.protos.size` find the field directly; a real iteration API isn't
+ * shipped here. */
+
+UObject *
+urbi_proto_list_create(UVM *vm, UObject *recv)
+{
+    if (vm == NULL || recv == NULL) return NULL;
+
+    UObject *list = urbi_object_alloc(vm, URBI_ATOM_LIST);
+    if (list == NULL) return NULL;
+
+    /* Install size = count(recv->protos). */
+    USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
+    if (sym_size == NULL) return NULL;
+
+    UValue n = urbi_value_nil();
+    n.kind = (uint8_t)UVAL_INT;
+    n.v.i = (int64_t)urbi_object_proto_count(recv);
+    if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) return NULL;
+
+    return list;
+}
+
+/* === Object.setSlot(name, value) =========================================== */
+
+static int
+obj_setSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 2) return urbi_raise_arity(vm, "setSlot", 2, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "setSlot: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "setSlot: name must be a String", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    USymbol *name = (USymbol *)args[0].v.p;
+    int rc = urbi_object_set_local_slot(vm, recv, name, args[1]);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+
+    *out = args[1];
+    return UEXEC_OK;
+}
+
+/* === Object.getSlot(name) ================================================== */
+
+static int
+obj_getSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "getSlot", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "getSlot: name must be a String", out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "getSlot: self must be a UObject", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    USymbol *name = (USymbol *)args[0].v.p;
+
+    /* Use the unified slot-resolver (walks proto chain).  Returns 1 on
+     * found, 0 on miss, -1 on error (depth-bound overflow). */
+    UObject *holder = NULL;
+    uint32_t slot_idx = 0;
+    int rc = urbi_object_resolve_slot(vm, recv, name, &holder, &slot_idx);
+    if (rc <= 0) return urbi_raise_lookup(vm, name, out);
+
+    /* Read the slot value out of holder's flat USlot* array. */
+    if (holder == NULL || holder->slots == NULL)
+        return urbi_raise_lookup(vm, name, out);
+    *out = holder->slots[slot_idx];
+    return UEXEC_OK;
+}
+
+/* === Object.hasSlot(name) ================================================== */
+
+static int
+obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "hasSlot", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "hasSlot: name must be a String", out);
+    UObject *recv;
+    if (self.kind != (uint8_t)UVAL_OBJECT) {
+        /* Atom receivers: the proto chain is the atom proto; the
+         * underlying integer/etc. has no own slots, so route through the
+         * atom proto for the hasSlot lookup. */
+        recv = urbi_atom_proto_for_value(vm, self);
+        if (recv == NULL) return urbi_raise_oom(vm, out);
+    } else {
+        recv = (UObject *)self.v.p;
+    }
+    USymbol *name = (USymbol *)args[0].v.p;
+    UObject *holder = NULL;
+    uint32_t slot_idx = 0;
+    int rc = urbi_object_resolve_slot(vm, recv, name, &holder, &slot_idx);
+    *out = uval_bool(rc == 1);
+    return UEXEC_OK;
+}
+
+/* === Object.removeSlot(name) =============================================== */
+
+static int
+obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "removeSlot", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "removeSlot: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "removeSlot: name must be a String", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    USymbol *name = (USymbol *)args[0].v.p;
+    int rc = urbi_object_remove_slot(vm, recv, name);
+    if (rc != 0) return urbi_raise_oom(vm, out);
+
+    /* Return self to allow chaining; legacy semantics returned nil but
+     * that costs an extra arg parse on the script side.  Fixture
+     * expectations follow the Phase 3 contract documented in the .chk
+     * fixture. */
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === Object.clone() ========================================================
+ *
+ * S-atom-clone-perf: atom receivers (UVAL_INT/_FLOAT/_BOOL/_STR/etc.)
+ * return self directly with zero allocation.  UVAL_OBJECT receivers
+ * route through urbi_object_clone (which already exists). */
+
+static int
+obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "clone", 0, nargs, out);
+
+    /* Atom short-circuit. */
+    if (self.kind != (uint8_t)UVAL_OBJECT) {
+        *out = self;
+        return UEXEC_OK;
+    }
+
+    UObject *recv = (UObject *)self.v.p;
+    UObject *clone = urbi_object_clone(vm, recv);
+    if (clone == NULL) return urbi_raise_oom(vm, out);
+    *out = uval_obj(clone);
+    return UEXEC_OK;
+}
+
+/* === Object.addProto(parent) =============================================== */
+
+static int
+obj_addProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "addProto", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "addProto: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "addProto: argument must be a UObject", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    UObject *proto = (UObject *)args[0].v.p;
+    int rc = urbi_object_add_proto(vm, recv, proto);
+    if (rc == URBI_ERR_INVALID_ARG) {
+        /* Either valid_proto rejected (atom-family mismatch / cycle) or
+         * the proto-list cap is exceeded.  Both surface as TypeError to
+         * scripted callers. */
+        return urbi_raise_type(vm,
+            "addProto: invalid prototype (atom-family mismatch, cycle, or cap)", out);
+    }
+    if (rc != URBI_OK) return urbi_raise_oom(vm, out);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === Object.removeProto(parent) ============================================ */
+
+static int
+obj_removeProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "removeProto", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "removeProto: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "removeProto: argument must be a UObject", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    UObject *proto = (UObject *)args[0].v.p;
+    /* Idempotent per legacy semantics — silent no-op if proto wasn't
+     * present.  urbi_object_remove_proto already implements that. */
+    (void)urbi_object_remove_proto(vm, recv, proto);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === Object.protos ========================================================= */
+
+static int
+obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "protos", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "protos: self must be a UObject", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    UObject *list = urbi_proto_list_create(vm, recv);
+    if (list == NULL) return urbi_raise_oom(vm, out);
+    *out = uval_obj(list);
+    return UEXEC_OK;
+}
+
+/* === Object.setProtos(parent) ============================================== */
+
+static int
+obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "setProtos", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "setProtos: self must be a UObject", out);
+    /* Wave 1 limited: List literal lex defers to Wave 2.  Accept a single
+     * UObject and treat as a one-element list.  A future setProtos that
+     * accepts a List value will branch on args[0].kind == UVAL_LIST. */
+    if (args[0].kind != (uint8_t)UVAL_OBJECT) {
+        return urbi_raise_type(vm,
+            "setProtos: List literal deferred to Wave 2; pass a single UObject", out);
+    }
+
+    UObject *recv = (UObject *)self.v.p;
+    UObject *single[1];
+    single[0] = (UObject *)args[0].v.p;
+    int rc = urbi_object_set_protos(vm, recv, single, 1);
+    if (rc == URBI_ERR_INVALID_ARG)
+        return urbi_raise_type(vm, "setProtos: invalid prototype", out);
+    if (rc != URBI_OK) return urbi_raise_oom(vm, out);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === urbi_object_root_register ============================================= */
+
+typedef struct {
+    const char           *name;
+    urbi_native_method_fn fn;
+} ObjectMethodEntry;
+
+static const ObjectMethodEntry OBJECT_METHODS[] = {
+    { "setSlot",     obj_setSlot     },
+    { "getSlot",     obj_getSlot     },
+    { "hasSlot",     obj_hasSlot     },
+    { "removeSlot",  obj_removeSlot  },
+    { "clone",       obj_clone       },
+    { "addProto",    obj_addProto    },
+    { "removeProto", obj_removeProto },
+    { "protos",      obj_protos      },
+    { "setProtos",   obj_setProtos   }
+};
+
+#define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))
+
+int
+urbi_object_root_register(UVM *vm)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+    UObject *root = urbi_object_root(vm);
+    if (root == NULL) return URBI_ERR_OOM;
+
+    size_t i;
+    for (i = 0; i < OBJECT_METHODS_COUNT; i++) {
+        UClosure *cl = urbi_native_closure_create(vm, OBJECT_METHODS[i].fn);
+        if (cl == NULL) return URBI_ERR_OOM;
+
+        USymbol *sym = (USymbol *)ustr_intern(
+            vm, OBJECT_METHODS[i].name,
+            urbi_strlen(OBJECT_METHODS[i].name));
+        if (sym == NULL) return URBI_ERR_OOM;
+
+        UValue v = urbi_value_nil();
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p = cl;
+        int rc = urbi_object_set_local_slot(vm, root, sym, v);
+        if (rc != 0) return URBI_ERR_OOM;
+    }
+    return URBI_OK;
+}

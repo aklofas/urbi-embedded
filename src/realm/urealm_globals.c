@@ -21,6 +21,7 @@
 #include "object/uobject.h"   /* urbi_object_root, urbi_object_atom, urbi_object_set_local_slot,
                                *   urbi_object_install_property */
 #include "object/ushape.h"    /* urbi_shape_find_slot */
+#include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot — M6 Phase 3 */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
 #include "module/umodule.h"
@@ -318,6 +319,18 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * inside the resolver loop below). */
     if (vm->event_proto == NULL) {
         urbi_native_protos_init(vm);
+    }
+
+    /* M6 Phase 3: register Object root C-native methods on vm->atom_object
+     * BEFORE the resolver loop installs Object as a realm global.  This way
+     * the realm-global "Object" already carries setSlot/getSlot/clone/etc.
+     * for the very first urbiscript chunk that references it.  Idempotent:
+     * vm->stdlib_booted gates re-entry. */
+    {
+        UErrCode rc = (UErrCode)urbi_stdlib_boot(vm);
+        if (rc != URBI_OK) {
+            return rc;
+        }
     }
 
     for (i = 0; i < urbi_builtin_registry_count; i++) {
