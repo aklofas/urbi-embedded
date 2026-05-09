@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Chunk-execution C API wrappers (row 8 §5 / T16).
+/* Chunk-execution C API wrappers.
  *
- * M3-baseline note: urbi_run_chunk wraps urbi_vm_run for synchronous execution.
- * The step-driven architecture described in §5 of the chunk-lifecycle spec
- * (per-realm strands, budget loops, T20 strand C API) is deferred to T20.
- * At that point, urbi_run_chunk will route through urbi_step with a real
- * per-realm strand.  This M3 shim preserves the same external contract:
- * blocks until the module OP_RETs, returns URBI_OK on success.
+ * urbi_run_chunk is a synchronous wrapper around urbi_vm_run: it allocates
+ * a transient strand, drives it to completion, and returns when the module
+ * OP_RETs.  The step-driven cooperative scheduler (urbi_step + per-realm
+ * strands) lives alongside this entry point — embedders that need
+ * incremental dispatch use urbi_step directly; urbi_run_chunk is the
+ * convenience "block until done" path.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
@@ -36,9 +36,10 @@
  * *out_result (or discarding it if out_result is NULL).  realm == NULL
  * auto-creates/uses the VM's global Realm.
  *
- * M3 baseline: delegates to urbi_vm_run, which allocates a transient strand and
- * drives it to completion synchronously.  T20 promotes this to the step-driven
- * per-realm strand pattern once the strand C API (urbi_strand_create, etc.) lands.
+ * Delegates to urbi_vm_run, which allocates a transient strand wired to the
+ * resolved realm and drives it synchronously to OP_RET.  Embedders that need
+ * incremental, budget-bounded dispatch use urbi_strand_create + urbi_step
+ * (the per-realm strand C API) instead.
  * --------------------------------------------------------------------------- */
 int
 urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
