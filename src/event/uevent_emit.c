@@ -7,6 +7,7 @@
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include <stddef.h>
 
@@ -121,7 +122,17 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 static void
 run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
 {
-    /* Guard: never re-enter scratch execution from within scratch. */
+    /* EMITR-003 contract assertion: the sole call site (c_event_emit_sync)
+     * already short-circuits to async when in_watcher_scratch is set, so
+     * this entry MUST observe in_watcher_scratch == 0 in correct builds.
+     * The early-return below is defensive belt-and-suspenders against a
+     * future second caller that does not pre-check; the assertion catches
+     * such a regression in URBI_DEBUG builds before the silent skip. */
+    URBI_INTERNAL_ASSERT(!vm->in_watcher_scratch);
+
+    /* Defensive guard: never re-enter scratch execution from within scratch.
+     * Load-bearing only when triggered (covered by the assert above in
+     * URBI_DEBUG); kept in release for safety. */
     if (vm->in_watcher_scratch) return;
 
     vm->in_watcher_scratch = 1;
