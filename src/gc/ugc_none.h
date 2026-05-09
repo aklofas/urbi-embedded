@@ -70,7 +70,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s,
 }
 
 static inline void
-urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure,
+urbi_gc_upvalue_write(struct UVM *vm, const struct UClosure *closure,
                       uint8_t up_idx, UValue child)
 {
     (void)vm; (void)closure; (void)up_idx; (void)child;

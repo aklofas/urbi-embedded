@@ -42,7 +42,7 @@
  * (the per-realm strand C API) instead.
  * --------------------------------------------------------------------------- */
 int
-urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
+urbi_run_chunk(UVM *vm, URealm *realm, const UModule *module, UValue *out_result)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -229,7 +229,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
  * driving urbi_step() afterwards if the script registered watchers/coroutines.
  * --------------------------------------------------------------------------- */
 int
-urbi_run_script(UVM *vm, URealm *realm, UModule *module)
+urbi_run_script(UVM *vm, URealm *realm, const UModule *module)
 {
     URBI_ASSERT_NOT_ISR(vm);
     return urbi_run_chunk(vm, realm, module, NULL);

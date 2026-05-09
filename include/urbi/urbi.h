@@ -152,13 +152,13 @@ UStepResult urbi_step(struct UVM *vm,
                       uint64_t *out_next_wake_us);
 
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
-                   struct UModule *module, UValue *out_result);
+                   const struct UModule *module, UValue *out_result);
 
 int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
                    const char *line, size_t line_len,
                    char *out_buf, size_t out_buf_size);
 
-int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module);
+int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *module);
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 

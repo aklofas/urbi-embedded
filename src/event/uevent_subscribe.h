@@ -37,7 +37,7 @@ void uevent_at_watchers_append(struct UEvent *e, struct UWatcher *w);
  * not found (caller error or already-removed elsewhere), the field is left
  * as-is.  Caller is responsible for clearing if it needs a known-NULL
  * invariant.  EVENT-010. */
-void uevent_at_watchers_remove(struct UEvent *e, struct UWatcher *target);
+void uevent_at_watchers_remove(struct UEvent *e, const struct UWatcher *target);
 
 #ifdef __cplusplus
 }

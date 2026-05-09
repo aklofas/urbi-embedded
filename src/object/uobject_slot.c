@@ -490,7 +490,7 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
      * shape that aliased this UProps pointer.  Allocating a fresh
      * UProps and rewriting the props_table[idx] entry isolates this
      * shape's view from any aliasing sibling. */
-    UProps *existing = obj->shape->props_table[idx];
+    const UProps *existing = obj->shape->props_table[idx];
     UProps *fresh = uprops_alloc(vm);
     if (fresh == NULL) {
         return -1;

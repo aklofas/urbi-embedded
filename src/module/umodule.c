@@ -998,7 +998,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
        closures may need a per-proto nested_count if/when the emitter
        starts allocating child arrays. */
     for (size_t pi = 0; pi < d->module->nested_count; pi++) {
-        UProto *p = d->module->nested[pi];
+        const UProto *p = d->module->nested[pi];
         if (p == NULL) continue;  /* watcher-detached slot or stub */
         rc = verify_walk_block(d,
                                p->max_reg,
