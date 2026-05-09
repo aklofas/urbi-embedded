@@ -366,7 +366,10 @@ urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
      * top-down was misleading. */
     if (vm == NULL) return;
     URBI_ASSERT_NOT_ISR(vm);
-    vm->event_drain_handler = h;
+    /* EVENT-007: __ATOMIC_RELEASE store pairs with the __ATOMIC_ACQUIRE
+     * load in uevent_ring_drain.  Single-threaded today; the pairing
+     * inherits correctness for v1.x URBI_SCHED_PREEMPTIVE. */
+    __atomic_store_n(&vm->event_drain_handler, h, __ATOMIC_RELEASE);
 }
 
 const char *uvm_error_name(UVMError code) {
