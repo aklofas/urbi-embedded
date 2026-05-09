@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+## v0.5.7.1 — 2026-05-08 — Wire-format hash gate determinism hotfix
+
+Hotfix on top of `v0.5.7-fixes`.
+
+### Fixed
+
+- `tests/scripts/capture_wire_format_hashes.sh` was non-deterministic across
+  runs: per-fixture extraction wrote source to `mktemp /tmp/urbi_chk_XXXXXX.u`
+  and passed that random path to `urbi --dump-wire-format`, embedding it in
+  the wire format's `source_name` field. Two consecutive captures of the same
+  fixture produced different SHA256s. The wire-format hash gate added at
+  `v0.5.7-fixes` Phase 22 was therefore not actually a useful gate — the
+  checked-in `tests/golden/v0.5.7-fixes-wire-format-hashes.txt` was just one
+  arbitrary instance of the noisy output.
+
+  Surfaced at the start of Wave 6 (v0.5.8-cleanup) when the Phase-0 baseline
+  sanity check (re-capture and diff against the golden) failed.
+
+### Changed
+
+- `capture_wire_format_hashes.sh` now feeds source via stdin (`-f -`) so the
+  embedded `source_name` is the stable string `"-"` rather than a random
+  per-run path. Output is now byte-identical across runs.
+- `tests/golden/v0.5.7-fixes-wire-format-hashes.txt` regenerated from the
+  fixed script (148 hashes; 5 COMPILE_ERROR + 143 deterministic SHA256s).
+
+### Added
+
+- `tests/scripts/check_wire_format_determinism.sh` runs the capture script
+  twice and asserts byte-identical output. Hard-fail in `make releasetest`
+  Phase 1 via the new `test-wire-format-determinism` target.
+
+### Bytecode
+
+Bytecode-byte-identical against `v0.5.7-fixes` (no codegen change). The
+`tests/golden/v0.5.7-fixes-bytecode-hashes.txt` content matches.
+
 ## v0.5.7-fixes — 2026-05-08
 
 Wave 5 of v0.5.x cleanup ramp.
