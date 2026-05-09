@@ -480,3 +480,133 @@ or on a struct that `UVM` owns. Subsystem authors may not use `static` local
 variables for mutable state that differs per-VM. This is a structural analogue of
 Lua's `lua_State`-as-root design: Lua earns multi-VM embeddability precisely because
 every mutable Lua datum lives on a `lua_State`.
+
+---
+
+### Tagged-pointer prototype chain
+
+**Locked:** 2026-04-29
+**Status:** active
+
+**Decision.** Object prototype chains are stored as a tagged pointer with
+three forms: zero-proto (a tagged null), single-proto (a tagged pointer
+to one parent), and multi-proto (a tagged pointer to a heap-allocated
+parent array). The tag bits encode which form, so single-proto lookup —
+the dominant case — does not allocate.
+
+**Alternatives considered.**
+
+- *Always-array prototype chain.* Every object holds a `UObject **`
+  parent array even when one parent is the common case. Rejected: an
+  extra allocation per object, ~16 B overhead per single-proto object,
+  no upside.
+- *Linked-list prototype chain.* Each parent points to the next.
+  Rejected: extra cache miss per traversal step, no benefit on
+  modern hardware.
+
+---
+
+### Inline cache: 4 entries per call site
+
+**Locked:** 2026-04-29
+**Status:** active
+
+**Decision.** Each slot-access call site carries 4 IC entries by
+default; the embedded-footprint preset (`URBI_IC_ENTRIES_PER_SITE=2`)
+narrows this to 2. Entries are organized as a small linear scan; on
+miss, the slot lookup walks the prototype chain and writes a new
+entry, evicting the least-recent if the table is full.
+
+**Alternatives considered.**
+
+- *Single-entry IC.* Smaller; thrashes badly under polymorphism.
+- *Hash-table IC.* Larger; more memory traffic; doesn't pay for itself
+  at the working-set size typical for embedded scripts.
+
+---
+
+### Scratch-frame primitive for AT_SYNC body execution
+
+**Locked:** 2026-05-05
+**Status:** active
+
+**Decision.** The four AT_SYNC body-execution sites (AT_EVENT inline,
+AT_EVENT onleave-inline, drain-onleave, event-sync-emit-body) all route
+through `urbi_run_closure_on_scratch`. The primitive spins up an
+ephemeral `UStrand`, runs the body closure with a fresh register window,
+and tears the strand down on completion.
+
+**Alternatives considered.**
+
+- *Body-inlined emit at each site.* Original approach. Each AT_SYNC site
+  emitted the body inline, which made register-allocation drift between
+  sibling sites a recurrent bug class.
+- *Strand-pool reuse.* Strands recycled across watcher fires.
+  Rejected: complicates the GC walker contract; the per-fire allocation
+  cost is small compared to the body's own work.
+
+---
+
+### Cooperative single-threaded VM as `v1.0` baseline
+
+**Locked:** 2026-04-28
+**Status:** active
+
+**Decision.** The `URBI_SCHED_COOPERATIVE` scheduler is the only
+implementation shipped at `v1.0`. Each `UVM` is driven by one thread at
+a time; multi-threaded scheduling (`URBI_SCHED_PREEMPTIVE`) is a
+post-v1.0 expansion. Several primitives (the `UModuleInstance`
+walk-then-prepend, the deferred slot-change emit ring) assume
+single-threaded VM and are flagged for revisit when multi-threaded
+scheduling lands.
+
+**Alternatives considered.**
+
+- *Multi-threaded VM at v1.0.* Rejected as scope; the contract surface
+  for cross-thread closure handoff and GC barriers is large enough to
+  warrant a separate design pass.
+
+---
+
+### Bytecode wire format `v1.5` exact-match policy
+
+**Locked:** 2026-05-07
+**Status:** active
+
+**Decision.** A bytecode module is loadable only by a runtime whose
+wire-format version exactly matches the producer's. There is no
+in-band migration. Live-system bytecode upgrade tooling — required for
+embedded deploys that cannot rebuild from source — is a post-v1.0
+roadmap item.
+
+**Alternatives considered.**
+
+- *Forward-compatible loader.* Older runtimes accept newer modules
+  with backward-compatible features. Rejected: forces every wire-format
+  decision to commit to a forward-compat envelope; no upside until live
+  upgrade tooling lands.
+- *Backward-compatible loader.* Newer runtimes accept older modules,
+  rewriting opcodes on load. Rejected: same upside as live upgrade
+  tooling but ships earlier; better to design the upgrade tooling
+  separately and load it as an opt-in pass.
+
+---
+
+### Strict tooling as quality contract
+
+**Locked:** 2026-05-09
+**Status:** active
+
+**Decision.** Four strict-tooling gates hard-fail in `make releasetest`:
+cppcheck-strict (across all categories), tidy-strict (across all
+categories), scan-build (clang static analyzer), docstring-coverage
+(every header-exposed declaration in `include/urbi/*.h` carries a
+contract docstring). A green `make releasetest` is the canonical
+signal that the codebase is ready to ship.
+
+**Alternatives considered.**
+
+- *Advisory-only.* Tools run; warnings logged; no fail. Rejected:
+  warnings accumulated; no enforcement.
+- *Per-tool opt-in.* Each subsystem opts into each tool. Rejected:
+  fragments enforcement across the tree.

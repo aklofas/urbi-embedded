@@ -82,12 +82,47 @@ captures `x`, `find_or_install_upvalue` propagates the upvalue chain:
 
 | Component | Location |
 |---|---|
-| `UFuncState` struct definition | `src/uemit.h` |
-| `find_or_install_upvalue` | `src/uemit.c` |
-| Block open / close | `uemit_open_block`, `uemit_close_block` in `src/uemit.c` |
-| Back-edge close (while loops) | `uemit_emit_loop_back_close` in `src/uemit.c` |
-| `OP_CLOSE` runtime | `src/uvm.c` — closes all open upvalue cells ≥ R[A] |
-| `OP_GETUPVAL` / `OP_SETUPVAL` | `src/uvm.c` — upvalue read / write dispatch |
+| `UFuncState` struct definition | `src/emit/uemit.h` |
+| `find_or_install_upvalue` | `src/emit/uemit_funcstate.c` |
+| Block open / close | `uemit_open_block`, `uemit_close_block` in `src/emit/uemit_stmt.c` |
+| Back-edge close (while loops) | `uemit_emit_loop_back_close` in `src/emit/uemit_funcstate.c` |
+| `OP_CLOSE` runtime | `src/vm/uvm_closure.c` — closes all open upvalue cells ≥ R[A] |
+| `OP_GETUPVAL` / `OP_SETUPVAL` | `src/vm/uvm_closure.c` — upvalue read / write dispatch |
 
 See [opcodes.md](opcodes.md) for the full `OP_CLOSE` and `OP_GETUPVAL`
 encoding.
+
+---
+
+## UClosure prototype-instance binding
+
+Every `UClosure` carries a `proto_inst` pointer to the `UProtoInstance`
+it runs inside — the per-VM realm-bound view of the closure's `UProto`.
+The binding is end-to-end:
+
+- **Top-level closures** route through
+  `s->module_instance->proto_instances->entries[0]` at `urbi_run_chunk` /
+  `urbi_vm_run` time.
+- **Nested closures** inherit `cur_closure->proto_inst` from the
+  enclosing call frame at `OP_CLOSURE` execution.
+
+The `proto_inst` pointer is what bridges the call site's compiled-once
+`UProto` (constants, instructions, IC name table) to the VM-and-realm
+specific `UProtoInstance` (interned `USymbol*` IC table, per-realm-global
+binding cache). Without it, two VMs running the same module would share
+mutable IC state.
+
+---
+
+## Watcher closure ownership
+
+Reactive watchers (`at`, `whenever`, `waituntil`, `every`) install
+closures whose lifetime is decoupled from the installing call frame. The
+`URBI_WATCHER_OWNS_*` flags on the watcher describe which of the
+installed closures the watcher took ownership of — the cond closure, the
+body closure, the onleave closure, or some subset — so that GC and
+explicit teardown release the right set of references.
+
+See [`reactive-runtime.md`](reactive-runtime.md) for the full watcher
+lifecycle and the four AT_SYNC sites that share
+`urbi_run_closure_on_scratch`.

@@ -406,12 +406,14 @@ v0.1.0-skeleton tag the logic lives inline in `tools/urbi.c`.
 
 ---
 
-## Concurrency, scheduler, GC
+## Runtime subsystems
 
-The walking-skeleton stage covers the arithmetic expression core. The language
-features that make urbiscript distinctive — concurrent statement separators,
-reactive watchers, and structured cancellation — are deferred to later
-releases. See [ROADMAP.md](../ROADMAP.md) for the release sequence.
+The pipeline above produces and runs bytecode for the arithmetic
+expression core. Beyond that, several runtime subsystems collaborate to
+implement the language features that make urbiscript distinctive —
+concurrency, the prototype object model, reactive watchers, garbage
+collection, and the realm + module-instance system. Each has a dedicated
+deep-dive doc; this section is the orientation map.
 
 ### Concurrency
 
@@ -424,46 +426,74 @@ urbiscript's statement separators encode concurrency:
   not wait).
 - `&` — parallel join (both sides spawn; caller waits for both to complete).
 
-`at (cond) body` registers a persistent watcher that fires whenever `cond`
-transitions from false to true. `whenever` re-fires while `cond` remains
-true. `every(100ms)` fires on a timer. `waituntil` blocks the current
-coroutine until a condition holds.
+The runtime ships a cooperative scheduler (`URBI_SCHED_COOPERATIVE`) as
+the `v1.0` baseline. Every running coroutine is a `UStrand` that holds
+its own register window, instruction pointer, and trace state; the
+scheduler walks a priority-aware ready queue and yields control at
+statement-separator boundaries. An ISR-safe SPSC event ring buffers
+events from interrupt context for drain at the next safe point. The
+scheduler determinism gate runs three configurations × 100 iterations
+on every release. See [Scheduler design](scheduler-design.md) for the
+full contract.
 
-First-class `Tag` objects group related watchers and coroutines; `tag.stop()`
-cancels all activity under the tag. Tags carry `enter` and `leave` event
-callbacks for RAII-style cleanup.
+First-class `Tag` objects group related watchers and coroutines;
+`tag.stop()` cancels all activity under the tag. Tags carry `enter`
+and `leave` event callbacks for RAII-style cleanup.
 
-The cooperative coroutine scheduler and the reactive watcher registry both
-land in a later release.
+### Object model
 
-### Scheduler
+Objects are prototype-based with hidden-class slot layout. A `UObject`
+header (56 B host, 48 B 32-bit embedded, both pinned by
+`_Static_assert`) points at a `UShape` describing its slot layout, plus
+a tagged-pointer prototype chain (three forms: zero-proto, single-proto,
+multi-proto). Slot lookup goes through a 4-entry-per-call-site inline
+cache (2 entries on the embedded-footprint preset). Shape transitions
+are interned through a per-VM `UShapeMap` so that two objects that have
+evolved through the same series of slot adds share identity. See
+[Object model](object-model.md) for the layout, IC design, and the nine
+atom-family singletons.
 
-The scheduler is cooperative and priority-aware. Coroutines yield at
-statement boundaries; the scheduler picks the highest-priority runnable
-coroutine at each yield. Real-time deadlines are expressed through tag
-priorities and yield points, not through preemption. The scheduler is
-designed to run without OS support; on FreeRTOS and bare-metal targets it is
-called from the main loop (or from a timer ISR that pokes the tick counter)
-rather than via any threading primitive.
+### Reactive runtime
 
-The scheduler implementation lands in a later release.
+`at (cond) body` registers a persistent watcher that fires whenever
+`cond` transitions from false to true. `whenever` re-fires while `cond`
+remains true. `every(100ms)` fires on a timer. `waituntil` blocks the
+current coroutine until a condition holds.
 
-### GC
+Reactive constructs compile to install opcodes that build watchers on
+the heap. Watchers fire from three safe-point families: condition-dirty
+re-evaluation, slot-change events, and explicit emit (`E.emit(...)`).
+The emit pipeline routes all four AT_SYNC sites through a single
+primitive — `urbi_run_closure_on_scratch` — that spins up an ephemeral
+strand for the body closure and tears it down on completion. See
+[Reactive runtime](reactive-runtime.md) for the full lifecycle, the
+ownership flags that govern watcher teardown, and the freereg/next_reg
+sync rubric.
 
-The garbage collector is an incremental tri-color mark-and-sweep with
-safe-point discipline. GC steps occur at statement boundaries — the same
-yield points as the scheduler — so GC pauses are bounded by the cost of
-processing one statement, not by the size of the live heap. Emergency GC
-inside the allocator hot path is not performed; if a step-based GC cannot
-keep pace, the next safe point runs a proportionally larger increment.
+### Garbage collection
 
-The choice of incremental over stop-the-world is motivated by the GC pause
-target in [ROADMAP.md](../ROADMAP.md): ≤ 1 ms under a typical reactive
-workload on 32-bit embedded hardware. A stop-the-world collector cannot
-provide that guarantee without hard limits on live-set size; an incremental
-collector provides it structurally by bounding each step.
+The runtime uses incremental tri-color mark-sweep
+(`URBI_GC_INCREMENTAL`) with a no-GC build (`URBI_GC_NONE`) carried
+through CI for the smallest embedded footprints. Write barriers fire on
+slot stores and other heap-pointer mutations; safe points are
+statement-separator boundaries plus explicit `urbi_gc_step()` calls in
+embedded driver loops. The strand-walker traverses live coroutines from
+realm hierarchy roots so that a single GC pass sees all reachable
+strand state. Pause budget is ≤2.1 µs measured against a 1 ms target.
+See [GC](gc.md) for the cell-type inventory, gc_byte bit layout, and
+the realm-hierarchy walker contract.
 
-The GC implementation lands in a later release.
+### Realm and module instances
+
+A realm holds the top-level globals plus the (vm, module) → instance
+cache. `urbi_run_chunk` and `urbi_vm_run` automatically bind a
+`UModuleInstance` for the realm at first invocation, lazily interning
+the IC name table and threading `proto_instances` through the call
+frame for `UClosure.proto_inst` access. The walk-then-prepend protocol
+on the cache is correct under the single-threaded-VM assumption that
+defines the `v1.0` baseline. See [Realm and modules](realm-and-modules.md)
+for the load contract, the lazy-intern protocol, and the multi-threaded
+deferrals.
 
 ---
 

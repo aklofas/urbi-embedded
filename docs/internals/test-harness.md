@@ -146,6 +146,17 @@ tests/unit/test_*.c)`, so creating the file is enough to get it compiled. The
 only manual edits required are the `extern` declaration and the `main()` call in
 `runner.c`.
 
+## TDD-per-fix discipline
+
+Every bug fix lands with a co-located regression test that fails before
+the fix and passes after. The test goes in the same commit as the fix.
+For fixes spanning multiple files, the test colocates with the most
+load-bearing change — typically `tests/unit/t<subsystem>_<scenario>.c`.
+
+The discipline is enforced informally — there is no automated check
+that every fix commit ships a new test. The expectation is that PR
+reviewers flag a missing regression test as a blocker.
+
 ## Running tests
 
 Each build variant uses its own subdirectory under `build/`, so they coexist
@@ -161,8 +172,9 @@ The test targets form two tiers:
   commit lands on `main`.
 - **Pre-release tier** — `make releasetest` aggregates every host-side
   gate that CI runs (sanitizer matrix including `test-switch`,
-  `test-valgrind`, `lint`, `docs-check`, `coverage`) into a single
-  ~3–5 min sequential run. Invoked before tagging a milestone or
+  `test-valgrind`, `lint`, `docs-check`, `coverage`, plus the four
+  strict-tooling gates listed below) into a two-phase parallel run that
+  finishes in ~2 min wall-clock. Invoked before tagging a release or
   before pushing a branch that touches multiple subsystems; otherwise
   rely on CI.
 
@@ -181,11 +193,35 @@ verification.
 | `make test-ubsan`    | UBSan (`-O1 -g`)                       | `build/host-ubsan/`    | ~10 s         | After any `src/*.c` change                   |
 | `make test-switch`   | `-Os -DURBI_VM_FORCE_SWITCH=1`         | `build/host-switch/`   | ~5 s          | After `src/uvm.c` changes                    |
 | `make test-valgrind` | `-O0 -g` under memcheck                | `build/host-valgrind/` | ~1–3 min      | Before milestone tag; via `releasetest`      |
-| `make releasetest`   | aggregate (sequential recursive `$(MAKE)`) | various            | ~3–5 min      | Before tagging a release; before push if branch spans subsystems |
+| `make releasetest`   | aggregate (two-phase parallel)         | various                | ~2 min        | Before tagging a release; before push if branch spans subsystems |
 
 Runtimes are approximate (typical development hardware); actual numbers
 vary with CPU, disk, and whether `ccache` is in use. `make test-valgrind`
 is the single longest gate within `releasetest`.
+
+`make releasetest` runs in two stages:
+
+- **Stage A (parallel under `-j$(nproc) -Otarget`):** host build, host
+  ASan, host UBSan, host debug build, cross-arm sanity compile,
+  cross-riscv sanity compile, lint suite (clang-tidy strict, cppcheck
+  strict, GCC `-fanalyzer`), scan-build, docstring-coverage, LOC-cap
+  enforcement, GC-stress, `URBI_GC_NONE` smoke, scheduler determinism
+  (3 presets × 100 iterations), `make docs-check`. Wall-clock ~10 s on
+  a 32-core host.
+- **Stage B (solo, valgrind-only):** full corpus under valgrind
+  memcheck with leak-check; full corpus × 3 sanitizers run alongside.
+  Wall-clock ~120 s.
+
+The two-stage split is required: valgrind throughput collapses 10-20×
+under memory-bandwidth contention from concurrent gcov, clang-tidy,
+cppcheck, and `-fanalyzer`. Solo isolation buys back almost all the
+slowdown. Sharding by suite-index doesn't help — heavy suites cluster.
+
+**Four strict-tooling gates are hard-fail in `releasetest`:**
+`cppcheck-strict`, `tidy-strict`, `scan-build`, and
+`docstring-coverage`. Advisory-only mode is retired. A green
+`make releasetest` is the canonical signal that the codebase meets the
+v1.0 quality contract.
 
 Cross-compile variants build `liburbi.a` for Cortex-M7 (`make cross-arm`) and
 RISC-V rv32imc (`make cross-riscv`) but do not execute tests — there is no
