@@ -89,34 +89,14 @@ UTEST(scripted_at_fires_on_rising_edge)
 
     /* === Phase 2: trigger the rising edge ===
      *
-     * Write Realm.x = 10 via a nested function call.  The write goes
-     * through OP_SETSLOT which calls urbi_gc_slot_write on global_object.
-     * Because UGC_HAS_WATCHER_OBSERVER is set (from phase 1 trace), this
-     * calls observer_dirty => watcher_dirty_count = 1.
-     *
-     * The non-top-frame OP_RET after the function body returns hits the
-     * safepoint inside dispatch_loop_until_yield, which calls
-     * watcher_eval_dirty.  watcher_eval_dirty evaluates the cond
-     * (Realm.x > 5, now 10 > 5 = true) and detects a rising edge,
-     * spawning the body strand via spawn_body_coroutine.
-     *
-     * The body strand runs Realm.fired = Realm.fired + 1.  For this to
-     * succeed the body strand needs a module_instance (to resolve the IC
-     * table for OP_GETSLOT/SETSLOT at frame_count==0).  This is the
-     * gap being tested: do_spawn_body_coroutine does NOT currently
-     * synthesize a module_instance for the body strand (unlike
-     * urbi_run_closure_on_scratch which synthesizes one for the cond).
-     *
-     * Expected outcome (T9 integration test role):
-     *   - If the body strand has a valid module_instance (e.g. if a future
-     *     fix wires it in do_spawn_body_coroutine), the test passes.
-     *   - If module_instance is NULL, the body strand HALTs with
-     *     "GETSLOT/SETSLOT: no IC table bound", urbi_step returns
-     *     URBI_STEP_FATAL, and Realm.fired stays 0.
-     *
-     * The nested function call pattern ensures the safepoint fires AFTER
-     * the write (at non-top-frame OP_RET), making watcher_eval_dirty run
-     * within the same compile_and_run invocation. */
+     * Mechanism: OP_SETSLOT writes Realm.x through urbi_gc_slot_write,
+     * which calls observer_dirty (UGC_HAS_WATCHER_OBSERVER is set from
+     * phase 1).  The non-top-frame OP_RET safepoint then calls
+     * watcher_eval_dirty, which spawns the body strand on rising edge.
+     * Detailed walk-through (incl. body-strand module_instance synthesis)
+     * lives in docs/superpowers/specs/2026-05-04-urbi-pre-m5-at-whenever-waituntil-design.md
+     * §4.  This test verifies presence + ordering; deep mechanism is
+     * the spec's responsibility. */
     rc = utest_e2e_compile_and_run(&vm,
         "var trigger = function() { Realm.x = 10 }; trigger()",
         NULL);
