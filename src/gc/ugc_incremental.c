@@ -317,8 +317,24 @@ gc_atomic_finish_step(UVM *vm)
     gc_set_sweep_cursor(vm, gc_node_head(vm));
     gc_set_sweep_cursor_prev(vm, NULL);
 
-    /* Return accumulated consumed bytes; if gray list was empty, return
-     * a small constant so slice loop progresses. */
+    /* Return value contract:
+     *   >0 — bytes-of-gray-work consumed in this atomic-finish step.  The
+     *        slice scheduler subtracts this from the slice budget; if the
+     *        budget remains >0 the SWEEP phase begins immediately within
+     *        the same slice (see urbi_gc_slice loop call site at line ~760).
+     *   64u — sentinel returned when the gray list was already empty.  We
+     *        cannot return 0 because the slice scheduler reads 0 as "GC is
+     *        idle, no atomic work pending" and would wedge the loop on
+     *        successive 0-returns when the slice budget hasn't refilled.
+     *        64u is a small constant chosen to (a) make forward progress
+     *        through the SWEEP phase on the same slice, (b) be small enough
+     *        that downstream sweep_step bounds dominate the slice budget
+     *        accounting, and (c) match the granularity of `gc_mark_roots_step`
+     *        which also uses small constants for empty-work shapes.
+     *
+     * The 64u sentinel exists only because callers count "0" as "GC done".
+     * If the slice scheduler ever distinguishes "no work this slice, retry
+     * next safepoint" from "GC is idle", this sentinel can collapse to 0. */
     return consumed > 0U ? consumed : 64U;
 }
 
