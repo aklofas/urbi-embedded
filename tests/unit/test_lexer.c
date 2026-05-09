@@ -135,6 +135,19 @@ static void unterminated_block_comment_emits_error(void) {
     UASSERT_STR_EQ(t.u.err.message, "unterminated block comment");
 }
 
+/* LEX-004: error span for an unterminated block comment must cover the
+ * full unterminated extent (from the opening "/" to end-of-source), not
+ * just the hardcoded 2-byte "/" + "*" prefix. */
+static void unterminated_block_comment_error_span_full(void) {
+    /* "/* oops" — 7 bytes; the entire range is the unterminated comment. */
+    ULexer l;
+    ulex_init(&l, "/* oops", 7);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNTERMINATED_BLOCK_COMMENT);
+    UASSERT_EQ(t.len, 7);
+}
+
 static void plus_token(void) {
     ULexer l; ulex_init(&l, "+", 1);
     const UToken t = ulex_next(&l);
@@ -998,6 +1011,7 @@ void test_lexer_suite(void) {
     utest_run("block_comment_single_line", block_comment_single_line);
     utest_run("block_comment_spans_lines", block_comment_spans_lines);
     utest_run("unterminated_block_comment_emits_error", unterminated_block_comment_emits_error);
+    utest_run("unterminated_block_comment_error_span_full", unterminated_block_comment_error_span_full);
     utest_run("plus_token", plus_token);
     utest_run("minus_token", minus_token);
     utest_run("star_token", star_token);

@@ -456,6 +456,7 @@ typedef struct {
     ULexError code;
     int line;
     int col;
+    int len;       /* error span length; 2 by default for the bare "/*" */
 } UTriviaResult;
 
 static UTriviaResult skip_trivia(ULexer *l) {
@@ -463,8 +464,9 @@ static UTriviaResult skip_trivia(ULexer *l) {
      * caller reads them on the LEX_OK path the values are valid 1-based
      * positions, not sentinels.  Error paths overwrite these with the
      * actual error position (e.g. start_line/start_col for an unterminated
-     * block comment). */
-    UTriviaResult r = {LEX_OK, 1, 1};
+     * block comment).  LEX-004: len defaults to 2 (the "/" + "*" prefix);
+     * error paths overwrite with the actual span. */
+    UTriviaResult r = {LEX_OK, 1, 1, 2};
     while (l->cur < l->end) {
         const char c = *l->cur;
         if (c == ' ' || c == '\t') {
@@ -493,6 +495,7 @@ static UTriviaResult skip_trivia(ULexer *l) {
             /* Block comment — record start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
+            const char *const start = l->cur;
             l->cur += 2;
             int closed = 0;
             while (l->cur + 1 < l->end) {
@@ -513,6 +516,10 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 r.code = LEX_UNTERMINATED_BLOCK_COMMENT;
                 r.line = start_line;
                 r.col = start_col;
+                /* LEX-004: report the full unterminated extent, not just the
+                 * "/" + "*" prefix.  Span runs from the opening "/" to the
+                 * end of the source. */
+                r.len = (int)(l->cur - start);
                 return r;
             }
         } else {
@@ -534,7 +541,10 @@ static const UTokenType kPunctTable[256] = {
 UToken ulex_next(ULexer *lex) {
     UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
-        return make_error(tr.code, tr.line, tr.col, 2);
+        /* LEX-004: tr.len carries the actual error span (full unterminated
+         * extent for block comments; 2 — "/" + "*" — for any future
+         * trivia-level error that doesn't override it). */
+        return make_error(tr.code, tr.line, tr.col, tr.len);
     }
     if (lex->cur >= lex->end) {
         return make_eof(lex);
