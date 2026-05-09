@@ -38,6 +38,13 @@ For contributors building or modifying the C99 implementation.
 - [Architecture](internals/architecture.md) — module map and data-flow overview
 - [Opcode reference](internals/opcodes.md) — every opcode: encoding, operands, semantics
 - [Bytecode format](internals/bytecode-format.md) — `.urb` on-disk layout
+- [Object model](internals/object-model.md) — UObject layout, hidden classes, inline cache, atom families
+- [Garbage collection](internals/gc.md) — incremental tri-color mark-sweep, write barriers, walker contract
+- [Reactive runtime](internals/reactive-runtime.md) — watchers, scratch frames, sync-execution sites
+- [Realm and modules](internals/realm-and-modules.md) — per-realm globals, module instance cache, IC name interning
+- [Scheduler design](internals/scheduler-design.md) — cooperative scheduler contract
+- [Closures](internals/closures.md) — `UFuncState`, upvalue capture, `proto_inst` binding
+- [Emit correctness notes](internals/emit-correctness-notes.md) — verified emit invariants
 - [Design decisions](internals/design-decisions.md) — rationale log for implementation choices
 - [Test harness](internals/test-harness.md) — `utest.h` API and how to add unit tests
 - [Code style](STYLE.md) — C naming, memory model, freestanding discipline, const-correctness
@@ -74,6 +81,7 @@ make cross-arm    # sanity cross-compile for ARM Cortex-M7
 make cross-riscv  # sanity cross-compile for RISC-V rv32imc
 make lint         # run clang-tidy + cppcheck + GCC -fanalyzer
 make docs-check   # lint all Markdown docs (markdownlint + link check)
+make releasetest  # full pre-release sweep (~2 min, two-stage parallel)
 ```
 
 ---
@@ -122,8 +130,13 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Opcode reference](internals/opcodes.md) | Every opcode in the current set: encoding, operand fields, semantics, pseudocode | `v0.1.0-skeleton` |
 | [Test harness](internals/test-harness.md) | `utest.h` header-only harness API, naming conventions, sanitizer and cross-compile targets | `v0.1.0-skeleton` |
 | [Design decisions](internals/design-decisions.md) | Rationale log: choices made during implementation with the alternatives that were rejected | `v0.1.0-skeleton` |
-| GC internals | Incremental tri-color mark-sweep: write barrier protocol, safe-point discipline, bounded step size, pause budget | `v0.3.0-concurrency` |
-| Scheduler internals | Priority-aware cooperative scheduler: coroutine lifecycle, statement-boundary preemption points, tag integration | `v0.3.0-concurrency` |
+| [Closures](internals/closures.md) | `UFuncState` upvalue capture, `UClosure.proto_inst` binding, watcher closure ownership | `v0.2.0-expressions` |
+| [Scheduler design](internals/scheduler-design.md) | Cooperative scheduler contract; coroutine lifecycle; statement-boundary preemption points; tag integration; GC walker contract | `v0.3.0-concurrency` |
+| [Garbage collection](internals/gc.md) | Incremental tri-color mark-sweep: `gc_byte` bit layout, write-barrier protocol, safe-points, strand-walker contract, GC-cell inventory, configurable knobs | `v0.3.0-concurrency` |
+| [Object model](internals/object-model.md) | UObject layout, UShape hidden classes, inline cache, atom-family singletons, prototype-chain forms, slot operations | `v0.4.0-objects` |
+| [Reactive runtime](internals/reactive-runtime.md) | Reactive vocabulary, AST node kinds and emit shapes, watcher lifecycle, scratch-frame primitive, ownership flags, register-allocation invariant | `v0.5.0-reactive` |
+| [Realm and modules](internals/realm-and-modules.md) | Realm structure, per-realm globals API, module instance cache, `ic_name_strs` lazy interning, module-load contract, single-threaded VM assumptions | `v0.5.0-reactive` |
+| [Emit correctness notes](internals/emit-correctness-notes.md) | Verified emit invariants that don't fit in source comments | `v0.5.2-scratch-frame-followup` |
 
 ### reference/
 

@@ -106,7 +106,7 @@ time rather than a silent miscompile. This is the same pattern as
 `src/uarena.c`'s `stdlib_alloc` gating: the header is unconditional, the
 implementation symbols are hosted-only.
 
-The M3 concurrency runtime adds the following files, all of which must satisfy
+The concurrency runtime (`v0.3.0-concurrency` and later) adds the following files, all of which must satisfy
 the same freestanding constraint: `usched_cooperative.c`, `ugc_incremental.c`,
 `uhandle.c`, `utype.c`, `utag.c`, `uwatcher.c`, `uwatcher_eval.c`,
 `uwatcher_drain.c`, `uwatcher_spawn.c`, `uwatcher_gc.c`, `ustrand.c`,

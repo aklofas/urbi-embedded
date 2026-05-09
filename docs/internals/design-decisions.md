@@ -134,16 +134,17 @@ four instructions a stack VM needs (`PUSH R1`, `PUSH R2`, `OP_ADD`,
 for binary operations, which is most of what a numeric expression evaluator
 does.
 
-The cost at M1 is a ~100-line stack-based register allocator in the emitter.
-That cost is paid once. The benefit — lower instruction count, simpler dispatch
-loop, Lua 5.1+ idioms carrying forward — accumulates across every subsequent
-milestone.
+The cost in `v0.1.0-skeleton` is a ~100-line stack-based register allocator in
+the emitter. That cost is paid once. The benefit — lower instruction count,
+simpler dispatch loop, Lua 5.1+ idioms carrying forward — accumulates across
+every subsequent release.
 
 **Implications.** Bytecode density is higher than a stack VM, which matters
-for flash-constrained targets. The emitter must perform register allocation; at
-M1 this is a simple next-free-register stack with destination reuse, adequate
-for expression trees. Later milestones (locals, upvalues, closures) will extend
-the allocator without changing the opcode encoding. Lua 5.1+ literature and
+for flash-constrained targets. The emitter must perform register allocation;
+in the initial release this is a simple next-free-register stack with
+destination reuse, adequate for expression trees. Later releases (locals,
+upvalues, closures) will extend the allocator without changing the opcode
+encoding. Lua 5.1+ literature and
 tooling applies to the VM design with minimal adaptation.
 
 ---
@@ -164,7 +165,7 @@ followed by a mask or a shift, with no multi-bit boundary crossing.
 - *Lua 5.5 bit-packed encoding: `op(7) | A(8) | k(1) | B(8) | C(8)`.* The `k`
   flag distinguishes whether operand B is a register index or a constant-pool
   index. Saves one `OP_LOADK` per constant-operand instruction. Rejected: the
-  byte-alignment benefit outweighs the density gain at M1's opcode count; the
+  byte-alignment benefit outweighs the density gain at the initial opcode count; the
   `k` flag also complicates the verifier (B means two different things depending
   on the flag).
 
@@ -177,7 +178,7 @@ followed by a mask or a shift, with no multi-bit boundary crossing.
 **Why this one.**
 
 The 8-bit opcode field is not a waste. Lua 5.5 ships 85 opcodes on a 7-bit
-field; the v1.0 opcode budget is 8 at M1 and realistically under 64 by v1.0
+field; the v1.0 opcode budget is 8 in the initial release and realistically under 64 by v1.0
 complete. The "lost bit" on the opcode is irrelevant. What byte-alignment buys
 is concrete: the verifier's opcode-range check is one comparison, the
 disassembler's decoder is three byte reads, and 8-bit-addressable targets
@@ -190,7 +191,7 @@ simpler to verify, and equivalent in density — rather than retrofitting a flag
 bit into the existing encoding. The encoding stays byte-aligned throughout.
 
 **Implications.** The opcode field accommodates 256 distinct opcodes, far more
-than v1.0 needs. Reserved opcodes 8–255 are available for M2+ without a format
+than v1.0 needs. Reserved opcodes 8–255 are available for later releases without a format
 change. Instruction streams are 4-byte aligned in the file (the format includes
 an explicit alignment pad before the instruction section), which satisfies the
 alignment requirement for any direct-memory dispatch or future JIT code emission.
@@ -236,7 +237,7 @@ constant load, one 16-bit index, the same 4-byte instruction width as every
 other opcode. The decode cost is identical to the ABC form.
 
 **Implications.** Constant pools are bounded at 65 536 entries per module. In
-practice this ceiling is unlikely to be hit in M1–M3 scope. If it ever becomes
+practice this ceiling is unlikely to be hit in early releases. If it ever becomes
 binding, a `LOADKX` overflow opcode remains a v1.x option: the encoding
 reserves the opcode byte space, and the ABx form at full 16-bit range already
 handles every realistic case. The Bx field gives the verifier a trivial bounds
@@ -447,8 +448,7 @@ touching the bit-packing scheme.
 **Status:** active
 **Reference docs:**
 [`internals/architecture.md` — Multi-VM model](architecture.md#multi-vm-model),
-`tools/audit-globals.sh`,
-`docs/superpowers/specs/2026-04-24-urbi-pre-m2-multi-vm-audit-design.md`
+`tools/audit-globals.sh`
 
 **Decision.** No mutable datum may live at file scope in any `src/*.c` translation
 unit. Every piece of state that changes at runtime must live on a `UVM` struct (or
@@ -475,8 +475,139 @@ clang-tidy check (enabled in `.clang-tidy`, gated under `make lint`) rejects any
 new mutable file-scope definition at CI time. The `tools/audit-globals.sh` script
 provides a secondary human-readable report. Both run in the CI `lint` job.
 
-**Implications.** Every new mutable datum added in M2 and beyond must land on `UVM`
+**Implications.** Every new mutable datum added after the initial release must land on `UVM`
 or on a struct that `UVM` owns. Subsystem authors may not use `static` local
 variables for mutable state that differs per-VM. This is a structural analogue of
 Lua's `lua_State`-as-root design: Lua earns multi-VM embeddability precisely because
 every mutable Lua datum lives on a `lua_State`.
+
+---
+
+### Tagged-pointer prototype chain
+
+**Locked:** 2026-04-29
+**Status:** active
+
+**Decision.** Object prototype chains are stored as a tagged pointer with
+three forms: zero-proto (a tagged null), single-proto (a tagged pointer
+to one parent), and multi-proto (a tagged pointer to a heap-allocated
+parent array). The tag bits encode which form, so single-proto lookup —
+the dominant case — does not allocate.
+
+**Alternatives considered.**
+
+- *Always-array prototype chain.* Every object holds a `UObject **`
+  parent array even when one parent is the common case. Rejected: an
+  extra allocation per object, ~16 B overhead per single-proto object,
+  no upside.
+- *Linked-list prototype chain.* Each parent points to the next.
+  Rejected: extra cache miss per traversal step, no benefit on
+  modern hardware.
+
+---
+
+### Inline cache: 4 entries per call site
+
+**Locked:** 2026-04-29
+**Status:** active
+
+**Decision.** Each slot-access call site carries 4 IC entries by
+default; the embedded-footprint preset (`URBI_IC_ENTRIES_PER_SITE=2`)
+narrows this to 2. Entries are organized as a small linear scan; on
+miss, the slot lookup walks the prototype chain and writes a new
+entry, evicting the least-recent if the table is full.
+
+**Alternatives considered.**
+
+- *Single-entry IC.* Smaller; thrashes badly under polymorphism.
+- *Hash-table IC.* Larger; more memory traffic; doesn't pay for itself
+  at the working-set size typical for embedded scripts.
+
+---
+
+### Scratch-frame primitive for AT_SYNC body execution
+
+**Locked:** 2026-05-05
+**Status:** active
+
+**Decision.** The sync-execution sites in the reactive runtime (install
+cond, eval cond, AT_SYNC body, eval/drain onleave, event-sync emit body)
+all route through `urbi_run_closure_on_scratch` (and its
+`_with_payload` variant). The primitive spins up an ephemeral `UStrand`,
+runs the body closure with a fresh register window, and tears the strand
+down on completion.
+
+**Alternatives considered.**
+
+- *Body-inlined emit at each site.* Original approach. Each AT_SYNC site
+  emitted the body inline, which made register-allocation drift between
+  sibling sites a recurrent bug class.
+- *Strand-pool reuse.* Strands recycled across watcher fires.
+  Rejected: complicates the GC walker contract; the per-fire allocation
+  cost is small compared to the body's own work.
+
+---
+
+### Cooperative single-threaded VM as `v1.0` baseline
+
+**Locked:** 2026-04-28
+**Status:** active
+
+**Decision.** The `URBI_SCHED_COOPERATIVE` scheduler is the only
+implementation shipped at `v1.0`. Each `UVM` is driven by one thread at
+a time; multi-threaded scheduling (`URBI_SCHED_PREEMPTIVE`) is a
+post-v1.0 expansion. Several primitives (the `UModuleInstance`
+walk-then-prepend, the deferred slot-change emit ring) assume
+single-threaded VM and are flagged for revisit when multi-threaded
+scheduling lands.
+
+**Alternatives considered.**
+
+- *Multi-threaded VM at v1.0.* Rejected as scope; the contract surface
+  for cross-thread closure handoff and GC barriers is large enough to
+  warrant a separate design pass.
+
+---
+
+### Bytecode wire format `v1.5` exact-match policy
+
+**Locked:** 2026-05-07
+**Status:** active
+
+**Decision.** A bytecode module is loadable only by a runtime whose
+wire-format version exactly matches the producer's. There is no
+in-band migration. Live-system bytecode upgrade tooling — required for
+embedded deploys that cannot rebuild from source — is a post-v1.0
+roadmap item.
+
+**Alternatives considered.**
+
+- *Forward-compatible loader.* Older runtimes accept newer modules
+  with backward-compatible features. Rejected: forces every wire-format
+  decision to commit to a forward-compat envelope; no upside until live
+  upgrade tooling lands.
+- *Backward-compatible loader.* Newer runtimes accept older modules,
+  rewriting opcodes on load. Rejected: same upside as live upgrade
+  tooling but ships earlier; better to design the upgrade tooling
+  separately and load it as an opt-in pass.
+
+---
+
+### Strict tooling as quality contract
+
+**Locked:** 2026-05-09
+**Status:** active
+
+**Decision.** Four strict-tooling gates hard-fail in `make releasetest`:
+cppcheck-strict (across all categories), tidy-strict (across all
+categories), scan-build (clang static analyzer), docstring-coverage
+(every header-exposed declaration in `include/urbi/*.h` carries a
+contract docstring). A green `make releasetest` is the canonical
+signal that the codebase is ready to ship.
+
+**Alternatives considered.**
+
+- *Advisory-only.* Tools run; warnings logged; no fail. Rejected:
+  warnings accumulated; no enforcement.
+- *Per-tool opt-in.* Each subsystem opts into each tool. Rejected:
+  fragments enforcement across the tree.

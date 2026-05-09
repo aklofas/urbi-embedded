@@ -45,16 +45,16 @@ forward- or backward-compatibility tolerance at v1.x.
 
 | Byte | Version | Release           | Wire-format additions                  |
 |------|---------|-------------------|-----------------------------------------|
-| 0x10 | v1.0    | v0.1.0-skeleton   | Initial M1 8-opcode walking-skeleton   |
-| 0x11 | v1.1    | v0.2.0-expressions| M2 closures, locals, control flow      |
-| 0x12 | v1.2    | v0.3.0-concurrency| M3 control transfer + chunk lifecycle  |
-| 0x13 | v1.3    | v0.4.0-objects    | M4 objects: UProto + ic_count/ic_names |
-| 0x14 | v1.4    | v0.5.0-reactive   | M5 reactive: 8 new opcodes, UEvent etc.|
-| 0x15 | v1.5    | v0.5.6-bytecode   | Wave 4 wire-format completion: nested  |
-|      |         |                   | protos + per-proto + root ic_name_strs |
-|      |         |                   | + opcode renumber (OP_INVOKE retired;  |
-|      |         |                   | M5 reactive 38-45; OP_MAX shrinks 47   |
-|      |         |                   | → 46) + verifier shape table.          |
+| 0x10 | v1.0    | v0.1.0-skeleton   | Initial 8-opcode walking-skeleton      |
+| 0x11 | v1.1    | v0.2.0-expressions| Closures, locals, control flow         |
+| 0x12 | v1.2    | v0.3.0-concurrency| Control transfer + chunk lifecycle     |
+| 0x13 | v1.3    | v0.4.0-objects    | Objects: UProto + ic_count/ic_names    |
+| 0x14 | v1.4    | v0.5.0-reactive   | Reactive: 8 new opcodes, UEvent etc.   |
+| 0x15 | v1.5    | v0.5.6-bytecode   | Wire-format completion: nested protos  |
+|      |         |                   | + per-proto + root ic_name_strs +      |
+|      |         |                   | opcode renumber (OP_INVOKE retired;    |
+|      |         |                   | reactive opcodes 38-45; OP_MAX shrinks |
+|      |         |                   | 47 → 46) + verifier shape table.       |
 
 ---
 
@@ -113,7 +113,7 @@ Each record starts with a 1-byte kind tag (`UValKind`):
 
 Kind bytes above 4 are rejected with `ULOAD_CORRUPT_TAG`. At v1.5 only
 `UVAL_INT` and `UVAL_FLOAT` constants are produced by the emitter; the
-remaining tags are reserved for M6 stdlib (`UVAL_STR` will become live
+remaining tags are reserved for the standard library release (`UVAL_STR` will become live
 when string literals land) and have no payload encoding yet.
 
 Float constants are stored as raw bytes in the target's native byte order
@@ -212,9 +212,8 @@ A v1.4 module loaded into a v1.5 build is rejected with
 `ULOAD_UNSUPPORTED_VERSION` (exact-match policy retained from v1.0).
 No live-system upgrade tooling exists at v0.5.6; rebuild from source.
 
-A future v1.x revision may relax this; see
-`docs/urbi-embedded-design-risks.md` row "v1.x: live-system bytecode
-upgrade tooling" for the planning sketch.
+A future v1.x revision may relax this; live-system bytecode upgrade
+tooling is on the post-v1.0 roadmap.
 
 ---
 
