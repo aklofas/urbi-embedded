@@ -438,6 +438,14 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
     lex->cur = src;
     lex->line = 1;
     lex->line_start = src;
+
+    /* LEX-002: post-init invariant.  `line_start == src` even on empty input;
+     * for len == 0, (cur - line_start) is 0 and the column computed by
+     * make_eof / make_tok stays 1.  The pointer arithmetic is well-defined
+     * for src == NULL only when len == 0 (asserted above). */
+    URBI_INTERNAL_ASSERT(lex->line_start == lex->src);
+    URBI_INTERNAL_ASSERT(lex->cur == lex->src);
+    URBI_INTERNAL_ASSERT(lex->line == 1);
 }
 
 static UToken make_eof(const ULexer *l) {
