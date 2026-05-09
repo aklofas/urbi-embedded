@@ -117,6 +117,17 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* --- Proto helpers --- */
 
+/* MOD-032: free a single buffer through `alloc`, skipping NULL.
+ * Centralizes the `if (p != NULL) (void)alloc(p, 0, ud);` pattern that
+ * appears 6× in umodule_destroy (and 5× in umodule_destroy_proto_buffers,
+ * which we leave alone for surgical scope).  The pointer is not NULLed
+ * because both call sites zero the containing struct via urbi_zero after
+ * all frees complete. */
+static inline void module_buf_free(UModuleAllocFn alloc, void *alloc_ud,
+                                   void *p) {
+    if (p != NULL) (void)alloc(p, 0, alloc_ud);
+}
+
 void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
     /* MOD-030: every caller guards proto != NULL; the runtime contract is
@@ -1082,19 +1093,19 @@ void umodule_destroy(UModule *module) {
             /* TIDY-005: UProto ** → void * decay needs explicit cast. */
             alloc((void *)module->nested, 0, module->alloc_ud);
         }
-        if (module->instructions != NULL) (void)alloc(module->instructions, 0, module->alloc_ud);
-        if (module->constants    != NULL) (void)alloc(module->constants,    0, module->alloc_ud);
-        if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);
-        if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
-        if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
+        /* MOD-032: 6 buffer frees collapsed via module_buf_free helper. */
+        module_buf_free(alloc, module->alloc_ud, module->instructions);
+        module_buf_free(alloc, module->alloc_ud, module->constants);
+        module_buf_free(alloc, module->alloc_ud, module->line_deltas);
+        module_buf_free(alloc, module->alloc_ud, module->abs_lines);
+        module_buf_free(alloc, module->alloc_ud, module->source_name);
         /* TIDY-005: USymbol ** / char ** → void * decay needs explicit cast. */
-        if (module->ic_names     != NULL) (void)alloc((void *)module->ic_names, 0, module->alloc_ud);
+        module_buf_free(alloc, module->alloc_ud, (void *)module->ic_names);
         if (module->ic_name_strs != NULL) {
             /* Each entry is a NUL-terminated string allocated separately. */
             for (uint16_t k = 0; k < module->ic_count; k++) {
-                if (module->ic_name_strs[k] != NULL) {
-                    (void)alloc(module->ic_name_strs[k], 0, module->alloc_ud);
-                }
+                module_buf_free(alloc, module->alloc_ud,
+                                module->ic_name_strs[k]);
             }
             (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
         }
