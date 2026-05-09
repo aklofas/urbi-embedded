@@ -42,6 +42,20 @@ typedef enum {
     URBI_SCHED_CLASS_DEADLINE = 2
 } USchedClass;
 
+/* Strand priority + scheduler-class accessors.
+ *
+ * Compiled only when the selected scheduler defines URBI_SCHED_HAS_PRIORITY.
+ * The cooperative scheduler (v1.0 baseline) defines this to 0 so these
+ * symbols are absent in shipped builds; the declarations are RESERVED for
+ * v1.x preemptive / RT scheduler shapes.  No implementation exists at v1.0.
+ *
+ * urbi_strand_set_priority — assign a priority byte (0=lowest, 255=highest;
+ *   exact semantics defined by the chosen scheduler).  Caller owns `s`.
+ * urbi_strand_get_priority — read the strand's current priority byte.
+ * urbi_strand_get_sched_class — return the strand's scheduling class
+ *   (DEFAULT / PRIORITY / DEADLINE).
+ *
+ * All three operate on caller-owned UStrand; no ownership transfer. */
 void        urbi_strand_set_priority(struct UStrand *s, uint8_t priority);
 uint8_t     urbi_strand_get_priority(struct UStrand *s);
 USchedClass urbi_strand_get_sched_class(struct UStrand *s);
