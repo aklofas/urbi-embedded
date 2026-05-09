@@ -182,6 +182,29 @@ UObject *urbi_object_clone(struct UVM *vm, UObject *parent);
  * valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
 
+/* === urbi_atom_proto_for_value — Phase 2 atom-method dispatch helper ===
+ *
+ * Route a UValue to its atom proto.  Used by the OP_GETSLOT / OP_SETSLOT
+ * slow path so that slot lookup starting from a non-UVAL_OBJECT receiver
+ * walks through the realm-global atom proto chain.
+ *
+ * For UVAL_OBJECT, returns the receiver pointer (no atom routing).
+ * For UVAL_INT / UVAL_FLOAT / UVAL_STR / UVAL_EVENT, returns the
+ * realm-global atom proto for that family (URBI_ATOM_INTEGER / _FLOAT /
+ * _STRING / _EVENT).
+ * For UVAL_BOOL, UVAL_NIL, UVAL_VOID, and the closure/strand/host-fn
+ * kinds, returns the root Object proto (legacy semantics: lookup
+ * terminates at root Object's slot table; Phase 4 tightens Boolean
+ * routing once URBI_ATOM_BOOLEAN lands).
+ *
+ * Tag values are wrapped as UVAL_OBJECT today (no UVAL_TAG exists in the
+ * public UValKind union), so they fall through the UVAL_OBJECT arm.
+ *
+ * Lazy-allocates the per-VM atom singleton on first call (idempotent).
+ * Returns NULL only if urbi_object_atom returns NULL (atom-singleton
+ * allocation OOM). */
+struct UObject *urbi_atom_proto_for_value(struct UVM *vm, UValue v);
+
 /* === Prototype-mutation primitives (T10 — per pre-M4 prototype-chain spec §5) ===
  *
  * Every prototype-chain mutation routes through one of these three primitives.
