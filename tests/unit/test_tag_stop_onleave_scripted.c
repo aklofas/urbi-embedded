@@ -21,107 +21,20 @@
  * dispatch through urbi_run_closure_on_scratch (production path). */
 
 #include "utest.h"
+#include "utest_e2e_helpers.h"
 
 #include <stddef.h>
-#include <string.h>
 
-#include "value/uarena.h"
-#include "parse/uast.h"
-#include "emit/uemit.h"
-#include "lex/ulex.h"
-#include "module/umodule.h"
-#include "parse/uparse.h"
-#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "tag/utag.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 
 #define UTEST(name) static void name(void)
 
-/* ===================================================================
- * Helpers (mirror test_at_sync_scripted.c / test_at_scripted_e2e.c)
- * =================================================================== */
-
-static UValue
-make_int(int64_t n)
-{
-    UValue v;
-    v.kind = UVAL_INT;
-    v.v.i  = n;
-    return v;
-}
-
-static UValue
-make_nil(void)
-{
-    UValue v;
-    v.kind = UVAL_NIL;
-    return v;
-}
-
-static int
-compile_and_run(UVM *vm, const char *src, UValue *out_result)
-{
-    URealm *realm = urbi_realm_global(vm);
-    if (realm == NULL) return URBI_ERR_OOM;
-
-    ULexer   lex;
-    UArena   arena;
-    UModule  module = {0};
-    UEmitter e;
-    UParser  p;
-    UAstNode *node;
-
-    ulex_init(&lex, src, strlen(src));
-    uarena_init(&arena, 4096);
-    uemit_init(&e, &module, &arena, vm, NULL);
-    uparse_init(&p, &lex, &arena);
-
-    while ((node = uparse_next_statement(&p)) != NULL) {
-        if (node->kind == AST_ERROR) {
-            uarena_destroy(&arena);
-            umodule_destroy(&module);
-            return URBI_ERR_COMPILE;
-        }
-        if (uemit_statement(&e, node) != EMIT_OK) {
-            uarena_destroy(&arena);
-            umodule_destroy(&module);
-            return URBI_ERR_COMPILE;
-        }
-        uarena_reset(&arena);
-    }
-    if (uemit_finish(&e) != EMIT_OK) {
-        uarena_destroy(&arena);
-        umodule_destroy(&module);
-        return URBI_ERR_COMPILE;
-    }
-
-    UValue result = {0};
-    int rc = urbi_run_chunk(vm, realm, &module, &result);
-    if (out_result != NULL) {
-        *out_result = result;
-    }
-    uarena_destroy(&arena);
-    umodule_destroy(&module);
-    return rc;
-}
-
-#define E2E_MAX_ITERS 1000
-
-static int
-run_to_no_runnable(UVM *vm)
-{
-    int i;
-    for (i = 0; i < E2E_MAX_ITERS; i++) {
-        UStepResult sr = urbi_step(vm, 1000, NULL);
-        if (sr == URBI_STEP_FATAL)     return -1;
-        if (sr == URBI_STEP_WAKE_AT)   return 1;
-        if (sr == URBI_STEP_QUIESCENT) return 1;
-        if (vm->strand_runnable_count == 0) return 1;
-    }
-    return 0;
-}
+/* compile_and_run / run_to_no_runnable / make_int / make_nil now live
+ * in utest_e2e_helpers.{h,c}; see that header for documentation. */
 
 /* ===================================================================
  * Test: scripted_tag_stop_drains_onleave
@@ -151,15 +64,15 @@ UTEST(scripted_tag_stop_drains_onleave)
     if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
     int rc;
-    rc = urbi_realm_set_global(&vm, gr, "x",     1, make_int(0));
+    rc = urbi_realm_set_global(&vm, gr, "x",     1, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
-    rc = urbi_realm_set_global(&vm, gr, "fired", 5, make_int(0));
+    rc = urbi_realm_set_global(&vm, gr, "fired", 5, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
-    rc = urbi_realm_set_global(&vm, gr, "left",  4, make_int(0));
+    rc = urbi_realm_set_global(&vm, gr, "left",  4, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
 
     /* === Phase 1: install the at-watcher with onleave === */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "at (Realm.x > 5) Realm.fired = Realm.fired + 1 "
         "onleave Realm.left = Realm.left + 100",
         NULL);
@@ -176,7 +89,7 @@ UTEST(scripted_tag_stop_drains_onleave)
     UASSERT(w->onleave != NULL);
 
     /* === Phase 2: trigger rising edge to fire body === */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "var __trigger__ = function() { Realm.x = 10 }; __trigger__()",
         NULL);
     if (rc != URBI_OK) {
@@ -187,7 +100,7 @@ UTEST(scripted_tag_stop_drains_onleave)
     }
 
     /* AT mode: body strand spawned; drive to completion. */
-    int step_rc = run_to_no_runnable(&vm);
+    int step_rc = utest_e2e_run_to_no_runnable(&vm);
     UASSERT(step_rc != -1);
 
     UValue fired = {0};
@@ -205,7 +118,7 @@ UTEST(scripted_tag_stop_drains_onleave)
     UASSERT_EQ(0, (int)left.v.i);
 
     /* === Phase 3: stop the realm tag — cascade watcher to pending queue === */
-    UValue nil = make_nil();
+    UValue nil = utest_e2e_make_nil();
     rc = urbi_tag_stop(&vm, gr->tag, nil);
     UASSERT_EQ(URBI_OK, rc);
 
@@ -215,11 +128,11 @@ UTEST(scripted_tag_stop_drains_onleave)
     UASSERT(gr->tag->member_watchers_head == NULL);
 
     /* === Phase 4: drive a no-op nested call so the safepoint drains === */
-    rc = compile_and_run(&vm,
+    rc = utest_e2e_compile_and_run(&vm,
         "var __post__ = function() { 0 }; __post__()",
         NULL);
     (void)rc;
-    (void)run_to_no_runnable(&vm);
+    (void)utest_e2e_run_to_no_runnable(&vm);
 
     /* === Phase 5: verify onleave fired and queue is drained === */
     UASSERT(vm.pending_onleave_head == NULL);
