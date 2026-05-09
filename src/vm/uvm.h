@@ -271,6 +271,17 @@ typedef struct UVM {
     uint16_t         watcher_pool_high_water;
 
     /* --- Row 11 watcher dirty-set --- */
+    /* in_watcher_eval (WATCH-010): true while an at/whenever cond is being
+     * evaluated.
+     *
+     * Drain dependency: urbi_emit_slot_change_slow re-routes through the
+     * deferred ring when this flag is set; the at/whenever body wouldn't
+     * see its own write-during-eval otherwise.  The flag is owner-set by
+     * watcher_eval_dirty / drain_pending_onleave_queue and cleared on
+     * cond return.
+     *
+     * Invariant: vm->in_watcher_eval implies vm->dirty_set is being drained
+     * via the deferred-ring path, NOT the immediate path. */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
                                           inline on scratch frame; guards re-entrancy

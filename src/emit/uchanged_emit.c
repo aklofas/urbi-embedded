@@ -31,7 +31,13 @@
  * Re-entrancy: if any scratch-context flag is set the current call must
  * have originated from inside a sync slot-change body.  Route to the
  * deferred ring (urbi_drain_deferred_slot_changes runs at the next
- * safepoint before watcher_eval_dirty) and emit a one-shot URBI_LOG_WARN. */
+ * safepoint before watcher_eval_dirty) and emit a one-shot URBI_LOG_WARN.
+ *
+ * WATCH-010 drain dependency: vm->in_watcher_eval is the at/whenever-cond
+ * eval flag.  When set, this function MUST route through the deferred
+ * ring — the at/whenever body wouldn't see its own write-during-eval
+ * otherwise, since the body strand is driven by the same eval pass.
+ * See uvm.h field comment on in_watcher_eval for the full invariant. */
 void
 urbi_emit_slot_change_slow(UVM *vm, UObject *parent,
                            USymbol *key, UValue new_value)
