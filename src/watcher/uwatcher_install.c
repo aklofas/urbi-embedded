@@ -193,6 +193,15 @@ install_watcher_runtime(
         if (vm->host_log_fn)
             vm->host_log_fn(vm, URBI_LOG_WARN,
                 "watcher install: pool exhausted");
+        /* WATCH-005: clear trace state on fall-through.  Phase 2 reset
+         * trace_overflow + trace_read_set_count on entry, but Phase 3
+         * populated trace_read_set_count via the OP_GETSLOT probe; the
+         * OOM_POOL return must not leak that count to any unrelated
+         * reader.  (The next install attempt re-resets at lines 149-150,
+         * but defensive cleanup at the fall-through site keeps the
+         * invariant local to this function.) */
+        vm->trace_overflow       = 0;
+        vm->trace_read_set_count = 0;
         return URBI_INSTALL_OOM_POOL;
     }
 
