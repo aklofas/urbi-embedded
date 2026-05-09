@@ -28,7 +28,22 @@
 
 ### Footprint
 
-(populated as Phase 18 commits land)
+vs v0.5.7-fixes archive baseline (host 352 K / arm 174 K / riscv 324 K):
+
+- host  liburbi.a: 346 K  (Δ −1.7 %)
+- arm   liburbi.a: 169 K  (Δ −2.9 %)
+- riscv liburbi.a: 315 K  (Δ −2.8 %)
+
+Reductions sourced from Phase 3 dead-code removal, Phase 13 helper
+extraction (`module_buf_free`), Phase 16 `urbi_zero` callsite sweep
+(CHSTR-032), Phase 17 cppcheck-driven variable-scope narrowing, and
+Phase 18 inline-helper tightening (UValue↔UEvent kind predicates).
+Remaining overage vs the v0.5.6 baseline is documented as load-bearing
+(M5 reactive-runtime IC tables, atom families, `urbi_opcode_shapes[]`
+verifier table, deferred slot-change emit ring).
+
+text+data+bss `size --total liburbi.a` post-tightening: host 135 022 B,
+arm 62 378 B, riscv 80 084 B.
 
 ### Documentation
 
