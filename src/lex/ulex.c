@@ -14,7 +14,7 @@
 #define LEX_RADIX_PREFIX_LEN 2
 
 static const char * const TOKEN_NAMES[] = {
-    "TOK_EOF", "TOK_INT", "TOK_IDENT",
+    "TOK_EOF", "TOK_INT", "TOK_STRING", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
     "TOK_LPAREN", "TOK_RPAREN",
     "TOK_PIPE", "TOK_SEMI", "TOK_COMMA", "TOK_AMP",
@@ -48,7 +48,9 @@ static const char * const ERR_MSG[] = {
     "leading underscore in numeric literal",
     "trailing underscore in numeric literal",
     "adjacent underscores in numeric literal",
-    "integer literal exceeds INT64_MAX"
+    "integer literal exceeds INT64_MAX",
+    "unterminated string literal",
+    "invalid escape sequence in string literal"
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 _Static_assert(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
@@ -442,6 +444,74 @@ static UToken scan_ident(ULexer *lex) {
     return t;
 }
 
+/* lex_string — consume a "..." string literal (LEX-035 / Phase 1).
+ *
+ * Pre: lex->cur points at the opening '"'; start_line / start_col record
+ * the position of that opening quote (1-based).
+ *
+ * Post: on success, lex->cur points one past the closing '"' and the
+ * returned UToken has type=TOK_STRING with u.str.start/len pointing at the
+ * INTERIOR of the literal (no quote chars).  The byte span is the raw
+ * source view — escape sequences are NOT resolved here; the parser owns
+ * escape resolution so the lexer stays zero-allocation (LEX-027).
+ *
+ * Phase-1 escape set: \n (newline), \t (tab), \\ (backslash), \" (quote).
+ * Other escapes (\r, \0, \xHH, \uHHHH) are reserved for v1.x.
+ *
+ * Errors (cursor advances past the offending span for clean recovery,
+ * LEX-028 contract):
+ *   - LEX_UNTERMINATED_STRING: EOF reached before closing quote.  Cursor
+ *     ends at lex->end.
+ *   - LEX_INVALID_ESCAPE: an unrecognized escape body was encountered.
+ *     Cursor advances past the bad escape body so the next ulex_next can
+ *     resume cleanly. */
+static UToken lex_string(ULexer *lex, const int start_line, const int start_col) {
+    /* Skip opening quote. */
+    lex->cur++;
+    const char *body_start = lex->cur;
+
+    while (lex->cur < lex->end && *lex->cur != '"') {
+        if (*lex->cur == '\\') {
+            /* Validate the escape body, then advance past it.  The parser
+             * resolves the byte; the lexer just guards the recognized set. */
+            lex->cur++;
+            if (lex->cur < lex->end) {
+                const char c = *lex->cur;
+                if (c != 'n' && c != 't' && c != '\\' && c != '"') {
+                    /* Recovery: consume the bad escape body so the next
+                     * ulex_next call resumes at a clean boundary. */
+                    lex->cur++;
+                    return make_error(LEX_INVALID_ESCAPE,
+                                      start_line, start_col,
+                                      (int)(lex->cur - body_start) + 1);
+                }
+                lex->cur++;
+            }
+            /* If we hit EOF mid-escape, the outer loop will exit and the
+             * unterminated-string branch reports the error. */
+        } else {
+            if (*lex->cur == '\n') {
+                lex->line++;
+                lex->line_start = lex->cur + 1;
+            }
+            lex->cur++;
+        }
+    }
+
+    if (lex->cur >= lex->end) {
+        return make_error(LEX_UNTERMINATED_STRING, start_line, start_col,
+                          (int)(lex->cur - body_start) + 1);
+    }
+
+    /* lex->cur points at the closing '"'. */
+    UToken t = make_tok_base(TOK_STRING, start_line, start_col);
+    t.len = (int)(lex->cur - body_start) + 2;   /* includes both quote chars */
+    t.u.str.start = body_start;
+    t.u.str.len = (int)(lex->cur - body_start);
+    lex->cur++;                                  /* skip closing quote */
+    return t;
+}
+
 void ulex_init(ULexer *lex, const char *src, const size_t len) {
     /* Preconditions (LEX-001 + LEX-027): lex must be non-NULL; src must be
      * non-NULL whenever len > 0.  The (NULL, 0) case is permitted — it
@@ -574,6 +644,15 @@ UToken ulex_next(ULexer *lex) {
 
     const char *start = lex->cur;
     const char c = *lex->cur;
+
+    /* String literal — needs its own helper (escape recognition + unterminated
+     * tracking).  Branched ahead of the punct fast-path because the helper
+     * advances lex->cur past the closing quote and handles its own errors. */
+    if (c == '"') {
+        const int start_line = lex->line;
+        const int start_col = (int)(start - lex->line_start) + 1;
+        return lex_string(lex, start_line, start_col);
+    }
 
     /* Fast path: purely single-char punctuation. */
     {

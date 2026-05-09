@@ -16,6 +16,7 @@ extern "C" {
 typedef enum {
     TOK_EOF = 0,      /* end of input — sentinel */
     TOK_INT,          /* integer literal */
+    TOK_STRING,       /* string literal — "foo", with \n/\t/\\/\" escapes */
     TOK_IDENT,        /* identifier [a-zA-Z_][a-zA-Z0-9_]* */
 
     /* arithmetic — M1 */
@@ -103,6 +104,8 @@ typedef enum {
     LEX_TRAILING_UNDERSCORE,
     LEX_ADJACENT_UNDERSCORES,
     LEX_INT_OVERFLOW,
+    LEX_UNTERMINATED_STRING,    /* string opened but not closed before EOF */
+    LEX_INVALID_ESCAPE,         /* unrecognized escape sequence \x */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via _Static_assert */
 } ULexError;
