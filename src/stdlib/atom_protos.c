@@ -1,0 +1,164 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* atom_protos.c — M6 Phase 4: atom proto C-native method stubs.
+ *
+ * Each atom family (Boolean, Integer, Float, String, nil, void) gets a
+ * minimum method set at Wave 1.  Wave 2 fills out the full Tier 1 method
+ * sets (logical ops on Boolean, arithmetic on Integer/Float, encode/decode
+ * on String, etc.).
+ *
+ * The Object root .clone() method already handles atom short-circuit
+ * (S-atom-clone-perf at Phase 3); the atom-proto chain inherits this via
+ * prototype lookup, so Boolean.clone() works without per-proto
+ * implementation.  This file focuses on family-specific overlays:
+ *   - Boolean.toString (true/false → "true"/"false")
+ *   - String.length    (byte count of the receiver)
+ *
+ * Equality stays in OP_EQ at the VM level — atom == atom is dispatched
+ * without slot lookup, so no per-family `==` install is needed.
+ *
+ * The Integer / Float / Nil / Void protos exist but inherit clone +
+ * getSlot / setSlot / etc. from the Object root via the prototype chain
+ * (each non-root atom singleton's protos field points at root Object
+ * per src/object/uobject.c urbi_object_atom). */
+
+#include "stdlib/atom_protos.h"
+#include "stdlib/object_root.h"
+
+#include "module/umodule.h"        /* UValue, UVAL_*, UClosure typedef */
+#include "object/uobject.h"        /* urbi_object_*, urbi_object_atom */
+#include "runtime/uclosure.h"      /* struct UClosure full def + native_method_fn typedef */
+#include "runtime/umacros.h"       /* urbi_strlen */
+#include "sched/ustrand.h"         /* UEXEC_OK, UEXEC_THROW */
+#include "urbi/object.h"           /* URBI_ATOM_* family tags */
+#include "urbi/types.h"            /* UErrCode, urbi_value_nil */
+#include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
+#include "value/uintern.h"         /* ustr_intern + USymbol */
+#include "vm/uvm.h"                /* UVM */
+
+#include <stdint.h>
+#include <stddef.h>
+
+/* === Boolean.toString — true/false → "true"/"false" ====================== */
+
+static int
+bool_toString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Boolean.toString", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_BOOL)
+        return urbi_raise_type(vm, "Boolean.toString: self must be Boolean", out);
+
+    const char *s = (self.v.i != 0) ? "true" : "false";
+    USymbol *sym = (USymbol *)ustr_intern(vm, s, urbi_strlen(s));
+    if (sym == NULL) return urbi_raise_oom(vm, out);
+
+    *out = urbi_value_nil();
+    out->kind = (uint8_t)UVAL_STR;
+    out->v.p = sym;
+    return UEXEC_OK;
+}
+
+/* === String.length — byte count of the interned symbol ==================
+ *
+ * UVAL_STR.v.p is a NUL-terminated `const char *` returned by ustr_intern;
+ * its byte count is recoverable by urbi_strlen.  The interned-table entry
+ * (UInternStr) carries a precomputed length, but its struct definition
+ * is private to src/value/uintern.c; routing through urbi_strlen keeps
+ * stdlib/ free of intern-table internals.  Strings are short at v1.0 (no
+ * known fixture exceeds a few dozen bytes), so the linear walk is
+ * negligible. */
+
+static int
+string_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.length", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.length: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String.length: NULL string", out);
+
+    *out = urbi_value_nil();
+    out->kind = (uint8_t)UVAL_INT;
+    out->v.i = (int64_t)urbi_strlen(s);
+    return UEXEC_OK;
+}
+
+/* === Method-table install helper ======================================== */
+
+typedef struct {
+    const char           *name;
+    urbi_native_method_fn fn;
+} AtomMethodEntry;
+
+static int
+register_methods_on_proto(UVM *vm, UObject *proto,
+                          const AtomMethodEntry *table, size_t count)
+{
+    size_t i;
+    for (i = 0; i < count; i++) {
+        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
+        if (cl == NULL) return URBI_ERR_OOM;
+
+        USymbol *sym = (USymbol *)ustr_intern(
+            vm, table[i].name, urbi_strlen(table[i].name));
+        if (sym == NULL) return URBI_ERR_OOM;
+
+        UValue v = urbi_value_nil();
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p = cl;
+        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
+        if (rc != 0) return URBI_ERR_OOM;
+    }
+    return URBI_OK;
+}
+
+/* Per-family method tables. */
+
+static const AtomMethodEntry BOOL_METHODS[] = {
+    { "toString", bool_toString }
+};
+
+static const AtomMethodEntry STRING_METHODS[] = {
+    { "length",   string_length }
+};
+
+#define BOOL_METHODS_COUNT   (sizeof(BOOL_METHODS)   / sizeof(BOOL_METHODS[0]))
+#define STRING_METHODS_COUNT (sizeof(STRING_METHODS) / sizeof(STRING_METHODS[0]))
+
+/* === urbi_atom_protos_register ========================================== */
+
+int
+urbi_atom_protos_register(UVM *vm)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+
+    /* Allocate singletons (lazy-init via urbi_object_atom).  Boolean /
+     * String are populated below; Integer / Float / Nil / Void are
+     * touched here so the singletons exist at boot time even though no
+     * Wave-1 family-specific methods install on them — they inherit
+     * clone / setSlot / etc. from root Object via the proto chain. */
+    UObject *bool_proto   = urbi_object_atom(vm, URBI_ATOM_BOOLEAN);
+    UObject *str_proto    = urbi_object_atom(vm, URBI_ATOM_STRING);
+    UObject *int_proto    = urbi_object_atom(vm, URBI_ATOM_INTEGER);
+    UObject *float_proto  = urbi_object_atom(vm, URBI_ATOM_FLOAT);
+    UObject *nil_proto    = urbi_object_atom(vm, URBI_ATOM_NIL);
+    UObject *void_proto   = urbi_object_atom(vm, URBI_ATOM_VOID);
+
+    if (bool_proto == NULL || str_proto == NULL || int_proto == NULL
+            || float_proto == NULL || nil_proto == NULL || void_proto == NULL) {
+        return URBI_ERR_OOM;
+    }
+
+    int rc;
+    rc = register_methods_on_proto(vm, bool_proto,
+                                   BOOL_METHODS, BOOL_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    rc = register_methods_on_proto(vm, str_proto,
+                                   STRING_METHODS, STRING_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    return URBI_OK;
+}

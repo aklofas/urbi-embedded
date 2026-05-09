@@ -150,7 +150,9 @@ UTEST(boolean_toString_true) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    int rc = compile_and_run(&vm, "var v = true.toString");
+    /* Method invocation requires parens — bare `true.toString` returns the
+     * closure handle (UVAL_CLOSURE) without calling it. */
+    int rc = compile_and_run(&vm, "var v = true.toString()");
     UASSERT_EQ(rc, URBI_OK);
 
     UValue out = urbi_value_nil();
@@ -165,7 +167,7 @@ UTEST(string_length_returns_byte_count) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    int rc = compile_and_run(&vm, "var v = \"hello\".length");
+    int rc = compile_and_run(&vm, "var v = \"hello\".length()");
     UASSERT_EQ(rc, URBI_OK);
 
     UValue out = urbi_value_nil();

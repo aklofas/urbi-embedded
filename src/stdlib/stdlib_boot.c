@@ -9,6 +9,7 @@
 
 #include "stdlib/stdlib_boot.h"
 #include "stdlib/object_root.h"
+#include "stdlib/atom_protos.h"
 
 #include "urbi/urbi.h"   /* URBI_OK, URBI_ERR_* */
 #include "vm/uvm.h"
@@ -22,8 +23,15 @@ urbi_stdlib_boot(UVM *vm)
     int rc = urbi_object_root_register(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 4 (atom proto stubs) and Phase 7 (Event.new / Tag.new
-     * scripted constructors) hook in here. */
+    /* Phase 4 (atom proto stubs).  Allocates Boolean / Nil / Void
+     * singletons + installs Wave-1 family-specific methods (Boolean
+     * .toString, String.length).  Integer / Float / Nil / Void protos
+     * exist but inherit clone + getSlot/etc. from Object root via the
+     * prototype chain. */
+    rc = urbi_atom_protos_register(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* Phase 7 (Event.new / Tag.new scripted constructors) hooks in here. */
 
     vm->stdlib_booted = 1U;
     return URBI_OK;
