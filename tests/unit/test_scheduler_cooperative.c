@@ -668,6 +668,51 @@ UTEST(sched_walk_roots_noop)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-025: wait_payload union arms are correctly tagged by the strand's
+ * wait_reason byte after sched_strand_block.  This test exercises all three
+ * live arms and confirms the read site contract: each arm's value matches
+ * the payload supplied at block time, and USTRAND_GET_REASON is the
+ * discriminator. */
+UTEST(sched_wait_payload_reason_discriminates_arms)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand sleeper, eventer, joiner, parent;
+    ustrand_init(&sleeper, &vm);
+    ustrand_init(&eventer, &vm);
+    ustrand_init(&joiner,  &vm);
+    ustrand_init(&parent,  &vm);
+
+    /* SLEEP arm. */
+    sleeper.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
+    sched_strand_block(&sleeper, USTRAND_REASON_SLEEP, 12345ULL);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&sleeper), (int)USTRAND_REASON_SLEEP);
+    UASSERT_EQ(sleeper.wait_payload.wake_us, 12345ULL);
+
+    /* EVENT arm. */
+    eventer.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
+    sched_strand_block(&eventer, USTRAND_REASON_EVENT, (uint64_t)0xCAFEBABEU);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&eventer), (int)USTRAND_REASON_EVENT);
+    UASSERT((uintptr_t)eventer.wait_payload.event == (uintptr_t)0xCAFEBABEU);
+
+    /* JOIN arm. */
+    joiner.state = USTRAND_STATE_RUNNING;
+    vm.strand_runnable_count = 1;
+    sched_strand_block(&joiner, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)&parent);
+    UASSERT_EQ((int)USTRAND_GET_REASON(&joiner), (int)USTRAND_REASON_JOIN);
+    UASSERT(joiner.wait_payload.join_parent == &parent);
+
+    ustrand_destroy(&sleeper, &vm);
+    ustrand_destroy(&eventer, &vm);
+    ustrand_destroy(&joiner,  &vm);
+    ustrand_destroy(&parent,  &vm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_scheduler_cooperative_suite(void) {
     utest_run("sched_init_empties_ready_queue",           sched_init_empties_ready_queue);
     utest_run("sched_make_runnable_appends_tail",         sched_make_runnable_appends_tail);
@@ -697,4 +742,6 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_quiescent_false_when_event_queue_nonzero", sched_quiescent_false_when_event_queue_nonzero);
     utest_run("sched_quiescent_false_when_host_call_pending_nonzero", sched_quiescent_false_when_host_call_pending_nonzero);
     utest_run("sched_walk_roots_noop",                    sched_walk_roots_noop);
+    utest_run("sched_wait_payload_reason_discriminates_arms",
+              sched_wait_payload_reason_discriminates_arms);
 }

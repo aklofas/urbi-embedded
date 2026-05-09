@@ -169,12 +169,26 @@ struct UStrand {
     UStrand                *ready_next;
     UStrand                *ready_prev;
 
-    /* --- WAITING-related queue fields --- */
+    /* --- WAITING-related queue fields ---
+     *
+     * wait_payload (CHSTR-025): anonymous union discriminated by the strand's
+     * USTRAND_GET_REASON(s) byte (lower nibble of s->state).  Each WAITING
+     * sub-state owns exactly one arm; reading any other arm is undefined
+     * behaviour because storing into one union member ends the lifetime of
+     * the others (C11 6.2.6.1 §7).
+     *
+     *   USTRAND_REASON_SLEEP  (0x01) -> wait_payload.wake_us       (sleep queue)
+     *   USTRAND_REASON_EVENT  (0x03) -> wait_payload.event         (event-wait)
+     *   USTRAND_REASON_JOIN   (0x04) -> wait_payload.join_parent   (join-wait)
+     *
+     * USTRAND_REASON_WATCHER (0x02) does NOT use wait_payload (the strand
+     * parks via UWatcher's own waiters list, not the union).  Read-site
+     * contract: switch on USTRAND_GET_REASON(s) before touching an arm. */
     UStrand                *wait_next;
     union {
-        uint64_t            wake_us;
-        struct UEvent      *event;
-        UStrand            *join_parent;   /* set by OP_JOIN_WAIT: child we are waiting on */
+        uint64_t            wake_us;       /* USTRAND_REASON_SLEEP */
+        struct UEvent      *event;         /* USTRAND_REASON_EVENT */
+        UStrand            *join_parent;   /* USTRAND_REASON_JOIN: child we are waiting on */
     } wait_payload;
 
     /* --- Watcher body ownership (spec #1 §4.2) ---

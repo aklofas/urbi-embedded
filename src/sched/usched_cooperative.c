@@ -58,7 +58,10 @@
 static void
 sleep_q_insert(UVM *vm, UStrand *s)
 {
-    /* Insert s into the sleep queue sorted ascending by wake_us. */
+    /* Insert s into the sleep queue sorted ascending by wake_us.
+     * CHSTR-025: every node on the sleep queue is in REASON_SLEEP, so
+     * wait_payload.wake_us is the active union arm at every read below. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP);
     if (!vm->sleep_q_head ||
         vm->sleep_q_head->wait_payload.wake_us > s->wait_payload.wake_us) {
         s->wait_next     = vm->sleep_q_head;
@@ -291,6 +294,9 @@ uint64_t
 sched_earliest_wake_us(UVM *vm)
 {
     if (!vm->sleep_q_head) return UINT64_MAX;
+    /* CHSTR-025: sleep_q_head is by construction in REASON_SLEEP. */
+    URBI_INTERNAL_ASSERT(
+        USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
     return vm->sleep_q_head->wait_payload.wake_us;
 }
 
