@@ -530,11 +530,12 @@ entry, evicting the least-recent if the table is full.
 **Locked:** 2026-05-05
 **Status:** active
 
-**Decision.** The four AT_SYNC body-execution sites (AT_EVENT inline,
-AT_EVENT onleave-inline, drain-onleave, event-sync-emit-body) all route
-through `urbi_run_closure_on_scratch`. The primitive spins up an
-ephemeral `UStrand`, runs the body closure with a fresh register window,
-and tears the strand down on completion.
+**Decision.** The sync-execution sites in the reactive runtime (install
+cond, eval cond, AT_SYNC body, eval/drain onleave, event-sync emit body)
+all route through `urbi_run_closure_on_scratch` (and its
+`_with_payload` variant). The primitive spins up an ephemeral `UStrand`,
+runs the body closure with a fresh register window, and tears the strand
+down on completion.
 
 **Alternatives considered.**
 

@@ -124,5 +124,5 @@ body closure, the onleave closure, or some subset — so that GC and
 explicit teardown release the right set of references.
 
 See [`reactive-runtime.md`](reactive-runtime.md) for the full watcher
-lifecycle and the four AT_SYNC sites that share
+lifecycle and the sync-execution sites that share
 `urbi_run_closure_on_scratch`.

@@ -463,7 +463,7 @@ current coroutine until a condition holds.
 Reactive constructs compile to install opcodes that build watchers on
 the heap. Watchers fire from three safe-point families: condition-dirty
 re-evaluation, slot-change events, and explicit emit (`E.emit(...)`).
-The emit pipeline routes all four AT_SYNC sites through a single
+The emit pipeline routes every sync-execution site through a single
 primitive — `urbi_run_closure_on_scratch` — that spins up an ephemeral
 strand for the body closure and tears it down on completion. See
 [Reactive runtime](reactive-runtime.md) for the full lifecycle, the
@@ -476,7 +476,7 @@ The runtime uses incremental tri-color mark-sweep
 (`URBI_GC_INCREMENTAL`) with a no-GC build (`URBI_GC_NONE`) carried
 through CI for the smallest embedded footprints. Write barriers fire on
 slot stores and other heap-pointer mutations; safe points are
-statement-separator boundaries plus explicit `urbi_gc_step()` calls in
+statement-separator boundaries plus explicit `urbi_gc_slice()` calls in
 embedded driver loops. The strand-walker traverses live coroutines from
 realm hierarchy roots so that a single GC pass sees all reachable
 strand state. Pause budget is ≤2.1 µs measured against a 1 ms target.
