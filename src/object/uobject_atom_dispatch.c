@@ -30,10 +30,12 @@ UObject *
 urbi_atom_proto_for_value(struct UVM *vm, UValue v)
 {
     /* Fast arms: each known UValKind routes to its dedicated atom proto.
-     * Per Phase-2 design every other kind (UVAL_BOOL / UVAL_NIL /
-     * UVAL_VOID / UVAL_CLOSURE / UVAL_STRAND / UVAL_HOST_FN) and any
-     * unrecognised kind falls through to the root-Object default below.
-     * Phase 4 widens the per-kind map (URBI_ATOM_BOOLEAN, etc.). */
+     * Phase 4 widens the per-kind map by promoting UVAL_BOOL / UVAL_NIL /
+     * UVAL_VOID — previously bucketed into root Object — into their own
+     * URBI_ATOM_BOOLEAN / NIL / VOID protos.  The remaining script-side
+     * kinds (UVAL_CLOSURE / UVAL_STRAND / UVAL_HOST_FN) still fall through
+     * to root Object since they have no scripted-method surface at
+     * v1.0. */
     switch ((UValKind)v.kind) {
         case UVAL_OBJECT:
             return (UObject *)v.v.p;
@@ -47,15 +49,21 @@ urbi_atom_proto_for_value(struct UVM *vm, UValue v)
         case UVAL_STR:
             return urbi_object_atom(vm, URBI_ATOM_STRING);
 
+        case UVAL_BOOL:
+            return urbi_object_atom(vm, URBI_ATOM_BOOLEAN);
+
+        case UVAL_NIL:
+            return urbi_object_atom(vm, URBI_ATOM_NIL);
+
+        case UVAL_VOID:
+            return urbi_object_atom(vm, URBI_ATOM_VOID);
+
         case UVAL_EVENT:
             /* Tag values flow through the Object kind today (no UVAL_TAG
              * in the public union); UEvent has its own UValKind, and
              * Phase 4 maps it to URBI_ATOM_EVENT here directly. */
             return urbi_object_atom(vm, URBI_ATOM_EVENT);
 
-        case UVAL_BOOL:
-        case UVAL_NIL:
-        case UVAL_VOID:
         case UVAL_CLOSURE:
         case UVAL_STRAND:
         case UVAL_HOST_FN:
@@ -63,14 +71,11 @@ urbi_atom_proto_for_value(struct UVM *vm, UValue v)
             break;   /* fall through to root-Object + diagnostic */
     }
 
-    /* Unrecognised / Phase-4-pending kinds: the URBI_DEBUG diagnostic uses
-     * urbi_atom_family_name to surface the routed kind.  Production
-     * builds compile out the stderr write. */
+    /* Unrecognised kinds (closures / strands / host_fn — no scripted-method
+     * surface at v1.0): URBI_DEBUG diagnostic for the routed kind.
+     * Production builds compile out the stderr write. */
 #ifdef URBI_DEBUG
-    if (v.kind != (uint8_t)UVAL_BOOL
-        && v.kind != (uint8_t)UVAL_NIL
-        && v.kind != (uint8_t)UVAL_VOID
-        && v.kind != (uint8_t)UVAL_CLOSURE
+    if (v.kind != (uint8_t)UVAL_CLOSURE
         && v.kind != (uint8_t)UVAL_STRAND
         && v.kind != (uint8_t)UVAL_HOST_FN) {
         fprintf(stderr,
