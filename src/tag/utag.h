@@ -52,7 +52,10 @@ struct UEvent;
 typedef struct UTag {
     /* --- common cell header (row 10 §3.1) --- */
     uint8_t  type_tag;                  /* UTYPE_TAG */
-    uint8_t  gc_byte;                   /* GC color bits; 0 at M3 (host-managed) */
+    uint8_t  gc_byte;                   /* GC-managed since M5: tri-color color
+                                         * bits + UGC_HAS_SLOT_CHANGE_EVENT.
+                                         * Set to vm->current_white by
+                                         * urbi_gc_alloc.  TAGCH-007. */
     uint16_t pad0;
 
     /* --- watcher-related state (RESERVED v1.x; placeholders at M3) --- */
