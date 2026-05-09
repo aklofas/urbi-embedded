@@ -94,7 +94,11 @@ urbi_register_fn(struct UVM *vm, struct UObject *proto,
     UValue v;
     urbi_zero(&v, sizeof(v));
     v.kind  = (uint8_t)UVAL_HOST_FN;
-    v.v.p   = (void *)(uintptr_t)fn;  /* store function pointer as void* */
+    /* Store function pointer in UValue.v.p (void*) via uintptr_t — function-
+     * to-data pointer round-trip is intentional and defined for the v1.0
+     * targets (POSIX + ARM Cortex-M7 + RISC-V32 + Xtensa LX7 are all
+     * Harvard-flat for code/data within the same address space). */
+    v.v.p   = (void *)(uintptr_t)fn;  /* NOLINT(performance-no-int-to-ptr) — UVAL_HOST_FN function-pointer encoding */
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 

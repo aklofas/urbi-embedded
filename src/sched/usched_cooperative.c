@@ -256,10 +256,16 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
             sleep_q_insert(vm, s);
             break;
         case USTRAND_REASON_EVENT:
-            s->wait_payload.event = (struct UEvent *)(uintptr_t)payload;
+            /* payload is a uint64_t carrying a UEvent* (REASON_EVENT calling
+             * convention from c_event_subscribe / event-emit handoff). The
+             * uintptr_t round-trip is intentional — payload encoding is a
+             * documented sched/strand contract. */
+            s->wait_payload.event = (struct UEvent *)(uintptr_t)payload;  /* NOLINT(performance-no-int-to-ptr) — REASON_EVENT payload-encoding contract */
             break;
         case USTRAND_REASON_JOIN:
-            s->wait_payload.join_parent = (UStrand *)(uintptr_t)payload;
+            /* payload is a uint64_t carrying the parent UStrand* (REASON_JOIN
+             * calling convention from join_parent setup). */
+            s->wait_payload.join_parent = (UStrand *)(uintptr_t)payload;  /* NOLINT(performance-no-int-to-ptr) — REASON_JOIN payload-encoding contract */
             break;
         default:
             /* SCHED-007: unknown reason byte — payload is dropped by design.

@@ -30,11 +30,13 @@ struct UArenaChunk {
 /* --- Chunk payload address and size helpers. --- */
 
 static unsigned char *chunk_payload(UArenaChunk *c) {
-    /* Skip the header, aligning the payload start to ARENA_ALIGN. */
+    /* Skip the header, aligning the payload start to ARENA_ALIGN.  The
+     * uintptr_t round-trip is the standard alignment idiom; the result
+     * still points within the same allocation. */
     uintptr_t base = (uintptr_t)(c + 1);
     uintptr_t misalign = base % ARENA_ALIGN;
     if (misalign) base += ARENA_ALIGN - misalign;
-    return (unsigned char *)base;
+    return (unsigned char *)base;  /* NOLINT(performance-no-int-to-ptr) — alignment round-trip on same allocation */
 }
 
 /* --- stdlib default allocator pair (hosted only). --- */
