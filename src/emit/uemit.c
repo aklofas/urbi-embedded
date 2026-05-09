@@ -123,6 +123,57 @@ uint8_t fs_temp_floor(const UFuncState *fs) {
     return floor_val;
 }
 
+/* Linear-scan dedup over the string pool.  `interned` MUST be a pointer
+   from ustr_intern (per-VM canonicalization gives pointer-equality for
+   byte-equal strings, so dedup is a pointer compare).  Returns existing
+   index if a UVAL_STR entry with the same interned pointer already exists;
+   otherwise appends a new entry and returns its index.  Sets e->error and
+   returns 0 on pool-full (> UINT16_MAX entries) or OOM.
+   Routes to the nested UProto constant pool when in a nested function.
+   Defined here next to add_const_int because the two share the proto-or-
+   module routing dispatch and the same pool-grow primitive. */
+uint16_t add_const_str(UEmitter *e, const char *interned) {
+    UProto *p = current_proto(e);
+    UValue **pool;
+    size_t  *count;
+    size_t  *cap;
+
+    if (p != NULL) {
+        pool  = &p->constants;
+        count = &p->const_count;
+        cap   = &p->const_cap;
+    } else {
+        pool  = &e->module->constants;
+        count = &e->module->const_count;
+        cap   = &e->module->const_cap;
+    }
+
+    size_t i;
+    for (i = 0; i < *count; i++) {
+        if ((*pool)[i].kind == (uint8_t)UVAL_STR
+            && (*pool)[i].v.p == (void *)interned) {
+            return (uint16_t)i;
+        }
+    }
+    if (*count > (size_t)UINT16_MAX) {
+        e->error = EMIT_CONSTANT_POOL_FULL;
+        return 0U;
+    }
+    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
+        e->error = EMIT_OOM;
+        return 0U;
+    }
+    {
+        const size_t idx = *count;
+        int pad;
+        (*pool)[idx].kind = (uint8_t)UVAL_STR;
+        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
+        (*pool)[idx].v.p = (void *)interned;
+        (*count)++;
+        return (uint16_t)idx;
+    }
+}
+
 /* Linear-scan dedup over the integer pool.  Returns existing index if
    a UVAL_INT entry with the same value already exists; otherwise appends
    a new entry and returns its index.  Sets e->error and returns 0 on
@@ -421,6 +472,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_INT:        return emit_int_arm(e, n);
     case AST_BOOL:       return emit_bool_arm(e, n);
     case AST_NIL:        return emit_nil_arm(e, n);
+    case AST_STR:        return emit_string_arm(e, n);
     case AST_NOOP:       return emit_noop_arm(e, n);
     case AST_UNARY:      return emit_unary_arm(e, n);
     case AST_BINARY:     return emit_binary_arm(e, n);

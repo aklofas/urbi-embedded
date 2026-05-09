@@ -62,6 +62,34 @@ uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n) {
     return r;
 }
 
+/* --- AST_STR ---
+ *
+ * Phase-1 routing: parser fed us escape-resolved + concat-folded bytes in
+ * the arena; we intern those bytes against the VM's per-VM intern table
+ * (pointer-equal for byte-equal content) and add a UVAL_STR slot to the
+ * current constant pool.  OP_LOADK loads the slot into a fresh register.
+ *
+ * Closes the v0.5.6 MOD-008 reservation of the UVAL_STR constant-pool kind
+ * (see src/module/umodule.c constant-pool decoder for the symmetric load
+ * arm). */
+
+uint8_t emit_string_arm(UEmitter *e, const UAstNode *n) {
+    /* Intern the escape-resolved bytes; ustr_intern returns a pointer-stable
+     * canonical address per (vm, content) pair.  vm is non-NULL by emitter
+     * contract (uemit_init wires it). */
+    const char *interned = ustr_intern(e->vm, n->u.str_lit.bytes,
+                                       (size_t)n->u.str_lit.len);
+    if (interned == NULL) { e->error = EMIT_OOM; return 0U; }
+
+    const uint16_t k = add_const_str(e, interned);
+    if (e->error != EMIT_OK) return 0U;
+
+    const uint8_t r = alloc_reg(e);
+    if (e->error != EMIT_OK) return 0U;
+    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    return r;
+}
+
 /* --- AST_NOOP --- */
 
 uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n) {
