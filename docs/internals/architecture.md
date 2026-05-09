@@ -555,5 +555,6 @@ scans the source tree for non-const file-scope definitions.
 Multiple `UVM` instances may run in separate threads without
 synchronization; cross-VM value handoff is not supported in v1.0 and is
 undefined behavior. The multi-threaded-per-VM and shared-immutable-bytecode-pool
-paths are deferred to v1.x. See `docs/superpowers/specs/2026-04-24-urbi-pre-m2-multi-vm-audit-design.md`
-for the full isolation model and the 8-case test matrix.
+paths are deferred to v1.x. See [`internals/design-decisions.md` — No global
+mutable state](design-decisions.md#no-global-mutable-state) for the rationale
+and the 8-case test matrix.

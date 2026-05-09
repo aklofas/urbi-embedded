@@ -403,7 +403,7 @@ File paths, line and column numbers, trailing whitespace, and
 everything else is compared literally. This is deliberately strict —
 `sed 's/ *$//'` would mask regressions.
 
-At M2+, when legacy fixtures are ported, the rule may extend to
+When legacy fixtures are ported, the rule may extend to
 cover span-notation normalization (`input.u:@.L-C:` → `<stdin>:L:C:`
 or similar). That extension lands when a concrete port forces it,
 not preemptively.
@@ -439,18 +439,19 @@ Every fixture opens with a 2-line header block in comment form,
 immediately at the top of the file before any REPL exchanges:
 
 ```text
-# Milestone: <M1 | M2 | ... | v1.0>
+# Milestone: <release classifier>
 # Covers: <comma-separated topic list>
 ```
 
 Long `Covers:` lists wrap with `#` followed by 9 spaces continuation
 indent so values stay column-aligned under the field name.
 
-The header is checked by humans only — there is no parser or lint
-rule — but keeping the two fields machine-searchable pays off at
-corpus scale. `grep -l 'Covers:.*promotion' tests/chk/**/*.chk` and
-`grep -l '^# Milestone: M3' tests/chk/**/*.chk` are the target
-queries.
+The `Milestone` field is an internal classifier used by maintainers
+for fixture-tier triage; new fixtures may copy the value from a
+sibling fixture in the same subdirectory. The header is checked by
+humans only — there is no parser or lint rule — but keeping the two
+fields machine-searchable pays off at corpus scale. `grep -l 'Covers:.*promotion' tests/chk/**/*.chk` is the typical
+query shape.
 
 The `Covers:` list should name language features, opcodes, or
 error classes exercised by the fixture. It's descriptive, not
