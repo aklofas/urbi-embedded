@@ -43,34 +43,13 @@
 #include "module/umodule.h"
 #include <stdint.h>
 
-/* === uvalue_from_event / uvalue_as_event ===
+/* === uvalue_from_event / uvalue_as_event / uvalue_is_event ===
  *
- * UEvent is a GC-managed cell.  At M5 we add UVAL_EVENT (kind=9) to the
- * UValKind enum (umodule.h) so the GC barrier in uvalue_is_heap() shades it.
- * Both helpers are defined here (internal to src/) rather than in a public
- * header — embedders access events through the C API, not raw UValue tags. */
-
-UValue
-uvalue_from_event(UEvent *e)
-{
-    UValue v;
-    urbi_zero(&v, sizeof(v));
-    v.kind  = (uint8_t)UVAL_EVENT;
-    v.v.p   = (void *)e;
-    return v;
-}
-
-UEvent *
-uvalue_as_event(UValue v)
-{
-    return (UEvent *)v.v.p;
-}
-
-int
-uvalue_is_event(UValue v)
-{
-    return v.kind == (uint8_t)UVAL_EVENT;
-}
+ * UEvent is a GC-managed cell.  At M5 we added UVAL_EVENT (kind=9) to
+ * the UValKind enum (umodule.h) so the GC barrier in uvalue_is_heap()
+ * shades it.  Phase-18 (Wave 6, 2026-05-09) made the three helpers
+ * `static inline` in uevent_native.h to elide call overhead at the 5
+ * in-tree call sites; no out-of-line definitions are needed. */
 
 /* === native_event_optional_payload ===
  *
