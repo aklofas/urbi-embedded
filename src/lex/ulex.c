@@ -510,7 +510,11 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 l->cur++;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '*') {
-            /* Block comment — record start for error reporting. */
+            /* Block comment — NON-NESTING (LEX-034).  The first occurrence
+             * of "*"+"/" closes the comment regardless of intervening
+             * "/"+"*" sequences.  Matches C semantics; locked in by the
+             * tests/chk/lex/block_comment_no_nest.chk fixture.  Record
+             * start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
             const char *const start = l->cur;
