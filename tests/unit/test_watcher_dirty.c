@@ -486,6 +486,16 @@ onleave_hook_count(struct UVM *vm, struct UWatcher *w)
     g_onleave_count++;
 }
 
+/* No-op onleave hook for tests that only need to prevent
+ * run_watcher_onleave from dispatching the (UClosure *)1 sentinel
+ * through real bytecode — no counter, no shared state. Parallel to
+ * test_tag_stop_realm.c's onleave_drain_noop. */
+static void
+onleave_drain_noop(struct UVM *vm, struct UWatcher *w)
+{
+    (void)vm; (void)w;
+}
+
 /* 15. pending_onleave_push_sets_flag_and_unlinks_from_active:
  *     Install one watcher; push to pending_onleave_queue; verify
  *     URBI_WATCHER_PENDING_UNREGISTER is set, watcher is off active_watchers_head,
@@ -795,8 +805,12 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     UASSERT(count_pending >= 2);
 
     /* Drain to clean up.  Install a no-op onleave hook so run_watcher_onleave
-     * doesn't dispatch the (UClosure *)1 sentinel through real bytecode. */
-    vm.test_watcher_onleave_hook = onleave_hook_count;
+     * doesn't dispatch the (UClosure *)1 sentinel through real bytecode.
+     * Test only verifies walker presence (count_pending >= 2 above), not the
+     * onleave invocation count, so use the purpose-built no-op rather than
+     * the counting hook to avoid leaking g_onleave_count state into other
+     * tests in this file. */
+    vm.test_watcher_onleave_hook = onleave_drain_noop;
     drain_pending_onleave_queue(&vm);
 
     urbi_vm_destroy(&vm);
