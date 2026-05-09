@@ -23,6 +23,15 @@
  * prepend node to the chain, set UGC_HAS_SLOT_CHANGE_EVENT on the object,
  * manually gc_shade_gray the node when the parent object is BLACK (forward
  * Dijkstra via a field write — not a UCell-slot write).
+ *
+ * TAGCH-009 — only the node is explicitly shaded:
+ *   The Dijkstra barrier shades the new UChangedNode if the parent is BLACK.
+ *   The new UEvent does NOT need a parallel shade because it is reachable
+ *   only through node->event — i.e. through the very node we just shaded.
+ *   When the GC walks the gray node payload, it follows node->event and
+ *   shades the event then.  Shading the event here would be redundant
+ *   (and would mask future bugs that broke the node->event link).
+ *
  * OOM on either alloc: return NULL (fail-soft); orphan node (if any) is
  * reclaimed by the next sweep.
  * Idempotent: second call for the same (obj, name) returns the same UEvent. */
