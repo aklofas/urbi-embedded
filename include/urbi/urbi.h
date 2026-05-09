@@ -162,6 +162,15 @@ int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
+/* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
+ * as int) to the corresponding public UErrCode.  Currently routes
+ * ULOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
+ * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
+ * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
+ * public-API call site, even though the deserialize-bytes entry point
+ * itself remains M6 work in progress. */
+int urbi_load_translate_load_err(int load_err);
+
 /* === Row 9 strand lifecycle C API (M3 / T20) ===
  *
  * Separate _create (DORMANT alloc) from _start (DORMANT → READY enqueue) so

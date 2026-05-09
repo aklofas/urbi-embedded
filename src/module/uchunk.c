@@ -241,7 +241,32 @@ urbi_run_script(UVM *vm, URealm *realm, const UModule *module)
  * TODO(M6): register module in the VM's import table under module_name so
  * that subsequent urbiscript `import module_name` expressions resolve it.
  * Requires urbi_vm_import_register (M6 API surface) which does not exist yet.
+ *
+ * Phase 3 / API-005: when this surface eventually deserializes bytecode it
+ * must translate the internal UModuleLoadError ULOAD_UNSUPPORTED_VERSION
+ * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
+ * UErrCode enum).  See urbi_load_translate_load_err() below — the helper
+ * lands now so any future deserialize-bytes entry point routes through
+ * a single mapping site.
  * --------------------------------------------------------------------------- */
+
+/* urbi_load_translate_load_err: public-API translation of internal
+ * UModuleLoadError → UErrCode.  Closes API-005: ULOAD_UNSUPPORTED_VERSION
+ * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
+ *
+ * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
+ * surface does not yet differentiate them; M6 may grow per-code mappings
+ * as the loader API matures. */
+int
+urbi_load_translate_load_err(int load_err)
+{
+    if (load_err == 0) return URBI_OK;
+    if (load_err == (int)ULOAD_UNSUPPORTED_VERSION) {
+        return URBI_ERR_BYTECODE_VERSION_MISMATCH;
+    }
+    return URBI_ERR_INVALID_ARG;
+}
+
 int
 urbi_load_module(UVM *vm, UModule *module, const char *module_name)
 {
