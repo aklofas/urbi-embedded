@@ -283,14 +283,14 @@ UShape *urbi_shape_transition_property(struct UVM *vm, UShape *parent,
 int32_t urbi_shape_find_slot(const UShape *s, const USymbol *name)
 {
     if (name == NULL) {
-        return -1;              /* NULL is the root-shape sentinel; never a slot */
+        return URBI_SHAPE_SLOT_INVALID;   /* NULL name is never a slot */
     }
     for (const UShape *cur = s; cur != NULL; cur = cur->parent) {
         if (cur->name == name) {
             return (int32_t)cur->index;
         }
     }
-    return -1;
+    return URBI_SHAPE_SLOT_INVALID;
 }
 
 /* T27: rebuild a shape with `name` dropped from the lineage.

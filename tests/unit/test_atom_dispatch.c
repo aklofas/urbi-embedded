@@ -12,6 +12,8 @@
 #include "utest.h"
 
 #include "object/uobject.h"
+#include "object/uic.h"        /* UIC, urbi_slot_set_slow — T23 cleanup absorption */
+#include "object/ushape.h"     /* urbi_shape_find_slot, URBI_SHAPE_SLOT_INVALID */
 #include "module/umodule.h"   /* UValue, UModule */
 #include "value/uintern.h"    /* ustr_intern — T20/T21 set local slots on atom protos */
 #include "value/uarena.h"
@@ -198,11 +200,75 @@ UTEST(int_method_dispatch_returns_slot_value) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T23: distinguish OOM from const-write in slot install/set ===
+ *
+ * Closes OBJ-007, OBJ-009, OBJ-017, API-007. */
+
+UTEST(slot_set_slow_returns_const_slot_write_on_const_overwrite) {
+    /* OBJ-007 + OBJ-009: urbi_slot_set_slow on a CONSTANT slot must
+     * return URBI_ERR_CONST_SLOT_WRITE, not generic -1.  Pre-fix,
+     * the const-write path collapsed onto the same -1 as OOM. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UObject *obj = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(obj != NULL);
+    USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
+    UASSERT(sym != NULL);
+
+    UValue v = urbi_value_nil();
+    v.kind = UVAL_INT;
+    v.v.i = 1;
+
+    /* Install x as a regular slot, then mark it CONSTANT via property API. */
+    int rc = urbi_object_set_local_slot(&vm, obj, sym, v);
+    UASSERT_EQ(rc, 0);
+    rc = urbi_object_install_property(&vm, obj, sym,
+                                      URBI_SLOT_FLAG_CONSTANT, v);
+    UASSERT_EQ(rc, 0);
+
+    /* Attempt to overwrite via the slow-path SET (analogous to what
+     * OP_SETSLOT does on const-write).  Pre-fix returned -1 (ambiguous);
+     * post-fix returns URBI_ERR_CONST_SLOT_WRITE. */
+    UIC ic;
+    memset(&ic, 0, sizeof(ic));
+    ic.name = sym;
+
+    UValue v2 = urbi_value_nil();
+    v2.kind = UVAL_INT;
+    v2.v.i = 99;
+
+    rc = urbi_slot_set_slow(&vm, obj, &ic, v2);
+    UASSERT_EQ(rc, URBI_ERR_CONST_SLOT_WRITE);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(shape_find_slot_uses_invalid_sentinel_on_miss) {
+    /* OBJ-017: urbi_shape_find_slot must return URBI_SHAPE_SLOT_INVALID
+     * (-1) instead of magic-number 0 to signal "slot not present".
+     * Slot index 0 is a valid slot, never a miss sentinel. */
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UObject *obj = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
+    UASSERT(obj != NULL);
+    USymbol *sym_missing = (USymbol *)ustr_intern(&vm, "nonexistent", 11);
+    UASSERT(sym_missing != NULL);
+
+    int32_t idx = urbi_shape_find_slot(obj->shape, sym_missing);
+    UASSERT_EQ(idx, URBI_SHAPE_SLOT_INVALID);
+
+    urbi_vm_destroy(&vm);
+}
+
 void test_atom_dispatch_suite(void) {
-    utest_run("atom_proto_for_int",                       atom_proto_for_int);
-    utest_run("atom_proto_for_float",                     atom_proto_for_float);
-    utest_run("atom_proto_for_string",                    atom_proto_for_string);
-    utest_run("atom_proto_for_object_returns_self",       atom_proto_for_object_returns_self);
-    utest_run("int_method_dispatch_via_atom_proto",       int_method_dispatch_via_atom_proto);
-    utest_run("int_method_dispatch_returns_slot_value",   int_method_dispatch_returns_slot_value);
+    utest_run("atom_proto_for_int",                                       atom_proto_for_int);
+    utest_run("atom_proto_for_float",                                     atom_proto_for_float);
+    utest_run("atom_proto_for_string",                                    atom_proto_for_string);
+    utest_run("atom_proto_for_object_returns_self",                       atom_proto_for_object_returns_self);
+    utest_run("int_method_dispatch_via_atom_proto",                       int_method_dispatch_via_atom_proto);
+    utest_run("int_method_dispatch_returns_slot_value",                   int_method_dispatch_returns_slot_value);
+    utest_run("slot_set_slow_returns_const_slot_write_on_const_overwrite", slot_set_slow_returns_const_slot_write_on_const_overwrite);
+    utest_run("shape_find_slot_uses_invalid_sentinel_on_miss",            shape_find_slot_uses_invalid_sentinel_on_miss);
 }
