@@ -110,9 +110,6 @@ urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
     }
     return r;
 }
-#endif /* URBI_DEBUG */
-
-#ifdef URBI_DEBUG
 
 /* --- urbi_get_determinism_checksum implementation --- */
 
