@@ -331,9 +331,24 @@ walk_uchanged_node(struct UVM *vm, void *payload,
  * walk_uevent above).  Also shades enter_event and leave_event when
  * non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
  *
- * member_strands_head (UCleanupEntry chain) is intentionally NOT walked:
- * UStrands are root-walked separately via the realm hierarchy (M3 row 10 /
- * GC roots spec §5.3).  Walking them here would double-visit strands. */
+ * member_strands_head (UCleanupEntry chain) is intentionally NOT walked.
+ * TAGCH-017 — this is correctness, not just a perf optimization:
+ *   - UCleanupEntry instances are NOT GC cells.  They live inside the
+ *     owning strand's cleanup_base[] array (host-allocated by the strand,
+ *     never registered on the all-cells list).  Calling gc_shade_gray on
+ *     a UCleanupEntry would pass a non-cell pointer to the GC and corrupt
+ *     the gray-stack invariants.
+ *   - Indirecting via entry->strand_back to walk the owning strand here
+ *     would also be wrong: strands are root-walked once per cycle via the
+ *     realm hierarchy (sched_walk_roots → strand_walk_roots; see
+ *     src/sched/usched_cooperative.c §strand_walk_roots).  A second walk
+ *     here would not just be wasted work — strand_walk_roots performs a
+ *     full conservative register-window scan, and re-entering it from a
+ *     different traversal context risks unbounded recursion if any future
+ *     tag-on-stack reachability path emerges.
+ * UStrands are therefore reached exclusively through the realm strand
+ * walker (M3 row 10 / GC roots spec §5.3).  This walker only handles the
+ * tag-owned cell graph: enter/leave events + member_watchers chain. */
 static void
 walk_utag(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
