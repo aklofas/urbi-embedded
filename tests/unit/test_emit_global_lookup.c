@@ -197,6 +197,93 @@ UTEST(emit_assign_to_undeclared_name_still_errors) {
     gl_ctx_destroy(&c);
 }
 
+UTEST(emit_global_state_machine_distinct_flags) {
+    /* EMIT-021 regression: global_slot_reserved and references_global are
+     * NOT synonyms.  They encode a tri-state state machine:
+     *
+     *   1. UNUSED          : !global_slot_reserved && !references_global
+     *                        (nested function body that has not yet been
+     *                        emitted via emit_function_literal)
+     *   2. RESERVED_NO_REF :  global_slot_reserved && !references_global
+     *                        (chunk-top funcstate at open time, OR nested
+     *                        funcstate after pre-reservation, before any
+     *                        global ident has been resolved)
+     *   3. REFERENCED      :  global_slot_reserved &&  references_global
+     *                        (after first global identifier resolves)
+     *
+     * The fourth combination (!reserved && referenced) is unreachable.
+     *
+     * `r_global_slot` is the register number, not a flag — its value is
+     * meaningful only when global_slot_reserved is true.
+     *
+     * State 2 is observable at chunk-top open: uemit_open_function pre-reserves
+     * the slot unconditionally so a subsequent if/while condition cannot
+     * collide at register 0.  references_global stays false until the first
+     * global identifier is actually resolved — only then does close emit
+     * OP_LOAD_REALM_GLOBAL as a prologue.
+     *
+     * If a future refactor collapses the two booleans to one flag, this test
+     * will fail at the RESERVED_NO_REF assertion. */
+    GlCtx c;
+    /* Source has no global references — only a pure-literal expression. */
+    gl_ctx_init(&c, "1 + 2");
+    UAstNode *stmt = uparse_next_statement(&c.p);
+    UASSERT(stmt != NULL);
+    UEmitError rc = uemit_statement(&c.e, stmt);
+    UASSERT_EQ(EMIT_OK, (int)rc);
+    UASSERT(c.e.current_fs != NULL);
+
+    /* State 2 (RESERVED_NO_REF): chunk-top open pre-reserves the slot. */
+    UASSERT(c.e.current_fs->global_slot_reserved);
+    UASSERT(!c.e.current_fs->references_global);
+
+    uemit_finish(&c.e);
+    gl_ctx_destroy(&c);
+}
+
+UTEST(emit_global_state_machine_advances_to_referenced) {
+    /* EMIT-021 regression (continuation): once a global is resolved, both
+     * flags are true (state 3 REFERENCED).  Locks in the forward-only
+     * progression RESERVED_NO_REF -> REFERENCED. */
+    GlCtx c;
+    gl_ctx_init(&c, "Object");
+    UAstNode *stmt = uparse_next_statement(&c.p);
+    UASSERT(stmt != NULL);
+    UEmitError rc = uemit_statement(&c.e, stmt);
+    UASSERT_EQ(EMIT_OK, (int)rc);
+    UASSERT(c.e.current_fs != NULL);
+
+    /* State 3 (REFERENCED): both flags must be true after global resolve. */
+    UASSERT(c.e.current_fs->global_slot_reserved);
+    UASSERT(c.e.current_fs->references_global);
+
+    uemit_finish(&c.e);
+    gl_ctx_destroy(&c);
+}
+
+UTEST(emit_global_pure_local_chunk_no_prologue) {
+    /* EMIT-021 regression: a chunk-top with no global references must NOT
+     * emit OP_LOAD_REALM_GLOBAL at the prologue, even though the slot was
+     * pre-reserved.  This is the load-bearing distinction between
+     * global_slot_reserved (controls floor) and references_global (controls
+     * prologue emit) — collapsing them would break this case. */
+    GlCtx c;
+    gl_ctx_init(&c, "1 + 2");
+    UEmitError rc = gl_ctx_run(&c);
+    UASSERT_EQ(EMIT_OK, (int)rc);
+
+    /* Scan: must NOT contain OP_LOAD_REALM_GLOBAL. */
+    bool found_load_global = false;
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_LOAD_REALM_GLOBAL) {
+            found_load_global = true;
+            break;
+        }
+    }
+    UASSERT(!found_load_global);
+    gl_ctx_destroy(&c);
+}
+
 void
 test_emit_global_lookup_suite(void)
 {
@@ -216,4 +303,10 @@ test_emit_global_lookup_suite(void)
               emit_local_still_resolves_before_global);
     utest_run("emit assign to undeclared name is still EMIT_UNRESOLVED_NAME",
               emit_assign_to_undeclared_name_still_errors);
+    utest_run("emit global state machine: RESERVED_NO_REF distinct from REFERENCED (EMIT-021)",
+              emit_global_state_machine_distinct_flags);
+    utest_run("emit global state machine: advances to REFERENCED on first global ref (EMIT-021)",
+              emit_global_state_machine_advances_to_referenced);
+    utest_run("emit global state machine: pure-local chunk has no prologue (EMIT-021)",
+              emit_global_pure_local_chunk_no_prologue);
 }
