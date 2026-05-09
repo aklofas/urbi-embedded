@@ -95,8 +95,24 @@ void urbi_defer_slot_change(struct UVM    *vm,
  * Slow path: called when UGC_HAS_SLOT_CHANGE_EVENT is set on parent.
  * Walks changed_events_head by USymbol identity, dispatches via
  * c_event_emit_sync.  Re-entrancy from scratch context routes to the
- * deferred-emit ring (T66).  In URBI_DEBUG builds asserts bit-7-set
- * without a matching chain entry. */
+ * deferred-emit ring (T66).
+ *
+ * EMITR-013 contract: silent return on unmatched key is the normal case.
+ * UGC_HAS_SLOT_CHANGE_EVENT is a per-OBJECT bit ("at least one slot on
+ * this object has a change-watcher"), not per-slot.  Every slot-change
+ * emit on a subscribed object reaches this function, but only one slot's
+ * UChangedNode entry needs to match the supplied `key`.  When the chain
+ * walk falls through with no name == key match, the affected slot simply
+ * has no subscribers — silently return (no observer to notify).
+ *
+ * The earlier "programming error / bit 7 must only be set when at least
+ * one UChangedNode exists" framing was misleading: bit 7 is correct as
+ * long as ANY slot has a UChangedNode, which is what the chain walk
+ * verifies on a per-key basis.  Callers MUST NOT treat the silent return
+ * as an error path; it is the expected outcome for the "different slot"
+ * case.  Callers that have already validated the key against an IC
+ * table (and therefore know the chain SHOULD have an entry) can add a
+ * URBI_INTERNAL_ASSERT in the caller to catch genuine misuse. */
 void urbi_emit_slot_change_slow(struct UVM    *vm,
                                 struct UObject *parent,
                                 struct USymbol *key,
