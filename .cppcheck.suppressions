@@ -66,7 +66,7 @@ knownConditionTrueFalse:src/runtime/uunwind.c:275
 // the callback caveat in the diagnostic.  Equivalent native callbacks
 // in src/event/uevent_native.c don't trigger this because they're called
 // directly (not via function-pointer table); only this one is.
-constParameterCallback:src/event/uevent_native.c:170
+constParameterCallback:src/event/uevent_native.c:174
 
 // audit:CPPCHK-013 (Phase 19) — parse_err_line / parse_err_col are written
 // in the parse-error breakout (lines 141-142) and read inside the
