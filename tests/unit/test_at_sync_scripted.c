@@ -77,7 +77,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
      * the body runs inline on the scratch frame (no strand spawn).  So
      * Realm.fired must equal 1 by the time compile_and_run returns. */
     rc = utest_e2e_compile_and_run(&vm,
-        "var __trigger__ = function() { Realm.x = 10 }; __trigger__()",
+        "var trigger = function() { Realm.x = 10 }; trigger()",
         NULL);
     if (rc != URBI_OK) {
         while (vm.active_watchers_head != NULL)
@@ -98,7 +98,7 @@ UTEST(scripted_at_sync_fires_on_rising_edge)
 
     /* === Phase 3: same-direction write must NOT re-fire === */
     rc = utest_e2e_compile_and_run(&vm,
-        "var __trigger2__ = function() { Realm.x = 20 }; __trigger2__()",
+        "var trigger2 = function() { Realm.x = 20 }; trigger2()",
         NULL);
     (void)rc;
 
