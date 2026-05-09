@@ -58,8 +58,17 @@ typedef struct UTag {
                                          * urbi_gc_alloc.  TAGCH-007. */
     uint16_t pad0;
 
-    /* --- watcher-related state (RESERVED v1.x; placeholders at M3) --- */
-    uint8_t  flags;                     /* UTAG_FLAG_FROZEN / UTAG_FLAG_STOPPED */
+    /* --- tag-state flags (declared; runtime use deferred) ---
+     *
+     * TAGCH-008: the bit positions UTAG_FLAG_FROZEN (0x01) and
+     * UTAG_FLAG_STOPPED (0x02) are declared above (alongside this struct)
+     * for spec stability, but the runtime does not set or read them in
+     * v0.5.x — `Tag.freeze` and `Tag.stop`-state semantics land with the
+     * stdlib at M6/M7.  Future flag adds need a header-comment update
+     * here and a corresponding macro at file head.  Spec #3 §3.4 + §6 +
+     * the stdlib design row in REVIVAL.md §14. */
+    uint8_t  flags;                     /* UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED;
+                                         * 0 in v0.5.x */
     uint8_t  pad1[3];
 
     /* --- membership lists (row 11 §3) ---
