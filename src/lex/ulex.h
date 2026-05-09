@@ -110,13 +110,19 @@ typedef enum {
 /*
  * UToken — returned by value from ulex_next; no heap allocation.
  *
- * Lifetime: u.str.start is a non-owning pointer into the caller's source
- * buffer.  The source buffer MUST outlive any UToken that references it.
+ * Lifetime (LEX-029): u.str.start is a non-owning pointer into the caller's
+ * source buffer (the same buffer passed to ulex_init).  The source buffer
+ * MUST outlive any UToken that references it.  u.err.message is a static-
+ * storage string literal (lives for the program lifetime; no caller action
+ * required).  This holds for every UToken consumer — parser, REPL,
+ * diagnostic emitters — every site that reads u.str.start must keep the
+ * source buffer alive at least as long as the UToken.
  *
  * Union invariants (active member per type):
  *   u.i    — TOK_INT: the parsed integer value
- *   u.str  — TOK_IDENT: start/len point into the source buffer
- *   u.err  — TOK_ERROR: code (ULexError) + static message string
+ *   u.str  — TOK_IDENT (and keyword tokens TOK_KW_*): start/len point into
+ *            the source buffer (caller-owned lifetime, see above)
+ *   u.err  — TOK_ERROR: code (ULexError) + static-storage message string
  *   (other types leave u zero-valued)
  *
  * Position fields: line and col are 1-based; len is the span in source bytes.
@@ -155,13 +161,41 @@ typedef struct {
 } ULexer;
 
 /* Initialize the ULexer over a source buffer.  No allocation.
-   src must point to at least len valid bytes and must remain valid and
-   unmodified for the lifetime of the ULexer and all UTokens it produces. */
+ *
+ * Preconditions (LEX-001 + LEX-027):
+ *   - lex must be non-NULL.
+ *   - src must point to at least len valid bytes for any len > 0.
+ *   - The (NULL, 0) case is permitted: it represents empty input (e.g.
+ *     a freshly-opened REPL with no line yet) and ulex_next will return
+ *     TOK_EOF without dereferencing src.
+ *
+ * The source buffer must remain valid and unmodified for the lifetime of
+ * the ULexer AND for the lifetime of every UToken the lexer produces
+ * (UToken.u.str.start aliases into it — see UToken docs above).
+ *
+ * Preconditions are enforced by URBI_INTERNAL_ASSERT in URBI_DEBUG builds;
+ * release builds inherit the original UB-on-violation semantics. */
 void ulex_init(ULexer *lex, const char *src, size_t len);
 
 /* Read and return the next UToken.  Idempotent at EOF — subsequent calls
-   keep returning TOK_EOF.  After TOK_ERROR the cursor has advanced past the
-   offending byte; the caller may continue lexing for error recovery. */
+ * keep returning TOK_EOF.
+ *
+ * Post-error advance contract (LEX-028): after a TOK_ERROR the cursor has
+ * advanced past the offending lexeme so a follow-up ulex_next resumes at a
+ * clean boundary.  Per-error specifics:
+ *
+ *   - LEX_UNKNOWN_CHAR: cursor advances exactly 1 byte (the bad byte).
+ *   - LEX_UNTERMINATED_BLOCK_COMMENT: cursor jumps to end-of-source; the
+ *     reported len covers the full unterminated extent.
+ *   - LEX_AMBIGUOUS_LEADING_ZERO, LEX_INT_OVERFLOW, LEX_LEADING_UNDERSCORE,
+ *     LEX_TRAILING_UNDERSCORE, LEX_ADJACENT_UNDERSCORES: cursor advances
+ *     past the entire malformed numeric run so the next token starts on
+ *     the byte after the literal.
+ *   - LEX_EMPTY_RADIX, LEX_MALFORMED_HEX/BIN/OCT: cursor advances past the
+ *     "0x" / "0b" / "0o" prefix plus the offending byte (if any).
+ *
+ * In every case the caller may continue lexing for error recovery without
+ * risk of an infinite loop. */
 UToken ulex_next(ULexer *lex);
 
 /* Return a static string such as "TOK_PLUS" for the given type.

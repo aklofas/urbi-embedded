@@ -474,7 +474,7 @@ typedef struct {
     ULexError code;
     int line;
     int col;
-    int len;       /* error span length; 2 by default for the bare "/*" */
+    int len;       /* error span length; defaults to 2 (the slash-star prefix) */
 } UTriviaResult;
 
 static UTriviaResult skip_trivia(ULexer *l) {
