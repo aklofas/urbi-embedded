@@ -167,7 +167,16 @@ uwatcher_pool_init(struct UVM *vm)
     slab = (UWatcher *)vm->alloc_fn(NULL, slab_bytes, vm->alloc_ud);
     if (slab == NULL) return -1;
 
-    /* Zero the entire slab (freestanding: no memset). */
+    /* Zero the entire slab (WATCH-029).  Freestanding builds cannot use
+     * memset (libc dep); urbi_zero (runtime/umacros.h) is the canonical
+     * helper repeated across all subsystems that need zero-fill at
+     * init/recycle time (FOUND-030: the pattern was de-duplicated in
+     * Wave 2 / v0.5.4-decompose).  We use the helper here too — the
+     * watcher pool slab is the freelist's backing store, allocated
+     * fresh per VM init, so byte-zeroing it is correct (clears every
+     * UWatcher header to a known-quiescent state including flags ==
+     * 0 so uwatcher_pool_destroy's slab walk can tell never-allocated
+     * slots from currently-allocated ones, WATCH-002 / WATCH-006). */
     urbi_zero(slab, slab_bytes);
 
     /* Thread freelist: each slot's next_active points to the next slot;
