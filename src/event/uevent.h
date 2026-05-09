@@ -38,10 +38,6 @@ struct UVM;
 struct UWatcher;
 struct UStrand;
 
-/* === UEvent flag bits (stored in UEvent.flags) === */
-
-#define UEVENT_FLAG_RESERVED  0x01U   /* placeholder; no semantic at M5 */
-
 /* === UEvent struct (spec #3 §3.1) === */
 
 typedef struct UEvent {
