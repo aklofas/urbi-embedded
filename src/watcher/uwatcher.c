@@ -247,10 +247,15 @@ uwatcher_pool_destroy(struct UVM *vm)
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
 
-    /* Defensive: zero all pool pointers. */
-    vm->watcher_pool_base     = NULL;
-    vm->watcher_pool_freelist = NULL;
-    vm->active_watchers_head  = NULL;
+    /* Defensive: zero all pool pointers.  pending_onleave_head/tail were
+     * already NULL'd above (drain loop's *head = w->next_active terminator
+     * + explicit tail = NULL), but explicit zeroing here keeps the invariant
+     * robust against future refactors of drain_watcher_list (WATCH-003). */
+    vm->watcher_pool_base      = NULL;
+    vm->watcher_pool_freelist  = NULL;
+    vm->active_watchers_head   = NULL;
+    vm->pending_onleave_head   = NULL;
+    vm->pending_onleave_tail   = NULL;
 }
 
 /* === Unregister ===

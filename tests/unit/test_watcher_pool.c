@@ -173,6 +173,59 @@ UTEST(pool_high_water_tracks_peak)
     urbi_vm_destroy(&vm);
 }
 
+/* 6. pool_destroy_zeroes_pending_onleave_head (WATCH-003):
+ *    uwatcher_pool_destroy must explicitly NULL pending_onleave_head as part
+ *    of its defensive zero pass.  Today the drain loop happens to NULL it via
+ *    the *head = w->next_active assignment, but the defensive block at the
+ *    function tail only zeroes watcher_pool_base / watcher_pool_freelist /
+ *    active_watchers_head — leaving pending_onleave_head dependent on the
+ *    drain loop's side effect.  This test locks the invariant so a future
+ *    refactor of drain_watcher_list cannot leave it dangling.
+ *
+ *    We exercise the empty-pending case and the populated-pending case;
+ *    in both, post-destroy pending_onleave_head must be NULL. */
+UTEST(pool_destroy_zeroes_pending_onleave_head)
+{
+    /* Case A: empty pending list. */
+    {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+        UASSERT(vm.pending_onleave_head == NULL);
+        urbi_vm_destroy(&vm);
+        /* Post-destroy invariant: pending_onleave_head is NULL. */
+        UASSERT(vm.pending_onleave_head == NULL);
+        UASSERT(vm.pending_onleave_tail == NULL);
+    }
+
+    /* Case B: populated pending list (one watcher pre-pushed onto the
+     * pending_onleave queue, then destroy drains + zeroes). */
+    {
+        UVM vm;
+        UWatcher *w;
+        urbi_vm_init(&vm, NULL, NULL);
+
+        w = urbi_watcher_install_for_test(
+            &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
+        UASSERT(w != NULL);
+
+        /* Move w from active_watchers_head to pending_onleave_head by hand —
+         * mimics the urbi_tag_stop / pending_onleave_queue_push transition
+         * without depending on the tag layer.  active_watchers_head must be
+         * cleared so urbi_vm_destroy's drain doesn't double-process w. */
+        UASSERT(vm.active_watchers_head == w);
+        vm.active_watchers_head = NULL;
+        w->next_active = NULL;
+        vm.pending_onleave_head = w;
+        vm.pending_onleave_tail = w;
+
+        urbi_vm_destroy(&vm);
+
+        /* Post-destroy invariant: both head and tail are NULL. */
+        UASSERT(vm.pending_onleave_head == NULL);
+        UASSERT(vm.pending_onleave_tail == NULL);
+    }
+}
+
 /* === Suite entry point === */
 
 void
@@ -189,4 +242,6 @@ test_watcher_pool_suite(void)
               pool_exhaustion_returns_null);
     utest_run("pool_high_water_tracks_peak",
               pool_high_water_tracks_peak);
+    utest_run("pool_destroy_zeroes_pending_onleave_head",
+              pool_destroy_zeroes_pending_onleave_head);
 }
