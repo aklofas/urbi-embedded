@@ -333,6 +333,36 @@ UTEST(object_new_returns_clone) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T56: COW semantics through .new() ===================================
+ *
+ * The M4 COW machinery handles writes-on-clones: c.setSlot writes a fresh
+ * local slot on c without disturbing p's slot.  Phase-5 .new() delegates
+ * to .clone() so the COW path activates transparently. */
+
+UTEST(new_then_local_write_does_not_modify_proto) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var p = Object.clone();"
+        "p.setSlot(\"x\", 42);"
+        "var c = p.new();"
+        "c.setSlot(\"x\", 99);"
+        "var pv = p.x;"
+        "var cv = c.x";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue pv = urbi_value_nil();
+    UValue cv = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "pv", 2, &pv), URBI_OK);
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "cv", 2, &cv), URBI_OK);
+    UASSERT_EQ((int)pv.v.i, 42);
+    UASSERT_EQ((int)cv.v.i, 99);
+
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(new_and_clone_are_equivalent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -405,6 +435,8 @@ void test_object_root_suite(void) {
               object_set_protos_single);
     utest_run("object_root: Object.new returns a clone",
               object_new_returns_clone);
+    utest_run("object_root: .new() then local write does not modify proto",
+              new_then_local_write_does_not_modify_proto);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }
