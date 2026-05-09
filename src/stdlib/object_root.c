@@ -38,7 +38,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#if !defined(URBI_FREESTANDING)
+/* Hosted-only stderr diagnostics; freestanding builds (e.g. cortex-m7 with
+ * -ffreestanding) lack <stdio.h> and silently drop the messages. */
+#if __STDC_HOSTED__
 #  include <stdio.h>
 #endif
 
@@ -115,7 +117,7 @@ urbi_raise_arity(UVM *vm, const char *fn_name, uint8_t expected,
 {
     (void)vm;
     if (out != NULL) *out = urbi_value_nil();
-#if !defined(URBI_FREESTANDING)
+#if __STDC_HOSTED__
     fprintf(stderr, "ArityError: %s expected %u args, got %u\n",
             (fn_name != NULL ? fn_name : "<unknown>"),
             (unsigned)expected, (unsigned)got);
@@ -130,7 +132,7 @@ urbi_raise_type(UVM *vm, const char *msg, UValue *out)
 {
     (void)vm;
     if (out != NULL) *out = urbi_value_nil();
-#if !defined(URBI_FREESTANDING)
+#if __STDC_HOSTED__
     fprintf(stderr, "TypeError: %s\n", (msg != NULL ? msg : "<unspecified>"));
 #else
     (void)msg;
@@ -143,7 +145,7 @@ urbi_raise_oom(UVM *vm, UValue *out)
 {
     (void)vm;
     if (out != NULL) *out = urbi_value_nil();
-#if !defined(URBI_FREESTANDING)
+#if __STDC_HOSTED__
     fprintf(stderr, "OutOfMemoryError\n");
 #endif
     return UEXEC_THROW;
@@ -154,7 +156,7 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
 {
     (void)vm; (void)name;
     if (out != NULL) *out = urbi_value_nil();
-#if !defined(URBI_FREESTANDING)
+#if __STDC_HOSTED__
     fprintf(stderr, "LookupError: slot not found\n");
 #endif
     return UEXEC_THROW;
