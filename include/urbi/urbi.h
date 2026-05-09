@@ -392,11 +392,16 @@ UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
  *
  * Call only at a QUIESCENT point (no strands runnable, no pending events).
  * Returns a stable hash of:
- *   - all UValue bindings across every live Realm's namespace
- *   - watcher pool high-water mark
- *   - gc_total_allocated counter
- *   - intern table entry count
- *   - topology_gen, lookup_id, next_object_id (M4 object-model counters)
+ *   1. all UValue bindings across every live Realm's namespace
+ *   2. watcher pool high-water mark
+ *   3. gc_total_allocated counter
+ *   4. intern table entry count
+ *   5. topology_gen, lookup_id, next_object_id (M4 object-model counters)
+ *   6. per-IC observable state across every live UModuleInstance (M4 T30):
+ *      ic->n, ic->replace_cursor, and ic->topology_gen[0..n) for each
+ *      UIC site in each UProtoInstance's IC table.  Heap pointers
+ *      (recv_shapes, slots, uprops) are deliberately NOT folded —
+ *      they are not stable across process invocations.
  *
  * String values (UVAL_STR) are hashed by their interned pointer, which is
  * stable within a single VM lifetime but NOT guaranteed cross-run-stable
