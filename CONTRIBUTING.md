@@ -238,43 +238,57 @@ test-suite-passes gates.
 
 ### Strict-tooling baselines
 
-Three strict-tooling targets gate at three different tiers:
+Four strict-tooling targets gate at hard-fail tier in releasetest;
+all stand at 0 violations against the v0.5.8-cleanup baseline:
 
-- **`make test-scan-build`** — Clang static analyzer.  **Hard gate
-  in releasetest.**  Must be 0 bugs.  Runs on every PR.
+- **`make test-scan-build`** — Clang static analyzer.  Hard gate
+  since releasetest's first cut; 0 bugs required.
+- **`make test-cppcheck`** — cppcheck `--enable=all --inconclusive`
+  strict checklist over `src/`.  Promoted to all-categories
+  hard-fail at v0.5.8-cleanup Phase 19 (was 145 informational at
+  v0.5.7-fixes shipping → 0 at v0.5.8-cleanup).  Suppressions live
+  in `.cppcheck.suppressions` at the repo root with audit-ID
+  rationale per block.  Two structurally false-positive categories
+  are blanket-suppressed: `unusedFunction` (cppcheck scans `src/`
+  only, every public-API symbol looks unused from its perspective)
+  and `unusedLabelConfiguration` + `assignBoolToPointer` in
+  `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
+  `&&label` operator).
 - **`make test-tidy-strict`** — clang-tidy with bug-prone /
-  cert-ish checklist.  **Hard gate in releasetest as of
-  v0.5.8-cleanup Phase 20** (was 23 informational at v0.5.7-fixes
-  shipping → 0 at v0.5.8-cleanup).  Per-line `// NOLINT(<check>)`
-  suppressions with rationale carry the design pins:
-  `performance-no-int-to-ptr` for the UProtos high-bit pointer
-  encoding (pre-M4 prototype-chain spec §7.2), the strand REASON_*
-  payload-encoding contract, the UVAL_HOST_FN function-pointer
-  storage, and arena alignment round-trips;
+  cert-ish + readability checklist.  Promoted to all-categories
+  hard-fail at v0.5.8-cleanup Phase 20 (was 23 informational at
+  v0.5.7-fixes shipping → 0 at v0.5.8-cleanup).  Per-line
+  `// NOLINT(<check>)` suppressions with rationale carry the
+  design pins: `performance-no-int-to-ptr` for the UProtos
+  high-bit pointer encoding (pre-M4 prototype-chain spec §7.2),
+  the strand REASON_* payload-encoding contract, the UVAL_HOST_FN
+  function-pointer storage, and arena alignment round-trips;
   `clang-analyzer-valist.Uninitialized` for the vararg log helpers
   whose `va_start` → `vsnprintf` → `va_end` triple the analyzer
   cannot trace through; `optin.performance.Padding` on `struct UVM`
   whose field order is pinned by 6 `_Static_assert`s and clusters
   fields by milestone for maintainability.
-- **`make test-cppcheck`** — cppcheck `--enable=all --inconclusive`
-  strict checklist over `src/`.  **Hard gate in releasetest as of
-  v0.5.8-cleanup Phase 19** (was 145 informational at v0.5.7-fixes
-  shipping → 0 at v0.5.8-cleanup).  Suppressions live in
-  `.cppcheck.suppressions` at the repo root with audit-ID rationale
-  per block.  Two structurally false-positive categories are
-  blanket-suppressed: `unusedFunction` (cppcheck scans `src/` only,
-  every public-API symbol looks unused from its perspective) and
-  `unusedLabelConfiguration` + `assignBoolToPointer` in
-  `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
-  `&&label` operator).
+- **`make test-docstring-coverage`** — every header-declared
+  symbol in `include/urbi/` and subsystem-public `src/<subsys>/u*.h`
+  headers carries a contract docstring.  Promoted to hard-fail at
+  v0.5.8-cleanup Phase 21.  See **Header docstring coverage** below
+  for content requirements and the cascading-comment rule.
 
-All three strict-tooling targets are now hard-fail releasetest gates
-with 0 violations at the v0.5.8-cleanup baseline.  Future findings
-from category drift (new clang-tidy / cppcheck releases adding
-checks) must either be fixed at source, suppressed per-line with
-audit-ID rationale at the suppression site, or added to the
-documented blanket suppressions in `.cppcheck.suppressions` /
-`.clang-tidy.strict`.
+Suppression preference: prefer **inline** `// NOLINT(category)`
+(clang-tidy) and `// cppcheck-suppress category` immediately above
+the affected line, with a rationale comment.  Inline suppressions
+move with the line they cover when surrounding code is edited;
+file-level line-pinned entries in `.cppcheck.suppressions` /
+`.clang-tidy.suppressions` are fragile (Phase 20 hit a CPPCHK-012
+realignment after unrelated comment additions shifted the pinned
+line number).  Reserve the suppression files for blanket
+project-wide suppressions where inline placement isn't possible.
+
+Future findings from category drift (new clang-tidy / cppcheck
+releases adding checks) must either be fixed at source, suppressed
+inline with audit-ID rationale, or — only when truly necessary —
+added to the documented blanket suppressions in
+`.cppcheck.suppressions` / `.clang-tidy.suppressions`.
 
 ### Header docstring coverage
 
