@@ -178,8 +178,19 @@ sched_strand_make_runnable(UStrand *s)
        the early return prevents the corruption silently — the strand
        simply stays DEAD and the caller's ++count is skipped.  No legitimate
        caller drives a DEAD → READY transition; the path is purely defensive
-       against future refactors that lose track of strand state. */
+       against future refactors that lose track of strand state.
+
+       SCHED-005: idempotence assertion — calling make_runnable on a strand
+       already in READY state would tail-insert it a second time, producing
+       a circular ready_next/ready_prev chain and double-counting
+       strand_runnable_count (so sched_quiescent never converges).  Every
+       legitimate caller transitions DORMANT → READY (urbi_strand_start) or
+       WAITING → READY (sched_strand_unblock, event/watcher waker paths,
+       uunwind wake).  No legitimate caller drives READY → READY.  The
+       assertion fail-fasts in URBI_DEBUG; production builds elide it (the
+       circular-chain corruption surfaces as a quiescence-stall bug). */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) != USTRAND_DEAD);
+    URBI_INTERNAL_ASSERT(s->state != USTRAND_STATE_READY);
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     s->state      = USTRAND_STATE_READY;
