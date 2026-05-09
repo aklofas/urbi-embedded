@@ -28,7 +28,10 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
     if (errmsg == NULL || errcap == 0) return;
     va_list ap;
     va_start(ap, fmt);
-    (void)vsnprintf(errmsg, errcap, fmt, ap);
+    /* False positive: ap is initialized by va_start, consumed by vsnprintf,
+     * then cleared by va_end.  Analyzer cannot see through the va_list
+     * contract on the vsnprintf prototype. */
+    (void)vsnprintf(errmsg, errcap, fmt, ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
 }
 

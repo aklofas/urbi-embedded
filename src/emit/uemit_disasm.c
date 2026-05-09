@@ -20,7 +20,10 @@ static bool dis_printf(char *buf, const size_t cap, size_t *off,
     int n;
     if (*off >= cap) return false;
     va_start(ap, fmt);
-    n = vsnprintf(buf + *off, cap - *off, fmt, ap);
+    /* False positive: ap is initialized by va_start, consumed by vsnprintf,
+     * then cleared by va_end.  Analyzer cannot see through the va_list
+     * contract on the vsnprintf prototype. */
+    n = vsnprintf(buf + *off, cap - *off, fmt, ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
     if (n < 0) return false;
     if ((size_t)n >= cap - *off) {
