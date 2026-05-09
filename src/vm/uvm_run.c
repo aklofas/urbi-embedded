@@ -211,13 +211,19 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         }
     }
 
-    /* Pre-GC: free every heapified upvalue cell allocated this run. */
+    /* M6 Phase 3: migrate heapified upvals to vm->stdlib_upvalues so they
+     * outlive their owning closures (which are also migrated to
+     * vm->stdlib_closures above).  Symmetric with the closure migration —
+     * both are reclaimed at urbi_vm_destroy.  Pre-Phase 3 these were freed
+     * eagerly, but a closure that survives the run holds references to
+     * its upvals; freeing the upvals dangles `closure->upvals[i]`. */
     {
         UUpvalCell *cell = strand.closed_cells;
         strand.closed_cells = NULL;  /* null before ustrand_destroy to avoid double-free */
         while (cell != NULL) {
             UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell->next = vm->stdlib_upvalues;
+            vm->stdlib_upvalues = cell;
             cell = next;
         }
     }

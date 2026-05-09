@@ -414,9 +414,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* === M6 Phase 3 stdlib state ===
      * stdlib_closures: linked list of native UClosures registered by
-     *   urbi_object_root_register (and future stdlib boot phases).  Threaded
-     *   via UClosure.next_alloc; freed in urbi_vm_destroy.  Distinct from
-     *   strand closure_lists (those are short-lived, freed on strand teardown).
+     *   urbi_object_root_register (and future stdlib boot phases) AND of
+     *   user-script UClosures migrated from strand closure_lists at run
+     *   exit (see uvm_run.c).  Both flavours share the same VM-lifetime
+     *   ownership and are reclaimed via urbi_vm_destroy's single sweep.
+     * stdlib_upvalues: linked list of heapified UUpvalCells migrated from
+     *   strand closed_cells at run exit.  Closures that survive the run
+     *   (now on stdlib_closures) reference these upvals; freeing them at
+     *   run-end would dangle the closure's upvals[] array.  Threaded via
+     *   UUpvalCell.next; freed at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
      * last_recv: receiver UValue from the most recent OP_GETSLOT load.
@@ -426,10 +432,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   are therefore loaded via OP_GETSLOT, which writes here unconditionally.
      *   Stale on non-method calls (where native_fn is NULL); the OP_CALL
      *   arm reads this only on the native_fn != NULL branch. */
-    UClosure  *stdlib_closures;
-    uint8_t    stdlib_booted;
-    uint8_t    pad_stdlib[7];          /* padding; zeroed */
-    UValue     last_recv;
+    UClosure   *stdlib_closures;
+    UUpvalCell *stdlib_upvalues;
+    uint8_t     stdlib_booted;
+    uint8_t     pad_stdlib[7];          /* padding; zeroed */
+    UValue      last_recv;
 } UVM;
 
 /* --- API --- */

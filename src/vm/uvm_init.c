@@ -290,6 +290,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* M6 Phase 3: stdlib state. */
     vm->stdlib_closures = NULL;
+    vm->stdlib_upvalues = NULL;
     vm->stdlib_booted   = 0U;
     {
         int i;
@@ -348,6 +349,18 @@ void urbi_vm_destroy(UVM *vm) {
             cl = next;
         }
         vm->stdlib_closures = NULL;
+
+        /* M6 Phase 3: free vm-lifetime heapified upvals (UUpvalCells
+         * migrated from strand closed_cells at run exit).  These must
+         * outlive their owning closures, which are also on
+         * stdlib_closures above. */
+        UUpvalCell *uc = vm->stdlib_upvalues;
+        while (uc != NULL) {
+            UUpvalCell *next = uc->next;
+            vm->alloc_fn(uc, 0, vm->alloc_ud);
+            uc = next;
+        }
+        vm->stdlib_upvalues = NULL;
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */
