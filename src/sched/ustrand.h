@@ -1,6 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UStrand state byte encoding + lifecycle declarations.
-   Full lifecycle operations land across T20 (create/start/spawn) and T29 (tag fields). */
+/* UStrand state byte encoding + lifecycle declarations. */
+
+/* === Strand walker contract (REALM-026) ===
+ *
+ * URealm.strands_head MUST contain every live strand whose register window
+ * may hold GC-managed UValues.  Scheduler implementations are responsible
+ * for maintaining this invariant — the GC walker visits every strand on
+ * this list (with the DEAD-state filter applied inside strand_walk_roots).
+ * This decouples GC correctness from any single scheduler's internal
+ * queues (cooperative ready/sleep, future priority bands, mutex/event
+ * wait queues, ...).
+ *
+ * The list is threaded via UStrand.next_in_realm; strands are head-inserted
+ * at urbi_strand_create and unlinked at urbi_realm_destroy.
+ * See docs/internals/scheduler-design.md for the full contract. */
 
 #ifndef USTRAND_H
 #define USTRAND_H
