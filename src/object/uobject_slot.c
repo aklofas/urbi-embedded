@@ -535,7 +535,11 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
 
     /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
      * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
-     * for the entire DFS below. */
+     * for the entire DFS below.
+     *
+     * CPPCHK-002: cppcheck flags this as always-false because it assumes a
+     * 32-bit lookup_id; vm->lookup_id is uint64_t and the cast catches the
+     * actual u32 wrap.  Suppressed via .cppcheck.suppressions. */
     if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {

@@ -80,6 +80,9 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * is unconditionally fresh).  This avoids a redundant walk-all-cells
      * pass in the wrap-during-first-pass scenario. */
     int wrapped_in_first_pass = 0;
+    /* CPPCHK-002: cppcheck static analysis flags this as always-false because
+     * it assumes a 32-bit lookup_id; vm->lookup_id is uint64_t and the cast
+     * catches the actual u32 wrap.  Suppressed via .cppcheck.suppressions. */
     if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
         wrapped_in_first_pass = 1;
@@ -115,6 +118,8 @@ urbi_object_lookup(UVM *vm, UObject *obj, USymbol *name, UValue *out)
      * already fired in the first pass — stamps were cleared and
      * lookup_id is currently >= 1, so a plain pre-bump is unconditionally
      * fresh.  Otherwise apply the standard rollover guard. */
+    /* CPPCHK-002: same u32 rollover guard as the first-pass check above —
+     * suppressed via .cppcheck.suppressions; live correctness on 64-bit. */
     if (!wrapped_in_first_pass
         && (uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);

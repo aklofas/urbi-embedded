@@ -8,3 +8,14 @@
 //   missingIncludeSystem  — system includes intentionally not parsed
 //   constParameter*       — public C API mutates via callback, doc-known
 //   variableScope         — when keeping scope wide aids debugging
+
+// audit:CPPCHK-002 lookup_id rollover guard — three sites where cppcheck's
+// static analysis assumes 32-bit lookup_id and reports the (uint32_t) cast on
+// (lookup_id + 1ULL) as always false.  vm->lookup_id is uint64_t; the cast
+// catches the actual u32 wrap (every ~4B lookups) where the stamp would
+// collide with the "no stamp" sentinel 0.  Guard is live correctness on
+// 64-bit hosts and required for stamp-uniqueness during DFS traversal.
+// Verified 2026-05-08 against src/vm/uvm.h:128 (uint64_t lookup_id field).
+knownConditionTrueFalse:src/object/uobject_lookup.c:86
+knownConditionTrueFalse:src/object/uobject_lookup.c:124
+knownConditionTrueFalse:src/object/uobject_slot.c:543
