@@ -211,8 +211,18 @@ walk_uprops(struct UVM *vm, void *payload,
 
 /* === walk_noop ===
  *
- * No-op walker for cell types whose payload is fully described but whose
- * children-walk lands at a later M4 task. */
+ * No-op walker for cell types whose children are reachable through
+ * stronger paths and need no separate scan.  Used post-M4 by:
+ *   - UPropsTable        (reached via owning UShape)
+ *   - USlotArray         (reached via owning UObject's walk_uobject)
+ *   - UProtoInstance     (reached via UModuleInstance owner; stronger
+ *                         paths cover IC children — see comment at
+ *                         type_uproto_instance below for the OBJ-028
+ *                         retirement rationale)
+ *
+ * The "later M4 task" remark in the original comment referred to walks
+ * that landed in M4 itself; M4 has shipped, and these three call sites
+ * are the only legitimate consumers today. */
 static void
 walk_noop(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
