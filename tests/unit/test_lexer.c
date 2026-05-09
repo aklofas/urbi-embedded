@@ -24,6 +24,20 @@ static void eof_on_null_zero_input(void) {
     UASSERT_EQ(t.col, 1);
 }
 
+/* LEX-003: error tokens always report 1-based line/col positions even on
+ * a near-empty source.  Ensures the LEX_OK initializer in skip_trivia
+ * (which carries line/col defaults) doesn't leak a 0 sentinel through to
+ * a make_error call site. */
+static void error_token_reports_one_based_position(void) {
+    /* Lex `$` at offset 0: produces LEX_UNKNOWN_CHAR with line=1, col=1. */
+    ULexer l;
+    ulex_init(&l, "$", 1);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT(t.line >= 1);
+    UASSERT(t.col >= 1);
+}
+
 static void eof_is_idempotent(void) {
     ULexer l;
     ulex_init(&l, "", 0);
@@ -972,6 +986,7 @@ static void lex_time_suffix_d_at_boundary_succeeds(void) {
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
     utest_run("eof_on_null_zero_input", eof_on_null_zero_input);
+    utest_run("error_token_reports_one_based_position", error_token_reports_one_based_position);
     utest_run("eof_is_idempotent", eof_is_idempotent);
     utest_run("token_name_returns_static_strings", token_name_returns_static_strings);
     utest_run("whitespace_only_yields_eof_at_correct_position", whitespace_only_yields_eof_at_correct_position);

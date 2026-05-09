@@ -459,7 +459,12 @@ typedef struct {
 } UTriviaResult;
 
 static UTriviaResult skip_trivia(ULexer *l) {
-    UTriviaResult r = {LEX_OK, 0, 0};
+    /* LEX-003: initialize line/col to 1 (not 0) so that even if a future
+     * caller reads them on the LEX_OK path the values are valid 1-based
+     * positions, not sentinels.  Error paths overwrite these with the
+     * actual error position (e.g. start_line/start_col for an unterminated
+     * block comment). */
+    UTriviaResult r = {LEX_OK, 1, 1};
     while (l->cur < l->end) {
         const char c = *l->cur;
         if (c == ' ' || c == '\t') {
