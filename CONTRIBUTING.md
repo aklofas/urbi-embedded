@@ -276,6 +276,43 @@ audit-ID rationale at the suppression site, or added to the
 documented blanket suppressions in `.cppcheck.suppressions` /
 `.clang-tidy.strict`.
 
+### Header docstring coverage
+
+`make test-docstring-coverage` enforces that every function declaration
+in a public-API or subsystem-public header carries an immediately
+preceding `/* ... */` block comment (or `//` line comment).  **Hard
+gate in releasetest as of v0.5.8-cleanup Phase 21.**
+
+Scope:
+
+- `include/urbi/*.h`              — public C API
+- `src/<subsys>/u<subsys>.h`      — subsystem-public headers
+
+Skipped: `_internal.h` (intentionally private inter-TU API) and
+`umacros.h` (macro-only helper bag).
+
+A docstring "cascades" through a contiguous run of declarations: a
+comment above the first decl in a group covers later decls in the
+same group as long as no blank line, function definition, or non-decl
+content intervenes.  Forward declarations (`struct X;`, simple
+`typedef`) and callback typedefs do not break the cascade — they
+typically sit between a docstring and the function decl that uses
+the type.
+
+Required content per docstring (per Phase 21 of the v0.5.8-cleanup
+plan):
+
+- one-line summary of what the function does;
+- preconditions (state any required caller-side setup);
+- postconditions (state any guaranteed callee-side effects);
+- ownership of pointer arguments (caller-owned, callee-owned, shared);
+- return-value meaning + error codes when applicable;
+- ISR-safety (note whether the function is ISR-safe).
+
+Group-style docstrings are accepted for tightly-related decls.  See
+the priority API in `include/urbi/sched.h:45-61` for the canonical
+group-doc form.
+
 ### Full-corpus sanitizer gate
 
 `make test-corpus-sanitize` runs every `.chk` fixture under ASan, UBSan,
