@@ -311,6 +311,52 @@ UTEST(atom_clone_zero_allocations) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T55: Object.new returns a clone (Class.new() idiom) =================== */
+
+UTEST(object_new_returns_clone) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var p = Object.clone();"
+        "p.setSlot(\"x\", 42);"
+        "var c = p.new();"
+        "var v = c.x";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue out = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT_EQ((int)out.v.i, 42);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(new_and_clone_are_equivalent) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var p = Object.clone();"
+        "p.setSlot(\"x\", 100);"
+        "var a = p.new();"
+        "var b = p.clone();"
+        "var av = a.x;"
+        "var bv = b.x";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue av = urbi_value_nil();
+    UValue bv = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "av", 2, &av), URBI_OK);
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "bv", 2, &bv), URBI_OK);
+    UASSERT_EQ((int)av.v.i, 100);
+    UASSERT_EQ((int)bv.v.i, 100);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T37: setProtos single-UObject path (Wave-1 limited) =================== */
 
 UTEST(object_set_protos_single) {
@@ -357,4 +403,8 @@ void test_object_root_suite(void) {
               atom_clone_zero_allocations);
     utest_run("object_root: setProtos single UObject",
               object_set_protos_single);
+    utest_run("object_root: Object.new returns a clone",
+              object_new_returns_clone);
+    utest_run("object_root: .new() and .clone() are equivalent",
+              new_and_clone_are_equivalent);
 }

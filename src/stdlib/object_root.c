@@ -51,6 +51,7 @@ static int obj_getSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, U
 static int obj_hasSlot     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_removeSlot  (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_clone       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_new         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_addProto    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_removeProto (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_protos      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
@@ -313,6 +314,27 @@ obj_clone(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Object.new() ==========================================================
+ *
+ * T39 (spec §8): Foo.new() is the Class.new() idiom — clone Foo's proto
+ * entry and return a fresh UObject.  At v1.0 .new() is identical to
+ * .clone(); the distinction is reserved for future per-class init-hook
+ * semantics (urbiscript has no special init() idiom — user code calls
+ * obj.init() explicitly after .new() if needed).
+ *
+ * Atom short-circuit (S-atom-clone-perf) applies via obj_clone delegation:
+ * 1.new() returns 1 directly with zero allocation. */
+
+static int
+obj_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 0) return urbi_raise_arity(vm, "new", 0, nargs, out);
+    /* Delegate to obj_clone so the atom short-circuit + UObject path stay
+     * in one place.  When the language gains init hooks, this delegation
+     * becomes the call site for the post-clone init dispatch. */
+    return obj_clone(vm, self, args, nargs, out);
+}
+
 /* === Object.addProto(parent) =============================================== */
 
 static int
@@ -419,6 +441,7 @@ static const ObjectMethodEntry OBJECT_METHODS[] = {
     { "hasSlot",     obj_hasSlot     },
     { "removeSlot",  obj_removeSlot  },
     { "clone",       obj_clone       },
+    { "new",         obj_new         },
     { "addProto",    obj_addProto    },
     { "removeProto", obj_removeProto },
     { "protos",      obj_protos      },
