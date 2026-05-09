@@ -1,0 +1,31 @@
+# Milestone: M6
+# Covers: Phase 2 atom-method dispatch — slot lookup starting from a
+# non-UVAL_OBJECT receiver routes through the realm-global atom proto
+# (Integer / String / etc.).
+#
+# This fixture installs a slot on an atom proto via `Atom.slot = v` and
+# verifies the slot is reachable via `<literal>.slot`.  Without
+# atom-method dispatch (pre-Phase 2), the literal lookup would error
+# with "GETSLOT: receiver is not an Object" before atom-routing existed.
+#
+# Float-literal coverage is deferred: the v1.0 lexer does not currently
+# emit a single TOK_FLOAT for `3.14`; literal `3.14.fmark` parses as
+# `(3 . 14) . fmark` and fails before atom dispatch.  Int + String are
+# sufficient to validate the dispatch-arm wiring.
+
+# Stash a slot on Integer that we can resolve from any int literal.
+Integer.marker = 42
+[00000000] 42
+
+1.marker
+[00000001] 42
+
+99.marker
+[00000002] 42
+
+# Symmetric for String.
+String.smark = 200
+[00000003] 200
+
+"abc".smark
+[00000004] 200
