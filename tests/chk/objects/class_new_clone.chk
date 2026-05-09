@@ -1,0 +1,33 @@
+# Milestone: M6
+# Covers: Phase 5 (T55, T56, T59) — .new() and .clone() semantics + COW
+# on derived + atom .new() returning self (S-atom-clone-perf).
+#
+# T39 idiom: Foo.new() is shorthand for Foo.clone() at v1.0.  Both yield
+# a fresh UObject with Foo as its sole proto entry.  The COW path in
+# urbi_slot_set_slow installs writes locally on the derived without
+# disturbing the source.
+#
+# Each REPL line frames a single result; we use `;` to chain setup off
+# the same line so the only framed value is the asserted one.
+
+# .new() returns a fresh clone resolving slots through the proto chain.
+var p = Object.clone(); p.setSlot("x", 42); var a = p.new(); a.x
+[00000000] 42
+
+# .new() and .clone() produce equivalent results (T55 equivalence test).
+var p2 = Object.clone(); p2.setSlot("x", 42); var b = p2.clone(); b.x
+[00000001] 42
+
+# Derived can override; source unchanged (T56 COW through .new()).
+var p3 = Object.clone(); p3.setSlot("x", 42); var c = p3.new(); c.setSlot("x", 99); c.x
+[00000002] 99
+
+var p4 = Object.clone(); p4.setSlot("x", 42); var d = p4.new(); d.setSlot("x", 99); p4.x
+[00000003] 42
+
+# Atom .new() returns the same atom (T59 / S-atom-clone-perf).
+1.new()
+[00000004] 1
+
+"foo".new()
+[00000005] "foo"
