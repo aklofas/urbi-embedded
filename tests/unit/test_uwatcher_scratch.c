@@ -83,8 +83,8 @@ UTEST(scratch_runner_returns_integer_value)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto    = &proto;
-    cl.nupvals  = 0;
+    cl.proto = &proto;
+    cl.nupvals = 0;
 
     UValue out    = {0};
     int    threw  = 0;
@@ -133,7 +133,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -206,8 +206,8 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto    = &proto;
-    cl.nupvals  = 0;
+    cl.proto = &proto;
+    cl.nupvals = 0;
 
     UValue out   = {0};
     int    threw = 0;
@@ -251,7 +251,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -297,7 +297,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -341,7 +341,7 @@ UTEST(scratch_runner_with_payload_writes_r0)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue payload = {0};
@@ -404,9 +404,9 @@ test_uwatcher_scratch_suite(void)
               scratch_runner_returns_integer_value);
     utest_run("scratch_runner_sets_threw_on_unhandled_throw",
               scratch_runner_sets_threw_on_unhandled_throw);
-    utest_run("scratch runner handles NULL closure",
+    utest_run("scratch_runner_handles_null_closure",
               scratch_runner_handles_null_closure);
-    utest_run("scratch runner returns nil for nil literal",
+    utest_run("scratch_runner_returns_nil_for_nil_literal",
               scratch_runner_returns_nil_for_nil_literal);
     utest_run("scratch_runner_returns_true_for_truthy_comparison",
               scratch_runner_returns_true_for_truthy_comparison);
