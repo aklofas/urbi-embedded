@@ -118,7 +118,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * the write (at non-top-frame OP_RET), making watcher_eval_dirty run
      * within the same compile_and_run invocation. */
     rc = utest_e2e_compile_and_run(&vm,
-        "var __trigger__ = function() { Realm.x = 10 }; __trigger__()",
+        "var trigger = function() { Realm.x = 10 }; trigger()",
         NULL);
     /* compile_and_run itself may return OK even if the watcher eval
      * spawned a body strand that later fails — the body strand runs
@@ -157,7 +157,7 @@ UTEST(scripted_at_fires_on_rising_edge)
      * already fired (last_value_cache is truthy), so this same-direction
      * write must not spawn another body strand. */
     rc = utest_e2e_compile_and_run(&vm,
-        "var __trigger2__ = function() { Realm.x = 20 }; __trigger2__()",
+        "var trigger2 = function() { Realm.x = 20 }; trigger2()",
         NULL);
     (void)rc;
 
