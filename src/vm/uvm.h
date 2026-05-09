@@ -283,9 +283,16 @@ typedef struct UVM {
      * Invariant: vm->in_watcher_eval implies vm->dirty_set is being drained
      * via the deferred-ring path, NOT the immediate path. */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
-    uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
-                                          inline on scratch frame; guards re-entrancy
-                                          in c_event_emit_sync / c_event_waituntil. */
+    /* in_watcher_scratch (WATCH-036): caller-owned re-entry guard.  Set
+     * TRUE before calling urbi_run_closure_on_scratch[_with_payload];
+     * clear after.  The helper itself does NOT manage this flag — see
+     * WATCH-011 (uwatcher_scratch.c head comment on
+     * urbi_run_closure_on_scratch) for the asymmetry rationale.
+     *
+     * spec #3 §5.4: also set while running event body inline on the
+     * scratch frame; guards re-entrancy in c_event_emit_sync /
+     * c_event_waituntil. */
+    uint8_t  in_watcher_scratch;
     uint8_t  pad_in_eval[2];           /* padding; zeroed */
 
     /* --- spec #3 §7.1: currently-dispatching strand ---
