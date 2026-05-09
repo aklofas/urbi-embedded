@@ -60,6 +60,18 @@ invoke_condition_closure(struct UVM *vm, struct UWatcher *w)
  * urbi_run_closure_on_scratch.  Throws are suppressed (watcher does
  * not propagate per spec §6.4 no-yield contract).
  *
+ * No-yield contract (WATCH-031):
+ *   AT_SYNC bodies MUST NOT yield — sync bodies run to completion
+ *   inside the eval pass.  A body that yields (calls into a host
+ *   function that waits, hits a sleep, etc.) is a contract violation;
+ *   the runtime currently suppresses any throw with a warn ("at
+ *   sync(cond) body threw; suppressed") but does NOT auto-degrade
+ *   the body to async re-spawn — that "degrade-to-async" policy is
+ *   a v1.x design item.  No-yield is a policy contract, not a static
+ *   guarantee — the runtime can't prove a body is yield-free at
+ *   install time, so user-authored AT_SYNC bodies must respect the
+ *   contract.
+ *
  * Preconditions (URBI_DEBUG asserted):
  *   - vm->in_watcher_eval == 1 (we are inside watcher_eval_dirty).
  *   - w->mode == UWATCHER_AT_SYNC.
