@@ -235,6 +235,69 @@ strand_arm_from_closure_asserts_stack_null(void)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-019: re-arming a strand with a closure whose proto has constants==NULL
+ * must not retain the stale cur_consts pointer from a prior arm.  The fix:
+ * urbi_strand_arm_from_closure unconditionally writes entry->proto->constants
+ * to s->cur_consts (rather than preserving the prior pool when the new proto
+ * carries no constants).  Re-arming via the legal free → arm sequence (per the
+ * CHSTR-005 precondition) covers both fork_spawn_child and the watcher
+ * body-spawn paths if a strand is recycled. */
+static void
+strand_arm_from_closure_resets_cur_consts_on_rearm(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    /* First closure: has a non-NULL constants pool. */
+    uint32_t instr1[1];
+    UValue   consts1[1];
+    UProto   proto1;
+    UClosure cl1;
+    make_trivial_closure(&cl1, &proto1, instr1, consts1);
+
+    UStrand *s = urbi_strand_create(realm, &cl1);
+    UASSERT(s != NULL);
+
+    /* First arm — cur_consts picks up consts1. */
+    int rc = urbi_strand_arm_from_closure(s, &cl1);
+    UASSERT_EQ(0, rc);
+    UASSERT(s->cur_consts == proto1.constants);
+
+    /* Free the register stack so the CHSTR-005 precondition (s->stack == NULL)
+     * is satisfied for re-arm — this is the documented re-use sequence. */
+    urbi_strand_register_stack_free(s, &vm);
+    UASSERT(s->stack == NULL);
+
+    /* Second closure: proto has constants == NULL. */
+    uint32_t instr2[1];
+    UProto   proto2;
+    UClosure cl2;
+    instr2[0] = (uint32_t)OP_RET;
+    memset(&proto2, 0, sizeof(proto2));
+    proto2.instructions = instr2;
+    proto2.instr_count  = 1;
+    proto2.constants    = NULL;
+    proto2.const_count  = 0;
+    memset(&cl2, 0, sizeof(cl2));
+    cl2.proto   = &proto2;
+    cl2.nupvals = 0;
+
+    /* Re-arm with the second closure. */
+    rc = urbi_strand_arm_from_closure(s, &cl2);
+    UASSERT_EQ(0, rc);
+
+    /* CHSTR-019: cur_consts must be unconditionally reset to the new proto's
+     * pool (NULL here), not retain the stale consts1 pointer from prior arm. */
+    UASSERT(s->cur_consts == NULL);
+
+    urbi_strand_destroy(s);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -249,4 +312,6 @@ test_strand_arm_suite(void)
               strand_arm_from_closure_asserts_stack_null);
     utest_run("strand_arm_from_closure_initializes_module_instance",
               strand_arm_from_closure_initializes_module_instance);
+    utest_run("strand_arm_from_closure_resets_cur_consts_on_rearm",
+              strand_arm_from_closure_resets_cur_consts_on_rearm);
 }

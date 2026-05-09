@@ -455,9 +455,13 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
 
     s->pc         = entry->proto->instructions;
     s->pc_base    = entry->proto->instructions;
-    s->cur_consts = entry->proto->constants
-                  ? entry->proto->constants
-                  : s->cur_consts;   /* keep existing pool if proto has none */
+    /* CHSTR-019: unconditionally adopt the new proto's constant pool (which
+     * may itself be NULL).  The earlier conditional preserve-on-NULL clobbered
+     * cur_consts only when entry->proto->constants was non-NULL, leaving a
+     * stale pointer from a prior arm if the strand was recycled via the legal
+     * free → arm sequence (CHSTR-005).  Always reset; callers that need a
+     * non-NULL pool must supply one in the closure. */
+    s->cur_consts = entry->proto->constants;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->closure_list = NULL;
