@@ -396,9 +396,29 @@ gc_sweep_step(UVM *vm, size_t budget)
          * Check these flags BEFORE IS_DEAD: even if a fixed/pinned cell's
          * color didn't get updated by the mark phase (because no root
          * registered it as reachable), it must not be freed.  Re-paint it
-         * to current_white so it survives further cycles too. */
+         * to current_white so it survives further cycles too.
+         *
+         * GC-007: the re-paint is REQUIRED, not redundant.  FIXED means
+         * "don't free"; it does NOT mean "skip color update".  A FIXED
+         * cell's color must track current_white at every sweep boundary
+         * so the next mark phase observes it as not-yet-marked.  Without
+         * the re-paint, a FIXED cell that survived two cycles in a row
+         * (without being re-walked by its specialised root walker, e.g.
+         * watcher_table_walk_roots for UWatcher cells) would carry stale
+         * non-current-white color into the next mark, breaking the
+         * tri-color invariant.  Do not "optimise" this branch by
+         * dropping the urbi_gc_set_color call without a separate root
+         * walker that paints the cell every cycle.
+         *
+         * Note that some FIXED cells (UWatcher) are walked through a
+         * dedicated root walker (watcher_table_walk_roots) that
+         * traverses active_watchers_head independently of the all-cells
+         * sidecar list — so the cells exist in the sweep iteration even
+         * when no ordinary heap reference reaches them. */
         if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0U) {
             urbi_gc_set_color(cell, vm->current_white);
+            URBI_INTERNAL_ASSERT(
+                (cell->gc_byte & UGC_COLOR_MASK) == vm->current_white);
             vm->gc_surviving_bytes += cur->size;
             consumed              += cur->size;
             prev = cur;

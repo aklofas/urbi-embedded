@@ -238,6 +238,46 @@ UTEST(fixed_cell_survives_sweep)
     urbi_vm_destroy(&vm);
 }
 
+/* GC-007: a FIXED cell's color tracks vm->current_white after every sweep.
+ *
+ * The sweep loop in ugc_incremental.c paints FIXED cells with current_white
+ * regardless of whether the mark phase reached them.  This is REQUIRED, not
+ * redundant: the FIXED cell may not have a heap root walking to it (e.g. a
+ * UWatcher reached only through watcher_table_walk_roots, which traverses
+ * a side list rather than the all-cells sidecar).  Without the re-paint,
+ * the cell would carry a stale OTHER_WHITE color into the next mark and
+ * appear "already marked" — breaking the tri-color invariant.
+ *
+ * The test forces two consecutive full GC cycles (which flips current_white
+ * each cycle) and asserts that the FIXED cell's color matches the
+ * post-sweep current_white at every cycle boundary. */
+UTEST(fixed_cell_color_tracks_current_white_after_sweep)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UCell) + 16U, UTYPE_OBJECT);
+    UASSERT(c != NULL);
+    c->gc_byte |= UGC_IS_FIXED;
+
+    /* Cycle 1. */
+    urbi_gc_force_full(&vm);
+    UASSERT(c->gc_byte & UGC_IS_FIXED);
+    UASSERT_EQ((int)(c->gc_byte & UGC_COLOR_MASK), (int)vm.current_white);
+
+    /* Cycle 2: current_white flips; the sweep must re-paint to the new value. */
+    urbi_gc_force_full(&vm);
+    UASSERT(c->gc_byte & UGC_IS_FIXED);
+    UASSERT_EQ((int)(c->gc_byte & UGC_COLOR_MASK), (int)vm.current_white);
+
+    /* Cycle 3 for good measure — the contract holds across many cycles. */
+    urbi_gc_force_full(&vm);
+    UASSERT(c->gc_byte & UGC_IS_FIXED);
+    UASSERT_EQ((int)(c->gc_byte & UGC_COLOR_MASK), (int)vm.current_white);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void test_ugc_handle_suite(void)
@@ -258,4 +298,6 @@ void test_ugc_handle_suite(void)
               pin_unpin_nop_for_non_heap);
     utest_run("fixed_cell_survives_sweep",
               fixed_cell_survives_sweep);
+    utest_run("fixed_cell_color_tracks_current_white_after_sweep",
+              fixed_cell_color_tracks_current_white_after_sweep);
 }
