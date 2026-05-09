@@ -342,10 +342,18 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  *
  * Per spec §5.5: walk-all eval at safepoint; identifying the specific cell or
  * slot key is unnecessary — watcher_eval_dirty visits every active watcher
- * whose read-set might be affected. */
+ * whose read-set might be affected.
+ *
+ * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watcher_dirty_count
+ * non-atomically; any ISR re-entry that triggers a slot write on a bit-6 cell
+ * would corrupt the count under read-modify-write interleaving.  Slot writes
+ * are not allowed from ISR context per the URBI_ASSERT_NOT_ISR contract that
+ * guards every public-API entry point that mutates state — this assertion
+ * is the dirty-set hot-path mirror of that contract. */
 void
 observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
 {
+    URBI_ASSERT_NOT_ISR(vm);
     (void)cell;
     (void)key;
     vm->watcher_dirty_count++;
