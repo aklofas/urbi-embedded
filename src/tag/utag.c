@@ -38,20 +38,13 @@ utag_create(struct UVM *vm)
     if (c == NULL) return NULL;
 
     tag = (UTag *)c;
-    /* urbi_gc_alloc zeroes the allocation and sets gc_byte = current_white.
-     * Set identity and payload fields explicitly. */
-    tag->type_tag              = UTYPE_TAG;
-    tag->pad0                  = 0;
-    tag->flags                 = 0;
-    tag->pad1[0]               = 0;
-    tag->pad1[1]               = 0;
-    tag->pad1[2]               = 0;
-    tag->member_strands_head   = NULL;
-    tag->member_watchers_head  = NULL;
-    tag->enter_event           = NULL;
-    tag->leave_event           = NULL;
-    tag->name.kind             = UVAL_NIL;
-    tag->name.v.i              = 0;
+    /* TAGCH-003: urbi_gc_alloc owns the zero-init contract — it zeros every
+     * byte of the allocation via urbi_zero (see ugc_incremental.c::urbi_gc_alloc)
+     * and then writes type_tag and gc_byte = current_white.  Every UTag field
+     * other than the cell-header bytes is therefore already zero, which is the
+     * desired payload state (NULL pointers, flags = 0, name.kind = UVAL_NIL = 0).
+     * No explicit zero loop is needed; verified by tests/unit/test_utag_gc.c
+     * (utag_gc_alloc_zero_init_contract). */
 
     return tag;
 }

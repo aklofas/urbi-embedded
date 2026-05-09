@@ -105,6 +105,46 @@ UTEST(utag_walker_registered)
     urbi_vm_destroy(&vm);
 }
 
+/* ===== Test 4: TAGCH-003 — urbi_gc_alloc zero-init contract for UTag =====
+ *
+ * Allocate a UTag-sized cell directly via urbi_gc_alloc (NOT utag_create);
+ * verify every byte except gc_byte is zero.  This is the contract that
+ * justifies removing the explicit zero loop in utag_create — the GC owns
+ * the zero-init, not the caller.
+ *
+ * gc_byte is set to current_white by urbi_gc_alloc and is allowed to be
+ * non-zero (today current_white starts at 0 anyway). */
+
+UTEST(utag_gc_alloc_zero_init_contract)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UCell *c = urbi_gc_alloc(&vm, sizeof(UTag), UTYPE_TAG);
+    UASSERT(c != NULL);
+    if (c != NULL) {
+        UTag *t = (UTag *)c;
+        /* type_tag is set by urbi_gc_alloc to UTYPE_TAG; everything else
+         * (pad0, flags, pad1[3], member lists, enter/leave events, name)
+         * must be byte-zero. */
+        UASSERT_EQ((unsigned)t->type_tag, (unsigned)UTYPE_TAG);
+        UASSERT_EQ((unsigned)t->pad0,     0U);
+        UASSERT_EQ((unsigned)t->flags,    0U);
+        UASSERT_EQ((unsigned)t->pad1[0],  0U);
+        UASSERT_EQ((unsigned)t->pad1[1],  0U);
+        UASSERT_EQ((unsigned)t->pad1[2],  0U);
+        UASSERT(t->member_strands_head  == NULL);
+        UASSERT(t->member_watchers_head == NULL);
+        UASSERT(t->enter_event == NULL);
+        UASSERT(t->leave_event == NULL);
+        /* name is a UValue; bytewise-zero means kind==0 (UVAL_NIL) and v.i==0. */
+        UASSERT_EQ((unsigned)t->name.kind, 0U);
+        UASSERT_EQ((long long)t->name.v.i, 0LL);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -114,4 +154,6 @@ test_utag_gc_suite(void)
     utest_run("utag_gc_promoted",        utag_gc_promoted);
     utest_run("utag_sizeof_m5",          utag_sizeof_m5);
     utest_run("utag_walker_registered",  utag_walker_registered);
+    utest_run("utag_gc_alloc_zero_init_contract",
+              utag_gc_alloc_zero_init_contract);
 }
