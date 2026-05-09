@@ -435,6 +435,43 @@ UTEST(new_then_local_write_does_not_modify_proto) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T63: protos.insertFront(proto) ========================================
+ *
+ * The legacy shared-protos.chk fixture (line 12) uses
+ * `C.protos.insertFront(A)` to prepend A onto C's prototype list.  The
+ * Wave-1 stub installs insertFront on the synthetic proto-list returned
+ * by .protos and threads the owner through a hidden _owner slot. */
+
+UTEST(protos_insert_front_prepends_proto) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    /* a has slot foo=1; b has slot foo=2.  c clones b (so c.foo == 2);
+     * c.protos().insertFront(a) prepends a, so c.foo now resolves to a's
+     * slot first (== 1).  Wave-1: protos is a method (parens required);
+     * Wave-2's List atom may make protos a property (parens optional). */
+    const char *src =
+        "var a = Object.clone();"
+        "a.setSlot(\"foo\", 1);"
+        "var b = Object.clone();"
+        "b.setSlot(\"foo\", 2);"
+        "var c = b.clone();"
+        "var v0 = c.foo;"
+        "c.protos().insertFront(a);"
+        "var v1 = c.foo";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue v0 = urbi_value_nil();
+    UValue v1 = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v0", 2, &v0), URBI_OK);
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v1", 2, &v1), URBI_OK);
+    UASSERT_EQ((int)v0.v.i, 2);
+    UASSERT_EQ((int)v1.v.i, 1);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T62: removeLocalSlot legacy alias =====================================
  *
  * Object.removeLocalSlot is a legacy alias for removeSlot used in the
@@ -628,6 +665,8 @@ void test_object_root_suite(void) {
               object_get_slot_value_alias);
     utest_run("object_root: removeLocalSlot is a legacy alias for removeSlot",
               object_remove_local_slot_alias);
+    utest_run("object_root: protos.insertFront prepends proto",
+              protos_insert_front_prepends_proto);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }

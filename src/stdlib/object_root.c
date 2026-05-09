@@ -46,18 +46,19 @@
 
 /* === Forward declarations =================================================== */
 
-static int obj_setSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_getSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_getSlotValue    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_hasSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeLocalSlot (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_clone           (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_new             (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_addProto        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeProto     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_protos          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_setProtos       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setSlot           (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlot           (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlotValue      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_hasSlot           (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeSlot        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeLocalSlot   (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_clone             (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_new               (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_addProto          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeProto       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_protos            (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setProtos         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
 
@@ -189,6 +190,36 @@ urbi_proto_list_create(UVM *vm, const UObject *recv)
     n.kind = (uint8_t)UVAL_INT;
     n.v.i = (int64_t)urbi_object_proto_count(recv);
     if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) return NULL;
+
+    /* T63: thread the owner reference through so insertFront can mutate
+     * the original receiver's prototype list.  Wave 2's List atom replaces
+     * this synthetic with a proper list value; for Wave 1 an underscore-
+     * prefixed hidden slot is sufficient. */
+    USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
+    if (sym_owner == NULL) return NULL;
+    UValue owner = urbi_value_nil();
+    owner.kind = (uint8_t)UVAL_OBJECT;
+    /* Cast away const — the _owner slot is the receiver-side owner that
+     * insertFront mutates.  obj_protos's caller passes a non-const recv
+     * UObject down the call chain; this synthetic-list helper takes
+     * const for the read-only proto-count purposes, but the underlying
+     * UObject is itself non-const through the script's reference. */
+    owner.v.p = (void *)(uintptr_t)recv;
+    if (urbi_object_set_local_slot(vm, list, sym_owner, owner) != 0) return NULL;
+
+    /* T63: install insertFront on this synthetic list.  Each protos call
+     * allocates a fresh list; this attaches a per-list closure so the
+     * lookup hits the synthetic before climbing to Object root.  Wave 1:
+     * the per-list allocation cost is acceptable; Wave 2's List atom
+     * installs insertFront once on the List atom proto. */
+    UClosure *cl = urbi_native_closure_create(vm, obj_protos_insertFront);
+    if (cl == NULL) return NULL;
+    USymbol *sym_iF = (USymbol *)ustr_intern(vm, "insertFront", 11);
+    if (sym_iF == NULL) return NULL;
+    UValue clv = urbi_value_nil();
+    clv.kind = (uint8_t)UVAL_CLOSURE;
+    clv.v.p = cl;
+    if (urbi_object_set_local_slot(vm, list, sym_iF, clv) != 0) return NULL;
 
     return list;
 }
@@ -455,6 +486,92 @@ obj_setProtos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (rc == URBI_ERR_INVALID_ARG)
         return urbi_raise_type(vm, "setProtos: invalid prototype", out);
     if (rc != URBI_OK) return urbi_raise_oom(vm, out);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === protos.insertFront(proto) ===========================================
+ *
+ * T63: Wave-1 stub for the legacy `C.protos.insertFront(A)` idiom (used in
+ * legacy/repos/aldebaran-urbi/tests/2.x/shared-protos.chk line 12).
+ *
+ * `self` is the synthetic UObject returned from .protos; we extract the
+ * underlying owner via the hidden `_owner` slot, prepend args[0] to the
+ * owner's prototype list, and rebuild via urbi_object_set_protos.
+ *
+ * Wave 2 retires this when the proper List atom replaces the synthetic
+ * proto-list (the List atom installs insertFront once on the List atom
+ * proto and operates on the underlying list storage).  For Wave 1 the
+ * mutation flows through urbi_object_set_protos with a stack-bounded
+ * UObject* array.  If the combined list exceeds the proto cap,
+ * set_protos returns URBI_ERR_INVALID_ARG which surfaces as TypeError. */
+
+#ifndef URBI_PROTO_LIST_INSERT_FRONT_CAP
+/* Cap for stack-allocated combined-protos array.  Mirrors the proto-cap
+ * inside urbi_object_set_protos (URBI_PROTOS_SETPROTOS_CAP, 64).  Sized
+ * 65 here so the worst case (existing chain of length 64 + 1 prepend) is
+ * handed to set_protos which then rejects with URBI_ERR_INVALID_ARG. */
+#define URBI_PROTO_LIST_INSERT_FRONT_CAP 65
+#endif
+
+static int
+obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                       UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "insertFront", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "insertFront: self must be the synthetic protos UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "insertFront: argument must be a UObject", out);
+
+    UObject *list = (UObject *)self.v.p;
+    USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
+    if (sym_owner == NULL) return urbi_raise_oom(vm, out);
+
+    UObject *holder = NULL;
+    uint32_t idx = 0U;
+    int rc = urbi_object_resolve_slot(vm, list, sym_owner, &holder, &idx);
+    if (rc != 1 || holder == NULL || holder->slots == NULL)
+        return urbi_raise_type(vm,
+            "insertFront: synthetic protos list is missing _owner", out);
+
+    UValue owner_v = holder->slots[idx];
+    if (owner_v.kind != (uint8_t)UVAL_OBJECT || owner_v.v.p == NULL)
+        return urbi_raise_type(vm,
+            "insertFront: synthetic protos _owner is not a UObject", out);
+
+    UObject *owner = (UObject *)owner_v.v.p;
+    UObject *prepend = (UObject *)args[0].v.p;
+
+    uint32_t old_n = urbi_object_proto_count(owner);
+    if (old_n + 1U > URBI_PROTO_LIST_INSERT_FRONT_CAP)
+        return urbi_raise_type(vm, "insertFront: proto list cap exceeded", out);
+
+    UObject *combined[URBI_PROTO_LIST_INSERT_FRONT_CAP];
+    combined[0] = prepend;
+    for (uint32_t i = 0U; i < old_n; i++) {
+        combined[i + 1U] = urbi_object_proto_at(owner, i);
+    }
+
+    int src = urbi_object_set_protos(vm, owner, combined, old_n + 1U);
+    if (src == URBI_ERR_INVALID_ARG)
+        return urbi_raise_type(vm,
+            "insertFront: invalid prototype (atom-family mismatch / cycle / cap)", out);
+    if (src != URBI_OK) return urbi_raise_oom(vm, out);
+
+    /* Refresh the synthetic list's `size` slot so `protos.size` reflects
+     * the new count for any subsequent reads.  (Each .protos call returns
+     * a fresh synthetic, but the caller may chain off this same list.) */
+    USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
+    if (sym_size != NULL) {
+        UValue nval = urbi_value_nil();
+        nval.kind = (uint8_t)UVAL_INT;
+        nval.v.i = (int64_t)urbi_object_proto_count(owner);
+        (void)urbi_object_set_local_slot(vm, list, sym_size, nval);
+    }
 
     *out = self;
     return UEXEC_OK;
