@@ -1146,15 +1146,17 @@ UTEST(vm_op_closure_binds_proto_inst) {
 
 UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
     /* `var o = nil; o.x` — after T9, the IC table IS bound via
-     * s->module_instance at top-level (frame_count == 0).  The dispatch
-     * arm must reach the receiver-type check ("receiver is not an Object")
-     * rather than the earlier "no IC table bound" guard.
+     * s->module_instance at top-level (frame_count == 0).  After v0.6.0
+     * Phase 2, non-UVAL_OBJECT receivers route through atom-method
+     * dispatch (UVAL_NIL → root Object proto), so the failure is now a
+     * "slot not found" rather than "receiver is not an Object".
      *
      * Object.clone() is not accessible from urbiscript at this commit (no
      * globals at v1.0), so a positive end-to-end slot-read test is deferred
      * to T12 (when .chk fixtures port).  This test verifies the binding is
      * wired by observing the diagnostic transition: pre-T9 → "no IC table
-     * bound"; post-T9 → "receiver is not an Object". */
+     * bound"; post-Phase-2 → "slot 'x' not found" (atom dispatch reaches
+     * root Object, finds no `x` slot). */
     UVM vm;
     ULexer lex;
     const char *src = "var o = nil; o.x";
@@ -1177,10 +1179,11 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
     UASSERT_EQ((int)EMIT_OK, (int)uemit_finish(&e));
     UVMError rc = urbi_vm_run(&vm, NULL, &module, &out);
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
-    /* Key assertion: error is from receiver-type check, not IC-table binding.
-     * Pre-T9: "no IC table bound (module instance not wired at M4 baseline)"
-     * Post-T9: "receiver is not an Object"  */
-    UASSERT(strstr(vm.last_errmsg, "receiver is not an Object") != NULL);
+    /* Phase 2 of v0.6.0: nil routes via atom-method dispatch to root
+     * Object; lookup of `x` then fails as "slot 'x' not found" (the IC
+     * binding is still wired — just the receiver-type rejection moved
+     * to the slow-path miss). */
+    UASSERT(strstr(vm.last_errmsg, "slot 'x' not found") != NULL);
     UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
     umodule_destroy(&module);
     uarena_destroy(&arena);

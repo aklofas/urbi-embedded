@@ -778,12 +778,23 @@ dispatch:
             }
             UIC *ic = &pi->ic_table[ic_index];
 
-            if (s->R[recv_reg].kind != (uint8_t)UVAL_OBJECT) {
-                vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: receiver is not an Object");
-                HALT();
+            /* Phase 2 atom-method dispatch: when the receiver is not an
+             * Object value, route the slot lookup through the realm-global
+             * atom proto (Integer / Float / String / Event proto) rather
+             * than failing.  IC entries cache the atom proto's shape, so
+             * subsequent calls with the same atom kind hit the fast path
+             * (every UVAL_INT routes to the same Integer atom proto). */
+            UObject *recv;
+            if (s->R[recv_reg].kind == (uint8_t)UVAL_OBJECT) {
+                recv = (UObject *)s->R[recv_reg].v.p;
+            } else {
+                recv = urbi_atom_proto_for_value(vm, s->R[recv_reg]);
+                if (recv == NULL) {
+                    vm->last_error = UVM_OOM;
+                    vm_format_type_error_msg(vm, "GETSLOT: atom proto allocation failed");
+                    HALT();
+                }
             }
-            UObject *recv = (UObject *)s->R[recv_reg].v.p;
 
             /* Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
              * tracing reads, record the receiver's GC cell.
