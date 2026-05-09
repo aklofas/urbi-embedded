@@ -138,18 +138,32 @@ urbi_atom_protos_register(UVM *vm)
      * String are populated below; Integer / Float / Nil / Void are
      * touched here so the singletons exist at boot time even though no
      * Wave-1 family-specific methods install on them — they inherit
-     * clone / setSlot / etc. from root Object via the proto chain. */
-    UObject *bool_proto   = urbi_object_atom(vm, URBI_ATOM_BOOLEAN);
-    UObject *str_proto    = urbi_object_atom(vm, URBI_ATOM_STRING);
-    UObject *int_proto    = urbi_object_atom(vm, URBI_ATOM_INTEGER);
-    UObject *float_proto  = urbi_object_atom(vm, URBI_ATOM_FLOAT);
-    UObject *nil_proto    = urbi_object_atom(vm, URBI_ATOM_NIL);
-    UObject *void_proto   = urbi_object_atom(vm, URBI_ATOM_VOID);
+     * clone / setSlot / etc. from root Object via the proto chain.
+     *
+     * The Integer/Float/Nil/Void protos are pointer-to-const here because
+     * Wave 1 doesn't write to them (Wave 2 will, when family-specific
+     * methods land — at which point these become non-const).  The compile
+     * is otherwise unobserved between bool_proto/str_proto (mutated below)
+     * and the four read-only ones, so the const distinction is honoured. */
+    UObject       *bool_proto  = urbi_object_atom(vm, URBI_ATOM_BOOLEAN);
+    UObject       *str_proto   = urbi_object_atom(vm, URBI_ATOM_STRING);
+    const UObject *int_proto   = urbi_object_atom(vm, URBI_ATOM_INTEGER);
+    const UObject *float_proto = urbi_object_atom(vm, URBI_ATOM_FLOAT);
+    const UObject *nil_proto   = urbi_object_atom(vm, URBI_ATOM_NIL);
+    const UObject *void_proto  = urbi_object_atom(vm, URBI_ATOM_VOID);
 
     if (bool_proto == NULL || str_proto == NULL || int_proto == NULL
             || float_proto == NULL || nil_proto == NULL || void_proto == NULL) {
         return URBI_ERR_OOM;
     }
+    /* int_proto / float_proto / nil_proto / void_proto exist for boot-
+     * time singleton allocation only at Wave 1 (they inherit Object
+     * root's methods via the proto chain).  Mark them `(void)` so the
+     * compiler sees they are intentionally unused at this wave. */
+    (void)int_proto;
+    (void)float_proto;
+    (void)nil_proto;
+    (void)void_proto;
 
     int rc;
     rc = register_methods_on_proto(vm, bool_proto,
