@@ -15,7 +15,8 @@ SRC := $(wildcard src/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
-            tests/unit/twatcher_install_helper.c
+            tests/unit/twatcher_install_helper.c \
+            tests/unit/utest_e2e_helpers.c
 
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
