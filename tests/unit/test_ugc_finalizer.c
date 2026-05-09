@@ -28,7 +28,6 @@ UTEST(register_type_auto_assigns_host_slot)
 {
     UType t = {0};
     t.name         = "TestType";
-    t.payload_size = 16U;
     /* type_tag == 0: auto-assign */
 
     UVM vm;
@@ -95,7 +94,6 @@ UTEST(finalizer_runs_on_dead_cell)
     UType fin_type = {0};
     fin_type.name         = "FinType";
     fin_type.flags        = TYPE_HAS_FINALIZER;
-    fin_type.payload_size = 16U;
     fin_type.destroy      = test_destroy_fn;
     /* type_tag == 0: auto-assign */
 

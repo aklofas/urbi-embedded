@@ -356,14 +356,12 @@ walk_utag(struct UVM *vm, void *payload,
 
 /* === Static UType descriptors ===
  *
- * payload_size is set to 0 (variable / not pinned at this task) for all
- * M4 types.  flags = 0 (no finalizer, not host-backed).  destroy = NULL
- * for every type at this task — finalizer integration lands when host
- * memory shows up in any of these payloads (none do today). */
+ * flags = 0 (no finalizer) for every M4 type.  destroy = NULL for every
+ * type at this task — finalizer integration lands when host memory
+ * shows up in any of these payloads (none do today). */
 static const UType type_uobject = {
     .type_tag      = UTYPE_OBJECT,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UObject",
     .walk_payload  = walk_uobject,
     .destroy       = NULL,
@@ -372,7 +370,6 @@ static const UType type_uobject = {
 static const UType type_uprotos = {
     .type_tag      = UTYPE_PROTOS,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProtos",
     .walk_payload  = walk_uprotos,
     .destroy       = NULL,
@@ -381,7 +378,6 @@ static const UType type_uprotos = {
 static const UType type_ushape = {
     .type_tag      = UTYPE_SHAPE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UShape",
     .walk_payload  = walk_ushape,
     .destroy       = NULL,
@@ -390,7 +386,6 @@ static const UType type_ushape = {
 static const UType type_ushapemap = {
     .type_tag      = UTYPE_SHAPE_MAP,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UShapeMap",
     .walk_payload  = walk_ushapemap,
     .destroy       = NULL,
@@ -399,7 +394,6 @@ static const UType type_ushapemap = {
 static const UType type_uprops = {
     .type_tag      = UTYPE_PROPS,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProps",
     .walk_payload  = walk_uprops,
     .destroy       = NULL,
@@ -411,7 +405,6 @@ static const UType type_uprops = {
 static const UType type_upropstable = {
     .type_tag      = UTYPE_PROPS_TABLE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UPropsTable",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -424,7 +417,6 @@ static const UType type_upropstable = {
 static const UType type_uslot_array = {
     .type_tag      = UTYPE_SLOT_ARRAY,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "USlotArray",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -433,7 +425,6 @@ static const UType type_uslot_array = {
 static const UType type_uslothandle = {
     .type_tag      = UTYPE_SLOTHANDLE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "USlotHandle",
     .walk_payload  = walk_uslothandle,
     .destroy       = NULL,
@@ -442,7 +433,6 @@ static const UType type_uslothandle = {
 static const UType type_umodule_instance = {
     .type_tag      = UTYPE_MODULE_INSTANCE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UModuleInstance",
     .walk_payload  = walk_umoduleinstance,
     .destroy       = NULL,
@@ -459,7 +449,6 @@ static const UType type_umodule_instance = {
 static const UType type_uproto_instance = {
     .type_tag      = UTYPE_PROTO_INSTANCE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProtoInstance",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -468,7 +457,6 @@ static const UType type_uproto_instance = {
 static const UType type_uevent = {
     .type_tag      = UTYPE_EVENT,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UEvent",
     .walk_payload  = walk_uevent,
     .destroy       = NULL,
@@ -477,7 +465,6 @@ static const UType type_uevent = {
 static const UType type_uchanged_node = {
     .type_tag      = UTYPE_CHANGED_NODE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UChangedNode",
     .walk_payload  = walk_uchanged_node,
     .destroy       = NULL,
@@ -486,7 +473,6 @@ static const UType type_uchanged_node = {
 static const UType type_utag = {
     .type_tag      = UTYPE_TAG,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UTag",
     .walk_payload  = walk_utag,
     .destroy       = NULL,
