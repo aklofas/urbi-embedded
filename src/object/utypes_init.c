@@ -211,8 +211,18 @@ walk_uprops(struct UVM *vm, void *payload,
 
 /* === walk_noop ===
  *
- * No-op walker for cell types whose payload is fully described but whose
- * children-walk lands at a later M4 task. */
+ * No-op walker for cell types whose children are reachable through
+ * stronger paths and need no separate scan.  Used post-M4 by:
+ *   - UPropsTable        (reached via owning UShape)
+ *   - USlotArray         (reached via owning UObject's walk_uobject)
+ *   - UProtoInstance     (reached via UModuleInstance owner; stronger
+ *                         paths cover IC children — see comment at
+ *                         type_uproto_instance below for the OBJ-028
+ *                         retirement rationale)
+ *
+ * The "later M4 task" remark in the original comment referred to walks
+ * that landed in M4 itself; M4 has shipped, and these three call sites
+ * are the only legitimate consumers today. */
 static void
 walk_noop(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
@@ -321,9 +331,24 @@ walk_uchanged_node(struct UVM *vm, void *payload,
  * walk_uevent above).  Also shades enter_event and leave_event when
  * non-NULL (lazy-allocated by getter on first `at(tag.enter?)`).
  *
- * member_strands_head (UCleanupEntry chain) is intentionally NOT walked:
- * UStrands are root-walked separately via the realm hierarchy (M3 row 10 /
- * GC roots spec §5.3).  Walking them here would double-visit strands. */
+ * member_strands_head (UCleanupEntry chain) is intentionally NOT walked.
+ * TAGCH-017 — this is correctness, not just a perf optimization:
+ *   - UCleanupEntry instances are NOT GC cells.  They live inside the
+ *     owning strand's cleanup_base[] array (host-allocated by the strand,
+ *     never registered on the all-cells list).  Calling gc_shade_gray on
+ *     a UCleanupEntry would pass a non-cell pointer to the GC and corrupt
+ *     the gray-stack invariants.
+ *   - Indirecting via entry->strand_back to walk the owning strand here
+ *     would also be wrong: strands are root-walked once per cycle via the
+ *     realm hierarchy (sched_walk_roots → strand_walk_roots; see
+ *     src/sched/usched_cooperative.c §strand_walk_roots).  A second walk
+ *     here would not just be wasted work — strand_walk_roots performs a
+ *     full conservative register-window scan, and re-entering it from a
+ *     different traversal context risks unbounded recursion if any future
+ *     tag-on-stack reachability path emerges.
+ * UStrands are therefore reached exclusively through the realm strand
+ * walker (M3 row 10 / GC roots spec §5.3).  This walker only handles the
+ * tag-owned cell graph: enter/leave events + member_watchers chain. */
 static void
 walk_utag(struct UVM *vm, void *payload,
           UGcRootCallback cb, void *ctx)
@@ -356,14 +381,12 @@ walk_utag(struct UVM *vm, void *payload,
 
 /* === Static UType descriptors ===
  *
- * payload_size is set to 0 (variable / not pinned at this task) for all
- * M4 types.  flags = 0 (no finalizer, not host-backed).  destroy = NULL
- * for every type at this task — finalizer integration lands when host
- * memory shows up in any of these payloads (none do today). */
+ * flags = 0 (no finalizer) for every M4 type.  destroy = NULL for every
+ * type at this task — finalizer integration lands when host memory
+ * shows up in any of these payloads (none do today). */
 static const UType type_uobject = {
     .type_tag      = UTYPE_OBJECT,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UObject",
     .walk_payload  = walk_uobject,
     .destroy       = NULL,
@@ -372,7 +395,6 @@ static const UType type_uobject = {
 static const UType type_uprotos = {
     .type_tag      = UTYPE_PROTOS,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProtos",
     .walk_payload  = walk_uprotos,
     .destroy       = NULL,
@@ -381,7 +403,6 @@ static const UType type_uprotos = {
 static const UType type_ushape = {
     .type_tag      = UTYPE_SHAPE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UShape",
     .walk_payload  = walk_ushape,
     .destroy       = NULL,
@@ -390,7 +411,6 @@ static const UType type_ushape = {
 static const UType type_ushapemap = {
     .type_tag      = UTYPE_SHAPE_MAP,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UShapeMap",
     .walk_payload  = walk_ushapemap,
     .destroy       = NULL,
@@ -399,7 +419,6 @@ static const UType type_ushapemap = {
 static const UType type_uprops = {
     .type_tag      = UTYPE_PROPS,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProps",
     .walk_payload  = walk_uprops,
     .destroy       = NULL,
@@ -411,7 +430,6 @@ static const UType type_uprops = {
 static const UType type_upropstable = {
     .type_tag      = UTYPE_PROPS_TABLE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UPropsTable",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -424,7 +442,6 @@ static const UType type_upropstable = {
 static const UType type_uslot_array = {
     .type_tag      = UTYPE_SLOT_ARRAY,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "USlotArray",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -433,7 +450,6 @@ static const UType type_uslot_array = {
 static const UType type_uslothandle = {
     .type_tag      = UTYPE_SLOTHANDLE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "USlotHandle",
     .walk_payload  = walk_uslothandle,
     .destroy       = NULL,
@@ -442,7 +458,6 @@ static const UType type_uslothandle = {
 static const UType type_umodule_instance = {
     .type_tag      = UTYPE_MODULE_INSTANCE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UModuleInstance",
     .walk_payload  = walk_umoduleinstance,
     .destroy       = NULL,
@@ -459,7 +474,6 @@ static const UType type_umodule_instance = {
 static const UType type_uproto_instance = {
     .type_tag      = UTYPE_PROTO_INSTANCE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UProtoInstance",
     .walk_payload  = walk_noop,
     .destroy       = NULL,
@@ -468,7 +482,6 @@ static const UType type_uproto_instance = {
 static const UType type_uevent = {
     .type_tag      = UTYPE_EVENT,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UEvent",
     .walk_payload  = walk_uevent,
     .destroy       = NULL,
@@ -477,7 +490,6 @@ static const UType type_uevent = {
 static const UType type_uchanged_node = {
     .type_tag      = UTYPE_CHANGED_NODE,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UChangedNode",
     .walk_payload  = walk_uchanged_node,
     .destroy       = NULL,
@@ -486,7 +498,6 @@ static const UType type_uchanged_node = {
 static const UType type_utag = {
     .type_tag      = UTYPE_TAG,
     .flags         = 0U,
-    .payload_size  = 0U,
     .name          = "UTag",
     .walk_payload  = walk_utag,
     .destroy       = NULL,

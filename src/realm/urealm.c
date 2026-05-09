@@ -3,8 +3,7 @@
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * Allocation uses vm->alloc_fn (realloc semantics).
- * Zero-fill uses a byte loop (same pattern as ucleanup.c / uarena.c).
- * Row 8 / T14. */
+ * Zero-fill uses a byte loop (same pattern as ucleanup.c / uarena.c). */
 
 #if __STDC_HOSTED__
 #  include <assert.h>
@@ -22,7 +21,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* urbi_tag_stop */
 #include "sched/ustrand.h"    /* urbi_strand_destroy, UStrand.next_in_realm */
-#include "sched/usched_cooperative.h"  /* sched_strand_unbind_from_ready_queue (T69) */
+#include "sched/usched_cooperative.h"  /* sched_strand_unbind_from_ready_queue */
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
@@ -113,10 +112,11 @@ fail_tag:
  *
  * Precondition: All strands attached to this realm's tag must be dead
  * before calling this function. The urbi_tag_stop call deposits TAG_STOP
- * on all member strands (row 11 §3.5), but strands eventually fatal-escalate
- * rather than gracefully unwind at M3 (walker-side TAG_STOP absorption is
- * currently a pop-and-continue stub). Proper strand unwinding deferred to
- * when tag-scope absorption lands (row 11 §6).
+ * on all member strands, but strands eventually fatal-escalate rather
+ * than gracefully unwind at M3 (walker-side TAG_STOP absorption is
+ * currently a pop-and-continue stub). Proper strand unwinding deferred
+ * to when tag-scope absorption lands (deferred to v1.x; see
+ * docs/urbi-embedded-design-risks.md).
  *
  * Safe to call with realm == NULL. */
 
@@ -132,7 +132,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
 
-    /* Step 1 (T38): Free all heap-allocated strands registered in this realm.
+    /* Step 1: Free all heap-allocated strands registered in this realm.
      * Must happen BEFORE utag_destroy because each strand's cleanup stack
      * holds TAG_SCOPE entries that link back to realm->tag.  Destroying
      * strands first calls strand_unlink_from_tags which empties
@@ -142,7 +142,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * urbi_strand_create at the bottom of the list, so realm->tag's own
      * registration-strand is freed last).
      *
-     * REALM-011 / T69: before calling urbi_strand_destroy on a strand, splice
+     * REALM-011: before calling urbi_strand_destroy on a strand, splice
      * it out of vm->ready_head / ready_tail's doubly-linked list so the queue
      * never holds dangling pointers into freed strand memory.  Without this
      * unbind step sched_strand_destroy zeroes only the strand's own
@@ -163,7 +163,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         }
     }
 
-    /* Step 2: Stop the realm's tag (row 11 §3.5: deposits TAG_STOP on all
+    /* Step 2: Stop the realm's tag (deposits TAG_STOP on all
      * member strands; they eventually fatal-escalate at M3).
      * After step 1, all realm strands are destroyed and unlinked, so the
      * tag's member list is empty and urbi_tag_stop is a no-op here at M3.
@@ -296,9 +296,22 @@ urealm_teardown_all(struct UVM *vm)
  * vm->realms_head linked list.  For each Realm:
  *   1. realm->reflective (UVAL_NIL at M5; UValue slot still walked).
  *   2. namespace entries (via unamespace_walk_roots).
- *   3. realm->tag — GC-managed at M5 (T18: urbi_gc_alloc, UTYPE_TAG).
+ *   3. realm->tag — GC-managed since M5 via urbi_gc_alloc / UTYPE_TAG.
  *      Shaded via gc_shade_gray so the UTYPE_TAG walker runs and yields
- *      name + enter_event + leave_event + member_watchers_head chain. */
+ *      name + enter_event + leave_event + member_watchers_head chain.
+ *
+ * REALM-008: the (UCell *)r->tag cast below depends on UTag laying out a
+ * UCell-compatible header (type_tag at byte 0, gc_byte at byte 1) as its
+ * first two bytes.  Pinned with _Static_assert so any reordering of UTag's
+ * leading fields fails at compile time rather than producing a silently
+ * miscoloured cell at runtime. */
+
+_Static_assert(offsetof(UTag, type_tag) == 0,
+               "UTag.type_tag must alias UCell.type_tag at offset 0 "
+               "(realm_list_walk_roots casts (UCell *)r->tag)");
+_Static_assert(offsetof(UTag, gc_byte) == 1,
+               "UTag.gc_byte must alias UCell.gc_byte at offset 1 "
+               "(realm_list_walk_roots casts (UCell *)r->tag)");
 
 void
 realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
@@ -320,7 +333,7 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
             gc_shade_gray(vm, (UCell *)r->global_object);
         }
 
-        /* 4. tag — GC-managed at M5 T18; shade so the UTag walker runs. */
+        /* 4. tag — GC-managed since M5; shade so the UTag walker runs. */
         if (r->tag != NULL) {
             gc_shade_gray(vm, (UCell *)r->tag);
         }

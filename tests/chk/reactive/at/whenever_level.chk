@@ -3,11 +3,15 @@
 #         eval pass where condition is truthy, not just on rising edge.
 #
 # Activated 2026-05-05 as part of cond-closure unstub.
-# Uses two separate trigger functions so there are two safepoints (one per
-# non-top-frame OP_RET) while Realm.x > 5 is truthy.  whenever fires at each
-# safepoint visit where cond is truthy (fired = 3); at would fire only on the
-# false→true transition (fired = 1).  Confirms UWATCHER_WHENEVER level-trigger
-# path in watcher_eval_dirty (uwatcher_eval.c).
+# Mechanism: three fires from three safepoints — install-time eval of the
+# level cond, t1's non-top-frame OP_RET, and t2's non-top-frame OP_RET
+# (the body's write to Realm.fired re-dirties the same Realm cell the
+# cond reads, leaving the watcher dirty for the next safepoint).
+# whenever fires at every safepoint visit where cond is truthy
+# (fired = 3); at would fire only on the false→true transition (fired = 1).
+# Confirms UWATCHER_WHENEVER level-trigger path in watcher_eval_dirty
+# (uwatcher_eval.c).
+# See also: at_rising_edge.chk for the edge-trigger contrast.
 
 var x = 0;
 var fired = 0;

@@ -16,14 +16,20 @@ bool uvalue_truthy(const UValue *v) {
         case UVAL_NIL:    return false;
         case UVAL_BOOL:   return v->v.i != 0;
         case UVAL_VOID:   return false;
-        case UVAL_STRAND: return true;   /* strand handle is truthy (matches closure pattern) */
-        case UVAL_OBJECT: return true;   /* object reference is truthy (matches closure pattern) */
-        case UVAL_INT:    /* fall through */
-        case UVAL_FLOAT:  /* fall through */
-        case UVAL_STR:    /* fall through */
-        case UVAL_CLOSURE:/* fall through */
-        case UVAL_EVENT:  /* fall through */
-        case UVAL_HOST_FN: return true;
+        /* Per-kind arms document distinct semantic invariants (each kind's
+         * truthiness is decided independently per spec) even though the C
+         * expression collapses to `return true`. Keeping arms expanded with
+         * per-kind comments documents this contract; collapsing would lose
+         * the per-kind audit trail. */
+        case UVAL_STRAND:  /* strand handle is truthy (matches closure pattern) */ /* NOLINT(bugprone-branch-clone) */
+        case UVAL_OBJECT:  /* object reference is truthy (matches closure pattern) */
+        case UVAL_INT:     /* numeric is always truthy (zero included; matches Lua/Python) */
+        case UVAL_FLOAT:   /* numeric is always truthy */
+        case UVAL_STR:     /* interned string ref is truthy */
+        case UVAL_CLOSURE: /* closure ref is truthy */
+        case UVAL_EVENT:   /* event ref is truthy */
+        case UVAL_HOST_FN: /* host-function ref is truthy */
+            return true;
         default:
             /* FOUND-039: corrupt kind byte — fail-safe in release. */
             URBI_INTERNAL_ASSERT(0 && "uvalue_truthy: unknown UValue kind");
@@ -41,13 +47,19 @@ bool uvalue_equal(const UValue *a, const UValue *b) {
             case UVAL_INT:     return a->v.i == b->v.i;
             case UVAL_FLOAT:   return a->v.f == b->v.f;
             case UVAL_BOOL:    return a->v.i == b->v.i;
-            case UVAL_STR:     return a->v.p == b->v.p;     /* interned ptr eq */
-            case UVAL_CLOSURE: return a->v.p == b->v.p;     /* identity */
             case UVAL_VOID:    return false;                 /* void != void per spec */
-            case UVAL_STRAND:  return a->v.p == b->v.p;     /* strand identity */
-            case UVAL_OBJECT:  return a->v.p == b->v.p;     /* object identity */
-            case UVAL_EVENT:   return a->v.p == b->v.p;     /* event identity */
-            case UVAL_HOST_FN: return a->v.p == b->v.p;     /* fn-pointer identity */
+            /* Pointer-identity arms: each kind's per-comment documents the
+             * distinct semantic interpretation (interned-eq for strings vs
+             * object/closure/strand identity), even though the compiled
+             * expression is identical. Collapsing to one fall-through cluster
+             * preserves all per-kind comments while satisfying tidy. */
+            case UVAL_STR:     /* interned ptr eq */
+            case UVAL_CLOSURE: /* closure identity */
+            case UVAL_STRAND:  /* strand identity */
+            case UVAL_OBJECT:  /* object identity */
+            case UVAL_EVENT:   /* event identity */
+            case UVAL_HOST_FN: /* fn-pointer identity */
+                return a->v.p == b->v.p;
             default:
                 /* FOUND-039: corrupt kind byte — fail-safe in release. */
                 URBI_INTERNAL_ASSERT(0 && "uvalue_equal: unknown UValue kind");
@@ -180,7 +192,7 @@ size_t uvalue_format(const UValue *v, char *buf, size_t cap) {
                 break;
             }
         }
-        if (needs_dot_zero && (size_t)(n + 2) < cap) {
+        if (needs_dot_zero && (size_t)n + 2U < cap) {
             buf[n++] = '.';
             buf[n++] = '0';
             buf[n] = '\0';

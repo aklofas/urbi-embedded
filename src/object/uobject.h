@@ -235,7 +235,11 @@ static inline struct upf_ctx upf_init(const UObject *obj) {
     c.up  = NULL;
     c.i   = 0U;
     if (c.raw != 0U && (c.raw & 1U) == 0U) {
-        c.up = (UProtos *)c.raw;
+        /* Heap form: raw is a UProtos* stored as uintptr_t; bit 0 clear.
+         * Per pre-M4 prototype-chain spec §7.2 the high-bit encoding is a
+         * load-bearing design pin, so the int-to-pointer round-trip is
+         * intentional. */
+        c.up = (UProtos *)c.raw;  /* NOLINT(performance-no-int-to-ptr) — UProtos pointer-encoding (TIDY-003 design pin) */
     }
     return c;
 }
@@ -248,7 +252,9 @@ static inline int upf_next(struct upf_ctx *c, UObject **out) {
     }
     if ((c->raw & 1U) != 0U) {
         if (c->i != 0U) return 0;
-        *out = (UObject *)(c->raw >> 1);
+        /* Single form: bit 0 set, UObject* in high bits — load-bearing
+         * per pre-M4 prototype-chain spec §7.2 (TIDY-003 design pin). */
+        *out = (UObject *)(c->raw >> 1);  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
         c->i = 1U;
         return 1;
     }
@@ -391,20 +397,26 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
  * allocations); after first MARK_ROOTS the root walker keeps them alive. */
 void urbi_object_register_gc_roots(struct UVM *vm);
 
-/* Convenience inlines — count + indexed access across all three forms. */
+/* Convenience inlines — count + indexed access across all three forms.
+ *
+ * Each int-to-pointer cast below is the UProtos high-bit encoding per
+ * pre-M4 prototype-chain spec §7.2: bit 0 of obj->protos selects single-form
+ * (raw>>1 is UObject*) vs heap-form (raw is UProtos*).  The encoding is a
+ * load-bearing design pin (TIDY-003), so per-line NOLINT documents each
+ * site. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
     if (obj->protos == 0U) return 0U;
     if ((obj->protos & 1U) != 0U) return 1U;
-    return ((const UProtos *)obj->protos)->n;
+    return ((const UProtos *)obj->protos)->n;  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */
 }
 
 static inline UObject *urbi_object_proto_at(const UObject *obj, uint32_t i) {
     if (obj->protos == 0U) return NULL;
     if ((obj->protos & 1U) != 0U) {
-        return (i == 0U) ? (UObject *)(obj->protos >> 1) : NULL;
+        return (i == 0U) ? (UObject *)(obj->protos >> 1) : NULL;  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
     }
     {
-        UProtos *up = (UProtos *)obj->protos;
+        UProtos *up = (UProtos *)obj->protos;  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */
         return (i < up->n) ? up->items[i] : NULL;
     }
 }

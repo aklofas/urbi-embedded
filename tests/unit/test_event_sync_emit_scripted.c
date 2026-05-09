@@ -9,12 +9,15 @@
  * before c_event_emit_sync returns.
  *
  * Construction approach (per plan simplified path):
- *   - Event.new() and scripted `at sync (e?) body` install are not yet
- *     wirable end-to-end (T59 Event stdlib defer at v0.5.1; the original
- *     v0.5.1 retrospective also flagged an AST_AT_EVENT register-allocation
- *     desync, fixed in v0.5.2 — see tests/unit/test_parse_at_event.c
+ *   - Note: the AST_AT_EVENT scripted-install register-allocation desync was
+ *     a real codegen bug — fixed in v0.5.7-fixes Phase 2 (commits
+ *     3af426c..dc98956), tracked in REVIVAL §14 row S-emit-freereg-discipline.
+ *   - Event.new() and scripted `at sync (e?) body` install are still not
+ *     wirable end-to-end: Event.new() awaits M6 stdlib (the desync fix
+ *     unblocks the codegen path but the constructor itself is still missing).
+ *     See tests/unit/test_parse_at_event.c
  *     emit_at_event_global_member_event_expr_disjoint_regs for the
- *     regression test, so only the Event.new() defer still applies).
+ *     desync regression test.
  *   - Instead: compile a one-arg body closure from urbiscript
  *     (`function(p) { Realm.received = p }`), retrieve the resulting
  *     UClosure value from urbi_run_chunk's return slot, construct a UEvent
@@ -30,20 +33,16 @@
  * No test hooks installed — the body runs through the real scratch helper. */
 
 #include "utest.h"
+#include "utest_e2e_helpers.h"
 
 #include <stddef.h>
-#include <string.h>
 
-#include "value/uarena.h"
-#include "parse/uast.h"
-#include "emit/uemit.h"
-#include "lex/ulex.h"
-#include "module/umodule.h"
-#include "parse/uparse.h"
-#include "vm/uvm.h"
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
+#include "value/uarena.h"
+#include "module/umodule.h"
+#include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
 #include "event/uevent.h"
@@ -51,52 +50,10 @@
 
 #define UTEST(name) static void name(void)
 
-/* ===================================================================
- * Helpers
- * =================================================================== */
-
-static UValue
-make_int(int64_t n)
-{
-    UValue v;
-    v.kind = UVAL_INT;
-    v.v.i  = n;
-    return v;
-}
-
-/* Compile + run `src`, return the chunk's result through *out_result.
- * Caller owns `arena` and `module` and must keep them alive as long as
- * any returned UVAL_CLOSURE is in use. */
-static int
-compile_and_run(UVM *vm, UArena *arena, UModule *module,
-                const char *src, UValue *out_result)
-{
-    URealm *realm = urbi_realm_global(vm);
-    if (realm == NULL) return URBI_ERR_OOM;
-
-    ULexer   lex;
-    UEmitter e;
-    UParser  p;
-    UAstNode *node;
-
-    ulex_init(&lex, src, strlen(src));
-    uemit_init(&e, module, arena, vm, NULL);
-    uparse_init(&p, &lex, arena);
-
-    while ((node = uparse_next_statement(&p)) != NULL) {
-        if (node->kind == AST_ERROR) return URBI_ERR_COMPILE;
-        if (uemit_statement(&e, node) != EMIT_OK) return URBI_ERR_COMPILE;
-        uarena_reset(arena);
-    }
-    if (uemit_finish(&e) != EMIT_OK) return URBI_ERR_COMPILE;
-
-    UValue result = {0};
-    int rc = urbi_run_chunk(vm, realm, module, &result);
-    if (out_result != NULL) {
-        *out_result = result;
-    }
-    return rc;
-}
+/* compile_and_run / make_int now live in utest_e2e_helpers.{h,c}.  This
+ * file uses the _with_module variant because the captured body closure
+ * must remain alive after the call (it gets installed in an
+ * AT_EVENT_SYNC watcher and fired via c_event_emit_sync below). */
 
 /* ===================================================================
  * Test: scripted_event_sync_emit_delivers_payload
@@ -123,7 +80,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UASSERT(gr != NULL);
     if (gr == NULL) { urbi_vm_destroy(&vm); return; }
 
-    int rc = urbi_realm_set_global(&vm, gr, "received", 8, make_int(0));
+    int rc = urbi_realm_set_global(&vm, gr, "received", 8, utest_e2e_make_int(0));
     UASSERT_EQ(URBI_OK, rc);
 
     /* === Phase 1: compile a one-arg body closure that writes to
@@ -134,7 +91,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     uarena_init(&arena, 4096);
 
     UValue closure_val = {0};
-    rc = compile_and_run(&vm, &arena, &module,
+    rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "function(p) { Realm.received = p }",
         &closure_val);
     UASSERT_EQ(URBI_OK, rc);
@@ -176,7 +133,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
                (int)e->at_watchers_head->mode);
 
     /* === Phase 3: fire the event === */
-    c_event_emit_sync(&vm, e, make_int(42));
+    c_event_emit_sync(&vm, e, utest_e2e_make_int(42));
 
     UValue received = {0};
     rc = urbi_realm_get_global(&vm, gr, "received", 8, &received);
@@ -185,7 +142,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UASSERT_EQ(42, (int)received.v.i);
 
     /* === Phase 4: re-fire with a different payload === */
-    c_event_emit_sync(&vm, e, make_int(7));
+    c_event_emit_sync(&vm, e, utest_e2e_make_int(7));
 
     rc = urbi_realm_get_global(&vm, gr, "received", 8, &received);
     UASSERT_EQ(URBI_OK, rc);

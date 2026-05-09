@@ -83,8 +83,8 @@ UTEST(scratch_runner_returns_integer_value)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto    = &proto;
-    cl.nupvals  = 0;
+    cl.proto = &proto;
+    cl.nupvals = 0;
 
     UValue out    = {0};
     int    threw  = 0;
@@ -108,7 +108,15 @@ UTEST(scratch_runner_returns_integer_value)
  * with vm->last_error == UVM_TYPE_ERROR.  The helper must:
  *   - set *out_threw = 1
  *   - reset vm->last_error to UVM_OK
- *   - leave *out_result as UVAL_NIL */
+ *   - leave *out_result as UVAL_NIL
+ *
+ * Why nil() and not `1 + nil`?  Both routes through the cond-throw →
+ * caller-receives-fault path, but `1 + nil` crashes inside OP_ADD's
+ * error formatter, which dereferences s->module->line_deltas — NULL
+ * on a scratch frame (the helper synthesizes a minimal module_instance
+ * shell with no line table).  nil() routes through
+ * vm_format_type_error_msg which doesn't touch the module, so it is
+ * stable on scratch frames. */
 UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 {
     UVM    vm;
@@ -133,7 +141,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -206,8 +214,8 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto    = &proto;
-    cl.nupvals  = 0;
+    cl.proto = &proto;
+    cl.nupvals = 0;
 
     UValue out   = {0};
     int    threw = 0;
@@ -251,7 +259,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -297,7 +305,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue out   = {0};
@@ -341,7 +349,7 @@ UTEST(scratch_runner_with_payload_writes_r0)
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
-    cl.proto   = &proto;
+    cl.proto = &proto;
     cl.nupvals = 0;
 
     UValue payload = {0};
@@ -404,9 +412,9 @@ test_uwatcher_scratch_suite(void)
               scratch_runner_returns_integer_value);
     utest_run("scratch_runner_sets_threw_on_unhandled_throw",
               scratch_runner_sets_threw_on_unhandled_throw);
-    utest_run("scratch runner handles NULL closure",
+    utest_run("scratch_runner_handles_null_closure",
               scratch_runner_handles_null_closure);
-    utest_run("scratch runner returns nil for nil literal",
+    utest_run("scratch_runner_returns_nil_for_nil_literal",
               scratch_runner_returns_nil_for_nil_literal);
     utest_run("scratch_runner_returns_true_for_truthy_comparison",
               scratch_runner_returns_true_for_truthy_comparison);

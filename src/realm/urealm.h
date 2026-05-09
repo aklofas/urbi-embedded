@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* URealm: per-execution-context type (namespace + tag-owner + lifetime).
- * UNamespace: name→UValue map owned by a URealm.
- * Row 8 / T14. */
+ * UNamespace: name→UValue map owned by a URealm. */
 
 #ifndef UREALM_H
 #define UREALM_H
@@ -19,7 +18,7 @@ extern "C" {
 /* === Forward declarations === */
 
 struct UVM;
-struct UTag;   /* T29 */
+struct UTag;
 struct UNamespace;
 
 /* === Realm flag bits (stored in URealm.flags) === */
@@ -32,7 +31,6 @@ struct UNamespace;
 /* === URealm struct ===
  *
  * Total: ~72 bytes on 64-bit (pointer-heavy; aligned naturally).
- * Row 8 §4.2 layout.
  *
  * All Realms belonging to a VM are kept on a doubly-linked list rooted at
  * vm->realms_head.  Head-insertion is used; order is unspecified. */
@@ -69,22 +67,15 @@ typedef struct URealm {
     struct URealm *prev_in_vm;
     struct URealm *next_in_vm;
 
-    /* Strand ownership (T38): singly-linked list of all UStrand objects
-     * created under this realm via urbi_strand_create.  Threaded via
+    /* Strand ownership: singly-linked list of all UStrand objects created
+     * under this realm via urbi_strand_create.  Threaded via
      * UStrand.next_in_realm.  Walked by urbi_realm_destroy to free
      * all heap-allocated strands when the realm is torn down (this
      * happens BEFORE utag_destroy so the realm's tag member-list is
      * empty when the tag is freed — see urealm.c step 1).
      *
-     * GC walker contract (pre-M4 GC strand-walker spec §6.1):
-     *   strands_head MUST contain every live strand whose register window
-     *   may hold GC-managed UValues.  Scheduler implementations are
-     *   responsible for maintaining this invariant — the GC walker visits
-     *   every strand on this list (with the DEAD-state filter applied
-     *   inside strand_walk_roots).  This decouples GC correctness from any
-     *   single scheduler's internal queues (cooperative ready/sleep,
-     *   future priority bands, mutex/event wait queues, ...).
-     *   See docs/internals/scheduler-design.md for the full contract. */
+     * GC-walker contract for UStrand: see ustrand.h (top-of-file comment)
+     * "Strand walker contract" for the full mark+sweep interaction. */
     struct UStrand *strands_head;
 } URealm;
 
@@ -122,7 +113,7 @@ void               unamespace_walk_roots(struct UNamespace *ns,
 /* === VM teardown helper ===
  *
  * Destroy all Realms still alive at urbi_vm_destroy() time.
- * Called from urbi_vm_destroy() — T14 wires this up. */
+ * Called from urbi_vm_destroy(). */
 void urealm_teardown_all(struct UVM *vm);
 
 /* === GC root walker for the full realm list ===

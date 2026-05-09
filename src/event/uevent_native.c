@@ -16,7 +16,16 @@
  * UVAL_HOST_FN UValue, and installs it as a local slot on the proto.
  * Lives here rather than a shared header because only T53/T54 use it
  * and moving it to a shared header would pull uevent_emit.h + uintern.h
- * into every consumer of urbi.h.  Factor out at M6 if a third caller appears. */
+ * into every consumer of urbi.h.  Factor out at M6 if a third caller appears.
+ *
+ * EVENT-026 — exemption from v0.5.2 AST_AT_EVENT register-allocation fix:
+ *   The native emit/syncEmit/waituntil paths bypass AST_AT_EVENT codegen
+ *   entirely.  They consume already-resolved UValues from argv and call
+ *   straight into c_event_emit_async / c_event_emit_sync / c_event_waituntil
+ *   from C — no emitter freereg / next_reg state to keep in sync.  The
+ *   register-allocation desync that affected scripted emit (v0.5.2 T6;
+ *   fixed at TWO sibling sites in src/emit/uemit_react.c, AST_AT_EVENT
+ *   sync+async + AT_SLOT_CHANGE) does not apply here. */
 
 #include "event/uevent_native.h"
 
@@ -34,34 +43,13 @@
 #include "module/umodule.h"
 #include <stdint.h>
 
-/* === uvalue_from_event / uvalue_as_event ===
+/* === uvalue_from_event / uvalue_as_event / uvalue_is_event ===
  *
- * UEvent is a GC-managed cell.  At M5 we add UVAL_EVENT (kind=9) to the
- * UValKind enum (umodule.h) so the GC barrier in uvalue_is_heap() shades it.
- * Both helpers are defined here (internal to src/) rather than in a public
- * header — embedders access events through the C API, not raw UValue tags. */
-
-UValue
-uvalue_from_event(UEvent *e)
-{
-    UValue v;
-    urbi_zero(&v, sizeof(v));
-    v.kind  = (uint8_t)UVAL_EVENT;
-    v.v.p   = (void *)e;
-    return v;
-}
-
-UEvent *
-uvalue_as_event(UValue v)
-{
-    return (UEvent *)v.v.p;
-}
-
-int
-uvalue_is_event(UValue v)
-{
-    return v.kind == (uint8_t)UVAL_EVENT;
-}
+ * UEvent is a GC-managed cell.  At M5 we added UVAL_EVENT (kind=9) to
+ * the UValKind enum (umodule.h) so the GC barrier in uvalue_is_heap()
+ * shades it.  Phase-18 (Wave 6, 2026-05-09) made the three helpers
+ * `static inline` in uevent_native.h to elide call overhead at the 5
+ * in-tree call sites; no out-of-line definitions are needed. */
 
 /* === native_event_optional_payload ===
  *
@@ -106,7 +94,11 @@ urbi_register_fn(struct UVM *vm, struct UObject *proto,
     UValue v;
     urbi_zero(&v, sizeof(v));
     v.kind  = (uint8_t)UVAL_HOST_FN;
-    v.v.p   = (void *)(uintptr_t)fn;  /* store function pointer as void* */
+    /* Store function pointer in UValue.v.p (void*) via uintptr_t — function-
+     * to-data pointer round-trip is intentional and defined for the v1.0
+     * targets (POSIX + ARM Cortex-M7 + RISC-V32 + Xtensa LX7 are all
+     * Harvard-flat for code/data within the same address space). */
+    v.v.p   = (void *)(uintptr_t)fn;  /* NOLINT(performance-no-int-to-ptr) — UVAL_HOST_FN function-pointer encoding */
     return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 
@@ -115,18 +107,19 @@ urbi_register_fn(struct UVM *vm, struct UObject *proto,
 /* urbi_native_event_new: constructor — allocates a fresh UEvent.
  *
  * Argv[0] is the receiver (the Event proto); ignored.
- * Returns a UVAL_EVENT wrapping the new UEvent, or NIL on OOM. */
+ * Returns a UVAL_EVENT wrapping the new UEvent, or NIL on OOM.
+ *
+ * EVENT-011: route the OOM nil through urbi_value_nil() so the canonical
+ * zero-init helper owns the layout — avoids the {0}-then-set-kind pattern
+ * that depends on UVAL_NIL's enum value being layout-compatible with
+ * brace-init. */
 static UValue
 urbi_native_event_new(struct UStrand *s, int argc, UValue *argv)
 {
     (void)argc; (void)argv;
     struct UVM *vm = s->vm;
     UEvent *e = urbi_event_create(vm);
-    if (e == NULL) {
-        UValue nil = {0};
-        nil.kind = (uint8_t)UVAL_NIL;
-        return nil;
-    }
+    if (e == NULL) return urbi_value_nil();
     return uvalue_from_event(e);
 }
 

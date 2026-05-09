@@ -37,7 +37,11 @@ void emit_diag_warn(UEmitter *e, UAstNode *n, const char *fmt, ...) {
     char buf[256];
     va_list ap;
     va_start(ap, fmt);
-    (void)vsnprintf(buf, sizeof(buf), fmt, ap);
+    /* clang-analyzer-valist.Uninitialized is a false positive here — `ap`
+     * is initialized by va_start above, then consumed by vsnprintf, then
+     * cleared by va_end below.  The analyzer cannot see through the
+     * vsnprintf prototype's va_list contract. */
+    (void)vsnprintf(buf, sizeof(buf), fmt, ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
 
     /* Copy the message string using the module allocator. */

@@ -95,8 +95,24 @@ void urbi_defer_slot_change(struct UVM    *vm,
  * Slow path: called when UGC_HAS_SLOT_CHANGE_EVENT is set on parent.
  * Walks changed_events_head by USymbol identity, dispatches via
  * c_event_emit_sync.  Re-entrancy from scratch context routes to the
- * deferred-emit ring (T66).  In URBI_DEBUG builds asserts bit-7-set
- * without a matching chain entry. */
+ * deferred-emit ring (T66).
+ *
+ * EMITR-013 contract: silent return on unmatched key is the normal case.
+ * UGC_HAS_SLOT_CHANGE_EVENT is a per-OBJECT bit ("at least one slot on
+ * this object has a change-watcher"), not per-slot.  Every slot-change
+ * emit on a subscribed object reaches this function, but only one slot's
+ * UChangedNode entry needs to match the supplied `key`.  When the chain
+ * walk falls through with no name == key match, the affected slot simply
+ * has no subscribers — silently return (no observer to notify).
+ *
+ * The earlier "programming error / bit 7 must only be set when at least
+ * one UChangedNode exists" framing was misleading: bit 7 is correct as
+ * long as ANY slot has a UChangedNode, which is what the chain walk
+ * verifies on a per-key basis.  Callers MUST NOT treat the silent return
+ * as an error path; it is the expected outcome for the "different slot"
+ * case.  Callers that have already validated the key against an IC
+ * table (and therefore know the chain SHOULD have an entry) can add a
+ * URBI_INTERNAL_ASSERT in the caller to catch genuine misuse. */
 void urbi_emit_slot_change_slow(struct UVM    *vm,
                                 struct UObject *parent,
                                 struct USymbol *key,
@@ -113,6 +129,15 @@ void urbi_emit_slot_change_slow(struct UVM    *vm,
  * Call site pattern (all slot-write callsites):
  *   store(obj, idx, v);
  *   urbi_emit_slot_change_if_subscribed(vm, obj, key_sym, v);
+ *
+ * TAGCH-010 — sticky bit:
+ *   The bit-7 read here is monotonically rising with respect to the lifetime
+ *   of `parent` — UGC_HAS_SLOT_CHANGE_EVENT is set on first chain prepend in
+ *   urbi_object_get_or_create_change_event and never cleared.  Therefore a
+ *   "true" outcome on this branch means "obj has had at least one
+ *   subscriber at some point", not "obj currently has a live subscriber".
+ *   The slow path tolerates the latter case via silent return on chain
+ *   miss.  Clearing-on-detach is a v1.x design item — audit row GC-002.
  */
 static inline void
 urbi_emit_slot_change_if_subscribed(struct UVM    *vm,

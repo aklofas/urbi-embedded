@@ -490,7 +490,7 @@ urbi_object_set_property_value(UVM *vm, UObject *obj, const USymbol *name,
      * shape that aliased this UProps pointer.  Allocating a fresh
      * UProps and rewriting the props_table[idx] entry isolates this
      * shape's view from any aliasing sibling. */
-    UProps *existing = obj->shape->props_table[idx];
+    const UProps *existing = obj->shape->props_table[idx];
     UProps *fresh = uprops_alloc(vm);
     if (fresh == NULL) {
         return -1;
@@ -535,7 +535,11 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
 
     /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
      * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
-     * for the entire DFS below. */
+     * for the entire DFS below.
+     *
+     * CPPCHK-002: cppcheck flags this as always-false because it assumes a
+     * 32-bit lookup_id; vm->lookup_id is uint64_t and the cast catches the
+     * actual u32 wrap.  Suppressed via .cppcheck.suppressions. */
     if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
         urbi_object_lookup_id_force_wrap(vm);
     } else {

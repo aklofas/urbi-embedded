@@ -128,7 +128,6 @@ typedef enum {
     PARSE_CLOSURE_KEYWORD,         /* `closure(x){...}` form */
     PARSE_TRAILING_AMP,            /* `expr &` is illegal */
     PARSE_LAZY_OUT_OF_PARAM_LIST,
-    PARSE_LAZY_PARAM_DEFAULT,      /* `lazy x = ...` reserved syntax */
 
     /* M3 additions */
     PARSE_TRY_NEEDS_CATCH_OR_FINALLY, /* `try { }` with neither catch nor finally */

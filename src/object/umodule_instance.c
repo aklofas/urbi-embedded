@@ -192,7 +192,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
      * slice of the trailing IC region; unfilled sites have topology_gen == 0
      * (the sentinel per pre-M4 topology-generation spec §3.1). */
-    for (uint16_t i = 0U; i < m->nested_count; i++) {
+    for (size_t i = 0U; i < m->nested_count; i++) {
         UProto *p = m->nested[i];
         if (p != NULL &&
             !intern_ic_names_from_strs(vm, p->ic_count, &p->ic_names,
@@ -223,10 +223,11 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
 void
 urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
 {
-    /* GC-managed; sweep reaps both cells when no roots reach mi.  No
-     * explicit teardown at T16 — IC entries hold no host-owned resources
-     * yet (T22+ may revisit if IC fill installs anything that needs an
-     * explicit finalizer). */
+    /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
+     * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
+     * because the public-API contract (paired create/destroy) survives
+     * into M7, where this hook may grow semantics (host-visible registry
+     * detach, etc.).  No churn for callers when that lands. */
     (void)vm;
     (void)mi;
 }

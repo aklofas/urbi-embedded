@@ -195,24 +195,6 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
     gc_shade_gray(vm, cell);
 }
 
-/* === walk_vm_globals ===
- *
- * Walks UVM-level UValues that aren't owned by any subsystem root provider.
- * Per spec §5.7: fatal_handler_value, prototypes[], error_protos[].
- * At M3 baseline these fields don't exist on UVM yet (they land at M4+);
- * this is a no-op stub.
- *
- * TODO(T26): enumerate vm->prototypes[] / vm->error_protos[] /
- * vm->fatal_handler_value when those land at M4+. */
-static void
-walk_vm_globals(UVM *vm, UGcRootCallback cb, void *ctx)
-{
-    (void)vm;
-    (void)cb;
-    (void)ctx;
-    /* No VM-level UValue globals exist at M3. */
-}
-
 /* === drain_gray: shared gray work-list drainer (GC-027) ===
  *
  * Pops cells from the gray work-list, walks their payload (if any), and
@@ -261,10 +243,9 @@ drain_gray(UVM *vm, size_t budget)
 static size_t
 gc_mark_roots_step(UVM *vm)
 {
-    /* Walk VM-internal globals (no-op stub at M3; T26 fills in). */
-    walk_vm_globals(vm, mark_root_callback, vm);
-
-    /* Walk all registered root providers. */
+    /* Walk all registered root providers.
+     * VM-level UValue globals (e.g. fatal_handler_value, prototypes[]) are
+     * reached via root providers — no separate VM-globals walk needed. */
     uint8_t i;
     for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, mark_root_callback, vm);
@@ -336,8 +317,24 @@ gc_atomic_finish_step(UVM *vm)
     gc_set_sweep_cursor(vm, gc_node_head(vm));
     gc_set_sweep_cursor_prev(vm, NULL);
 
-    /* Return accumulated consumed bytes; if gray list was empty, return
-     * a small constant so slice loop progresses. */
+    /* Return value contract:
+     *   >0 — bytes-of-gray-work consumed in this atomic-finish step.  The
+     *        slice scheduler subtracts this from the slice budget; if the
+     *        budget remains >0 the SWEEP phase begins immediately within
+     *        the same slice (see urbi_gc_slice loop call site at line ~760).
+     *   64u — sentinel returned when the gray list was already empty.  We
+     *        cannot return 0 because the slice scheduler reads 0 as "GC is
+     *        idle, no atomic work pending" and would wedge the loop on
+     *        successive 0-returns when the slice budget hasn't refilled.
+     *        64u is a small constant chosen to (a) make forward progress
+     *        through the SWEEP phase on the same slice, (b) be small enough
+     *        that downstream sweep_step bounds dominate the slice budget
+     *        accounting, and (c) match the granularity of `gc_mark_roots_step`
+     *        which also uses small constants for empty-work shapes.
+     *
+     * The 64u sentinel exists only because callers count "0" as "GC done".
+     * If the slice scheduler ever distinguishes "no work this slice, retry
+     * next safepoint" from "GC is idle", this sentinel can collapse to 0. */
     return consumed > 0U ? consumed : 64U;
 }
 
@@ -415,9 +412,29 @@ gc_sweep_step(UVM *vm, size_t budget)
          * Check these flags BEFORE IS_DEAD: even if a fixed/pinned cell's
          * color didn't get updated by the mark phase (because no root
          * registered it as reachable), it must not be freed.  Re-paint it
-         * to current_white so it survives further cycles too. */
+         * to current_white so it survives further cycles too.
+         *
+         * GC-007: the re-paint is REQUIRED, not redundant.  FIXED means
+         * "don't free"; it does NOT mean "skip color update".  A FIXED
+         * cell's color must track current_white at every sweep boundary
+         * so the next mark phase observes it as not-yet-marked.  Without
+         * the re-paint, a FIXED cell that survived two cycles in a row
+         * (without being re-walked by its specialised root walker, e.g.
+         * watcher_table_walk_roots for UWatcher cells) would carry stale
+         * non-current-white color into the next mark, breaking the
+         * tri-color invariant.  Do not "optimise" this branch by
+         * dropping the urbi_gc_set_color call without a separate root
+         * walker that paints the cell every cycle.
+         *
+         * Note that some FIXED cells (UWatcher) are walked through a
+         * dedicated root walker (watcher_table_walk_roots) that
+         * traverses active_watchers_head independently of the all-cells
+         * sidecar list — so the cells exist in the sweep iteration even
+         * when no ordinary heap reference reaches them. */
         if ((cell->gc_byte & (UGC_IS_FIXED | UGC_IS_PINNED)) != 0U) {
             urbi_gc_set_color(cell, vm->current_white);
+            URBI_INTERNAL_ASSERT(
+                (cell->gc_byte & UGC_COLOR_MASK) == vm->current_white);
             vm->gc_surviving_bytes += cur->size;
             consumed              += cur->size;
             prev = cur;
@@ -801,15 +818,13 @@ urbi_gc_force_full(UVM *vm)
 
 /* === urbi_gc_walk_roots ===
  *
- * Walks VM globals (stub at M3) then iterates all registered root providers.
- * Provided for host/test use and called indirectly via gc_mark_roots_step. */
+ * Iterates all registered root providers.  Provided for host/test use and
+ * called indirectly via gc_mark_roots_step.  VM-level globals (if any) are
+ * reached via providers — no separate VM-globals walk. */
 void
 urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    /* Walk VM-internal globals (no-op stub at M3). */
-    walk_vm_globals(vm, cb, ctx);
-    /* Iterate registered root providers. */
     uint8_t i;
     for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, cb, ctx);

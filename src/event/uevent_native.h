@@ -5,6 +5,7 @@
 #define EVENT_NATIVE_H
 
 #include "module/umodule.h"        /* UValue, UVAL_EVENT */
+#include "runtime/umacros.h"       /* urbi_zero (used by uvalue_from_event) */
 #include "urbi/urbi.h"      /* UHostFn */
 #include "vm/uvm.h"         /* UVMError */
 #include <stdint.h>
@@ -17,17 +18,33 @@ struct UVM;
 struct UEvent;
 struct UObject;
 
-/* === UValue ↔ UEvent helpers (M5 — UVAL_EVENT kind=9) === */
+/* === UValue ↔ UEvent helpers (M5 — UVAL_EVENT kind=9) ===
+ *
+ * Phase-18 footprint pin (2026-05-09): the three predicates below are
+ * `static inline` so the compiler can elide the call-site overhead in
+ * the 5 in-tree call sites (4 in uevent_native.c, 1 in uvm.c).  Each
+ * is a single field access; out-of-line they cost a function call per
+ * dispatch. */
 
 /* Pack a UEvent* into a UVAL_EVENT UValue. */
-UValue  uvalue_from_event(struct UEvent *e);
+static inline UValue uvalue_from_event(struct UEvent *e) {
+    UValue v;
+    urbi_zero(&v, sizeof(v));
+    v.kind = (uint8_t)UVAL_EVENT;
+    v.v.p = (void *)e;
+    return v;
+}
 
 /* Extract UEvent* from a UVAL_EVENT UValue.
  * Caller must verify kind == UVAL_EVENT first. */
-struct UEvent *uvalue_as_event(UValue v);
+static inline struct UEvent *uvalue_as_event(UValue v) {
+    return (struct UEvent *)v.v.p;
+}
 
 /* Predicate: returns non-zero iff v.kind == UVAL_EVENT. */
-int     uvalue_is_event(UValue v);
+static inline int uvalue_is_event(UValue v) {
+    return v.kind == (uint8_t)UVAL_EVENT;
+}
 
 /* === urbi_register_fn ===
  *

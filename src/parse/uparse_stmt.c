@@ -181,9 +181,11 @@ UAstNode *parse_block(UParser *p) {
          * exits on `}` or TOK_EOF, so a trailing `; }` or `| }` is
          * silently accepted (closes PARSE-010). */
         UToken sep = peek(p);
-        if (sep.type == TOK_SEMI) {
-            consume(p);
-        } else if (sep.type == TOK_PIPE) {
+        /* `;` and `|` are both block-statement separators here (REPL-boundary
+         * convention applies inside blocks too). Either consumes one token; a
+         * trailing-separator `; }` / `| }` falls through to the loop guard
+         * which exits on `}` or TOK_EOF (closes PARSE-010). */
+        if (sep.type == TOK_SEMI || sep.type == TOK_PIPE) {
             consume(p);
         } else {
             break;

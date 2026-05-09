@@ -114,10 +114,14 @@ static void var_sync_as_ident_fails(void) {
 }
 
 static void var_async_as_ident_fails(void) {
-    /* PARSE-007: `async` was inconsistently a half-soft keyword pre-fix —
-     * `var async = 1` succeeded but `async = 2` failed because
-     * parse_statement_or_expr's TOK_KW_ASYNC is not in the IDENT-handling
-     * arm.  Post-fix `async` is uniformly reserved; both forms now report
+    /* LEX-036 + PARSE-007: at the LEX level `async` is a hard keyword —
+     * lex emits TOK_KW_ASYNC unconditionally (see lex_async_keyword above
+     * and the KEYWORDS[] table at src/lex/ulex.c).  The "soft keyword"
+     * shape only existed at the PARSE level: pre-PARSE-007, the var-decl
+     * arm of parse_statement_or_expr accepted TOK_KW_ASYNC as if it were
+     * an identifier, which made `var async = 1` parse but `async = 2`
+     * fail.  Post-fix the var-decl arm rejects the keyword uniformly,
+     * matching the lex-level reservation.  Both forms now report
      * PARSE_RESERVED_KEYWORD_AS_IDENT. */
     UASSERT_EQ((int)PARSE_RESERVED_KEYWORD_AS_IDENT,
                (int)parse_var_error("var async = 1"));

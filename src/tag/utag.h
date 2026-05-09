@@ -35,13 +35,15 @@ struct UEvent;
  * Pure scope-nesting topology: member lists, no parent/child tree.
  * The "hierarchy" emerges from scope nesting via the cleanup-stack.
  *
- * Layout at M5: ~64 bytes on 64-bit host.
+ * Layout at M5 (64-bit host): pinned at exactly 56 B by _Static_assert below.
  *   Cell header  : type_tag(1) + gc_byte(1) + pad0(2) = 4 B
  *   Flags + pad  : flags(1) + pad1[3] = 4 B
  *   Pointers     : member_strands_head(8) + member_watchers_head(8) = 16 B
  *   Event ptrs   : enter_event(8) + leave_event(8) = 16 B    (spec #3 §3.4)
  *   Name UValue  : 16 B
- *   Total        : 56 B + natural padding = ~64 B
+ *   Total        : 56 B  (TAGCH-006: no trailing compiler pad — pad1[3] +
+ *                         pad0 already absorb alignment to the first 8 B
+ *                         pointer; UValue ends on an 8 B boundary).
  *
  * type_tag = UTYPE_TAG (5); gc_byte = current_white (set by urbi_gc_alloc).
  * enter_event / leave_event are NULL at create; lazy-allocated by getter
@@ -50,11 +52,23 @@ struct UEvent;
 typedef struct UTag {
     /* --- common cell header (row 10 §3.1) --- */
     uint8_t  type_tag;                  /* UTYPE_TAG */
-    uint8_t  gc_byte;                   /* GC color bits; 0 at M3 (host-managed) */
+    uint8_t  gc_byte;                   /* GC-managed since M5: tri-color color
+                                         * bits + UGC_HAS_SLOT_CHANGE_EVENT.
+                                         * Set to vm->current_white by
+                                         * urbi_gc_alloc.  TAGCH-007. */
     uint16_t pad0;
 
-    /* --- watcher-related state (RESERVED v1.x; placeholders at M3) --- */
-    uint8_t  flags;                     /* UTAG_FLAG_FROZEN / UTAG_FLAG_STOPPED */
+    /* --- tag-state flags (declared; runtime use deferred) ---
+     *
+     * TAGCH-008: the bit positions UTAG_FLAG_FROZEN (0x01) and
+     * UTAG_FLAG_STOPPED (0x02) are declared above (alongside this struct)
+     * for spec stability, but the runtime does not set or read them in
+     * v0.5.x — `Tag.freeze` and `Tag.stop`-state semantics land with the
+     * stdlib at M6/M7.  Future flag adds need a header-comment update
+     * here and a corresponding macro at file head.  Spec #3 §3.4 + §6 +
+     * the stdlib design row in REVIVAL.md §14. */
+    uint8_t  flags;                     /* UTAG_FLAG_FROZEN | UTAG_FLAG_STOPPED;
+                                         * 0 in v0.5.x */
     uint8_t  pad1[3];
 
     /* --- membership lists (row 11 §3) ---

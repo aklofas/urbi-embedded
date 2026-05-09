@@ -4,7 +4,14 @@
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation uses vm->alloc_fn (realloc semantics).
- * Zero-fill uses urbi_zero (volatile byte loop) — no memset dependency. */
+ * Zero-fill uses urbi_zero (volatile byte loop) — no memset dependency.
+ *
+ * HISTORICAL NOTE (WATCH-032 / WATCH-023): this TU previously exposed
+ * `urbi_watcher_install_internal` as a test-only seam.  Removed in
+ * v0.5.7-fixes (WATCH-023).  All install paths now go through
+ * OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL /
+ * OP_WAITUNTIL_INSTALL (production) or `urbi_watcher_install_for_test`
+ * (tests/unit/twatcher_install_helper.{c,h}, tests-only). */
 
 #include "uwatcher.h"
 #include "vm/uvm.h"
@@ -167,7 +174,16 @@ uwatcher_pool_init(struct UVM *vm)
     slab = (UWatcher *)vm->alloc_fn(NULL, slab_bytes, vm->alloc_ud);
     if (slab == NULL) return -1;
 
-    /* Zero the entire slab (freestanding: no memset). */
+    /* Zero the entire slab (WATCH-029).  Freestanding builds cannot use
+     * memset (libc dep); urbi_zero (runtime/umacros.h) is the canonical
+     * helper repeated across all subsystems that need zero-fill at
+     * init/recycle time (FOUND-030: the pattern was de-duplicated in
+     * Wave 2 / v0.5.4-decompose).  We use the helper here too — the
+     * watcher pool slab is the freelist's backing store, allocated
+     * fresh per VM init, so byte-zeroing it is correct (clears every
+     * UWatcher header to a known-quiescent state including flags ==
+     * 0 so uwatcher_pool_destroy's slab walk can tell never-allocated
+     * slots from currently-allocated ones, WATCH-002 / WATCH-006). */
     urbi_zero(slab, slab_bytes);
 
     /* Thread freelist: each slot's next_active points to the next slot;
@@ -247,10 +263,15 @@ uwatcher_pool_destroy(struct UVM *vm)
 
     vm->alloc_fn(vm->watcher_pool_base, 0, vm->alloc_ud);
 
-    /* Defensive: zero all pool pointers. */
-    vm->watcher_pool_base     = NULL;
-    vm->watcher_pool_freelist = NULL;
-    vm->active_watchers_head  = NULL;
+    /* Defensive: zero all pool pointers.  pending_onleave_head/tail were
+     * already NULL'd above (drain loop's *head = w->next_active terminator
+     * + explicit tail = NULL), but explicit zeroing here keeps the invariant
+     * robust against future refactors of drain_watcher_list (WATCH-003). */
+    vm->watcher_pool_base      = NULL;
+    vm->watcher_pool_freelist  = NULL;
+    vm->active_watchers_head   = NULL;
+    vm->pending_onleave_head   = NULL;
+    vm->pending_onleave_tail   = NULL;
 }
 
 /* === Unregister ===
@@ -261,17 +282,12 @@ uwatcher_pool_destroy(struct UVM *vm)
  *
  * The companion `install` primitive lives in production code as
  * `install_watcher_runtime` / `install_at_event_runtime`
- * (src/watcher/uwatcher_install.c).  WATCH-023 retired the former
- * `urbi_watcher_install_internal` test seam from this TU; tests now wire
- * watchers via `urbi_watcher_install_for_test`
- * (tests/unit/twatcher_install_helper.{c,h}). */
+ * (src/watcher/uwatcher_install.c).  See file-header HISTORICAL NOTE
+ * for the WATCH-023 test-seam removal. */
 
 void
 urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
 {
-    struct UWatcher **pp;
-    size_t i;
-
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(w != NULL);
 
@@ -279,7 +295,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
      * OTHER active watchers.  If none of them still observe the cell, clear
      * bit-6.  The scan happens before active-list unlink so the loop correctly
      * skips w itself via the (o == w) guard.  Per spec §5.4. */
-    for (i = 0; i < (size_t)w->read_set_count; i++) {
+    for (size_t i = 0; i < (size_t)w->read_set_count; i++) {
         UCell   *c             = w->cells[i];
         bool     still_observed = false;
         UWatcher *o;
@@ -314,7 +330,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         }
     } else {
         /* Unlink from active_watchers_head via pointer-to-pointer walk. */
-        pp = &vm->active_watchers_head;
+        struct UWatcher **pp = &vm->active_watchers_head;
         while (*pp != NULL) {
             if (*pp == w) {
                 *pp = w->next_active;
@@ -337,10 +353,18 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
  *
  * Per spec §5.5: walk-all eval at safepoint; identifying the specific cell or
  * slot key is unnecessary — watcher_eval_dirty visits every active watcher
- * whose read-set might be affected. */
+ * whose read-set might be affected.
+ *
+ * ISR re-entry guard (WATCH-009): observer_dirty mutates vm->watcher_dirty_count
+ * non-atomically; any ISR re-entry that triggers a slot write on a bit-6 cell
+ * would corrupt the count under read-modify-write interleaving.  Slot writes
+ * are not allowed from ISR context per the URBI_ASSERT_NOT_ISR contract that
+ * guards every public-API entry point that mutates state — this assertion
+ * is the dirty-set hot-path mirror of that contract. */
 void
 observer_dirty(struct UVM *vm, UCell *cell, uint32_t key)
 {
+    URBI_ASSERT_NOT_ISR(vm);
     (void)cell;
     (void)key;
     vm->watcher_dirty_count++;

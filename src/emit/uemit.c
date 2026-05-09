@@ -198,11 +198,20 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
 /* Append one delta byte to line_deltas.  line_deltas has no cap field —
    it is sized exactly to instr_count.  Called after instr_count has been
    incremented so the new slot is at [instr_count - 1].
-   When writing to a nested proto, use the proto's allocator. */
+   When writing to a nested proto, use the proto's allocator.
+
+   EMIT-001: every call site (emit_instr, root + nested paths) bumps
+   instr_count BEFORE invoking; instr_count == 0 here would mean a caller
+   bug.  Defensive early-return + assertion: alloc(ptr, 0, ud) is
+   implementation-defined and `[instr_count - 1U]` underflows on the
+   unsigned subscript, so failing closed is safer than relying on the
+   precondition holding at every future call site. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
     if (p != NULL) {
         /* Nested proto path. */
+        URBI_INTERNAL_ASSERT(p->instr_count > 0U);
+        if (p->instr_count == 0U) return;
         UModuleAllocFn alloc = p->alloc_fn;
         if (alloc == NULL) {
 #if __STDC_HOSTED__
@@ -219,6 +228,8 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
         p->line_deltas[p->instr_count - 1U] = delta;
         return;
     }
+    URBI_INTERNAL_ASSERT(e->module->instr_count > 0U);
+    if (e->module->instr_count == 0U) return;
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     void *fresh = alloc(e->module->line_deltas,
@@ -380,7 +391,11 @@ bool cond_has_direct_side_effect(UAstNode *n) {
                 if (cond_has_direct_side_effect(n->u.block.stmts[i])) return true;
             return false;
         }
-        case AST_CALL:   return false;  /* opaque — best-effort only */
+        /* TIDY-008: AST_CALL is opaque (read-only methods are common; we avoid
+         * false positives by treating calls as no-side-effect at compile time).
+         * The default arm returns false for every other unhandled kind too,
+         * so a separate `case AST_CALL: return false;` was a byte-identical
+         * branch clone — collapsed into the default with this comment. */
         default:         return false;
     }
 }

@@ -6,6 +6,7 @@
  *   SCHED-002 — sched_strand_block re-block already-WAITING (entry-state assert)
  *   SCHED-003 — sched_strand_yield re-yield already-READY (entry-state assert)
  *   SCHED-004 — c_event_waituntil re-stamp leaves stale sleep-queue links
+ *   SCHED-005 — sched_strand_make_runnable idempotence assertion
  */
 
 #include "utest.h"
@@ -316,6 +317,62 @@ UTEST(unbind_from_sleep_queue_idempotent_when_not_on_queue)
  * splice it out cleanly so the sleep queue's invariants hold afterwards.
  * This simulates the worst case the audit identified: a stale wait_next
  * pointer that would otherwise survive into the WAIT_EVENT state. */
+/* ===================================================================
+ * SCHED-005: sched_strand_make_runnable idempotence assertion
+ * ===================================================================
+ *
+ * Calling sched_strand_make_runnable on a strand already in READY state
+ * tail-inserts it a second time, producing a circular ready_next/ready_prev
+ * chain and double-counting strand_runnable_count.  Fix: assert
+ * (s->state != USTRAND_STATE_READY) at entry.  Aborts only fire under
+ * URBI_DEBUG; positive path (DORMANT → READY) verifies the legitimate
+ * caller invariants. */
+UTEST(make_runnable_from_dormant_correct)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+    /* state at init is DORMANT — make_runnable is the legitimate transition. */
+
+    sched_strand_make_runnable(&s);
+
+    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_READY);
+    UASSERT_EQ(vm.strand_runnable_count, 1U);
+    UASSERT(vm.ready_head == &s);
+    UASSERT(vm.ready_tail == &s);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+#ifdef URBI_DEBUG
+static void
+make_runnable_already_ready(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    /* First make_runnable: legitimate DORMANT → READY. */
+    sched_strand_make_runnable(&s);
+    /* state now READY, on ready queue. */
+
+    /* Second make_runnable from READY — must abort. */
+    sched_strand_make_runnable(&s);
+}
+
+UTEST(make_runnable_already_ready_aborts_in_debug)
+{
+    EXPECT_ABORT(make_runnable_already_ready());
+}
+#endif
+
 UTEST(unbind_then_restamp_clears_stale_sleep_queue_link)
 {
     UVM vm;
@@ -375,4 +432,10 @@ void test_sched_state_aliasing_suite(void) {
               unbind_from_sleep_queue_idempotent_when_not_on_queue);
     utest_run("unbind_then_restamp_clears_stale_sleep_queue_link",
               unbind_then_restamp_clears_stale_sleep_queue_link);
+    utest_run("make_runnable_from_dormant_correct",
+              make_runnable_from_dormant_correct);
+#ifdef URBI_DEBUG
+    utest_run("make_runnable_already_ready_aborts_in_debug",
+              make_runnable_already_ready_aborts_in_debug);
+#endif
 }

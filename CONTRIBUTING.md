@@ -30,11 +30,11 @@ they coexist and no `make clean` is required when switching between them.
 (enforced in `make releasetest`).
 
 `make test-branch-coverage` reports branch + decision coverage via gcovr's
-`--branches` + `--decisions` flags. As of v0.5.7-fixes the gate is
-informational-only at 69% baseline; Phase 20 of the v0.5.7-fixes plan
-closes coverage gaps and the gate enables (`--fail-under-branch 75`) once
-baseline exceeds threshold. Drops below threshold flag PRs; either close
-the gap in the same commit or document at the bottom of the affected file:
+`--branches` + `--decisions` flags.  Informational-only at the v0.5.8
+baseline (~69%); the gate enables (`--fail-under-branch 75`) once
+baseline exceeds threshold.  Drops below the informational baseline flag
+PRs; either close the gap in the same commit or document at the bottom
+of the affected file:
 
     // AUDIT: branch <description> covered indirectly via tests/path/test_other.c
 
@@ -196,16 +196,30 @@ Or push and let CI catch it.
 
 Bytecode-byte-identical contract: any commit that touches `src/lex/`,
 `src/parse/`, `src/emit/`, `src/value/`, `src/module/`, `src/object/`, or
-`src/runtime/` should reproduce `tests/golden/v0.5.7-fixes-bytecode-hashes.txt`
-exactly unless a deliberate codegen change is being made (which requires
-re-capturing the golden table and bumping bytecode version).
+`src/runtime/` should reproduce the active baseline bytecode hash table
+under `tests/golden/` exactly unless a deliberate codegen change is being
+made (which requires re-capturing the golden table and bumping bytecode
+version).  Each cleanup wave captures a fresh `v<TAG>-pre-<wave>` golden
+at Phase 0 against which the wave's commits must stay byte-identical;
+the v0.5.8-cleanup baseline is `tests/golden/v0.5.7-pre-cleanup-bytecode-hashes.txt`.
 
-The wire-format gate at `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
+The wire-format gate at `tests/golden/v0.5.7-pre-cleanup-wire-format-hashes.txt`
 provides complementary coverage: the disasm-text hash is stable across
 opcode renumber + version-byte advance and is blind to genuine wire-format
 breaks; the wire-format hash is sensitive to header bytes, opcode-shape
 table, varint encoding, and nested-proto round-trip.  Re-capture both
 golden tables in lockstep when a codegen change is intentional.
+
+Capture commands:
+
+    bash tests/scripts/capture_bytecode_hashes.sh       # writes tests/golden/bytecode-hashes.txt
+    bash tests/scripts/capture_wire_format_hashes.sh    # writes tests/golden/wire-format-hashes.txt
+
+`diff` the freshly-captured table against the active baseline; an empty
+diff is the bytecode-byte-identical contract holding.  The
+`make test-wire-format-determinism` gate checks separately that the
+wire-format capture is itself deterministic across runs (closes the
+v0.5.7.1 hotfix that fixed mktemp paths leaking into `source_name`).
 
 ### TDD per fix commit (Wave 5 onward)
 
@@ -220,8 +234,10 @@ bug found during development) MUST follow strict test-driven development:
    together so the test cannot be silently disabled in a future
    regression.  No "test-only" or "fix-only" commits for fix work.
 
-This standing requirement was codified during Wave 5 (`v0.5.7-fixes`).
-Discipline notes:
+This standing requirement was codified during Wave 5 (`v0.5.7-fixes`)
+and held end-to-end through Wave 6 (`v0.5.8-cleanup`); every fix commit
+across both waves landed with a paired regression test in the same
+commit.  Discipline notes:
 
 - Internal-assertion paths that abort the test runner are a known gap;
   the URBI_TEST_ONLY assert-fire macro (filed in
@@ -238,29 +254,94 @@ test-suite-passes gates.
 
 ### Strict-tooling baselines
 
-Three strict-tooling targets gate at three different tiers:
+Four strict-tooling targets gate at hard-fail tier in releasetest;
+all stand at 0 violations against the v0.5.8-cleanup baseline:
 
-- **`make test-scan-build`** — Clang static analyzer.  **Hard gate
-  in releasetest.**  Must be 0 bugs.  Runs on every PR.
+- **`make test-scan-build`** — Clang static analyzer.  Hard gate
+  since releasetest's first cut; 0 bugs required.
+- **`make test-cppcheck`** — cppcheck `--enable=all --inconclusive`
+  strict checklist over `src/`.  Promoted to all-categories
+  hard-fail at v0.5.8-cleanup Phase 19 (was 145 informational at
+  v0.5.7-fixes shipping → 0 at v0.5.8-cleanup).  Suppressions live
+  in `.cppcheck.suppressions` at the repo root with audit-ID
+  rationale per block.  Two structurally false-positive categories
+  are blanket-suppressed: `unusedFunction` (cppcheck scans `src/`
+  only, every public-API symbol looks unused from its perspective)
+  and `unusedLabelConfiguration` + `assignBoolToPointer` in
+  `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
+  `&&label` operator).
 - **`make test-tidy-strict`** — clang-tidy with bug-prone /
-  cert-ish checklist.  **Hard gate in releasetest** for the
-  bug-prone categories only.  Informational-tier residuals (~25 at
-  v0.5.7-fixes shipping) cover false-positive or design-pin
-  categories: `bugprone-branch-clone` (legitimate parallel arms in
-  unwind dispatch), `performance-no-int-to-ptr` (UProtos high-bit
-  pointer encoding), `clang-analyzer-valist-uninitialized` (vararg
-  log helpers under `-fanalyzer`).
-- **`make test-cppcheck-strict`** — cppcheck with strict checklist.
-  **Hard gate in releasetest** for bug-prone categories.
-  Informational-tier residuals (~145 at v0.5.7-fixes shipping)
-  dominantly `unusedFunction` false positives in public C API
-  consumed only from `tests/`.  Suppression strategy filed in
-  `docs/urbi-embedded-backlog.md` for follow-up.
+  cert-ish + readability checklist.  Promoted to all-categories
+  hard-fail at v0.5.8-cleanup Phase 20 (was 23 informational at
+  v0.5.7-fixes shipping → 0 at v0.5.8-cleanup).  Per-line
+  `// NOLINT(<check>)` suppressions with rationale carry the
+  design pins: `performance-no-int-to-ptr` for the UProtos
+  high-bit pointer encoding (pre-M4 prototype-chain spec §7.2),
+  the strand REASON_* payload-encoding contract, the UVAL_HOST_FN
+  function-pointer storage, and arena alignment round-trips;
+  `clang-analyzer-valist.Uninitialized` for the vararg log helpers
+  whose `va_start` → `vsnprintf` → `va_end` triple the analyzer
+  cannot trace through; `optin.performance.Padding` on `struct UVM`
+  whose field order is pinned by 6 `_Static_assert`s and clusters
+  fields by milestone for maintainability.
+- **`make test-docstring-coverage`** — every header-declared
+  symbol in `include/urbi/` and subsystem-public `src/<subsys>/u*.h`
+  headers carries a contract docstring.  Promoted to hard-fail at
+  v0.5.8-cleanup Phase 21.  See **Header docstring coverage** below
+  for content requirements and the cascading-comment rule.
 
-The informational-tier residuals are visible in CI output but do not
-fail the build.  Ratchet target: each cleanup wave should drive the
-informational counts down by retiring at least 5 sites or recategorizing
-each remaining site as a documented design pin.
+Suppression preference: prefer **inline** `// NOLINT(category)`
+(clang-tidy) and `// cppcheck-suppress category` immediately above
+the affected line, with a rationale comment.  Inline suppressions
+move with the line they cover when surrounding code is edited;
+file-level line-pinned entries in `.cppcheck.suppressions` /
+`.clang-tidy.suppressions` are fragile (Phase 20 hit a CPPCHK-012
+realignment after unrelated comment additions shifted the pinned
+line number).  Reserve the suppression files for blanket
+project-wide suppressions where inline placement isn't possible.
+
+Future findings from category drift (new clang-tidy / cppcheck
+releases adding checks) must either be fixed at source, suppressed
+inline with audit-ID rationale, or — only when truly necessary —
+added to the documented blanket suppressions in
+`.cppcheck.suppressions` / `.clang-tidy.suppressions`.
+
+### Header docstring coverage
+
+`make test-docstring-coverage` enforces that every function declaration
+in a public-API or subsystem-public header carries an immediately
+preceding `/* ... */` block comment (or `//` line comment).  **Hard
+gate in releasetest as of v0.5.8-cleanup Phase 21.**
+
+Scope:
+
+- `include/urbi/*.h`              — public C API
+- `src/<subsys>/u<subsys>.h`      — subsystem-public headers
+
+Skipped: `_internal.h` (intentionally private inter-TU API) and
+`umacros.h` (macro-only helper bag).
+
+A docstring "cascades" through a contiguous run of declarations: a
+comment above the first decl in a group covers later decls in the
+same group as long as no blank line, function definition, or non-decl
+content intervenes.  Forward declarations (`struct X;`, simple
+`typedef`) and callback typedefs do not break the cascade — they
+typically sit between a docstring and the function decl that uses
+the type.
+
+Required content per docstring (per Phase 21 of the v0.5.8-cleanup
+plan):
+
+- one-line summary of what the function does;
+- preconditions (state any required caller-side setup);
+- postconditions (state any guaranteed callee-side effects);
+- ownership of pointer arguments (caller-owned, callee-owned, shared);
+- return-value meaning + error codes when applicable;
+- ISR-safety (note whether the function is ISR-safe).
+
+Group-style docstrings are accepted for tightly-related decls.  See
+the priority API in `include/urbi/sched.h:45-61` for the canonical
+group-doc form.
 
 ### Full-corpus sanitizer gate
 
@@ -295,6 +376,26 @@ The default soft cap is 1000 LOC per `.c` source file (enforced by
   throughput on hosted builds and ~3x on Cortex-M7.  This exception is
   permitted by `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-design.md`
   §3.3 ("generated dispatch tables, opcode trampolines").
+
+## v0.5.x cleanup ramp (2026-05-06 to 2026-05-09)
+
+The v0.5.x cleanup ramp was a 6-wave pre-M6 hygiene release between
+the M5 reactive runtime (`v0.5.0-reactive`) and the M6 stdlib milestone.
+Each wave addressed one tightly-scoped theme so that bisecting later
+regressions stays cheap:
+
+- `v0.5.3-layout` — folder reorg + filename renames
+- `v0.5.4-decompose` — split four monster files into per-concern units
+- `v0.5.5-naming` — function + public C API rename + header hygiene
+- `v0.5.6-bytecode` — wire format v1.4 → v1.5 hard break
+- `v0.5.7-fixes` — 123 bug-tier audit IDs closed; TDD per fix commit
+  codified as a standing convention
+- `v0.5.8-cleanup` — final wave: dead code, smells, docs, and
+  strict-tooling close-out (cppcheck + tidy-strict + docstring-coverage
+  all promoted to hard-fail releasetest gates)
+
+Conventions established during the ramp are documented above.  See
+`docs/milestones/v0.5.x-cleanup.md` for the full retrospective.
 
 ## License
 

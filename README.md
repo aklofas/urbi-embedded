@@ -33,7 +33,7 @@ Implements **urbiscript** — a prototype-based, parallel-by-default, event-driv
 make
 ```
 
-Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. Public API currently exposes `urbi_version()`; compiler-internal module surfaces (lexer, parser, arena, module, emitter) are stable within the library but not yet re-exported through `urbi.h`. The host embedding API arrives at the C API milestone.
+Produces `build/host/liburbi.a`. All build variants (release, debug, sanitizers, cross-compiles) land in `build/<TARGET>/` subtrees — see `CONTRIBUTING.md` for the full list. The public API exposes 346+ symbols spread across `<urbi/types.h>`, `<urbi/urbi.h>`, `<urbi/gc.h>`, `<urbi/sched.h>`, and `<urbi/object.h>` — VM lifecycle, module / chunk loading, strand spawn / step driver, ISR-safe event injection, realm globals, GC primitives, and the M4 object surface. The headers are self-contained: external consumers using only `-Iinclude` resolve cleanly without internal includes. The full embedding contract (host integration patterns, FreeRTOS pattern, Standard Robotics API) is formalised at the C API milestone.
 
 ## Using the REPL
 

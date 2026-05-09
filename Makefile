@@ -15,7 +15,8 @@ SRC := $(wildcard src/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
-            tests/unit/twatcher_install_helper.c
+            tests/unit/twatcher_install_helper.c \
+            tests/unit/utest_e2e_helpers.c
 
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
@@ -109,6 +110,14 @@ test-loc-cap:
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
 	@./tests/scripts/check_wire_format_determinism.sh
+
+# Phase 21 (v0.5.8-cleanup) gate: every public-API and subsystem-public
+# header function declaration must carry an immediately-preceding /* ... */
+# comment.  Hard-fail in releasetest below.  See
+# tests/scripts/check_docstring_coverage.sh for the cascade rules.
+.PHONY: test-docstring-coverage
+test-docstring-coverage:
+	@./tests/scripts/check_docstring_coverage.sh
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
@@ -279,16 +288,21 @@ test-corpus-sanitize:
 #
 # T118: test-scan-build promoted into releasetest after Phase 19 closed
 # its known false-positive set ("scan-build: No bugs found." at v0.5.7).
-# test-tidy-strict and test-cppcheck remain informational at v0.5.7
-# (25 / 145 residual violations respectively, all non-trivial categories
-# tracked in docs/urbi-embedded-backlog.md "Strict-tooling residuals" —
-# bugprone-branch-clone, performance-no-int-to-ptr, and clang-analyzer-
-# valist need either targeted refactors or per-site NOLINT review).
-# Promote those two to hard gates after the residuals close.
+# Phase 19 (v0.5.8-cleanup) drove test-cppcheck strict residuals 135 → 0
+# and promoted it to hard-fail (the lint aggregate runs the narrow advisory
+# cppcheck target; this is the --enable=all --inconclusive strict variant
+# gated via .cppcheck.suppressions).
+# Phase 20 (v0.5.8-cleanup) drove test-tidy-strict residuals 23 → 0 across
+# bugprone-branch-clone, performance-no-int-to-ptr (UProtos pointer-encoding
+# design pin), clang-analyzer-valist.Uninitialized, optin.performance.Padding
+# (UVM struct layout pin), bugprone-too-small-loop-variable,
+# bugprone-misplaced-widening-cast, bugprone-macro-parentheses; promoted to
+# hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
-    test-scan-build test-wire-format-determinism
+    test-scan-build test-cppcheck test-tidy-strict \
+    test-wire-format-determinism test-docstring-coverage
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -654,4 +668,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage

@@ -23,6 +23,15 @@
  * prepend node to the chain, set UGC_HAS_SLOT_CHANGE_EVENT on the object,
  * manually gc_shade_gray the node when the parent object is BLACK (forward
  * Dijkstra via a field write — not a UCell-slot write).
+ *
+ * TAGCH-009 — only the node is explicitly shaded:
+ *   The Dijkstra barrier shades the new UChangedNode if the parent is BLACK.
+ *   The new UEvent does NOT need a parallel shade because it is reachable
+ *   only through node->event — i.e. through the very node we just shaded.
+ *   When the GC walks the gray node payload, it follows node->event and
+ *   shades the event then.  Shading the event here would be redundant
+ *   (and would mask future bugs that broke the node->event link).
+ *
  * OOM on either alloc: return NULL (fail-soft); orphan node (if any) is
  * reclaimed by the next sweep.
  * Idempotent: second call for the same (obj, name) returns the same UEvent. */
@@ -61,7 +70,18 @@ urbi_object_get_or_create_change_event(UVM *vm, UObject *obj, USymbol *name)
     node->next  = obj->changed_events_head;
     obj->changed_events_head = node;
 
-    /* Mark the object: at least one slot now has a change-event subscriber. */
+    /* Mark the object: at least one slot now has a change-event subscriber.
+     *
+     * TAGCH-010 — sticky-bit semantics:
+     *   UGC_HAS_SLOT_CHANGE_EVENT is monotonically set; the v0.5.x runtime
+     *   has NO clearing path.  Once any slot on `obj` ever had a watcher,
+     *   the bit stays set for the lifetime of the object — even if every
+     *   subscriber is later removed.  Effect: the slow path
+     *   urbi_emit_slot_change_slow stays reachable on every slot write of
+     *   that object; it tolerates an empty / unmatched chain by silent
+     *   return (see uchanged_emit.c "no chain entry matches" branch).
+     *   The cost is one chain walk per slot write on detached objects.
+     *   Clearing on full chain detach is filed for v1.x — audit row GC-002. */
     ((UCell *)obj)->gc_byte |= UGC_HAS_SLOT_CHANGE_EVENT;
 
     /* Dijkstra forward barrier: if the parent object is BLACK, the newly

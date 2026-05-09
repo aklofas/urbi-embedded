@@ -106,12 +106,24 @@ uevent_ring_drain(struct UVM *vm)
         /* T57: if a drain handler is registered, call it with the entry's
          * event_id and a NIL payload (the raw-bytes ring does not carry
          * UValues; host handler implements event_id → UEvent* mapping).
-         * Without a drain handler, entries are discarded (M3 behaviour). */
-        if (vm->event_drain_handler) {
+         * Without a drain handler, entries are discarded (M3 behaviour).
+         *
+         * EVENT-007: load with __ATOMIC_ACQUIRE for consistency with the
+         * rest of this ISR-aware ring file.  The drain runs on the
+         * consumer thread and the handler is registered from the same
+         * thread under the v1.0 cooperative model, so no race exists
+         * today.  The atomic load is defensive: it pairs with the
+         * __ATOMIC_RELEASE store in urbi_register_event_drain so
+         * URBI_SCHED_PREEMPTIVE multi-threading work (deferred to v1.x
+         * per design-risks) inherits a correct contract instead of
+         * relying on freshly-discovered races. */
+        urbi_event_drain_handler h = (urbi_event_drain_handler)
+            __atomic_load_n(&vm->event_drain_handler, __ATOMIC_ACQUIRE);
+        if (h) {
             UValue nil_payload;
             nil_payload.kind = (uint8_t)UVAL_NIL;
             nil_payload.v.i  = 0;
-            vm->event_drain_handler(vm, e->event_id, nil_payload);
+            h(vm, e->event_id, nil_payload);
         } else {
             /* M3 compatibility: bump event_queue_count so urbi_step stays
              * RUNNING until the queue is empty. */

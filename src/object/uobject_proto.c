@@ -29,15 +29,16 @@ shade_existing_protos(UVM *vm, UObject *obj)
         return;   /* empty form — nothing to shade */
     }
     if ((raw & 1U) != 0U) {
-        /* single form: bit 0 set, address in high bits */
-        gc_shade_gray(vm, (UCell *)(raw >> 1));
+        /* single form: bit 0 set, address in high bits — UProtos pointer-
+         * encoding (TIDY-003 design pin per pre-M4 prototype-chain spec §7.2). */
+        gc_shade_gray(vm, (UCell *)(raw >> 1));  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
     } else {
         /* heap form: raw is a UProtos*. Shade the UProtos cell itself.
          * The UObject*s in items[] are reachable from the UProtos walker
          * (utypes_init.c walk_uprotos), so shading the UProtos is sufficient
          * to keep them alive across the overwrite — the GC will trace into
          * items[] when it next dequeues this gray cell. */
-        gc_shade_gray(vm, (UCell *)raw);
+        gc_shade_gray(vm, (UCell *)raw);  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */
     }
 }
 

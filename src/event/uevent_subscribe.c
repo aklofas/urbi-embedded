@@ -39,7 +39,7 @@ uevent_at_watchers_append(UEvent *e, UWatcher *w)
 }
 
 void
-uevent_at_watchers_remove(UEvent *e, UWatcher *target)
+uevent_at_watchers_remove(UEvent *e, const UWatcher *target)
 {
     UWatcher **prev = &e->at_watchers_head;
     UWatcher  *cur  = e->at_watchers_head;

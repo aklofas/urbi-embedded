@@ -1,0 +1,15 @@
+# Milestone: M1
+# Covers: block comments are NON-NESTING — the first */ closes the comment
+#         regardless of intervening /* sequences.  Matches C semantics.
+# Audit:   LEX-034 (no fixture or doc on this previously).
+
+# --- the first */ closes the outer comment; everything after the */ is code
+/* outer /* inner */ 42
+[00000001] 42
+
+# --- a tail */ outside the comment is just a syntax error in the surrounding
+# expression; what matters here is that the lexer treats the FIRST */ as the
+# closing delimiter — verified above.  Re-enter a clean expression to confirm
+# the lexer state is sane after the prior fixture line.
+1 + 2
+[00000002] 3

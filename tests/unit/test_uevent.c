@@ -45,6 +45,40 @@ static void uevent_alloc_basics(void)
     urbi_vm_destroy(&vm);
 }
 
+/* ===== EVENT-001: gc_byte preserved as current_white from urbi_gc_alloc =====
+ *
+ * Pins the contract that urbi_event_create does NOT clobber gc_byte after
+ * urbi_gc_alloc has set it to vm->current_white.  A future maintainer adding
+ * `ev->gc_byte = 0;` "for symmetry" would corrupt the GC color barrier — the
+ * cell would observe as "marked with color 0" when current_white is 1, which
+ * makes it look already-marked to the next mark phase and risks premature
+ * collection.
+ *
+ * The test reads vm->current_white before and after the alloc and asserts
+ * that ev->gc_byte tracks the expected current_white value (low color bit
+ * only — UGC_HAS_FINALIZER and the other gc_byte bits are zero at birth). */
+static void uevent_gc_byte_preserves_alloc_color(void)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    uint8_t expected_white = vm.current_white;
+
+    UEvent *ev = urbi_event_create(&vm);
+    UASSERT(ev != NULL);
+
+    if (ev != NULL) {
+        /* Compare the color bits only.  urbi_gc_alloc writes
+         * cell->gc_byte = vm->current_white directly; no other gc_byte
+         * bits are set at birth.  If urbi_event_create were to do
+         * `ev->gc_byte = 0;` after the alloc, expected_white == 1 builds
+         * would observe gc_byte == 0 here and FAIL. */
+        UASSERT_EQ((int)ev->gc_byte, (int)expected_white);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Test 5: sizeof ===== */
 
 static void uevent_sizeof(void)
@@ -81,6 +115,8 @@ test_uevent_suite(void)
 {
     printf("test_uevent\n");
     utest_run("uevent_alloc_basics",   uevent_alloc_basics);
+    utest_run("uevent_gc_byte_preserves_alloc_color",
+              uevent_gc_byte_preserves_alloc_color);
     utest_run("uevent_sizeof",         uevent_sizeof);
     utest_run("uevent_walker_registered", uevent_walker_registered);
 }

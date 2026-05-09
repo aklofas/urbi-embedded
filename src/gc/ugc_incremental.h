@@ -293,7 +293,7 @@ urbi_gc_register_write(struct UVM *vm, struct UStrand *s, uint16_t reg_idx, UVal
 }
 
 static inline void
-urbi_gc_upvalue_write(struct UVM *vm, struct UClosure *closure, uint8_t up_idx, UValue child)
+urbi_gc_upvalue_write(struct UVM *vm, const struct UClosure *closure, uint8_t up_idx, UValue child)
 {
     const UCell *parent = (const UCell *)closure;
     uint8_t parent_gc = parent->gc_byte;

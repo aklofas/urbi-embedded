@@ -128,6 +128,17 @@ static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
         const int d = digit_value(c, base);
         if (d < 0) break;
         if (!acc_digit(&r.value, d, base)) {
+            /* LEX-013: "first error wins" — overflow is reported and the
+             * recovery loop consumes both digits AND underscores until the
+             * next non-digit-non-underscore boundary so the caller resumes
+             * at a clean lexeme boundary.  This deliberately MASKS any
+             * trailing or adjacent underscore violation that would
+             * otherwise be reported on the same literal: the user already
+             * has a more impactful error (overflow) to fix first, and the
+             * underscore violation reappears once they bring the literal
+             * within range.  Behaviour is locked in at v0.5.8 — see the
+             * scan_radix_overflow_consumes_trailing_underscores regression
+             * in test_lexer.c. */
             while (lex->cur < lex->end &&
                    (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
                 lex->cur++;
@@ -271,6 +282,13 @@ static URadixDispatch dispatch_radix_prefix(ULexer *lex, const char *start,
         return r;
     }
     if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
+        /* LEX-012: precondition for the leading-zero ambiguous path —
+         * lex->cur must be at start so that `cur - start` after consumption
+         * measures the full ambiguous span.  All entry paths into
+         * dispatch_radix_prefix come from scan_number which sets
+         * `start = lex->cur` immediately before the call; this assert pins
+         * that invariant against future refactors. */
+        URBI_INTERNAL_ASSERT(lex->cur == start);
         /* Consume the leading-zero sequence so caller advances. */
         lex->cur++;
         while (lex->cur < lex->end &&
@@ -425,11 +443,27 @@ static UToken scan_ident(ULexer *lex) {
 }
 
 void ulex_init(ULexer *lex, const char *src, const size_t len) {
+    /* Preconditions (LEX-001 + LEX-027): lex must be non-NULL; src must be
+     * non-NULL whenever len > 0.  The (NULL, 0) case is permitted — it
+     * represents empty input (e.g. an idle REPL) and ulex_next will return
+     * TOK_EOF without dereferencing src.  Asserts fire in URBI_DEBUG builds;
+     * release builds inherit the original behaviour (UB on NULL+N). */
+    URBI_INTERNAL_ASSERT(lex != NULL);
+    URBI_INTERNAL_ASSERT(src != NULL || len == 0);
+
     lex->src = src;
     lex->end = src + len;
     lex->cur = src;
     lex->line = 1;
     lex->line_start = src;
+
+    /* LEX-002: post-init invariant.  `line_start == src` even on empty input;
+     * for len == 0, (cur - line_start) is 0 and the column computed by
+     * make_eof / make_tok stays 1.  The pointer arithmetic is well-defined
+     * for src == NULL only when len == 0 (asserted above). */
+    URBI_INTERNAL_ASSERT(lex->line_start == lex->src);
+    URBI_INTERNAL_ASSERT(lex->cur == lex->src);
+    URBI_INTERNAL_ASSERT(lex->line == 1);
 }
 
 static UToken make_eof(const ULexer *l) {
@@ -440,10 +474,17 @@ typedef struct {
     ULexError code;
     int line;
     int col;
+    int len;       /* error span length; defaults to 2 (the slash-star prefix) */
 } UTriviaResult;
 
 static UTriviaResult skip_trivia(ULexer *l) {
-    UTriviaResult r = {LEX_OK, 0, 0};
+    /* LEX-003: initialize line/col to 1 (not 0) so that even if a future
+     * caller reads them on the LEX_OK path the values are valid 1-based
+     * positions, not sentinels.  Error paths overwrite these with the
+     * actual error position (e.g. start_line/start_col for an unterminated
+     * block comment).  LEX-004: len defaults to 2 (the "/" + "*" prefix);
+     * error paths overwrite with the actual span. */
+    UTriviaResult r = {LEX_OK, 1, 1, 2};
     while (l->cur < l->end) {
         const char c = *l->cur;
         if (c == ' ' || c == '\t') {
@@ -469,9 +510,14 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 l->cur++;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '*') {
-            /* Block comment — record start for error reporting. */
+            /* Block comment — NON-NESTING (LEX-034).  The first occurrence
+             * of "*"+"/" closes the comment regardless of intervening
+             * "/"+"*" sequences.  Matches C semantics; locked in by the
+             * tests/chk/lex/block_comment_no_nest.chk fixture.  Record
+             * start for error reporting. */
             const int start_line = l->line;
             const int start_col = (int)(l->cur - l->line_start) + 1;
+            const char *const start = l->cur;
             l->cur += 2;
             int closed = 0;
             while (l->cur + 1 < l->end) {
@@ -492,6 +538,10 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 r.code = LEX_UNTERMINATED_BLOCK_COMMENT;
                 r.line = start_line;
                 r.col = start_col;
+                /* LEX-004: report the full unterminated extent, not just the
+                 * "/" + "*" prefix.  Span runs from the opening "/" to the
+                 * end of the source. */
+                r.len = (int)(l->cur - start);
                 return r;
             }
         } else {
@@ -513,7 +563,10 @@ static const UTokenType kPunctTable[256] = {
 UToken ulex_next(ULexer *lex) {
     UTriviaResult tr = skip_trivia(lex);
     if (tr.code != LEX_OK) {
-        return make_error(tr.code, tr.line, tr.col, 2);
+        /* LEX-004: tr.len carries the actual error span (full unterminated
+         * extent for block comments; 2 — "/" + "*" — for any future
+         * trivia-level error that doesn't override it). */
+        return make_error(tr.code, tr.line, tr.col, tr.len);
     }
     if (lex->cur >= lex->end) {
         return make_eof(lex);

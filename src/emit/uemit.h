@@ -334,16 +334,54 @@ typedef struct UFuncState {
      *
      * r_global_slot is claimed from freereg (same floor as local slots) so
      * it stays valid across statement boundaries; freereg is bumped to prevent
-     * the temp zone from aliasing it. */
-    bool     references_global;      /* true after first global ident resolved */
+     * the temp zone from aliasing it.
+     *
+     * EMIT-021 state machine — global_slot_reserved and references_global are
+     * NOT synonyms.  They encode three distinct states:
+     *
+     *   (1) UNUSED          : !global_slot_reserved && !references_global
+     *       Nested funcstate that has not yet been emitted via
+     *       emit_function_literal (no slot claim, no global reads).
+     *
+     *   (2) RESERVED_NO_REF :  global_slot_reserved && !references_global
+     *       Slot has been claimed from freereg (and floor includes it) but
+     *       no global identifier has resolved yet.  Two ways to reach this
+     *       state:
+     *         - chunk-top funcstate at uemit_open_function entry: the slot
+     *           is unconditionally pre-reserved so a subsequent if/while
+     *           condition register cannot collide at index 0;
+     *         - nested function body in emit_function_literal: pre-reserved
+     *           above the last param so an if-arm-only first global use
+     *           still claims a stable slot.
+     *
+     *   (3) REFERENCED      :  global_slot_reserved &&  references_global
+     *       After first global identifier resolves; uemit_close_function
+     *       emits OP_LOAD_REALM_GLOBAL as a function prologue.
+     *
+     * The fourth combination (!reserved && referenced) is unreachable —
+     * resolving a global always claims the slot first.
+     *
+     * Floor semantics: fs_temp_floor includes the global slot iff
+     * global_slot_reserved (NOT iff references_global).  This is the
+     * load-bearing distinction: a chunk-top with no global reads still
+     * has its r_global_slot register protected from temp-zone overwrites,
+     * while close still skips the prologue (no wasted instruction).
+     *
+     * Regression test: tests/unit/test_emit_global_lookup.c
+     *   emit_global_state_machine_distinct_flags (RESERVED_NO_REF)
+     *   emit_global_state_machine_advances_to_referenced (REFERENCED)
+     *   emit_global_pure_local_chunk_no_prologue (RESERVED_NO_REF stays
+     *     RESERVED_NO_REF when no global is read — no prologue emitted) */
+    bool     references_global;      /* true after first global ident resolved;
+                                        gates OP_LOAD_REALM_GLOBAL prologue
+                                        emission in uemit_close_function. */
     bool     global_slot_reserved;   /* true once r_global_slot is claimed from
-                                        freereg (may be true even if
-                                        references_global is still false — the
-                                        slot is pre-reserved at function entry to
-                                        prevent if/while temp resets from aliasing
-                                        it when a global ref is first encountered
-                                        inside a branch arm). */
-    uint8_t  r_global_slot;          /* register for realm->global_object */
+                                        freereg; gates fs_temp_floor inclusion.
+                                        Set INDEPENDENTLY of references_global
+                                        — see EMIT-021 state machine above. */
+    uint8_t  r_global_slot;          /* register for realm->global_object;
+                                        meaningful only when
+                                        global_slot_reserved is true. */
 
     /* === M5 T72: chunk-top declared global names ===
      *

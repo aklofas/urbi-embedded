@@ -28,7 +28,10 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
     if (errmsg == NULL || errcap == 0) return;
     va_list ap;
     va_start(ap, fmt);
-    (void)vsnprintf(errmsg, errcap, fmt, ap);
+    /* False positive: ap is initialized by va_start, consumed by vsnprintf,
+     * then cleared by va_end.  Analyzer cannot see through the va_list
+     * contract on the vsnprintf prototype. */
+    (void)vsnprintf(errmsg, errcap, fmt, ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
 }
 
@@ -117,9 +120,23 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* --- Proto helpers --- */
 
+/* MOD-032: free a single buffer through `alloc`, skipping NULL.
+ * Centralizes the `if (p != NULL) (void)alloc(p, 0, ud);` pattern that
+ * appears 6× in umodule_destroy (and 5× in umodule_destroy_proto_buffers,
+ * which we leave alone for surgical scope).  The pointer is not NULLed
+ * because both call sites zero the containing struct via urbi_zero after
+ * all frees complete. */
+static inline void module_buf_free(UModuleAllocFn alloc, void *alloc_ud,
+                                   void *p) {
+    if (p != NULL) (void)alloc(p, 0, alloc_ud);
+}
+
 void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
-    if (proto == NULL || alloc == NULL) return;
+    /* MOD-030: every caller guards proto != NULL; the runtime contract is
+     * "non-NULL proto" — assert rather than silently no-op. */
+    URBI_INTERNAL_ASSERT(proto != NULL);
+    if (alloc == NULL) return;
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
@@ -158,7 +175,28 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
         module->nested_cap = new_cap;
     }
 
-    /* Allocate the UProto struct itself. */
+    /* Allocate the UProto struct itself.
+     *
+     * MOD-003: if this allocation fails AFTER the nested[] grow above
+     * succeeded, we leave `module->nested` pointing at the grown (larger)
+     * buffer with `nested_cap` bumped but `nested_count` unchanged.  This
+     * is "grow-without-commit" — the array is correctly sized for an
+     * unused trailing slot range [nested_count..nested_cap), every
+     * existing entry [0..nested_count) is intact, and the next caller
+     * walks the same grow path with the larger cap already satisfied
+     * (skipping the realloc).
+     *
+     * Rolling back the grow would require freeing the larger buffer and
+     * restoring the prior nested pointer.  Since realloc invalidates the
+     * prior pointer when it returns a different address, restoring would
+     * mean re-allocating yet again — net cost higher than carrying the
+     * benign over-cap.  The "benign over-cap" state is observed by:
+     *   - umodule_destroy: walks [0..nested_count) only.
+     *   - serialize: writes nested_count, not nested_cap.
+     *   - subsequent umodule_alloc_nested_proto: enters the grow branch
+     *     only when nested_count >= nested_cap, which now skips the
+     *     realloc and proceeds to UProto alloc.
+     * No code path reads beyond [0..nested_count). */
     UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
     if (proto == NULL) return NULL;
     urbi_zero(proto, sizeof(*proto));
@@ -521,8 +559,11 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
             return ULOAD_OOM;
         }
     }
+    /* MOD-014: monotonic abs_line invariant — pc values must form a strictly
+     * increasing sequence (each later checkpoint references a higher pc than
+     * the prior).  Skip the comparison on i==0 since there is no prior to
+     * compare against; the first checkpoint may legitimately reference pc=0. */
     uint32_t prev_pc_checkpoint = 0;
-    bool first_checkpoint = true;
     for (uint64_t i = 0; i < n_abs; i++) {
         uint64_t pc64 = 0;
         uint64_t line64 = 0;
@@ -544,7 +585,7 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
                        (unsigned long long)pc64, instr_count);
             return ULOAD_CORRUPT;
         }
-        if (!first_checkpoint && (uint32_t)pc64 <= prev_pc_checkpoint) {
+        if (i > 0 && (uint32_t)pc64 <= prev_pc_checkpoint) {
             set_errmsg(d->errmsg, d->errcap,
                        "abs_lines not monotonic in pc at %llu",
                        (unsigned long long)pc64);
@@ -554,7 +595,6 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
         (*abs_lines_out)[*abs_line_count_out].line = (uint32_t)line64;
         (*abs_line_count_out)++;
         prev_pc_checkpoint = (uint32_t)pc64;
-        first_checkpoint = false;
     }
     return ULOAD_OK;
 }
@@ -961,7 +1001,7 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
        closures may need a per-proto nested_count if/when the emitter
        starts allocating child arrays. */
     for (size_t pi = 0; pi < d->module->nested_count; pi++) {
-        UProto *p = d->module->nested[pi];
+        const UProto *p = d->module->nested[pi];
         if (p == NULL) continue;  /* watcher-detached slot or stub */
         rc = verify_walk_block(d,
                                p->max_reg,
@@ -1056,19 +1096,19 @@ void umodule_destroy(UModule *module) {
             /* TIDY-005: UProto ** → void * decay needs explicit cast. */
             alloc((void *)module->nested, 0, module->alloc_ud);
         }
-        if (module->instructions != NULL) (void)alloc(module->instructions, 0, module->alloc_ud);
-        if (module->constants    != NULL) (void)alloc(module->constants,    0, module->alloc_ud);
-        if (module->line_deltas  != NULL) (void)alloc(module->line_deltas,  0, module->alloc_ud);
-        if (module->abs_lines    != NULL) (void)alloc(module->abs_lines,    0, module->alloc_ud);
-        if (module->source_name  != NULL) (void)alloc(module->source_name,  0, module->alloc_ud);
+        /* MOD-032: 6 buffer frees collapsed via module_buf_free helper. */
+        module_buf_free(alloc, module->alloc_ud, module->instructions);
+        module_buf_free(alloc, module->alloc_ud, module->constants);
+        module_buf_free(alloc, module->alloc_ud, module->line_deltas);
+        module_buf_free(alloc, module->alloc_ud, module->abs_lines);
+        module_buf_free(alloc, module->alloc_ud, module->source_name);
         /* TIDY-005: USymbol ** / char ** → void * decay needs explicit cast. */
-        if (module->ic_names     != NULL) (void)alloc((void *)module->ic_names, 0, module->alloc_ud);
+        module_buf_free(alloc, module->alloc_ud, (void *)module->ic_names);
         if (module->ic_name_strs != NULL) {
             /* Each entry is a NUL-terminated string allocated separately. */
             for (uint16_t k = 0; k < module->ic_count; k++) {
-                if (module->ic_name_strs[k] != NULL) {
-                    (void)alloc(module->ic_name_strs[k], 0, module->alloc_ud);
-                }
+                module_buf_free(alloc, module->alloc_ud,
+                                module->ic_name_strs[k]);
             }
             (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
         }

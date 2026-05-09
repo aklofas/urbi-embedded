@@ -15,8 +15,7 @@
  * Precondition checks use a guarded <assert.h> on hosted targets.
  *
  * Key discipline: names are INTERNED pointers (from ustr_intern).
- * Lookup uses pointer equality, not strcmp.
- * Row 8 / T14. */
+ * Lookup uses pointer equality, not strcmp. */
 
 #if __STDC_HOSTED__
 #  include <assert.h>
@@ -104,18 +103,12 @@ int
 unamespace_set(struct UVM *vm, struct UNamespace *ns,
                const char *name, UValue value)
 {
-    uint32_t i;
-    UNsEntry *old_entries;
-    UNsEntry *new_entries;
-    size_t new_cap;
-    size_t new_bytes;
-
     UREALM_NS_ASSERT(vm != NULL);
     UREALM_NS_ASSERT(ns != NULL);
     UREALM_NS_ASSERT(name != NULL);
 
     /* Search for existing entry (pointer equality — interned names). */
-    for (i = 0; i < ns->count; i++) {
+    for (uint32_t i = 0; i < ns->count; i++) {
         if (ns->entries[i].name == name) {
             ns->entries[i].value = value;
             return 0;
@@ -124,11 +117,11 @@ unamespace_set(struct UVM *vm, struct UNamespace *ns,
 
     /* Grow if at capacity. */
     if (ns->count >= ns->cap) {
-        new_cap   = (size_t)ns->cap * 2U;
-        new_bytes = new_cap * sizeof(UNsEntry);
-        old_entries = ns->entries;
-        new_entries = (UNsEntry *)vm->alloc_fn(old_entries, new_bytes,
-                                              vm->alloc_ud);
+        size_t new_cap     = (size_t)ns->cap * 2U;
+        size_t new_bytes   = new_cap * sizeof(UNsEntry);
+        UNsEntry *old_entries = ns->entries;
+        UNsEntry *new_entries = (UNsEntry *)vm->alloc_fn(old_entries, new_bytes,
+                                                         vm->alloc_ud);
         if (new_entries == NULL) return -1;
         /* Zero the new slots (realloc does not zero the extended region). */
         {

@@ -112,7 +112,21 @@ typedef struct UDeferredSlotChange {
 
 #define UVM_ERRMSG_CAP 128
 
-typedef struct UVM {
+/* Field order is intentional and load-bearing:
+ *  - The early fields (alloc_fn, alloc_ud, last_error, last_errmsg) form the
+ *    init-by-zero error-handling prefix used by urbi_vm_init's failure paths.
+ *  - The M2/M3/M4/M5 sections cluster fields by lifecycle (M2 intern table,
+ *    M4 prototype/atom singletons, M5 reactive runtime) so reviewing each
+ *    milestone's contribution stays local to one block.
+ *  - Six _Static_assert layout pins (in src/vm/uvm.c, guarded on
+ *    __SIZEOF_POINTER__ == 8) cement specific field offsets for cross-arch
+ *    parity verification.
+ * Reordering by clang-analyzer-optin.performance.Padding's optimal-pack
+ * suggestion would shrink the struct by ~40 bytes (host) but break the
+ * layout pins and scatter related fields across milestones, costing far
+ * more in maintainability than the saved bytes are worth on a struct
+ * allocated once per VM.  Suppress per-line. */
+typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — field order is intentional, see comment above */
     UVMAllocFn alloc_fn;
     void      *alloc_ud;
     UVMError   last_error;
@@ -271,10 +285,29 @@ typedef struct UVM {
     uint16_t         watcher_pool_high_water;
 
     /* --- Row 11 watcher dirty-set --- */
+    /* in_watcher_eval (WATCH-010): true while an at/whenever cond is being
+     * evaluated.
+     *
+     * Drain dependency: urbi_emit_slot_change_slow re-routes through the
+     * deferred ring when this flag is set; the at/whenever body wouldn't
+     * see its own write-during-eval otherwise.  The flag is owner-set by
+     * watcher_eval_dirty / drain_pending_onleave_queue and cleared on
+     * cond return.
+     *
+     * Invariant: vm->in_watcher_eval implies that any urbi_emit_slot_change_slow
+     * invocation routes the slot-change emit through the deferred ring, NOT the
+     * immediate path. See src/emit/uchanged_emit.c for the routing. */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
-    uint8_t  in_watcher_scratch;       /* spec #3 §5.4: set while running event body
-                                          inline on scratch frame; guards re-entrancy
-                                          in c_event_emit_sync / c_event_waituntil. */
+    /* in_watcher_scratch (WATCH-036): caller-owned re-entry guard.  Set
+     * TRUE before calling urbi_run_closure_on_scratch[_with_payload];
+     * clear after.  The helper itself does NOT manage this flag — see
+     * WATCH-011 (uwatcher_scratch.c head comment on
+     * urbi_run_closure_on_scratch) for the asymmetry rationale.
+     *
+     * spec #3 §5.4: also set while running event body inline on the
+     * scratch frame; guards re-entrancy in c_event_emit_sync /
+     * c_event_waituntil. */
+    uint8_t  in_watcher_scratch;
     uint8_t  pad_in_eval[2];           /* padding; zeroed */
 
     /* --- spec #3 §7.1: currently-dispatching strand ---

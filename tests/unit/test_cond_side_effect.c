@@ -136,6 +136,29 @@ UTEST(cond_side_effect_null_returns_false) {
     UASSERT(!cond_has_direct_side_effect(NULL));
 }
 
+/* TIDY-008: AST_CALL and any unhandled AST kind (e.g. AST_INT, AST_IDENT)
+ * must return false — collapsed `case AST_CALL:` into the `default:` arm
+ * (the two branches were byte-identical).  Asserting both kinds share the
+ * same return value locks the equivalence so a future divergence (where
+ * AST_CALL's semantics actually differ from default) surfaces as a test
+ * failure rather than silently re-cloning the branch. */
+UTEST(cond_side_effect_call_and_unhandled_kinds_share_default) {
+    UAstNode call;
+    memset(&call, 0, sizeof(call));
+    call.kind             = AST_CALL;
+    call.line             = 1;
+    call.col              = 1;
+    call.u.call.callee    = NULL;
+    call.u.call.args      = NULL;
+    call.u.call.arg_count = 0;
+
+    UAstNode int_node = make_int_node(42);
+
+    /* Both fall through the same return-false path. */
+    UASSERT(!cond_has_direct_side_effect(&call));
+    UASSERT(!cond_has_direct_side_effect(&int_node));
+}
+
 /* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
@@ -155,4 +178,6 @@ void test_cond_side_effect_suite(void) {
               cond_side_effect_clean_for_compare);
     utest_run("cond_side_effect_null_returns_false",
               cond_side_effect_null_returns_false);
+    utest_run("cond_side_effect_call_and_unhandled_kinds_share_default",
+              cond_side_effect_call_and_unhandled_kinds_share_default);
 }

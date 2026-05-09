@@ -47,6 +47,17 @@
 #endif
 
 #if URBI_GC_HAS_PINNING
+/* Pin / unpin a UValue against GC sweep.
+ *
+ * urbi_pin: set UGC_IS_PINNED on the cell so it is exempt from sweep.
+ * urbi_unpin: clear UGC_IS_PINNED so the cell is eligible for collection.
+ *
+ * Both are no-ops for non-heap UValues (NIL/INT/FLOAT/BOOL/STR/VOID — the
+ * tag carries the value directly so there is no cell to pin).  Caller-owned
+ * `vm` and `v`; nothing escapes.  v1.0 ships single-bit pin (idempotent set
+ * and clear); v1.x adds a refcount table for nested pin/unpin pairs.
+ *
+ * Not ISR-safe (URBI_ASSERT_NOT_ISR fires in URBI_DEBUG builds). */
 void urbi_pin(struct UVM *vm, UValue v);
 void urbi_unpin(struct UVM *vm, UValue v);
 #endif
@@ -120,11 +131,45 @@ UCell *urbi_gc_alloc(struct UVM *vm, size_t size, uint8_t type_tag);
  * ISR note: NOT ISR-safe — allocates/frees memory and modifies VM state. */
 void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
 
+/* Iterate every registered root provider, invoking cb(vm, slot, ctx) once
+ * per UValue root reached.  Provided for host/test use; the GC mark phase
+ * also calls this indirectly through gc_mark_roots_step.  VM-level globals
+ * are reached through providers — there is no separate VM-globals walk.
+ * cb and ctx are caller-owned and must remain valid for the duration of
+ * the call.  Not ISR-safe. */
 void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
+
+/* Append `provider` to the VM's fixed root-provider array (capacity
+ * URBI_MAX_ROOT_PROVIDERS = 8 per row 10 §5.1).  The provider function
+ * pointer is borrowed: callee retains it for the lifetime of `vm`, and
+ * caller must keep the underlying code object alive at least that long.
+ * URBI_INTERNAL_ASSERT fires on overflow.  Not ISR-safe. */
 void   urbi_gc_register_root_provider(struct UVM *vm, UGcRootProviderFn provider);
+
+/* Initialize the GC fields on a fresh UVM.  Called from urbi_vm_init after
+ * its zero-init pass; sets the only fields whose correct initial value is
+ * NOT zero (gc_threshold, gc_debt).  Caller owns `vm`; no allocation.
+ * Not ISR-safe. */
 void   urbi_gc_init(struct UVM *vm);
+
+/* Tear down the GC: walks the all-cells sidecar list and frees every cell
+ * via the VM allocator (ignoring UGC_IS_FIXED / UGC_IS_PINNED — at teardown
+ * everything goes).  Cells with UGC_HAS_FINALIZER trigger their type's
+ * destroy callback before free.  Must be the LAST subsystem teardown step
+ * in urbi_vm_destroy, after every other subsystem that allocates GC cells
+ * has dropped its references.  Caller owns `vm`.  Not ISR-safe. */
 void   urbi_gc_destroy(struct UVM *vm);
+
+/* Run the GC state machine to completion synchronously.  If currently IDLE,
+ * starts a new cycle (flips current_white, enters MARK_ROOTS).  Runs slices
+ * with SIZE_MAX budget per call until back to IDLE.  Intended for tests and
+ * explicit-collection requests; NOT for production MCU use where bounded
+ * pauses matter.  Caller owns `vm`.  Not ISR-safe. */
 void   urbi_gc_force_full(struct UVM *vm);
+
+/* Read total GC-tracked bytes allocated since VM creation (vm->gc_total_
+ * allocated).  Pure read of a single size_t field; safe to call from any
+ * non-ISR context.  Used by test harnesses + the determinism checksum. */
 size_t urbi_gc_bytes_allocated_inline(const struct UVM *vm);
 
 /* === Root provider forward declarations (T26) ===

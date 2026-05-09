@@ -7,6 +7,7 @@
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* do_spawn_body_coroutine, UWATCHER_AT_EVENT* */
 #include "sched/usched_cooperative.h"  /* sched_strand_make_runnable, sched_strand_block */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (URBI_DEBUG-gated) */
 #include "urbi/urbi.h"         /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include <stddef.h>
 
@@ -83,6 +84,13 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
 
+    /* EMITR-012: ISR re-entry would be unsafe here because do_spawn_body_coroutine
+     * allocates a fresh UStrand from the scheduler's strand pool (potentially
+     * via urbi_gc_alloc) and links it onto the runnable queue.  ISR-safe event
+     * delivery uses the SPSC ring (uevent_ring) drained from the main loop,
+     * which routes back through this function on the main thread.  An ISR
+     * caller that hits this path would race with the main-thread strand
+     * allocator and corrupt the runnable queue. */
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Walk at_watchers_head FIFO: snapshot next before potential modification. */
@@ -107,11 +115,31 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
  *
  * Throws cannot propagate from a sync emit — spec §5.4 contract is fail-soft
  * and warn (the emit caller is unaware of subscriber bodies and cannot
- * meaningfully handle their exceptions). */
+ * meaningfully handle their exceptions).
+ *
+ * Re-entry guard asymmetry vs. the eval-pass / drain wires:
+ * This site sets vm->in_watcher_scratch explicitly, while the eval-pass
+ * wires (invoke_body_inline / invoke_onleave_inline) and the drain wire
+ * (run_watcher_onleave) rely on caller-owned vm->in_watcher_eval for
+ * re-entry protection. Reason: c_event_emit_sync may be called from
+ * contexts that haven't already entered watcher-eval (e.g., a synchronous
+ * emit invoked from main code or from a host C callback), so this
+ * function owns its own re-entry flag. The four wired sites otherwise
+ * share the same urbi_run_closure_on_scratch[_with_payload] primitive. */
 static void
 run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
 {
-    /* Guard: never re-enter scratch execution from within scratch. */
+    /* EMITR-003 contract assertion: the sole call site (c_event_emit_sync)
+     * already short-circuits to async when in_watcher_scratch is set, so
+     * this entry MUST observe in_watcher_scratch == 0 in correct builds.
+     * The early-return below is defensive belt-and-suspenders against a
+     * future second caller that does not pre-check; the assertion catches
+     * such a regression in URBI_DEBUG builds before the silent skip. */
+    URBI_INTERNAL_ASSERT(!vm->in_watcher_scratch);
+
+    /* Defensive guard: never re-enter scratch execution from within scratch.
+     * Load-bearing only when triggered (covered by the assert above in
+     * URBI_DEBUG); kept in release for safety. */
     if (vm->in_watcher_scratch) return;
 
     vm->in_watcher_scratch = 1;
@@ -144,6 +172,13 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
 {
     struct UWatcher *w;
 
+    /* EMITR-012: ISR re-entry would be unsafe here because the sync path
+     * may run subscriber bodies inline on the watcher scratch frame
+     * (run_event_body_on_scratch), which dispatches arbitrary bytecode
+     * including allocator-touching opcodes (OP_NEW_OBJECT, OP_GETSLOT
+     * slow-path) and may call host_log_fn.  ISR contexts must use the
+     * uevent_ring SPSC enqueue path; the main-loop drainer eventually
+     * reaches this function with no ISR re-entry possible. */
     URBI_ASSERT_NOT_ISR(vm);
 
     if (vm->in_watcher_scratch || vm->in_watcher_eval || vm->in_watcher_install) {
@@ -198,6 +233,14 @@ c_event_waituntil(struct UVM *vm, struct UEvent *e)
     struct UStrand *s;
     UValue payload = {0};   /* EMITR-007: file convention is `{0}` for NIL. */
 
+    /* EMITR-012: ISR re-entry would be unsafe here because waituntil parks
+     * the calling strand (vm->cur_strand) onto e->waiters_head and calls
+     * sched_strand_block, which mutates the scheduler's wait queues and
+     * decrements strand_runnable_count.  An ISR has no cur_strand (no
+     * scripting context) so the read at the function body would NULL-deref;
+     * even if guarded, mutating scheduler state from an ISR would race the
+     * main-loop dispatcher.  Hosts that need event-driven wakes from ISR
+     * use the uevent_ring path instead. */
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Scratch / eval context guard (spec §7.1 safety note). */

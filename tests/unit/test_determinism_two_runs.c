@@ -94,6 +94,44 @@ UTEST(two_runs_empty_vms_match)
     urbi_vm_destroy(&vm2);
 }
 
+/* Case (API-025): UValue kinds that hit the default arm of
+ * checksum_walk_cb (UVAL_OBJECT / UVAL_EVENT / UVAL_HOST_FN / UVAL_VOID /
+ * UVAL_NIL / UVAL_CLOSURE / UVAL_STRAND) must mix only the kind byte,
+ * never the pointer payload — heap pointers are non-portable across runs.
+ *
+ * Regression: bind two distinct UVAL_OBJECT values to the same key in
+ * separate VMs.  Pointers differ; checksums must still match because the
+ * payload is intentionally NOT folded into the hash. */
+UTEST(default_arm_kinds_ignore_payload)
+{
+    UVM vm1, vm2;
+    urbi_vm_init(&vm1, NULL, NULL);
+    urbi_vm_init(&vm2, NULL, NULL);
+
+    URealm *r1 = urbi_realm_global(&vm1);
+    URealm *r2 = urbi_realm_global(&vm2);
+
+    UValue v1, v2;
+    v1.kind = UVAL_OBJECT;
+    v1.v.p  = (void *)0xAAAAAAAAAAAAAAAAULL;
+    v2.kind = UVAL_OBJECT;
+    v2.v.p  = (void *)0xBBBBBBBBBBBBBBBBULL;  /* deliberately different */
+
+    const char *n1 = ustr_intern(&vm1, "obj", 3);
+    const char *n2 = ustr_intern(&vm2, "obj", 3);
+    UASSERT(n1 != NULL);
+    UASSERT(n2 != NULL);
+    (void)unamespace_set(&vm1, r1->bindings, n1, v1);
+    (void)unamespace_set(&vm2, r2->bindings, n2, v2);
+
+    uint64_t h1 = urbi_get_determinism_checksum(&vm1);
+    uint64_t h2 = urbi_get_determinism_checksum(&vm2);
+    UASSERT(h1 == h2);
+
+    urbi_vm_destroy(&vm1);
+    urbi_vm_destroy(&vm2);
+}
+
 #endif /* URBI_DEBUG */
 
 /* ---- Suite registration ---- */
@@ -108,5 +146,7 @@ void test_determinism_two_runs_suite(void)
               two_runs_different_int_binding_differ);
     utest_run("two_runs_empty_vms_match",
               two_runs_empty_vms_match);
+    utest_run("default_arm_kinds_ignore_payload",
+              default_arm_kinds_ignore_payload);
 #endif
 }

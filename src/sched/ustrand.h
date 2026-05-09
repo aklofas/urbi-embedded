@@ -1,6 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* UStrand state byte encoding + lifecycle declarations.
-   Full lifecycle operations land across T20 (create/start/spawn) and T29 (tag fields). */
+/* UStrand state byte encoding + lifecycle declarations. */
+
+/* === Strand walker contract (REALM-026) ===
+ *
+ * URealm.strands_head MUST contain every live strand whose register window
+ * may hold GC-managed UValues.  Scheduler implementations are responsible
+ * for maintaining this invariant — the GC walker visits every strand on
+ * this list (with the DEAD-state filter applied inside strand_walk_roots).
+ * This decouples GC correctness from any single scheduler's internal
+ * queues (cooperative ready/sleep, future priority bands, mutex/event
+ * wait queues, ...).
+ *
+ * The list is threaded via UStrand.next_in_realm; strands are head-inserted
+ * at urbi_strand_create and unlinked at urbi_realm_destroy.
+ * See docs/internals/scheduler-design.md for the full contract. */
 
 #ifndef USTRAND_H
 #define USTRAND_H
@@ -90,14 +103,20 @@ struct UClosure;         /* umodule.h — forward-decl for closure list threadin
 struct UModuleInstance;  /* object/umodule_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 
-/* === UStrand struct (M3 baseline) ===
-   T20 and T29 add lifecycle operations; T9 wires the unwind walker;
-   T3 initialises the cleanup-stack array. */
+/* === UStrand struct ===
+   The strand is the unit of cooperative concurrency.  Each instance owns
+   its own register stack, frame array, cleanup stack, and scheduler-list
+   threading; the lifecycle helpers below (ustrand_init, ustrand_destroy,
+   urbi_strand_arm_init, urbi_strand_arm_from_closure, etc.) are the live
+   contract.  The execution-state fields at the bottom of the struct hold
+   per-strand frame/PC/upvalue state and are valid while the strand is
+   RUNNING or READY (paused mid-run). */
 
 typedef struct UStrand UStrand;
 struct UStrand {
-    /* M2 fields for frame stack, registers, lex env, etc. are added by T20
-       when the strand becomes a full execution context. */
+    /* Field groups below: VM/realm context -> unwind/cleanup state ->
+       state byte + budget -> scheduler list pointers -> wait-state ->
+       watcher/event/join links -> realm strand list -> execution state. */
 
     /* --- VM back-pointer (T5; set by ustrand_init; required by scheduler ops) --- */
     struct UVM             *vm;
@@ -156,12 +175,26 @@ struct UStrand {
     UStrand                *ready_next;
     UStrand                *ready_prev;
 
-    /* --- WAITING-related queue fields --- */
+    /* --- WAITING-related queue fields ---
+     *
+     * wait_payload (CHSTR-025): anonymous union discriminated by the strand's
+     * USTRAND_GET_REASON(s) byte (lower nibble of s->state).  Each WAITING
+     * sub-state owns exactly one arm; reading any other arm is undefined
+     * behaviour because storing into one union member ends the lifetime of
+     * the others (C11 6.2.6.1 §7).
+     *
+     *   USTRAND_REASON_SLEEP  (0x01) -> wait_payload.wake_us       (sleep queue)
+     *   USTRAND_REASON_EVENT  (0x03) -> wait_payload.event         (event-wait)
+     *   USTRAND_REASON_JOIN   (0x04) -> wait_payload.join_parent   (join-wait)
+     *
+     * USTRAND_REASON_WATCHER (0x02) does NOT use wait_payload (the strand
+     * parks via UWatcher's own waiters list, not the union).  Read-site
+     * contract: switch on USTRAND_GET_REASON(s) before touching an arm. */
     UStrand                *wait_next;
     union {
-        uint64_t            wake_us;
-        struct UEvent      *event;
-        UStrand            *join_parent;   /* set by OP_JOIN_WAIT: child we are waiting on */
+        uint64_t            wake_us;       /* USTRAND_REASON_SLEEP */
+        struct UEvent      *event;         /* USTRAND_REASON_EVENT */
+        UStrand            *join_parent;   /* USTRAND_REASON_JOIN: child we are waiting on */
     } wait_payload;
 
     /* --- Watcher body ownership (spec #1 §4.2) ---
@@ -203,10 +236,19 @@ struct UStrand {
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
     const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
-    struct UModuleInstance *module_instance; /* M4 follow-up: per-(vm,module) IC RAM tier;
-                                               bound by urbi_vm_run / urbi_run_chunk via
-                                               urbi_get_or_create_module_instance.  May be
-                                               NULL if not yet wired (defensive). */
+    /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
+     * Bound by urbi_vm_run / urbi_run_chunk via
+     * urbi_get_or_create_module_instance.  May be NULL if not yet wired
+     * (defensive).
+     *
+     * CHSTR-043: GC-managed, NOT freed by ustrand_destroy.  The
+     * UModuleInstance is shared across strands within a realm and has its
+     * own GC lifecycle — vm->module_instances_head heads the live list and
+     * walk_umoduleinstance (src/object/utypes_init.c) traces each instance
+     * during the realm's strand walker.  ustrand_destroy clears the strand
+     * via urbi_zero / release_strand_resource_chain for hygiene only; the
+     * pointer is not free'd here. */
+    struct UModuleInstance *module_instance;
     UCallFrame              frames[UVM_MAX_FRAMES];
     int                     frame_count;
     UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */
@@ -227,15 +269,24 @@ _Static_assert(sizeof(struct UStrand) == 2880,
                "UStrand size pin (CHSTR-041) on 64-bit");
 #endif
 
-/* === Lifecycle functions (stubs; full impl across T20 + T29) ===
+/* === Lifecycle functions ===
 
    ustrand_init zeros the strand, sets DORMANT state, and pre-allocates the
    cleanup stack using vm->alloc_fn.  On allocation failure the strand is
    left in a detectable malformed-DORMANT state (cleanup_base == NULL);
-   callers must check.
+   the return value distinguishes success (0) from OOM (-1) and callers
+   must check it.
 
-   ustrand_destroy frees the cleanup stack using vm->alloc_fn.  The same vm
-   pointer used for init must be passed to destroy. */
+   ustrand_destroy walks the cleanup stack to unregister the strand from
+   any tag.member_strands_head lists (strand_unlink_from_tags), routes
+   cross-strand stop bookkeeping through sched_strand_account_destroy
+   (which decrements vm->host_call_pending_count if a cross-strand stop was
+   deposited on this strand), frees the cleanup stack and the register
+   stack via vm->alloc_fn, and releases per-strand resource chains
+   (closures, closed upvalues, and out-slot writes) via
+   release_strand_resource_chain.  The module_instance pointer is GC-managed
+   and is NOT freed here (see CHSTR-043 docstring).  The same vm pointer
+   used for init must be passed to destroy. */
 
 /* CHSTR-010: returns 0 on success, -1 if the cleanup-stack allocation fails.
  * Existing callers that discard the return value are valid C; urbi_strand_create
@@ -257,8 +308,6 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *   bottommost tag (pushed first).  On cleanup-stack overflow, sets
  *   new_s->fatal_status = UEXEC_CANCEL, fatal_value = NIL, state = DEAD and
  *   returns immediately.  Not ISR-safe. */
-
-struct UTag;   /* forward-decl; full struct in utag.h */
 
 size_t urbi_strand_capture_ambient_chain(struct UStrand *parent,
                                          struct UTag   **out_chain,

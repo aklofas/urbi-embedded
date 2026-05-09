@@ -143,8 +143,14 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
 
     /* CHSTR-044: register-stack free via urbi_strand_register_stack_free.
      * urbi_vm_run frees its own transient strand's stack before calling
-     * ustrand_destroy, so double-free is not a risk there (stack is NULL). */
-    if (vm != NULL)
+     * ustrand_destroy, so double-free is not a risk there (stack is NULL).
+     *
+     * CHSTR-004: explicit s->stack != NULL guard pins the contract at the
+     * call site rather than relying on urbi_strand_register_stack_free's
+     * internal NULL-check.  Two-layer guard: future maintainers reading
+     * ustrand_destroy can see locally that the helper is safe to call on a
+     * pre-freed strand without having to chase the helper's body. */
+    if (vm != NULL && s->stack != NULL)
         urbi_strand_register_stack_free(s, vm);
 
     /* CHSTR-029: three resource chains consolidated into one helper. */
@@ -368,15 +374,14 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
             return;
         }
 
-        /* Zero-init the entry (strand_cleanup_push returns a pointer into
-           the pre-zeroed allocation, but be explicit for each used field). */
+        /* Zero the entry up front so any future UCleanupEntry field gains
+         * a defined initial value without a per-call-site touch (CHSTR-032).
+         * Then assign the live fields. strand_cleanup_push hands back a slot
+         * inside the pre-zeroed cleanup_base, but slots are reused across
+         * push/pop cycles so a fresh zero per push is the safe contract. */
+        urbi_zero(e, sizeof(*e));
         e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
-        e->flags          = 0;
-        e->register_base  = 0;
-        e->register_count = 0;
-        e->handler_pc     = 0;
         e->owning_tag     = chain[i];
-        e->catch_pattern  = NULL;
         e->strand_back    = new_s;
         e->next_member    = chain[i]->member_strands_head;
 
@@ -455,9 +460,13 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
 
     s->pc         = entry->proto->instructions;
     s->pc_base    = entry->proto->instructions;
-    s->cur_consts = entry->proto->constants
-                  ? entry->proto->constants
-                  : s->cur_consts;   /* keep existing pool if proto has none */
+    /* CHSTR-019: unconditionally adopt the new proto's constant pool (which
+     * may itself be NULL).  The earlier conditional preserve-on-NULL clobbered
+     * cur_consts only when entry->proto->constants was non-NULL, leaving a
+     * stale pointer from a prior arm if the strand was recycled via the legal
+     * free → arm sequence (CHSTR-005).  Always reset; callers that need a
+     * non-NULL pool must supply one in the closure. */
+    s->cur_consts = entry->proto->constants;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->closure_list = NULL;

@@ -152,13 +152,13 @@ UStepResult urbi_step(struct UVM *vm,
                       uint64_t *out_next_wake_us);
 
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
-                   struct UModule *module, UValue *out_result);
+                   const struct UModule *module, UValue *out_result);
 
 int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
                    const char *line, size_t line_len,
                    char *out_buf, size_t out_buf_size);
 
-int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module);
+int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *module);
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
@@ -352,6 +352,11 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  *
  * urbi_module_instance_destroy is a no-op at v1.0 — both cells are
  * GC-managed and reaped by sweep when no roots reach the instance.
+ * (AUDIT: OBJ-027 — function body is dead at v1.0; symbol kept for
+ * public-API stability.  M7 module-instance lifecycle work may give
+ * the call host-visible side-effects (e.g. detaching from a host-owned
+ * registry); until then, callers should still pair create/destroy so
+ * the symbol can grow semantics without source churn.)
  *
  * Thread safety: none at M4; same single-threaded constraint as the rest
  * of the v1.0 API. */
@@ -387,11 +392,16 @@ UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
  *
  * Call only at a QUIESCENT point (no strands runnable, no pending events).
  * Returns a stable hash of:
- *   - all UValue bindings across every live Realm's namespace
- *   - watcher pool high-water mark
- *   - gc_total_allocated counter
- *   - intern table entry count
- *   - topology_gen, lookup_id, next_object_id (M4 object-model counters)
+ *   1. all UValue bindings across every live Realm's namespace
+ *   2. watcher pool high-water mark
+ *   3. gc_total_allocated counter
+ *   4. intern table entry count
+ *   5. topology_gen, lookup_id, next_object_id (M4 object-model counters)
+ *   6. per-IC observable state across every live UModuleInstance (M4 T30):
+ *      ic->n, ic->replace_cursor, and ic->topology_gen[0..n) for each
+ *      UIC site in each UProtoInstance's IC table.  Heap pointers
+ *      (recv_shapes, slots, uprops) are deliberately NOT folded —
+ *      they are not stable across process invocations.
  *
  * String values (UVAL_STR) are hashed by their interned pointer, which is
  * stable within a single VM lifetime but NOT guaranteed cross-run-stable

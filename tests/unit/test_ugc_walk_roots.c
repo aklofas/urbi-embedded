@@ -126,8 +126,8 @@ UTEST(walk_roots_t26_walk_with_realm)
 /* ===== Test 5: gc_mark_roots_step wires providers into the GC phase =====
  *
  * Drives the GC to MARK_ROOTS and confirms the phase transitions to
- * MARK_INCREMENTAL, proving gc_mark_roots_step calls walk_vm_globals +
- * registered providers internally (via the loop in gc_mark_roots_step). */
+ * MARK_INCREMENTAL, proving gc_mark_roots_step iterates registered root
+ * providers internally (via the loop in gc_mark_roots_step). */
 UTEST(walk_roots_t26_mark_roots_phase_transition)
 {
     UVM vm;

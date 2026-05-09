@@ -58,7 +58,10 @@
 static void
 sleep_q_insert(UVM *vm, UStrand *s)
 {
-    /* Insert s into the sleep queue sorted ascending by wake_us. */
+    /* Insert s into the sleep queue sorted ascending by wake_us.
+     * CHSTR-025: every node on the sleep queue is in REASON_SLEEP, so
+     * wait_payload.wake_us is the active union arm at every read below. */
+    URBI_INTERNAL_ASSERT(USTRAND_GET_REASON(s) == USTRAND_REASON_SLEEP);
     if (!vm->sleep_q_head ||
         vm->sleep_q_head->wait_payload.wake_us > s->wait_payload.wake_us) {
         s->wait_next     = vm->sleep_q_head;
@@ -110,10 +113,17 @@ sched_init(UVM *vm, void *config)
 void
 sched_destroy(UVM *vm)
 {
-    /* Strands are owned by their realms; nothing to free here. */
-    vm->ready_head   = NULL;
-    vm->ready_tail   = NULL;
-    vm->sleep_q_head = NULL;
+    /* Strands are owned by their realms; nothing to free here.
+     *
+     * SCHED-009: zero strand_runnable_count for symmetry with sched_init.
+     * Pre-fix this counter survived destroy, so a destroy + stale-query
+     * path would observe a non-zero value despite the queues being NULL.
+     * The four scheduler-owned fields (ready_head, ready_tail, sleep_q_head,
+     * strand_runnable_count) are now mirror-zeroed across init/destroy. */
+    vm->ready_head            = NULL;
+    vm->ready_tail            = NULL;
+    vm->sleep_q_head          = NULL;
+    vm->strand_runnable_count = 0;
 }
 
 /* === Per-strand lifecycle === */
@@ -178,8 +188,19 @@ sched_strand_make_runnable(UStrand *s)
        the early return prevents the corruption silently — the strand
        simply stays DEAD and the caller's ++count is skipped.  No legitimate
        caller drives a DEAD → READY transition; the path is purely defensive
-       against future refactors that lose track of strand state. */
+       against future refactors that lose track of strand state.
+
+       SCHED-005: idempotence assertion — calling make_runnable on a strand
+       already in READY state would tail-insert it a second time, producing
+       a circular ready_next/ready_prev chain and double-counting
+       strand_runnable_count (so sched_quiescent never converges).  Every
+       legitimate caller transitions DORMANT → READY (urbi_strand_start) or
+       WAITING → READY (sched_strand_unblock, event/watcher waker paths,
+       uunwind wake).  No legitimate caller drives READY → READY.  The
+       assertion fail-fasts in URBI_DEBUG; production builds elide it (the
+       circular-chain corruption surfaces as a quiescence-stall bug). */
     URBI_INTERNAL_ASSERT(USTRAND_GET_STATE(s) != USTRAND_DEAD);
+    URBI_INTERNAL_ASSERT(s->state != USTRAND_STATE_READY);
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
     UVM *vm = s->vm;
     s->state      = USTRAND_STATE_READY;
@@ -235,12 +256,30 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
             sleep_q_insert(vm, s);
             break;
         case USTRAND_REASON_EVENT:
-            s->wait_payload.event = (struct UEvent *)(uintptr_t)payload;
+            /* payload is a uint64_t carrying a UEvent* (REASON_EVENT calling
+             * convention from c_event_subscribe / event-emit handoff). The
+             * uintptr_t round-trip is intentional — payload encoding is a
+             * documented sched/strand contract. */
+            s->wait_payload.event = (struct UEvent *)(uintptr_t)payload;  /* NOLINT(performance-no-int-to-ptr) — REASON_EVENT payload-encoding contract */
             break;
         case USTRAND_REASON_JOIN:
-            s->wait_payload.join_parent = (UStrand *)(uintptr_t)payload;
+            /* payload is a uint64_t carrying the parent UStrand* (REASON_JOIN
+             * calling convention from join_parent setup). */
+            s->wait_payload.join_parent = (UStrand *)(uintptr_t)payload;  /* NOLINT(performance-no-int-to-ptr) — REASON_JOIN payload-encoding contract */
             break;
         default:
+            /* SCHED-007: unknown reason byte — payload is dropped by design.
+             * Entry contracts (Phase 5 of v0.5.7-fixes; see USTRAND_REASON_*
+             * constants in src/sched/ustrand.h) reject unknown reasons
+             * upstream at every legitimate caller (the c_event_*, sleep,
+             * join paths all pass a literal USTRAND_REASON_*).  This
+             * default arm is a defense-in-depth catch-all and should never
+             * fire in production.  USTRAND_REASON_HOST (0x04, reserved)
+             * and USTRAND_REASON_NONE (0x00) currently land here without a
+             * payload field assignment — when those become live they need
+             * their own case arm.  URBI_INTERNAL_ASSERT(0) under debug to
+             * surface anyone who slipped past the upstream check. */
+            URBI_INTERNAL_ASSERT(0);
             break;
     }
 }
@@ -261,6 +300,9 @@ uint64_t
 sched_earliest_wake_us(UVM *vm)
 {
     if (!vm->sleep_q_head) return UINT64_MAX;
+    /* CHSTR-025: sleep_q_head is by construction in REASON_SLEEP. */
+    URBI_INTERNAL_ASSERT(
+        USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
     return vm->sleep_q_head->wait_payload.wake_us;
 }
 
@@ -402,20 +444,33 @@ sched_dequeue_ready_head(UVM *vm)
  * Walk all GC roots for a single live strand.  Called by sched_walk_roots
  * for every non-DEAD strand in the ready and sleep queues.
  *
- * Root sources at M3 baseline:
+ * Root sources at v0.5.x baseline (M5 shipped):
  *   (1) Register window — conservative full-stack scan (see below).
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
  *   (3) Cleanup stack — owning_tag (UTag*) and catch_pattern (UPattern*)
- *       are not yet UValues at M3 (they land at T29+); skipped with TODO.
- *   (4) Wait payload — event / join_parent involve M5 types; skipped with TODO.
+ *       are NOT yielded as direct UValue roots here.  Reachability is
+ *       provided indirectly: UTag was GC-promoted at M5 and is reached via
+ *       the realm strand walker plus the closure references that captured
+ *       it; member_strands_head's back-pointer to the cleanup entry sits
+ *       on the strand stack which (1) walks.  See SCHED-012 v1.x carry-
+ *       forward note below.
+ *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
+ *       NOT yielded here.  UEvent became a GC cell at M5, but every UEvent
+ *       a strand can be waiting on is reachable through another path (realm
+ *       globals for stdlib events; object's changed_events_head for
+ *       slot-change events; tag's enter_event/leave_event fields for tag-
+ *       scoped events).  join_parent points at another live strand reached
+ *       via realm.strands_head.
  *
  * Register window strategy (row 10 §5.2 guidance):
  *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
  *   register window spans frames[0..frame_count-1]; the topmost frame's
  *   extent requires bytecode metadata not available at M3.  We walk the
  *   entire allocated array (conservative over-mark; never under-marks).
- *   TODO(T26+ opt): tighten to active-frame register window when bytecode
- *   emits frame-extent metadata (proposed for M4/M5).
+ *   TODO(v1.x — frame-extent metadata): tighten to active-frame register
+ *   window when bytecode emits per-frame extent metadata.  Tracked under
+ *   docs/urbi-embedded-design-risks.md row "v1.x — preemptive scheduling
+ *   readiness" (cooperative GC has no urgency to optimize here).
  *
  * Scratch-strand coverage (closes GC-006 + GC-038):
  *   The watcher cond/body/onleave scratch path (urbi_run_closure_on_scratch
@@ -431,15 +486,13 @@ sched_dequeue_ready_head(UVM *vm)
 static void
 strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 {
-    int i;
-
     /* Guard: DEAD strands have no live roots (spec §5.2). */
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
 
     /* (1) Register window — conservative full-stack scan.
      *     s->stack may be NULL for a DORMANT strand not yet armed. */
     if (s->stack != NULL) {
-        for (i = 0; i < UVM_STACK_CAP; i++) {
+        for (int i = 0; i < UVM_STACK_CAP; i++) {
             cb(vm, &s->stack[i], ctx);
         }
     }
@@ -450,14 +503,26 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->fatal_value,  ctx);
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
-     *     owning_tag (UTag*) and catch_pattern (UPattern*) are not UValues
-     *     at M3 baseline — T29 will enroll UTags as GC roots.
-     *     TODO(T29): walk cleanup_base[0..cleanup_depth-1].owning_tag +
-     *     catch_pattern once those become GC-managed UValues. */
+     *     owning_tag (UTag*) was GC-promoted at M5 but is reached indirectly:
+     *     a tag visible to user code is captured in the lexical closures the
+     *     watcher table walker visits and / or pinned via the strand register
+     *     window walked at (1).  catch_pattern (UPattern*) remains host-
+     *     allocated at v1.0 (UPattern is not GC-managed).  No direct callback
+     *     is needed here.
+     *     TODO(v1.x — cleanup-stack walker): if a future audit identifies a
+     *     UTag reachable only via cleanup_base[i].owning_tag, this loop must
+     *     yield those UTag pointers as UVAL_TAG roots.  Today no such audit
+     *     exists; the M5+ test corpus has not surfaced a reachability gap
+     *     (see test_gc_strand_walker.c + test_gc_scratch_rooting.c). */
 
     /* (4) Wait payload (row 9 §4.3).
-     *     UEvent and UStrand join_parent are not GC-managed UValues at M3.
-     *     TODO(M5): walk s->wait_payload.event when UEvent becomes a GC cell. */
+     *     wait_payload.event (struct UEvent*) and wait_payload.join_parent
+     *     (UStrand*) are reached indirectly: every UEvent a strand can wait
+     *     on is also reachable via realm globals (stdlib events), the
+     *     owning object's changed_events_head (slot-change events), or the
+     *     owning tag's enter_event/leave_event fields.  join_parent is
+     *     another live strand reached via realm.strands_head.  No direct
+     *     callback is needed here at v1.0. */
 
     /* (5) last_event_payload (spec #3 §7.1, T56).
      *     Written by c_event_emit_* before unblocking a waituntil strand.

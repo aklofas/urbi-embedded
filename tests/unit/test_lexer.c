@@ -12,6 +12,32 @@ static void eof_on_empty_input(void) {
     UASSERT_EQ(t.col, 1);
 }
 
+/* LEX-001 + LEX-027: (NULL, 0) is the legal empty-input contract; ulex_init
+ * must accept it and ulex_next must return TOK_EOF without dereferencing.
+ * This is the natural REPL idle case — no allocation, no read. */
+static void eof_on_null_zero_input(void) {
+    ULexer l;
+    ulex_init(&l, NULL, 0);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+    UASSERT_EQ(t.line, 1);
+    UASSERT_EQ(t.col, 1);
+}
+
+/* LEX-003: error tokens always report 1-based line/col positions even on
+ * a near-empty source.  Ensures the LEX_OK initializer in skip_trivia
+ * (which carries line/col defaults) doesn't leak a 0 sentinel through to
+ * a make_error call site. */
+static void error_token_reports_one_based_position(void) {
+    /* Lex `$` at offset 0: produces LEX_UNKNOWN_CHAR with line=1, col=1. */
+    ULexer l;
+    ulex_init(&l, "$", 1);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT(t.line >= 1);
+    UASSERT(t.col >= 1);
+}
+
 static void eof_is_idempotent(void) {
     ULexer l;
     ulex_init(&l, "", 0);
@@ -107,6 +133,40 @@ static void unterminated_block_comment_emits_error(void) {
     UASSERT_EQ(t.col, 1);
     UASSERT(t.u.err.message != NULL);
     UASSERT_STR_EQ(t.u.err.message, "unterminated block comment");
+}
+
+/* LEX-004: error span for an unterminated block comment must cover the
+ * full unterminated extent (from the opening "/" to end-of-source), not
+ * just the hardcoded 2-byte "/" + "*" prefix. */
+static void unterminated_block_comment_error_span_full(void) {
+    /* "/* oops" — 7 bytes; the entire range is the unterminated comment. */
+    ULexer l;
+    ulex_init(&l, "/* oops", 7);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_UNTERMINATED_BLOCK_COMMENT);
+    UASSERT_EQ(t.len, 7);
+}
+
+/* LEX-013: "first error wins" contract — when scan_radix detects integer
+ * overflow, the recovery loop consumes both digits AND underscores until
+ * the next non-digit-non-underscore boundary.  Any trailing or adjacent
+ * underscore violation co-located on the same literal is MASKED so the
+ * user sees only the overflow.  Locks in the documented behaviour against
+ * future drift. */
+static void scan_radix_overflow_consumes_trailing_underscores(void) {
+    /* 17 hex F's (= 2^68 - 1) is well past INT64_MAX; the trailing "__1"
+     * has both adjacent-underscore AND trailing-underscore-on-overflow
+     * shapes.  The reported error must be LEX_INT_OVERFLOW (not
+     * LEX_ADJACENT_UNDERSCORES), and the span must cover the full
+     * literal so that the next token starts after it. */
+    const char s[] = "0xFFFFFFFFFFFFFFFFF__1";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+    UASSERT_EQ(t.len, (int)(sizeof s - 1));
 }
 
 static void plus_token(void) {
@@ -866,6 +926,45 @@ static void lex_1d_yields_86400000000(void) {
     UASSERT_EQ(t.len, 2);
 }
 
+/* LEX-033: 123ms_x and 123sfoo coverage gap.  The duration-suffix table
+ * boundary check rejects a suffix when the byte after the suffix is
+ * ident-cont — both '_' and any letter qualify.  These two edge cases
+ * pin the post-suffix ident-boundary contract:
+ *
+ *   "123ms_x" — 'ms' is two chars; the byte after ('_') is ident-cont so
+ *   'ms' is NOT consumed; the next applicable single-char suffix 'm' is
+ *   followed by 's' (ident-cont) so also NOT consumed.  Result: TOK_INT
+ *   123 then TOK_IDENT "ms_x".
+ *
+ *   "123sfoo" — 's' is one char; the byte after ('f') is ident-cont so
+ *   's' is NOT consumed.  Result: TOK_INT 123 then TOK_IDENT "sfoo".
+ *
+ * Both shapes flag the trap that whitespace (or its absence) determines
+ * whether the literal carries time semantics. */
+static void lex_123ms_underscore_x_is_int_then_ident(void) {
+    ULexer l;
+    ulex_init(&l, "123ms_x", 7);
+    const UToken t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 123);
+    UASSERT_EQ(t1.len, 3);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 4);
+}
+
+static void lex_123sfoo_is_int_then_ident(void) {
+    ULexer l;
+    ulex_init(&l, "123sfoo", 7);
+    const UToken t1 = ulex_next(&l);
+    UASSERT_EQ(t1.type, TOK_INT);
+    UASSERT_EQ(t1.u.i, 123);
+    UASSERT_EQ(t1.len, 3);
+    const UToken t2 = ulex_next(&l);
+    UASSERT_EQ(t2.type, TOK_IDENT);
+    UASSERT_EQ(t2.u.str.len, 4);
+}
+
 static void lex_1mfoo_does_not_consume_suffix(void) {
     ULexer l;
     ulex_init(&l, "1mfoo", 5);
@@ -959,6 +1058,8 @@ static void lex_time_suffix_d_at_boundary_succeeds(void) {
 
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
+    utest_run("eof_on_null_zero_input", eof_on_null_zero_input);
+    utest_run("error_token_reports_one_based_position", error_token_reports_one_based_position);
     utest_run("eof_is_idempotent", eof_is_idempotent);
     utest_run("token_name_returns_static_strings", token_name_returns_static_strings);
     utest_run("whitespace_only_yields_eof_at_correct_position", whitespace_only_yields_eof_at_correct_position);
@@ -970,6 +1071,8 @@ void test_lexer_suite(void) {
     utest_run("block_comment_single_line", block_comment_single_line);
     utest_run("block_comment_spans_lines", block_comment_spans_lines);
     utest_run("unterminated_block_comment_emits_error", unterminated_block_comment_emits_error);
+    utest_run("unterminated_block_comment_error_span_full", unterminated_block_comment_error_span_full);
+    utest_run("scan_radix_overflow_consumes_trailing_underscores", scan_radix_overflow_consumes_trailing_underscores);
     utest_run("plus_token", plus_token);
     utest_run("minus_token", minus_token);
     utest_run("star_token", star_token);
@@ -1060,6 +1163,8 @@ void test_lexer_suite(void) {
     utest_run("lex_1m_yields_60000000", lex_1m_yields_60000000);
     utest_run("lex_1h_yields_3600000000", lex_1h_yields_3600000000);
     utest_run("lex_1d_yields_86400000000", lex_1d_yields_86400000000);
+    utest_run("lex_123ms_underscore_x_is_int_then_ident", lex_123ms_underscore_x_is_int_then_ident);
+    utest_run("lex_123sfoo_is_int_then_ident", lex_123sfoo_is_int_then_ident);
     utest_run("lex_1mfoo_does_not_consume_suffix", lex_1mfoo_does_not_consume_suffix);
     utest_run("lex_1ms_at_eof_consumed", lex_1ms_at_eof_consumed);
     utest_run("lex_time_suffix_ms_overflows", lex_time_suffix_ms_overflows);

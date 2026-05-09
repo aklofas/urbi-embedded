@@ -45,7 +45,11 @@
 #endif
 
 #if UVM_USE_COMPUTED_GOTO
-#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]
+   /* Computed-goto dispatch — DISPATCH expands to a `goto *<expr>` statement;
+    * the replacement list cannot be wrapped in parentheses (you can't
+    * parenthesize a statement), so bugprone-macro-parentheses is suppressed
+    * here.  CASE(op) expands to a label, also unparenthesizable. */
+#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]  /* NOLINT(bugprone-macro-parentheses) — `goto *expr` cannot be parenthesized */
 #  define CASE(op)    label_##op:
 #  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
 #  define HALT()      goto halt_error
@@ -1079,14 +1083,19 @@ dispatch:
             entry->next_member    = tag->member_strands_head;  /* head-insert */
             entry->strand_back    = s;
             tag->member_strands_head = entry;
-            /* T55: tier-2 enter event hook (spec #3 §8.3).
-             * Fast-path: two loads + branch when no subscribers (typical case).
-             * Zero alloc. Subscribers see the tag already ambient (entry pushed above). */
-            if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
-                UValue nil_val = {0};
-                nil_val.kind = (uint8_t)UVAL_NIL;
-                c_event_emit_sync(s->vm, tag->enter_event, nil_val);
-            }
+            /* VM-015: enter_event is unconditionally NULL on a fresh utag_create
+             * (utag.c zero-fills enter_event/leave_event at allocation; only the
+             * tag.enter native getter — invoked through a Tag.enter property
+             * read — lazy-allocates the UEvent later in tag_enter_getter).  At
+             * OP_PUSH_TAG the tag was just created on the line above and no
+             * code has had access to it; therefore tag->enter_event MUST be
+             * NULL here.  The original T55 "tier-2 enter event hook" branch
+             * (load + null-check + at_watchers_head load) was dead at every
+             * v1.0 dispatch and is removed; M6 wires Tag.enter through a
+             * different path (subscribers register on the lazy-alloc'd event
+             * after the tag escapes via a register binding, never during
+             * OP_PUSH_TAG itself).  The assertion pins the contract. */
+            URBI_INTERNAL_ASSERT(tag->enter_event == NULL);
             NEXT();
         }
 
@@ -1182,17 +1191,21 @@ dispatch:
             NEXT();
         }
 
-        /* OP_TAG_STOP stays as a stub — T31 (urbi_tag_stop) wires the runtime.
-         * No syntax emits this opcode yet at T11. */
+        /* OP_TAG_STOP: runtime path is host-callable urbi_tag_stop (M3 row 7),
+         * which runs no bytecode.  The bytecode opcode is reserved for a
+         * future emit path; no parser produces it today.  The dispatch entry
+         * stays as a typed-error stub so that any rogue OP_TAG_STOP that
+         * leaks into a chunk (e.g. via the test_emit round-trip) faults
+         * cleanly instead of executing undefined behaviour. */
 #if UVM_USE_COMPUTED_GOTO
         label_row7_stub:
 #else
         case OP_TAG_STOP:
 #endif
         {
-            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP runtime owned by T31");
+            URBI_DISPATCH_ASSERT(0 && "OP_TAG_STOP at runtime: emit path reserved for v1.x");
             vm->last_error = UVM_TYPE_ERROR;
-            vm_format_type_error_msg(vm, "OP_TAG_STOP: not yet implemented (T31)");
+            vm_format_type_error_msg(vm, "OP_TAG_STOP: bytecode emit path is reserved; use urbi_tag_stop host call");
             HALT();
         }
 

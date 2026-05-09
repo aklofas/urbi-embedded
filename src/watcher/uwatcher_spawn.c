@@ -37,6 +37,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef URBI_DEBUG
+/* uprotoinstance_arr_is_contiguous: debug-only invariant check.
+ *
+ * UProtoInstanceArr.entries[] is a C99 flexible array — its elements are
+ * always contiguous in memory by language guarantee.  This helper makes
+ * that invariant explicit at the call sites that depend on it (notably
+ * the cross-module_instance pointer-range walk in
+ * do_spawn_body_coroutine, WATCH-004).  Tautological by construction;
+ * its purpose is documentation + future-proofing if entries[] ever
+ * changes shape. */
+static int
+uprotoinstance_arr_is_contiguous(const UProtoInstanceArr *arr)
+{
+    if (arr == NULL) return 1;          /* vacuously contiguous */
+    if (arr->n == 0) return 1;          /* empty array */
+    /* Flexible-array contract: &entries[i] == &entries[0] + i for all i. */
+    return (&arr->entries[arr->n - 1U] == &arr->entries[0] + (arr->n - 1U));
+}
+#endif
+
 void
 do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
 {
@@ -108,6 +128,15 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
         for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
             UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL || arr->n == 0) continue;
+            /* Cross-module-instance pointer comparison: the range walk
+             * relies on UProtoInstance entries[] being contiguous within
+             * each module_instance's array.  Flexible-array language
+             * guarantee ensures this; the URBI_DEBUG assertion makes
+             * the invariant explicit (WATCH-004).  v1.x backlog item
+             * "UClosure.owning_mi field" removes the need for this walk. */
+#ifdef URBI_DEBUG
+            URBI_INTERNAL_ASSERT(uprotoinstance_arr_is_contiguous(arr));
+#endif
             /* Check if w->body->proto_inst falls within arr->entries[0..n-1].
              * Both pointers are within the same GC-managed bulk allocation
              * so pointer comparison is valid. */

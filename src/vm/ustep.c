@@ -7,6 +7,7 @@
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "event/uevent_ring.h"
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -81,11 +82,16 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
             vm->strand_runnable_count++;
         }
 
-        /* Wake any sleep-queue strands whose wake_us has passed. */
+        /* Wake any sleep-queue strands whose wake_us has passed.
+         * CHSTR-025: every node on sleep_q is REASON_SLEEP, so wake_us is the
+         * active union arm; assert at the loop head to surface a queue-invariant
+         * break in -DURBI_DEBUG builds. */
         {
             uint64_t now = vm->host_time_us();
-            while (vm->sleep_q_head &&
-                   vm->sleep_q_head->wait_payload.wake_us <= now) {
+            while (vm->sleep_q_head) {
+                URBI_INTERNAL_ASSERT(
+                    USTRAND_GET_REASON(vm->sleep_q_head) == USTRAND_REASON_SLEEP);
+                if (vm->sleep_q_head->wait_payload.wake_us > now) break;
                 UStrand *waker = vm->sleep_q_head;
                 /* sched_strand_unblock removes from sleep_q (decrementing
                  * wakeup_pending_count) and calls sched_strand_make_runnable. */

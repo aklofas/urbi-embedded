@@ -110,9 +110,6 @@ urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
     }
     return r;
 }
-#endif /* URBI_DEBUG */
-
-#ifdef URBI_DEBUG
 
 /* --- urbi_get_determinism_checksum implementation --- */
 
@@ -131,11 +128,16 @@ typedef struct {
 /* unamespace_walk_roots callback: fold each UValue into the running hash.
  * UVAL_INT: hashes the integer value directly.
  * UVAL_BOOL: hashes the integer value (0/1 stored as int64_t).
+ * UVAL_FLOAT: hashes the float bit pattern at its actual width (f32 or f64).
  * UVAL_STR: hashes the interned pointer address.  Stable within one VM
  *   lifetime (intern table never moves pointers); NOT cross-run-stable
  *   because allocator placement varies between process invocations.
- * UVAL_CLOSURE / UVAL_STRAND / UVAL_VOID / UVAL_NIL: hash only the kind
- *   (heap pointers are not deterministic across runs). */
+ * UVAL_NIL / UVAL_VOID / UVAL_CLOSURE / UVAL_STRAND / UVAL_OBJECT /
+ *   UVAL_EVENT / UVAL_HOST_FN: hash only the kind byte (already mixed
+ *   above the switch).  All seven carry heap pointers (or sentinels) that
+ *   are not deterministic across runs, so the payload is intentionally
+ *   NOT folded.  Closes API-025: comment now matches the default arm's
+ *   actual coverage. */
 static void
 checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
 {
@@ -145,9 +147,16 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
     FNV1A_MIX(c->h, root->kind);
     switch (root->kind) {
         case UVAL_INT:
-        case UVAL_BOOL:
-            FNV1A_MIX(c->h, (uint64_t)root->v.i);
+        case UVAL_BOOL: {
+            /* Reinterpret the int payload via memcpy for symmetry with the
+             * UVAL_FLOAT arm.  (uint64_t)root->v.i would also produce the
+             * same bits on two's-complement (universal in C), but the
+             * memcpy form is uniform across all numeric arms.  API-026. */
+            uint64_t bits;
+            memcpy(&bits, &root->v.i, sizeof(bits));
+            FNV1A_MIX(c->h, bits);
             break;
+        }
         case UVAL_FLOAT: {
             /* Mix the float's bit pattern at its actual width.  Reading v.i would
              * include stale upper bytes for f32 (URBI_FLOAT_TYPE==4) when a slot
@@ -168,7 +177,8 @@ checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
             FNV1A_MIX(c->h, (uintptr_t)root->v.p);
             break;
         default:
-            /* NIL, CLOSURE, VOID, STRAND: kind already mixed above. */
+            /* All remaining kinds (NIL, VOID, CLOSURE, STRAND, OBJECT,
+             * EVENT, HOST_FN): kind already mixed above; payload dropped. */
             break;
     }
 }

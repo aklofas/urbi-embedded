@@ -98,6 +98,7 @@ extern void test_uchanged_node_suite(void);
 extern void test_uvm_trace_fields_suite(void);
 extern void test_uvm_deferred_ring_suite(void);
 extern void test_strand_arm_suite(void);
+extern void test_strand_destroy_suite(void);
 extern void test_watcher_spawn_suite(void);
 extern void test_watcher_completed_suite(void);
 extern void test_watcher_lifecycle_suite(void);
@@ -145,7 +146,9 @@ extern void test_at_scripted_e2e_suite(void);
 extern void test_at_sync_scripted_suite(void);
 extern void test_tag_stop_onleave_scripted_suite(void);
 extern void test_event_sync_emit_scripted_suite(void);
+extern void test_utest_e2e_helpers_suite(void);
 extern void test_emit_freereg_drift_suite(void);
+extern void test_emit_line_delta_suite(void);
 extern void test_emit_error_paths_suite(void);
 extern void test_vm_dispatch_ownership_suite(void);
 extern void test_gc_sweep_accounting_suite(void);
@@ -154,6 +157,7 @@ extern void test_event_runtime_suite(void);
 extern void test_tag_barrier_suite(void);
 extern void test_object_in_place_barrier_suite(void);
 extern void test_module_loader_hardening_suite(void);
+extern void test_module_alloc_nested_suite(void);
 extern void test_foundations_suite(void);
 extern void test_public_api_suite(void);
 
@@ -230,6 +234,7 @@ static const struct suite_entry suites[] = {
     {"uvm_trace_fields",           test_uvm_trace_fields_suite},
     {"uvm_deferred_ring",          test_uvm_deferred_ring_suite},
     {"strand_arm",                 test_strand_arm_suite},
+    {"strand_destroy",             test_strand_destroy_suite},
     {"watcher_spawn",              test_watcher_spawn_suite},
     {"watcher_completed",          test_watcher_completed_suite},
     {"watcher_lifecycle",          test_watcher_lifecycle_suite},
@@ -277,7 +282,9 @@ static const struct suite_entry suites[] = {
     {"at_sync_scripted",          test_at_sync_scripted_suite},
     {"tag_stop_onleave_scripted", test_tag_stop_onleave_scripted_suite},
     {"event_sync_emit_scripted",  test_event_sync_emit_scripted_suite},
+    {"utest_e2e_helpers",         test_utest_e2e_helpers_suite},
     {"emit_freereg_drift",        test_emit_freereg_drift_suite},
+    {"emit_line_delta",           test_emit_line_delta_suite},
     {"emit_error_paths",          test_emit_error_paths_suite},
     {"vm_dispatch_ownership",     test_vm_dispatch_ownership_suite},
     {"gc_sweep_accounting",       test_gc_sweep_accounting_suite},
@@ -286,6 +293,7 @@ static const struct suite_entry suites[] = {
     {"tag_barrier",               test_tag_barrier_suite},
     {"object_in_place_barrier",   test_object_in_place_barrier_suite},
     {"module_loader_hardening",   test_module_loader_hardening_suite},
+    {"module_alloc_nested",       test_module_alloc_nested_suite},
     {"foundations",               test_foundations_suite},
     {"public_api",                test_public_api_suite},
     /* Add new suites here as test files are added. */

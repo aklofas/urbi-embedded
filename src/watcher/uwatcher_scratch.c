@@ -104,6 +104,16 @@ run_on_scratch_core(struct UVM       *vm,
      * UProtoInstanceArr (one entry) and a stack-local UModuleInstance shell.
      * Freed in teardown below; GC does not chase strand.module_instance.
      *
+     * IC pointer-sharing: only the bare UModuleInstance + UProtoInstanceArr
+     * structs are allocated — no trailing IC byte array.  entries[0].ic_table
+     * is a borrowed read-only pointer into closure->proto_inst's existing IC
+     * table.  This is safe because (1) the scratch frame holds no slot-write
+     * barriers that would mutate ICs, (2) closure->proto_inst already has
+     * its ICs populated by the time the scratch helper runs, and (3) the
+     * scratch frame's lifetime is strictly contained within the closure's.
+     * M6 will formalize this via a UClosure.owning_mi field; today the
+     * scratch helper carries the pointer-share invariant in code.
+     *
      * WATCH-007 (v0.5.7): on alloc failure, signal *out_threw = 1 and skip
      * dispatch.  Pre-fix the OOM path silently left strand.module_instance
      * = NULL, then OP_GETSLOT (frame_count==0 path) dereferenced NULL — a
@@ -261,6 +271,18 @@ run_on_scratch_core(struct UVM       *vm,
     return 0;
 }
 
+/* urbi_run_closure_on_scratch (WATCH-011): synchronously run the closure
+ * body on a scratch frame.
+ *
+ * NOTE: this function does NOT set vm->in_watcher_scratch despite the
+ * name.  The flag is owned by callers that need re-entry guarding
+ * (specifically c_event_emit_sync's run_event_body_on_scratch in
+ * src/event/uevent_emit.c, which sets the flag around its call to this
+ * helper).  Other callers — install_watcher_runtime, invoke_condition_closure,
+ * invoke_body_inline, invoke_onleave_inline, run_watcher_onleave — rely on
+ * caller-owned vm->in_watcher_eval / in_watcher_install for re-entry
+ * protection instead.  See WATCH-036 (uvm.h field comment on
+ * in_watcher_scratch) for the asymmetry rationale. */
 int
 urbi_run_closure_on_scratch(struct UVM      *vm,
                             struct UClosure *closure,

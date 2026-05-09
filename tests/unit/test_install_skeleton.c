@@ -341,6 +341,72 @@ UTEST(install_appends_watcher_to_active_and_tag_lists)
     urbi_vm_destroy(&vm);
 }
 
+/* WATCH-005: hook that populates trace_read_set_count without arming the
+ * VM trace dispatch.  Pairs with install_oom_pool_clears_trace_state
+ * below: the hook sets trace_read_set_count to a non-zero value during
+ * Phase 3, then Phase 5b's pool-alloc fails and we observe whether
+ * Phase 5b's fall-through resets trace state. */
+static void
+hook_populate_trace(struct UVM *vm, struct UClosure *cond,
+                    UValue *out_result, int *out_threw)
+{
+    UValue nil = {0};
+    (void)cond;
+    /* Simulate the trace probe collecting one slot read. */
+    vm->trace_read_set_count = 1U;
+    vm->trace_read_set[0]    = (struct UCell *)0x1;  /* sentinel */
+    *out_result = nil;
+    *out_threw  = 0;
+}
+
+/* WATCH-005: install_oom_pool_clears_trace_state
+ *
+ * When install_watcher_runtime fails at Phase 5b (pool exhaustion), it
+ * must NOT leak trace_read_set_count populated during Phase 3 — any
+ * unrelated reader (or the next install attempt before its own reset)
+ * would observe stale state otherwise.  The audit (WATCH-005) flagged
+ * this as benign-today (next install resets at lines 149-150) but
+ * fragile to refactors.
+ *
+ * Pre-fix: trace_read_set_count survives the OOM_POOL return.
+ * Post-fix: trace state is cleared on fall-through. */
+UTEST(install_oom_pool_clears_trace_state)
+{
+    UVM     vm;
+    UStrand s;
+    UWatcher *held[URBI_WATCHER_POOL_SIZE];
+    int i;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    ustrand_init(&s, &vm);
+    reset_log(&vm);
+
+    /* Drain the pool BEFORE installing the cond hook so the hook will
+     * have run (Phase 3) but Phase 5b alloc will fail. */
+    test_drain_watcher_pool(&vm, held);
+
+    vm.test_install_cond_hook = hook_populate_trace;
+
+    UWatcherInstallResult r = install_watcher_runtime(
+        &vm, &s, UWATCHER_AT, NULL, NULL, NULL, NULL);
+
+    UASSERT_EQ((int)URBI_INSTALL_OOM_POOL, (int)r);
+    /* Post-fix invariant: trace state cleared on fall-through. */
+    UASSERT_EQ(0, (int)vm.trace_read_set_count);
+    UASSERT_EQ(0, (int)vm.trace_overflow);
+
+    vm.test_install_cond_hook = NULL;
+
+    /* Return pool slots so urbi_vm_destroy is clean. */
+    for (i = 0; i < URBI_WATCHER_POOL_SIZE; i++) {
+        if (held[i] != NULL)
+            urbi_watcher_unregister_internal(&vm, held[i]);
+    }
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -357,6 +423,8 @@ test_install_skeleton_suite(void)
               install_warns_on_empty_readset);
     utest_run("install_returns_oom_pool_when_exhausted",
               install_returns_oom_pool_when_exhausted);
+    utest_run("install_oom_pool_clears_trace_state",
+              install_oom_pool_clears_trace_state);
     utest_run("install_initializes_watcher_fields",
               install_initializes_watcher_fields);
     utest_run("install_marks_observed_cells_with_bit6",

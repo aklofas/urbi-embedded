@@ -98,6 +98,10 @@ urbi_watcher_check_invariants(struct UVM *vm)
                 if (s == w->body_strand) { found = 1; break; }
             }
             URBI_INTERNAL_ASSERT(found);
+            (void)found;  /* read above only via URBI_INTERNAL_ASSERT, which
+                           * collapses to ((void)0) in non-DEBUG builds; mark
+                           * the variable as intentionally read to silence the
+                           * cppcheck unreadVariable warning (CPPCHK-006). */
         }
     }
 }

@@ -243,6 +243,12 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->pending_onleave_head   = NULL;
     vm->pending_onleave_tail   = NULL;
 
+    /* spec #3 §7.1: cur_strand is set by urbi_step around dispatch and
+     * cleared after.  Must be NULL on a fresh VM so callers (e.g. the
+     * EVENT-022 step-quiescent assert in urbi_register_event_drain) can
+     * trust it as the canonical "step in progress" signal. */
+    vm->cur_strand             = NULL;
+
     /* Watcher pool: allocate after field zero-init and after GC init
      * so pool_alloc can use vm->current_white and vm->alloc_fn is set. */
     uwatcher_pool_init(vm);
@@ -355,6 +361,17 @@ urbi_native_protos_init(UVM *vm)
  * for every entry drained from the ISR SPSC ring.  The handler maps event_id
  * to a UEvent* and typically calls c_event_emit_async.  Pass NULL to remove
  * the handler.  Not ISR-safe: must be called from the same thread as urbi_step.
+ *
+ * Step-safety contract (EVENT-022): only call between urbi_step / urbi_vm_run
+ * slices, never from inside one.  Concretely: vm->cur_strand must be NULL.
+ * A non-NULL cur_strand means a strand is currently dispatching, in which
+ * case the drain handler is being read concurrently by uevent_ring_drain
+ * (called at safepoint entry).  Today's single-threaded scheduler means the
+ * "concurrent" reader is on the same thread as us, so a write here would not
+ * race in the SMP sense — but it would mutate the handler mid-step, which
+ * is observably surprising semantics, and the v1.x URBI_SCHED_PREEMPTIVE
+ * design assumes drain-handler installs are quiescent.  URBI_DEBUG asserts
+ * the contract.
  */
 void
 urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
@@ -366,7 +383,15 @@ urbi_register_event_drain(UVM *vm, urbi_event_drain_handler h)
      * top-down was misleading. */
     if (vm == NULL) return;
     URBI_ASSERT_NOT_ISR(vm);
-    vm->event_drain_handler = h;
+    /* EVENT-022: enforce the step-quiescent contract above.  cur_strand
+     * is set by urbi_step before dispatch and cleared afterwards; it is
+     * the canonical "step in progress" signal in this VM (no separate
+     * in_step flag exists). */
+    URBI_INTERNAL_ASSERT(vm->cur_strand == NULL);
+    /* EVENT-007: __ATOMIC_RELEASE store pairs with the __ATOMIC_ACQUIRE
+     * load in uevent_ring_drain.  Single-threaded today; the pairing
+     * inherits correctness for v1.x URBI_SCHED_PREEMPTIVE. */
+    __atomic_store_n(&vm->event_drain_handler, h, __ATOMIC_RELEASE);
 }
 
 const char *uvm_error_name(UVMError code) {
