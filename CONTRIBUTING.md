@@ -361,6 +361,26 @@ The default soft cap is 1000 LOC per `.c` source file (enforced by
   permitted by `docs/superpowers/specs/2026-05-05-v0.5.x-cleanup-design.md`
   §3.3 ("generated dispatch tables, opcode trampolines").
 
+## v0.5.x cleanup ramp (2026-05-06 to 2026-05-09)
+
+The v0.5.x cleanup ramp was a 6-wave pre-M6 hygiene release between
+the M5 reactive runtime (`v0.5.0-reactive`) and the M6 stdlib milestone.
+Each wave addressed one tightly-scoped theme so that bisecting later
+regressions stays cheap:
+
+- `v0.5.3-layout` — folder reorg + filename renames
+- `v0.5.4-decompose` — split four monster files into per-concern units
+- `v0.5.5-naming` — function + public C API rename + header hygiene
+- `v0.5.6-bytecode` — wire format v1.4 → v1.5 hard break
+- `v0.5.7-fixes` — 123 bug-tier audit IDs closed; TDD per fix commit
+  codified as a standing convention
+- `v0.5.8-cleanup` — final wave: dead code, smells, docs, and
+  strict-tooling close-out (cppcheck + tidy-strict + docstring-coverage
+  all promoted to hard-fail releasetest gates)
+
+Conventions established during the ramp are documented above.  See
+`docs/milestones/v0.5.x-cleanup.md` for the full retrospective.
+
 ## License
 
 BSD-3-Clause.
