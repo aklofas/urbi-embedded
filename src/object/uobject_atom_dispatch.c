@@ -29,6 +29,11 @@
 UObject *
 urbi_atom_proto_for_value(struct UVM *vm, UValue v)
 {
+    /* Fast arms: each known UValKind routes to its dedicated atom proto.
+     * Per Phase-2 design every other kind (UVAL_BOOL / UVAL_NIL /
+     * UVAL_VOID / UVAL_CLOSURE / UVAL_STRAND / UVAL_HOST_FN) and any
+     * unrecognised kind falls through to the root-Object default below.
+     * Phase 4 widens the per-kind map (URBI_ATOM_BOOLEAN, etc.). */
     switch ((UValKind)v.kind) {
         case UVAL_OBJECT:
             return (UObject *)v.v.p;
@@ -49,34 +54,29 @@ urbi_atom_proto_for_value(struct UVM *vm, UValue v)
             return urbi_object_atom(vm, URBI_ATOM_EVENT);
 
         case UVAL_BOOL:
-            /* No URBI_ATOM_BOOLEAN at Phase 2 baseline — that lands as a
-             * Phase 4 deliverable.  Route Boolean to root Object until
-             * then; Phase 4 tightens the routing. */
-            return urbi_object_atom(vm, URBI_ATOM_OBJECT);
-
         case UVAL_NIL:
         case UVAL_VOID:
-            /* nil and void route to root Object until Phase 4 lands their
-             * dedicated protos.  Returning the root Object means slot
-             * lookup against `1.foo` succeeds via Integer proto, but
-             * `nil.foo` only resolves to whatever lives on root Object —
-             * matching legacy semantics where nil.clone() fails (nil is
-             * a singleton). */
-            return urbi_object_atom(vm, URBI_ATOM_OBJECT);
-
         case UVAL_CLOSURE:
         case UVAL_STRAND:
         case UVAL_HOST_FN:
         default:
-            /* Each of these has its own atom singleton candidate in v1.x.
-             * For Phase 2 they all route through root Object.  The default
-             * arm logs to stderr under URBI_DEBUG so audit-trail tools
-             * can surface unexpected kinds reaching this site. */
-#ifdef URBI_DEBUG
-            fprintf(stderr,
-                    "urbi_atom_proto_for_value: unhandled kind %s\n",
-                    urbi_atom_family_name((URBIAtomFamily)v.kind));
-#endif
-            return urbi_object_atom(vm, URBI_ATOM_OBJECT);
+            break;   /* fall through to root-Object + diagnostic */
     }
+
+    /* Unrecognised / Phase-4-pending kinds: the URBI_DEBUG diagnostic uses
+     * urbi_atom_family_name to surface the routed kind.  Production
+     * builds compile out the stderr write. */
+#ifdef URBI_DEBUG
+    if (v.kind != (uint8_t)UVAL_BOOL
+        && v.kind != (uint8_t)UVAL_NIL
+        && v.kind != (uint8_t)UVAL_VOID
+        && v.kind != (uint8_t)UVAL_CLOSURE
+        && v.kind != (uint8_t)UVAL_STRAND
+        && v.kind != (uint8_t)UVAL_HOST_FN) {
+        fprintf(stderr,
+                "urbi_atom_proto_for_value: unhandled kind %s\n",
+                urbi_atom_family_name((URBIAtomFamily)v.kind));
+    }
+#endif
+    return urbi_object_atom(vm, URBI_ATOM_OBJECT);
 }
