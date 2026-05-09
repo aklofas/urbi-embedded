@@ -35,6 +35,7 @@
 #define UGC_IS_FIXED             0x00U
 #define UGC_HAS_WATCHER_OBSERVER 0x00U
 #define UGC_HAS_SLOT_CHANGE_EVENT 0x00U
+#define UGC_IS_WEAK              0x00U  /* URBI_GC_NONE: no GC => no weak references. */
 
 /* === Phase constant — NONE is permanently IDLE (no cycles) === */
 #define GC_PHASE_IDLE            0
