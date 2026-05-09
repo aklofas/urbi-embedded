@@ -1,0 +1,17 @@
+# Milestone: M6
+# Covers: Phase 1 string-literal lex.  TOK_STRING through full pipeline:
+#         literal expr prints as quoted string; var binding round-trips;
+#         equality across two literal occurrences is true (intern step
+#         canonicalises pointers; UVAL_STR equality is pointer-compare,
+#         see src/value/uvalue.c uvalue_equal).
+# Audit:   LEX-035 partial closure (string literals; angle literals + pi
+#         deferred to v1.x backlog).
+
+"hello"
+[00000000] "hello"
+
+var s = "world"; s
+[00000001] "world"
+
+"foo" == "foo"
+[00000002] true
