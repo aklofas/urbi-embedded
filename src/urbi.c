@@ -128,11 +128,16 @@ typedef struct {
 /* unamespace_walk_roots callback: fold each UValue into the running hash.
  * UVAL_INT: hashes the integer value directly.
  * UVAL_BOOL: hashes the integer value (0/1 stored as int64_t).
+ * UVAL_FLOAT: hashes the float bit pattern at its actual width (f32 or f64).
  * UVAL_STR: hashes the interned pointer address.  Stable within one VM
  *   lifetime (intern table never moves pointers); NOT cross-run-stable
  *   because allocator placement varies between process invocations.
- * UVAL_CLOSURE / UVAL_STRAND / UVAL_VOID / UVAL_NIL: hash only the kind
- *   (heap pointers are not deterministic across runs). */
+ * UVAL_NIL / UVAL_VOID / UVAL_CLOSURE / UVAL_STRAND / UVAL_OBJECT /
+ *   UVAL_EVENT / UVAL_HOST_FN: hash only the kind byte (already mixed
+ *   above the switch).  All seven carry heap pointers (or sentinels) that
+ *   are not deterministic across runs, so the payload is intentionally
+ *   NOT folded.  Closes API-025: comment now matches the default arm's
+ *   actual coverage. */
 static void
 checksum_walk_cb(struct UVM *vm, UValue *root, void *ctx)
 {
