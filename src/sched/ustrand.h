@@ -260,15 +260,24 @@ _Static_assert(sizeof(struct UStrand) == 2880,
                "UStrand size pin (CHSTR-041) on 64-bit");
 #endif
 
-/* === Lifecycle functions (stubs; full impl across T20 + T29) ===
+/* === Lifecycle functions ===
 
    ustrand_init zeros the strand, sets DORMANT state, and pre-allocates the
    cleanup stack using vm->alloc_fn.  On allocation failure the strand is
    left in a detectable malformed-DORMANT state (cleanup_base == NULL);
-   callers must check.
+   the return value distinguishes success (0) from OOM (-1) and callers
+   must check it.
 
-   ustrand_destroy frees the cleanup stack using vm->alloc_fn.  The same vm
-   pointer used for init must be passed to destroy. */
+   ustrand_destroy walks the cleanup stack to unregister the strand from
+   any tag.member_strands_head lists (strand_unlink_from_tags), routes
+   cross-strand stop bookkeeping through sched_strand_account_destroy
+   (which decrements vm->host_call_pending_count if a cross-strand stop was
+   deposited on this strand), frees the cleanup stack and the register
+   stack via vm->alloc_fn, and releases per-strand resource chains
+   (closures, closed upvalues, and out-slot writes) via
+   release_strand_resource_chain.  The module_instance pointer is GC-managed
+   and is NOT freed here (see CHSTR-043 docstring).  The same vm pointer
+   used for init must be passed to destroy. */
 
 /* CHSTR-010: returns 0 on success, -1 if the cleanup-stack allocation fails.
  * Existing callers that discard the return value are valid C; urbi_strand_create
