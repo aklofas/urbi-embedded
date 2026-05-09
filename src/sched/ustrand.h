@@ -236,10 +236,19 @@ struct UStrand {
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
     const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
-    struct UModuleInstance *module_instance; /* M4 follow-up: per-(vm,module) IC RAM tier;
-                                               bound by urbi_vm_run / urbi_run_chunk via
-                                               urbi_get_or_create_module_instance.  May be
-                                               NULL if not yet wired (defensive). */
+    /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
+     * Bound by urbi_vm_run / urbi_run_chunk via
+     * urbi_get_or_create_module_instance.  May be NULL if not yet wired
+     * (defensive).
+     *
+     * CHSTR-043: GC-managed, NOT freed by ustrand_destroy.  The
+     * UModuleInstance is shared across strands within a realm and has its
+     * own GC lifecycle — vm->module_instances_head heads the live list and
+     * walk_umoduleinstance (src/object/utypes_init.c) traces each instance
+     * during the realm's strand walker.  ustrand_destroy clears the strand
+     * via urbi_zero / release_strand_resource_chain for hygiene only; the
+     * pointer is not free'd here. */
+    struct UModuleInstance *module_instance;
     UCallFrame              frames[UVM_MAX_FRAMES];
     int                     frame_count;
     UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */
