@@ -9,12 +9,15 @@
  * before c_event_emit_sync returns.
  *
  * Construction approach (per plan simplified path):
- *   - Event.new() and scripted `at sync (e?) body` install are not yet
- *     wirable end-to-end (T59 Event stdlib defer at v0.5.1; the original
- *     v0.5.1 retrospective also flagged an AST_AT_EVENT register-allocation
- *     desync, fixed in v0.5.2 — see tests/unit/test_parse_at_event.c
+ *   - Note: the AST_AT_EVENT scripted-install register-allocation desync was
+ *     a real codegen bug — fixed in v0.5.7-fixes Phase 2 (commits
+ *     3af426c..dc98956), tracked in REVIVAL §14 row S-emit-freereg-discipline.
+ *   - Event.new() and scripted `at sync (e?) body` install are still not
+ *     wirable end-to-end: Event.new() awaits M6 stdlib (the desync fix
+ *     unblocks the codegen path but the constructor itself is still missing).
+ *     See tests/unit/test_parse_at_event.c
  *     emit_at_event_global_member_event_expr_disjoint_regs for the
- *     regression test, so only the Event.new() defer still applies).
+ *     desync regression test.
  *   - Instead: compile a one-arg body closure from urbiscript
  *     (`function(p) { Realm.received = p }`), retrieve the resulting
  *     UClosure value from urbi_run_chunk's return slot, construct a UEvent

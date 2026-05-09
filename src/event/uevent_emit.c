@@ -107,7 +107,17 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
  *
  * Throws cannot propagate from a sync emit — spec §5.4 contract is fail-soft
  * and warn (the emit caller is unaware of subscriber bodies and cannot
- * meaningfully handle their exceptions). */
+ * meaningfully handle their exceptions).
+ *
+ * Re-entry guard asymmetry vs. the eval-pass / drain wires:
+ * This site sets vm->in_watcher_scratch explicitly, while the eval-pass
+ * wires (invoke_body_inline / invoke_onleave_inline) and the drain wire
+ * (run_watcher_onleave) rely on caller-owned vm->in_watcher_eval for
+ * re-entry protection. Reason: c_event_emit_sync may be called from
+ * contexts that haven't already entered watcher-eval (e.g., a synchronous
+ * emit invoked from main code or from a host C callback), so this
+ * function owns its own re-entry flag. The four wired sites otherwise
+ * share the same urbi_run_closure_on_scratch[_with_payload] primitive. */
 static void
 run_event_body_on_scratch(struct UVM *vm, struct UWatcher *w, UValue payload)
 {
