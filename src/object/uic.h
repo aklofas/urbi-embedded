@@ -75,4 +75,19 @@ int urbi_slot_get_slow(struct UVM *vm, UObject *recv, UIC *ic,
 int urbi_slot_set_slow(struct UVM *vm, UObject *recv, UIC *ic,
                        UValue value);
 
+/* === ic_fill_at_cursor — public helper for IC fill ===
+ *
+ * Closes OBJ-033 (defer:M6 / smell): the helper was historically file-
+ * private to uic.c but is anticipated to be shared with megamorphic-
+ * bail call sites (REVIVAL §8.5.1 / IC invalidation upgrade path).
+ * Hoisting the declaration costs nothing today (no external callers
+ * yet) and avoids a follow-up edit when those callers land.
+ *
+ * Fill exactly one entry of `ic` at the round-robin replace_cursor with
+ * the resolved slot information.  Advances replace_cursor and grows
+ * ic->n until the cache is full. */
+void ic_fill_at_cursor(UIC *ic, const struct UVM *vm, const UObject *recv,
+                       UObject *holder, uint32_t idx, UProps *up,
+                       uint8_t flags);
+
 #endif /* UIC_H */
