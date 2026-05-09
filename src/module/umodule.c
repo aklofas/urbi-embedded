@@ -119,7 +119,10 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
-    if (proto == NULL || alloc == NULL) return;
+    /* MOD-030: every caller guards proto != NULL; the runtime contract is
+     * "non-NULL proto" — assert rather than silently no-op. */
+    URBI_INTERNAL_ASSERT(proto != NULL);
+    if (alloc == NULL) return;
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
