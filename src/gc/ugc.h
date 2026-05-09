@@ -74,7 +74,6 @@ typedef struct UCell {
  *
  * flags field bits: */
 #define TYPE_HAS_FINALIZER  0x01   /* destroy != NULL and should be called */
-#define TYPE_HOST_BACKED    0x02   /* payload references host-owned memory */
 
 typedef void (*UTypeDestroyFn)(struct UVM *vm, void *payload);
 
