@@ -1079,14 +1079,19 @@ dispatch:
             entry->next_member    = tag->member_strands_head;  /* head-insert */
             entry->strand_back    = s;
             tag->member_strands_head = entry;
-            /* T55: tier-2 enter event hook (spec #3 §8.3).
-             * Fast-path: two loads + branch when no subscribers (typical case).
-             * Zero alloc. Subscribers see the tag already ambient (entry pushed above). */
-            if (tag->enter_event != NULL && tag->enter_event->at_watchers_head != NULL) {
-                UValue nil_val = {0};
-                nil_val.kind = (uint8_t)UVAL_NIL;
-                c_event_emit_sync(s->vm, tag->enter_event, nil_val);
-            }
+            /* VM-015: enter_event is unconditionally NULL on a fresh utag_create
+             * (utag.c zero-fills enter_event/leave_event at allocation; only the
+             * tag.enter native getter — invoked through a Tag.enter property
+             * read — lazy-allocates the UEvent later in tag_enter_getter).  At
+             * OP_PUSH_TAG the tag was just created on the line above and no
+             * code has had access to it; therefore tag->enter_event MUST be
+             * NULL here.  The original T55 "tier-2 enter event hook" branch
+             * (load + null-check + at_watchers_head load) was dead at every
+             * v1.0 dispatch and is removed; M6 wires Tag.enter through a
+             * different path (subscribers register on the lazy-alloc'd event
+             * after the tag escapes via a register binding, never during
+             * OP_PUSH_TAG itself).  The assertion pins the contract. */
+            URBI_INTERNAL_ASSERT(tag->enter_event == NULL);
             NEXT();
         }
 
