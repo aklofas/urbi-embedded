@@ -128,6 +128,17 @@ static UDigitAccResult accumulate_digits(ULexer *lex, const char *start,
         const int d = digit_value(c, base);
         if (d < 0) break;
         if (!acc_digit(&r.value, d, base)) {
+            /* LEX-013: "first error wins" — overflow is reported and the
+             * recovery loop consumes both digits AND underscores until the
+             * next non-digit-non-underscore boundary so the caller resumes
+             * at a clean lexeme boundary.  This deliberately MASKS any
+             * trailing or adjacent underscore violation that would
+             * otherwise be reported on the same literal: the user already
+             * has a more impactful error (overflow) to fix first, and the
+             * underscore violation reappears once they bring the literal
+             * within range.  Behaviour is locked in at v0.5.8 — see the
+             * scan_radix_overflow_consumes_trailing_underscores regression
+             * in test_lexer.c. */
             while (lex->cur < lex->end &&
                    (digit_value(*lex->cur, base) >= 0 || *lex->cur == '_')) {
                 lex->cur++;

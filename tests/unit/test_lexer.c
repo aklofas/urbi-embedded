@@ -148,6 +148,27 @@ static void unterminated_block_comment_error_span_full(void) {
     UASSERT_EQ(t.len, 7);
 }
 
+/* LEX-013: "first error wins" contract — when scan_radix detects integer
+ * overflow, the recovery loop consumes both digits AND underscores until
+ * the next non-digit-non-underscore boundary.  Any trailing or adjacent
+ * underscore violation co-located on the same literal is MASKED so the
+ * user sees only the overflow.  Locks in the documented behaviour against
+ * future drift. */
+static void scan_radix_overflow_consumes_trailing_underscores(void) {
+    /* 17 hex F's (= 2^68 - 1) is well past INT64_MAX; the trailing "__1"
+     * has both adjacent-underscore AND trailing-underscore-on-overflow
+     * shapes.  The reported error must be LEX_INT_OVERFLOW (not
+     * LEX_ADJACENT_UNDERSCORES), and the span must cover the full
+     * literal so that the next token starts after it. */
+    const char s[] = "0xFFFFFFFFFFFFFFFFF__1";
+    ULexer l;
+    ulex_init(&l, s, (int)(sizeof s - 1));
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_ERROR);
+    UASSERT_EQ(t.u.err.code, LEX_INT_OVERFLOW);
+    UASSERT_EQ(t.len, (int)(sizeof s - 1));
+}
+
 static void plus_token(void) {
     ULexer l; ulex_init(&l, "+", 1);
     const UToken t = ulex_next(&l);
@@ -1012,6 +1033,7 @@ void test_lexer_suite(void) {
     utest_run("block_comment_spans_lines", block_comment_spans_lines);
     utest_run("unterminated_block_comment_emits_error", unterminated_block_comment_emits_error);
     utest_run("unterminated_block_comment_error_span_full", unterminated_block_comment_error_span_full);
+    utest_run("scan_radix_overflow_consumes_trailing_underscores", scan_radix_overflow_consumes_trailing_underscores);
     utest_run("plus_token", plus_token);
     utest_run("minus_token", minus_token);
     utest_run("star_token", star_token);
