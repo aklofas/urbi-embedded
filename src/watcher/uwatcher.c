@@ -4,7 +4,14 @@
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * All allocation uses vm->alloc_fn (realloc semantics).
- * Zero-fill uses urbi_zero (volatile byte loop) — no memset dependency. */
+ * Zero-fill uses urbi_zero (volatile byte loop) — no memset dependency.
+ *
+ * HISTORICAL NOTE (WATCH-032 / WATCH-023): this TU previously exposed
+ * `urbi_watcher_install_internal` as a test-only seam.  Removed in
+ * v0.5.7-fixes (WATCH-023).  All install paths now go through
+ * OP_AT_INSTALL / OP_AT_SYNC_INSTALL / OP_WHENEVER_INSTALL /
+ * OP_WAITUNTIL_INSTALL (production) or `urbi_watcher_install_for_test`
+ * (tests/unit/twatcher_install_helper.{c,h}, tests-only). */
 
 #include "uwatcher.h"
 #include "vm/uvm.h"
@@ -275,10 +282,8 @@ uwatcher_pool_destroy(struct UVM *vm)
  *
  * The companion `install` primitive lives in production code as
  * `install_watcher_runtime` / `install_at_event_runtime`
- * (src/watcher/uwatcher_install.c).  WATCH-023 retired the former
- * `urbi_watcher_install_internal` test seam from this TU; tests now wire
- * watchers via `urbi_watcher_install_for_test`
- * (tests/unit/twatcher_install_helper.{c,h}). */
+ * (src/watcher/uwatcher_install.c).  See file-header HISTORICAL NOTE
+ * for the WATCH-023 test-seam removal. */
 
 void
 urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
