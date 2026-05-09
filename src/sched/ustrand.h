@@ -258,8 +258,6 @@ void ustrand_destroy(UStrand *s, struct UVM *vm);
  *   new_s->fatal_status = UEXEC_CANCEL, fatal_value = NIL, state = DEAD and
  *   returns immediately.  Not ISR-safe. */
 
-struct UTag;   /* forward-decl; full struct in utag.h */
-
 size_t urbi_strand_capture_ambient_chain(struct UStrand *parent,
                                          struct UTag   **out_chain,
                                          size_t          out_cap);
