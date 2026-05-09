@@ -480,15 +480,13 @@ sched_dequeue_ready_head(UVM *vm)
 static void
 strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
 {
-    int i;
-
     /* Guard: DEAD strands have no live roots (spec §5.2). */
     if (USTRAND_GET_STATE(s) == USTRAND_DEAD) return;
 
     /* (1) Register window — conservative full-stack scan.
      *     s->stack may be NULL for a DORMANT strand not yet armed. */
     if (s->stack != NULL) {
-        for (i = 0; i < UVM_STACK_CAP; i++) {
+        for (int i = 0; i < UVM_STACK_CAP; i++) {
             cb(vm, &s->stack[i], ctx);
         }
     }

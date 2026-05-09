@@ -288,9 +288,6 @@ uwatcher_pool_destroy(struct UVM *vm)
 void
 urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
 {
-    struct UWatcher **pp;
-    size_t i;
-
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(w != NULL);
 
@@ -298,7 +295,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
      * OTHER active watchers.  If none of them still observe the cell, clear
      * bit-6.  The scan happens before active-list unlink so the loop correctly
      * skips w itself via the (o == w) guard.  Per spec §5.4. */
-    for (i = 0; i < (size_t)w->read_set_count; i++) {
+    for (size_t i = 0; i < (size_t)w->read_set_count; i++) {
         UCell   *c             = w->cells[i];
         bool     still_observed = false;
         UWatcher *o;
@@ -333,7 +330,7 @@ urbi_watcher_unregister_internal(struct UVM *vm, struct UWatcher *w)
         }
     } else {
         /* Unlink from active_watchers_head via pointer-to-pointer walk. */
-        pp = &vm->active_watchers_head;
+        struct UWatcher **pp = &vm->active_watchers_head;
         while (*pp != NULL) {
             if (*pp == w) {
                 *pp = w->next_active;
