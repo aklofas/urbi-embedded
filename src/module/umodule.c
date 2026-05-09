@@ -161,7 +161,28 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
         module->nested_cap = new_cap;
     }
 
-    /* Allocate the UProto struct itself. */
+    /* Allocate the UProto struct itself.
+     *
+     * MOD-003: if this allocation fails AFTER the nested[] grow above
+     * succeeded, we leave `module->nested` pointing at the grown (larger)
+     * buffer with `nested_cap` bumped but `nested_count` unchanged.  This
+     * is "grow-without-commit" — the array is correctly sized for an
+     * unused trailing slot range [nested_count..nested_cap), every
+     * existing entry [0..nested_count) is intact, and the next caller
+     * walks the same grow path with the larger cap already satisfied
+     * (skipping the realloc).
+     *
+     * Rolling back the grow would require freeing the larger buffer and
+     * restoring the prior nested pointer.  Since realloc invalidates the
+     * prior pointer when it returns a different address, restoring would
+     * mean re-allocating yet again — net cost higher than carrying the
+     * benign over-cap.  The "benign over-cap" state is observed by:
+     *   - umodule_destroy: walks [0..nested_count) only.
+     *   - serialize: writes nested_count, not nested_cap.
+     *   - subsequent umodule_alloc_nested_proto: enters the grow branch
+     *     only when nested_count >= nested_cap, which now skips the
+     *     realloc and proceeds to UProto alloc.
+     * No code path reads beyond [0..nested_count). */
     UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
     if (proto == NULL) return NULL;
     urbi_zero(proto, sizeof(*proto));

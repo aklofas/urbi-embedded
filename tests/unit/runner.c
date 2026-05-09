@@ -157,6 +157,7 @@ extern void test_event_runtime_suite(void);
 extern void test_tag_barrier_suite(void);
 extern void test_object_in_place_barrier_suite(void);
 extern void test_module_loader_hardening_suite(void);
+extern void test_module_alloc_nested_suite(void);
 extern void test_foundations_suite(void);
 extern void test_public_api_suite(void);
 
@@ -292,6 +293,7 @@ static const struct suite_entry suites[] = {
     {"tag_barrier",               test_tag_barrier_suite},
     {"object_in_place_barrier",   test_object_in_place_barrier_suite},
     {"module_loader_hardening",   test_module_loader_hardening_suite},
+    {"module_alloc_nested",       test_module_alloc_nested_suite},
     {"foundations",               test_foundations_suite},
     {"public_api",                test_public_api_suite},
     /* Add new suites here as test files are added. */
