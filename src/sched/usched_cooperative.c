@@ -252,6 +252,18 @@ sched_strand_block(UStrand *s, uint8_t reason, uint64_t payload)
             s->wait_payload.join_parent = (UStrand *)(uintptr_t)payload;
             break;
         default:
+            /* SCHED-007: unknown reason byte — payload is dropped by design.
+             * Entry contracts (Phase 5 of v0.5.7-fixes; see USTRAND_REASON_*
+             * constants in src/sched/ustrand.h) reject unknown reasons
+             * upstream at every legitimate caller (the c_event_*, sleep,
+             * join paths all pass a literal USTRAND_REASON_*).  This
+             * default arm is a defense-in-depth catch-all and should never
+             * fire in production.  USTRAND_REASON_HOST (0x04, reserved)
+             * and USTRAND_REASON_NONE (0x00) currently land here without a
+             * payload field assignment — when those become live they need
+             * their own case arm.  URBI_INTERNAL_ASSERT(0) under debug to
+             * surface anyone who slipped past the upstream check. */
+            URBI_INTERNAL_ASSERT(0);
             break;
     }
 }
