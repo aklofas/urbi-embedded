@@ -143,8 +143,14 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
 
     /* CHSTR-044: register-stack free via urbi_strand_register_stack_free.
      * urbi_vm_run frees its own transient strand's stack before calling
-     * ustrand_destroy, so double-free is not a risk there (stack is NULL). */
-    if (vm != NULL)
+     * ustrand_destroy, so double-free is not a risk there (stack is NULL).
+     *
+     * CHSTR-004: explicit s->stack != NULL guard pins the contract at the
+     * call site rather than relying on urbi_strand_register_stack_free's
+     * internal NULL-check.  Two-layer guard: future maintainers reading
+     * ustrand_destroy can see locally that the helper is safe to call on a
+     * pre-freed strand without having to chase the helper's body. */
+    if (vm != NULL && s->stack != NULL)
         urbi_strand_register_stack_free(s, vm);
 
     /* CHSTR-029: three resource chains consolidated into one helper. */

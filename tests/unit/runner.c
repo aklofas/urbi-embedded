@@ -98,6 +98,7 @@ extern void test_uchanged_node_suite(void);
 extern void test_uvm_trace_fields_suite(void);
 extern void test_uvm_deferred_ring_suite(void);
 extern void test_strand_arm_suite(void);
+extern void test_strand_destroy_suite(void);
 extern void test_watcher_spawn_suite(void);
 extern void test_watcher_completed_suite(void);
 extern void test_watcher_lifecycle_suite(void);
@@ -231,6 +232,7 @@ static const struct suite_entry suites[] = {
     {"uvm_trace_fields",           test_uvm_trace_fields_suite},
     {"uvm_deferred_ring",          test_uvm_deferred_ring_suite},
     {"strand_arm",                 test_strand_arm_suite},
+    {"strand_destroy",             test_strand_destroy_suite},
     {"watcher_spawn",              test_watcher_spawn_suite},
     {"watcher_completed",          test_watcher_completed_suite},
     {"watcher_lifecycle",          test_watcher_lifecycle_suite},
