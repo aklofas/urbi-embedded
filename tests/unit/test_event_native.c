@@ -14,7 +14,11 @@
  *      and an int payload wakes a parked waiter and deposits the payload.
  *
  *   3. event_proto_has_all_four_slots:
- *      new / emit / syncEmit / waituntil all exist as UVAL_HOST_FN slots. */
+ *      new / emit / syncEmit / waituntil all exist as UVAL_HOST_FN slots.
+ *
+ *   4. event_new_returns_canonical_nil_on_oom (EVENT-011):
+ *      When urbi_event_create fails (alloc-spy injected OOM), the native
+ *      Event.new returns a value byte-identical to urbi_value_nil(). */
 
 #include "utest.h"
 
@@ -185,6 +189,86 @@ UTEST(event_proto_has_all_four_slots)
     urbi_vm_destroy(&vm);
 }
 
+/* ===================================================================
+ * Test 4 (EVENT-011): event_new_returns_canonical_nil_on_oom
+ *
+ * Replaces the legacy `UValue nil = {0}; nil.kind = UVAL_NIL;` pattern with
+ * `urbi_value_nil()`.  Verifies the OOM branch returns a value bit-identical
+ * to the canonical helper.  Drives the alloc spy to fail the next request
+ * after VM init, then invokes Event.new (which calls urbi_event_create,
+ * which calls urbi_gc_alloc, which calls the spy).
+ * =================================================================== */
+
+typedef struct {
+    int alloc_calls;
+    int fail_at;  /* -1: never; otherwise fail when alloc_calls > fail_at */
+} EventNativeAllocSpy;
+
+static void *
+event_native_spy_alloc(void *ptr, size_t n, void *ud)
+{
+    EventNativeAllocSpy *spy = (EventNativeAllocSpy *)ud;
+    if (n > 0 && ptr == NULL) {
+        spy->alloc_calls++;
+        if (spy->fail_at >= 0 && spy->alloc_calls > spy->fail_at) {
+            return NULL;
+        }
+    }
+    if (n == 0) { free(ptr); return NULL; }
+    return realloc(ptr, n);
+}
+
+UTEST(event_new_returns_canonical_nil_on_oom)
+{
+    EventNativeAllocSpy spy = { 0, -1 };
+
+    UVM vm;
+    urbi_vm_init(&vm, event_native_spy_alloc, &spy);
+    urbi_native_protos_init(&vm);
+
+    UASSERT(vm.event_proto != NULL);
+    if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
+
+    UStrand s;
+    ustrand_init(&s, &vm);
+
+    /* Look up the "new" host fn on Event proto. */
+    USymbol *sym_new = (USymbol *)ustr_intern(&vm, "new", 3);
+    UASSERT(sym_new != NULL);
+    if (sym_new == NULL) {
+        ustrand_destroy(&s, &vm);
+        urbi_vm_destroy(&vm);
+        return;
+    }
+    UValue slot_val;
+    slot_val.kind = (uint8_t)UVAL_NIL;
+    UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_new, &slot_val) == 0);
+    UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
+
+    /* Arm the spy to fail the next allocation; urbi_event_create then
+     * returns NULL and the host fn must take the OOM branch. */
+    spy.fail_at = spy.alloc_calls;
+
+    UValue argv[1];
+    argv[0].kind = (uint8_t)UVAL_OBJECT;
+    argv[0].v.p  = (void *)vm.event_proto;
+
+    UHostFn fn = (UHostFn)(uintptr_t)slot_val.v.p;
+    UValue result = fn(&s, 1, argv);
+
+    /* Result must be bit-identical to the canonical urbi_value_nil(). */
+    UValue canonical = urbi_value_nil();
+    UASSERT_EQ((int)result.kind, (int)UVAL_NIL);
+    UASSERT_EQ((int)result.kind, (int)canonical.kind);
+    /* memcmp covers _pad and union payload. */
+    UASSERT(memcmp(&result, &canonical, sizeof(UValue)) == 0);
+
+    /* Disarm spy before teardown. */
+    spy.fail_at = -1;
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite entry point ===== */
 
 void
@@ -194,4 +278,6 @@ test_event_native_suite(void)
     utest_run("event_new_creates_uevent",              event_new_creates_uevent);
     utest_run("event_emit_method_dispatches_to_async", event_emit_method_dispatches_to_async);
     utest_run("event_proto_has_all_four_slots",        event_proto_has_all_four_slots);
+    utest_run("event_new_returns_canonical_nil_on_oom",
+              event_new_returns_canonical_nil_on_oom);
 }

@@ -115,18 +115,19 @@ urbi_register_fn(struct UVM *vm, struct UObject *proto,
 /* urbi_native_event_new: constructor — allocates a fresh UEvent.
  *
  * Argv[0] is the receiver (the Event proto); ignored.
- * Returns a UVAL_EVENT wrapping the new UEvent, or NIL on OOM. */
+ * Returns a UVAL_EVENT wrapping the new UEvent, or NIL on OOM.
+ *
+ * EVENT-011: route the OOM nil through urbi_value_nil() so the canonical
+ * zero-init helper owns the layout — avoids the {0}-then-set-kind pattern
+ * that depends on UVAL_NIL's enum value being layout-compatible with
+ * brace-init. */
 static UValue
 urbi_native_event_new(struct UStrand *s, int argc, UValue *argv)
 {
     (void)argc; (void)argv;
     struct UVM *vm = s->vm;
     UEvent *e = urbi_event_create(vm);
-    if (e == NULL) {
-        UValue nil = {0};
-        nil.kind = (uint8_t)UVAL_NIL;
-        return nil;
-    }
+    if (e == NULL) return urbi_value_nil();
     return uvalue_from_event(e);
 }
 
