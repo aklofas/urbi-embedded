@@ -28,14 +28,16 @@ OUT="${1:-$ROOT/tests/golden/wire-format-hashes.txt}"
 : > "$OUT"
 find "$ROOT/tests/chk" -name '*.chk' -type f | LC_ALL=C sort | while IFS= read -r chk; do
     rel="${chk#$ROOT/}"
-    tmp=$(mktemp /tmp/urbi_chk_XXXXXX.u)
     # Extract code lines: skip comment lines, blank lines, and [frame] output lines.
-    awk '/^\[/ || /^[[:space:]]*#/ || /^[[:space:]]*$/ { next } { print }' \
-        "$chk" | tr '\n' ';' | sed 's/;;*/;/g;s/;$//' > "$tmp"
+    # Feed via stdin (`-f -`) rather than a mktemp tmp file so the source_name
+    # embedded in the wire format is the stable string "-" rather than a
+    # random /tmp/urbi_chk_XXXXXX.u path that would vary across runs.
+    src=$(awk '/^\[/ || /^[[:space:]]*#/ || /^[[:space:]]*$/ { next } { print }' \
+              "$chk" | tr '\n' ';' | sed 's/;;*/;/g;s/;$//')
     # Wire-format output contains NULs; shell command substitution truncates
-    # at the first NUL.  Pipe directly to sha256sum to preserve all bytes.
+    # at the first NUL.  Pipe directly to a temp binary to preserve all bytes.
     wire_bin=$(mktemp /tmp/urbi_wire_XXXXXX.bin)
-    if "$URBI" --dump-wire-format "$tmp" > "$wire_bin" 2>/dev/null && \
+    if printf '%s' "$src" | "$URBI" --dump-wire-format -f - > "$wire_bin" 2>/dev/null && \
        [ -s "$wire_bin" ]; then
         h=$(sha256sum "$wire_bin" | awk '{print $1}')
     else
@@ -43,6 +45,5 @@ find "$ROOT/tests/chk" -name '*.chk' -type f | LC_ALL=C sort | while IFS= read -
     fi
     rm -f "$wire_bin"
     printf '%s  %s\n' "$h" "$rel" >> "$OUT"
-    rm -f "$tmp"
 done
 wc -l "$OUT"

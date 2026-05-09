@@ -106,6 +106,10 @@ test: $(LIB) $(TEST_OBJ) test-integration test-chk
 test-loc-cap:
 	@./tests/scripts/check_loc_cap.sh
 
+.PHONY: test-wire-format-determinism
+test-wire-format-determinism: $(BUILDDIR)/urbi
+	@./tests/scripts/check_wire_format_determinism.sh
+
 test-debug:
 	$(MAKE) TARGET=host-debug \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
@@ -284,7 +288,7 @@ test-corpus-sanitize:
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
-    test-scan-build
+    test-scan-build test-wire-format-determinism
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
