@@ -195,24 +195,6 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
     gc_shade_gray(vm, cell);
 }
 
-/* === walk_vm_globals ===
- *
- * Walks UVM-level UValues that aren't owned by any subsystem root provider.
- * Per spec §5.7: fatal_handler_value, prototypes[], error_protos[].
- * At M3 baseline these fields don't exist on UVM yet (they land at M4+);
- * this is a no-op stub.
- *
- * TODO(T26): enumerate vm->prototypes[] / vm->error_protos[] /
- * vm->fatal_handler_value when those land at M4+. */
-static void
-walk_vm_globals(UVM *vm, UGcRootCallback cb, void *ctx)
-{
-    (void)vm;
-    (void)cb;
-    (void)ctx;
-    /* No VM-level UValue globals exist at M3. */
-}
-
 /* === drain_gray: shared gray work-list drainer (GC-027) ===
  *
  * Pops cells from the gray work-list, walks their payload (if any), and
@@ -261,10 +243,9 @@ drain_gray(UVM *vm, size_t budget)
 static size_t
 gc_mark_roots_step(UVM *vm)
 {
-    /* Walk VM-internal globals (no-op stub at M3; T26 fills in). */
-    walk_vm_globals(vm, mark_root_callback, vm);
-
-    /* Walk all registered root providers. */
+    /* Walk all registered root providers.
+     * VM-level UValue globals (e.g. fatal_handler_value, prototypes[]) are
+     * reached via root providers — no separate VM-globals walk needed. */
     uint8_t i;
     for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, mark_root_callback, vm);
@@ -801,15 +782,13 @@ urbi_gc_force_full(UVM *vm)
 
 /* === urbi_gc_walk_roots ===
  *
- * Walks VM globals (stub at M3) then iterates all registered root providers.
- * Provided for host/test use and called indirectly via gc_mark_roots_step. */
+ * Iterates all registered root providers.  Provided for host/test use and
+ * called indirectly via gc_mark_roots_step.  VM-level globals (if any) are
+ * reached via providers — no separate VM-globals walk. */
 void
 urbi_gc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    /* Walk VM-internal globals (no-op stub at M3). */
-    walk_vm_globals(vm, cb, ctx);
-    /* Iterate registered root providers. */
     uint8_t i;
     for (i = 0U; i < vm->root_provider_count; i++) {
         vm->root_providers[i](vm, cb, ctx);
