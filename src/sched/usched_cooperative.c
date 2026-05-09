@@ -432,20 +432,33 @@ sched_dequeue_ready_head(UVM *vm)
  * Walk all GC roots for a single live strand.  Called by sched_walk_roots
  * for every non-DEAD strand in the ready and sleep queues.
  *
- * Root sources at M3 baseline:
+ * Root sources at v0.5.x baseline (M5 shipped):
  *   (1) Register window — conservative full-stack scan (see below).
  *   (2) Unwind state — unwind_value + fatal_value are UValue fields.
  *   (3) Cleanup stack — owning_tag (UTag*) and catch_pattern (UPattern*)
- *       are not yet UValues at M3 (they land at T29+); skipped with TODO.
- *   (4) Wait payload — event / join_parent involve M5 types; skipped with TODO.
+ *       are NOT yielded as direct UValue roots here.  Reachability is
+ *       provided indirectly: UTag was GC-promoted at M5 and is reached via
+ *       the realm strand walker plus the closure references that captured
+ *       it; member_strands_head's back-pointer to the cleanup entry sits
+ *       on the strand stack which (1) walks.  See SCHED-012 v1.x carry-
+ *       forward note below.
+ *   (4) Wait payload — wait_payload.event / wait_payload.join_parent are
+ *       NOT yielded here.  UEvent became a GC cell at M5, but every UEvent
+ *       a strand can be waiting on is reachable through another path (realm
+ *       globals for stdlib events; object's changed_events_head for
+ *       slot-change events; tag's enter_event/leave_event fields for tag-
+ *       scoped events).  join_parent points at another live strand reached
+ *       via realm.strands_head.
  *
  * Register window strategy (row 10 §5.2 guidance):
  *   s->stack is a heap-allocated UVM_STACK_CAP-slot array.  The active
  *   register window spans frames[0..frame_count-1]; the topmost frame's
  *   extent requires bytecode metadata not available at M3.  We walk the
  *   entire allocated array (conservative over-mark; never under-marks).
- *   TODO(T26+ opt): tighten to active-frame register window when bytecode
- *   emits frame-extent metadata (proposed for M4/M5).
+ *   TODO(v1.x — frame-extent metadata): tighten to active-frame register
+ *   window when bytecode emits per-frame extent metadata.  Tracked under
+ *   docs/urbi-embedded-design-risks.md row "v1.x — preemptive scheduling
+ *   readiness" (cooperative GC has no urgency to optimize here).
  *
  * Scratch-strand coverage (closes GC-006 + GC-038):
  *   The watcher cond/body/onleave scratch path (urbi_run_closure_on_scratch
@@ -480,14 +493,26 @@ strand_walk_roots(UVM *vm, UStrand *s, UGcRootCallback cb, void *ctx)
     cb(vm, &s->fatal_value,  ctx);
 
     /* (3) Cleanup-stack entries (row 7 §4.4).
-     *     owning_tag (UTag*) and catch_pattern (UPattern*) are not UValues
-     *     at M3 baseline — T29 will enroll UTags as GC roots.
-     *     TODO(T29): walk cleanup_base[0..cleanup_depth-1].owning_tag +
-     *     catch_pattern once those become GC-managed UValues. */
+     *     owning_tag (UTag*) was GC-promoted at M5 but is reached indirectly:
+     *     a tag visible to user code is captured in the lexical closures the
+     *     watcher table walker visits and / or pinned via the strand register
+     *     window walked at (1).  catch_pattern (UPattern*) remains host-
+     *     allocated at v1.0 (UPattern is not GC-managed).  No direct callback
+     *     is needed here.
+     *     TODO(v1.x — cleanup-stack walker): if a future audit identifies a
+     *     UTag reachable only via cleanup_base[i].owning_tag, this loop must
+     *     yield those UTag pointers as UVAL_TAG roots.  Today no such audit
+     *     exists; the M5+ test corpus has not surfaced a reachability gap
+     *     (see test_gc_strand_walker.c + test_gc_scratch_rooting.c). */
 
     /* (4) Wait payload (row 9 §4.3).
-     *     UEvent and UStrand join_parent are not GC-managed UValues at M3.
-     *     TODO(M5): walk s->wait_payload.event when UEvent becomes a GC cell. */
+     *     wait_payload.event (struct UEvent*) and wait_payload.join_parent
+     *     (UStrand*) are reached indirectly: every UEvent a strand can wait
+     *     on is also reachable via realm globals (stdlib events), the
+     *     owning object's changed_events_head (slot-change events), or the
+     *     owning tag's enter_event/leave_event fields.  join_parent is
+     *     another live strand reached via realm.strands_head.  No direct
+     *     callback is needed here at v1.0. */
 
     /* (5) last_event_payload (spec #3 §7.1, T56).
      *     Written by c_event_emit_* before unblocking a waituntil strand.
