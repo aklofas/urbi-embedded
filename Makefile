@@ -283,13 +283,18 @@ test-corpus-sanitize:
 # Phase 19 (v0.5.8-cleanup) drove test-cppcheck strict residuals 135 → 0
 # and promoted it to hard-fail (the lint aggregate runs the narrow advisory
 # cppcheck target; this is the --enable=all --inconclusive strict variant
-# gated via .cppcheck.suppressions).  test-tidy-strict (25 informational
-# violations) is still gated as a hard target outside releasetest pending
-# Phase 20.
+# gated via .cppcheck.suppressions).
+# Phase 20 (v0.5.8-cleanup) drove test-tidy-strict residuals 23 → 0 across
+# bugprone-branch-clone, performance-no-int-to-ptr (UProtos pointer-encoding
+# design pin), clang-analyzer-valist.Uninitialized, optin.performance.Padding
+# (UVM struct layout pin), bugprone-too-small-loop-variable,
+# bugprone-misplaced-widening-cast, bugprone-macro-parentheses; promoted to
+# hard-fail.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
-    test-scan-build test-cppcheck test-wire-format-determinism
+    test-scan-build test-cppcheck test-tidy-strict \
+    test-wire-format-determinism
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer

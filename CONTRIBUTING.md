@@ -243,13 +243,19 @@ Three strict-tooling targets gate at three different tiers:
 - **`make test-scan-build`** — Clang static analyzer.  **Hard gate
   in releasetest.**  Must be 0 bugs.  Runs on every PR.
 - **`make test-tidy-strict`** — clang-tidy with bug-prone /
-  cert-ish checklist.  **Hard gate in releasetest** for the
-  bug-prone categories only.  Informational-tier residuals (~25 at
-  v0.5.7-fixes shipping) cover false-positive or design-pin
-  categories: `bugprone-branch-clone` (legitimate parallel arms in
-  unwind dispatch), `performance-no-int-to-ptr` (UProtos high-bit
-  pointer encoding), `clang-analyzer-valist-uninitialized` (vararg
-  log helpers under `-fanalyzer`).
+  cert-ish checklist.  **Hard gate in releasetest as of
+  v0.5.8-cleanup Phase 20** (was 23 informational at v0.5.7-fixes
+  shipping → 0 at v0.5.8-cleanup).  Per-line `// NOLINT(<check>)`
+  suppressions with rationale carry the design pins:
+  `performance-no-int-to-ptr` for the UProtos high-bit pointer
+  encoding (pre-M4 prototype-chain spec §7.2), the strand REASON_*
+  payload-encoding contract, the UVAL_HOST_FN function-pointer
+  storage, and arena alignment round-trips;
+  `clang-analyzer-valist.Uninitialized` for the vararg log helpers
+  whose `va_start` → `vsnprintf` → `va_end` triple the analyzer
+  cannot trace through; `optin.performance.Padding` on `struct UVM`
+  whose field order is pinned by 6 `_Static_assert`s and clusters
+  fields by milestone for maintainability.
 - **`make test-cppcheck`** — cppcheck `--enable=all --inconclusive`
   strict checklist over `src/`.  **Hard gate in releasetest as of
   v0.5.8-cleanup Phase 19** (was 145 informational at v0.5.7-fixes
@@ -262,11 +268,13 @@ Three strict-tooling targets gate at three different tiers:
   `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
   `&&label` operator).
 
-The informational-tier residuals (clang-tidy categories listed above)
-are visible in CI output but do not fail the build.  Ratchet target:
-each cleanup wave should drive the informational counts down by
-retiring at least 5 sites or recategorizing each remaining site as a
-documented design pin.
+All three strict-tooling targets are now hard-fail releasetest gates
+with 0 violations at the v0.5.8-cleanup baseline.  Future findings
+from category drift (new clang-tidy / cppcheck releases adding
+checks) must either be fixed at source, suppressed per-line with
+audit-ID rationale at the suppression site, or added to the
+documented blanket suppressions in `.cppcheck.suppressions` /
+`.clang-tidy.strict`.
 
 ### Full-corpus sanitizer gate
 
