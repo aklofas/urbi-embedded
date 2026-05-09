@@ -49,6 +49,7 @@ fafa8e1f84198682bb32377754a1e406eef2b12283a77a636abd5f9039cf086e  tests/chk/glob
 c193faeef6c95c7c0dd37e9d2d08dc163e785004cbe1d2fa03617b8ce7e1c3d7  tests/chk/lazy/basic_force.chk
 16476740bd89f2afc398eaba8740d857b6f9077766ecc0a37a5bd74d11afa00c  tests/chk/lazy/passthrough.chk
 9b2e8b665912cf80a5d27c9649644bdbda30c9083a0e6cc1b5096bb19e88783f  tests/chk/lazy/upvalue_capture.chk
+cb56da145b5edda2180b747b9063fe1f5f5d764a0a8886ef79cb6061a63d80e0  tests/chk/lex/block_comment_no_nest.chk
 COMPILE_ERROR  tests/chk/migration/bare_function.chk
 COMPILE_ERROR  tests/chk/migration/closure_keyword.chk
 d29a0939bcb51176dd565a5e2d33214ce5204806b384bd80a72cb40861cdc7b9  tests/chk/migration/v11_rejected.chk
