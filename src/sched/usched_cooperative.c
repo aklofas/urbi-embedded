@@ -110,10 +110,17 @@ sched_init(UVM *vm, void *config)
 void
 sched_destroy(UVM *vm)
 {
-    /* Strands are owned by their realms; nothing to free here. */
-    vm->ready_head   = NULL;
-    vm->ready_tail   = NULL;
-    vm->sleep_q_head = NULL;
+    /* Strands are owned by their realms; nothing to free here.
+     *
+     * SCHED-009: zero strand_runnable_count for symmetry with sched_init.
+     * Pre-fix this counter survived destroy, so a destroy + stale-query
+     * path would observe a non-zero value despite the queues being NULL.
+     * The four scheduler-owned fields (ready_head, ready_tail, sleep_q_head,
+     * strand_runnable_count) are now mirror-zeroed across init/destroy. */
+    vm->ready_head            = NULL;
+    vm->ready_tail            = NULL;
+    vm->sleep_q_head          = NULL;
+    vm->strand_runnable_count = 0;
 }
 
 /* === Per-strand lifecycle === */

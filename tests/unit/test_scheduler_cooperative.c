@@ -345,6 +345,33 @@ UTEST(sched_destroy_nulls_queues)
     urbi_vm_destroy(&vm);
 }
 
+/* SCHED-009: sched_destroy must zero strand_runnable_count for symmetry
+ * with sched_init.  Pre-fix: sched_destroy zeroed ready_head/ready_tail/
+ * sleep_q_head but left strand_runnable_count untouched, so a destroy +
+ * stale-query path would observe a non-zero counter.  Post-fix: all four
+ * sched-owned scheduler fields are zeroed.  Test sets the counter
+ * non-zero, calls destroy, and verifies the zero invariant holds. */
+UTEST(sched_destroy_zeros_strand_runnable_count)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    sched_init(&vm, NULL);
+
+    /* Set the scheduler-owned counter non-zero (caller never does this in
+     * production — but a stale destroy + re-init scenario or a future
+     * standalone destroy-then-query path needs the counter at zero). */
+    vm.strand_runnable_count = 7U;
+
+    sched_destroy(&vm);
+
+    UASSERT_EQ(vm.strand_runnable_count, 0U);
+    UASSERT(vm.ready_head   == NULL);
+    UASSERT(vm.ready_tail   == NULL);
+    UASSERT(vm.sleep_q_head == NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* Case 17: sched_strand_block with REASON_EVENT stores the event pointer. */
 UTEST(sched_strand_block_event_stores_pointer)
 {
@@ -658,6 +685,8 @@ void test_scheduler_cooperative_suite(void) {
     utest_run("sched_consume_budget_zero_noop",           sched_consume_budget_zero_noop);
     utest_run("sched_strand_unblock_from_sleep",          sched_strand_unblock_from_sleep);
     utest_run("sched_destroy_nulls_queues",               sched_destroy_nulls_queues);
+    utest_run("sched_destroy_zeros_strand_runnable_count",
+              sched_destroy_zeros_strand_runnable_count);
     utest_run("sched_strand_block_event_stores_pointer",  sched_strand_block_event_stores_pointer);
     utest_run("sched_strand_block_join_stores_pointer",   sched_strand_block_join_stores_pointer);
     utest_run("sched_sleep_q_multi_advance",              sched_sleep_q_multi_advance);
