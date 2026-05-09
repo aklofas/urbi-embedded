@@ -15,8 +15,7 @@
  * Precondition checks use a guarded <assert.h> on hosted targets.
  *
  * Key discipline: names are INTERNED pointers (from ustr_intern).
- * Lookup uses pointer equality, not strcmp.
- * Row 8 / T14. */
+ * Lookup uses pointer equality, not strcmp. */
 
 #if __STDC_HOSTED__
 #  include <assert.h>

@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* URealm: per-execution-context type (namespace + tag-owner + lifetime).
- * UNamespace: name→UValue map owned by a URealm.
- * Row 8 / T14. */
+ * UNamespace: name→UValue map owned by a URealm. */
 
 #ifndef UREALM_H
 #define UREALM_H
@@ -19,7 +18,7 @@ extern "C" {
 /* === Forward declarations === */
 
 struct UVM;
-struct UTag;   /* T29 */
+struct UTag;
 struct UNamespace;
 
 /* === Realm flag bits (stored in URealm.flags) === */
@@ -32,7 +31,6 @@ struct UNamespace;
 /* === URealm struct ===
  *
  * Total: ~72 bytes on 64-bit (pointer-heavy; aligned naturally).
- * Row 8 §4.2 layout.
  *
  * All Realms belonging to a VM are kept on a doubly-linked list rooted at
  * vm->realms_head.  Head-insertion is used; order is unspecified. */
@@ -122,7 +120,7 @@ void               unamespace_walk_roots(struct UNamespace *ns,
 /* === VM teardown helper ===
  *
  * Destroy all Realms still alive at urbi_vm_destroy() time.
- * Called from urbi_vm_destroy() — T14 wires this up. */
+ * Called from urbi_vm_destroy(). */
 void urealm_teardown_all(struct UVM *vm);
 
 /* === GC root walker for the full realm list ===
