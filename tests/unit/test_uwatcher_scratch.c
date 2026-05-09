@@ -108,7 +108,15 @@ UTEST(scratch_runner_returns_integer_value)
  * with vm->last_error == UVM_TYPE_ERROR.  The helper must:
  *   - set *out_threw = 1
  *   - reset vm->last_error to UVM_OK
- *   - leave *out_result as UVAL_NIL */
+ *   - leave *out_result as UVAL_NIL
+ *
+ * Why nil() and not `1 + nil`?  Both routes through the cond-throw →
+ * caller-receives-fault path, but `1 + nil` crashes inside OP_ADD's
+ * error formatter, which dereferences s->module->line_deltas — NULL
+ * on a scratch frame (the helper synthesizes a minimal module_instance
+ * shell with no line table).  nil() routes through
+ * vm_format_type_error_msg which doesn't touch the module, so it is
+ * stable on scratch frames. */
 UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 {
     UVM    vm;
