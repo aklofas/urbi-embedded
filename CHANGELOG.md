@@ -294,11 +294,11 @@ arm 62 378 B, riscv 80 084 B.
   cppcheck `unreadVariable` on debug-only `found`.
 - (Phase 17, CPPCHK-008) Variable scope narrowed at 5 cppcheck-flagged
   sites. Phase 17 T141 + T142 SKIPPED — `bugprone-switch-missing-default`
-  + `readability-redundant-casting` not in `.clang-tidy.strict`.
+  and `readability-redundant-casting` not in `.clang-tidy.strict`.
 - (Phase 18, footprint) `UValue ↔ UEvent` kind predicates inlined
   in header (`4ec563f`); the only Phase 18 codegen-change commit.
-- (Phase 23) Manual REPL sanity confirmed via cross-arm + cross-riscv
-  + 7 representative .chk fixtures; no commits.
+- (Phase 23) Manual REPL sanity confirmed via cross-arm, cross-riscv,
+  and 7 representative .chk fixtures; no commits.
 
 ### Dead code removed
 
