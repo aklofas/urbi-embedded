@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+## v0.6.0-stdlib-scaffold — 2026-XX-XX — Wave 1 of M6 stdlib
+
+**Theme:** Language scaffolding for the M6 standard library — string
+literals, atom-method dispatch, Object root C-native methods, atom proto
+stubs, `Class.new()` / `.clone()` semantics, class declarations with
+multi-proto MRO, and the scripted `Event.new()` constructor. Activates
+the eight deferred `tests/chk/objects/` fixtures end-to-end. Absorbs
+~10-15 `defer:M6` cleanup IDs.
+
+### Language
+
+(populated as Phase 1, 5, 6, 7 commits land — string literals; class
+decls; `Foo.new()`; `obj.clone()`; `Event.new()`)
+
+### Object model
+
+(populated as Phase 2-4 commits land — atom-method dispatch; Object root
+C-native methods; atom proto stubs)
+
+### Tests
+
+(populated as Phase 8 + 9 commits land — 8 fixtures activated; new
+fixtures for multi-proto MRO + nested-class shadow + atom-clone perf;
+co-located regression tests for cleanup-ID closures)
+
+### Cleanup
+
+(populated as Phase 9 commits land — TAGCH-013, EVENT-013, OBJ-007/009/
+017/030/033, REALM-016/017, FOUND-026/027, API-005/007/021, LEX-035, etc.)
+
+### Bytecode
+
+Wire format stays at v1.5 (`URBI_BYTECODE_VERSION_BYTE = 0x15`). No new
+opcodes. The constant pool gains UVAL_STR support (was MOD-008 deferred
+at v0.5.6). Pre-existing fixture hashes change ONLY for fixtures that
+exercise the new string-literal emit path (Phase 1 names them).
+
+### Compatibility
+
+Public C API extends with `urbi_object_new`, `urbi_object_clone`,
+`urbi_atom_proto_get` (atom-method dispatch routing). No removals, no
+signature changes to v0.5.x exports. Module wire format unchanged at v1.5.
+
+### Footprint
+
+| Target | v0.5.8-cleanup | v0.6.0-stdlib-scaffold | Delta |
+|---|---|---|---|
+| host (Linux x86_64) | 354 KB | TBD | TBD |
+| ARM Cortex-M7 | 173 KB | TBD | TBD |
+| RISC-V rv32imc | 324 KB | TBD | TBD |
+
+(Filled in at Phase 10 close.)
+
 ## v0.5.8-cleanup — 2026-05-09 — Pre-M6 cleanup ramp final wave (Wave 6 of 6)
 
 **Theme:** Polish + dead-code + docs. Closes ~104 `wave-6-cleanup` audit IDs
