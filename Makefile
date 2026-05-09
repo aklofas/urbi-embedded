@@ -280,16 +280,16 @@ test-corpus-sanitize:
 #
 # T118: test-scan-build promoted into releasetest after Phase 19 closed
 # its known false-positive set ("scan-build: No bugs found." at v0.5.7).
-# test-tidy-strict and test-cppcheck remain informational at v0.5.7
-# (25 / 145 residual violations respectively, all non-trivial categories
-# tracked in docs/urbi-embedded-backlog.md "Strict-tooling residuals" —
-# bugprone-branch-clone, performance-no-int-to-ptr, and clang-analyzer-
-# valist need either targeted refactors or per-site NOLINT review).
-# Promote those two to hard gates after the residuals close.
+# Phase 19 (v0.5.8-cleanup) drove test-cppcheck strict residuals 135 → 0
+# and promoted it to hard-fail (the lint aggregate runs the narrow advisory
+# cppcheck target; this is the --enable=all --inconclusive strict variant
+# gated via .cppcheck.suppressions).  test-tidy-strict (25 informational
+# violations) is still gated as a hard target outside releasetest pending
+# Phase 20.
 RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
-    test-scan-build test-wire-format-determinism
+    test-scan-build test-cppcheck test-wire-format-determinism
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer

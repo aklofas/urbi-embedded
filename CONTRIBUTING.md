@@ -250,17 +250,23 @@ Three strict-tooling targets gate at three different tiers:
   unwind dispatch), `performance-no-int-to-ptr` (UProtos high-bit
   pointer encoding), `clang-analyzer-valist-uninitialized` (vararg
   log helpers under `-fanalyzer`).
-- **`make test-cppcheck-strict`** — cppcheck with strict checklist.
-  **Hard gate in releasetest** for bug-prone categories.
-  Informational-tier residuals (~145 at v0.5.7-fixes shipping)
-  dominantly `unusedFunction` false positives in public C API
-  consumed only from `tests/`.  Suppression strategy filed in
-  `docs/urbi-embedded-backlog.md` for follow-up.
+- **`make test-cppcheck`** — cppcheck `--enable=all --inconclusive`
+  strict checklist over `src/`.  **Hard gate in releasetest as of
+  v0.5.8-cleanup Phase 19** (was 145 informational at v0.5.7-fixes
+  shipping → 0 at v0.5.8-cleanup).  Suppressions live in
+  `.cppcheck.suppressions` at the repo root with audit-ID rationale
+  per block.  Two structurally false-positive categories are
+  blanket-suppressed: `unusedFunction` (cppcheck scans `src/` only,
+  every public-API symbol looks unused from its perspective) and
+  `unusedLabelConfiguration` + `assignBoolToPointer` in
+  `src/vm/uvm.c` (cppcheck cannot parse GCC's computed-goto
+  `&&label` operator).
 
-The informational-tier residuals are visible in CI output but do not
-fail the build.  Ratchet target: each cleanup wave should drive the
-informational counts down by retiring at least 5 sites or recategorizing
-each remaining site as a documented design pin.
+The informational-tier residuals (clang-tidy categories listed above)
+are visible in CI output but do not fail the build.  Ratchet target:
+each cleanup wave should drive the informational counts down by
+retiring at least 5 sites or recategorizing each remaining site as a
+documented design pin.
 
 ### Full-corpus sanitizer gate
 
