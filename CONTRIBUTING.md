@@ -30,11 +30,11 @@ they coexist and no `make clean` is required when switching between them.
 (enforced in `make releasetest`).
 
 `make test-branch-coverage` reports branch + decision coverage via gcovr's
-`--branches` + `--decisions` flags. As of v0.5.7-fixes the gate is
-informational-only at 69% baseline; Phase 20 of the v0.5.7-fixes plan
-closes coverage gaps and the gate enables (`--fail-under-branch 75`) once
-baseline exceeds threshold. Drops below threshold flag PRs; either close
-the gap in the same commit or document at the bottom of the affected file:
+`--branches` + `--decisions` flags.  Informational-only at the v0.5.8
+baseline (~69%); the gate enables (`--fail-under-branch 75`) once
+baseline exceeds threshold.  Drops below the informational baseline flag
+PRs; either close the gap in the same commit or document at the bottom
+of the affected file:
 
     // AUDIT: branch <description> covered indirectly via tests/path/test_other.c
 
@@ -196,16 +196,30 @@ Or push and let CI catch it.
 
 Bytecode-byte-identical contract: any commit that touches `src/lex/`,
 `src/parse/`, `src/emit/`, `src/value/`, `src/module/`, `src/object/`, or
-`src/runtime/` should reproduce `tests/golden/v0.5.7-fixes-bytecode-hashes.txt`
-exactly unless a deliberate codegen change is being made (which requires
-re-capturing the golden table and bumping bytecode version).
+`src/runtime/` should reproduce the active baseline bytecode hash table
+under `tests/golden/` exactly unless a deliberate codegen change is being
+made (which requires re-capturing the golden table and bumping bytecode
+version).  Each cleanup wave captures a fresh `v<TAG>-pre-<wave>` golden
+at Phase 0 against which the wave's commits must stay byte-identical;
+the v0.5.8-cleanup baseline is `tests/golden/v0.5.7-pre-cleanup-bytecode-hashes.txt`.
 
-The wire-format gate at `tests/golden/v0.5.7-fixes-wire-format-hashes.txt`
+The wire-format gate at `tests/golden/v0.5.7-pre-cleanup-wire-format-hashes.txt`
 provides complementary coverage: the disasm-text hash is stable across
 opcode renumber + version-byte advance and is blind to genuine wire-format
 breaks; the wire-format hash is sensitive to header bytes, opcode-shape
 table, varint encoding, and nested-proto round-trip.  Re-capture both
 golden tables in lockstep when a codegen change is intentional.
+
+Capture commands:
+
+    bash tests/scripts/capture_bytecode_hashes.sh       # writes tests/golden/bytecode-hashes.txt
+    bash tests/scripts/capture_wire_format_hashes.sh    # writes tests/golden/wire-format-hashes.txt
+
+`diff` the freshly-captured table against the active baseline; an empty
+diff is the bytecode-byte-identical contract holding.  The
+`make test-wire-format-determinism` gate checks separately that the
+wire-format capture is itself deterministic across runs (closes the
+v0.5.7.1 hotfix that fixed mktemp paths leaking into `source_name`).
 
 ### TDD per fix commit (Wave 5 onward)
 
@@ -220,8 +234,10 @@ bug found during development) MUST follow strict test-driven development:
    together so the test cannot be silently disabled in a future
    regression.  No "test-only" or "fix-only" commits for fix work.
 
-This standing requirement was codified during Wave 5 (`v0.5.7-fixes`).
-Discipline notes:
+This standing requirement was codified during Wave 5 (`v0.5.7-fixes`)
+and held end-to-end through Wave 6 (`v0.5.8-cleanup`); every fix commit
+across both waves landed with a paired regression test in the same
+commit.  Discipline notes:
 
 - Internal-assertion paths that abort the test runner are a known gap;
   the URBI_TEST_ONLY assert-fire macro (filed in
