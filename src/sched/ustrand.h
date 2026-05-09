@@ -103,14 +103,20 @@ struct UClosure;         /* umodule.h — forward-decl for closure list threadin
 struct UModuleInstance;  /* object/umodule_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 
-/* === UStrand struct (M3 baseline) ===
-   T20 and T29 add lifecycle operations; T9 wires the unwind walker;
-   T3 initialises the cleanup-stack array. */
+/* === UStrand struct ===
+   The strand is the unit of cooperative concurrency.  Each instance owns
+   its own register stack, frame array, cleanup stack, and scheduler-list
+   threading; the lifecycle helpers below (ustrand_init, ustrand_destroy,
+   urbi_strand_arm_init, urbi_strand_arm_from_closure, etc.) are the live
+   contract.  The execution-state fields at the bottom of the struct hold
+   per-strand frame/PC/upvalue state and are valid while the strand is
+   RUNNING or READY (paused mid-run). */
 
 typedef struct UStrand UStrand;
 struct UStrand {
-    /* M2 fields for frame stack, registers, lex env, etc. are added by T20
-       when the strand becomes a full execution context. */
+    /* Field groups below: VM/realm context -> unwind/cleanup state ->
+       state byte + budget -> scheduler list pointers -> wait-state ->
+       watcher/event/join links -> realm strand list -> execution state. */
 
     /* --- VM back-pointer (T5; set by ustrand_init; required by scheduler ops) --- */
     struct UVM             *vm;
