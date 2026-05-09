@@ -435,6 +435,33 @@ UTEST(new_then_local_write_does_not_modify_proto) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T60: three-level clone chain lookup =================================
+ *
+ * a.new() → b; b.new() → c.  c.x must resolve through the chain back to
+ * a's slot via prototype-graph DFS.  Confirms the urbi_object_resolve_slot
+ * walker correctly traverses two hops without dropping the trail. */
+
+UTEST(clone_chain_three_levels) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var a = Object.clone();"
+        "a.setSlot(\"x\", 42);"
+        "var b = a.new();"
+        "var c = b.new();"
+        "var v = c.x";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue out = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_INT);
+    UASSERT_EQ((int)out.v.i, 42);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T59: atom .new() returns self (S-atom-clone-perf) ===================
  *
  * For non-UVAL_OBJECT receivers, .new() short-circuits via obj_clone's
@@ -543,6 +570,8 @@ void test_object_root_suite(void) {
               new_then_local_write_does_not_modify_proto);
     utest_run("object_root: atom .new() returns self",
               atom_new_returns_self);
+    utest_run("object_root: clone-chain three-level lookup",
+              clone_chain_three_levels);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }
