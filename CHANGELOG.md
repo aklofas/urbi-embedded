@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+## v0.5.8-cleanup — 2026-05-08 — Pre-M6 cleanup ramp final wave (Wave 6 of 6)
+
+**Theme:** Polish + dead-code + docs. Closes ~104 `wave-6-cleanup` audit IDs from the v0.5.x cleanup audit. Reactive runtime polish bundle landed. Footprint overage from Wave 5 addressed where cheap. Strict-tooling residuals (cppcheck 145 + tidy-strict 25) driven to zero — both gates now hard-fail across all categories. Docstring coverage gate enforced on every header-exposed symbol. Design-risks register reaches a coherent state. Cleanup-ramp final retrospective at `docs/milestones/v0.5.x-cleanup.md` (workspace root).
+
+### Reactive runtime
+(populated as Phase 1-2 commits land)
+
+### Bug fixes
+(populated as Phase 4 commits land — TDD per fix)
+
+### Unsafe-pattern hardening
+(populated as Phase 5 commits land — TDD per fix)
+
+### Lex / parse / emit / vm / sched / gc / watcher / event / tag / mod / obj / realm / api / chstr cleanup
+(populated as Phase 6-16 commits land)
+
+### Strict tooling
+(populated as Phase 19-20 commits land)
+
+### Footprint
+(populated as Phase 18 commits land)
+
+### Documentation
+(populated as Phase 21-22 commits land — docstring coverage; design-risks triage)
+
+### Build / tests / tools
+(populated as Phase 17, 23, 24 commits land)
+
+### Dead code removed
+(populated as Phase 3 commits land)
+
+### Bytecode
+
+Bytecode-byte-identical AND wire-format-byte-identical against v0.5.7.1 baseline. No emitter changes.
+
+### Compatibility
+
+Public C API unchanged. No new symbols, no signature changes, no enum-value renumbering. Module wire format unchanged at v1.5.
+
 ## v0.5.7.1 — 2026-05-08 — Wire-format hash gate determinism hotfix
 
 Hotfix on top of `v0.5.7-fixes`.
