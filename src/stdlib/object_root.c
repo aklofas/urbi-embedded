@@ -528,7 +528,7 @@ obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
             "insertFront: argument must be a UObject", out);
 
     UObject *list = (UObject *)self.v.p;
-    USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
+    const USymbol *sym_owner = (const USymbol *)ustr_intern(vm, "_owner", 6);
     if (sym_owner == NULL) return urbi_raise_oom(vm, out);
 
     UObject *holder = NULL;
