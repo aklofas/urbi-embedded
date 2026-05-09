@@ -46,17 +46,18 @@
 
 /* === Forward declarations =================================================== */
 
-static int obj_setSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_getSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_getSlotValue (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_hasSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeSlot   (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_clone        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_new          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_addProto     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_removeProto  (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_protos       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
-static int obj_setProtos    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_getSlotValue    (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_hasSlot         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeSlot      (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeLocalSlot (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_clone           (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_new             (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_addProto        (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_removeProto     (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_protos          (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setProtos       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
 
@@ -306,6 +307,20 @@ obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Object.removeLocalSlot(name) =========================================
+ *
+ * T62: legacy alias for removeSlot.  The 2014 inheritance.chk fixture uses
+ * `removeLocalSlot("foo")` (line 36) to drop a slot installed on the
+ * receiver itself (vs. removing from a proto chain).  At v1.0
+ * urbi_object_remove_slot only operates on the receiver's own shape (no
+ * walk into the proto chain), so the alias maps cleanly to removeSlot. */
+
+static int
+obj_removeLocalSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return obj_removeSlot(vm, self, args, nargs, out);
+}
+
 /* === Object.clone() ========================================================
  *
  * S-atom-clone-perf: atom receivers (UVAL_INT/_FLOAT/_BOOL/_STR/etc.)
@@ -453,17 +468,18 @@ typedef struct {
 } ObjectMethodEntry;
 
 static const ObjectMethodEntry OBJECT_METHODS[] = {
-    { "setSlot",      obj_setSlot      },
-    { "getSlot",      obj_getSlot      },
-    { "getSlotValue", obj_getSlotValue },   /* T61: legacy alias for getSlot */
-    { "hasSlot",      obj_hasSlot      },
-    { "removeSlot",   obj_removeSlot   },
-    { "clone",        obj_clone        },
-    { "new",          obj_new          },
-    { "addProto",     obj_addProto     },
-    { "removeProto",  obj_removeProto  },
-    { "protos",       obj_protos       },
-    { "setProtos",    obj_setProtos    }
+    { "setSlot",         obj_setSlot         },
+    { "getSlot",         obj_getSlot         },
+    { "getSlotValue",    obj_getSlotValue    },   /* T61: legacy alias for getSlot */
+    { "hasSlot",         obj_hasSlot         },
+    { "removeSlot",      obj_removeSlot      },
+    { "removeLocalSlot", obj_removeLocalSlot },   /* T62: legacy alias for removeSlot */
+    { "clone",           obj_clone           },
+    { "new",             obj_new             },
+    { "addProto",        obj_addProto        },
+    { "removeProto",     obj_removeProto     },
+    { "protos",          obj_protos          },
+    { "setProtos",       obj_setProtos       }
 };
 
 #define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))

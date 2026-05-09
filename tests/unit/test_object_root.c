@@ -435,6 +435,32 @@ UTEST(new_then_local_write_does_not_modify_proto) {
     urbi_vm_destroy(&vm);
 }
 
+/* === T62: removeLocalSlot legacy alias =====================================
+ *
+ * Object.removeLocalSlot is a legacy alias for removeSlot used in the
+ * 2014 inheritance.chk fixture (line 36).  Same semantics — drop the
+ * slot from the receiver's own shape; no proto-chain walk. */
+
+UTEST(object_remove_local_slot_alias) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    (void)urbi_realm_global(&vm);
+
+    const char *src =
+        "var o = Object.clone();"
+        "o.setSlot(\"x\", 42);"
+        "o.removeLocalSlot(\"x\");"
+        "var b = o.hasSlot(\"x\")";
+    UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
+
+    UValue out = urbi_value_nil();
+    UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "b", 1, &out), URBI_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_BOOL);
+    UASSERT_EQ((int)out.v.i, 0);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* === T61: getSlotValue legacy alias ========================================
  *
  * Object.getSlotValue is a legacy alias for getSlot used in the 2014
@@ -600,6 +626,8 @@ void test_object_root_suite(void) {
               clone_chain_three_levels);
     utest_run("object_root: getSlotValue is a legacy alias for getSlot",
               object_get_slot_value_alias);
+    utest_run("object_root: removeLocalSlot is a legacy alias for removeSlot",
+              object_remove_local_slot_alias);
     utest_run("object_root: .new() and .clone() are equivalent",
               new_and_clone_are_equivalent);
 }
