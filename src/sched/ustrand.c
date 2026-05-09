@@ -374,15 +374,14 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
             return;
         }
 
-        /* Zero-init the entry (strand_cleanup_push returns a pointer into
-           the pre-zeroed allocation, but be explicit for each used field). */
+        /* Zero the entry up front so any future UCleanupEntry field gains
+         * a defined initial value without a per-call-site touch (CHSTR-032).
+         * Then assign the live fields. strand_cleanup_push hands back a slot
+         * inside the pre-zeroed cleanup_base, but slots are reused across
+         * push/pop cycles so a fresh zero per push is the safe contract. */
+        urbi_zero(e, sizeof(*e));
         e->kind           = (uint8_t)UCLEANUP_TAG_SCOPE;
-        e->flags          = 0;
-        e->register_base  = 0;
-        e->register_count = 0;
-        e->handler_pc     = 0;
         e->owning_tag     = chain[i];
-        e->catch_pattern  = NULL;
         e->strand_back    = new_s;
         e->next_member    = chain[i]->member_strands_head;
 
