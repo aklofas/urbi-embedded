@@ -83,7 +83,7 @@ int urbi_raise_lookup(struct UVM *vm, struct USymbol *name, UValue *out);
  * Phase 3 synthetic helper: build a UObject that exposes a receiver's
  * proto chain as accessible-via-.size.  Wave 2 replaces this with a
  * proper List atom.  Returns NULL on OOM. */
-struct UObject *urbi_proto_list_create(struct UVM *vm, struct UObject *recv);
+struct UObject *urbi_proto_list_create(struct UVM *vm, const struct UObject *recv);
 
 #ifdef __cplusplus
 }

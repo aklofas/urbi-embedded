@@ -171,7 +171,7 @@ urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
  * shipped here. */
 
 UObject *
-urbi_proto_list_create(UVM *vm, UObject *recv)
+urbi_proto_list_create(UVM *vm, const UObject *recv)
 {
     if (vm == NULL || recv == NULL) return NULL;
 
@@ -256,7 +256,7 @@ obj_hasSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     } else {
         recv = (UObject *)self.v.p;
     }
-    USymbol *name = (USymbol *)args[0].v.p;
+    const USymbol *name = (const USymbol *)args[0].v.p;
     UObject *holder = NULL;
     uint32_t slot_idx = 0;
     int rc = urbi_object_resolve_slot(vm, recv, name, &holder, &slot_idx);
@@ -276,7 +276,7 @@ obj_removeSlot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "removeSlot: name must be a String", out);
 
     UObject *recv = (UObject *)self.v.p;
-    USymbol *name = (USymbol *)args[0].v.p;
+    const USymbol *name = (const USymbol *)args[0].v.p;
     int rc = urbi_object_remove_slot(vm, recv, name);
     if (rc != 0) return urbi_raise_oom(vm, out);
 
@@ -352,7 +352,7 @@ obj_removeProto(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         return urbi_raise_type(vm, "removeProto: argument must be a UObject", out);
 
     UObject *recv = (UObject *)self.v.p;
-    UObject *proto = (UObject *)args[0].v.p;
+    const UObject *proto = (const UObject *)args[0].v.p;
     /* Idempotent per legacy semantics — silent no-op if proto wasn't
      * present.  urbi_object_remove_proto already implements that. */
     (void)urbi_object_remove_proto(vm, recv, proto);
@@ -371,7 +371,7 @@ obj_protos(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (self.kind != (uint8_t)UVAL_OBJECT)
         return urbi_raise_type(vm, "protos: self must be a UObject", out);
 
-    UObject *recv = (UObject *)self.v.p;
+    const UObject *recv = (const UObject *)self.v.p;
     UObject *list = urbi_proto_list_create(vm, recv);
     if (list == NULL) return urbi_raise_oom(vm, out);
     *out = uval_obj(list);

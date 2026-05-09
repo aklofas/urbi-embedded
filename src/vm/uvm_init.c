@@ -329,15 +329,17 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* Pre-GC: free any closure surviving from the last urbi_vm_run(). */
-    if (vm->last_return_closure != NULL && vm->alloc_fn != NULL) {
-        vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
-        vm->last_return_closure = NULL;
-    }
-    /* M6 Phase 3: free stdlib native closures (UClosure objects allocated
-     * by urbi_native_closure_create; threaded via next_alloc).  These are
-     * VM-lifetime allocations, not strand-scoped, so the strand teardown
-     * does NOT touch them. */
+    /* M6 Phase 3: clear last_return_closure pointer.  Pre-Phase 3 this
+     * call freed the closure directly; Phase 3 migrates run-end closures
+     * onto vm->stdlib_closures (see uvm_run.c) so the closure gets reclaimed
+     * by the stdlib_closures sweep below.  Clearing the field guards
+     * against accidental dereference after destroy without the
+     * extra free that would now be a double-free. */
+    vm->last_return_closure = NULL;
+    /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
+     * registered by urbi_native_closure_create AND user closures migrated
+     * from strand closure_lists at run exit, see uvm_run.c).  All threaded
+     * via next_alloc on a single vm->stdlib_closures list. */
     if (vm->alloc_fn != NULL) {
         UClosure *cl = vm->stdlib_closures;
         while (cl != NULL) {

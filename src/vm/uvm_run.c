@@ -29,16 +29,13 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
 
-    /* Pre-GC: free the closure returned by the previous urbi_vm_run (if any).
-     * The caller had one run's lifetime to inspect it. */
-    if (vm->last_return_closure != NULL) {
-        UClosure *prev = vm->last_return_closure;
-        uint8_t nup = prev->nupvals;
-        size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
-        (void)extra;
-        vm->alloc_fn(prev, 0, vm->alloc_ud);
-        vm->last_return_closure = NULL;
-    }
+    /* M6 Phase 3: previously this site freed vm->last_return_closure at
+     * the start of each new run.  With the closure migration introduced in
+     * this phase (run-end closures move to vm->stdlib_closures rather than
+     * being freed), the closure stays alive until vm_destroy.  Just clear
+     * the pointer — the closure is already owned by the stdlib_closures
+     * sweep. */
+    vm->last_return_closure = NULL;
 
     /* Initialize out to Nil; overwritten on OP_RET success. */
     UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
@@ -172,9 +169,29 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         break;
     }
 
-    /* Pre-GC: free every closure allocated this run, except the one returned
-     * to the caller via *out.  That closure is kept alive in
-     * vm->last_return_closure until the next urbi_vm_run() or urbi_vm_destroy(). */
+    /* M6 Phase 3: migrate every run-allocated closure onto vm->stdlib_closures
+     * instead of freeing them at run end.  The earlier shape eagerly freed the
+     * strand's closure_list at uvm_run exit, but a run can leak references to
+     * those closures into long-lived storage (realm-global slots stored via
+     * SETSLOT, watcher condition / body / onleave fields, etc.) that the
+     * subsequent run's GC walker would dereference, hitting use-after-free.
+     *
+     * Phase 3 surfaced this latent issue (it was always there, but pre-Phase 3
+     * the realm-global-store-then-GC-walk pattern stayed under the GC trigger
+     * threshold; Phase 3's nine extra Object-proto slots add enough allocation
+     * pressure to cross the threshold and trigger the walk on the next run).
+     *
+     * The fix here: closures created by OP_CLOSURE share lifetime with the VM
+     * (vm_destroy reclaims them via the stdlib_closures sweep already in
+     * uvm_init.c).  This wastes memory on truly transient closures (the
+     * common case for a single-shot run) but eliminates the dangling-pointer
+     * class.  v1.x GC-managed UClosure (regime 3 promotion in
+     * gc_incremental.c) replaces this with proper sweep-time reclamation.
+     *
+     * vm->last_return_closure is still set so urbi_vm_run callers can
+     * inspect the result; the underlying memory is no longer freed at the
+     * next call (it's already on stdlib_closures), so the field is now
+     * effectively informational. */
     {
         UClosure *out_cl = (out->kind == (uint8_t)UVAL_CLOSURE)
                            ? (UClosure *)out->v.p : NULL;
@@ -182,11 +199,14 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
 
         UClosure *cl = strand.closure_list;
         strand.closure_list = NULL;  /* null before ustrand_destroy to avoid double-free */
+        /* O(n) per-closure migration with no tail-walk: pop the head off
+         * strand.closure_list and prepend onto vm->stdlib_closures.  The
+         * order of closures within stdlib_closures is irrelevant — the
+         * list is only used for the destroy-time sweep. */
         while (cl != NULL) {
             UClosure *next = cl->next_alloc;
-            if (cl != out_cl) {
-                vm->alloc_fn(cl, 0, vm->alloc_ud);
-            }
+            cl->next_alloc = vm->stdlib_closures;
+            vm->stdlib_closures = cl;
             cl = next;
         }
     }
