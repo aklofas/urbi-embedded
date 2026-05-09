@@ -77,7 +77,8 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->next_object_id = 0U;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
     vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
 
-    /* M4 atom-family singletons (T8): all NULL until first lazy-create. */
+    /* M4 atom-family singletons (T8) + M6 Phase 4 (Boolean/Nil/Void): all
+     * NULL until first lazy-create. */
     vm->atom_object  = NULL;
     vm->atom_integer = NULL;
     vm->atom_float   = NULL;
@@ -87,6 +88,9 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->atom_tag     = NULL;
     vm->atom_event   = NULL;
     vm->atom_symbol  = NULL;
+    vm->atom_boolean = NULL;
+    vm->atom_nil     = NULL;
+    vm->atom_void    = NULL;
 
     /* M5 T53/T54 native proto objects: NULL until event/tag_native_register. */
     vm->event_proto = NULL;

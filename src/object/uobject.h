@@ -76,11 +76,12 @@ typedef struct USlotArray {
 /* === UObject.flags layout ===
  *
  * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
- * the atom family (root Object, the eight built-in atoms, plus 9..15 spare);
- * bit 4 is frozen; bit 5 is sandbox-readonly (per Luau prior art); the high
- * bits are spare.  URBIAtomFamily enum lives in <urbi/object.h> as of
- * v0.5.5; the internal duplicate (with no `_F` suffix) was retired in
- * favor of the public form. */
+ * the atom family (root Object, the eight built-in atoms 1..8, plus the
+ * three M6 Phase 4 additions 9..11 — Boolean / Nil / Void; 12..15 still
+ * spare for v1.x); bit 4 is frozen; bit 5 is sandbox-readonly (per Luau
+ * prior art); the high bits are spare.  URBIAtomFamily enum lives in
+ * <urbi/object.h> as of v0.5.5; the internal duplicate (with no `_F`
+ * suffix) was retired in favor of the public form. */
 #include "urbi/object.h"
 #define URBI_OBJ_ATOM_MASK         0x0FU
 #define URBI_OBJ_FLAG_FROZEN       (1U << 4)

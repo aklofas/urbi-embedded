@@ -166,6 +166,7 @@ extern void test_foundations_suite(void);
 extern void test_public_api_suite(void);
 extern void test_atom_dispatch_suite(void);
 extern void test_object_root_suite(void);
+extern void test_atom_protos_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -308,6 +309,7 @@ static const struct suite_entry suites[] = {
     {"public_api",                test_public_api_suite},
     {"atom_dispatch",             test_atom_dispatch_suite},
     {"object_root",               test_object_root_suite},
+    {"atom_protos",               test_atom_protos_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -150,12 +150,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
                                     (per pre-M2 §7.1).  NULL until first
                                     urbi_shape_root() call. */
 
-    /* === M4 atom-family singletons (T8) ===
-     * Lazy-allocated per-VM atom prototypes; pinned via urbi_pin so they
-     * survive early GC cycles before T36's root provider lands.  Each is
-     * NULL until first urbi_object_root / urbi_object_atom call.  Slot
-     * order mirrors URBIAtomFamily values 0..8 (object/integer/float/
-     * string/list/dict/tag/event/symbol). */
+    /* === M4 atom-family singletons (T8) + M6 Phase 4 additions (Boolean /
+     *     Nil / Void) ===
+     * Lazy-allocated per-VM atom prototypes; pinned via the M4 T36 root
+     * walker (object_roots_walker) which shades each non-NULL singleton
+     * during MARK_ROOTS.  Each is NULL until first urbi_object_root /
+     * urbi_object_atom call.  Slot order mirrors URBIAtomFamily values
+     * 0..11 (object/integer/float/string/list/dict/tag/event/symbol —
+     * Phase 4 adds boolean/nil/void). */
     struct UObject *atom_object;     /* root Object — atom of all atoms; protos = empty */
     struct UObject *atom_integer;
     struct UObject *atom_float;
@@ -165,6 +167,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *atom_tag;
     struct UObject *atom_event;
     struct UObject *atom_symbol;
+    struct UObject *atom_boolean;    /* M6 Phase 4 — proto for UVAL_BOOL receivers */
+    struct UObject *atom_nil;        /* M6 Phase 4 — proto for UVAL_NIL receivers */
+    struct UObject *atom_void;       /* M6 Phase 4 — proto for UVAL_VOID receivers */
 
     /* === M5 T53/T54 — native proto objects ===
      * event_proto: UObject carrying native method slots (new/emit/syncEmit/waituntil).
