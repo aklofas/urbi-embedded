@@ -31,9 +31,17 @@ urbi_event_create(struct UVM *vm)
     if (c == NULL) return NULL;
 
     ev = (UEvent *)c;
-    /* urbi_gc_alloc zeroes the allocation; set the identity fields.
-     * gc_byte is managed by the GC (set to current_white by urbi_gc_alloc).
-     * pad0[0..4] zero-initialized by urbi_gc_alloc — no explicit loop needed. */
+    /* urbi_gc_alloc zeroes the allocation, then sets cell->gc_byte to
+     * vm->current_white (see ugc_incremental.c::urbi_gc_alloc).  We then
+     * re-write the identity fields explicitly.
+     *
+     * EVENT-001: gc_byte is INTENTIONALLY skipped here.  The allocator
+     * owns gc_byte — writing `ev->gc_byte = 0;` "for symmetry with the
+     * other zero-init fields" would clobber the current_white color and
+     * make the cell observe as already-marked when current_white == 1,
+     * risking premature collection at the next mark phase.  Do not add
+     * a gc_byte assignment here without coordinating with the GC barrier
+     * contract.  pad0[0..4] is zero-init from urbi_gc_alloc — no loop. */
     ev->type_tag        = UTYPE_EVENT;
     ev->flags           = 0U;
     ev->at_watchers_head = NULL;

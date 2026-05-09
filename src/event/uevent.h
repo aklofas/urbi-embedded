@@ -17,8 +17,9 @@
  *   name             : 16 B  (UValue — UVAL_NIL at alloc; populated at M6)
  *   Total            : 40 B + natural padding = ~48 B
  *
- * type_tag = UTYPE_EVENT; gc_byte = 0 at alloc (set by urbi_gc_alloc).
- * All pointer fields NULL at alloc; name.kind = UVAL_NIL. */
+ * type_tag = UTYPE_EVENT; gc_byte = vm->current_white at alloc (set by
+ * urbi_gc_alloc — color bit, NOT zero).  All pointer fields NULL at alloc;
+ * name.kind = UVAL_NIL. */
 
 #ifndef UEVENT_H
 #define UEVENT_H
