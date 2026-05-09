@@ -15,7 +15,7 @@
  *   at_watchers_head : 8 B
  *   waiters_head     : 8 B
  *   name             : 16 B  (UValue — UVAL_NIL at alloc; populated at M6)
- *   Total            : 40 B + natural padding = ~48 B
+ *   Total            : 40 B  (pinned by _Static_assert below — EVENT-021)
  *
  * type_tag = UTYPE_EVENT; gc_byte = vm->current_white at alloc (set by
  * urbi_gc_alloc — color bit, NOT zero).  All pointer fields NULL at alloc;
@@ -63,9 +63,10 @@ typedef struct UEvent {
 } UEvent;
 
 /* Size assertion: 40 B on 64-bit host (8B header + 8B + 8B + 16B = 40B).
- * The task description mentioned "~48 B" as a rounded estimate; the exact
- * layout works out to 40 B because pad0[5] fills the gap to 8 B alignment
- * for the first pointer with no trailing compiler pad.
+ * pad0[5] fills the gap to 8 B alignment for the first pointer with no
+ * trailing compiler pad.  EVENT-021: header layout-claim corrected to match
+ * this assertion (was "~48 B + natural padding"; the natural padding is
+ * already absorbed by pad0[5]).
  * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 _Static_assert(sizeof(UEvent) == 40,
