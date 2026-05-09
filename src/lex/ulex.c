@@ -425,6 +425,14 @@ static UToken scan_ident(ULexer *lex) {
 }
 
 void ulex_init(ULexer *lex, const char *src, const size_t len) {
+    /* Preconditions (LEX-001 + LEX-027): lex must be non-NULL; src must be
+     * non-NULL whenever len > 0.  The (NULL, 0) case is permitted — it
+     * represents empty input (e.g. an idle REPL) and ulex_next will return
+     * TOK_EOF without dereferencing src.  Asserts fire in URBI_DEBUG builds;
+     * release builds inherit the original behaviour (UB on NULL+N). */
+    URBI_INTERNAL_ASSERT(lex != NULL);
+    URBI_INTERNAL_ASSERT(src != NULL || len == 0);
+
     lex->src = src;
     lex->end = src + len;
     lex->cur = src;

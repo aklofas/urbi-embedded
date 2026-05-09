@@ -12,6 +12,18 @@ static void eof_on_empty_input(void) {
     UASSERT_EQ(t.col, 1);
 }
 
+/* LEX-001 + LEX-027: (NULL, 0) is the legal empty-input contract; ulex_init
+ * must accept it and ulex_next must return TOK_EOF without dereferencing.
+ * This is the natural REPL idle case — no allocation, no read. */
+static void eof_on_null_zero_input(void) {
+    ULexer l;
+    ulex_init(&l, NULL, 0);
+    const UToken t = ulex_next(&l);
+    UASSERT_EQ(t.type, TOK_EOF);
+    UASSERT_EQ(t.line, 1);
+    UASSERT_EQ(t.col, 1);
+}
+
 static void eof_is_idempotent(void) {
     ULexer l;
     ulex_init(&l, "", 0);
@@ -959,6 +971,7 @@ static void lex_time_suffix_d_at_boundary_succeeds(void) {
 
 void test_lexer_suite(void) {
     utest_run("eof_on_empty_input", eof_on_empty_input);
+    utest_run("eof_on_null_zero_input", eof_on_null_zero_input);
     utest_run("eof_is_idempotent", eof_is_idempotent);
     utest_run("token_name_returns_static_strings", token_name_returns_static_strings);
     utest_run("whitespace_only_yields_eof_at_correct_position", whitespace_only_yields_eof_at_correct_position);
