@@ -16,7 +16,16 @@
  * UVAL_HOST_FN UValue, and installs it as a local slot on the proto.
  * Lives here rather than a shared header because only T53/T54 use it
  * and moving it to a shared header would pull uevent_emit.h + uintern.h
- * into every consumer of urbi.h.  Factor out at M6 if a third caller appears. */
+ * into every consumer of urbi.h.  Factor out at M6 if a third caller appears.
+ *
+ * EVENT-026 — exemption from v0.5.2 AST_AT_EVENT register-allocation fix:
+ *   The native emit/syncEmit/waituntil paths bypass AST_AT_EVENT codegen
+ *   entirely.  They consume already-resolved UValues from argv and call
+ *   straight into c_event_emit_async / c_event_emit_sync / c_event_waituntil
+ *   from C — no emitter freereg / next_reg state to keep in sync.  The
+ *   register-allocation desync that affected scripted emit (v0.5.2 T6;
+ *   fixed at TWO sibling sites in src/emit/uemit_react.c, AST_AT_EVENT
+ *   sync+async + AT_SLOT_CHANGE) does not apply here. */
 
 #include "event/uevent_native.h"
 
