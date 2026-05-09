@@ -271,6 +271,13 @@ static URadixDispatch dispatch_radix_prefix(ULexer *lex, const char *start,
         return r;
     }
     if ((c2 >= '0' && c2 <= '9') || c2 == '_') {
+        /* LEX-012: precondition for the leading-zero ambiguous path —
+         * lex->cur must be at start so that `cur - start` after consumption
+         * measures the full ambiguous span.  All entry paths into
+         * dispatch_radix_prefix come from scan_number which sets
+         * `start = lex->cur` immediately before the call; this assert pins
+         * that invariant against future refactors. */
+        URBI_INTERNAL_ASSERT(lex->cur == start);
         /* Consume the leading-zero sequence so caller advances. */
         lex->cur++;
         while (lex->cur < lex->end &&
