@@ -590,6 +590,73 @@ str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === String case methods (T47) ============================================
+ *
+ * ASCII-only conversion at v1.0.  Non-ASCII bytes (>= 0x80) pass through
+ * unchanged.  Wave 2 delivers Unicode-aware case folding when libicu /
+ * the embedded NFC tables land — tracked as a stdlib backlog item.
+ *
+ * Allocation strategy: build the result in a heap buffer sized to the
+ * input (case-conversion is byte-length-preserving for ASCII), intern,
+ * and free.  For very long strings this is O(n) which is acceptable —
+ * the v1.0 stdlib has no Tier-1 long-string benchmarks. */
+
+static int
+str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
+           int to_upper, const char *fn_name)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, fn_name, 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String case op: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String case op: NULL string", out);
+    size_t n = urbi_strlen(s);
+
+    if (n == 0) {
+        int oom = 0;
+        UValue v = val_str_intern(vm, "", 0U, &oom);
+        if (oom) return urbi_raise_oom(vm, out);
+        *out = v;
+        return UEXEC_OK;
+    }
+
+    if (vm->alloc_fn == NULL) return urbi_raise_oom(vm, out);
+    char *buf = (char *)vm->alloc_fn(NULL, n + 1U, vm->alloc_ud);
+    if (buf == NULL) return urbi_raise_oom(vm, out);
+
+    size_t i;
+    for (i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (to_upper) {
+            buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - ('a' - 'A')) : (char)c;
+        } else {
+            buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : (char)c;
+        }
+    }
+    buf[n] = '\0';
+
+    int oom = 0;
+    UValue v = val_str_intern(vm, buf, n, &oom);
+    vm->alloc_fn(buf, 0U, vm->alloc_ud);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+}
+
+static int
+str_toUpper(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return str_caseop(vm, self, args, nargs, out, 1, "String.toUpper");
+}
+
+static int
+str_toLower(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return str_caseop(vm, self, args, nargs, out, 0, "String.toLower");
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -633,7 +700,9 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
 static const AtomMethodEntry STR_METHODS[] = {
     { "size",    str_size    },
     { "isEmpty", str_isEmpty },
-    { "charAt",  str_charAt  }
+    { "charAt",  str_charAt  },
+    { "toUpper", str_toUpper },
+    { "toLower", str_toLower }
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
