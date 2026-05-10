@@ -13,9 +13,9 @@
  *   2. tag_leave_is_lazy_allocated:
  *      Same contract for tag->leave_event.
  *
- *   3. tag_proto_has_enter_and_leave_slots:
- *      After urbi_native_protos_init, vm->tag_proto is non-NULL and has
- *      "enter" and "leave" slots as UVAL_HOST_FN stubs.
+ *   3. tag_proto_has_no_enter_or_leave_slots (TAGCH-013 closure):
+ *      Phase 7 (M6 stdlib) removed the unreachable enter/leave getter
+ *      stubs.  Lookup for "enter"/"leave" on vm->tag_proto must now miss.
  *
  *   4. tag_enter_setter_throws_protected_slot:
  *      Calling the _enter_set stub throws URBI_ERR_PROTECTED_SLOT (via
@@ -108,10 +108,18 @@ UTEST(tag_leave_is_lazy_allocated)
 }
 
 /* ===================================================================
- * Test 3: tag_proto_has_enter_and_leave_slots
+ * Test 3: tag_proto_has_no_enter_or_leave_slots (TAGCH-013 closure)
+ *
+ * Phase 7 (M6 stdlib) removed the two getter stubs that were installed
+ * on tag_proto under "enter" / "leave" — they were unreachable from any
+ * caller (UVAL_TAG does not exist in UValKind, so OP_CALL could never
+ * dispatch them; C tests didn't reach them either).  This regression
+ * test pins the cleanup: a lookup for "enter" or "leave" on tag_proto
+ * must miss until tag-property dispatch lands and reinstates these
+ * slots through typed UProps OGET binding (post-M6).
  * =================================================================== */
 
-UTEST(tag_proto_has_enter_and_leave_slots)
+UTEST(tag_proto_has_no_enter_or_leave_slots)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -132,11 +140,9 @@ UTEST(tag_proto_has_enter_and_leave_slots)
 
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
-        int hit = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
-        UASSERT(hit);
-        if (hit) {
-            UASSERT_EQ((int)v.kind, (int)UVAL_HOST_FN);
-        }
+        /* urbi_object_lookup returns 0 on hit, non-zero on miss. */
+        int miss = (urbi_object_lookup(&vm, vm.tag_proto, sym, &v) != 0);
+        UASSERT(miss);
     }
 
     urbi_vm_destroy(&vm);
@@ -208,6 +214,6 @@ test_tag_native_suite(void)
     printf("test_tag_native\n");
     utest_run("tag_enter_is_lazy_allocated",          tag_enter_is_lazy_allocated);
     utest_run("tag_leave_is_lazy_allocated",          tag_leave_is_lazy_allocated);
-    utest_run("tag_proto_has_enter_and_leave_slots",  tag_proto_has_enter_and_leave_slots);
+    utest_run("tag_proto_has_no_enter_or_leave_slots", tag_proto_has_no_enter_or_leave_slots);
     utest_run("tag_enter_setter_throws_protected_slot", tag_enter_setter_throws_protected_slot);
 }

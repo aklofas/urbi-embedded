@@ -9,36 +9,31 @@
  *   never observed).
  *
  * Native getter binding on vm->tag_proto:
- *   urbi_register_native_getter does not yet exist as a general infrastructure
- *   piece.  At T54 we use urbi_register_fn (from event_native.h) to install
- *   thin UVAL_HOST_FN wrapper stubs that unpack the tag from argv[0] and
- *   delegate to the typed getters.  The getter-specific wrapper approach is
- *   the minimum-viable binding mechanism; the full native-getter IC path
- *   (OGET flag + UProps integration for OP_GETSLOT dispatch) is deferred to
- *   the M5 slot-change / M6 stdlib tasks when IC-aware property dispatch
- *   lands.
- *
- *   For now: OP_GETSLOT will find a UVAL_HOST_FN in the slot and dispatch
- *   via OP_CALL (once OP_CALL handles UVAL_HOST_FN, T56).  C-level tests
- *   call tag_enter_getter / tag_leave_getter directly.
+ *   Phase 7 (M6 stdlib) closed TAGCH-013 partially by removing the two
+ *   getter stubs (`enter`/`leave`) that were unreachable from any caller
+ *   — UVAL_TAG does not exist in UValKind, so OP_CALL could never dispatch
+ *   them and C tests had no reason to invoke them indirectly.  When tag-
+ *   property dispatch lands (post-M6 — M7 C-API or later) the proper
+ *   UProps OGET/OSET path will reinstate scripted access via the tag
+ *   getter helpers (tag_enter_getter / tag_leave_getter), still typed.
  *
  * tag_enter_leave_setter_protected:
  *   Any write to tag.enter or tag.leave raises URBI_ERR_PROTECTED_SLOT.
- *   A UVAL_HOST_FN setter stub is installed on the same slot name via
- *   urbi_object_install_property (OSET flag).  At T54 this stub is
- *   reachable from C tests; full OP_SETSLOT getter/setter dispatch via
- *   UProps OGET/OSET lands at M6. */
+ *   A UVAL_HOST_FN setter stub is installed on the `_enter_set`/`_leave_set`
+ *   slot names; reachable today from C-level tests via direct slot lookup.
+ *   Full OP_SETSLOT getter/setter dispatch via UProps OGET/OSET lands when
+ *   property dispatch lands. */
 
 #include "tag/utag_native.h"
 
 #include "vm/uvm.h"
 #include "tag/utag.h"              /* UTag, tag->enter_event / leave_event */
 #include "event/uevent.h"            /* UEvent, urbi_event_create */
-#include "event/uevent_native.h"      /* uvalue_from_event, urbi_register_fn */
+#include "event/uevent_native.h"      /* uvalue_from_event */
 #include "value/uintern.h"           /* ustr_intern */
 #include "object/uobject.h"    /* urbi_object_alloc, urbi_object_install_property */
-#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002) */
-#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM */
+#include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (TAGCH-002), urbi_strlen, urbi_zero */
+#include "urbi/urbi.h"         /* URBI_ERR_PROTECTED_SLOT, URBI_ERR_OOM, UHostFn */
 /* urbi_gc_slot_write (Dijkstra forward barrier) is reached via urbi/gc.h
  * pulled in by vm/uvm.h above. */
 #include "sched/ustrand.h"           /* UStrand (for URBI_ERR_* throw helpers) */
@@ -106,40 +101,16 @@ tag_leave_getter(struct UVM *vm, struct UTag *tag)
 
 /* === Native method stubs for proto slot installation === */
 
-/* Enter getter stub: receiver-cast site.
+/* Protected setter stub for both enter and leave.
  *
- * TAGCH-002: at the M5 baseline this stub is unreachable through OP_CALL
- * dispatch — UVAL_TAG does not exist in UValKind (see include/urbi/types.h)
- * and tag-typed receivers can only land here via test code that hand-builds
- * argv[0].v.p.  The earlier shape `(UTag *)argv[0].v.p` was a type-unsafe
- * receiver cast that would silently mis-dispatch under any future caller
- * routed through OP_CALL with a wrong argv[0] kind.  Replace with an
- * URBI_INTERNAL_ASSERT(0) that aborts in URBI_DEBUG and falls through to
- * NIL in release.  When M6 lands first-class tag-typed receivers, this
- * stub is replaced by a properly-typed dispatch path; until then the
- * unreachability is part of the contract. */
-static UValue
-tag_enter_getter_stub(struct UStrand *s, int argc, UValue *argv)
-{
-    (void)s; (void)argc; (void)argv;
-    URBI_INTERNAL_ASSERT(0 && "unreachable: tag_enter_getter_stub");
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
-    return nil;
-}
-
-/* Leave getter stub: same TAGCH-002 contract as the enter stub. */
-static UValue
-tag_leave_getter_stub(struct UStrand *s, int argc, UValue *argv)
-{
-    (void)s; (void)argc; (void)argv;
-    URBI_INTERNAL_ASSERT(0 && "unreachable: tag_leave_getter_stub");
-    UValue nil = {0};
-    nil.kind = (uint8_t)UVAL_NIL;
-    return nil;
-}
-
-/* Protected setter stub for both enter and leave. */
+ * TAGCH-013 (defer:M6, partial close at Phase 7): the two getter stubs
+ * (tag_enter_getter_stub / tag_leave_getter_stub) were removed because they
+ * were unreachable from any path — UVAL_TAG does not exist in UValKind so
+ * neither OP_CALL nor any C-level test routed through them.  This setter
+ * stub stays because tests/unit/test_tag_native.c still reaches it via a
+ * direct UVAL_HOST_FN slot lookup to verify the URBI_ERR_PROTECTED_SLOT
+ * raise behaviour.  When the proper UProps OGET/OSET dispatch path lands
+ * (post-M6) this stub is replaced by typed getter/setter binding. */
 static UValue
 tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
 {
@@ -151,6 +122,40 @@ tag_enter_leave_setter_protected(struct UStrand *s, int argc, UValue *argv)
     UValue nil = {0};
     nil.kind = (uint8_t)UVAL_NIL;
     return nil;
+}
+
+/* === register_host_fn ===
+ *
+ * Install a UVAL_HOST_FN slot named `name` on `proto`.
+ *
+ * Phase 7 (M6 stdlib, EVENT-013 closure): pre-Phase-7 this lived as
+ * `urbi_register_fn` in src/event/uevent_native.c, used by both event and
+ * tag native registration.  Phase 7 migrated event registration to the
+ * Phase-3 native-method ABI (UVAL_CLOSURE + native_fn) since OP_CALL only
+ * dispatches UVAL_CLOSURE.  Tag still uses the host-fn path solely for the
+ * `_enter_set`/`_leave_set` setter stubs which are unreachable from script
+ * but tested directly from C — so the host-fn install helper survives here
+ * as a private helper, not exported.  When tag-property dispatch lands
+ * (post-M6) this whole code path is replaced by typed UProps installation. */
+static int
+register_host_fn(struct UVM *vm, struct UObject *proto,
+                 const char *name, UHostFn fn)
+{
+    if (vm == NULL || proto == NULL || fn == NULL || name == NULL) {
+        return -1;
+    }
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
+    if (sym == NULL) {
+        return -1;
+    }
+    UValue v;
+    urbi_zero(&v, sizeof(v));
+    v.kind = (uint8_t)UVAL_HOST_FN;
+    /* Function-to-data pointer round-trip: defined for v1.0 targets (POSIX,
+     * ARM Cortex-M7, RISC-V32, Xtensa LX7 — all Harvard-flat for code/data
+     * within one address space). */
+    v.v.p = (void *)(uintptr_t)fn;  /* NOLINT(performance-no-int-to-ptr) — UVAL_HOST_FN function-pointer encoding */
+    return urbi_object_set_local_slot(vm, proto, sym, v);
 }
 
 /* === tag_native_register === */
@@ -167,25 +172,18 @@ tag_native_register(struct UVM *vm)
     }
     vm->tag_proto = proto;
 
-    /* TAGCH-004: propagate urbi_register_fn failures.  Mirrors the
-     * Phase-11 EVENT-005 pattern in event_native_register: the previous
-     * code dropped the four return values, so an OOM during slot
-     * intern/install left a partially populated tag_proto on the VM —
-     * lookups for the missing slot names would return UVAL_NIL and
-     * silently mis-dispatch.  Chain with || short-circuit; on any
-     * non-zero return clear vm->tag_proto and surface UVM_OOM.  The
-     * proto cell itself stays GC-managed and is collected at the next
-     * sweep.
+    /* TAGCH-004: propagate slot-install failures.  The previous code
+     * dropped the return values, so an OOM during slot intern/install
+     * left a partially populated tag_proto on the VM.  Chain with || and
+     * on any non-zero return clear vm->tag_proto and surface UVM_OOM.
+     * The proto cell stays GC-managed and is collected at the next sweep.
      *
-     * Full OGET/OSET property dispatch via urbi_object_install_property
-     * (which sets URBI_SLOT_FLAG_OGET and wires UProps) requires the
-     * IC-aware property infrastructure to be plumbed through OP_GETSLOT's
-     * uprops[] fast path.  For now, plain UVAL_HOST_FN slots work for
-     * C-level tests and basic slot reads. */
-    if (urbi_register_fn(vm, proto, "enter",      tag_enter_getter_stub)            != 0
-     || urbi_register_fn(vm, proto, "leave",      tag_leave_getter_stub)            != 0
-     || urbi_register_fn(vm, proto, "_enter_set", tag_enter_leave_setter_protected) != 0
-     || urbi_register_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0) {
+     * TAGCH-013 (Phase 7 partial close): the two getter stubs were
+     * removed; only the protected setter stays installed (`_enter_set` /
+     * `_leave_set`) until tag-property dispatch lands and replaces this
+     * scaffold with typed UProps OGET/OSET binding. */
+    if (register_host_fn(vm, proto, "_enter_set", tag_enter_leave_setter_protected) != 0
+     || register_host_fn(vm, proto, "_leave_set", tag_enter_leave_setter_protected) != 0) {
         vm->tag_proto = NULL;
         return UVM_OOM;
     }
