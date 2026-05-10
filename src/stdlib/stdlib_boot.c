@@ -28,6 +28,7 @@
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
 #include "object/umodule_instance.h" /* urbi_get_or_create_module_instance */
+#include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
 int
@@ -59,10 +60,9 @@ urbi_stdlib_boot(UVM *vm)
         UModule *m = vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
         if (m == NULL) return URBI_ERR_OOM;
         /* Zero-init: umodule_destroy on a zero UModule is safe (header
-         * §470). */
-        for (size_t i = 0; i < sizeof(UModule); i++) {
-            ((unsigned char *)m)[i] = 0;
-        }
+         * §470).  urbi_zero used (not memset) per freestanding
+         * discipline. */
+        urbi_zero(m, sizeof(UModule));
         UModuleLoadError lerr = umodule_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
         if (lerr != ULOAD_OK) {
