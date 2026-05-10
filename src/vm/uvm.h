@@ -474,6 +474,16 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *platform_proto;
     struct UObject *global_namespace_proto;
     struct UObject *callmessage_proto;
+    /* M6 Phase 9: primitive proto singletons.  T94 lands mutex_proto
+     * (cooperative flag-flip); T95 date_proto (libc time() shim);
+     * T96 duration_proto (thin wrapper over integer microseconds).
+     * Allocated by urbi_stdlib_register_primitives; bound to realm
+     * globals by urbi_stdlib_register_primitives_globals after the
+     * registry loop.  NULL until first VM boot.  GC reachability via
+     * object_roots_walker. */
+    struct UObject *mutex_proto;
+    struct UObject *date_proto;
+    struct UObject *duration_proto;
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;

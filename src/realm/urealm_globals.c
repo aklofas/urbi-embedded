@@ -25,6 +25,7 @@
 #include "stdlib/containers.h"  /* urbi_stdlib_register_container_globals — M6 Phase 6 */
 #include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals — M6 Phase 7 */
 #include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals — M6 Phase 8 */
+#include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals — M6 Phase 9 */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
 #include "module/umodule.h"
@@ -426,6 +427,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * scripts access it as System.Platform.kind. */
     {
         int rc = urbi_stdlib_register_namespace_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* M6 Phase 9: post-registry primitive globals (Mutex / Date /
+     * Duration).  Same post-loop pattern. */
+    {
+        int rc = urbi_stdlib_register_primitives_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

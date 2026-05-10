@@ -316,6 +316,11 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->global_namespace_proto != NULL) gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
     if (vm->callmessage_proto      != NULL) gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
 
+    /* M6 Phase 9: primitive proto singletons (Mutex / Date / Duration). */
+    if (vm->mutex_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->mutex_proto);
+    if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
+    if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

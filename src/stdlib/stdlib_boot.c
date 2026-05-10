@@ -28,6 +28,7 @@
 #include "stdlib/containers.h"
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
+#include "stdlib/primitives.h"
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -86,6 +87,14 @@ urbi_stdlib_boot(UVM *vm)
      * globals, again preserving the registry's slot 0..7 layout.  See
      * src/stdlib/namespaces.c. */
     rc = urbi_stdlib_register_namespaces(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* Phase 9 (M6 Wave 2): primitive protos.  Allocates Mutex / Date /
+     * Duration proto UObjects with their native methods.  Realm-global
+     * binding for the primitive names is deferred to urbi_stdlib_-
+     * register_primitives_globals, again preserving the registry's
+     * slot 0..7 layout.  See src/stdlib/primitives.c. */
+    rc = urbi_stdlib_register_primitives(vm);
     if (rc != URBI_OK) return rc;
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
