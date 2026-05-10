@@ -250,6 +250,100 @@
   `date_duration_seam.chk` (`Date.plus(Duration)` arithmetic with
   positive / zero / sub-second-truncate / negative inputs).  Test
   count delta: 202 → 206 chk fixtures.
+- (Phase 10) **Public `urbi_compile_source` API.** The build-time
+  bake tool needed an entry point for compiling source bytes to
+  serialized v1.5 wire-format bytecode.  Added as the first new
+  `<urbi/urbi.h>` symbol since v0.5.5 — pipeline mirrors
+  `tools/urbi.c`'s in-process compile (lex → arena → parse-loop →
+  emit → serialize).  Hosted-only; freestanding builds return
+  `URBI_ERR_INVALID_ARG` (pre-compiled bytecode reaches embedded
+  targets via `urbi_load_module` instead).
+- (Phase 10) **Bake tool actually compiles.** The Phase-3 stub
+  walk (`fprintf "would compile"`) is now a real concatenate-then-
+  compile-once pass.  Each `.u` file under `src/stdlib/` listed in
+  `STDLIB_ORDER.txt` gets read, prefixed with a
+  `// === <path> ===` banner, and appended to a single source
+  buffer fed through `urbi_compile_source`.  The resulting v1.5
+  bytecode goes into `urbi_stdlib_bytecode[]` (1071 bytes at ship).
+  Concatenate-then-compile (vs one-module-per-file with framing)
+  keeps the boot path single-`UModule` and matches how legacy
+  share/urbi composition works anyway.
+- (Phase 10) **Boot-runs the stdlib chunk.** The Phase-4 banner
+  ("running the root chunk is deferred to a later phase") is
+  closed.  After all C-native registration completes inside
+  `urbi_populate_realm_globals`, `urbi_run_chunk` runs the
+  deserialized `vm->stdlib_module` in the in-flight realm so its
+  top-level statements (currently `class X : public Y {}` decls)
+  install themselves as realm globals.
+- (Phase 10) **Mixin marker classes** (`src/stdlib/mixins.u`) —
+  `Comparable`, `Orderable`, `RangeIterable` shipped as
+  empty-body shells.  User code can `addProto(Comparable)` for
+  vocabulary alignment with the legacy stdlib.  The legacy
+  methods (`!=` from `==`, `>`/`<=`/`>=` from `<`,
+  map/filter/find from each) require closure upvalue capture
+  across `this`/`other` plus multi-slot class bodies, neither of
+  which is in v1.0 emit scope — those forms migrate to v1.x.
+- (Phase 10) **Exception subclass hierarchy**
+  (`src/stdlib/exception_subclasses.u`) — nine subclasses
+  (`TypeError`, `ArityError`, `LookupError`, `KeyError`,
+  `IndexError`, `RangeError`, `DivByZero`, `IOError`,
+  `CapacityError`) declared as empty-body
+  `class X : public Exception {}` decls.  KeyError + IndexError
+  are two-level (`: public LookupError`).  `.new(message)` and
+  `.raise()` resolve through the chain to `Exception`.  Generic
+  `catch (e)` binds the raised instance; typed catch syntax is
+  v1.x.
+- (Phase 10) **2 `tests/chk/stdlib/overlays/` fixtures** —
+  `mixins.chk` (realm-global reachability + addProto-on-user-class),
+  `exception_subclasses.chk` (.new / .message / try-catch end-to-
+  end for all nine subclasses).  Test count delta: 206 → 208 chk
+  fixtures.
+
+### Deferred to v1.x
+
+Phase 10's plan envisioned ten `.u` overlay files (~80+ overlay
+methods).  The realistic Phase 10 ship is the bake-tool API plus
+two minimal-content overlay files (mixins + exception subclasses,
+one method between them: none, just the proto markers + subclass
+shells).  The remaining eight overlays from the plan all depend on
+infrastructure that is not in v1.0 emit scope:
+
+- **Closure upvalue capture across method boundaries** — every
+  one of `RangeIterable.map/filter/find`, `List.map/filter/foldl/
+  find/reduce/partition`, `Dict.keys/values/merge/invert`,
+  `String.split/trim/format/replace`, `Math.sin/cos/...` (lambda
+  bouncing to `.asFloat.sin`), `Mutex.synchronized` (try/finally
+  closure body), `Number.times/upto/downto` is dead until
+  `function(x) { outer_var }` resolves the outer var.
+- **Multi-slot class bodies** — `class C { var x = 1; var y = 2 }`
+  raises `EMIT_UNSUPPORTED_AST` because the body parses as a single
+  `AST_SEPARATOR` and `emit_class_body_stmt` only accepts
+  `AST_VAR_DECL`.  Affects every overlay that wants to declare
+  more than one slot inside a class body.
+- **`this.method()` from within a method body** — also raises
+  `EMIT_UNSUPPORTED_AST`.  Receiver-routed dispatch from
+  inside a function literal needs upvalue-captured `this` plus a
+  callable resolver, neither of which is wired.
+- **Operator overrides via `'+'`/`'<'`/`'=='` slot install** —
+  symbolic operators are inline VM opcodes (not slot lookups), so
+  installing `Duration.'+' = function(other) { ... }` does not
+  intercept the operator.  Affects time / number / comparable
+  operator-form overlays.
+- **Float literals** — `0.5` / `3.14` don't lex as numbers (lex
+  consumes `0` then sees `.5` as a slot access).  `Float`
+  values come from `.asFloat()` only.  Affects `math_overlay.u`'s
+  `Math.pi` constant + every `Float`-arity test that wanted
+  literal float arguments.
+
+The closure-upvalue gap is the load-bearing one: it unblocks the
+majority of the stdlib content overlays and is the primary
+plumbing item that should land before rebooting Phase 10's
+deeper deliverables.  Filed under
+`docs/urbi-embedded-design-risks.md` v1.x: "closure upvalue
+capture (M7+ / stdlib-content blocker)".  Multi-slot class bodies
+and `this.method()` from method bodies join it on the same
+backlog row — the three features are tightly coupled and would
+need to ship together for the deeper overlays to compile.
 
 ### Changed
 
