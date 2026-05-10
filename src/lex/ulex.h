@@ -84,6 +84,10 @@ typedef enum {
     TOK_QUESTION,      /* ? — event-subscribe postfix inside at(...) */
     TOK_BANG,          /* ! — event-emit postfix (e.g. `e!`) */
 
+    /* M6 wave 1 — class declarations */
+    TOK_KW_CLASS,
+    TOK_KW_PUBLIC,
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size

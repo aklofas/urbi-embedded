@@ -29,6 +29,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_AT", "TOK_KW_WHENEVER", "TOK_KW_WAITUNTIL",
     "TOK_KW_ONLEAVE", "TOK_KW_SYNC", "TOK_KW_ASYNC",
     "TOK_QUESTION", "TOK_BANG",
+    "TOK_KW_CLASS", "TOK_KW_PUBLIC",
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -391,6 +392,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("async",     TOK_KW_ASYNC),
     KW_ENTRY("at",        TOK_KW_AT),
     KW_ENTRY("catch",     TOK_KW_CATCH),
+    KW_ENTRY("class",     TOK_KW_CLASS),
     KW_ENTRY("closure",   TOK_KW_CLOSURE),
     KW_ENTRY("else",      TOK_KW_ELSE),
     KW_ENTRY("false",     TOK_KW_FALSE),
@@ -400,6 +402,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("lazy",      TOK_KW_LAZY),
     KW_ENTRY("nil",       TOK_KW_NIL),
     KW_ENTRY("onleave",   TOK_KW_ONLEAVE),
+    KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
     KW_ENTRY("sync",      TOK_KW_SYNC),
     KW_ENTRY("throw",     TOK_KW_THROW),
