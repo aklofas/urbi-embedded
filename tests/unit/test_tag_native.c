@@ -154,6 +154,17 @@ UTEST(tag_proto_has_no_enter_or_leave_slots)
  * The _enter_set stub calls urbi_throw with URBI_ERR_PROTECTED_SLOT.
  * urbi_throw deposits a THROW unwind event on the strand; we verify
  * the strand's pending_unwind.status becomes UEXEC_THROW after the call.
+ *
+ * Closes audit ID TAGCH-018 [cov, defer:M6]:
+ * 'tag_enter_leave_setter_protected — no test coverage for protected-
+ *  slot-write throw path'.  This test exercises that path end-to-end:
+ *  resolve _enter_set on tag_proto, invoke as a UHostFn with a tag_proto
+ *  receiver and a NIL value argument, assert the strand's unwind state
+ *  carries UEXEC_THROW + thrown int == URBI_ERR_PROTECTED_SLOT.
+ *  Cross-reference: TAGCH-013 closure (Phase 7 / v0.6.0 stdlib scaffold)
+ *  removed the unreachable enter/leave getter stubs but kept the setter
+ *  stubs to surface protected-slot semantics — this test pins that
+ *  semantics at v0.6.1.
  * =================================================================== */
 
 UTEST(tag_enter_setter_throws_protected_slot)
