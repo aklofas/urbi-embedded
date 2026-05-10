@@ -657,6 +657,112 @@ str_toLower(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return str_caseop(vm, self, args, nargs, out, 0, "String.toLower");
 }
 
+/* === String search methods (T48) ==========================================
+ *
+ * Hosted builds use libc strstr/memcmp.  Freestanding builds open-code an
+ * O(n*m) brute-force search to avoid the dependency.  v1.0 strings are
+ * short (no Tier-1 long-haystack benchmarks); the brute-force fallback
+ * is acceptable for the embedded path where libc is stripped. */
+
+static int
+strs_find(const char *hay, size_t hlen, const char *ndl, size_t nlen,
+          int64_t *out_idx)
+{
+    if (nlen == 0) { *out_idx = 0; return 1; }
+    if (nlen > hlen) { *out_idx = -1; return 0; }
+    size_t i;
+    for (i = 0; i + nlen <= hlen; i++) {
+        size_t k;
+        for (k = 0; k < nlen; k++) {
+            if (hay[i + k] != ndl[k]) break;
+        }
+        if (k == nlen) { *out_idx = (int64_t)i; return 1; }
+    }
+    *out_idx = -1;
+    return 0;
+}
+
+static int
+str_indexOf(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.indexOf", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.indexOf: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.indexOf: argument must be String", out);
+
+    const char *h = (const char *)self.v.p;
+    const char *n = (const char *)args[0].v.p;
+    if (h == NULL || n == NULL)
+        return urbi_raise_type(vm, "String.indexOf: NULL string", out);
+
+    int64_t idx;
+    (void)strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
+    *out = val_int(idx);
+    return UEXEC_OK;
+}
+
+static int
+str_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.contains", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.contains: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.contains: argument must be String", out);
+
+    const char *h = (const char *)self.v.p;
+    const char *n = (const char *)args[0].v.p;
+    if (h == NULL || n == NULL)
+        return urbi_raise_type(vm, "String.contains: NULL string", out);
+
+    int64_t idx;
+    int found = strs_find(h, urbi_strlen(h), n, urbi_strlen(n), &idx);
+    *out = val_bool(found);
+    return UEXEC_OK;
+}
+
+static int
+str_starts_or_ends(UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                   UValue *out, int starts, const char *fn_name)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, fn_name, 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String prefix/suffix op: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String prefix/suffix op: argument must be String", out);
+
+    const char *h = (const char *)self.v.p;
+    const char *n = (const char *)args[0].v.p;
+    if (h == NULL || n == NULL)
+        return urbi_raise_type(vm, "String prefix/suffix op: NULL string", out);
+
+    size_t hlen = urbi_strlen(h);
+    size_t nlen = urbi_strlen(n);
+    if (nlen == 0) { *out = val_bool(1); return UEXEC_OK; }
+    if (nlen > hlen) { *out = val_bool(0); return UEXEC_OK; }
+
+    const char *base = starts ? h : (h + (hlen - nlen));
+    size_t k;
+    for (k = 0; k < nlen; k++) {
+        if (base[k] != n[k]) { *out = val_bool(0); return UEXEC_OK; }
+    }
+    *out = val_bool(1);
+    return UEXEC_OK;
+}
+
+static int
+str_startsWith(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return str_starts_or_ends(vm, self, args, nargs, out, 1, "String.startsWith");
+}
+
+static int
+str_endsWith(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    return str_starts_or_ends(vm, self, args, nargs, out, 0, "String.endsWith");
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -702,7 +808,11 @@ static const AtomMethodEntry STR_METHODS[] = {
     { "isEmpty", str_isEmpty },
     { "charAt",  str_charAt  },
     { "toUpper", str_toUpper },
-    { "toLower", str_toLower }
+    { "toLower", str_toLower },
+    { "indexOf",    str_indexOf    },
+    { "contains",   str_contains   },
+    { "startsWith", str_startsWith },
+    { "endsWith",   str_endsWith   }
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
