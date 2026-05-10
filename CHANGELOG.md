@@ -44,7 +44,23 @@
 
 ### Fixed
 
-- (filled in)
+- T41 install-time arity validation for `get` / `set`: rejects
+  wrong-param-count getters / setters (getter must take 0 params,
+  setter must take 1) with a clear ArityError diagnostic at
+  `Object.setProperty` time instead of segfaulting in the dispatch
+  arm later.
+- T41 statement-start `get` / `set` form is now rejected at parse
+  time with a dedicated `PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED`
+  diagnostic that points the user at the two legal forms
+  (`recv.get x() {}` and `class C { get x() {} }`).  The bare
+  statement-start form has no v1.0 implicit-`this` resolver and is
+  deferred to v1.x.
+- `emit_call_arm` register clobber on multi-arg calls with a
+  trailing `AST_FUNCTION` argument: leaf-literal args ahead of the
+  function literal bumped only `next_reg`, leaving `freereg` lagging,
+  so the trailing `OP_CLOSURE` destination would land on an already-
+  allocated arg slot.  Latent since v0.4.0-objects, surfaced under
+  T41's setProperty desugar shape.
 
 ### Tooling
 
