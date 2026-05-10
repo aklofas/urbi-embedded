@@ -183,6 +183,15 @@ test-wire-format-determinism: $(BUILDDIR)/urbi
 test-docstring-coverage:
 	@./tests/scripts/check_docstring_coverage.sh
 
+# Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
+# Runs tools/urbi-compile-stdlib three times against
+# src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
+# three outputs are byte-identical.  Hard-fail in releasetest below.
+# See tests/scripts/bake_smoke.sh.
+.PHONY: test-bake-smoke
+test-bake-smoke: tools/urbi-compile-stdlib
+	@./tests/scripts/bake_smoke.sh
+
 test-debug:
 	$(MAKE) TARGET=host-debug \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
@@ -366,7 +375,8 @@ RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
-    test-wire-format-determinism test-docstring-coverage
+    test-wire-format-determinism test-docstring-coverage \
+    test-bake-smoke
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -732,4 +742,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke
