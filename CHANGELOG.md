@@ -58,6 +58,41 @@
   in `UErrCode`).  Returned by `urbi_stdlib_boot` when deserialize
   or bind fails; distinct from `URBI_ERR_OOM` (allocation) and
   `URBI_ERR_BYTECODE_VERSION_MISMATCH` (file-load surface).
+- (Phase 5) **C-native methods on Boolean / Integer / Float / String
+  atom protos.**  New `src/stdlib/atoms.c` registers Tier 1 named
+  methods through the Wave 1 atom-method dispatch pathway:
+  - `Boolean.negate()` — unary inverse (named-method form of legacy
+    `'!'` slot).
+  - `Integer.asString` / `asFloat` / `asBoolean` / `asInteger`;
+    `bitand` / `bitor` / `bitxor` / `bitnot` / `shl` / `shr`.
+    Bitwise are NAMED methods per REVIVAL §14 S14 (no symbolic-op
+    lex tokens — `&` is the parallel-join concurrency separator).
+  - `Float.sqrt` / `sin` / `cos` / `tan` / `asin` / `acos` / `atan` /
+    `atan2` / `log` / `log10` / `exp` / `pow` / `floor` / `ceil` /
+    `abs` / `round`; `isNaN` / `isInfinite`; `asString` /
+    `asInteger` / `asBoolean`.  libm passthroughs on hosted builds;
+    freestanding stubs raise TypeError pending the embedded float
+    library wiring.  Linker pulls in `-lm` on hosted glibc + via
+    Makefile `-lm` adds at the urbi binary, test runner, fuzz, and
+    stress link sites.
+  - `String.size` / `isEmpty` / `charAt` / `asciiAt`; `toUpper` /
+    `toLower` (ASCII-only at v1.0); `indexOf` / `contains` /
+    `startsWith` / `endsWith`; `asInteger` / `asFloat` / `asBoolean`
+    parse.  Strings remain byte-counted (delta §3.2); Unicode
+    code-point variants are Wave 2 backlog.
+
+  Symbolic operators (`+`, `-`, `*`, `/`, `==`, `<`, …) stay inline
+  VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in `src/vm/uvm.c`); only
+  named methods land here.  Phase 5 plan tasks T37 (Integer arith),
+  T38 (Integer comparison), T41 (Float arith), T46 (String concat),
+  T36 `&&`/`||`/`!` symbolic forms are dropped because the v1.0 VM
+  does not dispatch those forms via slot lookup (no lex tokens for
+  `&&` / `||` / `!`; arithmetic and comparison are inline opcodes
+  emitted by the parser).
+- (Phase 5) **11 `tests/chk/stdlib/atoms/` fixtures** covering each
+  method group (boolean / integer_conversion / integer_bitops /
+  float_math / float_classify / float_conversion / string_basic /
+  string_case / string_search / string_parse / string_char).
 
 ### Changed
 
