@@ -1,0 +1,31 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 9 (T96) Duration primitive — thin wrapper over integer
+#         microseconds.
+#
+# Time literals (100ms / 2s / 1d) lex to integer microseconds at M2; this
+# primitive lets script code wrap such an integer in a typed Duration
+# proto-shaped UObject for dispatch / arithmetic.
+#
+# Duration.fromMicroseconds(us)  — fresh Duration with `_microseconds` slot.
+# d.asMicroseconds()             — the bound integer.
+# d.asMilliseconds()             — bound / 1000.
+# d.asSeconds()                  — bound / 1_000_000.
+
+# Time literals lex to integer microseconds (M2 baseline).
+100ms == 100000
+[00000000] true
+
+2s == 2000000
+[00000001] true
+
+# Wrap an integer-microseconds value as a Duration.
+var d = Duration.fromMicroseconds(500000); d.asMicroseconds()
+[00000002] 500000
+
+# Read back as milliseconds.
+d.asMilliseconds()
+[00000003] 500
+
+# Read back as seconds (integer division).
+Duration.fromMicroseconds(3000000).asSeconds()
+[00000004] 3

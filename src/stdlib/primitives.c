@@ -398,6 +398,102 @@ static const PMethodEntry DATE_METHODS[] = {
 
 #define DATE_METHODS_COUNT (sizeof(DATE_METHODS) / sizeof(DATE_METHODS[0]))
 
+/* === Duration (T96) ======================================================
+ *
+ * Thin wrapper over integer microseconds.  Time literals (100ms / 2s /
+ * 1d) lex to integer microseconds at M2; Duration.fromMicroseconds wraps
+ * such an integer in a typed Duration UObject for dispatch.  The backing
+ * value lives on a hidden `_microseconds` UVAL_INT slot; named accessors
+ * expose conversions to milliseconds / seconds / minutes / hours / days.
+ *
+ * v1.0 keeps Duration arithmetic plain integer arithmetic on the
+ * microseconds value; Phase 10's `.u` overlay can grow Duration.+ /
+ * Duration.- as operator overrides on top of this primitive. */
+
+static int
+duration_from_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1)
+        return urbi_raise_arity(vm, "Duration.fromMicroseconds", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "Duration.fromMicroseconds: receiver must be an Object", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm,
+            "Duration.fromMicroseconds: argument must be Integer", out);
+
+    UObject *d = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (d == NULL) return urbi_raise_oom(vm, out);
+
+    if (write_local_slot(vm, d, "_microseconds", args[0]) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = val_obj(d);
+    return UEXEC_OK;
+}
+
+static int
+duration_micros(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0)
+        return urbi_raise_arity(vm, "Duration.asMicroseconds", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "Duration.asMicroseconds: receiver must be a Duration", out);
+
+    UValue v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
+        return urbi_raise_oom(vm, out);
+    *out = (v.kind == (uint8_t)UVAL_INT) ? v : val_int(0);
+    return UEXEC_OK;
+}
+
+static int
+duration_millis(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0)
+        return urbi_raise_arity(vm, "Duration.asMilliseconds", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "Duration.asMilliseconds: receiver must be a Duration", out);
+
+    UValue v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
+        return urbi_raise_oom(vm, out);
+    int64_t us = (v.kind == (uint8_t)UVAL_INT) ? v.v.i : 0;
+    *out = val_int(us / 1000);
+    return UEXEC_OK;
+}
+
+static int
+duration_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0)
+        return urbi_raise_arity(vm, "Duration.asSeconds", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm,
+            "Duration.asSeconds: receiver must be a Duration", out);
+
+    UValue v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_microseconds", &v) != 0)
+        return urbi_raise_oom(vm, out);
+    int64_t us = (v.kind == (uint8_t)UVAL_INT) ? v.v.i : 0;
+    *out = val_int(us / 1000000);
+    return UEXEC_OK;
+}
+
+static const PMethodEntry DURATION_METHODS[] = {
+    { "fromMicroseconds", duration_from_micros },
+    { "asMicroseconds",   duration_micros      },
+    { "asMilliseconds",   duration_millis      },
+    { "asSeconds",        duration_seconds     }
+};
+
+#define DURATION_METHODS_COUNT (sizeof(DURATION_METHODS) / sizeof(DURATION_METHODS[0]))
+
 /* === urbi_stdlib_register_primitives ====================================
  *
  * Allocates Mutex / Date / Duration proto UObjects per task. */
@@ -432,6 +528,18 @@ urbi_stdlib_register_primitives(UVM *vm)
     /* Default `seconds` slot to 0 so an un-cloned Date proto reads as
      * the Unix epoch. */
     rc = install_default_slot(vm, vm->date_proto, "_seconds", val_int(0));
+    if (rc != URBI_OK) return rc;
+
+    /* --- T96 Duration --- */
+    if (vm->duration_proto == NULL) {
+        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (p == NULL) return URBI_ERR_OOM;
+        vm->duration_proto = p;
+    }
+    rc = install_methods(vm, vm->duration_proto,
+                         DURATION_METHODS, DURATION_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+    rc = install_default_slot(vm, vm->duration_proto, "_microseconds", val_int(0));
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;
