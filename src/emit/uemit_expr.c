@@ -42,6 +42,17 @@ uint8_t emit_int_arm(UEmitter *e, const UAstNode *n) {
     return r;
 }
 
+/* --- AST_FLOAT_LIT --- */
+
+uint8_t emit_float_arm(UEmitter *e, const UAstNode *n) {
+    const uint16_t k = add_const_float(e, n->u.f);
+    if (e->error != EMIT_OK) return 0U;
+    const uint8_t r = alloc_reg(e);
+    if (e->error != EMIT_OK) return 0U;
+    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    return r;
+}
+
 /* --- AST_BOOL --- */
 
 uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n) {

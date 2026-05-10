@@ -221,6 +221,54 @@ uint16_t add_const_int(UEmitter *e, const int64_t v) {
     }
 }
 
+/* Linear-scan dedup over the float pool.  Returns existing index if a
+   UVAL_FLOAT entry with the same bit pattern already exists (bitwise
+   comparison — NaN != NaN intentionally, consistent with IEEE 754);
+   otherwise appends a new entry and returns its index.  Sets e->error
+   and returns 0 on pool-full (> UINT16_MAX entries) or OOM.
+   Routes to the nested UProto constant pool when in a nested function.
+   Promoted from static so uemit_expr.c can call it cross-TU. */
+uint16_t add_const_float(UEmitter *e, const double v) {
+    UProto *p = current_proto(e);
+    UValue **pool;
+    size_t  *count;
+    size_t  *cap;
+
+    if (p != NULL) {
+        pool  = &p->constants;
+        count = &p->const_count;
+        cap   = &p->const_cap;
+    } else {
+        pool  = &e->module->constants;
+        count = &e->module->const_count;
+        cap   = &e->module->const_cap;
+    }
+
+    size_t i;
+    for (i = 0; i < *count; i++) {
+        if ((*pool)[i].kind == (uint8_t)UVAL_FLOAT && (*pool)[i].v.f == v) {
+            return (uint16_t)i;
+        }
+    }
+    if (*count > (size_t)UINT16_MAX) {
+        e->error = EMIT_CONSTANT_POOL_FULL;
+        return 0U;
+    }
+    if (!proto_grow(e->module, p, (void **)pool, cap, *count + 1U, sizeof(UValue))) {
+        e->error = EMIT_OOM;
+        return 0U;
+    }
+    {
+        const size_t idx = *count;
+        int pad;
+        (*pool)[idx].kind = (uint8_t)UVAL_FLOAT;
+        for (pad = 0; pad < 7; pad++) (*pool)[idx]._pad[pad] = 0U;
+        (*pool)[idx].v.f = v;
+        (*count)++;
+        return (uint16_t)idx;
+    }
+}
+
 /* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow or
    proto_grow depending on whether we are in a nested function body. */
 static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
@@ -470,6 +518,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     if (e->error != EMIT_OK) return 0U;
     switch (n->kind) {
     case AST_INT:        return emit_int_arm(e, n);
+    case AST_FLOAT_LIT:  return emit_float_arm(e, n);
     case AST_BOOL:       return emit_bool_arm(e, n);
     case AST_NIL:        return emit_nil_arm(e, n);
     case AST_STR:        return emit_string_arm(e, n);
