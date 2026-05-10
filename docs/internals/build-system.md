@@ -115,6 +115,17 @@ target like any other `src/stdlib/*.c`. There is no chicken-and-egg:
 the bake tool runs once on the host, its output ships as portable
 C source.
 
+The Makefile rule for `tools/urbi-compile-stdlib` hard-pins the host
+toolchain (`-std=c99 -Wall -Wextra -Wpedantic -Os`) instead of
+inheriting the cross compiler's `CFLAGS`. The same `make cross-arm`
+invocation that builds `liburbi.a` for Cortex-M7 still produces a
+host-architecture bake-tool binary that links against the host
+`liburbi.a` (which it produced earlier in the same invocation, or
+which already exists from a prior `make`). The cross-target
+`build/<target>/liburbi.a` is built without ever invoking the bake
+tool — the tracked `.gen.c` is sufficient, and the cross compiler
+just compiles it for the target.
+
 Embedded targets that strip the parser/emitter (M7
 `URBI_BYTECODE_ONLY`) still load the same blob via
 `urbi_module_load`; the parser-free boot path is verified by
