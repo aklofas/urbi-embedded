@@ -497,6 +497,11 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_WAITUNTIL:      return emit_waituntil_arm(e, n);
     case AST_AT_EVENT:       return emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
+    case AST_CLASS_DECL:
+        /* Phase 6 of M6 stdlib: emit arm lands in next commit (T69).
+         * Parser produces AST_CLASS_DECL but emit support is staged. */
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:

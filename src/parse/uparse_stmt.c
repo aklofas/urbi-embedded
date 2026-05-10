@@ -111,6 +111,101 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     return parse_inner_tier_from_lhs(p, lhs);
 }
 
+/* --- parse_class_declaration: `class Name [: public P1, P2, ...] { body }`.
+ *
+ * Phase 6 of M6 stdlib (T38).  Per S-mro-declaration-order, the proto
+ * array preserves declaration left-to-right order; the emitter inserts
+ * protos in REVERSE order during desugar so the resulting chain ends up
+ * [P1, P2, Object] for `: public P1, P2`.
+ *
+ * Per S-class-name-scope: the class name is NOT in scope while parsing
+ * either the proto list or the body.  Any name binding for the class
+ * happens at emit time as part of the desugar (the emit arm allocates a
+ * local and writes the cloned-Object value into it AFTER body emit).
+ * That deferral makes `class a : public a { ... }` resolve the proto
+ * `a` to the OUTER `a` (legacy class.chk shadow case).
+ *
+ * The `public` keyword is required after the colon for syntactic
+ * compatibility with legacy urbi 2.x (which had access modifiers); v1.0
+ * has no access semantics but the keyword stays as a layout marker.
+ *
+ * Proto identifiers parse as full primary expressions so that future
+ * v1.x extensions (e.g. `class C : public M.Inner`) just work; for
+ * Wave 1 we expect AST_IDENT but do not gate on it. --- */
+UAstNode *parse_class_declaration(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_CLASS */
+
+    /* Class name. */
+    UToken name = peek(p);
+    if (name.type != TOK_IDENT) {
+        return make_error(p, PARSE_EXPECTED_IDENT,
+                          kErrorMessages[PARSE_EXPECTED_IDENT],
+                          name.line, name.col);
+    }
+    consume(p);
+
+    /* Optional `: public P1[, P2, ...]`. */
+    UAstNode **protos = NULL;
+    int proto_count = 0;
+    int proto_cap = 0;
+    if (peek(p).type == TOK_COLON) {
+        consume(p);  /* consume ':' */
+        UToken pub_tok = peek(p);
+        if (pub_tok.type != TOK_KW_PUBLIC) {
+            return make_error(p, PARSE_UNEXPECTED_TOKEN,
+                              "expected 'public' after ':' in class declaration",
+                              pub_tok.line, pub_tok.col);
+        }
+        consume(p);  /* consume 'public' */
+
+        /* Seed an initial proto array.  parse_prefix gives a single primary
+         * expression — not a separator-tier or comma-tier expression — so
+         * the comma stays available as the proto-list separator. */
+        proto_cap = 4;
+        protos = (UAstNode **)uarena_alloc(p->arena,
+                                           (size_t)proto_cap * sizeof(UAstNode *));
+        if (protos == NULL) return (UAstNode *)&uparser_oom_sentinel;
+
+        for (;;) {
+            UAstNode *proto = parse_prefix(p);
+            if (proto == NULL) return NULL;
+            if (proto->kind == AST_ERROR) return proto;
+
+            if (proto_count == proto_cap) {
+                if (!arena_grow_node_array(p, &protos, &proto_cap,
+                                           proto_count)) {
+                    return (UAstNode *)&uparser_oom_sentinel;
+                }
+            }
+            protos[proto_count++] = proto;
+
+            if (peek(p).type != TOK_COMMA) break;
+            consume(p);  /* consume ',' */
+        }
+    }
+
+    /* Body — block.  Class name is NOT yet in scope; the body parses
+     * with whatever outer binding `name` has (per S-class-name-scope). */
+    UToken body_tok = peek(p);
+    if (body_tok.type != TOK_LBRACE) {
+        return make_error(p, PARSE_EXPECTED_LBRACE,
+                          kErrorMessages[PARSE_EXPECTED_LBRACE],
+                          body_tok.line, body_tok.col);
+    }
+    UAstNode *body = parse_block(p);
+    if (body == NULL) return NULL;
+    if (body->kind == AST_ERROR) return body;
+
+    UAstNode *node = make_node(p, AST_CLASS_DECL, kw.line, kw.col);
+    if (node == NULL) return NULL;
+    node->u.class_decl.name_start  = name.u.str.start;
+    node->u.class_decl.name_len    = name.u.str.len;
+    node->u.class_decl.protos      = protos;
+    node->u.class_decl.proto_count = proto_count;
+    node->u.class_decl.body        = body;
+    return node;
+}
+
 /* --- parse_statement_or_expr: var-decl, assign, or inner-tier expression.
    Returns an inner-tier result (arithmetic expression, possibly with
    | / & separators). Used as the child-entry point for both
@@ -129,6 +224,7 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_AT:       return parse_at(p);
     case TOK_KW_WHENEVER: return parse_whenever(p);
     case TOK_KW_WAITUNTIL: return parse_waituntil(p);
+    case TOK_KW_CLASS:    return parse_class_declaration(p);
     case TOK_IDENT: {
         /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
            mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.
