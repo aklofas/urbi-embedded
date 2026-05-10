@@ -94,9 +94,45 @@ urbi-bin: $(BUILDDIR)/urbi
 # The bake-rule for src/stdlib/urbi_stdlib_bytecode.gen.c lands in a
 # follow-up commit; this commit only wires the tool's own build.
 
-tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c build/host/liburbi.a
+# Order-only dependency on build/host/liburbi.a (after the `|`):
+# the bake tool needs the archive to LINK against, but does not need
+# to relink whenever liburbi.a's contents change.
+#
+# A cycle exists in the dep graph:
+#     liburbi.a → .gen.o → .gen.c → bake-tool → liburbi.a
+# GNU make detects this and silently drops one edge with a one-line
+# "Circular ... dependency dropped" warning.  This is intentional and
+# correctness-safe: .gen.c is a TRACKED source so the first build of
+# liburbi.a does not need the bake tool, and subsequent rebakes only
+# happen when STDLIB_ORDER.txt or a .u changes (then liburbi.a
+# re-links from the regenerated .gen.o).  See docs/internals/build-system.md.
+tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c | build/host/liburbi.a
 	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -o $@ $< build/host/liburbi.a
+
+# Two-pass stdlib bake (per delta §3.1):
+# 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
+# 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
+# 3. liburbi.a re-links with populated .gen.c
+#
+# The .gen.c rule depends on the bake tool + the order file + every
+# .u under src/stdlib/.  Touching any of those triggers a rebake; the
+# resulting .gen.c is then picked up by the existing src/stdlib/*.c
+# wildcard, so liburbi.a re-links automatically.
+#
+# .gen.c is a TRACKED source file (not a generated artifact under
+# build/) so the first build of liburbi.a does not require the bake
+# tool — closing the chicken-and-egg between the tool and the library.
+
+STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
+
+src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
+                                        src/stdlib/STDLIB_ORDER.txt \
+                                        $(STDLIB_U_FILES)
+	./tools/urbi-compile-stdlib \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    $@
 
 # --- Integration tests --------------------------------------------------
 #
