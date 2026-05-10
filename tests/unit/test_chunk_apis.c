@@ -131,6 +131,46 @@ UTEST(run_chunk_null_out_result_no_crash)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-026 / CHSTR-030 closure: the realm parameter on urbi_run_chunk
+ * was historically `(void)realm;`-discarded (T20 deferral) — every chunk
+ * ran against the global realm regardless of the caller's argument.
+ * Wave-5 phase API-004 (commit ~v0.5.7) threaded realm through
+ * urbi_vm_run; this regression test pins that.  Strategy: install a
+ * const global on a non-default realm via the public API, run a chunk
+ * under THAT realm referencing the name, and assert the value resolves.
+ * If the realm parameter were silently replaced by the global realm the
+ * lookup would miss (the global realm has no such global). */
+UTEST(run_chunk_honors_supplied_realm)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *r1 = urbi_realm_create(&vm);
+    UASSERT(r1 != NULL);
+
+    /* Install K = 1234 on r1 only — the global realm does not have it. */
+    UValue v;
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i  = 1234;
+    UErrCode set_rc =
+        (UErrCode)urbi_realm_set_global_const(&vm, r1, "K", 1, v);
+    UASSERT_EQ((int)set_rc, (int)URBI_OK);
+
+    UModule module;
+    UASSERT(compile_src(&vm, "K", &module));
+
+    UValue result = {0};
+    int rc = urbi_run_chunk(&vm, r1, &module, &result);
+
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT_EQ((int)result.kind, (int)UVAL_INT);
+    UASSERT_EQ((long long)result.v.i, (long long)1234);
+
+    umodule_destroy(&module);
+    urbi_realm_destroy(&vm, r1);
+    urbi_vm_destroy(&vm);
+}
+
 /* -------------------------------------------------------------------------
  * urbi_repl_eval tests
  * ------------------------------------------------------------------------- */
@@ -348,6 +388,8 @@ void test_chunk_apis_suite(void) {
               run_chunk_null_realm_uses_global);
     utest_run("run_chunk_null_out_result_no_crash",
               run_chunk_null_out_result_no_crash);
+    utest_run("run_chunk_honors_supplied_realm",
+              run_chunk_honors_supplied_realm);
     utest_run("repl_eval_round_trip",
               repl_eval_round_trip);
     utest_run("repl_eval_compile_error_path",
