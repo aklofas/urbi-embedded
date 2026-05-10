@@ -11,7 +11,17 @@
 
 ### Added
 
-- (filled in during execution per phase)
+- (Phase 1) **String-literal Unicode escapes.** `\uXXXX` (4-hex BMP)
+  and `\u{HHHHHH}` (1-6 hex full-plane up to U+10FFFF) escape forms
+  added at the lexer, materialized as UTF-8 bytes in `UVAL_STR` via
+  the new `urbi_encode_utf8` helper.  Lone surrogates
+  (U+D800..U+DFFF) and code points beyond U+10FFFF are rejected with
+  dedicated `LEX_LONE_SURROGATE` / `LEX_UNICODE_ESCAPE_OUT_OF_RANGE`
+  / `LEX_UNICODE_ESCAPE_TOO_SHORT` lex errors.  Multi-byte UTF-8 in
+  source files continues to flow through the existing byte-passthrough
+  lex path lex-clean.  Runtime `String.length` / `String.size` stay
+  byte counts (code-point-counted variant deferred to v1.x per
+  REVIVAL §14).
 
 ### Changed
 
