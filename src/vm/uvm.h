@@ -485,7 +485,13 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *date_proto;
     struct UObject *duration_proto;
     uint8_t     stdlib_booted;
-    uint8_t     pad_stdlib[7];          /* padding; zeroed */
+    /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
+     * new allocations and returns NULL.  One-way latch set via the
+     * public C API urbi_lock_heap; never cleared.  Reserved for v2.0
+     * hard-RT mode where post-init allocation is forbidden.  Zero
+     * default at urbi_vm_init time. */
+    uint8_t     heap_locked;
+    uint8_t     pad_stdlib[6];          /* padding; zeroed */
     UValue      last_recv;
 } UVM;
 

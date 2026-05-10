@@ -438,6 +438,26 @@ void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UModule *module, UValue *out);
 
+/* === urbi_lock_heap (Phase 13 / T145) ===
+ *
+ * Lock the allocator post-init.  After this call, urbi_gc_alloc declines
+ * to allocate new GC-managed cells and returns NULL; the caller observes
+ * the failure as an OOM-shaped failure mode (URBI_ERR_OOM at native
+ * boundaries, or a TypeError raise via urbi_raise_oom on the script
+ * surface).  Existing GC-tracked objects continue to operate; collection
+ * still runs (sweep / mark slices do not allocate).
+ *
+ * Intended use: v2.0 hard-RT mode where post-init allocation is
+ * forbidden by policy.  The API surface lands at v1.0; the policy
+ * enforcement is opt-in — embedders that want allocation throughout
+ * the program lifetime simply never call this.
+ *
+ * Idempotent: calling on an already-locked VM is a no-op.  No unlock
+ * primitive at v1.0 (one-way latch matches the hard-RT contract).
+ *
+ * vm == NULL is a no-op. */
+void urbi_lock_heap(struct UVM *vm);
+
 #ifdef URBI_DEBUG
 /* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.
  *

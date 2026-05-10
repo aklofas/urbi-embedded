@@ -173,6 +173,7 @@ extern void test_class_decl_parse_suite(void);
 extern void test_class_decl_emit_suite(void);
 extern void test_bake_tool_suite(void);
 extern void test_stdlib_boot_suite(void);
+extern void test_lock_heap_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -322,6 +323,7 @@ static const struct suite_entry suites[] = {
     {"class_decl_emit",           test_class_decl_emit_suite},
     {"bake_tool",                 test_bake_tool_suite},
     {"stdlib_boot",               test_stdlib_boot_suite},
+    {"lock_heap",                 test_lock_heap_suite},
     /* Add new suites here as test files are added. */
 };
 
