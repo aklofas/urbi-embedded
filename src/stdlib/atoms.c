@@ -42,6 +42,7 @@
 #include <stdint.h>
 
 #if __STDC_HOSTED__
+#  include <math.h>                    /* sqrt, sin, cos, ... for Float math */
 #  include <stdio.h>                   /* snprintf for asString */
 #endif
 
@@ -291,6 +292,112 @@ int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Float math + conversion (T42, T44) ===================================
+ *
+ * Hosted libm passthroughs.  Freestanding builds raise TypeError; libm is
+ * provided by newlib-nano on Cortex-M / picolibc on rv32imc and is included
+ * implicitly when the gcc driver builds the shared/static lib (no -lm
+ * needed on those targets).  On hosted glibc, -lm becomes the linker
+ * dependency — the v1.0 host build adds it via the implicit
+ * `cc -o … -lm` chain in the Makefile if libm refs trigger the linker
+ * (gcc auto-links libm on glibc).  Test commit will surface any missing
+ * `-lm` and Phase 5 close-out can add it explicitly to LDFLAGS.
+ */
+
+#define FLOAT_OF_VALUE(uv) \
+    ((uv).kind == (uint8_t)UVAL_FLOAT ? (double)(uv).v.f : \
+     (uv).kind == (uint8_t)UVAL_INT   ? (double)(uv).v.i : 0.0)
+
+#define DEF_FLOAT_UNARY(name, libm_call)                                     \
+    static int                                                               \
+    flt_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
+    {                                                                        \
+        (void)args;                                                          \
+        if (nargs != 0) return urbi_raise_arity(vm, "Float." #name, 0, nargs, out); \
+        if (self.kind != (uint8_t)UVAL_FLOAT)                                \
+            return urbi_raise_type(vm, "Float." #name ": self must be Float", out); \
+        *out = val_float(libm_call((double)self.v.f));                       \
+        return UEXEC_OK;                                                     \
+    }
+
+#if __STDC_HOSTED__
+DEF_FLOAT_UNARY(sqrt,  sqrt)
+DEF_FLOAT_UNARY(sin,   sin)
+DEF_FLOAT_UNARY(cos,   cos)
+DEF_FLOAT_UNARY(tan,   tan)
+DEF_FLOAT_UNARY(asin,  asin)
+DEF_FLOAT_UNARY(acos,  acos)
+DEF_FLOAT_UNARY(atan,  atan)
+DEF_FLOAT_UNARY(log,   log)
+DEF_FLOAT_UNARY(log10, log10)
+DEF_FLOAT_UNARY(exp,   exp)
+DEF_FLOAT_UNARY(floor, floor)
+DEF_FLOAT_UNARY(ceil,  ceil)
+DEF_FLOAT_UNARY(abs,   fabs)
+DEF_FLOAT_UNARY(round, round)
+#else
+#  define DEF_FLOAT_UNARY_FREESTANDING(name)                                 \
+    static int                                                               \
+    flt_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
+    {                                                                        \
+        (void)self; (void)args; (void)nargs;                                 \
+        return urbi_raise_type(vm, "Float." #name ": libm not linked", out); \
+    }
+DEF_FLOAT_UNARY_FREESTANDING(sqrt)
+DEF_FLOAT_UNARY_FREESTANDING(sin)
+DEF_FLOAT_UNARY_FREESTANDING(cos)
+DEF_FLOAT_UNARY_FREESTANDING(tan)
+DEF_FLOAT_UNARY_FREESTANDING(asin)
+DEF_FLOAT_UNARY_FREESTANDING(acos)
+DEF_FLOAT_UNARY_FREESTANDING(atan)
+DEF_FLOAT_UNARY_FREESTANDING(log)
+DEF_FLOAT_UNARY_FREESTANDING(log10)
+DEF_FLOAT_UNARY_FREESTANDING(exp)
+DEF_FLOAT_UNARY_FREESTANDING(floor)
+DEF_FLOAT_UNARY_FREESTANDING(ceil)
+DEF_FLOAT_UNARY_FREESTANDING(abs)
+DEF_FLOAT_UNARY_FREESTANDING(round)
+#  undef DEF_FLOAT_UNARY_FREESTANDING
+#endif
+
+#undef DEF_FLOAT_UNARY
+
+/* atan2(y, x) — two-arg method */
+static int
+flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Float.atan2", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.atan2: self must be Float", out);
+
+    double x = FLOAT_OF_VALUE(args[0]);
+#if __STDC_HOSTED__
+    *out = val_float(atan2((double)self.v.f, x));
+    return UEXEC_OK;
+#else
+    (void)x;
+    return urbi_raise_type(vm, "Float.atan2: libm not linked", out);
+#endif
+}
+
+/* pow(self, exponent) — two-arg method */
+static int
+flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Float.pow", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.pow: self must be Float", out);
+
+    double e = FLOAT_OF_VALUE(args[0]);
+#if __STDC_HOSTED__
+    *out = val_float(pow((double)self.v.f, e));
+    return UEXEC_OK;
+#else
+    (void)e;
+    return urbi_raise_type(vm, "Float.pow: libm not linked", out);
+#endif
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -308,7 +415,24 @@ static const AtomMethodEntry INT_METHODS[] = {
     { "shl",       int_shl       },
     { "shr",       int_shr       }
 };
-static const AtomMethodEntry FLOAT_METHODS[]   = { {NULL, NULL} };
+static const AtomMethodEntry FLOAT_METHODS[] = {
+    { "sqrt",  flt_sqrt  },
+    { "sin",   flt_sin   },
+    { "cos",   flt_cos   },
+    { "tan",   flt_tan   },
+    { "asin",  flt_asin  },
+    { "acos",  flt_acos  },
+    { "atan",  flt_atan  },
+    { "atan2", flt_atan2 },
+    { "log",   flt_log   },
+    { "log10", flt_log10 },
+    { "exp",   flt_exp   },
+    { "pow",   flt_pow   },
+    { "floor", flt_floor },
+    { "ceil",  flt_ceil  },
+    { "abs",   flt_abs   },
+    { "round", flt_round }
+};
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
@@ -317,7 +441,7 @@ static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
  * needed; populated tables use straight sizeof. */
 #define BOOL_METHODS_COUNT    (sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))
 #define INT_METHODS_COUNT     (sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))
-#define FLOAT_METHODS_COUNT   ((sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0])) - 1U)
+#define FLOAT_METHODS_COUNT   (sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0]))
 #define STR_METHODS_COUNT     ((sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))   - 1U)
 
 /* === urbi_stdlib_register_atom_methods (T35 entry) ========================

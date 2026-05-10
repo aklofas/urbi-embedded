@@ -67,7 +67,7 @@ $(BUILDDIR)/tools/urbi.o: tools/urbi.c | $(BUILDDIR)/tools
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -c -o $@ $<
 
 $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB) -lm
 
 urbi-bin: $(BUILDDIR)/urbi
 
@@ -108,7 +108,7 @@ urbi-bin: $(BUILDDIR)/urbi
 # re-links from the regenerated .gen.o).  See docs/internals/build-system.md.
 tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c | build/host/liburbi.a
 	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
-	    -Iinclude -o $@ $< build/host/liburbi.a
+	    -Iinclude -o $@ $< build/host/liburbi.a -lm
 
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
@@ -164,7 +164,7 @@ test-chk: $(BUILDDIR)/urbi
 	echo "$$count chk fixture(s) passed"
 
 test: $(LIB) $(TEST_OBJ) test-integration test-chk
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
 .PHONY: test-loc-cap
@@ -448,19 +448,19 @@ $(STRESS_BUILDDIR):
 STRESS_CPPFLAGS := $(CPPFLAGS) -D_POSIX_C_SOURCE=200809L
 
 $(STRESS_BUILDDIR)/gc_long_running: tests/stress/gc_long_running.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_many_cycles: tests/stress/gc_many_cycles.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_pause_time: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_barrier_throughput: tests/stress/gc_barrier_throughput.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/stress_event_emit_loop: tests/stress/stress_event_emit_loop.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 test-stress: $(STRESS_BUILDDIR)/gc_long_running \
              $(STRESS_BUILDDIR)/gc_many_cycles \
@@ -485,7 +485,7 @@ test-stress: $(STRESS_BUILDDIR)/gc_long_running \
 
 $(STRESS_BUILDDIR)/gc_pause_time_gated: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
 	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -DGC_PAUSE_ASSERT_NS=1000000 \
-	    $< -L$(BUILDDIR) -lurbi -o $@
+	    $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 test-gc-pause: $(STRESS_BUILDDIR)/gc_pause_time_gated
 	$(STRESS_BUILDDIR)/gc_pause_time_gated
@@ -518,13 +518,13 @@ $(FUZZ_BUILDDIR):
 	@mkdir -p $@
 
 $(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c -lm
 
 $(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c -lm
 
 $(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c -lm
 
 fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
 	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
