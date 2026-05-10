@@ -1,18 +1,27 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* tools/urbi-compile-stdlib.c
  *
- * Build-time tool: walk STDLIB_ORDER.txt, compile each .u to bytecode
- * via the public Urbi compile API, emit src/stdlib/urbi_stdlib_bytecode.gen.c.
+ * Build-time tool: walk STDLIB_ORDER.txt, concatenate each .u source in
+ * declared order, compile the joined buffer once via urbi_compile_source,
+ * emit src/stdlib/urbi_stdlib_bytecode.gen.c with the resulting v1.5
+ * wire-format bytecode.
  *
  * Two-pass build (per delta spec §3.1):
  *   1. liburbi.a builds with placeholder .gen.c (0-length blob)
  *   2. tools/urbi-compile-stdlib runs against that intermediate library
  *   3. liburbi.a re-links with the populated .gen.c
  *
- * Phase 3 baseline: walks the order file but does NOT actually compile —
- * empty STDLIB_ORDER.txt produces a 0-length blob. Phase 10 fills in the
- * urbi_compile_source loop once the public compile API and the .u files
- * are in place. */
+ * Why concatenate-then-compile-once instead of one-module-per-file:
+ * urbi_stdlib_boot deserializes a single UModule from the blob (see
+ * src/stdlib/stdlib_boot.c §M6 Phase 4).  Multi-module loading would
+ * need a length-prefixed framing format and a boot-side loop; the
+ * one-module-shared-scope form keeps the boot path simple and matches
+ * the way the legacy share/urbi *.u files compose anyway.  The trade-off
+ * is that all overlays share one global scope at boot, which is the
+ * intended semantic for stdlib content.
+ *
+ * Phase 3 baseline: walked the order file but produced an empty blob
+ * (no urbi_compile_source).  Phase 10 closes that gap. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,8 +30,13 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
+/* The bake tool needs to stack-allocate a UVM, which is opaque in the
+ * public API.  Pulling in the internal header here is acceptable for a
+ * build-time host tool (mirrors what tools/urbi.c already does). */
+#include "vm/uvm.h"
+
 #define MAX_LINE        256
-#define MAX_BLOB_BYTES  (256 * 1024)   /* 256 KB cap for stdlib blob */
+#define MAX_SOURCE      (1024 * 1024)  /* 1 MiB cap on combined .u sources */
 
 /* Emit the .gen.c file: header comment, byte array, length variable.
  * Output format must be byte-stable for the determinism smoke gate
@@ -66,6 +80,79 @@ emit_c_array(FILE *out, const unsigned char *blob, size_t blob_len)
         blob_len);
 }
 
+/* Append the contents of `path` to (*src, *len), growing the heap buffer.
+ * Returns 0 on success, non-zero on failure (message to stderr). */
+static int
+append_source_file(const char *path, char **src, size_t *len, size_t *cap)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        fprintf(stderr, "[bake] cannot open %s\n", path);
+        return 1;
+    }
+    /* File-scope banner so concat boundaries appear in compile diagnostics. */
+    char banner[512];
+    int blen = snprintf(banner, sizeof banner,
+                        "// === %s ===\n", path);
+    if (blen < 0) blen = 0;
+
+    /* Reserve banner bytes first. */
+    while (*len + (size_t)blen + 1 > *cap) {
+        size_t ncap = *cap ? *cap * 2 : 8192;
+        if (ncap > MAX_SOURCE) {
+            fclose(fp);
+            fprintf(stderr, "[bake] combined sources exceed %u byte cap\n",
+                    (unsigned)MAX_SOURCE);
+            return 1;
+        }
+        char *nb = realloc(*src, ncap);
+        if (!nb) { fclose(fp); fprintf(stderr, "[bake] OOM\n"); return 1; }
+        *src = nb;
+        *cap = ncap;
+    }
+    memcpy(*src + *len, banner, (size_t)blen);
+    *len += (size_t)blen;
+
+    /* Append file body. */
+    for (;;) {
+        if (*len + 4096 + 2 > *cap) {
+            size_t ncap = *cap * 2;
+            if (ncap > MAX_SOURCE) {
+                fclose(fp);
+                fprintf(stderr, "[bake] combined sources exceed %u byte cap\n",
+                        (unsigned)MAX_SOURCE);
+                return 1;
+            }
+            char *nb = realloc(*src, ncap);
+            if (!nb) {
+                fclose(fp);
+                fprintf(stderr, "[bake] OOM\n");
+                return 1;
+            }
+            *src = nb;
+            *cap = ncap;
+        }
+        size_t r = fread(*src + *len, 1, 4096, fp);
+        *len += r;
+        if (r == 0) break;
+    }
+    fclose(fp);
+
+    /* Trailing newline guards against a final source missing a newline
+     * before the next file's banner.  Two newlines so any unterminated
+     * trailing comment / pipe sees a clean separator. */
+    if (*len + 2 > *cap) {
+        size_t ncap = *cap * 2;
+        char *nb = realloc(*src, ncap);
+        if (!nb) { fprintf(stderr, "[bake] OOM\n"); return 1; }
+        *src = nb;
+        *cap = ncap;
+    }
+    (*src)[(*len)++] = '\n';
+    (*src)[(*len)++] = '\n';
+    return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -85,17 +172,11 @@ main(int argc, char **argv)
         return 1;
     }
 
-    unsigned char *blob = malloc(MAX_BLOB_BYTES);
-    if (!blob) {
-        fclose(order);
-        fprintf(stderr, "[bake] OOM allocating blob buffer\n");
-        return 1;
-    }
-    size_t blob_len = 0;
+    char  *combined = NULL;
+    size_t comb_len = 0;
+    size_t comb_cap = 0;
+    int    n_files  = 0;
 
-    /* Phase 10 fills the actual compile loop here. Phase 3 ships the
-     * scaffold with an empty walk that produces a 0-length blob.
-     * Each non-blank line is the basename of a .u file under src_dir. */
     char line[MAX_LINE];
     while (fgets(line, sizeof line, order)) {
         size_t n = strlen(line);
@@ -105,26 +186,53 @@ main(int argc, char **argv)
         if (n == 0) continue;            /* blank line */
         if (line[0] == '#') continue;    /* comment */
 
-        /* TODO Phase 10: read src_dir/line, compile via urbi_compile_source,
-         * append bytecode to blob (length-prefixed if needed by the runtime
-         * loader, or topologically ordered concat if accepted by
-         * urbi_module_load directly). */
-        fprintf(stderr,
-            "[bake] would compile %s/%s (Phase 10)\n",
-            src_dir, line);
+        /* Build SRC_DIR/<basename>. */
+        char path[MAX_LINE * 2];
+        snprintf(path, sizeof path, "%s/%s", src_dir, line);
+
+        if (append_source_file(path, &combined, &comb_len, &comb_cap) != 0) {
+            free(combined);
+            fclose(order);
+            return 1;
+        }
+        n_files++;
     }
     fclose(order);
 
+    /* Compile the combined source.  Empty blob if STDLIB_ORDER.txt is
+     * empty — preserves Phase 4 baseline behavior. */
+    unsigned char *bc      = NULL;
+    size_t         bc_len  = 0;
+
+    if (comb_len > 0) {
+        UVM vm;
+        urbi_vm_init(&vm, NULL, NULL);
+
+        char err[512] = {0};
+        int rc = urbi_compile_source(&vm, combined, comb_len, "stdlib",
+                                     &bc, &bc_len, err, sizeof err);
+        urbi_vm_destroy(&vm);
+
+        if (rc != URBI_OK) {
+            fprintf(stderr, "[bake] compile failed: %s\n",
+                    err[0] ? err : "(no diagnostic)");
+            free(combined);
+            return 1;
+        }
+    }
+    free(combined);
+
     FILE *out = fopen(out_path, "w");
     if (!out) {
-        free(blob);
+        free(bc);
         fprintf(stderr, "[bake] cannot open %s for writing\n", out_path);
         return 1;
     }
-    emit_c_array(out, blob, blob_len);
+    emit_c_array(out, bc, bc_len);
     fclose(out);
-    free(blob);
+    free(bc);
 
-    fprintf(stderr, "[bake] wrote %s (%zu bytes blob)\n", out_path, blob_len);
+    fprintf(stderr, "[bake] wrote %s (%d file(s), %zu bytes blob)\n",
+            out_path, n_files, bc_len);
     return 0;
 }

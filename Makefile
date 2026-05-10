@@ -108,7 +108,7 @@ urbi-bin: $(BUILDDIR)/urbi
 # re-links from the regenerated .gen.o).  See docs/internals/build-system.md.
 tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c | build/host/liburbi.a
 	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
-	    -Iinclude -o $@ $< build/host/liburbi.a -lm
+	    -Iinclude -Isrc -o $@ $< build/host/liburbi.a -lm
 
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
