@@ -57,6 +57,10 @@ knownConditionTrueFalse:src/object/uobject_slot.c:550
 // correctly flags the call-site as `always true`.  M5 refines pattern dispatch
 // to actual exception-class matching (see comment block at uunwind.c:55-62);
 // suppressing keeps the gate green until that lands.
+//
+// CPPCHK-001 (defer:M6) is the same finding under a different ID — filed
+// before CPPCHK-011 from a different cppcheck pass and resolved transitively
+// when Phase 19 closed CPPCHK-011.  Both close at v0.6.1-stdlib (Phase 12).
 knownConditionTrueFalse:src/runtime/uunwind.c:288
 
 // audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
