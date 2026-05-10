@@ -1,0 +1,16 @@
+# Milestone: M6 Wave 2
+# Covers: T41 inside T38 class body — implicit class receiver.
+#
+# Class body `get name() { body }` installs the getter on the class
+# object directly; instances created via `.new()` inherit the slot
+# property through the prototype chain.
+#
+# Note: the getter body cannot use bare unqualified slot reads to
+# resolve against `self` at v0.6.1 (no implicit-this resolver yet);
+# the body returns a literal here.
+
+class Counter { get value() { 42 } }; Counter.value
+[00000000] 42
+
+class Counter2 { get value() { 99 } }; var c = Counter2.new(); c.value
+[00000001] 99

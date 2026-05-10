@@ -1,0 +1,7 @@
+# Milestone: M6 Wave 2
+# Covers: T41 — `set` parse sugar desugars to oset slot-property install.
+#
+# `Foo.value = 7` triggers the installed setter closure with v=7.
+
+var Stash = Object.clone(); Stash.setSlot("v", 0); var Foo = Object.clone(); Foo.set value(v) { Stash.setSlot("v", v) }; Foo.value = 7; Stash.v
+[00000000] 7

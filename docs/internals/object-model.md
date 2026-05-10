@@ -367,6 +367,52 @@ every object's `lookup_stamp` and resets `lookup_id` to 1.
 
 ---
 
+## get/set parse sugar (T41 — M6 Wave 2)
+
+Parse-only desugar; no new opcodes, no runtime change beyond wiring the
+deferred `oget`/`oset` dispatch arms.
+
+```text
+get x() { body }
+```
+
+becomes (at emit time)
+
+```text
+recv.setProperty("x", "oget", function() { body })
+```
+
+Symmetric for `set y(v) { body }` → `setProperty("y", "oset", ...)`. The
+runtime `oget` / `oset` slot-property dispatch (M4 baseline machinery,
+`URBI_SLOT_FLAG_OGET` / `OSET` on `UProps`) was wired live in the same
+ship — `OP_GETSLOT` / `OP_SETSLOT` route through
+`urbi_run_closure_on_scratch[_with_payload]` when an IC entry's flags
+indicate a property closure.
+
+Parse context: `get` and `set` are recognized as method-decl prefixes
+**only** when followed by `IDENT (`. Outside that strict shape they
+remain plain identifiers — no keyword reservation breakage. Detection
+uses `peek2()` (parser 2-token lookahead) at two sites:
+
+1. `parse_member_access` — `Foo.get value(...)` form (member-access form).
+2. `parse_assign_or_expr` — `get value(...)` at statement start (used in
+   class body and at top level, both with implicit receiver).
+
+The implicit-receiver class-body form has its own emit arm
+(`emit_class_body_property_decl` in `src/emit/uemit_class.c`) that wires
+`foo_reg` (the class object's register) as the explicit `setProperty`
+receiver during desugar — the synthetic AST scaffold used by
+`emit_property_decl_arm` can't address a raw register, so this is a
+parallel call-sequence builder.
+
+The backing C-native `Object.setProperty(name, prop, value)` lives in
+`src/stdlib/object_root.c`. It materializes a nil placeholder slot when
+the slot is absent (legacy semantics: `get`/`set` implicitly creates the
+slot) and then calls `urbi_object_install_property` with the appropriate
+flag bit.
+
+---
+
 ## Cross-references
 
 - [GC](gc.md) — cell types, gc_byte bit layout, the slot-write barrier

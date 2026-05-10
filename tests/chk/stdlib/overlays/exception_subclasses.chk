@@ -1,0 +1,54 @@
+# Milestone: M6 Wave 2 — Phase 10 (.u overlay).
+# Covers: Exception subclass hierarchy declared in src/stdlib/exception_subclasses.u
+#         and baked into urbi_stdlib_bytecode.  Each subclass resolves as a
+#         realm global, .new(message) clones from Exception with a bound
+#         message slot, and .raise() routes through the existing throw path.
+#
+# At v1.0, typed catch (`catch (TypeError e)`) is not yet syntax — every
+# fixture uses the generic `catch (e)` form.  The proto-walk for class
+# inheritance is exercised indirectly: a subclass instance carries the
+# subclass proto, the parent (Exception or LookupError), and Object — the
+# `.message` slot resolves through that chain.
+
+# Direct subclass.
+var e = TypeError.new("bad type"); e.message
+[00000000] "bad type"
+
+# Two-level subclass: KeyError extends LookupError extends Exception.
+# .new() and .message both resolve through the chain to Exception's clone
+# / install logic.
+var k = KeyError.new("missing key"); k.message
+[00000001] "missing key"
+
+# raise() on a subclass instance triggers the unwind; catch binds the
+# instance and .message remains reachable inside the handler.
+var got = ""; try { TypeError.new("oops").raise() } catch (e) { got = e.message }; got
+[00000002] "oops"
+
+# Raise via the deepest subclass; catch sees the same instance.
+var got = ""; try { KeyError.new("k").raise() } catch (e) { got = e.message }; got
+[00000003] "k"
+
+# All nine declared subclasses resolve as realm globals.  We assert
+# the kind via .message (the proto chain ends at Exception which owns
+# the constructor).
+ArityError.new("a").message
+[00000004] "a"
+
+LookupError.new("lk").message
+[00000005] "lk"
+
+IndexError.new("ix").message
+[00000006] "ix"
+
+RangeError.new("rg").message
+[00000007] "rg"
+
+DivByZero.new("dz").message
+[00000008] "dz"
+
+IOError.new("io").message
+[00000009] "io"
+
+CapacityError.new("cap").message
+[00000010] "cap"

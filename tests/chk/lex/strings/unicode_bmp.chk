@@ -1,0 +1,33 @@
+# Milestone: M6 wave 2
+# Covers: \uXXXX 4-hex BMP Unicode escape resolves to UTF-8 bytes inside
+#         UVAL_STR.  The REPL formatter (uvalue_format at
+#         src/value/uvalue.c) re-escapes non-printable / non-ASCII bytes
+#         as \xNN, so a single Unicode escape round-trips as the UTF-8
+#         sequence in \xNN form.  ASCII code points stay ASCII.
+# Audit:   delta-spec section 3.2 Unicode-escape decision.
+
+# ASCII fast path: U+0041 = A = 1 UTF-8 byte (no high bits, no \x escape).
+"\u0041"
+[00000000] "A"
+
+# 2-byte UTF-8: U+00E9 (e-acute) = 0xC3 0xA9.
+"\u00E9"
+[00000001] "\xc3\xa9"
+
+# 3-byte UTF-8: U+20AC (euro) = 0xE2 0x82 0xAC.
+"\u20AC"
+[00000002] "\xe2\x82\xac"
+
+# Lowercase hex digits accepted; same canonical bytes as uppercase form.
+"\u00e9" == "\u00E9"
+[00000003] true
+
+# \u escape sits adjacent to plain ASCII text in the same literal.
+"a\u0042c"
+[00000004] "aBc"
+
+# Adjacent-string concat across an escape boundary preserves canonical
+# bytes; equality holds because the intern step canonicalises pointers
+# and uvalue_equal pointer-compares UVAL_STR.
+"\u0041" "B" == "AB"
+[00000005] true

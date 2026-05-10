@@ -345,6 +345,75 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
     urbi_vm_destroy(&vm);
 }
 
+/* REALM-002 closure (defer:M6 → closed at v0.6.1):
+ *
+ * Audit finding [unsafe]: 'urbi_populate_realm_globals install_property_idx_guard
+ * — is_const silently ignored for slot indices >= 8'.
+ *
+ * Today's documented contract (urealm_globals.c:287-300): the v1.0 packed-
+ * nibble form of UShape.flags is 4 bits/slot across a single uint32_t
+ * (8 slots worth).  urbi_shape_transition_property's bit-shift arithmetic
+ * (shift = slot_index * 4) is undefined behaviour at slot_index >= 8 — UB
+ * that the explicit `idx < 8` gate suppresses.  The slot is still locally
+ * installed via set_local_slot for any slot index — its value remains
+ * reachable by name; only the IC-enforced CONSTANT bit is dropped at
+ * slot >= 8.
+ *
+ * This regression test pins both halves of that contract:
+ *   (a) installing slots past index 7 succeeds (URBI_OK), and the value
+ *       is reachable via urbi_realm_get_global.
+ *   (b) the CONSTANT enforcement at slot >= 8 is best-effort: a re-install
+ *       via set_global on the same name with a new value does NOT raise
+ *       CONST_SLOT_WRITE (the IC-side gate is not active).
+ *
+ * The cap is a v1.0 architectural limit; closing-via-doc + this regression
+ * test pins the surface so a future M6+spill-table implementation can lift
+ * it without silently regressing the contract.  See REVIVAL.md §14 row
+ * S-globals-cap-8 + design-risks 'M6: realm-globals UProps spill side-table'.
+ */
+UTEST(set_global_const_past_slot_7_installs_without_const_enforcement) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    /* The new realm starts with 15 builtin globals installed by populate
+     * (Object, Boolean, Nil, Void, Realm, Math, System, Date, ... per the
+     * urbi_builtin_registry).  Adding our own const slot lands well past
+     * the 8-slot packed-flag cap. */
+    const char *name = "MyConstPast8";
+    UASSERT_EQ(URBI_OK,
+               urbi_realm_set_global_const(&vm, realm, name,
+                                           strlen(name), make_int(100)));
+
+    /* (a) Slot is installed and readable via the public API. */
+    UValue out = {0};
+    UASSERT_EQ(URBI_OK,
+               urbi_realm_get_global(&vm, realm, name,
+                                     strlen(name), &out));
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ((int64_t)100, out.v.i);
+
+    /* (b) Const enforcement at slot >= 8 is best-effort.  set_global on
+     * the same name does NOT reject — the slot's value updates.  This
+     * pins the documented behaviour; future M6+spill-table work that
+     * promotes CONSTANT to slots >= 8 should flip this assertion. */
+    int rc = urbi_realm_set_global(&vm, realm, name,
+                                   strlen(name), make_int(200));
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue out2 = {0};
+    UASSERT_EQ(URBI_OK,
+               urbi_realm_get_global(&vm, realm, name,
+                                     strlen(name), &out2));
+    UASSERT_EQ((int)UVAL_INT, (int)out2.kind);
+    UASSERT_EQ((int64_t)200, out2.v.i);
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 UTEST(set_global_overwrites_non_const) {
     /* urbi_realm_set_global on a name that was already installed (non-const)
      * must update the value, and urbi_realm_get_global must return the
@@ -388,6 +457,8 @@ test_realm_globals_api_suite(void)
               get_global_distinguishes_overflow_from_oom);
     utest_run("populate + set_global_const share reject logic (T70)",
               populate_and_set_global_const_share_reject_logic);
+    utest_run("set_global_const past slot 7 installs without const enforcement (REALM-002)",
+              set_global_const_past_slot_7_installs_without_const_enforcement);
     utest_run("get_global: absent slot returns URBI_ERR_SLOT_NOT_FOUND",
               get_global_returns_slot_not_found_when_absent);
     utest_run("set_global: overwrites existing non-const slot",

@@ -583,12 +583,20 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
              * reads appearing directly as call arguments. */
             e->lazy_arg_context = true;
             uint8_t arg_r;
+            /* Sync freereg to next_reg BEFORE every arg emit (not just
+             * before lazy-thunk arms).  Plain leaf arms (AST_INT /
+             * AST_STR / AST_BOOL / AST_NIL) bump only next_reg via
+             * alloc_reg; freereg can lag.  When a subsequent arg is an
+             * AST_FUNCTION literal, emit_function_literal pulls its
+             * OP_CLOSURE destination from freereg — without this sync
+             * the closure lands on an already-allocated arg slot and
+             * clobbers it.  Pre-T41 this was unexercised; T41 (M6 Wave 2)
+             * surfaced it via the synthetic
+             * `recv.setProperty("name", "oget", function() body)` arg
+             * sequence. */
+            if (e->current_fs->freereg < e->next_reg)
+                e->current_fs->freereg = e->next_reg;
             if (param_lazy) {
-                /* Sync freereg to next_reg before the thunk emit so
-                 * AST_FUNCTION's OP_CLOSURE destination (taken from
-                 * freereg) doesn't clobber an already-allocated arg. */
-                if (e->current_fs->freereg < e->next_reg)
-                    e->current_fs->freereg = e->next_reg;
                 /* Lazy position: compile arg as zero-arg thunk. */
                 arg_r = emit_lazy_thunk(e, n->u.call.args[ai]);
             } else {

@@ -266,10 +266,6 @@ typedef struct {
                                         drives OP_CLOSE-before-back-edge (T8) */
     bool   has_captured;             /* set when any local in this block
                                         was flagged is_captured */
-    int    break_chain;              /* head of OP_JMP fixup chain for
-                                        break (M2.5; reserved) */
-    int    continue_chain;           /* head of OP_JMP fixup chain for
-                                        continue (M2.5; reserved) */
 } UBlockCtx;
 
 /* Per-local function-signature metadata (T16: lazy parameter tracking).

@@ -27,6 +27,116 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* === emit_class_body_property_decl — T41 in class body.
+ *
+ * Class-body `get name() { body }` and `set name(v) { body }`.  The
+ * receiver is the class object held in foo_reg, but foo_reg is a raw
+ * register slot (no AST node) — we can't reuse emit_property_decl_arm
+ * (which builds an AST_MEMBER_GET on n->u.property_decl.recv).
+ *
+ * Inline the desugar:
+ *   1. Load `setProperty` method from foo_reg via OP_GETSLOT.
+ *   2. Load name and "oget"/"oset" string args via AST_STR through emit_expr.
+ *   3. Compile the function literal to a closure.
+ *   4. OP_CALL with [self=foo_reg, name, prop, closure] -> discard.
+ *
+ * Sibling-site freereg discipline matches emit_class_body_stmt's
+ * existing pattern (S-emit-freereg-discipline).  Result is discarded
+ * since property installation is a side-effecting statement. === */
+static void
+emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
+{
+    const UAstMethodKind kind = stmt->u.property_decl.kind;
+    const char *prop_name = (kind == UAST_METHOD_GETTER) ? "oget" : "oset";
+
+    if (e->current_fs->freereg < e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+
+    /* Load setProperty method from foo_reg into a fresh callee register. */
+    USymbol *sym_setProp = (USymbol *)ustr_intern(e->vm, "setProperty", 11);
+    if (sym_setProp == NULL) { e->error = EMIT_OOM; return; }
+    int ic_setProp = uemit_assign_ic_index(e, sym_setProp);
+    if (ic_setProp < 0) return;
+
+    uint8_t callee_reg = alloc_reg(e);
+    if (e->error != EMIT_OK) return;
+    if (e->current_fs->freereg < e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+
+    emit_instr(e, uinstr_enc_abc(OP_GETSLOT, callee_reg, foo_reg,
+                                 (uint8_t)ic_setProp),
+               (uint32_t)stmt->line);
+
+    /* Move foo_reg into callee_reg+1 as the implicit `self` argument.
+     * OP_CALL convention: A is callee, B is (nargs+1) where the +1 is
+     * the implicit self-or-callee shim — but the class-decl-arm pattern
+     * passes args at A+1..A+B-1 with B = nargs+1, so for setProperty
+     * with 3 args the call shape is callee_reg=A, args at A+1..A+3,
+     * B = 4.  The native dispatch reads vm->last_recv set by the
+     * preceding OP_GETSLOT (which used foo_reg as B), so `self` arrives
+     * correctly without an explicit move. */
+
+    /* Arg 1: name string. */
+    UAstNode name_str = (UAstNode){0};
+    name_str.kind            = AST_STR;
+    name_str.line            = stmt->line;
+    name_str.col             = stmt->col;
+    name_str.u.str_lit.bytes = stmt->u.property_decl.name_start;
+    name_str.u.str_lit.len   = stmt->u.property_decl.name_len;
+    if (e->current_fs->freereg < e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+    uint8_t name_reg = emit_expr(e, &name_str);
+    if (e->error != EMIT_OK) return;
+    uint8_t expected_name = (uint8_t)(callee_reg + 1U);
+    if (name_reg != expected_name) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_name, name_reg, 0U),
+                   (uint32_t)stmt->line);
+    }
+
+    /* Arg 2: "oget" or "oset" string. */
+    UAstNode prop_str = (UAstNode){0};
+    prop_str.kind            = AST_STR;
+    prop_str.line            = stmt->line;
+    prop_str.col             = stmt->col;
+    prop_str.u.str_lit.bytes = prop_name;
+    prop_str.u.str_lit.len   = 4;
+    if (e->current_fs->freereg < e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+    uint8_t prop_reg = emit_expr(e, &prop_str);
+    if (e->error != EMIT_OK) return;
+    uint8_t expected_prop = (uint8_t)(callee_reg + 2U);
+    if (prop_reg != expected_prop) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_prop, prop_reg, 0U),
+                   (uint32_t)stmt->line);
+    }
+
+    /* Arg 3: the function literal (closure). */
+    if (e->current_fs->freereg < e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+    uint8_t func_reg = emit_expr(e, stmt->u.property_decl.func);
+    if (e->error != EMIT_OK) return;
+    uint8_t expected_func = (uint8_t)(callee_reg + 3U);
+    if (func_reg != expected_func) {
+        emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_func, func_reg, 0U),
+                   (uint32_t)stmt->line);
+    }
+
+    /* OP_CALL: B = (nargs + 1) = 4; C = 2 (1 ret, discarded). */
+    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 4U, 2U),
+               (uint32_t)stmt->line);
+
+    /* Discard the result and any trailing scratch above foo_reg. */
+    e->next_reg = (uint8_t)(foo_reg + 1U);
+    if (e->current_fs->freereg > e->next_reg) {
+        e->current_fs->freereg = e->next_reg;
+    }
+}
+
 /* === emit_class_body_stmt — emit one body statement as Foo.<name> = value.
  *
  * Each iteration is a sibling call site relative to the prior emit; the
@@ -38,6 +148,13 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
 {
     if (stmt == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
+        return;
+    }
+
+    /* T41 (Wave 2): class-body `get name() {...}` / `set name(v) {...}`
+     * — implicit receiver is the class object (foo_reg). */
+    if (stmt->kind == AST_PROPERTY_DECL) {
+        emit_class_body_property_decl(e, stmt, foo_reg);
         return;
     }
 
@@ -339,4 +456,79 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
 
     /* Return foo_reg as the expression value (the class object). */
     return foo_reg;
+}
+
+/* === emit_property_decl_arm — T41 get/set parse sugar.
+ *
+ * AST_PROPERTY_DECL desugars to:
+ *
+ *   recv.setProperty(name, "oget"|"oset", function() body)
+ *
+ * where the function literal carries the params + body parsed by
+ * parse_property_decl.  No new opcodes; runtime `oget`/`oset` slot-
+ * property dispatch (M4 baseline) handles the trigger on slot read /
+ * write.
+ *
+ * `n->u.property_decl.recv` must be non-NULL on entry.  Class-body
+ * forms (`recv == NULL`) are routed via emit_class_property_decl_arm
+ * which synthesizes the implicit class-object receiver. === */
+uint8_t
+emit_property_decl_arm(UEmitter *e, UAstNode *n)
+{
+    if (e->current_fs == NULL || e->vm == NULL) {
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+    if (n->u.property_decl.recv == NULL) {
+        /* Implicit-receiver form (class body or top-level `get x()`).
+         * v0.6.1 supports the explicit-receiver form only at the AST arm;
+         * class-body wiring lives in emit_class_body_stmt. */
+        e->error = EMIT_UNSUPPORTED_AST;
+        return 0U;
+    }
+
+    const UAstMethodKind kind = n->u.property_decl.kind;
+    const char *prop_name = (kind == UAST_METHOD_GETTER) ? "oget" : "oset";
+
+    /* Build synthetic AST nodes for the desugar.  All on stack — they
+     * borrow into the emitter for the duration of one emit_expr call,
+     * which copies the bytes it needs (interned strings, function-
+     * literal proto allocations, etc.) before returning. */
+    UAstNode name_str = (UAstNode){0};
+    name_str.kind            = AST_STR;
+    name_str.line            = n->line;
+    name_str.col             = n->col;
+    name_str.u.str_lit.bytes = n->u.property_decl.name_start;
+    name_str.u.str_lit.len   = n->u.property_decl.name_len;
+
+    UAstNode prop_str = (UAstNode){0};
+    prop_str.kind            = AST_STR;
+    prop_str.line            = n->line;
+    prop_str.col             = n->col;
+    prop_str.u.str_lit.bytes = prop_name;
+    prop_str.u.str_lit.len   = 4;   /* "oget" and "oset" both 4 bytes */
+
+    UAstNode setprop_member = (UAstNode){0};
+    setprop_member.kind                = AST_MEMBER_GET;
+    setprop_member.line                = n->line;
+    setprop_member.col                 = n->col;
+    setprop_member.u.member.recv       = n->u.property_decl.recv;
+    setprop_member.u.member.name_start = "setProperty";
+    setprop_member.u.member.name_len   = 11;
+    setprop_member.u.member.value      = NULL;
+
+    UAstNode *args[3];
+    args[0] = &name_str;
+    args[1] = &prop_str;
+    args[2] = n->u.property_decl.func;       /* AST_FUNCTION */
+
+    UAstNode setprop_call = (UAstNode){0};
+    setprop_call.kind             = AST_CALL;
+    setprop_call.line             = n->line;
+    setprop_call.col              = n->col;
+    setprop_call.u.call.callee    = &setprop_member;
+    setprop_call.u.call.args      = args;
+    setprop_call.u.call.arg_count = 3;
+
+    return emit_expr(e, &setprop_call);
 }

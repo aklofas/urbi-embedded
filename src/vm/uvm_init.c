@@ -23,11 +23,13 @@
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
 #include "runtime/uhandle.h"      /* host_handle_walk_roots */
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
+#include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
 #include "tag/utag_native.h"      /* tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
+#include "module/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -293,12 +295,27 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_drain_handler = NULL;
 
     /* M6 Phase 3: stdlib state. */
-    vm->stdlib_closures = NULL;
-    vm->stdlib_upvalues = NULL;
-    vm->stdlib_booted   = 0U;
+    vm->stdlib_closures        = NULL;
+    vm->stdlib_upvalues        = NULL;
+    vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
+    vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
+    vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
+    vm->container_triplet_proto = NULL;
+    vm->container_tuple_proto   = NULL;
+    vm->exception_proto         = NULL;  /* M6 Phase 7 — populated by urbi_stdlib_register_runtime_types */
+    vm->math_proto              = NULL;  /* M6 Phase 8 T86 — populated by urbi_stdlib_register_namespaces */
+    vm->system_proto            = NULL;  /* M6 Phase 8 T87 */
+    vm->platform_proto          = NULL;  /* M6 Phase 8 T88 */
+    vm->global_namespace_proto  = NULL;  /* M6 Phase 8 T90 */
+    vm->callmessage_proto       = NULL;  /* M6 Phase 8 T91 */
+    vm->mutex_proto             = NULL;  /* M6 Phase 9 T94 — populated by urbi_stdlib_register_primitives */
+    vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
+    vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
+    vm->stdlib_booted          = 0U;
+    vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
     {
         int i;
-        for (i = 0; i < 7; i++) vm->pad_stdlib[i] = 0U;
+        for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
     }
     vm->last_recv = urbi_value_nil();
 }
@@ -365,6 +382,23 @@ void urbi_vm_destroy(UVM *vm) {
             uc = next;
         }
         vm->stdlib_upvalues = NULL;
+
+        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
+         * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
+         * UModuleInstance referencing this module has already been
+         * reaped — no dangling ic_names back-reference can survive. */
+        if (vm->stdlib_module != NULL) {
+            umodule_destroy(vm->stdlib_module);
+            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
+            vm->stdlib_module = NULL;
+        }
+
+        /* M6 Phase 6: free container backing buffers (List/Dict/Tuple
+         * storage) threaded onto vm->stdlib_containers.  Runs after
+         * urbi_gc_destroy so the per-instance UObjects (which carry the
+         * pointer in a hidden _storage slot) have already been reaped —
+         * no dangling buffer reference can survive. */
+        urbi_stdlib_containers_destroy(vm);
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */

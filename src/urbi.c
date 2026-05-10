@@ -5,9 +5,14 @@
 #include "realm/urealm.h"
 #include "module/umodule.h"
 #include "value/uintern.h"
+#include "value/uarena.h"
 #include "runtime/umacros.h"
 #include "object/uic.h"
 #include "object/umodule_instance.h"
+#include "lex/ulex.h"
+#include "parse/uparse.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
 #include <stdint.h>
 
 #if __STDC_HOSTED__
@@ -60,6 +65,124 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
 {
     if (!vm) return;
     vm->isr_check_fn = fn;
+}
+
+/* urbi_compile_source: compile source → serialized v1.5 bytecode.  See
+ * urbi.h for the full contract.  The pipeline is the same one tools/urbi.c
+ * uses for in-process REPL/-e/-f compile; this entry point exposes it for
+ * the build-time stdlib bake (tools/urbi-compile-stdlib) and any embedder
+ * that wants to pre-compile a module. */
+int
+urbi_compile_source(struct UVM *vm,
+                    const char *src, size_t src_len,
+                    const char *src_name,
+                    unsigned char **out_buf, size_t *out_len,
+                    char *err_buf, size_t err_cap)
+{
+#if __STDC_HOSTED__
+    if (vm == NULL || src == NULL || out_buf == NULL || out_len == NULL) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "urbi_compile_source: NULL argument");
+        }
+        return URBI_ERR_INVALID_ARG;
+    }
+    *out_buf = NULL;
+    *out_len = 0;
+
+    const char *name = src_name ? src_name : "<source>";
+
+    ULexer lex;
+    ulex_init(&lex, src, src_len);
+
+    UArena arena;
+    uarena_init(&arena, 4096);
+
+    UModule module;
+    urbi_zero(&module, sizeof module);
+
+    UEmitter e;
+    uemit_init(&e, &module, &arena, vm, name);
+
+    UParser p;
+    uparse_init(&p, &lex, &arena);
+
+    bool had_error = false;
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) {
+            const char *msg = node->u.err.message ? node->u.err.message
+                                                  : "parse error";
+            if (err_buf && err_cap) {
+                snprintf(err_buf, err_cap, "%s:%d:%d: %s",
+                         name, node->line, node->col, msg);
+            }
+            had_error = true;
+            break;
+        }
+        (void)uemit_statement(&e, node);
+        uarena_reset(&arena);
+    }
+
+    if (had_error) {
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    if (uemit_finish(&e) != EMIT_OK) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: emit error: %s",
+                     name, uemit_error_name(e.error));
+        }
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* First pass: query required size. */
+    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    if (need < 0) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: serialize size-query failed",
+                     name);
+        }
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return URBI_ERR_INVALID_ARG;
+    }
+    unsigned char *buf = malloc((size_t)need);
+    if (buf == NULL) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: out of memory", name);
+        }
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
+    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    if (wrote != need) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: serialize wrote %ld, expected %ld",
+                     name, (long)wrote, (long)need);
+        }
+        free(buf);
+        umodule_destroy(&module);
+        uarena_destroy(&arena);
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    *out_buf = buf;
+    *out_len = (size_t)need;
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    return URBI_OK;
+#else
+    /* Freestanding: compile-from-source is not part of the embedded surface.
+     * Pre-compiled bytecode comes in via urbi_load_module instead. */
+    (void)vm; (void)src; (void)src_len; (void)src_name;
+    (void)out_buf; (void)out_len; (void)err_buf; (void)err_cap;
+    return URBI_ERR_INVALID_ARG;
+#endif
 }
 
 #ifdef URBI_DEBUG

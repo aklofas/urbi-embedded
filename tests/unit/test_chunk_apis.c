@@ -131,6 +131,46 @@ UTEST(run_chunk_null_out_result_no_crash)
     urbi_vm_destroy(&vm);
 }
 
+/* CHSTR-026 / CHSTR-030 closure: the realm parameter on urbi_run_chunk
+ * was historically `(void)realm;`-discarded (T20 deferral) — every chunk
+ * ran against the global realm regardless of the caller's argument.
+ * Wave-5 phase API-004 (commit ~v0.5.7) threaded realm through
+ * urbi_vm_run; this regression test pins that.  Strategy: install a
+ * const global on a non-default realm via the public API, run a chunk
+ * under THAT realm referencing the name, and assert the value resolves.
+ * If the realm parameter were silently replaced by the global realm the
+ * lookup would miss (the global realm has no such global). */
+UTEST(run_chunk_honors_supplied_realm)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *r1 = urbi_realm_create(&vm);
+    UASSERT(r1 != NULL);
+
+    /* Install K = 1234 on r1 only — the global realm does not have it. */
+    UValue v;
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i  = 1234;
+    UErrCode set_rc =
+        (UErrCode)urbi_realm_set_global_const(&vm, r1, "K", 1, v);
+    UASSERT_EQ((int)set_rc, (int)URBI_OK);
+
+    UModule module;
+    UASSERT(compile_src(&vm, "K", &module));
+
+    UValue result = {0};
+    int rc = urbi_run_chunk(&vm, r1, &module, &result);
+
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT_EQ((int)result.kind, (int)UVAL_INT);
+    UASSERT_EQ((long long)result.v.i, (long long)1234);
+
+    umodule_destroy(&module);
+    urbi_realm_destroy(&vm, r1);
+    urbi_vm_destroy(&vm);
+}
+
 /* -------------------------------------------------------------------------
  * urbi_repl_eval tests
  * ------------------------------------------------------------------------- */
@@ -166,6 +206,17 @@ UTEST(repl_eval_compile_error_path)
      * format (hosted builds) rather than the generic "compile error" string.
      * "1+" leaves a parse hole — expected expression at col 3 or similar. */
     UASSERT(buf[0] != '\0');  /* some diagnostic was written */
+
+    /* CHSTR-007 closure (regression net): the buffer must NOT degrade to the
+     * literal "compile error" fallback string.  Pre-CPPCHK-005 the diagnostic
+     * was always overwritten with the literal; today the parser's static
+     * message + line/col are passed through, and the literal only surfaces
+     * if no message info is available (an intrinsically-unreachable path
+     * because parser AST_ERROR nodes always carry a message pointer +
+     * line/col).  Pin the user-facing improvement here so any future
+     * regression to the legacy fallback fails the test. */
+    UASSERT(strcmp(buf, "compile error") != 0);
+    UASSERT(strstr(buf, "<stdin>:") != NULL);  /* hosted format includes location */
 
     urbi_vm_destroy(&vm);
 }
@@ -294,14 +345,19 @@ UTEST(load_module_null_args_rejected)
 }
 
 /* Case 10: load_module installs top-level bindings into the global Realm
- * (API-021 v0.6.0 regression).
+ * (API-021 v0.6.0 regression; also closes CHSTR-009).
  *
  * Compile a tiny module with a top-level `var x = 42` binding, hand it to
  * urbi_load_module, then read back via urbi_realm_get_global.  The original
  * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
  * binds a UModuleInstance and runs the root chunk under the global Realm
  * so top-level bindings install.  module_name is advisory at v0.6.0
- * (no import-table lookup yet — v1.x backlog). */
+ * (no import-table lookup yet — v1.x backlog).
+ *
+ * CHSTR-009 closure: the audit flagged this surface as 'stub returning
+ * INVALID_ARG; M6 lands real impl' and was filed defer:M6.  M6 Wave 1
+ * (API-021 / v0.6.0) landed the real body; this test pins the live
+ * functional path so the audit ID is closed-with-coverage at v0.6.1. */
 UTEST(load_module_installs_top_level_var)
 {
     UVM vm;
@@ -337,6 +393,8 @@ void test_chunk_apis_suite(void) {
               run_chunk_null_realm_uses_global);
     utest_run("run_chunk_null_out_result_no_crash",
               run_chunk_null_out_result_no_crash);
+    utest_run("run_chunk_honors_supplied_realm",
+              run_chunk_honors_supplied_realm);
     utest_run("repl_eval_round_trip",
               repl_eval_round_trip);
     utest_run("repl_eval_compile_error_path",

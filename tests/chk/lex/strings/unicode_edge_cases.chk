@@ -1,0 +1,31 @@
+# Milestone: M6 wave 2
+# Covers: lex-time rejection of malformed / out-of-range Unicode escapes.
+#         Each error path produces a TOK_ERROR with the appropriate
+#         ULexError code; the REPL surfaces it as
+#         "<stdin>:line:col: <message>" prefixed by "!!!".
+# Audit:   delta-spec section 3.2 Unicode-escape decision.
+
+# U+10FFFF is the Unicode maximum and must lex-clean.
+"\u{10FFFF}"
+[00000000] "\xf4\x8f\xbf\xbf"
+
+# U+110000 is one past the maximum and must reject.
+"\u{110000}"
+[00000001:error] !!! <stdin>:1:1: unicode code point exceeds U+10FFFF
+
+# Lone high-surrogate (U+D800) — reserved for UTF-16 pair encoding, has
+# no UTF-8 sequence; reject for both 4-hex and {} forms.
+"\uD800"
+[00000002:error] !!! <stdin>:1:1: unicode escape resolves to a lone surrogate
+
+# Lone low-surrogate (U+DFFF) — same reason.
+"\u{DFFF}"
+[00000003:error] !!! <stdin>:1:1: unicode escape resolves to a lone surrogate
+
+# 4-hex form requires exactly 4 hex digits; \u123 is 3 hex digits.
+"\u123"
+[00000004:error] !!! <stdin>:1:1: unicode escape requires 4 hex digits
+
+# Empty {} body — no hex digits.
+"\u{}"
+[00000005:error] !!! <stdin>:1:1: unicode escape requires 4 hex digits

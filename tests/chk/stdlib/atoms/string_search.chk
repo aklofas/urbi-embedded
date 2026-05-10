@@ -1,0 +1,44 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 String search methods.
+#
+# indexOf — first byte-offset of needle, -1 if not found.
+# contains — boolean alias for indexOf >= 0.
+# startsWith / endsWith — boolean predicates.
+
+"hello world".indexOf("world")
+[00000000] 6
+
+"hello world".indexOf("xyz")
+[00000001] -1
+
+"hello world".indexOf("hello")
+[00000002] 0
+
+"hello".contains("ell")
+[00000003] true
+
+"hello".contains("xyz")
+[00000004] false
+
+"hello".startsWith("hel")
+[00000005] true
+
+"hello".startsWith("xyz")
+[00000006] false
+
+"hello".endsWith("llo")
+[00000007] true
+
+"hello".endsWith("xyz")
+[00000008] false
+
+# Empty needle: every string starts with "" and ends with "" (legacy
+# semantics; matches typical strstr/strncmp behavior on n=0).
+"hello".startsWith("")
+[00000009] true
+
+"hello".endsWith("")
+[00000010] true
+
+"hello".contains("")
+[00000011] true

@@ -1,0 +1,29 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/mutex/basic.chk (subset)
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# The legacy fixture spawns three concurrent functions waiting on a
+# locked mutex and verifies output ordering is non-intermixed.  v0.6.1
+# can't replicate it: closure upvalue capture (`function f(name) { var d
+# = function(msg) { echo (name + ": " + msg) }`) is not in scope, and
+# `echo` / `sleep` / string concat are not realm globals.  This port
+# checks the lock/unlock/tryLock primitive contract — the mutex's own
+# semantics — while leaving the cooperative-thread choreography for v1.x.
+#
+# Wave-2 deferred (full port): closure upvalues, `echo`, `sleep(1s)`,
+# string concat, tag scope (`m: { ... }` tagged.chk), counter-by-fresh-
+# default-value queued.chk semantics.  See PORT_NOTES.md.
+
+var m = Mutex.new(); m.tryLock()
+[00000000] true
+
+var m = Mutex.new(); m.lock(); m.tryLock()
+[00000001] false
+
+var m = Mutex.new(); m.lock(); m.unlock(); m.tryLock()
+[00000002] true
+
+var m = Mutex.new(); m.tryLock(); m.tryLock()
+[00000003] false
+
+var m = Mutex.new(); m.lock(); m.unlock(); m.lock(); m.unlock(); m.tryLock()
+[00000004] true

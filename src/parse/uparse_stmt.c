@@ -92,6 +92,34 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
    member accesses, arithmetic).  The non-assign/non-tag path delegates
    to parse_inner_tier_from_lhs to avoid duplicating the Pratt loop. */
 static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
+    /* T41 statement-start getter/setter sugar: `get IDENT (...)` or
+     * `set IDENT (...)` produces an AST_PROPERTY_DECL.  Recognized only
+     * in the strict 3-token shape `get|set IDENT (`; outside that
+     * pattern, `get`/`set` remain plain identifiers (no keyword
+     * reservation breakage).  The receiver is implicit (NULL); emit
+     * resolves it from the enclosing class body or top-level realm
+     * scope. */
+    if ((ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
+         ident_equals(name.u.str.start, name.u.str.len, "set", 3))
+        && peek(p).type == TOK_IDENT && peek2(p).type == TOK_LPAREN) {
+        /* T41 (Phase 2 follow-up): the implicit-receiver form is legal
+         * only inside a `class { ... }` body.  At statement start there
+         * is no v1.0 resolver for the implicit `this`; reject with a
+         * dedicated diagnostic instead of falling through to a generic
+         * EMIT_UNSUPPORTED_AST at emit time.  Deferred to v1.x. */
+        if (p->class_body_depth == 0) {
+            return make_error(p, PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED,
+                              kErrorMessages[PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED],
+                              name.line, name.col);
+        }
+        UAstMethodKind kind =
+            ident_equals(name.u.str.start, name.u.str.len, "get", 3)
+                ? UAST_METHOD_GETTER : UAST_METHOD_SETTER;
+        UToken slot_name = consume(p);  /* consume the slot-name IDENT */
+        return parse_property_decl(p, /*recv=*/NULL, slot_name, kind,
+                                   name.line, name.col);
+    }
+
     if (peek(p).type == TOK_EQ) {
         return parse_assign_after_eq_peek(p, name);
     }
@@ -184,14 +212,20 @@ UAstNode *parse_class_declaration(UParser *p) {
     }
 
     /* Body — block.  Class name is NOT yet in scope; the body parses
-     * with whatever outer binding `name` has (per S-class-name-scope). */
+     * with whatever outer binding `name` has (per S-class-name-scope).
+     * Bump class_body_depth around the parse so statement-start
+     * `get`/`set` inside the body skip the top-level rejection in
+     * parse_assign_or_expr (T41 implicit-receiver form is legal in
+     * class bodies, illegal at statement-start). */
     UToken body_tok = peek(p);
     if (body_tok.type != TOK_LBRACE) {
         return make_error(p, PARSE_EXPECTED_LBRACE,
                           kErrorMessages[PARSE_EXPECTED_LBRACE],
                           body_tok.line, body_tok.col);
     }
+    p->class_body_depth++;
     UAstNode *body = parse_block(p);
+    p->class_body_depth--;
     if (body == NULL) return NULL;
     if (body->kind == AST_ERROR) return body;
 
@@ -488,6 +522,96 @@ UAstNode *parse_function(UParser *p) {
     node->u.func.params      = params;
     node->u.func.param_count = count;
     node->u.func.body        = body;
+    return node;
+}
+
+/* --- parse_property_decl: `(params) { body }` after a `get`/`set` IDENT.
+ *
+ * T41 (M6 Wave 2).  Caller has already consumed the leading IDENT
+ * (`get`/`set`) and the following slot-name IDENT — `name_tok` carries
+ * the slot-name token.  The current peek is `(`.
+ *
+ * The desugar is parse-only: no new opcodes.  The emit arm walks the
+ * AST_FUNCTION inside u.property_decl.func and routes the resulting
+ * closure to install_property (URBI_SLOT_FLAG_OGET / OSET) instead of
+ * a plain setSlot.  Parses the same `(params) { body }` shape as
+ * `parse_function`. --- */
+UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
+                              UAstMethodKind kind, int line, int col) {
+    if (peek(p).type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          peek(p).line, peek(p).col);
+    }
+    consume(p);  /* consume '(' */
+
+    /* Parameter list — identical shape to parse_function. */
+    int cap = 4;
+    UAstNode **params = (UAstNode **)uarena_alloc(p->arena,
+                                                   (size_t)cap * sizeof(UAstNode *));
+    if (!params) return (UAstNode *)&uparser_oom_sentinel;
+    int count = 0;
+
+    while (peek(p).type != TOK_RPAREN && peek(p).type != TOK_EOF) {
+        bool is_lazy = false;
+        if (peek(p).type == TOK_KW_LAZY) {
+            consume(p);
+            is_lazy = true;
+        }
+
+        UToken pname = peek(p);
+        if (pname.type != TOK_IDENT) {
+            return make_error(p, PARSE_EXPECTED_IDENT,
+                              kErrorMessages[PARSE_EXPECTED_IDENT],
+                              pname.line, pname.col);
+        }
+        consume(p);
+
+        UAstNode *pn = make_node(p, is_lazy ? AST_LAZY_PARAM : AST_PARAM,
+                                 pname.line, pname.col);
+        if (!pn) return (UAstNode *)&uparser_oom_sentinel;
+        pn->u.param.name_start = pname.u.str.start;
+        pn->u.param.name_len   = pname.u.str.len;
+
+        if (count == cap) {
+            if (!arena_grow_node_array(p, &params, &cap, count))
+                return (UAstNode *)&uparser_oom_sentinel;
+        }
+        params[count++] = pn;
+
+        if (peek(p).type == TOK_COMMA) {
+            consume(p);
+        } else {
+            break;
+        }
+    }
+
+    if (peek(p).type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          peek(p).line, peek(p).col);
+    }
+    consume(p);  /* consume ')' */
+
+    UAstNode *body = parse_block(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Build the inner AST_FUNCTION carrying params + body. */
+    UAstNode *func = make_node(p, AST_FUNCTION, line, col);
+    if (!func) return (UAstNode *)&uparser_oom_sentinel;
+    func->u.func.params      = params;
+    func->u.func.param_count = count;
+    func->u.func.body        = body;
+
+    /* Wrap in AST_PROPERTY_DECL. */
+    UAstNode *node = make_node(p, AST_PROPERTY_DECL, line, col);
+    if (!node) return (UAstNode *)&uparser_oom_sentinel;
+    node->u.property_decl.recv       = recv;        /* may be NULL */
+    node->u.property_decl.name_start = name_tok.u.str.start;
+    node->u.property_decl.name_len   = name_tok.u.str.len;
+    node->u.property_decl.kind       = kind;
+    node->u.property_decl.func       = func;
     return node;
 }
 

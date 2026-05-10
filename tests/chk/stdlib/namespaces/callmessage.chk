@@ -1,0 +1,15 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 8 (T91) CallMessage stub proto.
+#
+# CallMessage is reserved at v1.0 per REVIVAL §14 L14 — the legacy Urbi
+# 2.x fallback() reflection mechanism that exposes the calling context
+# as a first-class object.  The proto is bound as a realm global so
+# scripts can pattern-match on its presence; method surface (.target /
+# .method / .args / .apply()) lands at v1.x when fallback() lex/parse
+# support arrives.
+#
+# At v1.0 only a `kind` marker slot is exposed.
+
+# CallMessage exists as a realm global.
+CallMessage.kind
+[00000000] "callmessage"

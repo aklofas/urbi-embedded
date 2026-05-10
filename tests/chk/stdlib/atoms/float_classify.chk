@@ -1,0 +1,37 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 Float.isNaN / isInfinite predicates.
+#
+# Float.nan / Float.infinity constants land in Phase 8 (Math namespace).
+# Until then, NaN/Inf can be constructed via libm: log(-1) = NaN,
+# log(0) = -Inf.  Float.isNaN/isInfinite already work on the resulting
+# UVAL_FLOAT.
+#
+# Sanity: regular float is not NaN/Inf.
+
+4.asFloat().isNaN()
+[00000000] false
+
+4.asFloat().isInfinite()
+[00000001] false
+
+# log(-1) → NaN (well-defined libm behavior — sets errno to EDOM but
+# returns NaN regardless).  Construction is awkward in the v1.0 lex
+# but allows the predicate to be exercised end-to-end.
+var minus_one = (-1).asFloat()
+[00000002] -1.0
+var nanv = minus_one.log()
+[00000003] -nan
+nanv.isNaN()
+[00000004] true
+nanv.isInfinite()
+[00000005] false
+
+# log(0) → -Inf
+var zero = 0.asFloat()
+[00000006] 0.0
+var infv = zero.log()
+[00000007] -inf
+infv.isInfinite()
+[00000008] true
+infv.isNaN()
+[00000009] false

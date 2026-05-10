@@ -299,6 +299,28 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
     if (vm->tag_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->tag_proto);
 
+    /* M6 Phase 6: container proto singletons for Pair / Triplet / Tuple. */
+    if (vm->container_pair_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->container_pair_proto);
+    if (vm->container_triplet_proto != NULL) gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
+    if (vm->container_tuple_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
+
+    /* M6 Phase 7: Exception primitive proto. */
+    if (vm->exception_proto != NULL) gc_shade_gray(vm, (UCell *)vm->exception_proto);
+
+    /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
+     * proto is reached transitively via System's "Platform" slot but is
+     * shaded directly to keep the walker uniform. */
+    if (vm->math_proto             != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
+    if (vm->system_proto           != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
+    if (vm->platform_proto         != NULL) gc_shade_gray(vm, (UCell *)vm->platform_proto);
+    if (vm->global_namespace_proto != NULL) gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
+    if (vm->callmessage_proto      != NULL) gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
+
+    /* M6 Phase 9: primitive proto singletons (Mutex / Date / Duration). */
+    if (vm->mutex_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->mutex_proto);
+    if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
+    if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

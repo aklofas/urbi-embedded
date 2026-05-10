@@ -1,0 +1,33 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/system/platform.chk
+#         legacy/repos/aldebaran-urbi/tests/2.x/system/hostname.chk
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# Legacy platform.chk: `assert(System.Platform.kind() in ["POSIX", "WIN32"])`.
+# v0.6.1 narrows the kind to a host-name string ("linux", "darwin",
+# "windows", "freertos", "unknown") set at compile time, and exposes
+# it as a String slot rather than a method.
+#
+# Legacy hostname.chk uses `Process.new("hostname", []).run().join()` to
+# spawn an external command; the Process subsystem is deferred to v1.x.
+#
+# Wave-2 deferred (full port): legacy POSIX/WIN32 string family, `assert`,
+# `in` membership operator, `Path.asString().size`, Process subsystem.
+# See PORT_NOTES.md.
+
+System.Platform.kind.isEmpty()
+[00000000] false
+
+System.Platform.kind.size() > 0
+[00000001] true
+
+# v0.6.1 build-host gate: this fixture runs on Linux CI.  The kind
+# constant is set by namespaces.c at compile time.
+System.Platform.kind == "linux"
+[00000002] true
+
+# System.time() / cycle() readouts are non-negative.
+System.time() >= 0.asFloat()
+[00000003] true
+
+System.cycle() > 0
+[00000004] true

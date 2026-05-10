@@ -35,6 +35,7 @@ extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_lex_keywords_suite(void);
 extern void test_lex_string_suite(void);
+extern void test_lex_unicode_suite(void);
 extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
@@ -170,6 +171,9 @@ extern void test_object_root_suite(void);
 extern void test_atom_protos_suite(void);
 extern void test_class_decl_parse_suite(void);
 extern void test_class_decl_emit_suite(void);
+extern void test_bake_tool_suite(void);
+extern void test_stdlib_boot_suite(void);
+extern void test_lock_heap_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -181,6 +185,7 @@ static const struct suite_entry suites[] = {
     {"lexer",                      test_lexer_suite},
     {"lex_keywords",               test_lex_keywords_suite},
     {"lex_string",                 test_lex_string_suite},
+    {"lex_unicode",                test_lex_unicode_suite},
     {"ast_string",                 test_ast_string_suite},
     {"emit_string",                test_emit_string_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
@@ -316,6 +321,9 @@ static const struct suite_entry suites[] = {
     {"atom_protos",               test_atom_protos_suite},
     {"class_decl_parse",          test_class_decl_parse_suite},
     {"class_decl_emit",           test_class_decl_emit_suite},
+    {"bake_tool",                 test_bake_tool_suite},
+    {"stdlib_boot",               test_stdlib_boot_suite},
+    {"lock_heap",                 test_lock_heap_suite},
     /* Add new suites here as test files are added. */
 };
 

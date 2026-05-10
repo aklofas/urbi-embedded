@@ -4,6 +4,500 @@
 
 (empty)
 
+## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
+
+**Tag:** `v0.6.1-stdlib`
+**Theme:** Tier 1 standard library content on top of Wave 1's scaffolding.
+
+### Added
+
+- (Phase 13) **`urbi_lock_heap(vm)` public C API** — post-init heap
+  lock for v2.0 hard-RT mode.  One-way latch; `urbi_gc_alloc`
+  declines new allocations after the call (returns NULL — the
+  standard OOM-shaped failure mode the rest of the runtime already
+  handles via `urbi_raise_oom` on the script surface).  Surface
+  lands at v1.0; enforcement is opt-in.  Idempotent + NULL-safe.
+  No unlock primitive at v1.0 (one-way matches the hard-RT
+  contract).  4 new unit cases in `tests/unit/test_lock_heap.c`.
+- (Phase 13) **`tests/scripts/build-bytecode-only.sh` smoke gate** —
+  `URBI_BYTECODE_ONLY` emulation (parser-stripped link test).
+  The real build flag lands at M7 per master spec §1.1; Phase 13
+  ships a smoke approximation that proves the architectural shape
+  is sound: lex/parse/emit + the two parser-coupled root sources
+  (`src/urbi.c` + `src/module/uchunk.c`) CAN be elided, and the
+  resulting archive still exports `urbi_stdlib_boot` /
+  `urbi_vm_init` / `urbi_vm_destroy` / `urbi_lock_heap`.  Wired
+  into `make releasetest` Phase 1 via `test-bytecode-only`.
+- (Phase 13) **REVIVAL §14 compatibility-ledger entries** (workspace
+  root, not committed): S25 (byte-counted `String.length`),
+  S26 (Date / Duration v1.0 surface — no timezones, no leap
+  seconds), S27 (namespace bouncing bind-time vs lookup-time —
+  defer to v1.x), S28 (Dict insertion-order iteration).  §14.9
+  cross-references updated for each.
+- (Phase 1) **String-literal Unicode escapes.** `\uXXXX` (4-hex BMP)
+  and `\u{HHHHHH}` (1-6 hex full-plane up to U+10FFFF) escape forms
+  added at the lexer, materialized as UTF-8 bytes in `UVAL_STR` via
+  the new `urbi_encode_utf8` helper.  Lone surrogates
+  (U+D800..U+DFFF) and code points beyond U+10FFFF are rejected with
+  dedicated `LEX_LONE_SURROGATE` / `LEX_UNICODE_ESCAPE_OUT_OF_RANGE`
+  / `LEX_UNICODE_ESCAPE_TOO_SHORT` lex errors.  Multi-byte UTF-8 in
+  source files continues to flow through the existing byte-passthrough
+  lex path lex-clean.  Runtime `String.length` / `String.size` stay
+  byte counts (code-point-counted variant deferred to v1.x per
+  REVIVAL §14).
+- (Phase 2) **T41 `get` / `set` parse sugar.** `get x() { body }` and
+  `set y(v) { body }` desugar at emit time to
+  `recv.setProperty("x", "oget"|"oset", function() body)`.  Parse-only
+  sugar, but the deferred `oget`/`oset` runtime dispatch arms in
+  `OP_GETSLOT` / `OP_SETSLOT` were also wired in this ship — both fast-
+  path (IC hit) and slow-path (IC miss) routes invoke the property
+  closure via `urbi_run_closure_on_scratch[_with_payload]` instead of
+  diagnosing "not yet implemented".  New `Object.setProperty(name,
+  prop, value)` C-native method backs the desugar and materializes a
+  nil placeholder slot when the slot is absent (legacy semantics:
+  `get`/`set` implicitly creates the slot).  Recognized only in the
+  strict three-token shape `get|set IDENT (` — outside that, `get` and
+  `set` remain plain identifiers (no keyword reservation breakage).
+  Required for clean port of legacy `share/urbi/object.u` (lines 104,
+  109, 208-209) and `list.u` (line 121).
+- (Phase 4) **Stdlib boot integration.** `urbi_module_load`-style
+  `umodule_deserialize` + `urbi_get_or_create_module_instance` wired
+  into `urbi_stdlib_boot` after the C-native protos register.  Single
+  ordered module load; topologically sorted within the blob.
+  Parser-independent (verified by Phase 13's `URBI_BYTECODE_ONLY`
+  smoke).  At Phase 4 baseline the blob is empty
+  (`urbi_stdlib_bytecode_len == 0`), so the deserialize+bind branch
+  is dead — Phase 10 populates `STDLIB_ORDER.txt` and the branch
+  becomes live.  The deserialized `UModule` lives on
+  `vm->stdlib_module`, freed via `umodule_destroy` +
+  `vm->alloc_fn(_, 0, _)` in `urbi_vm_destroy` after
+  `urbi_gc_destroy` reaps any `UModuleInstance` referencing it.
+- (Phase 4) **`tests/unit/test_stdlib_boot.c`** — 5 baseline boot
+  smokes (vm-init success with empty blob; Wave 1 realm globals
+  Boolean / Nil / Void / Object reachable post-boot; positive +
+  negative IC name resolution post-boot; blob size baseline; two-VM
+  determinism asserting per-VM realm state independence).
+- (Phase 4) **`URBI_ERR_STDLIB_BOOT_FAILED` error code** (slot −15
+  in `UErrCode`).  Returned by `urbi_stdlib_boot` when deserialize
+  or bind fails; distinct from `URBI_ERR_OOM` (allocation) and
+  `URBI_ERR_BYTECODE_VERSION_MISMATCH` (file-load surface).
+- (Phase 5) **C-native methods on Boolean / Integer / Float / String
+  atom protos.**  New `src/stdlib/atoms.c` registers Tier 1 named
+  methods through the Wave 1 atom-method dispatch pathway:
+  - `Boolean.negate()` — unary inverse (named-method form of legacy
+    `'!'` slot).
+  - `Integer.asString` / `asFloat` / `asBoolean` / `asInteger`;
+    `bitand` / `bitor` / `bitxor` / `bitnot` / `shl` / `shr`.
+    Bitwise are NAMED methods per REVIVAL §14 S14 (no symbolic-op
+    lex tokens — `&` is the parallel-join concurrency separator).
+  - `Float.sqrt` / `sin` / `cos` / `tan` / `asin` / `acos` / `atan` /
+    `atan2` / `log` / `log10` / `exp` / `pow` / `floor` / `ceil` /
+    `abs` / `round`; `isNaN` / `isInfinite`; `asString` /
+    `asInteger` / `asBoolean`.  libm passthroughs on hosted builds;
+    freestanding stubs raise TypeError pending the embedded float
+    library wiring.  Linker pulls in `-lm` on hosted glibc + via
+    Makefile `-lm` adds at the urbi binary, test runner, fuzz, and
+    stress link sites.
+  - `String.size` / `isEmpty` / `charAt` / `asciiAt`; `toUpper` /
+    `toLower` (ASCII-only at v1.0); `indexOf` / `contains` /
+    `startsWith` / `endsWith`; `asInteger` / `asFloat` / `asBoolean`
+    parse.  Strings remain byte-counted (delta §3.2); Unicode
+    code-point variants are Wave 2 backlog.
+
+  Symbolic operators (`+`, `-`, `*`, `/`, `==`, `<`, …) stay inline
+  VM opcodes (OP_ADD / OP_LT / OP_EQ / etc. in `src/vm/uvm.c`); only
+  named methods land here.  Phase 5 plan tasks T37 (Integer arith),
+  T38 (Integer comparison), T41 (Float arith), T46 (String concat),
+  T36 `&&`/`||`/`!` symbolic forms are dropped because the v1.0 VM
+  does not dispatch those forms via slot lookup (no lex tokens for
+  `&&` / `||` / `!`; arithmetic and comparison are inline opcodes
+  emitted by the parser).
+- (Phase 5) **11 `tests/chk/stdlib/atoms/` fixtures** covering each
+  method group (boolean / integer_conversion / integer_bitops /
+  float_math / float_classify / float_conversion / string_basic /
+  string_case / string_search / string_parse / string_char).
+- (Phase 6) **C-native containers.**  New `src/stdlib/containers.c`
+  registers the v1.0 container surface:
+  - `Pair` (immutable 2-tuple via clone + `first` / `second` slots)
+  - `Triplet` (immutable 3-tuple via clone + `first` / `second` /
+    `third` slots)
+  - `Tuple` (variadic immutable n-tuple over a heap UList backing;
+    methods: `length`, `get(i)`)
+  - `List` (mutable, growable UValue array; methods: `new` (variadic),
+    `length`, `isEmpty`, `get(i)`, `set(i, v)`, `add(v)`, `contains(v)`,
+    `concat(other)`, `diff(other)`)
+  - `Dict` (mutable string-keyed open-address linear-probe hash table
+    with FNV-1a hashing; methods: `new`, `length`, `isEmpty`,
+    `set(key, value)`, `get(key)`, `has(key)`, `remove(key)`).
+    Iteration order is unspecified at v1.0 (REVIVAL §14 — joins
+    Lua / Ruby<1.9 / CPython pre-3.7).  Keys must be String at v1.0;
+    non-String keys raise TypeError.
+
+  Storage: List / Dict / Tuple instances pair a visible-side UObject
+  (proto-chained to the corresponding atom proto for method
+  resolution) with a backing UList / UDict struct allocated via
+  `vm->alloc_fn` and threaded onto a new `vm->stdlib_containers`
+  head pointer.  Backing buffers are freed at `urbi_vm_destroy` via
+  `urbi_stdlib_containers_destroy`.  The pointer round-trips through
+  a hidden `_storage` slot encoded as `UVAL_INT` (cast through
+  `uintptr_t`) so the GC walker treats it as a scalar leaf —
+  VM-lifetime ownership is intentional at v1.0; proper
+  `UTYPE_LIST` / `UTYPE_DICT` GC cell types defer to v1.x.
+
+  Method registration: List / Dict reuse the existing
+  `URBI_ATOM_LIST` / `URBI_ATOM_DICT` atom-proto singletons (the
+  realm-populate registry already publishes "List" / "Dict" as
+  realm globals).  Pair / Triplet / Tuple are fresh
+  `URBI_ATOM_OBJECT`-family proto UObjects stashed in new
+  `vm->container_*_proto` fields and bound to realm globals via a
+  post-loop hook (`urbi_stdlib_register_container_globals`) called
+  from `urbi_populate_realm_globals` after the 15-row registry
+  loop — this keeps the v1.0 packed-flag CONSTANT enforcement range
+  (slots 0..7: Object..List) intact.
+
+  Method-name choice: every operation is a named method.  v1.0 lex
+  has no `<<` or `[]` operator tokens; `at` is the reactive `at(...)`
+  keyword so list indexing is `.get(i)` (matches `Dict.get`).
+  Phase 10's `.u` overlay can synthesize operator wrappers if/when
+  the lex/parse extensions land.
+- (Phase 6) **6 `tests/chk/stdlib/containers/` fixtures** —
+  `pair.chk`, `triplet.chk`, `tuple.chk`, `list_core.chk`,
+  `list_concat.chk`, `dict_core.chk`.  Test count delta:
+  189 → 195 chk fixtures.
+- (Phase 7) **Exception primitive root.**  New
+  `src/stdlib/runtime_types.{c,h}` registers `Exception` as a fresh
+  `URBI_ATOM_OBJECT`-family proto with two C-native methods:
+  `Exception.new(message)` clones the proto and binds a per-instance
+  `message` slot; `Exception.raise` calls `urbi_throw` on
+  `vm->cur_strand`, depositing `pending_unwind = UEXEC_THROW` and
+  `unwind_value = self` so `try/catch` absorbs the Exception
+  instance as the catch variable (`catch (e) { e.message }`).
+  Realm-global binding lands at slots 15+ via a post-loop hook
+  (`urbi_stdlib_register_runtime_globals`), mirroring the container
+  globals pattern so the v1.0 packed-flag CONSTANT enforcement range
+  (slots 0..7) stays intact.  Exception subclasses (`TypeError`,
+  `IndexError`, …) defer to Phase 10's `.u` overlay.
+- (Phase 7) **`vm->cur_strand` wired through `urbi_vm_run`.**  Pre-
+  Phase-7 only `ustep.c`'s incremental driver set `vm->cur_strand`
+  during dispatch; the synchronous `urbi_vm_run` path was a gap.
+  Native methods that call `urbi_throw` / `urbi_return_val` /
+  `urbi_tag_stop_local` (Exception.raise being the first user) need
+  the running strand pointer to deposit unwind state.
+- (Phase 7) **OP_CALL native arm: catchable native raise.**  When a
+  native_fn returns `UEXEC_OK` with `pending_unwind != UEXEC_OK`
+  (i.e. it called `urbi_throw` from inside the C body), the dispatch
+  arm now routes through `safepoint:` instead of `NEXT()`, so the
+  cleanup-stack walker can absorb the deposited THROW under any
+  enclosing `try/catch` frame.  Native functions that return
+  `UEXEC_THROW` directly (the legacy `urbi_raise_arity` /
+  `urbi_raise_type` / `urbi_raise_oom` path) still fatal-halt with
+  the pre-Phase-7 "CALL: native method raised" TypeError — preserves
+  `tests/chk/objects/get-set/get_set_arity_reject.chk`-style fixtures
+  while enabling the catchable-raise path for stdlib code.
+- (Phase 7) **2 `tests/chk/stdlib/runtime/` fixtures** —
+  `exception_basic.chk` (constructor, `.message`, `.raise` +
+  try/catch absorption, named-instance round-trip),
+  `exception_chain.chk` (nested raise/catch, inner-raise-through-
+  finally to outer catch).  Test count delta: 195 → 197 chk fixtures.
+- (Phase 8) **C-native namespaces.**  New
+  `src/stdlib/namespaces.{c,h}` registers five namespace proto
+  UObjects bound as realm globals via the same post-loop hook
+  pattern as containers + runtime types (slot 15+, past the
+  packed-flag CONSTANT enforcement range):
+  - `Math`: IEEE-754 constants `pi`, `e`, `nan`, `infinity` (the
+    method surface — `sin` / `cos` / `sqrt` / etc. — defers to
+    Phase 10's `.u` overlay, which bounces to the Float atom-proto
+    methods Phase 5 installed).
+  - `System`: host primitives `time` (monotonic-microseconds → Float
+    seconds via `vm->host_time_us`), `cycle` (per-VM `lookup_id`
+    counter as Integer), `getenv(name)` (libc shim, freestanding-
+    nil), `gc` (explicit `urbi_gc_collect`).  Wall-clock-since-epoch
+    `System.time` from legacy 2.x narrows to monotonic-since-VM-
+    start at v1.0 to avoid a libc `time()` dependency on freestanding
+    targets — wall-clock access lands later via the Date primitive
+    (Phase 9).
+  - `System.Platform.kind`: compile-time string set via `#ifdef`
+    cascade — `"linux"` / `"darwin"` / `"windows"` / `"freertos"` /
+    `"unknown"`.  Nested as a slot on `System` (not a top-level
+    realm global).
+  - `Global.length`: reflective slot count of the active realm's
+    `global_object`.  Stub for v1.x reflection (`Global.names()`
+    etc.).
+  - `CallMessage`: stub proto with a `kind` marker slot, reserved per
+    REVIVAL §14 L14 for v1.x legacy-`fallback()` reflection.
+- (Phase 8) **VM fields + GC roots.** `UVM` grows five proto-singleton
+  pointers (`math_proto`, `system_proto`, `platform_proto`,
+  `global_namespace_proto`, `callmessage_proto`).  Allocated by
+  `urbi_stdlib_register_namespaces` (boot-phase); shaded by
+  `object_roots_walker` to keep them alive across GC.
+- (Phase 8) **5 `tests/chk/stdlib/namespaces/` fixtures** —
+  `math.chk` (constants + Float-method dispatch), `system.chk`
+  (time / cycle monotonicity / gc / getenv), `system_platform.chk`
+  (kind String non-empty), `global.chk` (length > 15 lower bound),
+  `callmessage.chk` (proto bound).  Test count delta: 197 → 202 chk
+  fixtures.
+- (Phase 9) **C-native primitives — `Mutex`, `Date`, `Duration`.**
+  New `src/stdlib/primitives.{c,h}` registers three primitive proto
+  UObjects bound as realm globals via the same post-loop hook pattern
+  as containers + runtime types + namespaces (slot 15+, past the
+  packed-flag CONSTANT enforcement range):
+  - `Mutex`: cooperative single-VM lock.  `Mutex.new()` clones the
+    proto with a hidden `_locked` bool slot; `m.lock()` /
+    `m.unlock()` / `m.tryLock()` / `m.locked()` are non-blocking
+    flag flips.  v1.0 `URBI_SCHED_COOPERATIVE` contract means the
+    "wait" semantics defer to Phase 10's `.u` overlay
+    (`Mutex.synchronized` via `waituntil`).
+  - `Date`: wall-clock access via libc `time()`.  `Date.now()` /
+    `Date.fromSeconds(s)` clone the proto with a hidden `_seconds`
+    int slot; `d.seconds()` reads it; `d.asString()` formats UTC
+    "YYYY-MM-DD HH:MM:SS" via `gmtime_r` + `strftime` on hosted
+    builds (POSIX feature-test macros gate the `time.h` symbols);
+    freestanding builds return `0` / `""` since `time()` /
+    `strftime` aren't available without libc.  `d.plus(dur)` returns
+    a fresh Date advanced by Duration's microseconds-to-seconds
+    quotient (Phase 10 overlay can promote to operator form).
+  - `Duration`: thin wrapper over integer microseconds.  Time
+    literals (`100ms` / `2s` / `1d`) lex to integer microseconds at
+    M2; `Duration.fromMicroseconds(us)` wraps such an integer in a
+    typed Duration UObject via a hidden `_microseconds` slot.
+    `d.asMicroseconds()` / `asMilliseconds()` / `asSeconds()` are
+    integer-arithmetic accessors.
+- (Phase 9) **VM fields + GC roots.** `UVM` grows three proto-singleton
+  pointers (`mutex_proto`, `date_proto`, `duration_proto`).  Allocated
+  by `urbi_stdlib_register_primitives` (boot-phase); shaded by
+  `object_roots_walker` to keep them alive across GC.
+- (Phase 9) **4 `tests/chk/stdlib/primitives/` fixtures** —
+  `mutex.chk` (lock / unlock / tryLock / locked flag flips),
+  `date.chk` (now / fromSeconds round-trip / asString / monotonic
+  granularity), `duration.chk` (fromMicroseconds + as*),
+  `date_duration_seam.chk` (`Date.plus(Duration)` arithmetic with
+  positive / zero / sub-second-truncate / negative inputs).  Test
+  count delta: 202 → 206 chk fixtures.
+- (Phase 10) **Public `urbi_compile_source` API.** The build-time
+  bake tool needed an entry point for compiling source bytes to
+  serialized v1.5 wire-format bytecode.  Added as the first new
+  `<urbi/urbi.h>` symbol since v0.5.5 — pipeline mirrors
+  `tools/urbi.c`'s in-process compile (lex → arena → parse-loop →
+  emit → serialize).  Hosted-only; freestanding builds return
+  `URBI_ERR_INVALID_ARG` (pre-compiled bytecode reaches embedded
+  targets via `urbi_load_module` instead).
+- (Phase 10) **Bake tool actually compiles.** The Phase-3 stub
+  walk (`fprintf "would compile"`) is now a real concatenate-then-
+  compile-once pass.  Each `.u` file under `src/stdlib/` listed in
+  `STDLIB_ORDER.txt` gets read, prefixed with a
+  `// === <path> ===` banner, and appended to a single source
+  buffer fed through `urbi_compile_source`.  The resulting v1.5
+  bytecode goes into `urbi_stdlib_bytecode[]` (1071 bytes at ship).
+  Concatenate-then-compile (vs one-module-per-file with framing)
+  keeps the boot path single-`UModule` and matches how legacy
+  share/urbi composition works anyway.
+- (Phase 10) **Boot-runs the stdlib chunk.** The Phase-4 banner
+  ("running the root chunk is deferred to a later phase") is
+  closed.  After all C-native registration completes inside
+  `urbi_populate_realm_globals`, `urbi_run_chunk` runs the
+  deserialized `vm->stdlib_module` in the in-flight realm so its
+  top-level statements (currently `class X : public Y {}` decls)
+  install themselves as realm globals.
+- (Phase 10) **Mixin marker classes** (`src/stdlib/mixins.u`) —
+  `Comparable`, `Orderable`, `RangeIterable` shipped as
+  empty-body shells.  User code can `addProto(Comparable)` for
+  vocabulary alignment with the legacy stdlib.  The legacy
+  methods (`!=` from `==`, `>`/`<=`/`>=` from `<`,
+  map/filter/find from each) require closure upvalue capture
+  across `this`/`other` plus multi-slot class bodies, neither of
+  which is in v1.0 emit scope — those forms migrate to v1.x.
+- (Phase 10) **Exception subclass hierarchy**
+  (`src/stdlib/exception_subclasses.u`) — nine subclasses
+  (`TypeError`, `ArityError`, `LookupError`, `KeyError`,
+  `IndexError`, `RangeError`, `DivByZero`, `IOError`,
+  `CapacityError`) declared as empty-body
+  `class X : public Exception {}` decls.  KeyError + IndexError
+  are two-level (`: public LookupError`).  `.new(message)` and
+  `.raise()` resolve through the chain to `Exception`.  Generic
+  `catch (e)` binds the raised instance; typed catch syntax is
+  v1.x.
+- (Phase 10) **2 `tests/chk/stdlib/overlays/` fixtures** —
+  `mixins.chk` (realm-global reachability + addProto-on-user-class),
+  `exception_subclasses.chk` (.new / .message / try-catch end-to-
+  end for all nine subclasses).  Test count delta: 206 → 208 chk
+  fixtures.
+- (Phase 11) **7 `tests/chk/stdlib/legacy/` ports** of subsets from
+  `legacy/repos/aldebaran-urbi/tests/2.x/`: `dict_legacy.chk`,
+  `list_legacy.chk`, `mutex_legacy.chk`, `date_legacy.chk`,
+  `system_legacy.chk`, `large_string_legacy.chk`,
+  `maths_errors_legacy.chk`.  Each is a focused subset of its legacy
+  counterpart; the per-fixture rationale + sections deferred to v1.x
+  live in `tests/chk/stdlib/legacy/PORT_NOTES.md`.  Plan envisioned
+  9-12 ports + 3 Wave-1-deferred-section activations
+  (atoms.chk / fallback.chk / inheritance.chk).  Reality: most legacy
+  fixtures depend on Phase 10 v1.0 emit gaps (no float literals,
+  list / dict literals, closure upvalue capture, multi-slot class
+  bodies, `var x.foo = ...` slot install, `assert` / `echo` realm
+  globals, string concat, fallback protocol, `do (recv) { ... }`),
+  so 7 ports landed and 0 Wave-1 activations.  PORT_NOTES.md catalogs
+  the deferred-to-v1.x full-fixture port backlog.  Test count delta:
+  208 → 215 chk fixtures.
+
+### Deferred to v1.x
+
+Phase 10's plan envisioned ten `.u` overlay files (~80+ overlay
+methods).  The realistic Phase 10 ship is the bake-tool API plus
+two minimal-content overlay files (mixins + exception subclasses,
+one method between them: none, just the proto markers + subclass
+shells).  The remaining eight overlays from the plan all depend on
+infrastructure that is not in v1.0 emit scope:
+
+- **Closure upvalue capture across method boundaries** — every
+  one of `RangeIterable.map/filter/find`, `List.map/filter/foldl/
+  find/reduce/partition`, `Dict.keys/values/merge/invert`,
+  `String.split/trim/format/replace`, `Math.sin/cos/...` (lambda
+  bouncing to `.asFloat.sin`), `Mutex.synchronized` (try/finally
+  closure body), `Number.times/upto/downto` is dead until
+  `function(x) { outer_var }` resolves the outer var.
+- **Multi-slot class bodies** — `class C { var x = 1; var y = 2 }`
+  raises `EMIT_UNSUPPORTED_AST` because the body parses as a single
+  `AST_SEPARATOR` and `emit_class_body_stmt` only accepts
+  `AST_VAR_DECL`.  Affects every overlay that wants to declare
+  more than one slot inside a class body.
+- **`this.method()` from within a method body** — also raises
+  `EMIT_UNSUPPORTED_AST`.  Receiver-routed dispatch from
+  inside a function literal needs upvalue-captured `this` plus a
+  callable resolver, neither of which is wired.
+- **Operator overrides via `'+'`/`'<'`/`'=='` slot install** —
+  symbolic operators are inline VM opcodes (not slot lookups), so
+  installing `Duration.'+' = function(other) { ... }` does not
+  intercept the operator.  Affects time / number / comparable
+  operator-form overlays.
+- **Float literals** — `0.5` / `3.14` don't lex as numbers (lex
+  consumes `0` then sees `.5` as a slot access).  `Float`
+  values come from `.asFloat()` only.  Affects `math_overlay.u`'s
+  `Math.pi` constant + every `Float`-arity test that wanted
+  literal float arguments.
+
+The closure-upvalue gap is the load-bearing one: it unblocks the
+majority of the stdlib content overlays and is the primary
+plumbing item that should land before rebooting Phase 10's
+deeper deliverables.  Filed under
+`docs/urbi-embedded-design-risks.md` v1.x: "closure upvalue
+capture (M7+ / stdlib-content blocker)".  Multi-slot class bodies
+and `this.method()` from method bodies join it on the same
+backlog row — the three features are tightly coupled and would
+need to ship together for the deeper overlays to compile.
+
+(Phase 12) **`defer:M6` audit IDs migrated to v1.x** — 4 of 15
+carry-forward IDs need architectural work that was not in v1.0
+scope and were filed against the design-risks register:
+
+- **GC-003 + GC-037 + VM-007 (clustered)** — 'UClosure cells
+  GC-managed promotion + slot-write barrier real index'.  UClosure
+  cells today are allocated through `vm->alloc_fn` directly (not
+  `urbi_gc_alloc`) and threaded onto a per-strand `closure_list`
+  legacy free-list; the missing UTYPE_CLOSURE walker is benign
+  because cells are never enrolled on `all_cells_head`.  The
+  proper fix promotes both allocation paths (`vm_alloc_closure` +
+  `urbi_native_closure_create`) to `urbi_gc_alloc` + adds a
+  `walk_uclosure` strand-walker entry; the same pass naturally
+  closes the slot-write barrier placeholder index (VM-007).
+  Filed in design-risks as 'v1.x: UClosure cells GC-managed
+  promotion'.
+- **GC-005** — Cross-references VM-007 (same root issue).
+  Slow-path `OP_SETSLOT` calls `urbi_gc_slot_write` with hardcoded
+  slot_index = 0; observer_dirty ignores the key argument entirely
+  at v1.0, so the placeholder is benign.  Closes when v1.x
+  preemptive scheduler or per-slot dirty-bit work needs the real
+  index.  Filed in design-risks as 'v1.x: slot-write barrier
+  placeholder index'.
+
+### Changed
+
+- (filled in)
+
+### Fixed
+
+- (Phase 12) **`defer:M6` cleanup absorption** — 11 of 15 carry-forward
+  audit IDs closed under TDD-per-fix-commit discipline (Wave-5 G1):
+  EMIT-030 (dead break_chain/continue_chain UBlockCtx fields removed),
+  PARSE-032 (doc-only — lex absorbs time/angle suffix into TOK_INT),
+  PARSE-033 (doc-only — tag-prefix onleave is v1.x scope; AST field
+  retained on union variant for v1.x parse+emit addition),
+  CHSTR-007 (regression net asserting REPL diagnostic NEVER falls
+  back to literal "compile error" string; pinned `<stdin>:line:col:`
+  format pass-through),
+  CHSTR-009 (annotated existing load_module live-path test as
+  closure pointer; M6 Wave 1 / API-021 had landed the real impl),
+  CHSTR-026 + CHSTR-030 (regression net asserting urbi_run_chunk
+  realm parameter is honored vs silently replaced by global; Wave 5
+  API-004 had threaded realm through urbi_vm_run; new test installs
+  K=1234 on a non-default realm and reads it back),
+  CPPCHK-001 (annotated existing CPPCHK-011 inline-suppression as
+  covering both IDs — duplicate filings),
+  TAGCH-018 (annotated existing tag_enter_setter_throws_protected_slot
+  test as the audit-ID closure pointer),
+  VM-009 (doc-only — OP_CALL native-arm short-circuit prevents the
+  audit's failure shape; comment block at the dispatch site pins the
+  contract),
+  REALM-002 (regression net pinning past-slot-7 install + best-effort
+  const enforcement contract; v1.0 architectural limit on
+  packed-nibble UShape.flags is documented).
+
+  Per-ID disposition lines appended to the
+  `2026-05-05-v0.5.x-cleanup-audit-findings.md` audit doc.  Phase 12
+  closure summary in `docs/urbi-embedded-design-risks.md` 'v0.6.1-stdlib
+  Phase 12' section.
+
+- T41 install-time arity validation for `get` / `set`: rejects
+  wrong-param-count getters / setters (getter must take 0 params,
+  setter must take 1) with a clear ArityError diagnostic at
+  `Object.setProperty` time instead of segfaulting in the dispatch
+  arm later.
+- T41 statement-start `get` / `set` form is now rejected at parse
+  time with a dedicated `PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED`
+  diagnostic that points the user at the two legal forms
+  (`recv.get x() {}` and `class C { get x() {} }`).  The bare
+  statement-start form has no v1.0 implicit-`this` resolver and is
+  deferred to v1.x.
+- `emit_call_arm` register clobber on multi-arg calls with a
+  trailing `AST_FUNCTION` argument: leaf-literal args ahead of the
+  function literal bumped only `next_reg`, leaving `freereg` lagging,
+  so the trailing `OP_CLOSURE` destination would land on an already-
+  allocated arg slot.  Latent since v0.4.0-objects, surfaced under
+  T41's setProperty desugar shape.
+
+### Tooling
+
+- (Phase 3) **`tools/urbi-compile-stdlib` build-time bake tool**
+  (~110 LOC C; links host `liburbi.a`).  Walks
+  `src/stdlib/STDLIB_ORDER.txt`, will compile each listed `.u` via
+  the public Urbi compile API, and emits the bytecode blob as
+  `src/stdlib/urbi_stdlib_bytecode.gen.c`.  Phase-3 baseline ships
+  the empty-walk scaffold (0-length blob); Phase 10 fills in the
+  compile loop.  Two-pass build wired in `Makefile`: pass 1 builds
+  `liburbi.a` against the tracked placeholder `.gen.c`; pass 2
+  links the bake tool; pass 3 regenerates `.gen.c` and re-links
+  `liburbi.a` whenever `STDLIB_ORDER.txt` or any `.u` changes.
+  Determinism gate (`tests/scripts/bake_smoke.sh`, 3-run
+  byte-identity) wired into `make releasetest` as
+  `test-bake-smoke`.  `make bake-clean` force-regenerates the
+  blob.  Cross-arch builds consume the host-baked `.gen.c` source
+  unchanged (the bake tool is host-only).  See
+  `docs/internals/build-system.md`.
+- (Phase 14) **Final footprint at `v0.6.1-stdlib`** (host gcc 14 -O2,
+  arm-none-eabi-gcc -Os, riscv64-unknown-elf-gcc -Os):
+  - host: 193 994 B / 198 882 B total (.text + .data) — vs v0.6.0
+    149 360 B = +44 634 B (+30 %).  Master spec §7 Linux total cap
+    400 KB: 49 % of budget consumed.
+  - arm: 94 191 B — vs v0.6.0 68 908 B = +25 283 B (+37 %).  ARM
+    cap 100 KB: 94 % of budget consumed.
+  - riscv: 118 460 B — vs v0.6.0 88 579 B = +29 881 B (+34 %).
+    RISC-V cap 130 KB: 91 % of budget consumed.
+  Wave 2 expected delta per spec §7 was +25-40 KB host before
+  contraction, +15-25 KB after.  Actual +44 KB host is over the
+  contraction-adjusted target but well under the absolute cap; no
+  contraction applied at v0.6.1 (room remains for future Wave 2
+  bytecode-blob growth + Phase 10 deferred overlays + M7 C-API
+  formalization).  Captured at
+  `tests/golden/v0.6.1-stdlib-footprint.txt`.
+
 ## v0.6.0-stdlib-scaffold — 2026-05-09 — Wave 1 of M6 stdlib
 
 **Theme:** Language scaffolding for the M6 standard library — string

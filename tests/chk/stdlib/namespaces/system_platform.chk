@@ -1,0 +1,24 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 8 (T88) System.Platform.kind constant.
+#
+# Platform is a sub-namespace nested as a slot on System (the proto
+# UObject is allocated separately but realm-globals do not bind it as
+# a top-level name; reach via System.Platform.kind).
+#
+# kind is a String set at compile time via #ifdef cascade in namespaces.c:
+#   "linux"   — Linux hosts
+#   "darwin"  — macOS
+#   "windows" — Win32
+#   "freertos" — freestanding builds (M0/M1 cross-arm baseline)
+#   "unknown" — fallback
+#
+# This fixture asserts the kind is non-empty.  The Boolean atom-proto's
+# isEmpty() landed in Phase 5 — call it on the kind String.
+
+# Platform is reachable through System.
+System.Platform.kind.size() > 0
+[00000000] true
+
+# Platform.kind is a String.
+System.Platform.kind.isEmpty()
+[00000001] false

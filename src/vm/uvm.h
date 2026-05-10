@@ -428,6 +428,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   (now on stdlib_closures) reference these upvals; freeing them at
      *   run-end would dangle the closure's upvals[] array.  Threaded via
      *   UUpvalCell.next; freed at urbi_vm_destroy.
+     * stdlib_module: heap-allocated UModule deserialized from the baked
+     *   urbi_stdlib_bytecode blob during urbi_stdlib_boot.  NULL when the
+     *   blob is empty (Phase 4 baseline) or boot has not run.  Owned by
+     *   the VM; freed via umodule_destroy + alloc_fn at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
      * last_recv: receiver UValue from the most recent OP_GETSLOT load.
@@ -439,8 +443,55 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   arm reads this only on the native_fn != NULL branch. */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
+    struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
+    /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
+     * instances allocated via urbi_stdlib_register_containers.  Each
+     * buffer begins with a (void *next) header that threads onto this
+     * head pointer.  Freed in urbi_vm_destroy via
+     * urbi_stdlib_containers_destroy.  See src/stdlib/containers.c. */
+    void       *stdlib_containers;
+    /* M6 Phase 6: Pair / Triplet / Tuple proto singletons.  Allocated
+     * by urbi_stdlib_register_containers; bound to realm globals by
+     * urbi_stdlib_register_container_globals after the registry loop.
+     * NULL until first VM boot. */
+    struct UObject *container_pair_proto;
+    struct UObject *container_triplet_proto;
+    struct UObject *container_tuple_proto;
+    /* M6 Phase 7: Exception primitive proto.  Allocated by
+     * urbi_stdlib_register_runtime_types; bound to "Exception" realm
+     * global by urbi_stdlib_register_runtime_globals after the registry
+     * loop.  NULL until first VM boot. */
+    struct UObject *exception_proto;
+    /* M6 Phase 8: namespace proto singletons.  T86 lands math_proto
+     * (pi / e / nan / infinity); subsequent T87+T88+T90+T91 tasks add
+     * system_proto / platform_proto / global_namespace_proto / call-
+     * message_proto.  Allocated by urbi_stdlib_register_namespaces;
+     * bound to realm globals by urbi_stdlib_register_namespace_globals
+     * after the registry loop.  NULL until first VM boot.  GC
+     * reachability via object_roots_walker. */
+    struct UObject *math_proto;
+    struct UObject *system_proto;
+    struct UObject *platform_proto;
+    struct UObject *global_namespace_proto;
+    struct UObject *callmessage_proto;
+    /* M6 Phase 9: primitive proto singletons.  T94 lands mutex_proto
+     * (cooperative flag-flip); T95 date_proto (libc time() shim);
+     * T96 duration_proto (thin wrapper over integer microseconds).
+     * Allocated by urbi_stdlib_register_primitives; bound to realm
+     * globals by urbi_stdlib_register_primitives_globals after the
+     * registry loop.  NULL until first VM boot.  GC reachability via
+     * object_roots_walker. */
+    struct UObject *mutex_proto;
+    struct UObject *date_proto;
+    struct UObject *duration_proto;
     uint8_t     stdlib_booted;
-    uint8_t     pad_stdlib[7];          /* padding; zeroed */
+    /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
+     * new allocations and returns NULL.  One-way latch set via the
+     * public C API urbi_lock_heap; never cleared.  Reserved for v2.0
+     * hard-RT mode where post-init allocation is forbidden.  Zero
+     * default at urbi_vm_init time. */
+    uint8_t     heap_locked;
+    uint8_t     pad_stdlib[6];          /* padding; zeroed */
     UValue      last_recv;
 } UVM;
 

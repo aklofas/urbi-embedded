@@ -1,0 +1,20 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 7 Exception nested raise / catch — inner raise binds
+#         inner exception; outer catch sees the outer-raised exception.
+#
+# Two nesting levels: inner try/catch absorbs the inner Exception, then
+# raises a fresh Exception which the outer catch sees.  Both messages
+# round-trip through their respective .message slots.
+
+var inner_msg = nil; var outer_msg = nil; try { try { Exception.new("inner").raise() } catch (e) { inner_msg = e.message; Exception.new("outer").raise() } } catch (o) { outer_msg = o.message }; inner_msg
+[00000000] "inner"
+
+outer_msg
+[00000000] "outer"
+
+# Inner raise propagates through finally (no inner catch) to outer catch.
+var fin = 0; var msg = nil; try { try { Exception.new("propagated").raise() } finally { fin = 1 } } catch (e) { msg = e.message }; fin
+[00000001] 1
+
+msg
+[00000001] "propagated"

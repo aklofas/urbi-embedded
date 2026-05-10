@@ -198,3 +198,55 @@ the `v1.0` `URBI_SCHED_COOPERATIVE` baseline:
 
 Multi-threaded VM contracts (parallel realms, `URBI_SCHED_PREEMPTIVE`,
 cross-thread instance-cache lookup) are a post-`v1.0` expansion.
+
+---
+
+## Stdlib boot integration (M6 Wave 2)
+
+`urbi_stdlib_boot(vm)` runs from inside `urbi_populate_realm_globals`
+on the first realm-create per VM (the `vm->event_proto == NULL`
+guard).  Wave 2 (Phase 4) extends Wave 1's two-step C-native boot
+into a three-step boot:
+
+1. **C-native Object root methods** — `urbi_object_root_register`
+   installs `setSlot` / `getSlot` / `clone` / etc. on `vm->atom_object`.
+2. **C-native atom proto stubs** — `urbi_atom_protos_register`
+   allocates `Boolean` / `Nil` / `Void` singletons and installs the
+   minimum Wave-1 method set (`Boolean.toString`, `String.length`).
+3. **Baked-bytecode load** — when `urbi_stdlib_bytecode_len > 0`,
+   `umodule_deserialize` parses the blob into a heap-allocated
+   `UModule` stored on `vm->stdlib_module`, then
+   `urbi_get_or_create_module_instance` binds a per-VM
+   `UModuleInstance` so the IC machinery sees the chunk's
+   `ic_name_strs` lazy-interned to live `USymbol *`.
+
+The baked blob comes from `tools/urbi-compile-stdlib`, which walks
+`src/stdlib/STDLIB_ORDER.txt` at build time, compiles each `.u` to
+v1.5 bytecode, concatenates the buffers, and emits
+`src/stdlib/urbi_stdlib_bytecode.gen.c` exposing
+`urbi_stdlib_bytecode[]` and `urbi_stdlib_bytecode_len`.  The two-pass
+build is described in [build-system.md](build-system.md).
+
+**Parser-independent.** Step 3 deserializes pre-compiled bytecode; it
+never invokes the lexer / parser / emitter pipeline.  Phase 13's
+`URBI_BYTECODE_ONLY` smoke build verifies the runtime can satisfy the
+boot path with the front-end stripped out — a prerequisite for the M7
+embedding contract where freestanding targets ship liburbi.a without
+the source-compile path linked in.
+
+**Phase 4 baseline.** `STDLIB_ORDER.txt` is empty, so the blob is
+0 bytes and step 3 is dead code.  Phase 10 populates the order file
+and the deserialize+bind branch becomes live.
+
+**Run-end deferral.** `urbi_stdlib_boot` does **not** run the stdlib
+module's root chunk — it is reachable from the realm-create path, and
+`urbi_run_chunk` would re-enter realm population.  Phase 10 wires a
+deferred-run hook that fires once the global Realm is fully
+populated.  Errors during deserialize or bind surface as
+`URBI_ERR_STDLIB_BOOT_FAILED` (slot −15 in `UErrCode`); allocation
+failures still surface as `URBI_ERR_OOM`.
+
+Module ownership: `vm->stdlib_module` is freed via `umodule_destroy`
+plus `vm->alloc_fn(_, 0, _)` from inside `urbi_vm_destroy`, sequenced
+**after** `urbi_gc_destroy` so any `UModuleInstance` referencing the
+module has already been reaped.

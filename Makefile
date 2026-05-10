@@ -67,9 +67,72 @@ $(BUILDDIR)/tools/urbi.o: tools/urbi.c | $(BUILDDIR)/tools
 	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -c -o $@ $<
 
 $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
-	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB) -lm
 
 urbi-bin: $(BUILDDIR)/urbi
+
+# --- Stdlib bake tool (host-only) ---------------------------------------
+#
+# tools/urbi-compile-stdlib is the Wave-2 build-time bake tool.  It
+# walks src/stdlib/STDLIB_ORDER.txt, compiles each listed .u file via
+# the public Urbi compile API, and emits the bytecode blob as
+# src/stdlib/urbi_stdlib_bytecode.gen.c.
+#
+# The tool is HOST-ONLY: it always links against build/host/liburbi.a,
+# never the cross-target archive.  Cross-arch builds consume the
+# already-emitted .gen.c source (compiled for the target like any
+# other src/stdlib/*.c).  This keeps the chicken-and-egg out of the
+# cross build: the bake runs once on the host, its output ships as
+# portable C source.
+#
+# Two-pass build (delta spec §3.1):
+#   1. liburbi.a builds with the placeholder .gen.c (tracked in repo)
+#   2. tools/urbi-compile-stdlib links against that intermediate library
+#   3. Subsequent builds regenerate .gen.c on .u or order changes,
+#      causing liburbi.a to re-link with the populated blob.
+#
+# The bake-rule for src/stdlib/urbi_stdlib_bytecode.gen.c lands in a
+# follow-up commit; this commit only wires the tool's own build.
+
+# Order-only dependency on build/host/liburbi.a (after the `|`):
+# the bake tool needs the archive to LINK against, but does not need
+# to relink whenever liburbi.a's contents change.
+#
+# A cycle exists in the dep graph:
+#     liburbi.a → .gen.o → .gen.c → bake-tool → liburbi.a
+# GNU make detects this and silently drops one edge with a one-line
+# "Circular ... dependency dropped" warning.  This is intentional and
+# correctness-safe: .gen.c is a TRACKED source so the first build of
+# liburbi.a does not need the bake tool, and subsequent rebakes only
+# happen when STDLIB_ORDER.txt or a .u changes (then liburbi.a
+# re-links from the regenerated .gen.o).  See docs/internals/build-system.md.
+tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c | build/host/liburbi.a
+	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
+	    -Iinclude -Isrc -o $@ $< build/host/liburbi.a -lm
+
+# Two-pass stdlib bake (per delta §3.1):
+# 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
+# 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
+# 3. liburbi.a re-links with populated .gen.c
+#
+# The .gen.c rule depends on the bake tool + the order file + every
+# .u under src/stdlib/.  Touching any of those triggers a rebake; the
+# resulting .gen.c is then picked up by the existing src/stdlib/*.c
+# wildcard, so liburbi.a re-links automatically.
+#
+# .gen.c is a TRACKED source file (not a generated artifact under
+# build/) so the first build of liburbi.a does not require the bake
+# tool — closing the chicken-and-egg between the tool and the library.
+
+STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
+
+src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
+                                        src/stdlib/STDLIB_ORDER.txt \
+                                        $(STDLIB_U_FILES)
+	./tools/urbi-compile-stdlib \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    $@
 
 # --- Integration tests --------------------------------------------------
 #
@@ -101,7 +164,7 @@ test-chk: $(BUILDDIR)/urbi
 	echo "$$count chk fixture(s) passed"
 
 test: $(LIB) $(TEST_OBJ) test-integration test-chk
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
 .PHONY: test-loc-cap
@@ -119,6 +182,30 @@ test-wire-format-determinism: $(BUILDDIR)/urbi
 .PHONY: test-docstring-coverage
 test-docstring-coverage:
 	@./tests/scripts/check_docstring_coverage.sh
+
+# Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
+# Runs tools/urbi-compile-stdlib three times against
+# src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
+# three outputs are byte-identical.  Hard-fail in releasetest below.
+# See tests/scripts/bake_smoke.sh.
+.PHONY: test-bake-smoke
+test-bake-smoke: tools/urbi-compile-stdlib
+	@./tests/scripts/bake_smoke.sh
+
+# Phase 13 (v0.6.1-stdlib Wave 2) URBI_BYTECODE_ONLY emulation gate.
+# The real URBI_BYTECODE_ONLY build flag — compile out the
+# lex/parse/emit subsystems, ship a runtime that can only execute
+# pre-baked bytecode — lands at M7 per the v1.0 implementation
+# design spec §1.1.  Phase 13 lands a smoke approximation that
+# proves the architectural shape is sound: lex/parse/emit + the
+# two parser-coupled root sources (src/urbi.c + src/module/uchunk.c)
+# CAN be elided, and the resulting archive still exports
+# urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
+# urbi_lock_heap.  Hard-fail in releasetest below.
+# See tests/scripts/build-bytecode-only.sh.
+.PHONY: test-bytecode-only
+test-bytecode-only:
+	@./tests/scripts/build-bytecode-only.sh
 
 test-debug:
 	$(MAKE) TARGET=host-debug \
@@ -303,7 +390,8 @@ RELEASETEST_PHASE1 := \
     test test-asan test-ubsan test-debug test-switch \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
-    test-wire-format-determinism test-docstring-coverage
+    test-wire-format-determinism test-docstring-coverage \
+    test-bake-smoke test-bytecode-only
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -375,19 +463,19 @@ $(STRESS_BUILDDIR):
 STRESS_CPPFLAGS := $(CPPFLAGS) -D_POSIX_C_SOURCE=200809L
 
 $(STRESS_BUILDDIR)/gc_long_running: tests/stress/gc_long_running.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_many_cycles: tests/stress/gc_many_cycles.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_pause_time: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/gc_barrier_throughput: tests/stress/gc_barrier_throughput.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 $(STRESS_BUILDDIR)/stress_event_emit_loop: tests/stress/stress_event_emit_loop.c $(LIB) | $(STRESS_BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -o $@
+	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -Isrc $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 test-stress: $(STRESS_BUILDDIR)/gc_long_running \
              $(STRESS_BUILDDIR)/gc_many_cycles \
@@ -412,7 +500,7 @@ test-stress: $(STRESS_BUILDDIR)/gc_long_running \
 
 $(STRESS_BUILDDIR)/gc_pause_time_gated: tests/stress/gc_pause_time.c $(LIB) | $(STRESS_BUILDDIR)
 	$(CC) $(CFLAGS) $(STRESS_CPPFLAGS) -DGC_PAUSE_ASSERT_NS=1000000 \
-	    $< -L$(BUILDDIR) -lurbi -o $@
+	    $< -L$(BUILDDIR) -lurbi -lm -o $@
 
 test-gc-pause: $(STRESS_BUILDDIR)/gc_pause_time_gated
 	$(STRESS_BUILDDIR)/gc_pause_time_gated
@@ -445,13 +533,13 @@ $(FUZZ_BUILDDIR):
 	@mkdir -p $@
 
 $(FUZZ_BUILDDIR)/fuzz_lex: tests/fuzz/fuzz_lex.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_lex.c -lm
 
 $(FUZZ_BUILDDIR)/fuzz_parse: tests/fuzz/fuzz_parse.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_parse.c -lm
 
 $(FUZZ_BUILDDIR)/fuzz_vm: tests/fuzz/fuzz_vm.c $(SRC) | $(FUZZ_BUILDDIR)
-	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) $(CPPFLAGS) -o $@ $(SRC) tests/fuzz/fuzz_vm.c -lm
 
 fuzz-lex: fuzz-tools $(FUZZ_BUILDDIR)/fuzz_lex
 	@echo "running fuzz_lex (Ctrl-C to stop; use -runs=N for bounded)"
@@ -641,6 +729,22 @@ audit-globals:
 clean:
 	rm -rf build compile_commands.json
 
+# bake-clean — force the bake tool to regenerate
+# src/stdlib/urbi_stdlib_bytecode.gen.c from STDLIB_ORDER.txt + .u files.
+#
+# Routine builds do not need this — the dep-graph picks up .u changes
+# automatically.  Use this when the committed .gen.c drifts from what
+# the current sources would produce (e.g. a .u was edited but `make`
+# did not notice because the file timestamp regressed).
+#
+# Distinct from `make clean` — it does not touch build/ at all, only
+# the tracked .gen.c source.
+bake-clean: tools/urbi-compile-stdlib
+	./tools/urbi-compile-stdlib \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    src/stdlib/urbi_stdlib_bytecode.gen.c
+
 # ---- documentation verification ------------------------------------------
 #
 # docs-check runs markdown lint + intra-repo link checking over docs/ and the
@@ -669,4 +773,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only

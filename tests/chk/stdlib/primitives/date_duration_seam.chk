@@ -1,0 +1,32 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 9 (T97) Date / Duration seam — Date.plus(Duration).
+#
+# v1.0 baseline lands the named-method form `d.plus(dur)`.  Phase 10's
+# `.u` overlay can promote this to the operator form `d + dur` once the
+# arithmetic-operator dispatch table lands for non-atom receivers.
+#
+# `d.plus(dur)` returns a fresh Date with `seconds += dur / 1000000`.
+# Duration sub-second precision is truncated (whole-second granularity).
+#
+# Usage requires intermediate variables for the receiver and argument
+# expressions (a v1.0 vm->last_recv-publish ordering quirk causes
+# last_recv to be clobbered when an inner method call appears as an
+# argument to an outer method call).  The named-vars form below is the
+# stable v1.0 contract; chained inline forms land at v1.x once last_recv
+# becomes per-call-site.
+
+# 1700000000 + 86400 seconds (one day) = 1700086400.
+var d = Date.fromSeconds(1700000000); var dur = Duration.fromMicroseconds(86400000000); d.plus(dur).seconds()
+[00000000] 1700086400
+
+# Adding a zero Duration is a no-op.
+var d0 = Date.fromSeconds(1700000000); var dz = Duration.fromMicroseconds(0); d0.plus(dz).seconds()
+[00000001] 1700000000
+
+# Adding a sub-second Duration truncates to the nearest second.
+var ds = Date.fromSeconds(100); var dh = Duration.fromMicroseconds(500000); ds.plus(dh).seconds()
+[00000002] 100
+
+# Adding a negative Duration subtracts.
+var dn = Date.fromSeconds(1000); var dx = Duration.fromMicroseconds(-500000000); dn.plus(dx).seconds()
+[00000003] 500

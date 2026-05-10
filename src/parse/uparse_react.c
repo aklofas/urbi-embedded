@@ -75,7 +75,14 @@ UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok) {
 /* --- parse_tag_prefix: `name : { body }`
    Called from parse_statement_or_expr after consuming `name` and seeing `:`.
    Produces AST_TAG_PREFIX with tag_expr = AST_IDENT(name), body = AST_BLOCK.
-   onleave is always NULL at M3 (M5 wires on-leave syntax). --- */
+
+   PARSE-033 closure: the AST_TAG_PREFIX.onleave field is always NULL at
+   v1.0 — the surface form `tag: { body } onleave handler` is v1.x scope
+   (M5 spec deferred it; M6 stdlib confirmed v1.0 ships without it).  The
+   AST field is retained on the union variant so the v1.x parser change
+   lands as an addition rather than an AST shape break.  `at (cond) body
+   onleave handler` (AST_WATCHER) is the supported onleave form today;
+   see uast.h tag_prefix.onleave for the canonical comment. --- */
 
 UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
     consume(p);  /* consume ':' */
@@ -92,7 +99,7 @@ UAstNode *parse_tag_prefix(UParser *p, UToken name_tok) {
     if (!node) return (UAstNode *)&uparser_oom_sentinel;
     node->u.tag_prefix.tag_expr = tag_expr;
     node->u.tag_prefix.body     = body;
-    node->u.tag_prefix.onleave  = NULL;  /* deferred to M5 */
+    node->u.tag_prefix.onleave  = NULL;  /* tag-prefix onleave is v1.x — see fn comment + uast.h */
     return node;
 }
 

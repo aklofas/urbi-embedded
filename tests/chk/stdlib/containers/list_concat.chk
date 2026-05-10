@@ -1,0 +1,48 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 List.concat / List.diff.
+#
+# concat(other) returns a fresh List with all of self's elements
+# followed by all of other's.  diff(other) returns a fresh List with
+# self's elements that don't appear in other (linear scan via
+# uvalue_equal).
+#
+# Note: each line uses an explicit `var` chain to bind the inputs
+# BEFORE the concat / diff invocation.  Nested call forms
+# (`a.concat(List.new(...))`) are avoided per the v1.0 vm->last_recv
+# clobbering limitation: each inner OP_GETSLOT-of-native-method
+# overwrites the receiver snapshot used by the next OP_CALL.
+
+# concat: build c = a.concat(b), then read c's length / element.
+var a = List.new(1, 2, 3); var b = List.new(4, 5); var c = a.concat(b); c.length()
+[00000000] 5
+
+var a = List.new(1, 2, 3); var b = List.new(4, 5); var c = a.concat(b); c.get(3)
+[00000001] 4
+
+var a = List.new(1, 2, 3); var b = List.new(4, 5); var c = a.concat(b); c.get(0)
+[00000002] 1
+
+# concat with empty side.
+var a = List.new(); var b = List.new(7, 8, 9); var c = a.concat(b); c.length()
+[00000003] 3
+
+var a = List.new(7, 8, 9); var b = List.new(); var c = a.concat(b); c.length()
+[00000004] 3
+
+# diff: build d = a.diff(b), then read d's length / element.
+var a = List.new(1, 2, 3); var b = List.new(2); var d = a.diff(b); d.length()
+[00000005] 2
+
+var a = List.new(1, 2, 3); var b = List.new(2); var d = a.diff(b); d.get(0)
+[00000006] 1
+
+var a = List.new(1, 2, 3); var b = List.new(2); var d = a.diff(b); d.get(1)
+[00000007] 3
+
+# diff with empty other returns the original list (length-equivalent).
+var a = List.new(1, 2, 3); var b = List.new(); var d = a.diff(b); d.length()
+[00000008] 3
+
+# diff that removes everything yields empty.
+var a = List.new(1, 2); var b = List.new(1, 2, 3); var d = a.diff(b); d.length()
+[00000009] 0

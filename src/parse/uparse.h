@@ -24,10 +24,22 @@ typedef struct {
     UArena *arena;
     UToken peek;
     bool have_peek;
+    /* Second-token lookahead.  Used by T41 (get/set parse sugar) to detect
+     * `get IDENT (` / `set IDENT (` patterns without an irreversible commit:
+     * after the current token (peek), peek2() returns the token AFTER it.
+     * Filled lazily by peek2(); consumed alongside peek by consume(). */
+    UToken peek2;
+    bool have_peek2;
     /* Set by parse_at while parsing the condition expression inside `at(...)`.
      * When true, the postfix `?` handler in parse_expression passes through
      * the token (does not error) so parse_at can detect it after the fact. */
     bool at_event_cond;
+    /* T41 (Wave 2): nesting depth of `class { ... }` bodies currently being
+     * parsed.  Bumped by parse_class_declaration around its parse_block call.
+     * Statement-start `get name() {...}` / `set name(v) {...}` is rejected
+     * at parse time when this is zero — the implicit-receiver form has no
+     * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
+    int class_body_depth;
 } UParser;
 
 /* Initialize.  No allocation.  Both lex and arena must outlive p. */

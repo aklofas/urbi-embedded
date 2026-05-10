@@ -1,0 +1,30 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/dictionary.chk
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# Legacy fixture exercises `["a" => 42].extend(["b" => "coin"])` with
+# dict-literal lex.  v0.6.1 has no `[k => v]` literal token; the same
+# semantics route through Dict.new() + set/get/has/length.
+#
+# Wave-2 deferred (full port): dict-literal lex, .extend(other-dict),
+# print form `["a" => 42, ...]`.  See PORT_NOTES.md.
+
+var d = Dict.new(); d.set("a", 42); d.get("a")
+[00000000] 42
+
+var d = Dict.new(); d.set("a", 42); d.set("b", "coin"); d.length()
+[00000001] 2
+
+var d = Dict.new(); d.set("a", 42); d.set("a", 51); d.get("a")
+[00000002] 51
+
+var d = Dict.new(); d.set("a", 42); d.has("a")
+[00000003] true
+
+var d = Dict.new(); d.set("a", 42); d.has("b")
+[00000004] false
+
+var d = Dict.new(); d.set("a", 42); d.set("b", "coin"); d.remove("a"); d.has("a")
+[00000005] false
+
+var d = Dict.new(); d.set("a", 42); d.set("b", "coin"); d.remove("a"); d.length()
+[00000006] 1

@@ -181,6 +181,38 @@ int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_
  * itself remains M6 work in progress. */
 int urbi_load_translate_load_err(int load_err);
 
+/* === Phase 10 stdlib bake (M6 Wave 2) ===
+ *
+ * urbi_compile_source: compile a urbiscript source buffer to serialized
+ * v1.5 wire-format bytecode.  Used by tools/urbi-compile-stdlib at build
+ * time to bake `.u` overlays into the stdlib bytecode blob; usable by any
+ * embedder that wants to ship pre-compiled modules.
+ *
+ * vm        — used during compile for string interning + emit-time identifier
+ *             tables.  Must be initialized via urbi_vm_init.  The compiled
+ *             bytecode is portable across VMs (deserialize re-interns).
+ * src       — source bytes; need not be NUL-terminated.
+ * src_len   — length of src in bytes.
+ * src_name  — diagnostic-only identifier for error messages.  May be NULL.
+ * out_buf   — receives a pointer to a newly-allocated buffer holding the
+ *             serialized bytecode; the CALLER must free() it (hosted only —
+ *             freestanding builds use the configured allocator's free path).
+ * out_len   — receives the byte count.
+ * err_buf   — caller-allocated diagnostic buffer (may be NULL).
+ * err_cap   — capacity of err_buf in bytes; ignored if err_buf is NULL.
+ *
+ * Returns URBI_OK on success.  On failure, *out_buf is NULL and a
+ * human-readable message is written into err_buf (NUL-terminated).
+ * Failure codes:
+ *   URBI_ERR_INVALID_ARG — NULL vm/src/out_buf/out_len.
+ *   URBI_ERR_OOM         — allocation or serialize failure.
+ *   URBI_ERR_INVALID_ARG — parse or emit error (see err_buf for details). */
+int urbi_compile_source(struct UVM *vm,
+                        const char *src, size_t src_len,
+                        const char *src_name,
+                        unsigned char **out_buf, size_t *out_len,
+                        char *err_buf, size_t err_cap);
+
 /* === Row 9 strand lifecycle C API (M3 / T20) ===
  *
  * Separate _create (DORMANT alloc) from _start (DORMANT → READY enqueue) so
@@ -405,6 +437,26 @@ void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UModule *module, UValue *out);
+
+/* === urbi_lock_heap (Phase 13 / T145) ===
+ *
+ * Lock the allocator post-init.  After this call, urbi_gc_alloc declines
+ * to allocate new GC-managed cells and returns NULL; the caller observes
+ * the failure as an OOM-shaped failure mode (URBI_ERR_OOM at native
+ * boundaries, or a TypeError raise via urbi_raise_oom on the script
+ * surface).  Existing GC-tracked objects continue to operate; collection
+ * still runs (sweep / mark slices do not allocate).
+ *
+ * Intended use: v2.0 hard-RT mode where post-init allocation is
+ * forbidden by policy.  The API surface lands at v1.0; the policy
+ * enforcement is opt-in — embedders that want allocation throughout
+ * the program lifetime simply never call this.
+ *
+ * Idempotent: calling on an already-locked VM is a no-op.  No unlock
+ * primitive at v1.0 (one-way latch matches the hard-RT contract).
+ *
+ * vm == NULL is a no-op. */
+void urbi_lock_heap(struct UVM *vm);
 
 #ifdef URBI_DEBUG
 /* urbi_get_determinism_checksum: FNV-1a hash of observable VM state.

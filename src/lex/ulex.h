@@ -110,6 +110,9 @@ typedef enum {
     LEX_INT_OVERFLOW,
     LEX_UNTERMINATED_STRING,    /* string opened but not closed before EOF */
     LEX_INVALID_ESCAPE,         /* unrecognized escape sequence \x */
+    LEX_UNICODE_ESCAPE_TOO_SHORT,    /* \uXXXX form has fewer than 4 hex digits */
+    LEX_UNICODE_ESCAPE_OUT_OF_RANGE, /* \u{HHHHHH} code point exceeds U+10FFFF */
+    LEX_LONE_SURROGATE,              /* \u escape resolves to U+D800..U+DFFF */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via _Static_assert */
 } ULexError;

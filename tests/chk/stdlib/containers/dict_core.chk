@@ -1,0 +1,50 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 Dict core operations.
+#
+# Dict.new() allocates a fresh dict backed by an open-address linear-
+# probe hash table.  Methods: length, isEmpty, set(key, value),
+# get(key), has(key), remove(key).  Keys must be String at v1.0;
+# non-String keys raise TypeError.
+#
+# Iteration order is unspecified at v1.0 (REVIVAL §14 — joins
+# Lua / Ruby<1.9 / CPython pre-3.7).
+
+var d = Dict.new(); d.isEmpty()
+[00000000] true
+
+var d = Dict.new(); d.length()
+[00000001] 0
+
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); d.length()
+[00000002] 2
+
+var d = Dict.new(); d.set("a", 1); d.get("a")
+[00000003] 1
+
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); d.get("b")
+[00000004] 2
+
+# Missing key returns nil.
+var d = Dict.new(); d.set("a", 1); d.get("missing")
+[00000005] nil
+
+# has predicate.
+var d = Dict.new(); d.set("a", 1); d.has("a")
+[00000006] true
+
+var d = Dict.new(); d.set("a", 1); d.has("missing")
+[00000007] false
+
+# remove drops the entry; subsequent has returns false; length decreases.
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); d.remove("a"); d.has("a")
+[00000008] false
+
+var d = Dict.new(); d.set("a", 1); d.set("b", 2); d.remove("a"); d.length()
+[00000009] 1
+
+# Update-in-place: set on an existing key overwrites without changing length.
+var d = Dict.new(); d.set("a", 1); d.set("a", 99); d.length()
+[00000010] 1
+
+var d = Dict.new(); d.set("a", 1); d.set("a", 99); d.get("a")
+[00000011] 99

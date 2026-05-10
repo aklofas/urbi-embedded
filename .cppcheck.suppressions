@@ -57,6 +57,10 @@ knownConditionTrueFalse:src/object/uobject_slot.c:550
 // correctly flags the call-site as `always true`.  M5 refines pattern dispatch
 // to actual exception-class matching (see comment block at uunwind.c:55-62);
 // suppressing keeps the gate green until that lands.
+//
+// CPPCHK-001 (defer:M6) is the same finding under a different ID — filed
+// before CPPCHK-011 from a different cppcheck pass and resolved transitively
+// when Phase 19 closed CPPCHK-011.  Both close at v0.6.1-stdlib (Phase 12).
 knownConditionTrueFalse:src/runtime/uunwind.c:288
 
 // audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
@@ -79,3 +83,37 @@ constParameterCallback:src/event/uevent_native.c:174
 unreadVariable:src/module/uchunk.c:137
 unreadVariable:src/module/uchunk.c:142
 unreadVariable:src/module/uchunk.c:143
+
+// audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
+// expands to native-method callbacks whose signature is pinned by the
+// urbi_native_method_fn typedef (UVM *vm, UValue self, UValue *args,
+// uint8_t nargs, UValue *out).  cppcheck flags `args` as constable
+// because the macro body only reads args[0]; const-casting would
+// cascade through every native-method registration site.  Mirrors the
+// rationale at CPPCHK-012 above.
+constParameterPointer:src/stdlib/atoms.c
+
+// audit:CPPCHK-Phase6 — src/stdlib/containers.c native-method callbacks
+// are bound by the same urbi_native_method_fn typedef as atoms.c
+// (CPPCHK-Phase5 above).  cppcheck flags `args` as constable plus
+// several local UList* / UDict* / UDictEntry* pointers loaded via
+// list_storage / dict_storage / dict_lookup that are read-only in their
+// branches; promoting those locals to `const` cascades into the helper
+// signatures, which the broader Phase 6 design keeps non-const so the
+// same locals can take a write-through path on the mutating method
+// branches (set / add / remove / dict_set / etc.).
+constParameterPointer:src/stdlib/containers.c
+constVariablePointer:src/stdlib/containers.c
+
+// audit:CPPCHK-Phase7 — src/stdlib/runtime_types.c native-method callbacks
+// expose UValue *args as part of the urbi_native_method_fn typedef; the
+// Exception primitive's exc_new only reads args[0] so cppcheck flags it,
+// but the function-pointer signature is pinned and cannot be const-qualified
+// without breaking every callback registration site.
+constParameterPointer:src/stdlib/runtime_types.c
+
+// audit:CPPCHK-Phase9 — src/stdlib/primitives.c native-method callbacks
+// (Mutex / Date / Duration .new / .fromSeconds / .fromMicroseconds / .plus)
+// expose UValue *args via the urbi_native_method_fn typedef; same rationale
+// as Phase 7 — the function-pointer signature is pinned.
+constParameterPointer:src/stdlib/primitives.c

@@ -1,0 +1,42 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/list.chk (small subset)
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# The legacy fixture is dominated by `[1, 2, 3].each(closure (x) { ... })`,
+# `l += [2, 3]` identity preservation, list-literal printing
+# (`[1, 2, nil, void, 3]`), and `1 in l in [false]` — none of which
+# v0.6.1 supports (no list literals, no closure upvalues, no `<<`,
+# no `+=` on List).
+#
+# Wave-2 deferred (full port): list-literal lex, list `+=` identity,
+# `.each(closure)`, `<<`, mutation-during-iteration semantics, list
+# print form.  See PORT_NOTES.md.
+
+var l = List.new(1, 2, 3); l.length()
+[00000000] 3
+
+var l = List.new(); l.length()
+[00000001] 0
+
+var l = List.new(); l.isEmpty()
+[00000002] true
+
+var l = List.new(1); l.isEmpty()
+[00000003] false
+
+var l = List.new(1, 2, 3); l.get(0)
+[00000004] 1
+
+var l = List.new(1, 2, 3); l.get(2)
+[00000005] 3
+
+var l = List.new(1, 2, 3); l.set(0, 99); l.get(0)
+[00000006] 99
+
+var l = List.new(); l.add(1); l.add(2); l.add(3); l.length()
+[00000007] 3
+
+var l = List.new(1, 2, 3); l.contains(2)
+[00000008] true
+
+var l = List.new(1, 2, 3); l.contains(99)
+[00000009] false

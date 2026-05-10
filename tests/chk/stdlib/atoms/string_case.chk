@@ -1,0 +1,30 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 String case methods.
+#
+# toUpper / toLower — ASCII-only at v1.0 (delta §3.2 Unicode is Wave 2
+# backlog).  Non-ASCII bytes pass through unchanged.
+
+"hello".toUpper()
+[00000000] "HELLO"
+
+"HELLO".toLower()
+[00000001] "hello"
+
+"AbCdE".toUpper()
+[00000002] "ABCDE"
+
+"AbCdE".toLower()
+[00000003] "abcde"
+
+"".toUpper()
+[00000004] ""
+
+"".toLower()
+[00000005] ""
+
+# Digits + punctuation pass through.
+"a1b2!?".toUpper()
+[00000006] "A1B2!?"
+
+"A1B2!?".toLower()
+[00000007] "a1b2!?"

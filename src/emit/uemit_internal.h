@@ -103,6 +103,14 @@ uint8_t emit_member_set_arm(UEmitter *e, UAstNode *n);
  * Called from emit_expr via forwarding stub; body lives in uemit_class.c. */
 uint8_t emit_class_decl_arm(UEmitter *e, UAstNode *n);
 
+/* T41 — getter/setter parse sugar.  AST_PROPERTY_DECL emits a
+ * `recv.setProperty(name, "oget"|"oset", function() body)` call sequence;
+ * runtime `oget`/`oset` slot-property dispatch (M4 baseline) handles the
+ * trigger on subsequent slot reads/writes.  When `recv` is NULL the emit
+ * arm uses the implicit class receiver (class body) or the realm-global
+ * `this` lookup (top-level form).  Lives in uemit_class.c. */
+uint8_t emit_property_decl_arm(UEmitter *e, UAstNode *n);
+
 /* Closure + thunk builders (defined in uemit.c).
  * Promoted from static so that uemit_react.c can build closures for
  * reactive arms without duplicating the logic. */

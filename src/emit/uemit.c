@@ -498,6 +498,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     case AST_AT_EVENT:       return emit_at_event_arm(e, n);
     case AST_AT_SLOT_CHANGE: return emit_at_slot_change_arm(e, n);
     case AST_CLASS_DECL:     return emit_class_decl_arm(e, n);
+    case AST_PROPERTY_DECL:  return emit_property_decl_arm(e, n);
     case AST_PROP_GET:
     case AST_PROP_SET:
     case AST_LOCAL_REF:

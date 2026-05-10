@@ -595,6 +595,12 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
+    /* Phase 13 / T145: urbi_lock_heap one-way latch.  Once locked,
+     * decline new allocations — caller observes NULL (the standard
+     * OOM-shaped failure mode the rest of the runtime already handles
+     * via urbi_raise_oom on the script surface). */
+    if (UNLIKELY(vm->heap_locked)) return NULL;
+
     /* Allocate the cell. */
     UCell *cell = (UCell *)vm->alloc_fn(NULL, size, vm->alloc_ud);
     if (UNLIKELY(cell == NULL)) return NULL;

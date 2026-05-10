@@ -1,0 +1,24 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 Pair (immutable 2-tuple).
+#
+# Pair.new(a, b) clones the Pair proto and installs `first` / `second`
+# as ordinary slots — no backing storage required.
+
+var p = Pair.new(1, "hello"); p.first
+[00000000] 1
+
+var p = Pair.new(1, "hello"); p.second
+[00000001] "hello"
+
+var p = Pair.new(42, 99); p.first
+[00000002] 42
+
+var p = Pair.new(42, 99); p.second
+[00000003] 99
+
+# Heterogeneous payloads: Boolean / Float / nested Pair.
+var p = Pair.new(true, false); p.first
+[00000004] true
+
+var p = Pair.new(true, false); p.second
+[00000005] false

@@ -47,6 +47,7 @@ extern const char * const kErrorMessages[];
 
 /* --- Token helpers (defined in uparse.c residual). --- */
 UToken peek(UParser *p);
+UToken peek2(UParser *p);
 UToken consume(UParser *p);
 
 /* --- Identifier comparison (defined in uparse.c residual). --- */
@@ -98,6 +99,14 @@ UAstNode *parse_return(UParser *p);
 UAstNode *parse_throw(UParser *p);
 UAstNode *parse_try(UParser *p);
 UAstNode *parse_class_declaration(UParser *p);
+/* T41 — property declaration helper.  `recv` is the explicit receiver
+ * (or NULL for class-body / implicit self).  `name_tok` is the slot-
+ * name IDENT (already consumed by the caller).  The next token must be
+ * `(` — this helper parses params, body, and builds AST_PROPERTY_DECL.
+ * Caller is responsible for verifying the `get`/`set` lookahead pattern
+ * via peek+peek2 and consuming the leading IDENT (`get`/`set`). */
+UAstNode *parse_property_decl(UParser *p, UAstNode *recv, UToken name_tok,
+                              UAstMethodKind kind, int line, int col);
 
 /* --- Reactive parser (defined in uparse_react.c). --- */
 UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok);

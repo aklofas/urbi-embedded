@@ -1,0 +1,31 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 String basic methods.
+#
+# length already exists from Wave 1; size is an alias (same byte count).
+# isEmpty — boolean predicate.  charAt — single-byte access (no `[]`
+# operator yet; v1.0 strings are byte-counted per delta §3.2 — Unicode
+# is Wave 2 backlog).
+
+"hello".length()
+[00000000] 5
+
+"".length()
+[00000001] 0
+
+"hello".size()
+[00000002] 5
+
+"".size()
+[00000003] 0
+
+"".isEmpty()
+[00000004] true
+
+"hello".isEmpty()
+[00000005] false
+
+"hello".charAt(0)
+[00000006] "h"
+
+"hello".charAt(4)
+[00000007] "o"

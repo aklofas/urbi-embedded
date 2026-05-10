@@ -837,6 +837,96 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
 }
 
 /* -----------------------------------------------------------------------
+ * T41 follow-up — emit_call_arm freereg drift between args
+ *
+ * Phase 2 (T41) `get`/`set` parse sugar desugars to
+ * `recv.setProperty(name_str, prop_str, function() body)` — a 3-arg
+ * call where the first two args are leaf literals (allocated through
+ * alloc_reg, which bumps next_reg only) and the trailing arg is an
+ * AST_FUNCTION (whose OP_CLOSURE destination is pulled from freereg).
+ *
+ * Pre-fix, emit_call_arm synced freereg up to next_reg only ONCE
+ * (before the arg loop) but not BETWEEN args.  When arg 0 / arg 1
+ * are leaf literals that bump only next_reg, freereg lags behind by
+ * the time arg 2 (the AST_FUNCTION) emits — so OP_CLOSURE's dst lands
+ * on a slot already holding arg 0 or arg 1, corrupting the call.
+ *
+ * Post-fix: emit_call_arm syncs freereg to next_reg before EACH arg,
+ * not just before the loop.  Test verifies all OP_LOADK / OP_CLOSURE
+ * destinations inside the call sequence land at strictly increasing
+ * slots — no collision between leaf-literal args and the trailing
+ * function-literal arg.
+ * ----------------------------------------------------------------------- */
+
+UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
+    UVM vm; urbi_vm_init(&vm, NULL, NULL);
+    UArena arena; uarena_init(&arena, 4096);
+    UModule module; memset(&module, 0, sizeof(module));
+
+    /* A 3-arg call mirroring T41's setProperty desugar shape: two leaf
+     * args followed by an AST_FUNCTION literal.  `callee` doesn't need
+     * to exist — emit_call_arm runs before any binding check, and a
+     * realm-global lookup at call time is fine for emit's purposes. */
+    UEmitError rc = compile_src(&vm, &arena, &module,
+        "var callee = function (a, b, fn) { 0 };"
+        "callee(\"x\", \"y\", function() { 42 });");
+    UASSERT_EQ((int)EMIT_OK, (int)rc);
+
+    /* Walk chunk-top instructions: find the OP_CALL, then walk
+     * backwards through OP_LOADK / OP_CLOSURE to confirm the 3 arg
+     * registers (callee_reg + 1, +2, +3) are written by exactly one
+     * instruction each, with strictly distinct A operands.  Pre-fix
+     * the AST_FUNCTION's OP_CLOSURE A would equal callee_reg + 1 or
+     * + 2 (clobbering one of "x" / "y" — those LOADK / MOVE-to-arg-slot
+     * sequences land first). */
+    int call_idx = -1;
+    int call_a   = -1;
+    for (size_t j = 0; j < module.instr_count; j++) {
+        if (uinstr_op(module.instructions[j]) == OP_CALL) {
+            call_idx = (int)j;
+            call_a   = (int)uinstr_a(module.instructions[j]);
+        }
+    }
+    UASSERT(call_idx >= 0);
+    UASSERT(call_a >= 0);
+
+    /* Each of arg slots {call_a + 1, call_a + 2, call_a + 3} must be
+     * written by exactly one instruction in the call's argument
+     * preparation window (after callee_reg setup, before OP_CALL). */
+    int writers[3] = { 0, 0, 0 };  /* count of writers for arg0/1/2 */
+    int closure_dst = -1;
+    for (int j = 0; j < call_idx; j++) {
+        uint32_t ins = module.instructions[j];
+        UOpcode op   = uinstr_op(ins);
+        uint8_t a    = uinstr_a(ins);
+        bool is_writer = (op == OP_LOADK || op == OP_CLOSURE ||
+                          op == OP_MOVE);
+        if (!is_writer) continue;
+        for (int k = 0; k < 3; k++) {
+            if ((int)a == call_a + 1 + k) {
+                writers[k]++;
+                if (op == OP_CLOSURE) closure_dst = (int)a;
+            }
+        }
+    }
+
+    /* Each arg slot has at least one writer (precondition). */
+    UASSERT(writers[0] >= 1);
+    UASSERT(writers[1] >= 1);
+    UASSERT(writers[2] >= 1);
+
+    /* Pre-fix: closure_dst lands at call_a + 1 (clobbering "x") or
+     * call_a + 2 (clobbering "y") because freereg lagged.  Post-fix:
+     * closure_dst lands at call_a + 3 — the third arg slot only. */
+    UASSERT(closure_dst >= 0);
+    UASSERT_EQ(closure_dst, call_a + 3);
+
+    umodule_destroy(&module);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry point
  * ----------------------------------------------------------------------- */
 
@@ -867,4 +957,6 @@ void test_emit_freereg_drift_suite(void) {
               emit_throw_does_not_clobber_local);
     utest_run("emit_jmp_offset_resilient_to_intervening_instructions",
               emit_jmp_offset_resilient_to_intervening_instructions);
+    utest_run("emit_call_arm_function_arg_does_not_clobber_leaf_args",
+              emit_call_arm_function_arg_does_not_clobber_leaf_args);
 }
