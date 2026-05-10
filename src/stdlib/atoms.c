@@ -71,18 +71,51 @@ install_methods(UVM *vm, UObject *proto,
     return URBI_OK;
 }
 
+/* === UValue construction helpers (file-private; zero pad bytes) =========== */
+
+static UValue
+val_bool(int b)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_BOOL;
+    v.v.i = b ? 1 : 0;
+    return v;
+}
+
+/* === Boolean.negate — return the unary inverse ============================
+ *
+ * Legacy `var '!' = false` (in share/urbi/boolean.u) installs the negation
+ * as a slot value, not a method.  Wave 1 v1.0 uses the named-method form
+ * `negate()` because slot-name dispatch through OP_GETSLOT requires a
+ * UClosure value, not a UVAL_BOOL leaf.  The plan's `!` slot would not
+ * dispatch from the v1.0 source `true.'!'` form (no quoted-name lex). */
+
+static int
+bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Boolean.negate", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_BOOL)
+        return urbi_raise_type(vm, "Boolean.negate: self must be Boolean", out);
+
+    *out = val_bool(self.v.i == 0);
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
-static const AtomMethodEntry BOOL_METHODS[]    = { {NULL, NULL} };
+static const AtomMethodEntry BOOL_METHODS[] = {
+    { "negate", bool_negate }
+};
 static const AtomMethodEntry INT_METHODS[]     = { {NULL, NULL} };
 static const AtomMethodEntry FLOAT_METHODS[]   = { {NULL, NULL} };
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 
-/* Each table has a NULL sentinel so an empty table is encoded as
- * `count == 0` (computed via `n - 1` of the sentinel-bearing array).  As
- * actual methods land, tasks remove the sentinel and grow the table; the
- * count macro stays correct. */
-#define BOOL_METHODS_COUNT    ((sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))  - 1U)
+/* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
+ * least one element (C99 forbids zero-size arrays).  Tables with real
+ * entries omit the sentinel.  COUNT macros use the sentinel form when
+ * needed; populated tables use straight sizeof. */
+#define BOOL_METHODS_COUNT    (sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))
 #define INT_METHODS_COUNT     ((sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))   - 1U)
 #define FLOAT_METHODS_COUNT   ((sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0])) - 1U)
 #define STR_METHODS_COUNT     ((sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))   - 1U)

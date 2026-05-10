@@ -1,0 +1,17 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 atom-method dispatch — Boolean named methods.
+#
+# Symbolic operators (&&, ||, !) are not Wave-1 lex tokens; the v1.0
+# named-method form is .negate() for the unary inverse.  Equality is
+# the inline OP_EQ opcode (no slot lookup), so true == false routes
+# without atom-method dispatch.
+
+true.negate()
+[00000000] false
+
+false.negate()
+[00000001] true
+
+# Idempotent under double-negation.
+true.negate().negate()
+[00000002] true
