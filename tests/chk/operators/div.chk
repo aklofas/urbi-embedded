@@ -1,0 +1,14 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Covers: OP_DIV falls back to "/" slot on user-type lhs; atom fast-path unaffected.
+
+# Atom fast-path: int / int promotes to float.
+6 / 2
+[00000000] 3.0
+
+# User-type overload: "/" slot called with rhs as argument.
+class Vec {}; Vec.setSlot("/", function(other) { 66 }); var a = Vec.new(); a / a
+[00000001] 66
+
+# Missing slot falls through to original type error.
+class NoDiv {}; var n = NoDiv.new(); n / n
+[00000002] !!! line 1: TypeError: OP_DIV operands must be Integer or Float (got unknown, unknown)

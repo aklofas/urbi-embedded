@@ -1,0 +1,22 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Covers: OP_LE falls back to "<=" slot on user-type lhs on type-error;
+#         atom fast-path unaffected; result coerced to bool.
+
+# Atom fast-path: int <= int still works.
+if (1 <= 1) { "le" } else { "nle" }
+[00000000] "le"
+
+if (2 <= 1) { "le" } else { "nle" }
+[00000001] "nle"
+
+# User-type overload: "<=" slot returning 1 (truthy) → less-or-equal.
+class Vec {}; Vec.setSlot("<=", function(other) { 1 }); var a = Vec.new(); var b = Vec.new(); if (a <= b) { "le" } else { "nle" }
+[00000002] "le"
+
+# User-type overload: "<=" slot returning 0 (falsy) → not less-or-equal.
+class Vec2 {}; Vec2.setSlot("<=", function(other) { 0 }); var a2 = Vec2.new(); var b2 = Vec2.new(); if (a2 <= b2) { "le" } else { "nle" }
+[00000003] "nle"
+
+# Missing slot falls through to original type error.
+class NoLe {}; var n = NoLe.new(); var m = NoLe.new(); n <= m
+[00000004] !!! line 1: TypeError: OP_LE operands must be Integer or Float (got unknown, unknown)

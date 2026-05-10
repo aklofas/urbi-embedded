@@ -1,0 +1,24 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Covers: != operator on user objects routes through OP_EQ (A=1), which tries
+#         the "==" slot just like ==.  The "!=" slot in OP_NEQ is never emitted
+#         by the current emitter (CMP_NEQ -> OP_EQ a_bit=1); documented here
+#         so the behavior is explicit.
+#
+# Note: urbiscript != desugars to OP_EQ with A=1 (skip-if-false), not OP_NEQ.
+# Operator overloading for != works by installing the "==" slot; the VM
+# interprets the result as (!result) for the != conditional.
+
+# Atom fast-path: int != int still works.
+if (1 != 1) { "neq" } else { "eq" }
+[00000000] "eq"
+
+if (1 != 2) { "neq" } else { "eq" }
+[00000001] "neq"
+
+# User-type: "==" slot returning 1 (truthy) makes != skip (a != b → false → "eq").
+class Vec {}; Vec.setSlot("==", function(other) { 1 }); var a = Vec.new(); var b = Vec.new(); if (a != b) { "neq" } else { "eq" }
+[00000002] "eq"
+
+# User-type: "==" slot returning 0 (falsy) makes != branch (a != b → true → "neq").
+class Vec2 {}; Vec2.setSlot("==", function(other) { 0 }); var a2 = Vec2.new(); var b2 = Vec2.new(); if (a2 != b2) { "neq" } else { "eq" }
+[00000003] "neq"
