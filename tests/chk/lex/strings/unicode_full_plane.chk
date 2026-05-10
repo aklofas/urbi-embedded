@@ -1,0 +1,25 @@
+# Milestone: M6 wave 2
+# Covers: \u{HHHHHH} 1-6 hex full-plane Unicode escape covers code points
+#         beyond the BMP (U+10000..U+10FFFF).  4-byte UTF-8 sequences
+#         round-trip as 4-byte \xNN runs in the REPL formatter output.
+# Audit:   delta-spec section 3.2 Unicode-escape decision.
+
+# 1-hex form: U+0041 = 'A' = 1 UTF-8 byte (ASCII).
+"\u{41}"
+[00000000] "A"
+
+# 4-hex BMP via the {} form: U+00E9 'e-acute' = 0xC3 0xA9.
+"\u{E9}"
+[00000001] "\xc3\xa9"
+
+# 5-hex non-BMP: U+1F600 (grinning face) = 0xF0 0x9F 0x98 0x80.
+"\u{1F600}"
+[00000002] "\xf0\x9f\x98\x80"
+
+# 6-hex Unicode max: U+10FFFF = 0xF4 0x8F 0xBF 0xBF.
+"\u{10FFFF}"
+[00000003] "\xf4\x8f\xbf\xbf"
+
+# Lowercase + leading-zero variants normalise to the same canonical bytes.
+"\u{1f600}" == "\u{01F600}"
+[00000004] true
