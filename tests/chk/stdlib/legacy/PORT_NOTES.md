@@ -17,7 +17,7 @@ language features that v0.6.1 does not yet ship — primarily:
   `EMIT_UNRESOLVED_NAME`.  Blocks every legacy fixture using `for&`,
   `each(closure (x) { ... })`, fresh-default-value tricks, etc.
 - **Multi-slot class bodies.**  `class C { var x; var y; method m() {} }`
-  raises `EMIT_UNSUPPORTED_AST`.  Single-slot bodies only.
+  raised `EMIT_UNSUPPORTED_AST`.  Fixed in Wave 3 (Gap #2).
 - **No `var x.foo = "..."` slot-install form.**  Wave 1 partial-port
   remainders (`atoms.chk`, `fallback.chk`) need this.
 - **No `assert`, `echo` realm globals.**  Legacy fixtures lean on
@@ -82,6 +82,15 @@ parity".
   + `call.message` + `do (recv) { ... }`.
 - `tests/2.x/inheritance.chk` Wave-1 deferred section: list literals
   for `setProtos([Global, Math])`.
+
+## Wave 3 addition (M6 Wave 3 / Phase 3, 2026-05-10)
+
+- `class_legacy.chk`: port of `tests/2.x/class.chk`.  The original
+  wraps tests in bare `{ ... }` blocks (illegal at top-level in v1.0
+  line-oriented REPL); adapted with same-line shadow chaining.  Skipped
+  lines involving `this` (Gap #3) and closure upvalue capture (Gap #1),
+  which are not yet landed in Wave 3.  Multi-slot class body extension
+  added (Gap #2, now closed).
 
 ## Adjustments applied during port
 
