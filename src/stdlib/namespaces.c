@@ -87,6 +87,25 @@ install_const_slot(UVM *vm, UObject *proto, const char *name, UValue value)
     return URBI_OK;
 }
 
+/* === Compile-time platform kind ==========================================
+ *
+ * Set at compile-time via #ifdef cascade.  The freestanding fallback uses
+ * "freertos" because the M0/M1 cross-arm baseline is freestanding-Cortex-
+ * M7 with the FreeRTOS BSP target as the canonical embedded host; non-
+ * FreeRTOS freestanding hosts can override in a v1.x BSP integration. */
+
+#if defined(__linux__)
+#  define URBI_PLATFORM_KIND "linux"
+#elif defined(__APPLE__)
+#  define URBI_PLATFORM_KIND "darwin"
+#elif defined(_WIN32)
+#  define URBI_PLATFORM_KIND "windows"
+#elif !defined(__STDC_HOSTED__) || (__STDC_HOSTED__ == 0)
+#  define URBI_PLATFORM_KIND "freertos"
+#else
+#  define URBI_PLATFORM_KIND "unknown"
+#endif
+
 /* === Method-table install helper ========================================= */
 
 typedef struct {
@@ -259,6 +278,29 @@ urbi_stdlib_register_namespaces(UVM *vm)
         vm->system_proto = s;
     }
     rc = install_methods(vm, vm->system_proto, SYSTEM_METHODS, SYSTEM_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    /* --- T88 System.Platform: kind constant ---
+     *
+     * Platform is nested as a slot on System (System.Platform.kind) — not a
+     * top-level realm global.  The proto is allocated as a sibling singleton
+     * and shaded directly by the GC walker for uniformity even though the
+     * System slot already keeps it reachable transitively. */
+    if (vm->platform_proto == NULL) {
+        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (p == NULL) return URBI_ERR_OOM;
+        vm->platform_proto = p;
+    }
+    {
+        int oom = 0;
+        UValue kind = val_str_intern(vm, URBI_PLATFORM_KIND,
+                                     urbi_strlen(URBI_PLATFORM_KIND), &oom);
+        if (oom) return URBI_ERR_OOM;
+        rc = install_const_slot(vm, vm->platform_proto, "kind", kind);
+        if (rc != URBI_OK) return rc;
+    }
+    rc = install_const_slot(vm, vm->system_proto, "Platform",
+                            val_obj(vm->platform_proto));
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;

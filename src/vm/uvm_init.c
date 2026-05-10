@@ -305,6 +305,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->exception_proto         = NULL;  /* M6 Phase 7 — populated by urbi_stdlib_register_runtime_types */
     vm->math_proto              = NULL;  /* M6 Phase 8 T86 — populated by urbi_stdlib_register_namespaces */
     vm->system_proto            = NULL;  /* M6 Phase 8 T87 */
+    vm->platform_proto          = NULL;  /* M6 Phase 8 T88 */
     vm->stdlib_booted          = 0U;
     {
         int i;
