@@ -24,5 +24,7 @@ class Base { var x = 1; var y = 2 }; class Child : public Base { var z = 3 }; va
 
 # SKIPPED (Gap #1 / upvalue capture not landed):
 #   class Counter { var n = 0; var inc = function() { this.n = this.n + 1 } }
-# SKIPPED (Gap #3 / `this` keyword not landed):
-#   class Greeter { var greet = function() { this.name } }
+# `this` (Gap #3) is now landed (v0.6.2 Phase 2); the Greeter test can be
+# activated here.  Left here as a reminder; primary coverage is in
+# tests/chk/objects/this-in-method.chk.
+#   class Greeter { var name = "hi"; var greet = function() { this.name } }; Greeter.new().greet()

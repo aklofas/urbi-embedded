@@ -90,13 +90,25 @@ parity".
   line-oriented REPL); adapted with same-line shadow chaining.  Skipped
   lines involving `this` (Gap #3) and closure upvalue capture (Gap #1),
   which are not yet landed in Wave 3.  Multi-slot class body extension
-  added (Gap #2, now closed).
+  added (Gap #2, now closed).  This note is superseded for Gap #3 by
+  Phase 2 (`this` keyword); the skipped line can be activated when that
+  branch lands.
 
 - `operators_legacy.chk`: subset port of `tests/2.x/operators.chk`.
   Tests that operator-named slots (+, -, *, /, ==) installed via
   `setSlot` are called by the VM's Gap #4 type-error fallback.
   Deferred: `.operator +(1)` explicit-method call syntax, `bitor`,
   and `in` operator are not in the v0.6.x parser.
+
+- `this.chk` (deferred entirely to v1.x): port of `tests/2.x/this.chk`.
+  The legacy fixture has 3 test lines, all using `this` at the top level
+  to access the Lobby object (`this == this`, `this == { this }`,
+  `this.type`).  At v1.0 `this` is only valid inside a method body;
+  top-level `this` is a compile-time error (`EMIT_NO_THIS_OUTSIDE_METHOD`).
+  The "Lobby" concept (a singleton global namespace object) is not
+  modelled in the v1.0 runtime.  No subset is shippable: all three lines
+  are structurally deferred.  Tracked in `docs/urbi-embedded-backlog.md`
+  under "legacy fixture parity."
 
 - `operator-parens.chk` (deferred to v1.x): requires the `'()'` slot
   name for the call operator and `call.evalArgs()` (CallMessage
