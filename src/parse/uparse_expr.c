@@ -6,9 +6,11 @@
 #include "parse/uparse.h"
 #include "parse/uparse_internal.h"
 #include "lex/ulex.h"
+#include "lex/ulex_internal.h"
 #include "parse/uast.h"
 #include "value/uarena.h"
 #include <stddef.h>
+#include <stdint.h>
 
 /* Return the left-binding precedence of an infix token, or 0 if not
    an infix operator (terminates the Pratt climb).
@@ -87,18 +89,36 @@ UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
+/* hex_digit_unchecked — convert one ASCII hex digit to its 0..15 value.
+ * Caller has already passed the byte through the lexer's
+ * validate_unicode_escape pass, which guarantees `c` is in [0-9a-fA-F].
+ * No defensive branch — the assumption is load-bearing for the
+ * non-failing escape-resolution path in parse_string_literal. */
+static int hex_digit_unchecked(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return c - 'A' + 10;
+}
+
 /* parse_string_literal — consume a TOK_STRING (possibly followed by adjacent
  * TOK_STRING tokens per REVIVAL §14.1 L3 concat) and produce AST_STR.
  *
- * Resolves Phase-1 escape sequences (\n / \t / \\ / \") into raw bytes; the
- * lexer guarantees only those four escape kinds reach the parser (others are
- * already rejected as LEX_INVALID_ESCAPE).  Concatenation is greedy: any
+ * Resolves Wave-1 escape sequences (\n / \t / \\ / \") and the v0.6.1
+ * Wave-2 \uXXXX / \u{HHHHHH} Unicode escapes into raw bytes (UTF-8 for
+ * the latter, via urbi_encode_utf8).  The lexer guarantees only the
+ * recognized escape kinds reach the parser (others are already rejected
+ * as LEX_INVALID_ESCAPE / LEX_UNICODE_*).  Concatenation is greedy: any
  * number of adjacent TOK_STRING tokens fold into a single AST_STR.
  *
  * The result buffer lives in the parser arena.  Worst-case size is the sum
  * of raw source spans across all concatenated tokens; we allocate that
  * up-front (no growth needed because escape resolution is monotonically
- * non-expansive — every \X consumes 2 source bytes and writes 1 output byte).
+ * non-expansive — every \X is at least 2 source bytes and emits at most
+ * 1 byte for the basic forms.  Unicode escapes also stay non-expansive:
+ * \uXXXX consumes 6 source bytes and emits at most 3 UTF-8 bytes;
+ * \u{HHHHHH} consumes ≥5 source bytes (\u{H}) and emits at most 4 UTF-8
+ * bytes (only for code points ≥ U+10000, where the source span is ≥9
+ * bytes).  See urbi_encode_utf8 in src/lex/ulex_internal.h.).
  *
  * Caller has already peeked TOK_STRING; this helper consumes it and any
  * adjacent siblings.
@@ -139,26 +159,55 @@ static UAstNode *parse_string_literal(UParser *p) {
         const char *cs = cur.u.str.start;
         const char *ce = cs + cur.u.str.len;
         while (cs < ce) {
-            char ch;
             if (*cs == '\\') {
                 cs++;
                 if (cs >= ce) break;   /* defensive — lexer rejects mid-EOF */
+                char ch;
                 switch (*cs) {
-                    case 'n':  ch = '\n'; break;
-                    case 't':  ch = '\t'; break;
-                    case '\\': ch = '\\'; break;
-                    case '"':  ch = '"';  break;
+                    case 'n':  ch = '\n'; cs++; break;
+                    case 't':  ch = '\t'; cs++; break;
+                    case '\\': ch = '\\'; cs++; break;
+                    case '"':  ch = '"';  cs++; break;
+                    case 'u': {
+                        /* Lexer's validate_unicode_escape has already
+                         * pinned the form (4-hex or {1-6 hex}) and the
+                         * surrogate / out-of-range guards.  Re-parse the
+                         * hex digits to recover the code point, then
+                         * write 1-4 UTF-8 bytes via urbi_encode_utf8. */
+                        cs++;   /* past 'u' */
+                        uint32_t cp = 0;
+                        if (cs < ce && *cs == '{') {
+                            cs++;
+                            while (cs < ce && *cs != '}') {
+                                cp = (cp << 4) | (uint32_t)hex_digit_unchecked(*cs);
+                                cs++;
+                            }
+                            if (cs < ce) cs++;   /* past '}' */
+                        } else {
+                            for (int i = 0; i < 4 && cs < ce; i++) {
+                                cp = (cp << 4) | (uint32_t)hex_digit_unchecked(*cs);
+                                cs++;
+                            }
+                        }
+                        unsigned char utf8_buf[4];
+                        const int n = urbi_encode_utf8(cp, utf8_buf);
+                        for (int i = 0; i < n; i++) {
+                            buf[len++] = (char)utf8_buf[i];
+                        }
+                        continue;   /* skip the trailing buf[len++] = ch path */
+                    }
                     default:
                         /* Lexer pre-validates the escape body; this branch
                          * is unreachable.  Fall through to the literal byte
                          * for defensive output. */
-                        ch = *cs; break;
+                        ch = *cs;
+                        cs++;
+                        break;
                 }
-                cs++;
+                buf[len++] = ch;
             } else {
-                ch = *cs++;
+                buf[len++] = *cs++;
             }
-            buf[len++] = ch;
         }
 
         /* Peek for adjacent TOK_STRING (REVIVAL §14.1 L3 concat).  If found,

@@ -479,7 +479,80 @@ int urbi_encode_utf8(uint32_t cp, unsigned char buf[4]) {
     return 4;
 }
 
-/* lex_string — consume a "..." string literal (LEX-035 / Phase 1).
+/* Lex-time validation of a \u escape body.  On entry lex->cur points at
+ * the 'u' of the escape; on success lex->cur is advanced past the entire
+ * \u-form (4 hex digits for \uXXXX, '{' + 1-6 hex + '}' for \u{HHHHHH}).
+ *
+ * The caller (lex_string) owns the surrounding error-token construction;
+ * this helper returns LEX_OK on success or one of the v0.6.1 unicode
+ * lex error codes.  The cursor is advanced past the offending span on
+ * error per the LEX-028 recovery contract.
+ *
+ * Lone surrogates (U+D800..U+DFFF) are rejected for both forms — they
+ * are reserved by RFC 3629 / Unicode for UTF-16 pair encoding and have
+ * no UTF-8 byte sequence.  Code points exceeding U+10FFFF are rejected
+ * as out-of-range. */
+static ULexError validate_unicode_escape(ULexer *lex) {
+    /* Skip past the 'u'. */
+    lex->cur++;
+
+    if (lex->cur < lex->end && *lex->cur == '{') {
+        /* \u{HHHHHH} form — 1 to 6 hex digits, then '}'. */
+        lex->cur++;
+        uint32_t cp = 0;
+        int hex_count = 0;
+        while (lex->cur < lex->end && hex_count < 6) {
+            const int d = digit_value(*lex->cur, 16);
+            if (d < 0) break;
+            cp = (cp << 4) | (uint32_t)d;
+            lex->cur++;
+            hex_count++;
+        }
+        /* Empty (\u{}) is rejected as too-short; >6 hex digits would
+         * exceed U+FFFFFF anyway and is rejected via the missing-'}' or
+         * out-of-range path below. */
+        if (hex_count == 0) {
+            return LEX_UNICODE_ESCAPE_TOO_SHORT;
+        }
+        if (lex->cur >= lex->end || *lex->cur != '}') {
+            /* Missing closing '}': treat as too-short.  Cursor is already
+             * past the hex digits; do not advance again, the outer loop
+             * will resume on the current byte. */
+            return LEX_UNICODE_ESCAPE_TOO_SHORT;
+        }
+        /* Consume the '}'. */
+        lex->cur++;
+        if (cp > 0x10FFFF) {
+            return LEX_UNICODE_ESCAPE_OUT_OF_RANGE;
+        }
+        if (cp >= 0xD800 && cp <= 0xDFFF) {
+            return LEX_LONE_SURROGATE;
+        }
+        return LEX_OK;
+    }
+
+    /* \uXXXX form — exactly 4 hex digits. */
+    uint32_t cp = 0;
+    int hex_count = 0;
+    while (lex->cur < lex->end && hex_count < 4) {
+        const int d = digit_value(*lex->cur, 16);
+        if (d < 0) break;
+        cp = (cp << 4) | (uint32_t)d;
+        lex->cur++;
+        hex_count++;
+    }
+    if (hex_count < 4) {
+        return LEX_UNICODE_ESCAPE_TOO_SHORT;
+    }
+    /* The 4-hex form cannot exceed U+FFFF; only the surrogate range needs
+     * a guard. */
+    if (cp >= 0xD800 && cp <= 0xDFFF) {
+        return LEX_LONE_SURROGATE;
+    }
+    return LEX_OK;
+}
+
+/* lex_string — consume a "..." string literal (LEX-035 / v0.6.1 Phase 1).
  *
  * Pre: lex->cur points at the opening '"'; start_line / start_col record
  * the position of that opening quote (1-based).
@@ -490,8 +563,16 @@ int urbi_encode_utf8(uint32_t cp, unsigned char buf[4]) {
  * source view — escape sequences are NOT resolved here; the parser owns
  * escape resolution so the lexer stays zero-allocation (LEX-027).
  *
- * Phase-1 escape set: \n (newline), \t (tab), \\ (backslash), \" (quote).
- * Other escapes (\r, \0, \xHH, \uHHHH) are reserved for v1.x.
+ * Wave 1 (v0.6.0) escape set: \n (newline), \t (tab), \\ (backslash),
+ * \" (quote).
+ *
+ * Wave 2 (v0.6.1) additions: \uXXXX (4-hex BMP code point) and
+ * \u{HHHHHH} (1-6 hex full-plane up to U+10FFFF).  Both forms are
+ * validated for syntax + range here; the parser uses urbi_encode_utf8
+ * to materialize the UTF-8 byte sequence into the AST string-literal
+ * buffer (escape resolution is monotonically non-expansive — every \X
+ * is at least 2 source bytes, every UTF-8 emission is at most 4 bytes,
+ * so the parser's worst-case-source-len capacity holds).
  *
  * Errors (cursor advances past the offending span for clean recovery,
  * LEX-028 contract):
@@ -499,7 +580,11 @@ int urbi_encode_utf8(uint32_t cp, unsigned char buf[4]) {
  *     ends at lex->end.
  *   - LEX_INVALID_ESCAPE: an unrecognized escape body was encountered.
  *     Cursor advances past the bad escape body so the next ulex_next can
- *     resume cleanly. */
+ *     resume cleanly.
+ *   - LEX_UNICODE_ESCAPE_TOO_SHORT: \uXXXX with fewer than 4 hex digits,
+ *     or \u{} with no hex digits, or \u{...} missing the closing '}'.
+ *   - LEX_UNICODE_ESCAPE_OUT_OF_RANGE: \u{HHHHHH} exceeds U+10FFFF.
+ *   - LEX_LONE_SURROGATE: \u escape resolves to U+D800..U+DFFF. */
 static UToken lex_string(ULexer *lex, const int start_line, const int start_col) {
     /* Skip opening quote. */
     lex->cur++;
@@ -512,7 +597,15 @@ static UToken lex_string(ULexer *lex, const int start_line, const int start_col)
             lex->cur++;
             if (lex->cur < lex->end) {
                 const char c = *lex->cur;
-                if (c != 'n' && c != 't' && c != '\\' && c != '"') {
+                if (c == 'n' || c == 't' || c == '\\' || c == '"') {
+                    lex->cur++;
+                } else if (c == 'u') {
+                    const ULexError uerr = validate_unicode_escape(lex);
+                    if (uerr != LEX_OK) {
+                        return make_error(uerr, start_line, start_col,
+                                          (int)(lex->cur - body_start) + 1);
+                    }
+                } else {
                     /* Recovery: consume the bad escape body so the next
                      * ulex_next call resumes at a clean boundary. */
                     lex->cur++;
@@ -520,7 +613,6 @@ static UToken lex_string(ULexer *lex, const int start_line, const int start_col)
                                       start_line, start_col,
                                       (int)(lex->cur - body_start) + 1);
                 }
-                lex->cur++;
             }
             /* If we hit EOF mid-escape, the outer loop will exit and the
              * unterminated-string branch reports the error. */
