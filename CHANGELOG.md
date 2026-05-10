@@ -45,6 +45,32 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
 
 - Phase 3: multi-slot class body via AST_BIN_SEP/AST_NARY recursion in emit_class_body_stmt; no AST changes. ~30 LOC.
 
+### Phase 4 — Operator-method fallback dispatch (Gap #4)
+
+- **VM dispatch:** 9 opcodes (OP_ADD/SUB/MUL/DIV/NEG/EQ/LT/LE and the
+  dead OP_NEQ arm) now try a type-error fallback before halting.
+  `vm_arith_method_fallback` (binary), `vm_arith_method_fallback_unary`
+  (unary neg), and `vm_cmp_method_fallback` (equality/comparison) look
+  up the operator-named slot (`"+"`, `"-"`, `"*"`, `"/"`, `"=="`,
+  `"<"`, `"<="`) on the lhs object's proto chain and call it.  A slot
+  returning truthy drives the conditional skip for OP_EQ/LT/LE.
+  Missing slot falls through to the original type-error diagnostic.
+- **IC:** Per-call-site `UOpOverloadIC` table (32 sites × 4 entries
+  each) caches `(pc_offset, topology_gen, op_name) → UClosure*`.
+  Heap-allocated pointer in UVM (not inline) so `UVM vm;` stack
+  declarations don't overflow.  Allocated in `urbi_vm_init` (alloc #4);
+  freed in `urbi_vm_destroy`.
+- **`ustr_op_name` helper:** `src/value/uintern.{h,c}` — interns short
+  operator strings via `ustr_intern`, returns `USymbol *` for IC key
+  pointer equality.
+- **New files:** `src/vm/uvm_op_overload.{h,c}` (~282 LOC total).
+- **Tests:** 17 unit cases in `tests/unit/test_vm_operator_overload.c`
+  (atom fast-path regression × 5 ops, user-type overload × 9 ops,
+  missing-slot type-error preservation × 2, IC-cache hit verification);
+  9 per-operator `.chk` fixtures under `tests/chk/operators/`; legacy
+  `operators_legacy.chk` subset port.  228 chk fixtures pass.
+  OOM-test alloc index updated (#4 → #5 for call-frame stack).
+
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
 **Tag:** `v0.6.1-stdlib`
