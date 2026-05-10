@@ -1,0 +1,29 @@
+# Milestone: M6 wave 3 (v0.6.2)
+# Covers: Gap #3 — `this` keyword in method bodies (v0.6.2 Phase 2)
+#
+# `this` inside a function body resolves to the receiver object at the
+# call site.  Implemented via OP_LOAD_RECV (opcode 46) which reads
+# UCallFrame.recv — snapshotted from vm->last_recv at OP_CALL time.
+#
+# Top-level `this` is an emit-time error (EMIT_NO_THIS_OUTSIDE_METHOD);
+# that is tested in the unit suite (test_emit_this).
+
+# this.slot read: getX() returns t.x through `this`
+var t = Object.clone(); t.setSlot("x", 10); t.setSlot("getX", function() { this.x }); t.getX()
+[00000000] 10
+
+# this.slot write: setX(v) assigns to the instance slot through `this`
+var t2 = Object.clone(); t2.setSlot("x", 5); t2.setSlot("setX", function(v) { this.x = v }); t2.setX(42); t2.x
+[00000001] 42
+
+# this in arithmetic: double() returns this.x + this.x
+var t3 = Object.clone(); t3.setSlot("x", 10); t3.setSlot("double", function() { this.x + this.x }); t3.double()
+[00000002] 20
+
+# this identity: me() returns the receiver object itself
+var t4 = Object.clone(); t4.setSlot("me", function() { this }); var inst = t4.new(); inst.me() == inst
+[00000003] true
+
+# this.method() sibling call: addOne() calls this.greet() which reads this.x
+var t5 = Object.clone(); t5.setSlot("x", 10); t5.setSlot("greet", function() { this.x + 1 }); t5.setSlot("addOne", function() { this.greet() }); t5.addOne()
+[00000004] 11
