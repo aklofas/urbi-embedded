@@ -462,6 +462,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * global by urbi_stdlib_register_runtime_globals after the registry
      * loop.  NULL until first VM boot. */
     struct UObject *exception_proto;
+    /* M6 Phase 8: namespace proto singletons.  T86 lands math_proto
+     * (pi / e / nan / infinity); subsequent T87+T88+T90+T91 tasks add
+     * system_proto / platform_proto / global_namespace_proto / call-
+     * message_proto.  Allocated by urbi_stdlib_register_namespaces;
+     * bound to realm globals by urbi_stdlib_register_namespace_globals
+     * after the registry loop.  NULL until first VM boot.  GC
+     * reachability via object_roots_walker. */
+    struct UObject *math_proto;
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;
