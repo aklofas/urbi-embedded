@@ -192,6 +192,21 @@ test-docstring-coverage:
 test-bake-smoke: tools/urbi-compile-stdlib
 	@./tests/scripts/bake_smoke.sh
 
+# Phase 13 (v0.6.1-stdlib Wave 2) URBI_BYTECODE_ONLY emulation gate.
+# The real URBI_BYTECODE_ONLY build flag — compile out the
+# lex/parse/emit subsystems, ship a runtime that can only execute
+# pre-baked bytecode — lands at M7 per the v1.0 implementation
+# design spec §1.1.  Phase 13 lands a smoke approximation that
+# proves the architectural shape is sound: lex/parse/emit + the
+# two parser-coupled root sources (src/urbi.c + src/module/uchunk.c)
+# CAN be elided, and the resulting archive still exports
+# urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
+# urbi_lock_heap.  Hard-fail in releasetest below.
+# See tests/scripts/build-bytecode-only.sh.
+.PHONY: test-bytecode-only
+test-bytecode-only:
+	@./tests/scripts/build-bytecode-only.sh
+
 test-debug:
 	$(MAKE) TARGET=host-debug \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
@@ -376,7 +391,7 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
-    test-bake-smoke
+    test-bake-smoke test-bytecode-only
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -758,4 +773,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only

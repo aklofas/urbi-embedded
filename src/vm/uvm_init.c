@@ -312,9 +312,10 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
     vm->stdlib_booted          = 0U;
+    vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
     {
         int i;
-        for (i = 0; i < 7; i++) vm->pad_stdlib[i] = 0U;
+        for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
     }
     vm->last_recv = urbi_value_nil();
 }
