@@ -168,6 +168,7 @@ extern void test_atom_dispatch_suite(void);
 extern void test_object_root_suite(void);
 extern void test_atom_protos_suite(void);
 extern void test_class_decl_parse_suite(void);
+extern void test_class_decl_emit_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -312,6 +313,7 @@ static const struct suite_entry suites[] = {
     {"object_root",               test_object_root_suite},
     {"atom_protos",               test_atom_protos_suite},
     {"class_decl_parse",          test_class_decl_parse_suite},
+    {"class_decl_emit",           test_class_decl_emit_suite},
     /* Add new suites here as test files are added. */
 };
 

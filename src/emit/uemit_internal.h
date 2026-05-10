@@ -99,6 +99,10 @@ uint8_t emit_at_slot_change_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_member_get_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_member_set_arm(UEmitter *e, UAstNode *n);
 
+/* Class-decl AST arm helper (defined in uemit_class.c).
+ * Called from emit_expr via forwarding stub; body lives in uemit_class.c. */
+uint8_t emit_class_decl_arm(UEmitter *e, UAstNode *n);
+
 /* Closure + thunk builders (defined in uemit.c).
  * Promoted from static so that uemit_react.c can build closures for
  * reactive arms without duplicating the logic. */
