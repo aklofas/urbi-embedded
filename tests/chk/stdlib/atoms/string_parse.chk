@@ -1,0 +1,28 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 String parse methods.
+#
+# asInteger — base-10 strtoll-style; whitespace + leading sign tolerated.
+# asFloat   — strtod-style.
+# asBoolean — "true" / "false" (case-sensitive at v1.0; legacy was loose
+#             but the v1.0 lex doesn't have a precedent yet).
+
+"42".asInteger()
+[00000000] 42
+
+"-7".asInteger()
+[00000001] -7
+
+"0".asInteger()
+[00000002] 0
+
+"42".asFloat()
+[00000003] 42.0
+
+"3".asFloat().asString()
+[00000004] "3.0"
+
+"true".asBoolean()
+[00000005] true
+
+"false".asBoolean()
+[00000006] false

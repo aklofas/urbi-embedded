@@ -763,6 +763,95 @@ str_endsWith(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return str_starts_or_ends(vm, self, args, nargs, out, 0, "String.endsWith");
 }
 
+/* === String parse methods (T49) ===========================================
+ *
+ * asInteger / asFloat use strtoll / strtod (hosted libc).  Freestanding
+ * builds raise TypeError; the embedded path can override with newlib's
+ * lighter parsers if needed.  Parse failure (no leading numeric) raises
+ * TypeError — the legacy 2014 stdlib silently returned 0 on parse
+ * failure but that's a footgun.  v1.0 chose strict semantics. */
+
+static int
+str_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.asInteger", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.asInteger: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL || s[0] == '\0')
+        return urbi_raise_type(vm, "String.asInteger: empty / NULL string", out);
+
+#if __STDC_HOSTED__
+    char *endptr = NULL;
+    long long v = strtoll(s, &endptr, 10);
+    if (endptr == s)
+        return urbi_raise_type(vm, "String.asInteger: not a number", out);
+    /* Trailing garbage is rejected (legacy semantics — full-string parse). */
+    while (*endptr == ' ' || *endptr == '\t') endptr++;
+    if (*endptr != '\0')
+        return urbi_raise_type(vm, "String.asInteger: trailing garbage", out);
+    *out = val_int((int64_t)v);
+    return UEXEC_OK;
+#else
+    return urbi_raise_type(vm,
+        "String.asInteger: freestanding strtoll not yet linked", out);
+#endif
+}
+
+static int
+str_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.asFloat", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.asFloat: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL || s[0] == '\0')
+        return urbi_raise_type(vm, "String.asFloat: empty / NULL string", out);
+
+#if __STDC_HOSTED__
+    char *endptr = NULL;
+    double v = strtod(s, &endptr);
+    if (endptr == s)
+        return urbi_raise_type(vm, "String.asFloat: not a number", out);
+    while (*endptr == ' ' || *endptr == '\t') endptr++;
+    if (*endptr != '\0')
+        return urbi_raise_type(vm, "String.asFloat: trailing garbage", out);
+    *out = val_float(v);
+    return UEXEC_OK;
+#else
+    return urbi_raise_type(vm,
+        "String.asFloat: freestanding strtod not yet linked", out);
+#endif
+}
+
+static int
+str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.asBoolean", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.asBoolean: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String.asBoolean: NULL string", out);
+
+    /* Case-sensitive byte compare against "true" / "false". */
+    if (s[0] == 't' && s[1] == 'r' && s[2] == 'u' && s[3] == 'e' && s[4] == '\0') {
+        *out = val_bool(1);
+        return UEXEC_OK;
+    }
+    if (s[0] == 'f' && s[1] == 'a' && s[2] == 'l' && s[3] == 's' && s[4] == 'e' && s[5] == '\0') {
+        *out = val_bool(0);
+        return UEXEC_OK;
+    }
+    return urbi_raise_type(vm,
+        "String.asBoolean: only \"true\" / \"false\" recognized", out);
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -812,7 +901,10 @@ static const AtomMethodEntry STR_METHODS[] = {
     { "indexOf",    str_indexOf    },
     { "contains",   str_contains   },
     { "startsWith", str_startsWith },
-    { "endsWith",   str_endsWith   }
+    { "endsWith",   str_endsWith   },
+    { "asInteger",  str_asInteger  },
+    { "asFloat",    str_asFloat    },
+    { "asBoolean",  str_asBoolean  }
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
