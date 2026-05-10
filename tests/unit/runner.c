@@ -177,6 +177,7 @@ extern void test_stdlib_boot_suite(void);
 extern void test_lock_heap_suite(void);
 extern void test_emit_class_multi_slot_suite(void);
 extern void test_vm_operator_overload_suite(void);
+extern void test_emit_this_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -330,6 +331,7 @@ static const struct suite_entry suites[] = {
     {"lock_heap",                 test_lock_heap_suite},
     {"emit_class_multi_slot",    test_emit_class_multi_slot_suite},
     {"vm_operator_overload",     test_vm_operator_overload_suite},
+    {"emit_this",                test_emit_this_suite},
     /* Add new suites here as test files are added. */
 };
 
