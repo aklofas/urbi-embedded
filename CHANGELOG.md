@@ -4,6 +4,22 @@
 
 (empty)
 
+## v0.6.2-language-completion — Wave 3 of M6 stdlib (language completion)
+
+**Shipped:** TBD (Phase 7 fills this)
+**Branch:** `topic/v0.6.2-language-completion`
+**Plan:** `docs/superpowers/plans/2026-05-10-v0.6.2-language-completion.md`
+**Spec:** `docs/superpowers/specs/2026-05-10-v0.6.2-language-completion-design.md`
+
+Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
+1. Closure upvalue capture across method boundaries (Gap #1, audit + general fix)
+2. Multi-slot class bodies via AST_SEPARATOR recursion (Gap #2)
+3. `this` keyword (TOK_KW_THIS + AST_THIS) — method-body only at v1.0 (Gap #3)
+4. Operator-via-slot-install dispatch — type-error fallback on 9 ops (Gap #4)
+5. Float literals in lex — full IEEE-style decimal (Gap #5)
+
+(Filled at Phase 7 with final numbers.)
+
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
 **Tag:** `v0.6.1-stdlib`
