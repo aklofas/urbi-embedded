@@ -41,6 +41,39 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
   fixtures). Cross-arm + cross-riscv verified.
 - **Footprint vs v0.6.1:** host +0.6 % / arm +0.8 % / riscv +1.0 %.
 
+### Phase 2 — `this` keyword (Gap #3)
+
+- **Lex:** `TOK_KW_THIS` keyword token (alphabetically between "sync"
+  and "throw" in the KEYWORDS table).
+- **Parse:** `AST_THIS = 37` leaf node; `case TOK_KW_THIS` in
+  `parse_atom`; `make_this_node()` helper.
+- **Emit:** `EMIT_NO_THIS_OUTSIDE_METHOD` error code — returned when
+  `AST_THIS` is encountered at top-level (`fs->parent == NULL`).
+  `emit_this_arm()` in `uemit_expr.c`: method-body check, allocate
+  destination register, emit `OP_LOAD_RECV`.
+- **New opcode `OP_LOAD_RECV = 46`** (`OP_MAX = 47`): loads the
+  receiver stored in the current call frame's `.recv` field into
+  `R[A]`.  Shape-table entry: `UOPF_ABC, UOPK_REG, UOPK_UNUSED,
+  UOPK_UNUSED`.  Disasm name: `"LOAD_RECV"`.  The plan specified
+  `OP_MOVE dst, R0` but R0 is the first user argument in the current
+  calling convention (`s->R` shifts to `&s->R[a+1]` at `OP_CALL`).
+  `OP_LOAD_RECV` from a saved field is the correct design.
+- **`UCallFrame.recv`** (`UValue`, 8 B on host): snapshotted from
+  `vm->last_recv` at every bytecode `OP_CALL` frame push; nil for
+  plain-variable calls.  `UCallFrame` grows 40 → 56 B; `UStrand`
+  size pin updated 2880 → 3904 B (64 frames × 16 B each).
+- **`OP_GETSLOT` receiver publish fix:** `vm->last_recv` is now set
+  for ALL loaded closures (not just `native_fn != NULL`), enabling
+  bytecode method calls to snap the correct receiver.
+- **Tests:** 10 unit cases in `tests/unit/test_emit_this.c` (all
+  pass); `tests/chk/objects/this-in-method.chk` (5 scenarios:
+  slot read, slot write, arithmetic, identity, sibling method call).
+  229 chk fixtures pass.
+- **Legacy port:** `tests/2.x/this.chk` entirely deferred — all 3
+  lines use top-level `this` (Lobby access) which is a v1.0 error;
+  documented in `PORT_NOTES.md`.
+- **Footprint vs Phase 1 (host):** +0.5 % (+970 B text).
+
 ### Phase 3 — Multi-slot class body (Gap #2)
 
 - Phase 3: multi-slot class body via AST_BIN_SEP/AST_NARY recursion in emit_class_body_stmt; no AST changes. ~30 LOC.
