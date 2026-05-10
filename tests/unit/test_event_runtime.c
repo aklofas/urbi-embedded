@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: event runtime fixes from v0.5.7-fixes Phase 11 (T49-T52).
  *
- * T49 EVENT-004: native event emit/sync_emit/waituntil validate argv[0]
- *                kind before casting via uvalue_as_event.  Misconfigured
- *                callers (wrong receiver kind) must get NIL back, not a
- *                garbage-cast crash inside the emit path.
+ * T49 EVENT-004: native event emit/sync_emit/waituntil validate the
+ *                receiver kind before casting via uvalue_as_event.
+ *                Phase 7 (M6 stdlib): the receiver moved from argv[0]
+ *                to the Phase-3 `self` slot, and validation failures now
+ *                surface as UEXEC_THROW (urbi_raise_type) rather than
+ *                silently returning NIL.  The test pins the throw branch
+ *                so future ABI shifts can't silently regress it.
  *
- * T50 EVENT-005: event_native_register propagates urbi_register_fn failures
+ * T50 EVENT-005: event_native_register propagates slot-install failures
  *                instead of dropping them.  When the slot installer OOMs
  *                on any of the four native slots, the function returns
  *                UVM_OOM and resets vm->event_proto to NULL.
@@ -33,7 +36,9 @@
 #include "value/uintern.h"
 #include "sched/ustrand.h"
 #include "module/umodule.h"
+#include "runtime/uclosure.h"   /* Phase 7: UClosure->native_fn dispatch shape */
 #include "urbi/urbi.h"
+#include "urbi/types.h"         /* urbi_value_nil */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -58,12 +63,14 @@ UTEST(native_event_functions_validate_argv)
     UASSERT(vm.event_proto != NULL);
     if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* Resolve the three native fns we want to drive. */
+    /* Phase 7 (M6 stdlib): Event proto slots are UVAL_CLOSURE values whose
+     * native_fn pointer carries the Phase-3 (vm, self, args, nargs, out)
+     * ABI.  The receiver kind is validated explicitly — non-event self
+     * raises UEXEC_THROW (urbi_raise_type) rather than silently returning
+     * NIL like the pre-Phase-7 host-fn ABI.  Drive each native and assert
+     * the throw branch. */
     const char *names[3] = { "emit", "syncEmit", "waituntil" };
     const size_t lens[3] = { 4U, 8U, 9U };
-
-    UStrand caller;
-    ustrand_init(&caller, &vm);
 
     int i;
     for (i = 0; i < 3; i++) {
@@ -74,29 +81,31 @@ UTEST(native_event_functions_validate_argv)
         UValue slot;
         slot.kind = (uint8_t)UVAL_NIL;
         UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym, &slot) == 0);
-        UASSERT_EQ((int)slot.kind, (int)UVAL_HOST_FN);
-        if (slot.kind != (uint8_t)UVAL_HOST_FN) continue;
+        UASSERT_EQ((int)slot.kind, (int)UVAL_CLOSURE);
+        if (slot.kind != (uint8_t)UVAL_CLOSURE) continue;
 
-        UHostFn fn = (UHostFn)(uintptr_t)slot.v.p;
+        UClosure *cl = (UClosure *)slot.v.p;
+        UASSERT(cl != NULL && cl->native_fn != NULL);
+        if (cl == NULL || cl->native_fn == NULL) continue;
 
-        /* Case A: argc == 0 — must return NIL without dereferencing argv[0]. */
-        UValue zero_argv[1];
-        zero_argv[0].kind = (uint8_t)UVAL_NIL;
-        zero_argv[0].v.i  = 0;
-        UValue r0 = fn(&caller, 0, zero_argv);
-        UASSERT_EQ((int)r0.kind, (int)UVAL_NIL);
+        /* self is a non-event UValue (NIL).  emit/syncEmit accept up to
+         * one arg, waituntil accepts zero — pick the right nargs per fn. */
+        UValue self;
+        self.kind = (uint8_t)UVAL_NIL;
+        self.v.i  = 0;
 
-        /* Case B: argv[0] is wrong kind (UVAL_NIL, not UVAL_EVENT). */
-        UValue argv[2];
-        argv[0].kind = (uint8_t)UVAL_NIL;
-        argv[0].v.i  = 0;
-        argv[1].kind = (uint8_t)UVAL_INT;
-        argv[1].v.i  = 7;
-        UValue r1 = fn(&caller, 2, argv);
-        UASSERT_EQ((int)r1.kind, (int)UVAL_NIL);
+        UValue args[1];
+        args[0].kind = (uint8_t)UVAL_INT;
+        args[0].v.i  = 7;
+
+        uint8_t nargs = (i == 2) ? 0U : 1U;  /* waituntil = 0, emit/syncEmit = 1 */
+        UValue out = urbi_value_nil();
+        int rc = cl->native_fn(&vm, self, args, nargs, &out);
+
+        UASSERT_EQ(rc, UEXEC_THROW);
+        UASSERT_EQ((int)out.kind, (int)UVAL_NIL);
     }
 
-    ustrand_destroy(&caller, &vm);
     urbi_vm_destroy(&vm);
 }
 

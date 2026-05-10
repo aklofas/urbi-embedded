@@ -30,7 +30,7 @@ struct UNamespace;
 
 /* === URealm struct ===
  *
- * Total: ~72 bytes on 64-bit (pointer-heavy; aligned naturally).
+ * Total: ~56 bytes on 64-bit (pointer-heavy; aligned naturally).
  *
  * All Realms belonging to a VM are kept on a doubly-linked list rooted at
  * vm->realms_head.  Head-insertion is used; order is unspecified. */
@@ -55,10 +55,6 @@ typedef struct URealm {
      * (spec #5 §4.1).  NULL until realm_create completes the alloc step.
      * GC-managed via realm_list_walk_roots shading this cell. */
     struct UObject *global_object; /* UTYPE_OBJECT; owned by GC */
-
-    /* Reflective handle (urbiscript-visible Realm.this / Realm.tag).
-     * NIL at M3; populated at M5+. */
-    UValue       reflective;    /* UVAL_OBJECT at M5+; UVAL_NIL at M3 */
 
     /* Host-attached data */
     void        *user_data;     /* opaque to runtime */
@@ -121,10 +117,9 @@ void urealm_teardown_all(struct UVM *vm);
  * Called by the GC root-provider registry (row 10 / T26) to enumerate
  * all UValues reachable from every live Realm.
  * Iterates vm->realms_head linked list; for each Realm visits:
- *   1. realm->reflective       (callback)
- *   2. namespace entries       (via unamespace_walk_roots)
- *   3. realm->global_object    (gc_shade_gray — UTYPE_OBJECT cell)
- *   4. realm->tag              (gc_shade_gray — UTYPE_TAG cell at M5+)
+ *   1. namespace entries       (via unamespace_walk_roots)
+ *   2. realm->global_object    (gc_shade_gray — UTYPE_OBJECT cell)
+ *   3. realm->tag              (gc_shade_gray — UTYPE_TAG cell at M5+)
  * The implementation in urealm.c is the source of truth for this list. */
 void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
@@ -138,14 +133,18 @@ URealm *urbi_realm_create(struct UVM *vm);
 void    urbi_realm_destroy(struct UVM *vm, URealm *realm);
 URealm *urbi_realm_global(struct UVM *vm);
 
-/* Per-Realm liveness inspection.
- * Reads VM-global counters at M3 (per-realm partitioning lands at T15+).
- * out_strands, out_watchers, out_wakes may be NULL.
- * Returns non-zero if any liveness counter is positive. */
-bool    urbi_realm_has_live_work(URealm *realm,
-                                 uint32_t *out_strands,
-                                 uint32_t *out_watchers,
-                                 uint32_t *out_wakes);
+/* VM-wide liveness inspection.
+ * Reads vm->strand_runnable_count / vm->watcher_active_count /
+ * vm->wakeup_pending_count.  out_strands, out_watchers, out_wakes may be
+ * NULL.  Returns true if any liveness counter is positive.
+ *
+ * Per-realm partitioning is a v1.x deferral (see urbi-embedded-design-risks.md).
+ * The realm-tagged predecessor `urbi_realm_has_live_work` was renamed at
+ * v0.6.0 to match the function's actual VM-wide semantic. */
+bool    urbi_vm_has_live_work(const struct UVM *vm,
+                              uint32_t *out_strands,
+                              uint32_t *out_watchers,
+                              uint32_t *out_wakes);
 
 #ifdef __cplusplus
 }

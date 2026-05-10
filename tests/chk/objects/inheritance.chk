@@ -1,0 +1,42 @@
+# Milestone: M6 wave 1 (partial — checks 13+ deferred to Wave 2)
+# Origin: legacy tests/2.x/inheritance.chk
+# Covers: addProto + removeProto chain mutation, proto-chain slot
+#         lookup, removeLocalSlot causing a follow-on lookup failure
+#         (idempotent removeProto).
+#
+# Wave-1 partial port: the legacy fixture's tail (after the
+# removeProto-idempotency check) exercises `class Foo {} ;
+# Foo.setProtos([Global, Math]); Foo.protos == [Global, Math]` — i.e.
+# List literals as the setProtos argument.  v1.0 has no List literal lex
+# yet (Wave 2); the lines that depend on it are dropped here and will
+# be filled in when the List atom lands.
+#
+# Each line is self-contained because v1.0 cross-chunk state for fresh
+# locals would print the new-object value as `<object 0x...>` which is
+# nondeterministic.  We chain setup + assertion via `;` per line.
+
+var top = Object.new(); top.protos().size
+[00000000] 1
+
+var bot = Object.new(); bot.protos().size
+[00000001] 1
+
+# Slot install on top, then bot inherits via addProto.
+var top2 = Object.new(); top2.foo = "top.foo"; var bot2 = Object.new(); bot2.addProto(top2); bot2.foo
+[00000002] "top.foo"
+
+# getSlotValue (legacy alias) walks the same path.
+var top3 = Object.new(); top3.foo = "top.foo"; var bot3 = Object.new(); bot3.addProto(top3); bot3.getSlotValue("foo")
+[00000003] "top.foo"
+
+# Local override; bot's `foo` masks top's `foo`.
+var top4 = Object.new(); top4.foo = "top.foo"; var bot4 = Object.new(); bot4.addProto(top4); bot4.foo = "bot.foo"; bot4.foo
+[00000004] "bot.foo"
+
+# After removeProto, the local override is still reachable.
+var top5 = Object.new(); top5.foo = "top.foo"; var bot5 = Object.new(); bot5.addProto(top5); bot5.foo = "bot.foo"; bot5.removeProto(top5); bot5.foo
+[00000005] "bot.foo"
+
+# Local override + removeLocalSlot + no parent ⇒ lookup fails.
+var top6 = Object.new(); top6.foo = "top.foo"; var bot6 = Object.new(); bot6.addProto(top6); bot6.foo = "bot.foo"; bot6.removeProto(top6); bot6.removeLocalSlot("foo"); bot6.foo
+[00000006:error] !!! TypeError: GETSLOT: slot 'foo' not found

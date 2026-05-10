@@ -30,6 +30,11 @@ static size_t proto_wire_size(const UProto *p, size_t start_off) {
             off += uvarint_size_zz(p->constants[i].v.i);
         } else if (p->constants[i].kind == (uint8_t)UVAL_FLOAT) {
             off += (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
+        } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
+            const char *s = (const char *)p->constants[i].v.p;
+            const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
+            off += uvarint_size_u((uint64_t)n);
+            off += n;
         }
     }
 
@@ -89,6 +94,14 @@ static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
             const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
             emit_memcpy(buf + off, &p->constants[i].v.f, fsz);
             off += fsz;
+        } else if (p->constants[i].kind == (uint8_t)UVAL_STR) {
+            const char *s = (const char *)p->constants[i].v.p;
+            const size_t n = (s != NULL) ? urbi_strlen(s) : 0U;
+            off = uvarint_write_u(buf, off, (uint64_t)n);
+            if (n > 0U) {
+                emit_memcpy(buf + off, s, n);
+                off += n;
+            }
         }
     }
 
@@ -140,8 +153,16 @@ static size_t module_wire_size(const UModule *c) {
             n += uvarint_size_zz(c->constants[i].v.i);
         } else if (c->constants[i].kind == (uint8_t)UVAL_FLOAT) {
             n += (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
+        } else if (c->constants[i].kind == (uint8_t)UVAL_STR) {
+            /* M6: UVAL_STR carries a uvarint byte-length prefix + raw UTF-8
+             * bytes.  The pointer in v.p is interned in the origin VM and
+             * NUL-terminated; urbi_strlen recovers the length. */
+            const char *s = (const char *)c->constants[i].v.p;
+            const size_t slen = (s != NULL) ? urbi_strlen(s) : 0U;
+            n += uvarint_size_u((uint64_t)slen);
+            n += slen;
         }
-        /* Other kinds: not produced by M1 emitter; serialize leaves them
+        /* Other kinds: not produced by the emitter; serialize leaves them
            with just the kind byte (payload omitted). */
     }
 
@@ -238,6 +259,14 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
             const size_t fsz = (URBI_FLOAT_TYPE == 8) ? 8U : 4U;
             emit_memcpy(buf + off, &module->constants[i].v.f, fsz);
             off += fsz;
+        } else if (module->constants[i].kind == (uint8_t)UVAL_STR) {
+            const char *s = (const char *)module->constants[i].v.p;
+            const size_t slen = (s != NULL) ? urbi_strlen(s) : 0U;
+            off = uvarint_write_u(buf, off, (uint64_t)slen);
+            if (slen > 0U) {
+                emit_memcpy(buf + off, s, slen);
+                off += slen;
+            }
         }
     }
 

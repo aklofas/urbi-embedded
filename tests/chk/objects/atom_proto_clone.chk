@@ -1,0 +1,37 @@
+# Milestone: M6
+# Covers: Phase 4 atom proto stubs — Boolean / Integer / Float / String
+# / nil / void protos exist as realm globals; .clone() works through
+# atom-method dispatch.
+#
+# Three things tested end-to-end:
+#   1. atom-clone short-circuit (S-atom-clone-perf): for non-UVAL_OBJECT
+#      receivers, .clone() returns the receiver value directly.
+#   2. Wave-1 family-specific methods: Boolean.toString(), String.length().
+#   3. Realm globals are reachable: Boolean / Integer / String / Nil / Void
+#      each resolve to their atom proto singleton.
+
+# Atom-clone returns self (S-atom-clone-perf).
+1.clone()
+[00000000] 1
+true.clone()
+[00000001] true
+"foo".clone()
+[00000002] "foo"
+
+# String.length via atom-method dispatch.
+"hello".length()
+[00000003] 5
+
+# Boolean.toString
+true.toString()
+[00000004] "true"
+false.toString()
+[00000005] "false"
+
+# Realm globals reachable as protos.
+Boolean == Boolean
+[00000006] true
+Integer == Integer
+[00000007] true
+String == String
+[00000008] true

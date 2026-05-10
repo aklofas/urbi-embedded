@@ -75,9 +75,29 @@ typedef enum {
     AST_AT_EVENT     = 31,  /* at (e?) / at sync (e?) — event-subscribe form.
                              * spec #3. Distinct from AST_WATCHER because dispatch goes
                              * through OP_AT_EVENT_INSTALL (=42), not OP_AT_INSTALL. */
-    AST_AT_SLOT_CHANGE = 32 /* at (obj.x.changed?) / sync variant — slot-change subscribe.
+    AST_AT_SLOT_CHANGE = 32, /* at (obj.x.changed?) / sync variant — slot-change subscribe.
                              * spec #4. Install needs OP_GETSLOT_CHANGE_EVENT (=44) prefix
                              * followed by OP_AT_EVENT_INSTALL. */
+
+    /* M6 — string literal */
+    AST_STR     = 33,       /* string literal — escape-resolved + adjacent-concat
+                             * folded view into an arena-allocated buffer.  Emit
+                             * routes through OP_LOADK with a UVAL_STR constant
+                             * (interning happens at emit time, not parse time,
+                             * matching the AST_IDENT pattern). */
+
+    /* M6 wave 1 — class declaration (T38) */
+    AST_CLASS_DECL = 34     /* class Foo [: public A, B] { body }
+                             * Carries the class name (zero-copy lexeme view),
+                             * an optional declaration-order proto array, and
+                             * the body block.  Per S-class-name-scope, the
+                             * class name is NOT in scope while protos and
+                             * body parse — `class a : public a { ... }`
+                             * resolves the proto `a` to the outer binding.
+                             * Per S-mro-declaration-order, the proto array
+                             * preserves left-to-right declaration order;
+                             * emit reverses during insertFront so the chain
+                             * ends up [P1, P2, Object] for `: public P1, P2`. */
 } UAstKind;
 
 typedef enum {
@@ -189,6 +209,8 @@ typedef enum {
  *   u.waituntil   — AST_WAITUNTIL:       cond-only waituntil
  *   u.at_event    — AST_AT_EVENT:        at (e?) event-subscribe form
  *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
+ *   u.str_lit     — AST_STR:             escape-resolved string bytes view
+ *   u.class_decl  — AST_CLASS_DECL:      class name + protos + body block
  *
  * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
@@ -341,6 +363,20 @@ struct UAstNode {
             UAstNode   *onleave;           /* nullable */
             bool        is_sync;           /* `at sync (obj.x.changed?)` */
         } at_slot_change;
+        struct {                                            /* AST_STR */
+            const char *bytes;             /* arena-allocated escape-resolved
+                                            * + concat-folded buffer; NOT
+                                            * NUL-terminated; lifetime bound
+                                            * to the parser's UArena */
+            int         len;               /* byte count (excluding any NUL) */
+        } str_lit;
+        struct {                                            /* AST_CLASS_DECL */
+            const char *name_start;        /* zero-copy lexeme view of class name */
+            int         name_len;
+            UAstNode  **protos;            /* arena array; NULL when no protos */
+            int         proto_count;       /* number of protos in declaration order */
+            UAstNode   *body;              /* AST_BLOCK */
+        } class_decl;
     } u;
 };
 

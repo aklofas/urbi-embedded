@@ -1,0 +1,20 @@
+# Milestone: M6 wave 1 (partial — atom auto-boxing on slot install deferred)
+# Origin: legacy tests/2.x/atoms.chk
+# Covers: atom-clone returns the atom value directly + atom + atom
+#         arithmetic remains valid post-clone.
+#
+# Wave-1 partial port: the legacy fixture also exercises
+# `var one.foo = "foobar"` (slot install on a cloned-atom value), then
+# expects `1.foo` and `2.foo` to fail with "lookup failed".  v1.0 does
+# not yet auto-box atoms on slot install (the `urbi_slot_set_slow` path
+# would need to allocate a fresh UObject inheriting from the atom proto
+# and rebind the local).  Defers to Wave 2.
+
+var one = 1.clone()
+[00000000] 1
+
+var two = 2.clone()
+[00000001] 2
+
+one + two
+[00000002] 3

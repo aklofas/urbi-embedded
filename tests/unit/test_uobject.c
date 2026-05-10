@@ -228,8 +228,10 @@ UTEST(uobject_atom_invalid_family_returns_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    /* 9..15 reserved per uobject.h; >= 9 must not match the switch. */
-    UObject *o = urbi_object_atom(&vm, (URBIAtomFamily)9);
+    /* M6 Phase 4 occupies families 9..11 (Boolean / Nil / Void); 12..15
+     * remain reserved per uobject.h.  Probe 12 — anything past the table
+     * must not match the switch and yields NULL. */
+    UObject *o = urbi_object_atom(&vm, (URBIAtomFamily)12);
     UASSERT(o == NULL);
 
     urbi_vm_destroy(&vm);

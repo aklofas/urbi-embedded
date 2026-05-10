@@ -319,14 +319,16 @@ UTEST(populate_and_set_global_const_share_reject_logic) {
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Registry order: Object, Integer, Float, String, Bool, Nil, Void,
-     * List → slots 0..7.  Each must be CONSTANT-rejected. */
+    /* Registry order: Object, Integer, Float, String, Boolean, Nil, Void,
+     * List → slots 0..7.  Each must be CONSTANT-rejected.  M6 Phase 4
+     * renamed the M5 placeholder "Bool" → "Boolean" when promoting the
+     * row from resolve_nil_placeholder to resolve_atom_boolean. */
     static const struct { const char *name; size_t len; } slot_0_to_7[] = {
         { "Object",  6 },
         { "Integer", 7 },
         { "Float",   5 },
         { "String",  6 },
-        { "Bool",    4 },
+        { "Boolean", 7 },
         { "Nil",     3 },
         { "Void",    4 },
         { "List",    4 },

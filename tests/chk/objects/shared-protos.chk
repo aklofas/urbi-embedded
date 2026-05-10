@@ -1,0 +1,20 @@
+# Milestone: M6 wave 1
+# Origin: legacy tests/2.x/shared-protos.chk
+# Covers: protos.insertFront mutates the receiver's proto chain in place;
+#         subsequent slot lookup resolves through the new chain head.
+#
+# Legacy used `function p () { echo("In A") }` (named-function decl +
+# echo).  v1.0 retired named-function decls (use `var p = function`)
+# and does not yet expose `echo` as a global.  We use `return` from
+# anonymous functions to exercise the same dispatch path.
+#
+# Each line is self-contained: class A / class B are bound at chunk top
+# (realm globals).  C is a fresh local on each REPL line; it inherits
+# from B at .clone(), then from [A, B, ...] after insertFront(A).
+
+class A { var p = function() { return "In A" } }; class B { var p = function() { return "In B" } }; var C = B.clone(); C.p()
+[00000000] "In B"
+
+# After insertFront(A), the chain head is A; A.p() shadows B.p().
+class Aa { var p = function() { return "In Aa" } }; class Bb { var p = function() { return "In Bb" } }; var Cc = Bb.clone(); Cc.protos().insertFront(Aa); Cc.p()
+[00000001] "In Aa"

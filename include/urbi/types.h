@@ -121,13 +121,12 @@ typedef enum {
     URBI_ERR_INVALID_ARG                = -1,
     URBI_ERR_STRAND_FATAL               = -2,
     URBI_ERR_OOM                        = -3,
-    /* URBI_ERR_BYTECODE_VERSION_MISMATCH: reserved code, NOT yet returned
-     * by any public-API entry point.  The internal loader at
-     * src/module/umodule.c returns the dedicated UModuleLoadError code
-     * ULOAD_UNSUPPORTED_VERSION instead; that value is currently exposed
-     * only on the internal API.  Slot held to preserve numeric stability
-     * for callers that already switch on it; will be wired through when
-     * urbi_load_module gains a real implementation at M6.  API-029. */
+    /* URBI_ERR_BYTECODE_VERSION_MISMATCH: returned by the public-API
+     * translation helper urbi_load_translate_load_err when the internal
+     * loader reports ULOAD_UNSUPPORTED_VERSION (see src/module/uchunk.c).
+     * The deserialize-bytes entry point itself is still M6 work in
+     * progress; the translation helper exists now so any future caller
+     * has a single mapping site to route through.  Closes API-005. */
     URBI_ERR_BYTECODE_VERSION_MISMATCH  = -4,
     URBI_ERR_COMPILE                    = -5,
     URBI_ERR_CLEANUP_OVERFLOW           = -6,

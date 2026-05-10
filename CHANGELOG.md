@@ -2,6 +2,191 @@
 
 ## Unreleased
 
+(empty)
+
+## v0.6.0-stdlib-scaffold — 2026-05-09 — Wave 1 of M6 stdlib
+
+**Theme:** Language scaffolding for the M6 standard library — string
+literals, atom-method dispatch, Object root C-native methods, atom proto
+stubs, `Class.new()` / `.clone()` semantics, class declarations with
+multi-proto MRO and nested-class shadow scoping, and the scripted
+`Event.new()` constructor. Activates eight deferred
+`tests/chk/objects/` fixtures end-to-end. Absorbs ~12 `defer:M6`
+cleanup IDs.
+
+### Language
+
+- (Phase 1) **String literals.** `TOK_STRING` lex with `\n` / `\t` /
+  `\\` / `\"` / `\0` / `\xNN` escapes; adjacent-string concatenation
+  (`"foo" "bar"` → `"foobar"`); `AST_STR` parse node; `OP_LOADK`
+  emits via `UVAL_STR` constant-pool entry. Empty-string literal
+  (`""`) lex-safe (null buffer guard). LEX-035 closed for ASCII /
+  basic-escape coverage; angle literals (`180deg` / `200grad`)
+  remain on the v1.x literal-suffix backlog.
+- (Phase 6) **Class declarations.** `class Foo : public A, B { body }`
+  parse + emit. Surface compiles to a clone-Object idiom + multi-proto
+  insertFront in declaration order (left-most proto wins MRO; matches
+  REVIVAL §3.2 MRO ledger). Body forms desugar inside the class
+  scope. Nested-class shadow scoping (S-class-name-scope): a
+  declaration-local class binding shadows an outer same-name binding
+  for the duration of the enclosing scope. New keywords `class` and
+  `public` (lex). New AST node `AST_CLASS_DECL = 34`.
+- (Phase 5) **`Class.new()` / `.clone()` semantics.** `Object.new`
+  C-native method implements the `Class.new()` idiom (closes T39):
+  allocates a fresh clone of the receiver, returns it, no const-slot
+  inheritance from the proto's locals (COW-cloned slots are mutable on
+  the derived object). Added `Object.removeLocalSlot` and
+  `Object.getSlotValue` legacy aliases (unbreaking existing third-
+  party-corpus call sites).
+- (Phase 7) **`Event.new()`.** Scripted Event constructor: clones the
+  Event proto, the resulting handle works through the existing
+  `at`/`waituntil`/`emit`/`syncEmit` watcher dispatch path. Unblocks
+  the M5 `event_sync_emit.chk` deferred-fixture activation in Phase 8.
+
+### Object model
+
+- (Phase 2) **Atom-method dispatch.** `OP_GETSLOT` slow path now
+  routes `UVAL_INT` / `UVAL_FLOAT` / `UVAL_STR` / `UVAL_BOOL` receivers
+  through `urbi_atom_proto_for_value(...)` to the appropriate
+  per-type proto when a slot lookup misses on the bare atom.
+  Atom-proto pointer cache lives in the realm; lookups fold through
+  the inline-cache machinery without per-call allocation. Slow-path
+  return distinguishes OOM from const-write (new
+  `URBI_SLOT_INVALID` sentinel; `URBI_ERR_SLOT_CONST_WRITE` retained
+  for const-overwrite). `ic_fill_at_cursor` hoisted to `uic.h` for
+  shared use across megamorphic-bail call sites.
+- (Phase 3) **`Object` root C-native methods.** Nine methods land as
+  C-native closures: `setSlot`, `getSlot`, `hasSlot`, `removeSlot`,
+  `clone`, `addProto`, `removeProto`, `protos`, `setProtos`. Closes
+  T30 + T33-T37 + T42. Introduces `UClosure.native_fn` (a
+  `urbi_native_method_fn`-typed function pointer alongside the
+  bytecode body); `OP_CALL` dispatch arm transparently routes
+  native-fn closures to direct C invocation, skipping the bytecode
+  arm entirely. Closures retain GC ownership of their UProto and
+  realm-binding metadata.
+- (Phase 3 follow-up) **VM-lifetime closure migration.** When a
+  top-level run completes, any UClosures still reachable via the
+  realm's globals are migrated from the run-scoped scratch frame to
+  vm-lifetime ownership; heapified upvals follow the same migration.
+  This closes a use-after-free that the M5 reactive-runtime
+  closure-lifetime model couldn't reach, surfaced by exhaustive
+  testing of the new C-native dispatch path.
+- (Phase 4) **Atom protos as realm globals.** Boolean / Nil / Void
+  protos now exist as first-class atom-proto singletons, exposed via
+  realm globals (`Boolean`, `Nil`, `Void`; `Nil` retained as
+  `Object`-style proto handle, lower-case `nil` remains the
+  `UVAL_NIL` value singleton). New enum members
+  `URBI_ATOM_BOOLEAN` / `URBI_ATOM_NIL` / `URBI_ATOM_VOID`. C-native
+  method registration extended for atom protos. **Compatibility
+  rename:** `Bool` → `Boolean` (matches REVIVAL §14.7 atom-proto
+  naming ledger).
+- (Phase 5) **`Object.protos.insertFront`.** Synthetic protos-list
+  surface gains `insertFront` (mutates the proto chain non-
+  destructively from the front). Wave 1 stub — full `List`-shaped
+  protos surface lands in Wave 2.
+
+### Tests
+
+- (Phase 8) **Eight deferred fixtures activated.**
+  `tests/chk/objects/`: `lookup`, `inheritance` (subset; List-literal
+  sections defer to Wave 2), `slot-cow-const`, `shared-protos`
+  (insertFront proto-chain mutation), `class` (S-class-name-scope
+  nested-shadow), `fallback` (`var Object.blurg` only; full
+  fallback-chain semantics defer to Wave 2), `atom-clone`, `atoms`
+  (subset; remainders defer to Wave 2). `tests/chk/objects/README.md`
+  refreshed to reflect activation status.
+- New `.chk` fixtures: `tests/chk/objects/atom_method_dispatch.chk`,
+  `object_root_methods.chk`, `atom_proto_clone.chk`,
+  `class_new_clone.chk`, `class_decl_basic.chk`,
+  `class_decl_multi_proto.chk`, `class_decl_nested.chk`,
+  `event_new_emit.chk`. Three new string-literal fixtures landed
+  Phase 1.
+- Co-located regression tests: `test_object_root.c`,
+  `test_atom_proto_dispatch.c`, `test_atom_protos.c`,
+  `test_class_decl.c`, `test_event_new.c`, `test_string_literal.c`,
+  plus VM-lifetime UClosure migration coverage in `test_uvm.c`.
+- Test corpus at ship: **1409 unit cases / 7933 checks / 168 `.chk`
+  fixtures** (vs 1300 / 7400 / 148 at v0.5.8-cleanup). Coverage
+  gates remain at the 85% line / 75% branch threshold.
+
+### Cleanup
+
+`defer:M6` audit IDs absorbed during Wave 1 polish phases:
+
+- **TAGCH-013 / EVENT-013** (Phase 7) — emitter / runtime cleanups
+  surfaced by Event.new() integration; closed with TDD.
+- **REALM-016** (Phase 9) — `reflective_field_unused` dead code
+  removed.
+- **REALM-017** (Phase 9) — `urbi_realm_has_live_work` →
+  `urbi_vm_has_live_work` rename (signature also `const`-qualified
+  in the Phase 9 follow-up sweep).
+- **API-005** (Phase 3) — `ULOAD_UNSUPPORTED_VERSION` now routes
+  through `URBI_ERR_BYTECODE_VERSION_MISMATCH` at the public API
+  surface.
+- **API-021** (Phase 9) — `urbi_load_module` body implemented
+  (was a stub).
+- **FOUND-026 / FOUND-027** (Phase 7) — runtime stubs documented
+  as Wave-2 deferred (audit IDs closed with explicit deferral
+  rationale).
+- **LEX-035** (Phase 1, partial closure) — string-literal lex
+  landed; angle literals (`180deg` / `200grad`) defer to v1.x
+  literal-suffix backlog; `pi` becomes `Math.pi` at Wave 2 (no
+  lex change).
+- Several smaller items: cppcheck suppressions refreshed for line-
+  number drift after Phase 6 (`uunwind.c`); `parse_string_literal`
+  null-buffer guard for empty strings; `parse_class` `proto_cap`
+  scope-narrowed inside the colon-branch; const-qualifications on
+  atom-proto pointers, `obj_protos_insertFront::sym_owner`, and
+  `urbi_proto_list_create` recv-arg flow.
+
+### Bytecode
+
+Wire format stays at **v1.5** (`URBI_BYTECODE_VERSION_BYTE = 0x15`).
+No new opcodes. The constant pool gains `UVAL_STR` support (closes
+MOD-008 deferred at v0.5.6). Per-fixture wire-format hashes shift
+only for fixtures that exercise the new string-literal emit path or
+the activated objects fixtures; the canonical Wave 1 goldens are
+captured at `tests/golden/v0.6.0-stdlib-scaffold-{bytecode,wire-
+format}-hashes.txt`.
+
+### Compatibility
+
+- **Public C API additions:** `urbi_atom_proto_for_value`,
+  `urbi_native_closure_create` (UClosure native_fn extension),
+  `urbi_object_new`, atom-proto realm-global setters. No v0.5.x
+  signature changes; the only signature touch is the
+  `urbi_realm_has_live_work` → `urbi_vm_has_live_work` rename
+  (closes REALM-017; in turn the `const`-qualification follow-up
+  sweep is purely additive at the source level since the renamed
+  function is the only callsite).
+- **Atom-proto naming:** `Bool` → `Boolean` realm global (matches
+  REVIVAL §14.7 atom-proto naming ledger). Old name not exported in
+  v0.5.x.
+- **Module wire format:** unchanged at v1.5. v1.4 modules continue
+  to be rejected with `ULOAD_UNSUPPORTED_VERSION` (now mapped to
+  `URBI_ERR_BYTECODE_VERSION_MISMATCH` at the API).
+
+### Footprint
+
+`size --total liburbi.a` at v0.6.0-stdlib-scaffold:
+
+| Target | v0.5.8-cleanup | v0.6.0-stdlib-scaffold | Delta |
+|---|---|---|---|
+| host (Linux x86_64) | 135 022 B | 149 360 B | +14 338 B (+10.6 %) |
+| ARM Cortex-M7 | 62 378 B | 68 908 B | +6 530 B (+10.5 %) |
+| RISC-V rv32imc | 80 084 B | 88 579 B | +8 495 B (+10.6 %) |
+
+Growth sources: `object_root.o` (~6.4 K host / 2.3 K arm / 3.1 K
+riscv) is the largest single contributor — nine C-native methods
+plus the dispatch tables. `atom_protos.o` (~1.3 K host / 0.7 K
+arm / 0.8 K riscv) hosts the atom-proto registration. `utypes_init.o`
+gains `URBI_ATOM_BOOLEAN/NIL/VOID` lazy singletons and the
+keyword-table extension for `class` / `public`. The class-decl
+emit arm adds ~340 LOC to the emit subsystem (still well under the
+600-LOC per-file cap). Wave 2 (`v0.6.1-stdlib`) is expected to
+ship the bulk of remaining stdlib content; footprint impact will
+be re-baselined at that ship.
+
 ## v0.5.8-cleanup — 2026-05-09 — Pre-M6 cleanup ramp final wave (Wave 6 of 6)
 
 **Theme:** Polish + dead-code + docs. Closes ~104 `wave-6-cleanup` audit IDs

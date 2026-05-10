@@ -1,0 +1,19 @@
+# Milestone: M6 wave 1 (partial — function-fallback / call.message / do (...) deferred)
+# Origin: legacy tests/2.x/fallback.chk
+# Covers: local methods on a class declaration are reachable via .new();
+#         COW slot write on the Object root reaches descendants.
+#
+# Wave-1 partial port: the legacy fixture exercises (a) the
+# `function fallback { echo("Fallback " + call.message) }` slot which
+# the dispatch path consults on lookup-miss (fallback protocol), (b)
+# `call.message` (call-object reflection), and (c) `do (Object.new()) {
+# function fallback { ... } }` (the `do` block as syntactic sugar for
+# scoped install).  All three defer to Wave 2 — fallback-on-miss VM
+# dispatch + CallMessage stdlib + `do` block sugar.
+
+class C { var foo = function() { return "foo" } }; var c = C.new(); c.foo()
+[00000000] "foo"
+
+# COW slot write on Object root, visible on descendants too.
+class C2 {}; var c2 = C2.new(); Object.blurg = "blurg"; c2.blurg
+[00000001] "blurg"

@@ -76,11 +76,12 @@ typedef struct USlotArray {
 /* === UObject.flags layout ===
  *
  * uint32_t bitfield per pre-M4 prototype-chain spec §3.  Low 4 bits encode
- * the atom family (root Object, the eight built-in atoms, plus 9..15 spare);
- * bit 4 is frozen; bit 5 is sandbox-readonly (per Luau prior art); the high
- * bits are spare.  URBIAtomFamily enum lives in <urbi/object.h> as of
- * v0.5.5; the internal duplicate (with no `_F` suffix) was retired in
- * favor of the public form. */
+ * the atom family (root Object, the eight built-in atoms 1..8, plus the
+ * three M6 Phase 4 additions 9..11 — Boolean / Nil / Void; 12..15 still
+ * spare for v1.x); bit 4 is frozen; bit 5 is sandbox-readonly (per Luau
+ * prior art); the high bits are spare.  URBIAtomFamily enum lives in
+ * <urbi/object.h> as of v0.5.5; the internal duplicate (with no `_F`
+ * suffix) was retired in favor of the public form. */
 #include "urbi/object.h"
 #define URBI_OBJ_ATOM_MASK         0x0FU
 #define URBI_OBJ_FLAG_FROZEN       (1U << 4)
@@ -181,6 +182,29 @@ UObject *urbi_object_clone(struct UVM *vm, UObject *parent);
  * Stable static string per atom family.  Used by error messages (T11
  * valid_proto failure path and beyond). */
 const char *urbi_atom_family_name(URBIAtomFamily f);
+
+/* === urbi_atom_proto_for_value — Phase 2 atom-method dispatch helper ===
+ *
+ * Route a UValue to its atom proto.  Used by the OP_GETSLOT / OP_SETSLOT
+ * slow path so that slot lookup starting from a non-UVAL_OBJECT receiver
+ * walks through the realm-global atom proto chain.
+ *
+ * For UVAL_OBJECT, returns the receiver pointer (no atom routing).
+ * For UVAL_INT / UVAL_FLOAT / UVAL_STR / UVAL_EVENT, returns the
+ * realm-global atom proto for that family (URBI_ATOM_INTEGER / _FLOAT /
+ * _STRING / _EVENT).
+ * For UVAL_BOOL, UVAL_NIL, UVAL_VOID, and the closure/strand/host-fn
+ * kinds, returns the root Object proto (legacy semantics: lookup
+ * terminates at root Object's slot table; Phase 4 tightens Boolean
+ * routing once URBI_ATOM_BOOLEAN lands).
+ *
+ * Tag values are wrapped as UVAL_OBJECT today (no UVAL_TAG exists in the
+ * public UValKind union), so they fall through the UVAL_OBJECT arm.
+ *
+ * Lazy-allocates the per-VM atom singleton on first call (idempotent).
+ * Returns NULL only if urbi_object_atom returns NULL (atom-singleton
+ * allocation OOM). */
+struct UObject *urbi_atom_proto_for_value(struct UVM *vm, UValue v);
 
 /* === Prototype-mutation primitives (T10 — per pre-M4 prototype-chain spec §5) ===
  *

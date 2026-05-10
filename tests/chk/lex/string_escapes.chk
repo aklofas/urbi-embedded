@@ -1,0 +1,23 @@
+# Milestone: M6
+# Covers: \n / \t / \\ / \" escape resolution at parse time.  The REPL
+#         formatter re-escapes for display (UVAL_STR formatter at
+#         src/value/uvalue.c) so a literal \n round-trips as \n in the
+#         framed output.  Adjacent-string concat across an escape
+#         boundary collapses to the same canonical interned bytes.
+
+"a\nb"
+[00000000] "a\nb"
+
+"x\ty"
+[00000001] "x\ty"
+
+"\\"
+[00000002] "\\"
+
+"\""
+[00000003] "\""
+
+# Concat across an escape boundary: "a\n" + "b" produces the same canonical
+# UVAL_STR as "a\nb" written as a single literal (intern collapses both).
+var s = "a\n" "b"; s == "a\nb"
+[00000004] true

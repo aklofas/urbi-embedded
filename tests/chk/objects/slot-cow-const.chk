@@ -1,0 +1,17 @@
+# Milestone: M6 wave 1
+# Origin: legacy tests/2.x/slot-cow-const.chk
+# Covers: class declaration + .new() + COW write to derived overrides
+#         a slot inherited from the parent class.
+#
+# The legacy fixture marks the parent slot `const` to verify constness
+# does not interfere with copy-on-write.  v1.0 has no `const var` parse
+# sugar; the underlying COW semantics are identical for non-const slots
+# (T8/T9/T10 from M4), so we exercise the same write-on-derived /
+# parent-unchanged path with an unmarked slot.  The const-keyword flavor
+# defers to v1.x with the parse sugar.
+
+class a { var x = 0 }; var b = a.new(); b.x = 12
+[00000000] 12
+
+a.x
+[00000001] 0

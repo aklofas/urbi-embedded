@@ -15,6 +15,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "module/umodule.h"
+#include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
@@ -238,16 +239,69 @@ urbi_run_script(UVM *vm, URealm *realm, const UModule *module)
 /* ---------------------------------------------------------------------------
  * urbi_load_module
  *
- * TODO(M6): register module in the VM's import table under module_name so
- * that subsequent urbiscript `import module_name` expressions resolve it.
- * Requires urbi_vm_import_register (M6 API surface) which does not exist yet.
+ * Bind a pre-compiled UModule into the VM and run its root chunk under the
+ * global Realm so any top-level bindings install into realm globals.
+ *
+ * v0.6.0 (API-021): the body was previously a stub that returned a fixed
+ * URBI_ERR_INVALID_ARG.  It now performs the minimum useful work that a
+ * "load" semantic permits without an import table:
+ *
+ *   1. Validate (vm, module, module_name) all non-NULL.
+ *   2. Bind a UModuleInstance via urbi_get_or_create_module_instance — this
+ *      lazy-interns the IC name strings and prepares the per-(vm, module)
+ *      runtime IC backing.  Subsequent urbi_run_chunk / urbi_run_script
+ *      calls reuse the same instance.
+ *   3. Run the root chunk under the global Realm; any `var foo = ...` at
+ *      the module's top level lands in realm->global_object's slot table.
+ *
+ * The module_name argument is currently advisory: with no import table it
+ * cannot be looked up via urbiscript `import "name"`.  v1.x adds the
+ * import-registry surface and threads module_name through the registration
+ * step; the existing public API stays compatible.  See backlog entry
+ * "v1.x: import-table registration for urbi_load_module".
+ *
+ * Phase 3 / API-005: when this surface eventually deserializes bytecode it
+ * must translate the internal UModuleLoadError ULOAD_UNSUPPORTED_VERSION
+ * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
+ * UErrCode enum).  See urbi_load_translate_load_err() below — the helper
+ * is in place so any future deserialize-bytes entry point routes through
+ * a single mapping site.
  * --------------------------------------------------------------------------- */
+
+/* urbi_load_translate_load_err: public-API translation of internal
+ * UModuleLoadError → UErrCode.  Closes API-005: ULOAD_UNSUPPORTED_VERSION
+ * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
+ *
+ * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
+ * surface does not yet differentiate them; M6 may grow per-code mappings
+ * as the loader API matures. */
+int
+urbi_load_translate_load_err(int load_err)
+{
+    if (load_err == 0) return URBI_OK;
+    if (load_err == (int)ULOAD_UNSUPPORTED_VERSION) {
+        return URBI_ERR_BYTECODE_VERSION_MISMATCH;
+    }
+    return URBI_ERR_INVALID_ARG;
+}
+
 int
 urbi_load_module(UVM *vm, UModule *module, const char *module_name)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    (void)vm;
-    (void)module;
-    (void)module_name;
-    return URBI_ERR_INVALID_ARG;
+
+    if (vm == NULL || module == NULL || module_name == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* Bind a UModuleInstance.  urbi_run_chunk would do this anyway; doing
+     * it explicitly here lets us surface OOM as URBI_ERR_OOM rather than
+     * conflate it with a runtime-side STRAND_FATAL.  module_name is not
+     * stored on the instance at v0.6.0 — it is reserved for v1.x's
+     * import-table registration step. */
+    if (urbi_get_or_create_module_instance(vm, module) == NULL) {
+        return URBI_ERR_OOM;
+    }
+
+    return urbi_run_script(vm, NULL, module);
 }

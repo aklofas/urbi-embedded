@@ -1,0 +1,39 @@
+# Milestone: M6
+# Covers: Phase 3 Object root C-native methods.
+#
+# Verifies setSlot / getSlot / hasSlot / removeSlot / clone /
+# addProto end-to-end via the realm-global Object proto.  Each
+# method is a UClosure with native_fn != NULL installed by the
+# stdlib boot (urbi_stdlib_boot → urbi_object_root_register).
+#
+# The atom-clone short-circuit (S-atom-clone-perf) is exercised by
+# the `1.clone()` line: clone short-circuits for any non-UVAL_OBJECT
+# receiver so 1.clone() yields the integer 1 with zero UObject
+# allocation.
+#
+# Each REPL line is one expression whose final value frames; we use
+# `;` to chain assignment + setup off the same line so the only
+# framed value is the one we want to assert.
+
+var o = Object.clone(); o.setSlot("x", 42); o.getSlot("x")
+[00000000] 42
+
+var o2 = Object.clone(); o2.setSlot("x", 42); o2.hasSlot("x")
+[00000001] true
+
+var o3 = Object.clone(); o3.hasSlot("missing")
+[00000002] false
+
+var o4 = Object.clone(); o4.setSlot("x", 1); o4.removeSlot("x"); o4.hasSlot("x")
+[00000003] false
+
+# Clone-of-int returns the int directly (S-atom-clone-perf).
+1.clone()
+[00000004] 1
+
+# Clone-of-object allocates fresh; parent and clone are independent.
+var p = Object.clone(); p.setSlot("v", 100); var c = p.clone(); c.setSlot("v", 200); p.v
+[00000005] 100
+
+var p2 = Object.clone(); p2.setSlot("v", 100); var c2 = p2.clone(); c2.setSlot("v", 200); c2.v
+[00000006] 200

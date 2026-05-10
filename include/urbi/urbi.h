@@ -90,13 +90,19 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
-/* Liveness query: reads VM-global counters (per-realm partitioning at T15+).
- * Populates out_strands / out_watchers / out_wakes (any may be NULL).
- * Returns non-zero if any liveness counter is positive. */
-bool           urbi_realm_has_live_work(struct URealm *realm,
-                                        uint32_t *out_strands,
-                                        uint32_t *out_watchers,
-                                        uint32_t *out_wakes);
+/* Liveness query: reads VM-wide runnable / active-watcher / pending-wakeup
+ * counters.  Populates out_strands / out_watchers / out_wakes (any may be
+ * NULL).  Returns true if any counter is positive.
+ *
+ * The function is VM-wide despite the per-realm spec wording: the counters
+ * themselves are not partitioned per realm.  Per-realm partitioning is a
+ * v1.x deferral (see docs/urbi-embedded-design-risks.md).  The realm-tagged
+ * predecessor `urbi_realm_has_live_work` was renamed at v0.6.0 to match
+ * actual semantic. */
+bool           urbi_vm_has_live_work(const struct UVM *vm,
+                                     uint32_t *out_strands,
+                                     uint32_t *out_watchers,
+                                     uint32_t *out_wakes);
 
 /* === M5 realm globals C API (spec #5 §7) ===
  *
@@ -135,8 +141,12 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  *
  * urbi_run_script: thin wrapper around urbi_run_chunk that discards the result.
  *
- * urbi_load_module: register a module under module_name in the VM's import table.
- * Returns URBI_ERR_INVALID_ARG at M3; real implementation lands at M6. */
+ * urbi_load_module: bind a pre-compiled module into the VM and run its root
+ * chunk under the global Realm so top-level bindings install into realm
+ * globals.  module_name is currently advisory (no import-table lookup yet —
+ * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
+ * argument is NULL, URBI_ERR_OOM on UModuleInstance allocation failure, or
+ * a UVMError-derived code if root-chunk execution fails. */
 
 struct UModule;       /* forward decl — definition in umodule.h */
 
@@ -161,6 +171,15 @@ int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
 int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *module);
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
+
+/* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
+ * as int) to the corresponding public UErrCode.  Currently routes
+ * ULOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
+ * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
+ * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
+ * public-API call site, even though the deserialize-bytes entry point
+ * itself remains M6 work in progress. */
+int urbi_load_translate_load_err(int load_err);
 
 /* === Row 9 strand lifecycle C API (M3 / T20) ===
  *

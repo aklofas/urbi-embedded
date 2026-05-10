@@ -14,6 +14,7 @@
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"
 #include "runtime/umacros.h"      /* urbi_zero */
+#include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
 #include "value/uintern.h"        /* uintern_destroy */
@@ -76,7 +77,8 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->next_object_id = 0U;     /* pre-M4 prototype-chain spec §8.1 (first alloc → 1) */
     vm->root_shape     = NULL;   /* lazy-allocated by urbi_shape_root */
 
-    /* M4 atom-family singletons (T8): all NULL until first lazy-create. */
+    /* M4 atom-family singletons (T8) + M6 Phase 4 (Boolean/Nil/Void): all
+     * NULL until first lazy-create. */
     vm->atom_object  = NULL;
     vm->atom_integer = NULL;
     vm->atom_float   = NULL;
@@ -86,6 +88,9 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->atom_tag     = NULL;
     vm->atom_event   = NULL;
     vm->atom_symbol  = NULL;
+    vm->atom_boolean = NULL;
+    vm->atom_nil     = NULL;
+    vm->atom_void    = NULL;
 
     /* M5 T53/T54 native proto objects: NULL until event/tag_native_register. */
     vm->event_proto = NULL;
@@ -286,6 +291,16 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
     vm->event_drain_handler = NULL;
+
+    /* M6 Phase 3: stdlib state. */
+    vm->stdlib_closures = NULL;
+    vm->stdlib_upvalues = NULL;
+    vm->stdlib_booted   = 0U;
+    {
+        int i;
+        for (i = 0; i < 7; i++) vm->pad_stdlib[i] = 0U;
+    }
+    vm->last_recv = urbi_value_nil();
 }
 
 void urbi_vm_destroy(UVM *vm) {
@@ -319,10 +334,37 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* Pre-GC: free any closure surviving from the last urbi_vm_run(). */
-    if (vm->last_return_closure != NULL && vm->alloc_fn != NULL) {
-        vm->alloc_fn(vm->last_return_closure, 0, vm->alloc_ud);
-        vm->last_return_closure = NULL;
+    /* M6 Phase 3: clear last_return_closure pointer.  Pre-Phase 3 this
+     * call freed the closure directly; Phase 3 migrates run-end closures
+     * onto vm->stdlib_closures (see uvm_run.c) so the closure gets reclaimed
+     * by the stdlib_closures sweep below.  Clearing the field guards
+     * against accidental dereference after destroy without the
+     * extra free that would now be a double-free. */
+    vm->last_return_closure = NULL;
+    /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
+     * registered by urbi_native_closure_create AND user closures migrated
+     * from strand closure_lists at run exit, see uvm_run.c).  All threaded
+     * via next_alloc on a single vm->stdlib_closures list. */
+    if (vm->alloc_fn != NULL) {
+        UClosure *cl = vm->stdlib_closures;
+        while (cl != NULL) {
+            UClosure *next = cl->next_alloc;
+            vm->alloc_fn(cl, 0, vm->alloc_ud);
+            cl = next;
+        }
+        vm->stdlib_closures = NULL;
+
+        /* M6 Phase 3: free vm-lifetime heapified upvals (UUpvalCells
+         * migrated from strand closed_cells at run exit).  These must
+         * outlive their owning closures, which are also on
+         * stdlib_closures above. */
+        UUpvalCell *uc = vm->stdlib_upvalues;
+        while (uc != NULL) {
+            UUpvalCell *next = uc->next;
+            vm->alloc_fn(uc, 0, vm->alloc_ud);
+            uc = next;
+        }
+        vm->stdlib_upvalues = NULL;
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */

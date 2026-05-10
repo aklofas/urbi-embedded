@@ -111,6 +111,9 @@ urbi_atom_family_name(URBIAtomFamily f)
         case URBI_ATOM_TAG:     return "Tag";
         case URBI_ATOM_EVENT:   return "Event";
         case URBI_ATOM_SYMBOL:  return "Symbol";
+        case URBI_ATOM_BOOLEAN: return "Boolean";
+        case URBI_ATOM_NIL:     return "Nil";
+        case URBI_ATOM_VOID:    return "Void";
         default:                return "?";
     }
 }
@@ -150,10 +153,11 @@ urbi_object_root(struct UVM *vm)
  *
  * Returns NULL on OOM or invalid family tag. */
 
-/* Table entry: per-family vm field offset.  URBIAtomFamily values 0-8
- * are numerically identical to URBIAtomFamily 0-8, so the table is indexed
- * directly by family.  offsetof is used to avoid assuming struct-member
- * ordering beyond what is documented in uvm.h §M4 atom-family singletons. */
+/* Table entry: per-family vm field offset.  URBIAtomFamily values 0-11
+ * (M4 baseline 0-8 plus M6 Phase 4 additions 9-11) are numerically
+ * identical to the table indices, so the table is indexed directly by
+ * family.  offsetof is used to avoid assuming struct-member ordering
+ * beyond what is documented in uvm.h §M4 atom-family singletons. */
 static const size_t kAtomFieldOffset[] = {
     [URBI_ATOM_OBJECT]  = offsetof(UVM, atom_object),
     [URBI_ATOM_INTEGER] = offsetof(UVM, atom_integer),
@@ -164,6 +168,9 @@ static const size_t kAtomFieldOffset[] = {
     [URBI_ATOM_TAG]     = offsetof(UVM, atom_tag),
     [URBI_ATOM_EVENT]   = offsetof(UVM, atom_event),
     [URBI_ATOM_SYMBOL]  = offsetof(UVM, atom_symbol),
+    [URBI_ATOM_BOOLEAN] = offsetof(UVM, atom_boolean),
+    [URBI_ATOM_NIL]     = offsetof(UVM, atom_nil),
+    [URBI_ATOM_VOID]    = offsetof(UVM, atom_void),
 };
 #define KATOM_TABLE_COUNT ((int)(sizeof(kAtomFieldOffset) / sizeof(kAtomFieldOffset[0])))
 

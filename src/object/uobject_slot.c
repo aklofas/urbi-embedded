@@ -9,6 +9,7 @@
 #include "object/uobject_internal.h"
 #include "object/ushape.h"
 #include "vm/uvm.h"
+#include "urbi/types.h"         /* URBI_OK / URBI_ERR_* — OBJ-007 distinct codes */
 #include "urbi/gc.h"            /* urbi_gc_alloc + urbi_gc_slot_write barrier */
 #include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_write */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
@@ -250,18 +251,24 @@ int
 urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                              uint8_t flag_bit, UValue value)
 {
+    /* OBJ-007: distinguish OOM from invalid-arg / slot-not-found.
+     * Returns:
+     *   URBI_OK                    on success or idempotent no-op
+     *   URBI_ERR_INVALID_ARG       NULL args or unsupported flag_bit
+     *   URBI_ERR_SLOT_NOT_FOUND    slot does not exist on obj's lineage
+     *   URBI_ERR_OOM               shape transition / UProps allocation OOM */
     if (vm == NULL || obj == NULL || name == NULL) {
-        return -1;
+        return URBI_ERR_INVALID_ARG;
     }
     int32_t idx = urbi_shape_find_slot(obj->shape, name);
     if (idx < 0) {
-        return -1;   /* slot must exist before installing a property on it */
+        return URBI_ERR_SLOT_NOT_FOUND;   /* slot must exist before installing */
     }
     /* Reject unsupported flag_bit BEFORE any allocation. */
     if (flag_bit != URBI_SLOT_FLAG_OGET
         && flag_bit != URBI_SLOT_FLAG_OSET
         && flag_bit != URBI_SLOT_FLAG_CONSTANT) {
-        return -1;
+        return URBI_ERR_INVALID_ARG;
     }
 
     /* OBJ-041: detect a TRUE no-op idempotent install — flag bit already
@@ -309,7 +316,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                                                        (uint32_t)idx,
                                                        flag_bit, 1);
     if (new_shape == NULL) {
-        return -1;
+        return URBI_ERR_OOM;
     }
 
     UPropsTable *clone_pt = NULL;
@@ -323,7 +330,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
          * sweep reclaims). */
         UCell *sc = urbi_gc_alloc(vm, sizeof(UShape), UTYPE_SHAPE);
         if (sc == NULL) {
-            return -1;
+            return URBI_ERR_OOM;
         }
         clone = (UShape *)sc;
         clone->name        = obj->shape->name;
@@ -341,7 +348,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                                     * sizeof(UProps *),
                                   UTYPE_PROPS_TABLE);
         if (pc == NULL) {
-            return -1;
+            return URBI_ERR_OOM;
         }
         clone_pt = (UPropsTable *)pc;
         clone_pt->n    = obj->shape->count;
@@ -361,7 +368,7 @@ urbi_object_install_property(UVM *vm, UObject *obj, const USymbol *name,
                        : NULL;
     UProps *fresh = uprops_alloc(vm);
     if (fresh == NULL) {
-        return -1;
+        return URBI_ERR_OOM;
     }
     if (existing != NULL) {
         fresh->oget     = existing->oget;

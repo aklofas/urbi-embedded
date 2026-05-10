@@ -31,7 +31,8 @@ typedef struct UShape  UShape;
 
 /* Atom families (single source of truth; v0.5.5 retired the dual-enum
  * with `_F` suffixes).  Low 4 bits of UObject.flags encode the family;
- * 9..15 reserved for v1.x. */
+ * slots 9..11 occupied by M6 Phase 4 (Boolean / Nil / Void protos);
+ * 12..15 reserved for v1.x. */
 typedef enum {
     URBI_ATOM_OBJECT  = 0,   /* root Object */
     URBI_ATOM_INTEGER = 1,
@@ -41,7 +42,10 @@ typedef enum {
     URBI_ATOM_DICT    = 5,
     URBI_ATOM_TAG     = 6,
     URBI_ATOM_EVENT   = 7,
-    URBI_ATOM_SYMBOL  = 8
+    URBI_ATOM_SYMBOL  = 8,
+    URBI_ATOM_BOOLEAN = 9,   /* M6 Phase 4: Boolean atom proto */
+    URBI_ATOM_NIL     = 10,  /* M6 Phase 4: nil singleton proto */
+    URBI_ATOM_VOID    = 11   /* M6 Phase 4: void singleton proto */
 } URBIAtomFamily;
 
 /* === Atom-family accessors (T8) ===

@@ -154,8 +154,16 @@ UShape *urbi_shape_root(struct UVM *vm);
 UShape *urbi_shape_transition_add_slot(struct UVM *vm, UShape *parent,
                                        USymbol *name);
 
+/* Sentinel returned by urbi_shape_find_slot when `name` is absent from
+ * the lineage.  Replaces the magic-0 that several pre-Wave-6 callers
+ * used to mean "not found" (OBJ-017 — slot index 0 is a valid slot, not
+ * a miss).  -1 chosen so the result fits in int32_t and never collides
+ * with any valid slot index. */
+#define URBI_SHAPE_SLOT_INVALID  ((int32_t)-1)
+
 /* Find the slot index for `name` in `s`'s lineage.
- * Returns >= 0 on hit (slot index in UObject.slots[]), -1 on miss.
+ * Returns >= 0 on hit (slot index in UObject.slots[]),
+ * URBI_SHAPE_SLOT_INVALID on miss.
  *
  * Walks parent-ward over `s`'s lineage; first ancestor whose `name` field
  * matches by USymbol pointer identity is the slot, and its `index` is

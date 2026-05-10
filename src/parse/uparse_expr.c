@@ -87,6 +87,105 @@ UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
+/* parse_string_literal — consume a TOK_STRING (possibly followed by adjacent
+ * TOK_STRING tokens per REVIVAL §14.1 L3 concat) and produce AST_STR.
+ *
+ * Resolves Phase-1 escape sequences (\n / \t / \\ / \") into raw bytes; the
+ * lexer guarantees only those four escape kinds reach the parser (others are
+ * already rejected as LEX_INVALID_ESCAPE).  Concatenation is greedy: any
+ * number of adjacent TOK_STRING tokens fold into a single AST_STR.
+ *
+ * The result buffer lives in the parser arena.  Worst-case size is the sum
+ * of raw source spans across all concatenated tokens; we allocate that
+ * up-front (no growth needed because escape resolution is monotonically
+ * non-expansive — every \X consumes 2 source bytes and writes 1 output byte).
+ *
+ * Caller has already peeked TOK_STRING; this helper consumes it and any
+ * adjacent siblings.
+ *
+ * Returns AST_STR on success, NULL on arena OOM. */
+static UAstNode *parse_string_literal(UParser *p) {
+    UToken first = consume(p);
+    int line = first.line;
+    int col = first.col;
+
+    /* Worst-case capacity: sum of all interior spans for first + every
+     * adjacent TOK_STRING sibling.  We need to peek ahead to size it before
+     * committing the arena allocation; cheaper to allocate per the first
+     * token and grow only when concat appends.  Since arena allocations are
+     * single-shot (no realloc), we instead measure the total span first by
+     * walking the peek + consume loop, but the parser's peek/consume API is
+     * one-token lookahead.  Solution: allocate generously for the first
+     * token, then reallocate by re-allocating + copy on each concat append.
+     * This is O(n^2) in adjacent-concat depth but adjacency is bounded by
+     * source size in practice; the arena fast-path handles the realloc.
+     *
+     * Implementation: we DON'T realloc.  Instead, allocate a fresh wider
+     * buffer when concat needs more room and copy from the current one.
+     * The discarded buffer space is leaked into the arena but the arena is
+     * reset per top-level statement so the total waste is bounded. */
+    /* Always allocate at least 1 byte so write paths don't dereference NULL
+     * (clang-tidy clang-analyzer-core.NullDereference flags the cap==0
+     * branch otherwise; the inner while loop is a no-op for "" so no bytes
+     * land in the buffer, but the analyzer can't prove that statically). */
+    int cap = first.u.str.len > 0 ? first.u.str.len : 1;
+    char *buf = (char *)uarena_alloc(p->arena, (size_t)cap);
+    if (buf == NULL) return NULL;
+    int len = 0;
+
+    UToken cur = first;
+    for (;;) {
+        /* Resolve escapes from cur's source span. */
+        const char *cs = cur.u.str.start;
+        const char *ce = cs + cur.u.str.len;
+        while (cs < ce) {
+            char ch;
+            if (*cs == '\\') {
+                cs++;
+                if (cs >= ce) break;   /* defensive — lexer rejects mid-EOF */
+                switch (*cs) {
+                    case 'n':  ch = '\n'; break;
+                    case 't':  ch = '\t'; break;
+                    case '\\': ch = '\\'; break;
+                    case '"':  ch = '"';  break;
+                    default:
+                        /* Lexer pre-validates the escape body; this branch
+                         * is unreachable.  Fall through to the literal byte
+                         * for defensive output. */
+                        ch = *cs; break;
+                }
+                cs++;
+            } else {
+                ch = *cs++;
+            }
+            buf[len++] = ch;
+        }
+
+        /* Peek for adjacent TOK_STRING (REVIVAL §14.1 L3 concat).  If found,
+         * consume it and grow the buffer to fit. */
+        UToken nxt = peek(p);
+        if (nxt.type != TOK_STRING) break;
+        cur = consume(p);
+
+        if (len + cur.u.str.len > cap) {
+            /* Allocate a wider buffer; copy the prefix.  Old buffer is
+             * abandoned in the arena (reset per top-level statement). */
+            int new_cap = cap + cur.u.str.len;
+            char *new_buf = (char *)uarena_alloc(p->arena, (size_t)new_cap);
+            if (new_buf == NULL) return NULL;
+            for (int i = 0; i < len; i++) new_buf[i] = buf[i];
+            buf = new_buf;
+            cap = new_cap;
+        }
+    }
+
+    UAstNode *n = make_node(p, AST_STR, line, col);
+    if (n == NULL) return NULL;
+    n->u.str_lit.bytes = buf;
+    n->u.str_lit.len = len;
+    return n;
+}
+
 /* --- parse_prefix: unary +/- /! then atom.  Unary '+' is a no-op. --- */
 
 UAstNode *parse_prefix(UParser *p) {
@@ -122,6 +221,8 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_INT:
         consume(p);
         return make_int(p, t.u.i, t.line, t.col);
+    case TOK_STRING:
+        return parse_string_literal(p);
     case TOK_IDENT:
         consume(p);
         return make_ident(p, t.u.str.start, t.u.str.len, t.line, t.col);

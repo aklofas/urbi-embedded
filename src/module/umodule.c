@@ -131,6 +131,29 @@ static inline void module_buf_free(UModuleAllocFn alloc, void *alloc_ud,
     if (p != NULL) (void)alloc(p, 0, alloc_ud);
 }
 
+/* Free the per-constant module-owned bytes attached to UVAL_STR slots whose
+ * _pad[0] marker was set by the deserializer (ownership flag, see umodule.c
+ * decode_constants_into UVAL_STR arm).  Emit-time UVAL_STR slots carry an
+ * intern-table pointer (VM-owned) and must NOT be freed here; the marker
+ * distinguishes the two ownership domains.
+ *
+ * Idempotent — safe to call on an already-freed slot because zero-init or
+ * post-fixup buffers have _pad[0] == 0.  Module-instance create clears the
+ * marker after the lazy intern fixup so this helper never double-frees. */
+static void free_owned_str_constants(UValue *constants, size_t count,
+                                     UModuleAllocFn alloc, void *alloc_ud) {
+    if (constants == NULL || alloc == NULL) return;
+    for (size_t i = 0U; i < count; i++) {
+        if (constants[i].kind == (uint8_t)UVAL_STR
+            && constants[i]._pad[0] == 1U
+            && constants[i].v.p != NULL) {
+            (void)alloc(constants[i].v.p, 0, alloc_ud);
+            constants[i].v.p = NULL;
+            constants[i]._pad[0] = 0U;
+        }
+    }
+}
+
 void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
                                    void *alloc_ud) {
     /* MOD-030: every caller guards proto != NULL; the runtime contract is
@@ -138,6 +161,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
     URBI_INTERNAL_ASSERT(proto != NULL);
     if (alloc == NULL) return;
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
+    free_owned_str_constants(proto->constants, proto->const_count, alloc, alloc_ud);
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
     if (proto->line_deltas  != NULL) alloc(proto->line_deltas,  0, alloc_ud);
     if (proto->abs_lines    != NULL) alloc(proto->abs_lines,    0, alloc_ud);
@@ -400,14 +424,44 @@ static UModuleLoadError decode_constants_into(MDecCtx *d,
                           d->buf + d->off, 4);
             d->off += 4;
 #endif
+        } else if (kind == (uint8_t)UVAL_STR) {
+            /* M6 (closes v0.5.6 MOD-008 reservation): UVAL_STR carries a
+             * uvarint byte-length prefix + raw UTF-8 bytes.  The loader has
+             * no UVM in scope and therefore cannot intern; instead we
+             * allocate a NUL-terminated buffer via the module allocator and
+             * record ownership with the _pad[0] = 1 marker.  Module-instance
+             * create (or any future fixup pass) interns the bytes against
+             * the runtime VM and clears the marker.  umodule_destroy walks
+             * constants and frees any v.p whose owner-flag is still set. */
+            uint64_t slen = 0;
+            rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
+                                        &slen, &consumed);
+            if (rc != ULOAD_OK) {
+                set_errmsg(d->errmsg, d->errcap, "bad varint at UVAL_STR length");
+                return rc;
+            }
+            d->off += consumed;
+            if (d->off + slen > d->size) {
+                set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_STR bytes");
+                return ULOAD_TRUNCATED;
+            }
+            UModuleAllocFn alloc_fn = alloc;
+            char *bytes = (char *)alloc_fn(NULL, (size_t)slen + 1U, alloc_ud);
+            if (bytes == NULL) {
+                return ULOAD_OOM;
+            }
+            module_memcpy(bytes, d->buf + d->off, (size_t)slen);
+            bytes[slen] = '\0';
+            d->off += (size_t)slen;
+            (*target_buf)[*target_count].v.p = bytes;
+            (*target_buf)[*target_count]._pad[0] = 1U;  /* owned-by-module marker */
         } else {
-            /* UVAL_NIL / UVAL_BOOL / UVAL_STR — no payload encoder/decoder
-               implemented in v0.5.6.  The emitter never produces these in
-               constant pools (BOOL is OP_LOADBOOL immediate, NIL is
-               OP_LOADNIL, STR is M6 stdlib).  Hand-crafted bytecode that
-               smuggles them in is rejected via ULOAD_CORRUPT_TAG so the
-               loader does not crash on the missing payload read. */
-            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in v0.5.6 constant pools",
+            /* UVAL_NIL / UVAL_BOOL — no payload encoder/decoder.  The emitter
+             * never produces these in constant pools (BOOL is OP_LOADBOOL
+             * immediate, NIL is OP_LOADNIL).  Hand-crafted bytecode that
+             * smuggles them in is rejected via ULOAD_CORRUPT_TAG so the
+             * loader does not crash on the missing payload read. */
+            set_errmsg(d->errmsg, d->errcap, "constant kind %u not decodable in constant pools",
                        (unsigned)kind);
             return ULOAD_CORRUPT_TAG;
         }
@@ -1098,6 +1152,8 @@ void umodule_destroy(UModule *module) {
         }
         /* MOD-032: 6 buffer frees collapsed via module_buf_free helper. */
         module_buf_free(alloc, module->alloc_ud, module->instructions);
+        free_owned_str_constants(module->constants, module->const_count,
+                                 alloc, module->alloc_ud);
         module_buf_free(alloc, module->alloc_ud, module->constants);
         module_buf_free(alloc, module->alloc_ud, module->line_deltas);
         module_buf_free(alloc, module->alloc_ud, module->abs_lines);

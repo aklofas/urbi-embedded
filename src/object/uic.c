@@ -21,13 +21,19 @@
  *   urbi_slot_get_slow → 0 on success (out_value populated unless the
  *                       caller will invoke a getter — see §6.1).  -1 on
  *                       miss or resolve-stack overflow.
- *   urbi_slot_set_slow → 0 on success.  -1 on COW-OOM, constant-write,
- *                       or resolve-stack overflow. */
+ *   urbi_slot_set_slow → URBI_OK on success.  Distinct codes per OBJ-009 +
+ *                       API-007: URBI_ERR_CONST_SLOT_WRITE on constant
+ *                       overwrite (formerly collapsed onto -1),
+ *                       URBI_ERR_OOM on COW / set_local_slot allocation
+ *                       failure, URBI_ERR_INVALID_ARG for NULL args, and
+ *                       generic -1 for resolve-stack overflow / future
+ *                       internal failure paths. */
 
 #include "object/uic.h"
 #include "object/uobject.h"
 #include "object/ushape.h"
 #include "vm/uvm.h"
+#include "urbi/types.h"   /* URBI_ERR_CONST_SLOT_WRITE / URBI_ERR_OOM (OBJ-009) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -68,8 +74,10 @@ ic_uprops_for_resolved_slot(const UObject *holder, uint32_t idx)
 
 /* Fill exactly one entry of `ic` at the round-robin replace_cursor with the
  * resolved slot information.  Advances replace_cursor and grows ic->n until
- * the cache is full. */
-static void
+ * the cache is full.  Hoisted from static to header-declared at OBJ-033
+ * (Wave 6 cleanup) to enable future megamorphic-bail call sites without
+ * a follow-up edit. */
+void
 ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
                   UObject *holder, uint32_t idx, UProps *up, uint8_t flags)
 {
@@ -134,7 +142,7 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
  *                       leaf-shape-add invalidates the IC's shape match
  *                       on the next access naturally).
  *   (b) holder == recv (local hit on a path the IC didn't cache):
- *       - CONSTANT     → -1 (constant slot)
+ *       - CONSTANT     → URBI_ERR_CONST_SLOT_WRITE
  *       - OSET         → fill IC; caller dispatches setter
  *       - otherwise    → in-place write + IC fill
  *   (c) holder != recv (resolved on a prototype):
@@ -144,14 +152,22 @@ urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
  *       - otherwise    → COW: install a local slot on recv with the new
  *                        value (no IC fill — the receiver's shape just
  *                        transitioned, so the next access misses by shape
- *                        and the slow path re-resolves to the local copy)
+ *                        and the slow path re-resolves to the local copy).
+ *                        The source's CONSTANT flag does NOT carry through
+ *                        to the COW'd local slot — const-ness binds the
+ *                        source slot, not derivations (touchstone: legacy
+ *                        slot-cow-const.chk; T57).
  *
- * Returns 0 on success, -1 on COW-OOM / constant-write / resolve overflow. */
+ * OBJ-009: distinct error codes — URBI_OK on success, URBI_ERR_INVALID_ARG
+ * for NULL args, URBI_ERR_CONST_SLOT_WRITE on constant overwrite,
+ * URBI_ERR_OOM on COW / set_local_slot allocation failure, generic -1
+ * (resolve-stack overflow / future error paths) for other internal
+ * failures.  Callers that previously checked `rc != 0` continue to work. */
 int
 urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
 {
     if (vm == NULL || recv == NULL || ic == NULL || ic->name == NULL) {
-        return -1;
+        return URBI_ERR_INVALID_ARG;
     }
 
     UObject *holder = NULL;
@@ -167,9 +183,9 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
          * + USlotArray growth; no IC fill needed because the new shape
          * naturally fails the next IC shape-match. */
         if (urbi_object_set_local_slot(vm, recv, ic->name, value) != 0) {
-            return -1;   /* OOM */
+            return URBI_ERR_OOM;
         }
-        return 0;
+        return URBI_OK;
     }
 
     /* rc == 1 — resolved at (holder, idx). */
@@ -181,33 +197,38 @@ urbi_slot_set_slow(UVM *vm, UObject *recv, UIC *ic, UValue value)
          * fast path next access dispatches the setter without re-walking.
          * Caller inspects flags[fresh_k] and invokes URBI_VM_DISPATCH_SETTER. */
         ic_fill_at_cursor(ic, vm, recv, holder, idx, up, flags);
-        return 0;
-    }
-
-    if (flags & URBI_SLOT_FLAG_CONSTANT) {
-        /* Constant slot — write rejected.  Whether the slot lives on the
-         * receiver or a prototype, attempting to write a CONSTANT slot is
-         * an error per pre-M2 §8.1.  No IC fill (would just reject again
-         * on the next access). */
-        return -1;
+        return URBI_OK;
     }
 
     if (holder == recv) {
+        /* Local slot on the receiver: const-ness is binding here. */
+        if (flags & URBI_SLOT_FLAG_CONSTANT) {
+            /* Constant slot on the receiver — write rejected per pre-M2
+             * §8.1.  No IC fill (would just reject again on the next
+             * access).  OBJ-009 / API-007: distinct from OOM. */
+            return URBI_ERR_CONST_SLOT_WRITE;
+        }
         /* In-place write on the local slot.  Fill the IC so subsequent
          * writes hit the fast path. */
         recv->slots[idx] = value;
         ic_fill_at_cursor(ic, vm, recv, holder, idx, up, flags);
-        return 0;
+        return URBI_OK;
     }
 
-    /* COW: holder != recv and no setter / not constant.  Install a local
-     * slot on recv with the new value; the prototype's slot is untouched.
+    /* holder != recv — slot resolves on a prototype.  COW per pre-M2
+     * §6.1: install a fresh local slot on recv with the new value.  The
+     * SOURCE slot's CONSTANT flag does NOT carry through: const-ness is
+     * an attribute of the source slot, not a constraint on derivations
+     * (touchstone: legacy slot-cow-const.chk — `var b = a.new(); b.x =
+     * 12;` succeeds even when a.x is const).  The new local slot is
+     * mutable; the prototype's slot is untouched.
+     *
      * No IC fill — the receiver's shape just transitioned (or, if recv
      * already had `name` locally, find_slot in resolve would have hit
-     * recv first); subsequent accesses will miss by shape and the slow
-     * path will resolve to the new local copy. */
+     * recv first); subsequent accesses miss by shape and the slow path
+     * resolves to the new local copy. */
     if (urbi_object_set_local_slot(vm, recv, ic->name, value) != 0) {
-        return -1;
+        return URBI_ERR_OOM;
     }
-    return 0;
+    return URBI_OK;
 }

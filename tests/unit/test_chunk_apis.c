@@ -269,9 +269,12 @@ UTEST(run_script_returns_ok_discards_result)
  * urbi_load_module tests
  * ------------------------------------------------------------------------- */
 
-/* Case 9: stub returns URBI_ERR_INVALID_ARG.  This test documents the TODO so
-   future implementers know the expected return value before M6 fills it in. */
-UTEST(load_module_stub_returns_invalid_arg)
+/* Case 9: load_module rejects NULL arguments (vm / module / module_name).
+ *
+ * Wave 1 (v0.6.0, API-021): the function previously stubbed every call to
+ * URBI_ERR_INVALID_ARG.  The body now does real work, but the input
+ * validation contract is unchanged. */
+UTEST(load_module_null_args_rejected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -279,8 +282,45 @@ UTEST(load_module_stub_returns_invalid_arg)
     UModule module;
     UASSERT(compile_src(&vm, "42", &module));
 
+    UASSERT_EQ(URBI_ERR_INVALID_ARG,
+               urbi_load_module(NULL, &module, "test_module"));
+    UASSERT_EQ(URBI_ERR_INVALID_ARG,
+               urbi_load_module(&vm, NULL, "test_module"));
+    UASSERT_EQ(URBI_ERR_INVALID_ARG,
+               urbi_load_module(&vm, &module, NULL));
+
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* Case 10: load_module installs top-level bindings into the global Realm
+ * (API-021 v0.6.0 regression).
+ *
+ * Compile a tiny module with a top-level `var x = 42` binding, hand it to
+ * urbi_load_module, then read back via urbi_realm_get_global.  The original
+ * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
+ * binds a UModuleInstance and runs the root chunk under the global Realm
+ * so top-level bindings install.  module_name is advisory at v0.6.0
+ * (no import-table lookup yet — v1.x backlog). */
+UTEST(load_module_installs_top_level_var)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    UModule module;
+    UASSERT(compile_src(&vm, "var x = 42", &module));
+
     int rc = urbi_load_module(&vm, &module, "test_module");
-    UASSERT_EQ(rc, URBI_ERR_INVALID_ARG);
+    UASSERT_EQ(URBI_OK, rc);
+
+    URealm *gr = urbi_realm_global(&vm);
+    UASSERT(gr != NULL);
+
+    UValue x = {0};
+    rc = urbi_realm_get_global(&vm, gr, "x", 1, &x);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)x.kind);
+    UASSERT_EQ(42, (int)x.v.i);
 
     umodule_destroy(&module);
     urbi_vm_destroy(&vm);
@@ -309,6 +349,8 @@ void test_chunk_apis_suite(void) {
               repl_eval_sequential_calls);
     utest_run("run_script_returns_ok_discards_result",
               run_script_returns_ok_discards_result);
-    utest_run("load_module_stub_returns_invalid_arg",
-              load_module_stub_returns_invalid_arg);
+    utest_run("load_module_null_args_rejected",
+              load_module_null_args_rejected);
+    utest_run("load_module_installs_top_level_var",
+              load_module_installs_top_level_var);
 }

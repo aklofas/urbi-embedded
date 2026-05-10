@@ -21,6 +21,7 @@
 #include "object/uobject.h"   /* urbi_object_root, urbi_object_atom, urbi_object_set_local_slot,
                                *   urbi_object_install_property */
 #include "object/ushape.h"    /* urbi_shape_find_slot */
+#include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot — M6 Phase 3 */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
 #include "module/umodule.h"
@@ -97,14 +98,26 @@ resolve_atom_string(UVM *vm)
     return rg_make_object(urbi_object_atom(vm, URBI_ATOM_STRING));
 }
 
-/* Bool/Nil/Void protos: no singletons at M5 baseline → nil placeholder.
- * All three use the same resolver (REALM-018); M6 stdlib will replace each
- * slot with the real atom prototype when it lands. */
+/* M6 Phase 4 (T48): Boolean / Nil / Void atom protos now exist.
+ * Each resolver lazy-allocates the corresponding atom singleton
+ * (urbi_object_atom is idempotent — replaces the M5 baseline
+ * resolve_nil_placeholder used at REALM-018). */
 static UValue
-resolve_nil_placeholder(UVM *vm)
+resolve_atom_boolean(UVM *vm)
 {
-    (void)vm;
-    return rg_make_nil();
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_BOOLEAN));
+}
+
+static UValue
+resolve_atom_nil_proto(UVM *vm)
+{
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_NIL));
+}
+
+static UValue
+resolve_atom_void_proto(UVM *vm)
+{
+    return rg_make_object(urbi_object_atom(vm, URBI_ATOM_VOID));
 }
 
 static UValue
@@ -181,12 +194,15 @@ const URegistryEntry urbi_builtin_registry[] = {
     { "Float",   resolve_atom_float,   true,  false },
     { "String",  resolve_atom_string,  true,  false },
 
-    /* Bool/Nil/Void: no singleton at M5 baseline; resolver returns nil.
-     * These entries still occupy registry slots so names are reserved in
-     * the global namespace and M6 stdlib can overwrite them. */
-    { "Bool",    resolve_nil_placeholder, true,  false },
-    { "Nil",     resolve_nil_placeholder, true,  false },
-    { "Void",    resolve_nil_placeholder, true,  false },
+    /* Boolean / Nil / Void: M6 Phase 4 promoted the M5 placeholders to
+     * real atom protos.  The "Boolean" name replaces the M5 placeholder
+     * "Bool" (legacy precedent + spec §5.2 boot order spell out the
+     * full name).  Note the case distinction: lowercase `nil` / `void`
+     * are the value singletons (UVAL_NIL / UVAL_VOID), while
+     * `Nil` / `Void` are the protos — separate rows below. */
+    { "Boolean", resolve_atom_boolean,    true,  false },
+    { "Nil",     resolve_atom_nil_proto,  true,  false },
+    { "Void",    resolve_atom_void_proto, true,  false },
 
     { "List",    resolve_atom_list,    true,  false },
     { "Dict",    resolve_atom_dict,    true,  false },
@@ -318,6 +334,18 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * inside the resolver loop below). */
     if (vm->event_proto == NULL) {
         urbi_native_protos_init(vm);
+    }
+
+    /* M6 Phase 3: register Object root C-native methods on vm->atom_object
+     * BEFORE the resolver loop installs Object as a realm global.  This way
+     * the realm-global "Object" already carries setSlot/getSlot/clone/etc.
+     * for the very first urbiscript chunk that references it.  Idempotent:
+     * vm->stdlib_booted gates re-entry. */
+    {
+        UErrCode rc = (UErrCode)urbi_stdlib_boot(vm);
+        if (rc != URBI_OK) {
+            return rc;
+        }
     }
 
     for (i = 0; i < urbi_builtin_registry_count; i++) {

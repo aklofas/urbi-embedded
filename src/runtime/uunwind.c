@@ -53,18 +53,30 @@ zero_registers(UStrand *s, uint16_t base, uint16_t count)
 }
 
 /* ===== M3 stubs for types/functions that land in later tasks =====
-
-   pattern_matches: M3 catch-everything stub.  T10/M5 refine to actual
-                    pattern dispatch (exception class matching, etc.).
-   bind_catch_value: no-op stub.  T10 will emit a MOVE to bind the caught
-                     value into the catch-clause's named register.
-
-   struct UPattern is forward-declared in ucleanup.h (included above). */
+ *
+ * pattern_matches  (FOUND-026): M3 catch-everything stub.  Returns 1
+ *                  unconditionally.  Wave 2 of M6 stdlib refines to
+ *                  actual class-pattern dispatch (exception subclass
+ *                  matching for `try { ... } catch (E e) { ... }`)
+ *                  once class-decl AST_CLASS_DECL emit (Phase 6) lands
+ *                  along with Wave 2's exception class hierarchy.
+ * bind_catch_value (FOUND-027): no-op pattern parameter.  Wave 2 lands
+ *                  the named-register binding when patterns gain
+ *                  destructuring; for Wave 1 the catch variable is
+ *                  always bound to the bare caught value (current
+ *                  behaviour) and `pat` stays unused.
+ *
+ * Both stubs are not yet load-bearing at v1.0 — match-all is the
+ * only behaviour exercised by the test corpus today.  Filed as Wave 2
+ * deferral in the M6 stdlib design-risks register.
+ *
+ * struct UPattern is forward-declared in ucleanup.h (included above). */
 
 static int
 pattern_matches(struct UPattern *pat, UValue val)
 {
-    /* M3 stub: always match — any throw is caught by any catch clause. */
+    /* M3 stub: always match — any throw is caught by any catch clause.
+     * FOUND-026: Wave 2 refines to class-pattern dispatch. */
     (void)pat; (void)val;
     return 1;
 }
@@ -73,8 +85,9 @@ static void
 bind_catch_value(UStrand *s, struct UPattern *pat, UValue val)
 {
     /* T10: write the caught value into s->catch_value; the catch handler's
-     * first instruction (OP_LOAD_CATCH_VALUE) reads it into the named register.
-     * Pattern is ignored at M3 (match-all stub); M5 refines to class dispatch. */
+     * first instruction (OP_LOAD_CATCH_VALUE) reads it into the named
+     * register.  FOUND-027: Wave 2 of M6 stdlib refines to use `pat` for
+     * destructuring; until then the catch-var is always the bare value. */
     (void)pat;
     s->catch_value = val;
 }

@@ -120,17 +120,20 @@ UTEST(tag_leave_event_creation_triggers_dijkstra_barrier)
 }
 
 /* ===================================================================
- * T54: stubs_assert_unreachable_in_debug
+ * T54 / TAGCH-013 closure: tag_proto_lacks_enter_leave_stub_slots
  *
- * After T54 the two getter stubs are URBI_INTERNAL_ASSERT(0)-then-NIL.
- * In release builds the assertion collapses to a no-op; the slots remain
- * installed on the proto.  We exercise the happy path: vm.tag_proto has
- * "enter" and "leave" UVAL_HOST_FN slots after urbi_native_protos_init
- * regardless of build flavor.  Gate G1 (URBI_DEBUG) actually triggers
- * the abort if anything calls into the stubs.
+ * Pre-Phase-7 (M5 baseline) the tag proto carried two getter stubs
+ * (`enter`/`leave`) installed as UVAL_HOST_FN.  They were unreachable
+ * from any path — UVAL_TAG does not exist in UValKind so OP_CALL could
+ * never dispatch them, and C tests had no reason to invoke them
+ * indirectly.  Phase 7 (M6 stdlib) removed the stubs as part of the
+ * TAGCH-013 partial close.  This test is the regression pin: looking
+ * up `enter` or `leave` on vm->tag_proto must miss until tag-property
+ * dispatch lands and reinstates them through typed UProps OGET binding
+ * (post-M6).
  * =================================================================== */
 
-UTEST(stubs_assert_unreachable_in_debug)
+UTEST(tag_proto_lacks_enter_leave_stub_slots)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -139,7 +142,6 @@ UTEST(stubs_assert_unreachable_in_debug)
     UASSERT(vm.tag_proto != NULL);
     if (vm.tag_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* Slots are installed (they'll only assert if invoked). */
     struct { const char *name; size_t len; } slots[] = {
         { "enter", 5 },
         { "leave", 5 },
@@ -152,9 +154,8 @@ UTEST(stubs_assert_unreachable_in_debug)
 
         UValue v;
         v.kind = (uint8_t)UVAL_NIL;
-        UASSERT(urbi_object_lookup(&vm, vm.tag_proto, sym, &v) == 0);
-        UASSERT_EQ((int)v.kind, (int)UVAL_HOST_FN);
-        UASSERT(v.v.p != NULL);
+        /* urbi_object_lookup returns 0 on hit, non-zero on miss. */
+        UASSERT(urbi_object_lookup(&vm, vm.tag_proto, sym, &v) != 0);
     }
 
     urbi_vm_destroy(&vm);
@@ -270,8 +271,8 @@ test_tag_barrier_suite(void)
               tag_enter_event_creation_triggers_dijkstra_barrier);
     utest_run("tag_leave_event_creation_triggers_dijkstra_barrier",
               tag_leave_event_creation_triggers_dijkstra_barrier);
-    utest_run("stubs_assert_unreachable_in_debug",
-              stubs_assert_unreachable_in_debug);
+    utest_run("tag_proto_lacks_enter_leave_stub_slots",
+              tag_proto_lacks_enter_leave_stub_slots);
     utest_run("tag_native_register_propagates_failures",
               tag_native_register_propagates_failures);
     utest_run("tag_native_calls_assert_not_isr",

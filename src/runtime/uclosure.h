@@ -40,6 +40,16 @@
  * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*).
  * `next_alloc` threads all closures allocated in one run into a free list
  * so they can be reclaimed at halt (pre-GC bookkeeping). */
+/* Native-method extension forward typedef — full definition in
+ * src/stdlib/object_root.h.  When set on a UClosure, OP_CALL invokes
+ * this C function instead of dispatching the proto's bytecode body. */
+struct UVM;
+typedef int (*urbi_native_method_fn)(struct UVM *vm,
+                                     UValue self,
+                                     UValue *args,
+                                     uint8_t nargs,
+                                     UValue *out);
+
 struct UClosure {
     UCell             cell;        /* 2 B — type_tag + gc_byte at offset 0/1 */
     /* Compiler-inserted padding before the next pointer field.
@@ -52,6 +62,13 @@ struct UClosure {
                                       pointer.  See banner above for
                                       binding/lifecycle. */
     struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
+    /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
+     * closures.  When non-NULL, OP_CALL calls this function instead of
+     * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on
+     * native closures (GC trace already guards each via NULL checks).
+     * The receiver (`self`) is read from vm->last_recv (set by OP_GETSLOT
+     * each time a slot is loaded) — no bytecode change required. */
+    urbi_native_method_fn native_fn;
     uint8_t           nupvals;
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
 };

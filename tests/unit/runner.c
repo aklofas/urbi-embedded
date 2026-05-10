@@ -34,6 +34,10 @@ void utest_run(const char *name, void (*fn)(void)) {
 extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_lex_keywords_suite(void);
+extern void test_lex_string_suite(void);
+extern void test_ast_string_suite(void);
+extern void test_emit_string_suite(void);
+extern void test_string_literal_e2e_suite(void);
 extern void test_arena_suite(void);
 extern void test_parser_suite(void);
 extern void test_varint_suite(void);
@@ -123,6 +127,7 @@ extern void test_event_emit_sync_suite(void);
 extern void test_event_waituntil_suite(void);
 extern void test_waituntil_tag_stop_suite(void);
 extern void test_event_native_suite(void);
+extern void test_event_new_scripted_suite(void);
 extern void test_tag_native_suite(void);
 extern void test_tag_enter_leave_suite(void);
 extern void test_event_gc_suite(void);
@@ -160,6 +165,11 @@ extern void test_module_loader_hardening_suite(void);
 extern void test_module_alloc_nested_suite(void);
 extern void test_foundations_suite(void);
 extern void test_public_api_suite(void);
+extern void test_atom_dispatch_suite(void);
+extern void test_object_root_suite(void);
+extern void test_atom_protos_suite(void);
+extern void test_class_decl_parse_suite(void);
+extern void test_class_decl_emit_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -170,6 +180,10 @@ static const struct suite_entry suites[] = {
     {"version",                    test_version_suite},
     {"lexer",                      test_lexer_suite},
     {"lex_keywords",               test_lex_keywords_suite},
+    {"lex_string",                 test_lex_string_suite},
+    {"ast_string",                 test_ast_string_suite},
+    {"emit_string",                test_emit_string_suite},
+    {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"arena",                      test_arena_suite},
     {"parser",                     test_parser_suite},
     {"varint",                     test_varint_suite},
@@ -259,6 +273,7 @@ static const struct suite_entry suites[] = {
     {"event_waituntil",            test_event_waituntil_suite},
     {"waituntil_tag_stop",         test_waituntil_tag_stop_suite},
     {"event_native",               test_event_native_suite},
+    {"event_new_scripted",         test_event_new_scripted_suite},
     {"tag_native",                 test_tag_native_suite},
     {"tag_enter_leave",            test_tag_enter_leave_suite},
     {"event_gc",                   test_event_gc_suite},
@@ -296,6 +311,11 @@ static const struct suite_entry suites[] = {
     {"module_alloc_nested",       test_module_alloc_nested_suite},
     {"foundations",               test_foundations_suite},
     {"public_api",                test_public_api_suite},
+    {"atom_dispatch",             test_atom_dispatch_suite},
+    {"object_root",               test_object_root_suite},
+    {"atom_protos",               test_atom_protos_suite},
+    {"class_decl_parse",          test_class_decl_parse_suite},
+    {"class_decl_emit",           test_class_decl_emit_suite},
     /* Add new suites here as test files are added. */
 };
 

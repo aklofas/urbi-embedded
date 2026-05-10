@@ -1,0 +1,16 @@
+# Milestone: M6 wave 1
+# Origin: legacy tests/2.x/class.chk
+# Covers: class-name not in scope while parsing the proto list, so
+#         `class a : public a` resolves the proto `a` to the OUTER `a`
+#         (S-class-name-scope nested-shadow).
+#
+# The legacy fixture used explicit nested blocks (`{ class a ... { class
+# a : public a ... } }`) for scoping; v1.0 REPL is line-oriented and
+# bare `{...}` is not a top-level statement, so we exercise the same
+# semantic with same-line shadow chaining.  This is the same test as
+# class_decl_nested.chk; both are kept for legacy-corpus parity.
+#
+# b inherits foo (via outer a) and bar (via inner a).
+
+class a { var foo = 40 }; class a : public a { var bar = 2 }; var b = a.new(); b.foo + b.bar
+[00000000] 42

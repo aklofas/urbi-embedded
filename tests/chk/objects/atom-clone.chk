@@ -1,0 +1,19 @@
+# Milestone: M6 wave 1
+# Origin: legacy tests/2.x/atom-clone.chk
+# Covers: atom-method dispatch + atom-clone perf contract.
+#
+# `1.clone()` resolves through the realm-global Integer atom proto and
+# short-circuits to return the receiver value directly per
+# S-atom-clone-perf.  Subsequent arithmetic on the cloned atom remains
+# valid (cloned int is still an int).
+#
+# Wave-1 limited port: the legacy fixture's third line `a.protos`
+# expected `[1]` — a List literal printing.  v1.0 prints the synthetic
+# proto-list UObject as `<?>` (UVAL_OBJECT formatter).  The List literal
+# print form defers to Wave 2.
+
+var a = 1.clone()
+[00000000] 1
+
+a + 2
+[00000001] 3
