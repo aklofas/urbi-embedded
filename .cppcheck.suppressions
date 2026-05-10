@@ -107,3 +107,9 @@ constVariablePointer:src/stdlib/containers.c
 // but the function-pointer signature is pinned and cannot be const-qualified
 // without breaking every callback registration site.
 constParameterPointer:src/stdlib/runtime_types.c
+
+// audit:CPPCHK-Phase9 — src/stdlib/primitives.c native-method callbacks
+// (Mutex / Date / Duration .new / .fromSeconds / .fromMicroseconds / .plus)
+// expose UValue *args via the urbi_native_method_fn typedef; same rationale
+// as Phase 7 — the function-pointer signature is pinned.
+constParameterPointer:src/stdlib/primitives.c

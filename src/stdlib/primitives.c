@@ -137,7 +137,7 @@ install_default_slot(UVM *vm, UObject *proto, const char *name, UValue value)
 static int
 read_local_slot(UVM *vm, UObject *o, const char *name, UValue *out)
 {
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
+    const USymbol *sym = (const USymbol *)ustr_intern(vm, name, urbi_strlen(name));
     if (sym == NULL) return -1;
     int32_t idx = urbi_shape_find_slot(o->shape, sym);
     if (idx < 0 || o->slots == NULL) {
