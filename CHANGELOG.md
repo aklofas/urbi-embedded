@@ -22,6 +22,21 @@
   lex path lex-clean.  Runtime `String.length` / `String.size` stay
   byte counts (code-point-counted variant deferred to v1.x per
   REVIVAL §14).
+- (Phase 2) **T41 `get` / `set` parse sugar.** `get x() { body }` and
+  `set y(v) { body }` desugar at emit time to
+  `recv.setProperty("x", "oget"|"oset", function() body)`.  Parse-only
+  sugar, but the deferred `oget`/`oset` runtime dispatch arms in
+  `OP_GETSLOT` / `OP_SETSLOT` were also wired in this ship — both fast-
+  path (IC hit) and slow-path (IC miss) routes invoke the property
+  closure via `urbi_run_closure_on_scratch[_with_payload]` instead of
+  diagnosing "not yet implemented".  New `Object.setProperty(name,
+  prop, value)` C-native method backs the desugar and materializes a
+  nil placeholder slot when the slot is absent (legacy semantics:
+  `get`/`set` implicitly creates the slot).  Recognized only in the
+  strict three-token shape `get|set IDENT (` — outside that, `get` and
+  `set` remain plain identifiers (no keyword reservation breakage).
+  Required for clean port of legacy `share/urbi/object.u` (lines 104,
+  109, 208-209) and `list.u` (line 121).
 
 ### Changed
 
