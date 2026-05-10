@@ -24,6 +24,7 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->lex = lex;
     p->arena = arena;
     p->have_peek = false;
+    p->have_peek2 = false;
     p->at_event_cond = false;
 }
 

@@ -1,7 +1,7 @@
 # Milestone: M6 Wave 2
 # Covers: T41 — `get` parse sugar desugars to oget slot-property install.
 #
-# Placeholder — Task 14 replaces with the real assertion.
+# Each `Foo.value` read triggers the installed getter closure.
 
-1
-[00000000] 1
+var Foo = Object.clone(); Foo.get value() { 42 }; Foo.value
+[00000000] 42

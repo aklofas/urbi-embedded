@@ -859,17 +859,32 @@ dispatch:
                 if (ic->recv_shapes[k]  == recv->shape
                  && ic->topology_gen[k] == vm->topology_gen) {
                     if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
-                        /* TODO(T39+): wire URBI_VM_DISPATCH_GETTER once the
-                         * frame-push wrapper for receiver+0-arg invocation
-                         * is defined.  Until then, getters are rejected at
-                         * dispatch with a clean diagnostic; corpus revival
-                         * fixtures (T42) exercise non-getter slot reads.
-                         * The IC entry itself was filled correctly by the
-                         * slow path on first install, so the diagnostic is
-                         * a runtime-only restriction, not a missing IC. */
-                        vm->last_error = UVM_TYPE_ERROR;
-                        vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
-                        HALT();
+                        /* T41 (M6 Wave 2): dispatch the getter closure on a
+                         * transient scratch strand.  The getter takes no args
+                         * (the user-written `function() { body }` is the
+                         * shape) and returns the slot value.  Receiver
+                         * binding (`this`) is not yet wired — the v0.6.1
+                         * scaffold supports getter bodies that compute their
+                         * value without referencing self; full self-binding
+                         * lands when the implicit-`this` resolver does. */
+                        UProps *up_g = ic->uprops[k];
+                        if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
+                            || up_g->oget.v.p == NULL) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "GETSLOT: getter is not a closure");
+                            HALT();
+                        }
+                        UValue getter_result; int getter_threw = 0;
+                        int rc_g = urbi_run_closure_on_scratch(
+                            vm, (UClosure *)up_g->oget.v.p,
+                            &getter_result, &getter_threw);
+                        if (rc_g != 0 || getter_threw) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "GETSLOT: getter raised");
+                            HALT();
+                        }
+                        s->R[dst_reg] = getter_result;
+                        NEXT();
                     }
                     UValue loaded = *ic->slots[k];
                     /* M6 Phase 3: publish receiver if this is a native
@@ -902,13 +917,28 @@ dispatch:
                 HALT();
             }
             /* Inspect the just-filled IC entry to decide if a getter is
-             * pending.  Same TODO as above — diagnose for now. */
+             * pending.  T41: dispatch identically to the fast-path arm. */
             uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
             if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
-                vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "GETSLOT: getter dispatch not yet implemented");
-                HALT();
+                UProps *up_g = ic->uprops[fresh_k];
+                if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
+                    || up_g->oget.v.p == NULL) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "GETSLOT: getter is not a closure");
+                    HALT();
+                }
+                UValue getter_result; int getter_threw = 0;
+                int rc_g = urbi_run_closure_on_scratch(
+                    vm, (UClosure *)up_g->oget.v.p,
+                    &getter_result, &getter_threw);
+                if (rc_g != 0 || getter_threw) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "GETSLOT: getter raised");
+                    HALT();
+                }
+                s->R[dst_reg] = getter_result;
+                NEXT();
             }
             /* M6 Phase 3: publish receiver if the resolved value is a
              * native method. */
@@ -961,10 +991,29 @@ dispatch:
                 if (ic->recv_shapes[k]  == recv->shape
                  && ic->topology_gen[k] == vm->topology_gen) {
                     if (ic->flags[k] & URBI_SLOT_FLAG_OSET) {
-                        /* TODO(T39+): wire URBI_VM_DISPATCH_SETTER. */
-                        vm->last_error = UVM_TYPE_ERROR;
-                        vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
-                        HALT();
+                        /* T41 (M6 Wave 2): dispatch the setter closure on a
+                         * transient scratch strand with the new value as
+                         * payload (R[0]).  The setter shape is
+                         * `function(v) { body }`. */
+                        UProps *up_s = ic->uprops[k];
+                        if (up_s == NULL || up_s->oset.kind != (uint8_t)UVAL_CLOSURE
+                            || up_s->oset.v.p == NULL) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "SETSLOT: setter is not a closure");
+                            HALT();
+                        }
+                        UValue setter_result; int setter_threw = 0;
+                        int rc_s = urbi_run_closure_on_scratch_with_payload(
+                            vm, (UClosure *)up_s->oset.v.p, v,
+                            &setter_result, &setter_threw);
+                        if (rc_s != 0 || setter_threw) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "SETSLOT: setter raised");
+                            HALT();
+                        }
+                        /* Setter return value is discarded; SETSLOT has no
+                         * scripted return value. */
+                        NEXT();
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_CONSTANT) {
                         vm->last_error = UVM_TYPE_ERROR;
@@ -1019,9 +1068,24 @@ dispatch:
             uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
                                         % URBI_IC_ENTRIES_PER_SITE);
             if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OSET)) {
-                vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_msg(vm, "SETSLOT: setter dispatch not yet implemented");
-                HALT();
+                /* T41: dispatch identically to the fast-path arm. */
+                UProps *up_s = ic->uprops[fresh_k];
+                if (up_s == NULL || up_s->oset.kind != (uint8_t)UVAL_CLOSURE
+                    || up_s->oset.v.p == NULL) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "SETSLOT: setter is not a closure");
+                    HALT();
+                }
+                UValue setter_result; int setter_threw = 0;
+                int rc_s = urbi_run_closure_on_scratch_with_payload(
+                    vm, (UClosure *)up_s->oset.v.p, v,
+                    &setter_result, &setter_threw);
+                if (rc_s != 0 || setter_threw) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "SETSLOT: setter raised");
+                    HALT();
+                }
+                NEXT();
             }
             /* Fire the write barrier on the slow path so watchers whose
              * read-set includes recv see the write.  Mirrors the fast-path

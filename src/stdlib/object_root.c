@@ -58,6 +58,7 @@ static int obj_addProto          (UVM *vm, UValue self, UValue *args, uint8_t na
 static int obj_removeProto       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_protos            (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_setProtos         (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
+static int obj_setProperty       (UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 static int obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out);
 
 /* === UValue helpers (zero-fill _pad bytes for bit-stable layout) =========== */
@@ -574,6 +575,86 @@ obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
     return UEXEC_OK;
 }
 
+/* === Object.setProperty(name, prop_name, value) ============================
+ *
+ * T41 (M6 Wave 2) — backing for the `get`/`set` parse sugar.  Installs a
+ * slot property on the receiver:
+ *
+ *   prop_name == "oget" → install URBI_SLOT_FLAG_OGET (slot read calls value)
+ *   prop_name == "oset" → install URBI_SLOT_FLAG_OSET (slot write calls value)
+ *   prop_name == "constant" → install URBI_SLOT_FLAG_CONSTANT (write-protect)
+ *
+ * `urbi_object_install_property` requires the slot to pre-exist; if the
+ * slot is missing we materialize it with a nil placeholder before
+ * installing the property bit.  Legacy semantics treat the `get`/`set`
+ * sugar as creating-and-installing in one shot. */
+
+static int
+obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 3) return urbi_raise_arity(vm, "setProperty", 3, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "setProperty: self must be a UObject", out);
+    if (args[0].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm,
+            "setProperty: name must be a String", out);
+    if (args[1].kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm,
+            "setProperty: prop name must be a String", out);
+
+    UObject *recv = (UObject *)self.v.p;
+    USymbol *name = (USymbol *)args[0].v.p;
+    const USymbol *prop = (const USymbol *)args[1].v.p;
+
+    /* Map the prop name to a flag bit.  Compare against the interned
+     * USymbols' bytes — USymbol is opaque here but its layout exposes the
+     * leading length-prefixed bytes via ustr_intern's NUL-terminated view.
+     * We re-intern the constant strings to compare by pointer identity. */
+    const USymbol *sym_oget     = (const USymbol *)ustr_intern(vm, "oget", 4);
+    const USymbol *sym_oset     = (const USymbol *)ustr_intern(vm, "oset", 4);
+    const USymbol *sym_constant = (const USymbol *)ustr_intern(vm, "constant", 8);
+    if (sym_oget == NULL || sym_oset == NULL || sym_constant == NULL)
+        return urbi_raise_oom(vm, out);
+
+    uint8_t flag_bit;
+    if (prop == sym_oget) {
+        flag_bit = URBI_SLOT_FLAG_OGET;
+    } else if (prop == sym_oset) {
+        flag_bit = URBI_SLOT_FLAG_OSET;
+    } else if (prop == sym_constant) {
+        flag_bit = URBI_SLOT_FLAG_CONSTANT;
+    } else {
+        return urbi_raise_type(vm,
+            "setProperty: prop name must be one of \"oget\", \"oset\", \"constant\"",
+            out);
+    }
+
+    /* Materialize the slot with a nil placeholder if it doesn't exist —
+     * legacy `get x()` / `set x(v)` sugar implicitly creates the slot. */
+    UObject *holder = NULL;
+    uint32_t idx = 0U;
+    int rc_resolve = urbi_object_resolve_slot(vm, recv, name, &holder, &idx);
+    if (rc_resolve != 1 || holder != recv) {
+        /* Slot missing on the receiver's local shape (or only present on
+         * a proto).  Install a nil placeholder on the receiver so the
+         * subsequent install_property call finds the slot. */
+        UValue placeholder = urbi_value_nil();
+        int rc_set = urbi_object_set_local_slot(vm, recv, name, placeholder);
+        if (rc_set != 0) return urbi_raise_oom(vm, out);
+    }
+
+    int rc = urbi_object_install_property(vm, recv, name, flag_bit, args[2]);
+    if (rc == URBI_ERR_INVALID_ARG)
+        return urbi_raise_type(vm,
+            "setProperty: invalid argument to install_property", out);
+    if (rc == URBI_ERR_SLOT_NOT_FOUND)
+        return urbi_raise_lookup(vm, (USymbol *)name, out);
+    if (rc != URBI_OK) return urbi_raise_oom(vm, out);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
 /* === urbi_object_root_register ============================================= */
 
 typedef struct {
@@ -593,7 +674,8 @@ static const ObjectMethodEntry OBJECT_METHODS[] = {
     { "addProto",        obj_addProto        },
     { "removeProto",     obj_removeProto     },
     { "protos",          obj_protos          },
-    { "setProtos",       obj_setProtos       }
+    { "setProtos",       obj_setProtos       },
+    { "setProperty",     obj_setProperty     }    /* T41: backs get/set sugar */
 };
 
 #define OBJECT_METHODS_COUNT (sizeof(OBJECT_METHODS) / sizeof(OBJECT_METHODS[0]))

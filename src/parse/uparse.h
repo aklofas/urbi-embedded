@@ -24,6 +24,12 @@ typedef struct {
     UArena *arena;
     UToken peek;
     bool have_peek;
+    /* Second-token lookahead.  Used by T41 (get/set parse sugar) to detect
+     * `get IDENT (` / `set IDENT (` patterns without an irreversible commit:
+     * after the current token (peek), peek2() returns the token AFTER it.
+     * Filled lazily by peek2(); consumed alongside peek by consume(). */
+    UToken peek2;
+    bool have_peek2;
     /* Set by parse_at while parsing the condition expression inside `at(...)`.
      * When true, the postfix `?` handler in parse_expression passes through
      * the token (does not error) so parse_at can detect it after the fact. */

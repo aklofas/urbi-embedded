@@ -422,6 +422,26 @@ UAstNode *parse_member_access(UParser *p, UAstNode *recv,
 
     const bool is_arrow = (op.type == TOK_ARROW);
 
+    /* T41: `Foo.get value(...)` / `Foo.set value(...)` getter/setter sugar.
+     * Only triggers on dot-access (not arrow), where the consumed IDENT is
+     * `get` or `set`, AND the next two tokens are IDENT followed by `(`.
+     * Outside that strict shape, `get` / `set` remain plain slot names. */
+    if (!is_arrow
+        && (ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
+            ident_equals(name.u.str.start, name.u.str.len, "set", 3))
+        && peek(p).type == TOK_IDENT && peek2(p).type == TOK_LPAREN) {
+        UAstMethodKind kind =
+            ident_equals(name.u.str.start, name.u.str.len, "get", 3)
+                ? UAST_METHOD_GETTER : UAST_METHOD_SETTER;
+        UToken slot_name = consume(p);  /* consume the slot-name IDENT */
+        UAstNode *pd = parse_property_decl(p, recv, slot_name, kind,
+                                           op.line, op.col);
+        /* Property-decl is a side-effecting installation; treat as an
+         * "assign" so the Pratt postfix loop stops climbing. */
+        *out_is_assign = true;
+        return pd;
+    }
+
     if (peek(p).type == TOK_EQ) {
         consume(p);  /* consume '=' */
         UAstNode *value = parse_inner_tier(p);

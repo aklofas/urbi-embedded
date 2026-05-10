@@ -125,9 +125,37 @@ UToken peek(UParser *p) {
     return p->peek;
 }
 
+/* Second-token lookahead — returns the token AFTER peek() without
+ * advancing the stream.  Used by T41 (get/set parse sugar) to detect
+ * `get IDENT (` shapes; after we know the current IDENT is `get`/`set`,
+ * we need to see whether the next two tokens are IDENT followed by `(`.
+ *
+ * Implementation: ensure peek is filled, then pull one more token from
+ * the lexer into peek2.  consume() advances the queue: peek2 (if filled)
+ * becomes the new peek; have_peek2 clears. */
+UToken peek2(UParser *p) {
+    /* Ensure peek is filled first so peek2 sits exactly one token ahead. */
+    if (!p->have_peek) {
+        p->peek = ulex_next(p->lex);
+        p->have_peek = true;
+    }
+    if (!p->have_peek2) {
+        p->peek2 = ulex_next(p->lex);
+        p->have_peek2 = true;
+    }
+    return p->peek2;
+}
+
 UToken consume(UParser *p) {
     UToken t = peek(p);
-    p->have_peek = false;
+    /* Slide peek2 down into peek if it was pre-fetched. */
+    if (p->have_peek2) {
+        p->peek = p->peek2;
+        p->have_peek = true;
+        p->have_peek2 = false;
+    } else {
+        p->have_peek = false;
+    }
     return t;
 }
 
