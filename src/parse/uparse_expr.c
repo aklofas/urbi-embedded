@@ -262,7 +262,17 @@ UAstNode *parse_prefix(UParser *p) {
     return parse_atom(p);
 }
 
-/* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error. --- */
+/* --- parse_atom: INT | IDENT | true | false | nil | ( expr ) | error.
+ *
+ * PARSE-032 closure (doc-only): time-literal suffixes (`100ms`, `1s`, `1d`)
+ * + angle suffixes (`180deg`, `2pi`, `200grad`) are absorbed at the lexer
+ * (`src/lex/ulex.c` rolls suffix into TOK_INT.u.i — microseconds for time,
+ * milli-radians or fixed-point for angle, per REVIVAL §3.2).  parse_atom
+ * intentionally only handles the bare TOK_INT here — the audit was filed
+ * because the parser surface looked incomplete; the apparent gap is the
+ * lex-side absorption.  When v1.x adds suffix overloading for non-int
+ * receivers (`Decimal(0.5s)` etc.), this comment + the lex translation
+ * site are the canonical change-points. */
 
 UAstNode *parse_atom(UParser *p) {
     UToken t = peek(p);
