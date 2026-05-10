@@ -151,6 +151,39 @@ emit_class_body_stmt(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
         return;
     }
 
+    /* Multi-slot class body: parser folds `;`-separated statements into
+     * AST_BIN_SEP / AST_NARY.  Recurse on lhs+rhs so each leaf is one
+     * sibling Foo.<name> = … site, with freereg discipline between
+     * iterations (matches existing class-body iterator at line ~368). */
+    if (stmt->kind == AST_BIN_SEP) {
+        if (e->current_fs->freereg < e->next_reg) {
+            e->current_fs->freereg = e->next_reg;
+        }
+        emit_class_body_stmt(e, stmt->u.bin_sep.lhs, foo_reg);
+        if (e->error != EMIT_OK) return;
+        e->next_reg = (uint8_t)(foo_reg + 1U);
+        if (e->current_fs->freereg > e->next_reg) {
+            e->current_fs->freereg = e->next_reg;
+        }
+        emit_class_body_stmt(e, stmt->u.bin_sep.rhs, foo_reg);
+        return;
+    }
+    if (stmt->kind == AST_NARY) {
+        /* N-ary separator — iterate children with same freereg discipline */
+        for (int i = 0; i < stmt->u.nary.count; i++) {
+            if (e->current_fs->freereg < e->next_reg) {
+                e->current_fs->freereg = e->next_reg;
+            }
+            emit_class_body_stmt(e, stmt->u.nary.children[i], foo_reg);
+            if (e->error != EMIT_OK) return;
+            e->next_reg = (uint8_t)(foo_reg + 1U);
+            if (e->current_fs->freereg > e->next_reg) {
+                e->current_fs->freereg = e->next_reg;
+            }
+        }
+        return;
+    }
+
     /* T41 (Wave 2): class-body `get name() {...}` / `set name(v) {...}`
      * — implicit receiver is the class object (foo_reg). */
     if (stmt->kind == AST_PROPERTY_DECL) {
