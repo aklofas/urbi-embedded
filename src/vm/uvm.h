@@ -145,6 +145,24 @@ typedef struct UOpOverloadIC {
  * stack footprint in tests that allocate `UVM vm;` on the C stack.  The IC
  * is heap-allocated at urbi_vm_init time and freed at urbi_vm_destroy. */
 
+/* --- Phase 5 (Gap #1): stolen nested-array bookkeeping ---
+ *
+ * When urbi_steal_repl_protos rescues a closure from a REPL-session
+ * UModule that is about to be destroyed, it steals the entire nested[]
+ * array by setting module->nested = NULL (so umodule_destroy skips it)
+ * and threading the array pointer onto vm->stdlib_nested_arrays via this
+ * node type.  The stolen array remains valid for the lifetime of any
+ * surviving UClosure whose origin_nested points at it.
+ *
+ * urbi_vm_destroy walks the list and frees each array via the stored
+ * alloc_fn/alloc_ud before the proto structs in stdlib_protos are freed. */
+typedef struct UNestedArrayNode {
+    struct UProto         **arr;       /* stolen nested[] array pointer     */
+    UVMAllocFn              alloc_fn;  /* allocator used to free arr        */
+    void                   *alloc_ud;  /* user data for alloc_fn            */
+    struct UNestedArrayNode *next;     /* linked-list link                  */
+} UNestedArrayNode;
+
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -480,6 +498,19 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   arm reads this only on the native_fn != NULL branch. */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
+    /* stdlib_protos: linked list of UProto objects stolen from REPL-session
+     * UModules by urbi_steal_repl_protos before umodule_destroy.  Stolen
+     * protos are owned by the VM and freed at urbi_vm_destroy.  Threaded via
+     * UProto.next_alloc (runtime-only field; not serialized).  NULL until the
+     * first REPL session produces a realm-global closure (the common case for
+     * embedded one-shot runs with no REPL). */
+    struct UProto      *stdlib_protos;
+    /* stdlib_nested_arrays: list of UNestedArrayNode records tracking nested[]
+     * arrays stolen from REPL-session UModules.  Each node stores the array
+     * pointer + allocator; freed in urbi_vm_destroy after the UProto structs
+     * in stdlib_protos are freed (order doesn't matter since the nodes hold
+     * the array memory, not the proto structs). */
+    UNestedArrayNode   *stdlib_nested_arrays;
     struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each

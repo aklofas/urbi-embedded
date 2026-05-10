@@ -318,6 +318,14 @@ typedef struct UProto {
     /* Allocator hook inherited from the owning module. */
     UModuleAllocFn alloc_fn;
     void          *alloc_ud;
+
+    /* [runtime-only, NOT serialized] Intrusive list link used when this proto
+     * is "stolen" from its owning UModule by urbi_steal_repl_protos before
+     * umodule_destroy.  Stolen protos are threaded onto vm->stdlib_protos and
+     * freed at urbi_vm_destroy.  NULL when the proto is still owned by its
+     * originating module (the normal case).  Zero-initialized alongside the
+     * rest of UProto at alloc time (umodule_alloc_nested_proto). */
+    struct UProto *next_alloc;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).

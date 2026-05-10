@@ -505,15 +505,40 @@ dispatch:
         CASE(OP_CLOSURE) {
             /* ABx: R[A] := new closure from module->nested[Bx].
              * Reads nupvals pseudo-instructions (OP_MOVE-encoded) immediately
-             * after, each specifying (B=in_stack, C=src_idx). */
+             * after, each specifying (B=in_stack, C=src_idx).
+             *
+             * Phase 5 (Gap #1): when executing inside a bytecode closure call
+             * (frame_count > 0), use the current frame's closure->origin_nested
+             * array instead of s->module->nested.  s->module always points at
+             * the TOP-LEVEL session module; for cross-session closure calls that
+             * module is the new session's (empty) module, not the closure's
+             * originating module.  origin_nested was captured at OP_CLOSURE
+             * creation time from the then-current s->module->nested and remains
+             * valid because urbi_steal_repl_protos keeps the array alive. */
             uint8_t  a  = uinstr_a(*s->pc);
             uint16_t bx = uinstr_bx(*s->pc);
-            if ((size_t)bx >= s->module->nested_count) {
+            /* Resolve the nested[] array to use for this OP_CLOSURE. */
+            struct UProto **nested_arr;
+            size_t          nested_cnt;
+            if (s->frame_count > 0) {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL && cur_cl->origin_nested != NULL) {
+                    nested_arr = cur_cl->origin_nested;
+                    nested_cnt = (size_t)cur_cl->origin_nested_count;
+                } else {
+                    nested_arr = s->module ? s->module->nested : NULL;
+                    nested_cnt = s->module ? s->module->nested_count : 0U;
+                }
+            } else {
+                nested_arr = s->module ? s->module->nested : NULL;
+                nested_cnt = s->module ? s->module->nested_count : 0U;
+            }
+            if (nested_arr == NULL || (size_t)bx >= nested_cnt) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CLOSURE: proto index out of range");
                 HALT();
             }
-            UProto *child_proto = s->module->nested[bx];
+            UProto *child_proto = nested_arr[bx];
             UClosure *cl = vm_alloc_closure(vm, child_proto, &s->closure_list);
             if (cl == NULL) {
                 vm->last_error = UVM_OOM;
@@ -522,15 +547,67 @@ dispatch:
             }
             /* M4 follow-up: bind proto_inst so the new closure can dispatch
              * OP_GETSLOT/OP_SETSLOT against the per-VM IC table.  entries[0]
-             * is the root chunk; entries[bx + 1] is the matching nested proto. */
-            if (s->module_instance != NULL
-                && s->module_instance->proto_instances != NULL
-                && (size_t)bx + 1U < (size_t)s->module_instance->proto_instances->n) {
-                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1U];
+             * is the root chunk; entries[bx + 1] is the matching nested proto.
+             *
+             * Phase 5 (Gap #1): when executing inside a cross-session closure
+             * call, s->module_instance belongs to the current session's module
+             * (not the closure's originating session), so entries[bx+1] may
+             * be out of range.  Fall back to the current frame's closure's
+             * origin_module_instance — that was the active module_instance
+             * when the parent closure was compiled, and its entries[] array
+             * covers all nested protos from the originating module. */
+            {
+                struct UModuleInstance *mi = s->module_instance;
+                if (mi != NULL
+                        && mi->proto_instances != NULL
+                        && (size_t)bx + 1U < (size_t)mi->proto_instances->n) {
+                    cl->proto_inst = &mi->proto_instances->entries[bx + 1U];
+                } else if (s->frame_count > 0) {
+                    /* Try the parent frame's closure's origin_module_instance. */
+                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
+                    struct UModuleInstance *omi = par_cl
+                                                  ? par_cl->origin_module_instance
+                                                  : NULL;
+                    if (omi != NULL
+                            && omi->proto_instances != NULL
+                            && (size_t)bx + 1U < (size_t)omi->proto_instances->n) {
+                        cl->proto_inst = &omi->proto_instances->entries[bx + 1U];
+                    }
+                }
+                /* If neither path worked, proto_inst stays NULL.  A subsequent
+                 * OP_GETSLOT will produce "no IC table bound" — this is the
+                 * pre-Phase-5 megamorphic bail, now limited to truly unusual
+                 * cases (VM init without module_instance wiring). */
             }
-            /* If no module_instance is bound (defensive — urbi_vm_run wires it for
-             * every normal execution path), proto_inst stays NULL and
-             * OP_GETSLOT/SETSLOT will diagnose cleanly. */
+
+            /* Phase 5 (Gap #1): propagate the resolved nested[] array and
+             * the originating module_instance to the new closure.
+             * origin_nested uses nested_arr (the already-resolved array from
+             * the parent frame, if any) so transitive closure chains share
+             * the same stolen nested[] array pointer.
+             * origin_module_instance is always set from s->module_instance
+             * (the current session's module_instance) — if origin_nested is
+             * from a parent's stolen array, we also need the parent's
+             * origin_module_instance for IC resolution.  Resolve it now. */
+            cl->origin_nested       = nested_arr;
+            cl->origin_nested_count = (uint16_t)nested_cnt;
+            /* Set origin_module_instance to the resolved module_instance
+             * (same fallback logic as proto_inst above). */
+            {
+                struct UModuleInstance *mi = s->module_instance;
+                if (mi != NULL
+                        && mi->proto_instances != NULL
+                        && (size_t)bx + 1U < (size_t)mi->proto_instances->n) {
+                    cl->origin_module_instance = mi;
+                } else if (s->frame_count > 0) {
+                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
+                    cl->origin_module_instance = par_cl
+                                                 ? par_cl->origin_module_instance
+                                                 : mi;
+                } else {
+                    cl->origin_module_instance = mi;
+                }
+            }
 
             /* Read nupvals pseudo-instructions. */
             {

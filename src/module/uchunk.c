@@ -23,6 +23,7 @@
 #include "parse/uparse.h"
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
+#include "runtime/uclosure.h"  /* UClosure — full struct for vm->stdlib_closures walk */
 #include <stddef.h>    /* size_t */
 
 #if __STDC_HOSTED__
@@ -83,6 +84,96 @@ urbi_run_chunk(UVM *vm, URealm *realm, const UModule *module, UValue *out_result
     case UVM_TYPE_ERROR: return URBI_ERR_STRAND_FATAL;
     }
     return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
+}
+
+/* ---------------------------------------------------------------------------
+ * urbi_steal_repl_protos (file-private helper)
+ *
+ * Before a REPL-session UModule is destroyed, check whether any UClosure on
+ * vm->stdlib_closures references a UProto owned by this module.  If so,
+ * steal the entire nested[] array:
+ *   1. Set module->nested = NULL so umodule_destroy skips the array.
+ *   2. Thread each individual UProto onto vm->stdlib_protos so their
+ *      instruction buffers (and other owned fields) are freed at
+ *      urbi_vm_destroy.
+ *   3. Track the array pointer itself via a UNestedArrayNode on
+ *      vm->stdlib_nested_arrays so it is freed at urbi_vm_destroy AFTER
+ *      the protos.  The UClosures whose origin_nested points at this array
+ *      remain valid for their entire lifetime.
+ *
+ * Root cause this fixes: closures installed as realm-globals (via
+ * `var f = function() { ... }` at chunk-top, or setSlot / class-body
+ * var-decl) are migrated to vm->stdlib_closures at urbi_vm_run exit.
+ * Their UProto objects are owned by the REPL-session UModule.  Without this
+ * steal, umodule_destroy frees those protos, leaving dangling proto pointers
+ * in every surviving UClosure.  The next cross-session call to such a
+ * closure loads dangling instructions and segfaults.
+ *
+ * Why steal the WHOLE array (not just directly-referenced protos):
+ * OP_CLOSURE inside a callee reads the nested[] array indexed by bx to
+ * create inner functions.  The callee uses origin_nested[bx] (Phase 5
+ * fix), so origin_nested must be the FULL original array — individual
+ * entries that weren't yet instantiated as closures must still be present.
+ * Stealing individual entries (nulling module->nested[i]) keeps the array
+ * allocated but with holes; stealing the whole array avoids any aliasing
+ * confusion: the surviving array is the one closures point to.
+ *
+ * Watcher-detached protos (module->nested[i] == NULL at session end,
+ * cleared by the watcher install path) are skipped in the proto thread-on
+ * loop; their memory is owned by the watcher pool.
+ * --------------------------------------------------------------------------- */
+static void
+urbi_steal_repl_protos(UVM *vm, UModule *module)
+{
+    if (module->nested == NULL || module->nested_count == 0) return;
+    if (vm->stdlib_closures == NULL) return;
+
+    /* Phase 1: scan to see if any proto in this module is referenced by a
+     * stdlib_closure.  One positive match means we must steal the whole
+     * nested[] array. */
+    int needs_steal = 0;
+    for (size_t ni = 0; ni < module->nested_count && !needs_steal; ni++) {
+        UProto *p = module->nested[ni];
+        if (p == NULL) continue;
+        UClosure *cl = vm->stdlib_closures;
+        while (cl != NULL) {
+            if (cl->proto == p) { needs_steal = 1; break; }
+            cl = cl->next_alloc;
+        }
+    }
+    if (!needs_steal) return;
+
+    /* Phase 2a: allocate a bookkeeping node to track the array pointer.
+     * If this allocation fails, fall back to not stealing (proto buffers
+     * will be freed by umodule_destroy — dangling closure, but no worse
+     * than pre-Phase-5 behaviour, and much less likely than OOM here). */
+    UModuleAllocFn arr_alloc = module->alloc_fn
+                               ? module->alloc_fn : vm->alloc_fn;
+    void          *arr_ud    = module->alloc_fn
+                               ? module->alloc_ud : vm->alloc_ud;
+    UNestedArrayNode *node = vm->alloc_fn(NULL,
+                                          sizeof(UNestedArrayNode),
+                                          vm->alloc_ud);
+    if (node == NULL) return;  /* OOM — leave module intact */
+
+    /* Phase 2b: steal the array pointer and detach it from the module.
+     * umodule_destroy checks module->nested == NULL and skips array free. */
+    node->arr      = module->nested;
+    node->alloc_fn = arr_alloc;
+    node->alloc_ud = arr_ud;
+    node->next     = vm->stdlib_nested_arrays;
+    vm->stdlib_nested_arrays = node;
+    module->nested = NULL;   /* prevents umodule_destroy from freeing it */
+
+    /* Phase 2c: thread individual UProto structs onto vm->stdlib_protos so
+     * their owned buffers (instructions, consts, upval_descs) are freed at
+     * urbi_vm_destroy.  Watcher-detached slots (NULL entries) are skipped. */
+    for (size_t ni = 0; ni < module->nested_count; ni++) {
+        UProto *p = node->arr[ni];
+        if (p == NULL) continue;  /* watcher-detached — owned by watcher pool */
+        p->next_alloc     = vm->stdlib_protos;
+        vm->stdlib_protos = p;
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -202,6 +293,14 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         for (drain = 0; drain < URBI_REPL_DRAIN_BUDGET && vm->strand_runnable_count > 0; drain++)
             urbi_step(vm, 1000, NULL);
     }
+
+    /* Phase 5 (Gap #1): steal any nested UProtos referenced by stdlib_closures
+     * BEFORE umodule_destroy frees them.  Without this, closures installed as
+     * realm-globals in this run (and migrated to vm->stdlib_closures at
+     * urbi_vm_run exit) would have dangling proto->instructions pointers on
+     * the next cross-session call.  See urbi_steal_repl_protos (above) for
+     * the full root-cause explanation. */
+    urbi_steal_repl_protos(vm, &module);
 
     if (run_rc != URBI_OK) {
         /* Copy vm->last_errmsg into out_buf; it was populated by urbi_vm_run. */

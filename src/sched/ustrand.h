@@ -266,7 +266,7 @@ struct UStrand {
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
 _Static_assert(sizeof(struct UStrand) == 3904,
-               "UStrand size pin (CHSTR-041) on 64-bit — bumped at v0.6.2 Phase 2 (Gap #3): UCallFrame.recv UValue field added 16 bytes × 64 frames = 1024 bytes");
+               "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change");
 #endif
 
 /* === Lifecycle functions ===

@@ -58,9 +58,35 @@ struct UClosure {
      * Either way the field order below matches natural pointer alignment;
      * no manual pad bytes are inserted. */
     UProto           *proto;
+    /* origin_nested [runtime-only]: pointer to the nested[] proto array of
+     * the UModule this closure was compiled in.  Set at OP_CLOSURE creation
+     * from s->module->nested.  Used by OP_CLOSURE inside the callee to look
+     * up sibling nested protos via the current frame's closure rather than
+     * s->module->nested (which points at the TOP-LEVEL session module, not
+     * the callee's originating module).
+     *
+     * Lifetime: urbi_steal_repl_protos transfers ownership of the nested[]
+     * array from the session UModule to vm->stdlib_nested_arrays before
+     * umodule_destroy runs, so the array remains valid for the closure's
+     * entire lifetime.  urbi_vm_destroy frees all stolen arrays.
+     *
+     * NULL for native-fn closures and closures whose module has no nested
+     * protos (nupvals == 0 closures that don't create inner functions).
+     * OP_CLOSURE falls back to s->module->nested when NULL. */
+    struct UProto   **origin_nested;
+    uint16_t          origin_nested_count;
     UProtoInstance   *proto_inst;  /* M4 follow-up: per-(vm,proto) IC tier
                                       pointer.  See banner above for
                                       binding/lifecycle. */
+    /* origin_module_instance [runtime-only]: the UModuleInstance that was
+     * active at OP_CLOSURE creation time.  Set from s->module_instance.
+     * Used by OP_CLOSURE inside the callee to resolve proto_inst entries
+     * for inner closures via origin_module_instance->proto_instances->
+     * entries[bx+1], even when s->module_instance belongs to a different
+     * session.  NULL for native-fn closures (those never execute bytecode).
+     * Lifetime: UModuleInstance objects are GC-managed and remain valid
+     * for the VM's lifetime once created. */
+    struct UModuleInstance *origin_module_instance;
     struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
     /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of

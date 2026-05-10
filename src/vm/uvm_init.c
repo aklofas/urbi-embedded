@@ -297,6 +297,8 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* M6 Phase 3: stdlib state. */
     vm->stdlib_closures        = NULL;
     vm->stdlib_upvalues        = NULL;
+    vm->stdlib_protos          = NULL;   /* Phase 5 (Gap #1): stolen REPL protos; freed at destroy */
+    vm->stdlib_nested_arrays   = NULL;   /* Phase 5 (Gap #1): stolen nested[] arrays; freed at destroy */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
     vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
     vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
@@ -402,6 +404,51 @@ void urbi_vm_destroy(UVM *vm) {
             uc = next;
         }
         vm->stdlib_upvalues = NULL;
+
+        /* Phase 5 (Gap #1): free stolen REPL UProto objects.  These protos
+         * were detached from their originating REPL-session UModules by
+         * urbi_steal_repl_protos in urbi_repl_eval (uchunk.c) before the
+         * module was destroyed, keeping their instruction buffers alive for
+         * closures on vm->stdlib_closures.  The stdlib_closures sweep above
+         * has already freed the UClosure structs that referenced these protos;
+         * it is now safe to free the protos and their owned buffers. */
+        {
+            struct UProto *sp = vm->stdlib_protos;
+            while (sp != NULL) {
+                struct UProto *next = sp->next_alloc;
+                /* Capture allocator pair before umodule_destroy_proto_buffers
+                 * zeroes the struct (the zero wipes alloc_fn/alloc_ud too). */
+                UModuleAllocFn proto_alloc = sp->alloc_fn;
+                void          *proto_ud    = sp->alloc_ud;
+                if (proto_alloc == NULL) {
+                    /* proto was allocated with the hosted stdlib_alloc fallback;
+                     * use the VM's own realloc wrapper which calls free(p). */
+                    proto_alloc = vm->alloc_fn;
+                    proto_ud    = vm->alloc_ud;
+                }
+                umodule_destroy_proto_buffers(sp, proto_alloc, proto_ud);
+                proto_alloc(sp, 0, proto_ud);
+                sp = next;
+            }
+            vm->stdlib_protos = NULL;
+        }
+
+        /* Phase 5 (Gap #1): free nested[] arrays stolen from REPL-session
+         * UModules.  The UProto structs in stdlib_protos were freed above;
+         * now free the UProto** array pointers tracked in this list.  Each
+         * node itself was allocated via the VM's alloc_fn. */
+        {
+            UNestedArrayNode *na = vm->stdlib_nested_arrays;
+            while (na != NULL) {
+                UNestedArrayNode *next = na->next;
+                /* Free the nested[] array. */
+                na->alloc_fn(na->arr, 0, na->alloc_ud);
+                /* Free the node itself (allocated with vm->alloc_fn). */
+                vm->alloc_fn(na, 0, vm->alloc_ud);
+                na = next;
+            }
+            vm->stdlib_nested_arrays = NULL;
+        }
 
         /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any

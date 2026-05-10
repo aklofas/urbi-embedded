@@ -1,0 +1,16 @@
+# Milestone: M6 Wave 3 (v0.6.2 — Phase 5 / Gap #1)
+# Covers: closure cross-session call stability; the regression fixed in Phase 5:
+#         a closure compiled in one REPL session and installed as a realm-global
+#         must remain callable in subsequent REPL sessions after its originating
+#         UModule is destroyed.
+#
+# Because the .chk runner drives everything in a single urbi process/session,
+# the pure cross-session scenario (separate urbi_repl_eval calls) is covered
+# by tests/unit/test_emit_closure_capture.c instead.
+#
+# This fixture validates single-session nested closure construction so that any
+# bytecode-level regression in the OP_CLOSURE origin_nested path is caught
+# before it would affect cross-session calls in the REPL.
+
+var mk = function() { var x = 42; function() { x } }; var get_x = mk(); get_x()
+[00000001] 42
