@@ -16,6 +16,7 @@ extern "C" {
 typedef enum {
     TOK_EOF = 0,      /* end of input — sentinel */
     TOK_INT,          /* integer literal */
+    TOK_FLOAT,        /* floating-point literal — 1.5, .5, 1.5e3, 1e3 */
     TOK_STRING,       /* string literal — "foo", with \n/\t/\\/\" escapes */
     TOK_IDENT,        /* identifier [a-zA-Z_][a-zA-Z0-9_]* */
 
@@ -113,6 +114,9 @@ typedef enum {
     LEX_UNICODE_ESCAPE_TOO_SHORT,    /* \uXXXX form has fewer than 4 hex digits */
     LEX_UNICODE_ESCAPE_OUT_OF_RANGE, /* \u{HHHHHH} code point exceeds U+10FFFF */
     LEX_LONE_SURROGATE,              /* \u escape resolves to U+D800..U+DFFF */
+    LEX_FLOAT_TRAILING_DOT,          /* 1. — no fraction digits after the decimal point */
+    LEX_FLOAT_EXPONENT_NO_DIGITS,    /* 1.5e+ or 1e — exponent marker with no digits */
+    LEX_FLOAT_OVERFLOW,              /* float literal exceeds representable range (±inf) */
     LEX__LAST          /* sentinel; not a real error code — used to size
                           ERR_MSG[] and detect drift via _Static_assert */
 } ULexError;
@@ -130,6 +134,7 @@ typedef enum {
  *
  * Union invariants (active member per type):
  *   u.i    — TOK_INT: the parsed integer value
+ *   u.f    — TOK_FLOAT: the parsed floating-point value (double)
  *   u.str  — TOK_IDENT (and keyword tokens TOK_KW_*): start/len point into
  *            the source buffer (caller-owned lifetime, see above)
  *   u.err  — TOK_ERROR: code (ULexError) + static-storage message string
@@ -144,6 +149,7 @@ typedef struct {
     int len;          /* span length in source chars */
     union {
         int64_t i;                          /* TOK_INT */
+        double  f;                          /* TOK_FLOAT */
         struct {                            /* TOK_IDENT */
             const char *start;
             int len;
