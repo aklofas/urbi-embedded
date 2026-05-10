@@ -99,7 +99,7 @@ struct URealm *urbi_realm_global(struct UVM *vm);
  * v1.x deferral (see docs/urbi-embedded-design-risks.md).  The realm-tagged
  * predecessor `urbi_realm_has_live_work` was renamed at v0.6.0 to match
  * actual semantic. */
-bool           urbi_vm_has_live_work(struct UVM *vm,
+bool           urbi_vm_has_live_work(const struct UVM *vm,
                                      uint32_t *out_strands,
                                      uint32_t *out_watchers,
                                      uint32_t *out_wakes);

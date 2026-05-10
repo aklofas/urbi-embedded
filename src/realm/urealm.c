@@ -232,7 +232,7 @@ urbi_realm_global(struct UVM *vm)
  * out_strands, out_watchers, out_wakes may be NULL. */
 
 bool
-urbi_vm_has_live_work(struct UVM *vm,
+urbi_vm_has_live_work(const struct UVM *vm,
                       uint32_t *out_strands,
                       uint32_t *out_watchers,
                       uint32_t *out_wakes)

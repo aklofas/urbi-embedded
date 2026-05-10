@@ -447,11 +447,9 @@ UTEST(vm_has_live_work_null_out_params)
     UASSERT_EQ(false, urbi_vm_has_live_work(&vm, &strands, NULL, NULL));
     UASSERT_EQ((uint32_t)0, strands);
 
-    strands = 0xDEADBEEFu;
     UASSERT_EQ(false, urbi_vm_has_live_work(&vm, NULL, &watchers, NULL));
     UASSERT_EQ((uint32_t)0, watchers);
 
-    watchers = 0xDEADBEEFu;
     UASSERT_EQ(false, urbi_vm_has_live_work(&vm, NULL, NULL, &wakes));
     UASSERT_EQ((uint32_t)0, wakes);
 

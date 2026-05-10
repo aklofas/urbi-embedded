@@ -76,6 +76,6 @@ constParameterCallback:src/event/uevent_native.c:174
 // The values are correctness-needed under hosted builds (REPL diagnostics)
 // and dead under freestanding builds (where the only outcome is a fixed
 // "compile error" string fallback).
-unreadVariable:src/module/uchunk.c:136
-unreadVariable:src/module/uchunk.c:141
+unreadVariable:src/module/uchunk.c:137
 unreadVariable:src/module/uchunk.c:142
+unreadVariable:src/module/uchunk.c:143
