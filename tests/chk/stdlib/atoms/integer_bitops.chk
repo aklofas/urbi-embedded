@@ -1,0 +1,33 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 Integer bitwise methods.
+#
+# Per REVIVAL §14 S14, bitwise ops are NAMED methods (not symbolic
+# operators).  The v1.0 lex has no `&`-as-bitwise / `|`-as-bitwise
+# tokens (TOK_AMP is the parallel-join concurrency separator).
+#
+# bitand / bitor / bitxor / bitnot / shl / shr.
+
+240.bitand(15)
+[00000000] 0
+
+240.bitor(15)
+[00000001] 255
+
+255.bitxor(15)
+[00000002] 240
+
+0.bitnot()
+[00000003] -1
+
+1.shl(4)
+[00000004] 16
+
+256.shr(4)
+[00000005] 16
+
+# Shift amount out of range returns 0 (well-defined; avoids signed UB).
+1.shl(64)
+[00000006] 0
+
+1.shr(64)
+[00000007] 0

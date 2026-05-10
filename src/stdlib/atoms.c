@@ -213,6 +213,84 @@ int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Integer bitops (T40) =================================================
+ *
+ * Per REVIVAL §14 S14, bitwise are NAMED methods (no symbolic-operator
+ * lex tokens reserve `&` / `|` for bitwise — `&` is the parallel-join
+ * concurrency separator).  Shift amount out of [0, 64) returns 0 (well-
+ * defined; avoids signed shift UB on x86 + cross-arm-cortex-m). */
+
+#define DEF_INT_BINOP(name, op)                                              \
+    static int                                                               \
+    int_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
+    {                                                                        \
+        if (nargs != 1) return urbi_raise_arity(vm, "Integer." #name, 1, nargs, out); \
+        if (self.kind != (uint8_t)UVAL_INT)                                  \
+            return urbi_raise_type(vm, "Integer." #name ": self must be Integer", out); \
+        if (args[0].kind != (uint8_t)UVAL_INT)                               \
+            return urbi_raise_type(vm, "Integer." #name ": argument must be Integer", out); \
+        *out = val_int(self.v.i op args[0].v.i);                             \
+        return UEXEC_OK;                                                     \
+    }
+
+DEF_INT_BINOP(bitand, &)
+DEF_INT_BINOP(bitor,  |)
+DEF_INT_BINOP(bitxor, ^)
+
+#undef DEF_INT_BINOP
+
+static int
+int_bitnot(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.bitnot", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.bitnot: self must be Integer", out);
+
+    *out = val_int(~self.v.i);
+    return UEXEC_OK;
+}
+
+static int
+int_shl(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Integer.shl", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.shl: self must be Integer", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.shl: argument must be Integer", out);
+
+    int64_t a = self.v.i;
+    int64_t s = args[0].v.i;
+    if (s < 0 || s >= 64) {
+        *out = val_int(0);
+    } else {
+        /* Cast through uint64_t to avoid signed-shift UB. */
+        *out = val_int((int64_t)((uint64_t)a << (uint64_t)s));
+    }
+    return UEXEC_OK;
+}
+
+static int
+int_shr(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Integer.shr", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.shr: self must be Integer", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.shr: argument must be Integer", out);
+
+    int64_t a = self.v.i;
+    int64_t s = args[0].v.i;
+    if (s < 0 || s >= 64) {
+        *out = val_int(0);
+    } else {
+        /* Logical shift right (uint64_t cast). */
+        *out = val_int((int64_t)((uint64_t)a >> (uint64_t)s));
+    }
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -222,7 +300,13 @@ static const AtomMethodEntry INT_METHODS[] = {
     { "asString",  int_asString  },
     { "asFloat",   int_asFloat   },
     { "asBoolean", int_asBoolean },
-    { "asInteger", int_asInteger }
+    { "asInteger", int_asInteger },
+    { "bitand",    int_bitand    },
+    { "bitor",     int_bitor     },
+    { "bitxor",    int_bitxor    },
+    { "bitnot",    int_bitnot    },
+    { "shl",       int_shl       },
+    { "shr",       int_shr       }
 };
 static const AtomMethodEntry FLOAT_METHODS[]   = { {NULL, NULL} };
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
