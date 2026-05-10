@@ -553,8 +553,6 @@ bool uemit_open_block(UEmitter *e, bool is_loop) {
     blk->first_local_idx   = fs->nactvar;
     blk->is_loop = is_loop;
     blk->has_captured = false;
-    blk->break_chain = -1;
-    blk->continue_chain = -1;
     return true;
 }
 
