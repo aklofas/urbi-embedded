@@ -46,6 +46,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_ONLEAVE", "TOK_KW_SYNC", "TOK_KW_ASYNC",
     "TOK_QUESTION", "TOK_BANG",
     "TOK_KW_CLASS", "TOK_KW_PUBLIC",
+    "TOK_KW_THIS",
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -557,6 +558,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
     KW_ENTRY("sync",      TOK_KW_SYNC),
+    KW_ENTRY("this",      TOK_KW_THIS),
     KW_ENTRY("throw",     TOK_KW_THROW),
     KW_ENTRY("true",      TOK_KW_TRUE),
     KW_ENTRY("try",       TOK_KW_TRY),

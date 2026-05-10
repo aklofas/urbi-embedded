@@ -89,6 +89,9 @@ typedef enum {
     TOK_KW_CLASS,
     TOK_KW_PUBLIC,
 
+    /* M6 wave 3 — this keyword (Gap #3) */
+    TOK_KW_THIS,
+
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size
