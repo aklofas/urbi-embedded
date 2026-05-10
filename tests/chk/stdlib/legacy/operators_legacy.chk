@@ -1,0 +1,28 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Origin: legacy tests/2.x/operators.chk
+# Covers: user-defined operator-named slots are invoked when the built-in
+#         arith opcodes get a type error.  The "==" slot drives both ==
+#         and != (see eq.chk / neq.chk for details).
+#
+# Deferred (v1.x): the legacy fixture uses the `.operator +(1)` explicit
+# operator-method call syntax and `x bitor y` / `in` operator.  None of
+# those parse forms exist in v0.6.x.  Full port tracks as a v1.x backlog
+# item (needs quoted-operator slot syntax and bitor/in keyword parsing).
+
+# Basic operator overloads: install named slots on a user class, then
+# verify the VM dispatch falls through to those slots.
+class MyNum {}; MyNum.setSlot("+", function(other) { 42 }); var m = MyNum.new(); m + m
+[00000000] 42
+
+class MyNum2 {}; MyNum2.setSlot("-", function(other) { 10 }); var m2 = MyNum2.new(); m2 - m2
+[00000001] 10
+
+class MyNum3 {}; MyNum3.setSlot("*", function(other) { 30 }); var m3 = MyNum3.new(); m3 * m3
+[00000002] 30
+
+class MyNum4 {}; MyNum4.setSlot("/", function(other) { 7 }); var m4 = MyNum4.new(); m4 / m4
+[00000003] 7
+
+# Equality overload: "==" slot drives both == and != (see neq.chk).
+class MyNum5 {}; MyNum5.setSlot("==", function(other) { 1 }); var m5 = MyNum5.new(); if (m5 == m5) { "yes" } else { "no" }
+[00000004] "yes"

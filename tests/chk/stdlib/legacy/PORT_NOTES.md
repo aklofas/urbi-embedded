@@ -83,7 +83,7 @@ parity".
 - `tests/2.x/inheritance.chk` Wave-1 deferred section: list literals
   for `setProtos([Global, Math])`.
 
-## Wave 3 addition (M6 Wave 3 / Phase 3, 2026-05-10)
+## Wave 3 additions (M6 Wave 3 / Phase 3-4, 2026-05-10)
 
 - `class_legacy.chk`: port of `tests/2.x/class.chk`.  The original
   wraps tests in bare `{ ... }` blocks (illegal at top-level in v1.0
@@ -91,6 +91,22 @@ parity".
   lines involving `this` (Gap #3) and closure upvalue capture (Gap #1),
   which are not yet landed in Wave 3.  Multi-slot class body extension
   added (Gap #2, now closed).
+
+- `operators_legacy.chk`: subset port of `tests/2.x/operators.chk`.
+  Tests that operator-named slots (+, -, *, /, ==) installed via
+  `setSlot` are called by the VM's Gap #4 type-error fallback.
+  Deferred: `.operator +(1)` explicit-method call syntax, `bitor`,
+  and `in` operator are not in the v0.6.x parser.
+
+- `operator-parens.chk` (deferred to v1.x): requires the `'()'` slot
+  name for the call operator and `call.evalArgs()` (CallMessage
+  reflection).  Neither is available in v0.6.x.
+
+- `edit-container.chk` (deferred to v1.x): tests `l[i] += N` compound
+  subscript assignment on List and Dict.  Requires list/dict literal
+  syntax (`[1, 2, 3]`, `["a" => 0]`) and compound-assignment desugar
+  (`l[i] += v` → `l.set(i, l.get(i) + v)`), none of which exist in
+  v0.6.x.
 
 ## Adjustments applied during port
 
