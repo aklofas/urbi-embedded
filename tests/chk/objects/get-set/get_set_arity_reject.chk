@@ -1,0 +1,24 @@
+# Milestone: M6 Wave 2 (Phase 2 follow-up)
+# Covers: T41 install-time arity validation for `get`/`set` parse sugar.
+#
+# Pre-fix: a wrong-arity getter / setter would compile cleanly and
+# install successfully; the dispatch-time invocation later read from
+# uninitialized register slots → SIGSEGV.  Post-fix: rejected at
+# Object.setProperty install time with an ArityError emitted to stderr
+# and a TypeError surfaced from the OP_CALL native arm.
+#
+# stderr is merged with stdout by the chk runner; the ArityError line
+# (from urbi_raise_arity, no [N] frame) interleaves before the
+# TypeError [N] frame line.
+
+var Foo = Object.clone(); Foo.get x(a, b) { a + b }; Foo.x
+[] ArityError: get expected 0 args, got 2
+[00000000] !!! TypeError: CALL: native method raised
+
+var Bar = Object.clone(); Bar.set y() { 42 }; Bar.y = 1
+[] ArityError: set expected 1 args, got 0
+[00000001] !!! TypeError: CALL: native method raised
+
+var Baz = Object.clone(); Baz.set z(a, b) { a + b }; Baz.z = 1
+[] ArityError: set expected 1 args, got 2
+[00000002] !!! TypeError: CALL: native method raised

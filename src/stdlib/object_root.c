@@ -629,6 +629,31 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
             out);
     }
 
+    /* T41 critical fix: validate the closure's arity at install time.
+     * The runtime dispatch path (urbi_run_closure_on_scratch) does not
+     * check nparams against the call shape — getter dispatch passes 0
+     * args, setter dispatch passes 1 arg.  A wrong-arity closure body
+     * would read uninitialized register slots → SIGSEGV.  Reject here
+     * with a clear ArityError instead.  `constant` carries through
+     * whatever value is passed (no closure expected), so no check.
+     *
+     * args[2] is a UClosure for oget/oset (emit_property_decl_arm
+     * synthesizes an AST_FUNCTION arg).  Nparams lives on the proto. */
+    if (flag_bit == URBI_SLOT_FLAG_OGET || flag_bit == URBI_SLOT_FLAG_OSET) {
+        if (args[2].kind != (uint8_t)UVAL_CLOSURE || args[2].v.p == NULL) {
+            return urbi_raise_type(vm,
+                "setProperty: oget/oset requires a function value", out);
+        }
+        const struct UClosure *cl = (const struct UClosure *)args[2].v.p;
+        const uint8_t expected = (flag_bit == URBI_SLOT_FLAG_OGET) ? 0U : 1U;
+        const uint8_t got = (cl->proto != NULL) ? cl->proto->nparams : 0U;
+        if (got != expected) {
+            const char *fn_name =
+                (flag_bit == URBI_SLOT_FLAG_OGET) ? "get" : "set";
+            return urbi_raise_arity(vm, fn_name, expected, got, out);
+        }
+    }
+
     /* Materialize the slot with a nil placeholder if it doesn't exist —
      * legacy `get x()` / `set x(v)` sugar implicitly creates the slot. */
     UObject *holder = NULL;
