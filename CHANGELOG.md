@@ -74,6 +74,58 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
   documented in `PORT_NOTES.md`.
 - **Footprint vs Phase 1 (host):** +0.5 % (+970 B text).
 
+### Phase 5 — Closure upvalue capture across sessions (Gap #1)
+
+- **Root cause fixed:** `UClosure` objects migrated to `vm->stdlib_closures`
+  at run-end held a `UProto *` into the originating REPL-session `UModule`.
+  After `urbi_repl_eval` returned, `umodule_destroy` freed those protos,
+  leaving dangling `proto->instructions` pointers. Any cross-session call
+  to such a closure segfaulted or executed garbage bytes.
+
+- **Proto lifetime — `urbi_steal_repl_protos` (uchunk.c):** Before
+  `umodule_destroy` runs, scan `vm->stdlib_closures` for any closure whose
+  proto lives in the session module.  When found, steal the entire
+  `nested[]` array: set `module->nested = NULL` (so `umodule_destroy` skips
+  it) and track the stolen array on `vm->stdlib_nested_arrays` (new
+  `UNestedArrayNode` list).  Thread individual `UProto` structs onto
+  `vm->stdlib_protos` for buffer cleanup at `urbi_vm_destroy`.
+
+- **OP_CLOSURE nested-proto lookup (uvm.c):** `OP_CLOSURE` reads
+  `nested_arr[bx]` to find the child proto.  Previously it always read
+  `s->module->nested` (the top-level session module's array, not the
+  callee's originating module's array).  Cross-session calls failed with
+  "proto index out of range" when creating inner closures from stolen protos.
+
+  Fix: when executing inside a closure frame (`frame_count > 0`), use the
+  current frame's `closure->origin_nested` (captured at `OP_CLOSURE`
+  creation time from `s->module->nested`) instead of `s->module->nested`.
+  New closures propagate the same `origin_nested` so transitive chains
+  (outer → middle → inner) all resolve against the same stolen array.
+  `UClosure` gains `origin_module_instance` (`UModuleInstance *`) so that
+  `proto_inst` (IC table) bindings also resolve correctly across sessions
+  via the parent closure's module-instance entries.
+
+- **New fields on `UClosure`:** `origin_nested` (`UProto **`),
+  `origin_nested_count` (`uint16_t`), `origin_module_instance`
+  (`UModuleInstance *`).
+
+- **New fields on `UVM`:** `stdlib_protos` (`UProto *`),
+  `stdlib_nested_arrays` (`UNestedArrayNode *`). Both freed in
+  `urbi_vm_destroy`.
+
+- **New type in `uvm.h`:** `UNestedArrayNode` — bookkeeping node for
+  stolen nested[] arrays (arr pointer + alloc_fn + alloc_ud + next link).
+
+- **New field on `UProto`:** `next_alloc` (runtime-only intrusive list link
+  for `stdlib_protos`; not serialized).
+
+- **Tests:** 11 new unit cases in `tests/unit/test_emit_closure_capture.c`
+  covering same-session, cross-session, `setSlot` install, local upvalue,
+  double-nested, triple-nested, `setProperty`/`.oget`, `OP_CLOSE` counter,
+  multiple closures. Two new `.chk` fixtures: `closure/cross_session.chk`,
+  `closure/nested_factory.chk`. Test corpus: 1429 → 1483 unit cases;
+  215 → 231 `.chk` fixtures.
+
 ### Phase 3 — Multi-slot class body (Gap #2)
 
 - Phase 3: multi-slot class body via AST_BIN_SEP/AST_NARY recursion in emit_class_body_stmt; no AST changes. ~30 LOC.
