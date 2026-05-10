@@ -4,6 +4,27 @@
 
 (empty)
 
+## v0.6.1-stdlib — Wave 2 of M6 stdlib (UNRELEASED)
+
+**Tag:** `v0.6.1-stdlib`
+**Theme:** Tier 1 standard library content on top of Wave 1's scaffolding.
+
+### Added
+
+- (filled in during execution per phase)
+
+### Changed
+
+- (filled in)
+
+### Fixed
+
+- (filled in)
+
+### Tooling
+
+- (filled in)
+
 ## v0.6.0-stdlib-scaffold — 2026-05-09 — Wave 1 of M6 stdlib
 
 **Theme:** Language scaffolding for the M6 standard library — string
