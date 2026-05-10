@@ -57,7 +57,7 @@ knownConditionTrueFalse:src/object/uobject_slot.c:550
 // correctly flags the call-site as `always true`.  M5 refines pattern dispatch
 // to actual exception-class matching (see comment block at uunwind.c:55-62);
 // suppressing keeps the gate green until that lands.
-knownConditionTrueFalse:src/runtime/uunwind.c:275
+knownConditionTrueFalse:src/runtime/uunwind.c:288
 
 // audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
 // dictated by the native-event callback function-pointer type registered
