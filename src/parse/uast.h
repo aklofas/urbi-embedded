@@ -56,7 +56,8 @@ typedef enum {
     AST_THROW      = 23,    /* throw expr */
 
     /* M3 — tag scope */
-    AST_TAG_PREFIX = 24,    /* mytag: { body } — tag-scope syntax; onleave deferred to M5 */
+    AST_TAG_PREFIX = 24,    /* mytag: { body } — tag-scope syntax; tag-prefix
+                               onleave clause is v1.x (PARSE-033 closure) */
 
     /* M4 — slot member access */
     AST_MEMBER_GET = 25,    /* obj.x         — recv + name */
@@ -231,7 +232,7 @@ typedef enum {
  *   u.assign      — AST_ASSIGN: assignment to existing local/upvalue
  *   u.try_stmt    — AST_TRY:    try body + optional catch/finally
  *   u.throw_expr  — AST_THROW:  value expression to throw
- *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave=NULL at M3
+ *   u.tag_prefix  — AST_TAG_PREFIX: tag-scope (mytag: { body }); onleave is v1.x
  *   u.member      — AST_MEMBER_GET, AST_MEMBER_SET: slot read / slot assignment
  *   u.prop        — AST_PROP_GET, AST_PROP_SET: slot-property read / assignment
  *   u.watcher     — AST_WATCHER:         at/at sync/whenever + optional onleave
@@ -356,7 +357,19 @@ struct UAstNode {
         struct {                                            /* AST_TAG_PREFIX */
             UAstNode   *tag_expr;          /* the tag identifier (AST_IDENT) */
             UAstNode   *body;              /* AST_BLOCK — the tag-scoped body */
-            UAstNode   *onleave;           /* onleave body — NULL at M3; M5 wires syntax */
+            UAstNode   *onleave;           /* onleave body for `tag: { body }
+                                              onleave handler` syntax.  NULL
+                                              today and the parser does not
+                                              consume an `onleave` clause on
+                                              AST_TAG_PREFIX — that surface is
+                                              v1.x scope (PARSE-033 closure).
+                                              The field is kept on the union
+                                              variant so the v1.x parse + emit
+                                              sites land as a code addition
+                                              rather than an AST shape break.
+                                              `at (cond) body onleave handler`
+                                              uses AST_WATCHER.onleave instead;
+                                              that form IS supported today. */
         } tag_prefix;
         struct {                                            /* AST_MEMBER_GET, AST_MEMBER_SET */
             UAstNode   *recv;              /* receiver expression */
