@@ -372,13 +372,13 @@ every object's `lookup_stamp` and resets `lookup_id` to 1.
 Parse-only desugar; no new opcodes, no runtime change beyond wiring the
 deferred `oget`/`oset` dispatch arms.
 
-```
+```text
 get x() { body }
 ```
 
 becomes (at emit time)
 
-```
+```text
 recv.setProperty("x", "oget", function() { body })
 ```
 
