@@ -136,9 +136,15 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
 
     /* Run to completion: loop until strand is DEAD or a fatal error sets last_error.
        OP_YIELD or per-strand budget exhaustion leaves state READY — treat as
-       "continue" for the M2 API contract (urbi_vm_run must block until completion). */
+       "continue" for the M2 API contract (urbi_vm_run must block until completion).
+       M6 Phase 7: vm->cur_strand must be set during dispatch so native methods
+       (Exception.raise, urbi_throw callers, c_event_waituntil, etc.) can
+       reach the running strand.  Pre-Phase-7 only ustep.c set this field;
+       urbi_vm_run is the synchronous one-shot path and was a gap. */
     for (;;) {
+        vm->cur_strand = &strand;
         (void)dispatch_loop_until_yield(&strand, /* step_budget */ UINT64_MAX);
+        vm->cur_strand = NULL;
         if (strand.state == USTRAND_STATE_DEAD) break;
         if (vm->last_error != UVM_OK) break;
         if (strand.state == USTRAND_STATE_READY) {

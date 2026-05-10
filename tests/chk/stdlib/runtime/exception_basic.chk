@@ -1,0 +1,23 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 7 Exception primitive root — `Exception.new(message)`
+#         constructor, `.message` slot, `.raise` deposit + try/catch
+#         absorption.
+#
+# Exception.raise calls urbi_throw on vm->cur_strand from the C native
+# method; the OP_CALL native arm (Phase 7 v0.6.1 change) routes the
+# deposited pending_unwind through safepoint so try/catch can intercept,
+# matching OP_THROW behaviour.  Pre-Phase-7 native UEXEC_THROW returns
+# fatal-halted the strand; that legacy path is preserved for native
+# methods that return UEXEC_THROW directly (e.g. urbi_raise_arity).
+
+# Constructor binds message slot — read it back.
+Exception.new("boom").message
+[00000000] "boom"
+
+# Catch absorbs raise; catch var binds the Exception instance.
+var caught = nil; try { Exception.new("via raise").raise() } catch (x) { caught = x.message }; caught
+[00000001] "via raise"
+
+# Raise from a previously-bound instance round-trips the message.
+var e2 = Exception.new("hello"); var msg = nil; try { e2.raise() } catch (c) { msg = c.message }; msg
+[00000002] "hello"

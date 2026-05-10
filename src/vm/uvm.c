@@ -574,11 +574,27 @@ dispatch:
                                            (uint8_t)nargs, &native_out);
                 if (rc == UEXEC_OK) {
                     s->R[a] = native_out;
+                    /* M6 Phase 7: a native that called urbi_throw (or one
+                     * of the sibling urbi_return_val / urbi_tag_stop_local
+                     * helpers) deposited pending_unwind on the strand but
+                     * returned UEXEC_OK so this arm wouldn't fatal-halt.
+                     * Route through safepoint so urbi_unwind walks the
+                     * cleanup stack — try/catch handlers bind the
+                     * deposited unwind value as the catch variable.  Used
+                     * by Exception.raise (src/stdlib/runtime_types.c). */
+                    if (s->pending_unwind != UEXEC_OK) {
+                        s->pc++;
+                        goto safepoint;
+                    }
                     NEXT();
                 }
-                /* Native raised: propagate as a TypeError to surface the
-                 * Phase-3 baseline error printed by urbi_raise_*.  Wave 2
-                 * swaps in proper Exception-class wiring. */
+                /* Native returned UEXEC_THROW (the legacy urbi_raise_*
+                 * helpers' return path).  Pre-Phase-7 fixtures depend on
+                 * this surfacing as a fatal "CALL: native method raised"
+                 * TypeError that halts the strand — preserve that path
+                 * for backwards compatibility.  Native code that wants
+                 * a catchable raise must call urbi_throw + return UEXEC_OK
+                 * (the Phase-7 Exception.raise pattern). */
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: native method raised");
                 HALT();

@@ -304,6 +304,9 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->container_triplet_proto != NULL) gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
     if (vm->container_tuple_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
 
+    /* M6 Phase 7: Exception primitive proto. */
+    if (vm->exception_proto != NULL) gc_shade_gray(vm, (UCell *)vm->exception_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

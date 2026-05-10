@@ -26,6 +26,7 @@
 #include "stdlib/atom_protos.h"
 #include "stdlib/atoms.h"
 #include "stdlib/containers.h"
+#include "stdlib/runtime_types.h"
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -68,7 +69,14 @@ urbi_stdlib_boot(UVM *vm)
     rc = urbi_stdlib_register_containers(vm);
     if (rc != URBI_OK) return rc;
 
-    /* Phase 7 (Event.new / Tag.new scripted constructors) hooks in here. */
+    /* Phase 7 (M6 Wave 2): runtime-type protos.  Allocates
+     * vm->exception_proto and installs Exception.new / Exception.raise.
+     * Realm-global binding for "Exception" is deferred to the post-loop
+     * hook urbi_stdlib_register_runtime_globals, mirroring container
+     * globals so the registry's slot 0..7 layout stays stable.  See
+     * src/stdlib/runtime_types.c. */
+    rc = urbi_stdlib_register_runtime_types(vm);
+    if (rc != URBI_OK) return rc;
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
      * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)

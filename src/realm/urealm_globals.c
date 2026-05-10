@@ -23,6 +23,7 @@
 #include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot — M6 Phase 3 */
 #include "stdlib/containers.h"  /* urbi_stdlib_register_container_globals — M6 Phase 6 */
+#include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals — M6 Phase 7 */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
 #include "module/umodule.h"
@@ -403,6 +404,16 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * Object..List layout. */
     {
         int rc = urbi_stdlib_register_container_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* M6 Phase 7: post-registry runtime-type globals (Exception).  Same
+     * post-loop pattern as containers — lands at slots 15+, past the
+     * v1.0 packed-flag CONSTANT enforcement range. */
+    {
+        int rc = urbi_stdlib_register_runtime_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
