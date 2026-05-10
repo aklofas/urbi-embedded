@@ -6,10 +6,23 @@
 #include "runtime/umacros.h"
 
 #include <limits.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
+
+/* strtod (for float literal parsing): from stdlib.h on hosted; declared
+ * explicitly for freestanding builds (newlib / picolibc supply it at link
+ * time for embedded targets; no header pull-in needed for the declaration). */
+#if __STDC_HOSTED__
+#  include <stdlib.h>
+#else
+/* Forward declaration for newlib / picolibc strtod on embedded targets.
+ * On a pure freestanding build without a C library this will produce a
+ * linker error for any float literal in the input — acceptable because
+ * the URBI_BYTECODE_ONLY strip path removes the lex/parse/emit subsystem
+ * entirely for bare-metal deploys.  The cross-compile gate only verifies
+ * that the code compiles; actual float-literal parse is host-only. */
+extern double strtod(const char *, char **);
+#endif
 
 /* Length of a radix prefix ("0x", "0b", "0o").  Used by scan_radix to size
    the EMPTY_RADIX error span; LEX_RADIX_PREFIX_LEN + 1 sizes the MALFORMED
@@ -419,7 +432,12 @@ static UToken scan_float_body(ULexer *lex, const char *start,
 
     char *endp = NULL;
     const double val = strtod(buf, &endp);
-    if (isinf(val)) {
+    /* Detect overflow: strtod returns ±infinity when the value exceeds the
+     * representable double range.  We check without <math.h> by using the
+     * IEEE-754 identity that (val - val) is NaN (not 0.0) for infinite
+     * operands; this avoids a <math.h> dependency in the lexer (freestanding
+     * targets may not have isinf() without the header). */
+    if (val != 0.0 && val - val != 0.0) {
         return make_error(LEX_FLOAT_OVERFLOW, start_line, start_col, span);
     }
 
