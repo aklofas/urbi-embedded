@@ -1,0 +1,17 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 String character methods (byte-level).
+#
+# asciiAt — return the byte at index as Integer (0..255).
+# Codepoint-aware variants are Wave 2 backlog (delta §3.2).
+
+"hello".asciiAt(0)
+[00000000] 104
+
+"hello".asciiAt(4)
+[00000001] 111
+
+"A".asciiAt(0)
+[00000002] 65
+
+"\n".asciiAt(0)
+[00000003] 10

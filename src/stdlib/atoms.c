@@ -852,6 +852,33 @@ str_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         "String.asBoolean: only \"true\" / \"false\" recognized", out);
 }
 
+/* === String.asciiAt (T50) ================================================
+ *
+ * Byte-level codepoint access — returns the byte at the given index as
+ * Integer (0..255).  charAt (T45) returns a 1-byte string slice; asciiAt
+ * returns the numeric byte value.  Codepoint-aware variants (codePointAt
+ * etc.) are deferred to Wave 2 Unicode follow-up (delta §3.2). */
+
+static int
+str_asciiAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.asciiAt", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.asciiAt: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "String.asciiAt: index must be Integer", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String.asciiAt: NULL string", out);
+    size_t n = urbi_strlen(s);
+    int64_t i = args[0].v.i;
+    if (i < 0 || (size_t)i >= n)
+        return urbi_raise_type(vm, "String.asciiAt: index out of range", out);
+
+    *out = val_int((int64_t)(unsigned char)s[i]);
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -904,7 +931,8 @@ static const AtomMethodEntry STR_METHODS[] = {
     { "endsWith",   str_endsWith   },
     { "asInteger",  str_asInteger  },
     { "asFloat",    str_asFloat    },
-    { "asBoolean",  str_asBoolean  }
+    { "asBoolean",  str_asBoolean  },
+    { "asciiAt",    str_asciiAt    }
 };
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
