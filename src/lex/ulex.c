@@ -51,7 +51,10 @@ static const char * const ERR_MSG[] = {
     "adjacent underscores in numeric literal",
     "integer literal exceeds INT64_MAX",
     "unterminated string literal",
-    "invalid escape sequence in string literal"
+    "invalid escape sequence in string literal",
+    "unicode escape requires 4 hex digits",
+    "unicode code point exceeds U+10FFFF",
+    "unicode escape resolves to a lone surrogate"
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 _Static_assert(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
