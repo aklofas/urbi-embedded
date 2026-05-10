@@ -39,7 +39,14 @@ UTEST(destroy_module_with_buffers_frees_them) {
     c.instructions[0] = 0x11223344;
     c.instructions[1] = 0x55667788;
 
-    c.constants = (UValue *)malloc(sizeof(UValue) * 2);
+    /* calloc, not malloc: umodule_destroy walks `const_count` slots through
+     * free_owned_str_constants, which inspects each UValue's kind + _pad[0]
+     * (the deserializer-set ownership marker for UVAL_STR; emit-time slots
+     * carry _pad[0] == 0).  malloc'd uninitialised bytes trip valgrind on
+     * the kind/_pad reads even when no slot is actually a marked string;
+     * calloc gives a valgrind-clean baseline that matches the deserializer
+     * (which zero-fills before decoding). */
+    c.constants = (UValue *)calloc(2, sizeof(UValue));
     c.const_cap = 2;
     c.const_count = 1;
 
