@@ -79,3 +79,12 @@ constParameterCallback:src/event/uevent_native.c:174
 unreadVariable:src/module/uchunk.c:137
 unreadVariable:src/module/uchunk.c:142
 unreadVariable:src/module/uchunk.c:143
+
+// audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
+// expands to native-method callbacks whose signature is pinned by the
+// urbi_native_method_fn typedef (UVM *vm, UValue self, UValue *args,
+// uint8_t nargs, UValue *out).  cppcheck flags `args` as constable
+// because the macro body only reads args[0]; const-casting would
+// cascade through every native-method registration site.  Mirrors the
+// rationale at CPPCHK-012 above.
+constParameterPointer:src/stdlib/atoms.c

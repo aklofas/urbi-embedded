@@ -626,14 +626,18 @@ str_caseop(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out,
     char *buf = (char *)vm->alloc_fn(NULL, n + 1U, vm->alloc_ud);
     if (buf == NULL) return urbi_raise_oom(vm, out);
 
+    /* ASCII case toggle: bit 0x20 distinguishes 'A'..'Z' (0x41..0x5A)
+     * from 'a'..'z' (0x61..0x7A).  toUpper clears the bit; toLower
+     * sets it.  Avoids signed-narrowing warnings from (char)(c - DELTA). */
     size_t i;
     for (i = 0; i < n; i++) {
         unsigned char c = (unsigned char)s[i];
         if (to_upper) {
-            buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - ('a' - 'A')) : (char)c;
+            if (c >= (unsigned char)'a' && c <= (unsigned char)'z') c &= (unsigned char)~0x20U;
         } else {
-            buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : (char)c;
+            if (c >= (unsigned char)'A' && c <= (unsigned char)'Z') c |= (unsigned char)0x20U;
         }
+        buf[i] = (char)c;
     }
     buf[n] = '\0';
 
