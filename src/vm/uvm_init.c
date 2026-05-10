@@ -28,6 +28,7 @@
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
+#include "module/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -295,6 +296,7 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* M6 Phase 3: stdlib state. */
     vm->stdlib_closures = NULL;
     vm->stdlib_upvalues = NULL;
+    vm->stdlib_module   = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
     vm->stdlib_booted   = 0U;
     {
         int i;
@@ -365,6 +367,16 @@ void urbi_vm_destroy(UVM *vm) {
             uc = next;
         }
         vm->stdlib_upvalues = NULL;
+
+        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
+         * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
+         * UModuleInstance referencing this module has already been
+         * reaped — no dangling ic_names back-reference can survive. */
+        if (vm->stdlib_module != NULL) {
+            umodule_destroy(vm->stdlib_module);
+            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
+            vm->stdlib_module = NULL;
+        }
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */

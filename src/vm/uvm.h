@@ -428,6 +428,10 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   (now on stdlib_closures) reference these upvals; freeing them at
      *   run-end would dangle the closure's upvals[] array.  Threaded via
      *   UUpvalCell.next; freed at urbi_vm_destroy.
+     * stdlib_module: heap-allocated UModule deserialized from the baked
+     *   urbi_stdlib_bytecode blob during urbi_stdlib_boot.  NULL when the
+     *   blob is empty (Phase 4 baseline) or boot has not run.  Owned by
+     *   the VM; freed via umodule_destroy + alloc_fn at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
      * last_recv: receiver UValue from the most recent OP_GETSLOT load.
@@ -439,6 +443,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   arm reads this only on the native_fn != NULL branch. */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
+    struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;

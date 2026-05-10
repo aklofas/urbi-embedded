@@ -137,7 +137,15 @@ typedef enum {
     URBI_ERR_CONST_SLOT_WRITE           = -11,
     URBI_ERR_SLOT_NOT_FOUND             = -12,
     URBI_ERR_SHAPE_BOUNDS               = -13,  /* T68: slot index past v1.0 packed-flag cap */
-    URBI_ERR_PROTO_DEPTH                = -14   /* T68: prototype-graph resolve-stack overflow */
+    URBI_ERR_PROTO_DEPTH                = -14,  /* T68: prototype-graph resolve-stack overflow */
+    /* URBI_ERR_STDLIB_BOOT_FAILED: returned by urbi_stdlib_boot (and any
+     * caller that propagates it) when the embedded stdlib bytecode blob
+     * fails to deserialize or bind during VM/realm bootstrap.  Distinct
+     * from URBI_ERR_OOM (which signals allocation failure during boot)
+     * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
+     * urbi_load_translate_load_err for the file-load surface).  M6
+     * Phase 4 reserves this code; the empty-blob path never reaches it. */
+    URBI_ERR_STDLIB_BOOT_FAILED         = -15
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===
