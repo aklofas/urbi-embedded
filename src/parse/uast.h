@@ -115,9 +115,17 @@ typedef enum {
                              * the receiver is emitted explicitly. */
 
     /* v0.6.2 Phase 1 — float literal (Gap #5) */
-    AST_FLOAT_LIT = 36      /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
+    AST_FLOAT_LIT = 36,     /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
                              * Parsed from TOK_FLOAT; emit routes through
                              * OP_LOADK with a UVAL_FLOAT constant. */
+
+    /* v0.6.2 Phase 2 — this keyword (Gap #3) */
+    AST_THIS = 37           /* `this` keyword — resolves to receiver (R0) in
+                             * method bodies.  Carries no payload; line+col
+                             * are inherited from the base node.  Top-level
+                             * `this` (lobby alias) is deferred to v1.x;
+                             * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
+                             * fs->parent == NULL. */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
