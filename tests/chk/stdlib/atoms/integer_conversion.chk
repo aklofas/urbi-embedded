@@ -1,0 +1,35 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 5 Integer conversion methods.
+#
+# asString — base-10 decimal representation
+# asFloat  — int → float promotion (UVAL_INT to UVAL_FLOAT)
+# asBoolean — zero/non-zero predicate (legacy semantics)
+# asInteger — identity (legacy: every numeric exposes asInteger)
+
+42.asString()
+[00000000] "42"
+
+0.asString()
+[00000001] "0"
+
+(-7).asString()
+[00000002] "-7"
+
+# asFloat — UVAL_FLOAT, prints as N.0 per Lua 5.4 trailing-.0 rule.
+42.asFloat()
+[00000003] 42.0
+
+0.asFloat()
+[00000003.5] 0.0
+
+0.asBoolean()
+[00000004] false
+
+1.asBoolean()
+[00000005] true
+
+(-1).asBoolean()
+[00000006] true
+
+42.asInteger()
+[00000007] 42

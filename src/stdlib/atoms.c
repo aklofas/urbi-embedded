@@ -41,6 +41,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if __STDC_HOSTED__
+#  include <stdio.h>                   /* snprintf for asString */
+#endif
+
 /* === Method-table entry + per-proto installer ============================= */
 
 typedef struct {
@@ -74,11 +78,47 @@ install_methods(UVM *vm, UObject *proto,
 /* === UValue construction helpers (file-private; zero pad bytes) =========== */
 
 static UValue
+val_int(int64_t i)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i = i;
+    return v;
+}
+
+static UValue
+val_float(double f)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_FLOAT;
+#if URBI_FLOAT_TYPE == 8
+    v.v.f = f;
+#else
+    v.v.f = (float)f;
+#endif
+    return v;
+}
+
+static UValue
 val_bool(int b)
 {
     UValue v = urbi_value_nil();
     v.kind = (uint8_t)UVAL_BOOL;
     v.v.i = b ? 1 : 0;
+    return v;
+}
+
+static UValue
+val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
+{
+    UValue v = urbi_value_nil();
+    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
+    if (sym == NULL) {
+        if (oom != NULL) *oom = 1;
+        return v;
+    }
+    v.kind = (uint8_t)UVAL_STR;
+    v.v.p = sym;
     return v;
 }
 
@@ -102,12 +142,88 @@ bool_negate(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === Integer.asString / asFloat / asBoolean / asInteger (T39) =============
+ *
+ * asString prints base-10 via snprintf into a stack buffer, then interns.
+ * Buffer 24 B is large enough for any int64_t (worst case 20 chars +
+ * sign + NUL).  Freestanding builds without snprintf raise TypeError;
+ * Wave 2 ships its own decimal formatter when the freestanding path
+ * becomes load-bearing (urbi-embedded targets Cortex-M7 with newlib-nano,
+ * which does provide snprintf — the freestanding fallback is reserved
+ * for STM32 stripped-libc configurations). */
+
+static int
+int_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asString", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.asString: self must be Integer", out);
+
+#if __STDC_HOSTED__
+    char buf[24];
+    int n = snprintf(buf, sizeof(buf), "%lld", (long long)self.v.i);
+    if (n <= 0 || (size_t)n >= sizeof(buf))
+        return urbi_raise_type(vm, "Integer.asString: format failure", out);
+    int oom = 0;
+    UValue v = val_str_intern(vm, buf, (size_t)n, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+#else
+    (void)vm;
+    return urbi_raise_type(vm,
+        "Integer.asString: freestanding decimal formatter not yet linked", out);
+#endif
+}
+
+static int
+int_asFloat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asFloat", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.asFloat: self must be Integer", out);
+
+    *out = val_float((double)self.v.i);
+    return UEXEC_OK;
+}
+
+static int
+int_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asBoolean", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.asBoolean: self must be Integer", out);
+
+    *out = val_bool(self.v.i != 0);
+    return UEXEC_OK;
+}
+
+static int
+int_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Integer.asInteger", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Integer.asInteger: self must be Integer", out);
+
+    *out = self;
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
     { "negate", bool_negate }
 };
-static const AtomMethodEntry INT_METHODS[]     = { {NULL, NULL} };
+static const AtomMethodEntry INT_METHODS[] = {
+    { "asString",  int_asString  },
+    { "asFloat",   int_asFloat   },
+    { "asBoolean", int_asBoolean },
+    { "asInteger", int_asInteger }
+};
 static const AtomMethodEntry FLOAT_METHODS[]   = { {NULL, NULL} };
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 
@@ -116,7 +232,7 @@ static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
  * entries omit the sentinel.  COUNT macros use the sentinel form when
  * needed; populated tables use straight sizeof. */
 #define BOOL_METHODS_COUNT    (sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))
-#define INT_METHODS_COUNT     ((sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))   - 1U)
+#define INT_METHODS_COUNT     (sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))
 #define FLOAT_METHODS_COUNT   ((sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0])) - 1U)
 #define STR_METHODS_COUNT     ((sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))   - 1U)
 
