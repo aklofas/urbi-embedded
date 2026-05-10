@@ -470,6 +470,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * after the registry loop.  NULL until first VM boot.  GC
      * reachability via object_roots_walker. */
     struct UObject *math_proto;
+    struct UObject *system_proto;
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;

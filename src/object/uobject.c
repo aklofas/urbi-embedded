@@ -308,7 +308,8 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->exception_proto != NULL) gc_shade_gray(vm, (UCell *)vm->exception_proto);
 
     /* M6 Phase 8: namespace proto singletons.  T86 onwards. */
-    if (vm->math_proto != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
+    if (vm->math_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
+    if (vm->system_proto != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
 
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
