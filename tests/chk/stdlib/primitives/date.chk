@@ -1,0 +1,32 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 9 (T95) Date primitive — wall-clock access via libc time().
+#
+# Date.now()              — fresh Date instance with `seconds` slot bound
+#                            to the current Unix timestamp.
+# Date.fromSeconds(secs)  — fresh Date instance with `seconds` slot bound
+#                            to the supplied integer.
+# d.seconds()             — returns the bound seconds-since-epoch as Integer.
+# d.asString()            — UTC ISO-style "YYYY-MM-DD HH:MM:SS" via strftime
+#                            on hosted builds; "" stub on freestanding.
+#
+# Hosted builds use libc time() / gmtime_r / strftime; freestanding builds
+# return 0 / "" placeholders so the API surface compiles uniformly.  Phase
+# 10's `.u` overlay can layer Date.fromString / Date.toIso8601 / etc. on
+# top of this primitive.
+
+# Date.now() returns a Date instance with a positive integer seconds slot
+# (post-2023 Unix epoch sanity bound).
+var d = Date.now(); d.seconds() > 1700000000
+[00000000] true
+
+# Date.fromSeconds() round-trips the supplied integer.
+var d2 = Date.fromSeconds(1700000000); d2.seconds()
+[00000001] 1700000000
+
+# asString returns a non-empty String for a non-zero-timestamp Date.
+d2.asString().length() > 10
+[00000002] true
+
+# Two now() calls yield non-decreasing seconds (monotonic-second granularity).
+var a = Date.now().seconds(); var b = Date.now().seconds(); b >= a
+[00000003] true

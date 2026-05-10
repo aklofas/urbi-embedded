@@ -11,6 +11,16 @@
  * reachability comes from object_roots_walker (uobject.c) which shades
  * each vm->*_proto field during MARK_ROOTS. */
 
+/* gmtime_r is POSIX.1-2001 / _POSIX_C_SOURCE >= 1.  Define before any
+ * libc header to ensure the prototype is visible on stricter glibc
+ * builds (notably GCC -std=c99 on Linux, which defaults to a strict
+ * conforming mode that hides POSIX symbols). */
+#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
+#  ifndef _POSIX_C_SOURCE
+#    define _POSIX_C_SOURCE 200809L
+#  endif
+#endif
+
 #include "stdlib/primitives.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
@@ -29,6 +39,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
+#  include <time.h>                    /* time_t, time(), gmtime_r, strftime */
+#endif
 
 /* === UValue construction helpers ========================================= */
 
@@ -42,11 +55,34 @@ val_bool(int b)
 }
 
 static UValue
+val_int(int64_t i)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i  = i;
+    return v;
+}
+
+static UValue
 val_obj(UObject *o)
 {
     UValue v = urbi_value_nil();
     v.kind = (uint8_t)UVAL_OBJECT;
     v.v.p  = o;
+    return v;
+}
+
+static UValue
+val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
+{
+    UValue v = urbi_value_nil();
+    USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
+    if (sym == NULL) {
+        if (oom != NULL) *oom = 1;
+        return v;
+    }
+    v.kind = (uint8_t)UVAL_STR;
+    v.v.p  = sym;
     return v;
 }
 
@@ -233,6 +269,135 @@ static const PMethodEntry MUTEX_METHODS[] = {
 
 #define MUTEX_METHODS_COUNT (sizeof(MUTEX_METHODS) / sizeof(MUTEX_METHODS[0]))
 
+/* === Date (T95) ==========================================================
+ *
+ * Wall-clock access via libc time().  Each Date instance carries a
+ * `seconds` slot holding the Unix epoch seconds as a UVAL_INT.  asString
+ * formats UTC as "YYYY-MM-DD HH:MM:SS" via gmtime_r + strftime on hosted
+ * builds; freestanding builds return "" since neither time() nor
+ * strftime are available outside the hosted environment.
+ *
+ * Phase 10's `.u` overlay can grow Date.toIso8601 / Date.fromString /
+ * arithmetic-via-operator surface on top of this primitive. */
+
+static int64_t
+host_time_seconds(void)
+{
+#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
+    return (int64_t)time(NULL);
+#else
+    return 0;
+#endif
+}
+
+static int
+date_now(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Date.now", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.now: receiver must be an Object", out);
+
+    UObject *d = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (d == NULL) return urbi_raise_oom(vm, out);
+
+    if (write_local_slot(vm, d, "_seconds", val_int(host_time_seconds())) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = val_obj(d);
+    return UEXEC_OK;
+}
+
+static int
+date_from_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Date.fromSeconds", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.fromSeconds: receiver must be an Object", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "Date.fromSeconds: seconds must be Integer", out);
+
+    UObject *d = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (d == NULL) return urbi_raise_oom(vm, out);
+
+    if (write_local_slot(vm, d, "_seconds", args[0]) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = val_obj(d);
+    return UEXEC_OK;
+}
+
+static int
+date_seconds(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Date.seconds", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.seconds: receiver must be a Date", out);
+
+    UValue v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &v) != 0)
+        return urbi_raise_oom(vm, out);
+    if (v.kind != (uint8_t)UVAL_INT) {
+        *out = val_int(0);
+    } else {
+        *out = v;
+    }
+    return UEXEC_OK;
+}
+
+static int
+date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Date.asString", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.asString: receiver must be a Date", out);
+
+    UValue v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &v) != 0)
+        return urbi_raise_oom(vm, out);
+    int64_t s = (v.kind == (uint8_t)UVAL_INT) ? v.v.i : 0;
+
+#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
+    time_t t = (time_t)s;
+    struct tm tmv;
+    /* gmtime_r is POSIX; on Windows hosts the call should be _gmtime64_s
+     * — out of scope for v1.0 (the embedded targets use the freestanding
+     * branch and Linux/macOS hosts have gmtime_r). */
+    if (gmtime_r(&t, &tmv) == NULL) {
+        int oom = 0;
+        UValue sv = val_str_intern(vm, "", 0U, &oom);
+        if (oom) return urbi_raise_oom(vm, out);
+        *out = sv;
+        return UEXEC_OK;
+    }
+    char buf[32];
+    size_t n = strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S", &tmv);
+    int oom = 0;
+    UValue sv = val_str_intern(vm, buf, n, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = sv;
+    return UEXEC_OK;
+#else
+    (void)s;
+    int oom = 0;
+    UValue sv = val_str_intern(vm, "", 0U, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = sv;
+    return UEXEC_OK;
+#endif
+}
+
+static const PMethodEntry DATE_METHODS[] = {
+    { "now",         date_now           },
+    { "fromSeconds", date_from_seconds  },
+    { "seconds",     date_seconds       },
+    { "asString",    date_as_string     }
+};
+
+#define DATE_METHODS_COUNT (sizeof(DATE_METHODS) / sizeof(DATE_METHODS[0]))
+
 /* === urbi_stdlib_register_primitives ====================================
  *
  * Allocates Mutex / Date / Duration proto UObjects per task. */
@@ -254,6 +419,19 @@ urbi_stdlib_register_primitives(UVM *vm)
     /* Default the proto's `_locked` slot to false so an un-cloned Mutex
      * also reads as unlocked. */
     rc = install_default_slot(vm, vm->mutex_proto, "_locked", val_bool(0));
+    if (rc != URBI_OK) return rc;
+
+    /* --- T95 Date --- */
+    if (vm->date_proto == NULL) {
+        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (p == NULL) return URBI_ERR_OOM;
+        vm->date_proto = p;
+    }
+    rc = install_methods(vm, vm->date_proto, DATE_METHODS, DATE_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+    /* Default `seconds` slot to 0 so an un-cloned Date proto reads as
+     * the Unix epoch. */
+    rc = install_default_slot(vm, vm->date_proto, "_seconds", val_int(0));
     if (rc != URBI_OK) return rc;
 
     return URBI_OK;
