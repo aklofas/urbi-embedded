@@ -108,6 +108,40 @@ typedef struct UDeferredSlotChange {
     UValue          new_value;
 } UDeferredSlotChange;
 
+/* --- Operator-overload IC (Gap #4, M6 Wave 3) ---
+ *
+ * Per-call-site inline cache for operator-method lookup.  When an arithmetic
+ * or comparison opcode raises a type error and the lhs is a user object, the
+ * fallback walks the proto chain to find the operator-named slot ("+", "-",
+ * etc.).  This IC caches the result so the second and subsequent calls at the
+ * same pc_offset skip the proto-chain walk.
+ *
+ * Sizing: URBI_OP_OVERLOAD_IC_SITES × URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE.
+ * Defaults: 64 sites × 4 entries = 256 IC slots.  Embedded footprint preset
+ * may halve these; they are independently tunable compile-time constants.
+ * Allocated inline in the UVM struct (not heap-allocated) so the IC is always
+ * available after urbi_vm_init without a separate alloc. */
+#ifndef URBI_OP_OVERLOAD_IC_SITES
+#define URBI_OP_OVERLOAD_IC_SITES          32U
+#endif
+#ifndef URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE
+#define URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE 4U
+#endif
+
+typedef struct UOpOverloadICEntry {
+    uint32_t         pc_offset;    /* call-site identifier (offset from proto base) */
+    uint64_t         topology_gen; /* vm->topology_gen at fill time; stale on mismatch */
+    struct USymbol  *op_name;      /* interned operator-name symbol */
+    struct UClosure *cached;       /* cached method closure; NULL = miss */
+} UOpOverloadICEntry;
+
+typedef struct UOpOverloadIC {
+    UOpOverloadICEntry entries[URBI_OP_OVERLOAD_IC_SITES]
+                              [URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE];
+    uint8_t  n[URBI_OP_OVERLOAD_IC_SITES];             /* live entries per site */
+    uint8_t  cursor[URBI_OP_OVERLOAD_IC_SITES];        /* eviction cursor per site */
+} UOpOverloadIC;
+
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -493,6 +527,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t     heap_locked;
     uint8_t     pad_stdlib[6];          /* padding; zeroed */
     UValue      last_recv;
+    /* Operator-overload IC (Gap #4, M6 Wave 3).  Allocated inline; zeroed by
+     * urbi_vm_init's urbi_zero call.  See UOpOverloadIC for the layout. */
+    UOpOverloadIC op_overload_ic;
 } UVM;
 
 /* --- API --- */
