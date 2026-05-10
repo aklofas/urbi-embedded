@@ -318,6 +318,20 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
     }
     vm->last_recv = urbi_value_nil();
+
+    /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
+     * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
+     * stack would overflow with a 4 KB inline IC). */
+    vm->op_overload_ic = NULL;
+    if (vm->alloc_fn != NULL) {
+        UOpOverloadIC *ic = (UOpOverloadIC *)vm->alloc_fn(
+                NULL, sizeof(UOpOverloadIC), vm->alloc_ud);
+        if (ic != NULL) {
+            urbi_zero(ic, sizeof(UOpOverloadIC));
+            vm->op_overload_ic = ic;
+        }
+        /* OOM: leave op_overload_ic NULL; fallback helpers guard against it. */
+    }
 }
 
 void urbi_vm_destroy(UVM *vm) {
@@ -347,6 +361,12 @@ void urbi_vm_destroy(UVM *vm) {
     if (vm->handle_table != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->handle_table, 0, vm->alloc_ud);
         vm->handle_table = NULL;
+    }
+
+    /* Gap #4 (M6 Wave 3): free heap-allocated operator-overload IC. */
+    if (vm->op_overload_ic != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->op_overload_ic, 0, vm->alloc_ud);
+        vm->op_overload_ic = NULL;
     }
 
     /* M2 baseline teardown. */

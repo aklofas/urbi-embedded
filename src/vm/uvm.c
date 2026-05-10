@@ -29,6 +29,9 @@
 #include "object/umodule_instance.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
+#include "vm/uvm_op_overload.h"  /* vm_arith_method_fallback / _unary / _cmp (Gap #4) */
+#include "value/uintern.h"       /* ustr_op_name (Gap #4 operator-name interning) */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -308,6 +311,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "+", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -323,6 +332,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "-", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -338,6 +353,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "*", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -353,6 +374,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "/", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -367,6 +394,13 @@ dispatch:
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             UVMError rc = arith_neg(a, b);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch.
+                 * Unary neg uses "-" slot name (same as binary minus; contextual). */
+                USymbol *op = ustr_op_name(vm, "-", 1);
+                if (op != NULL && vm_arith_method_fallback_unary(vm, a, b, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_unary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -697,19 +731,40 @@ dispatch:
         }
 
         CASE(OP_EQ) {
-            /* ABC: if ((R[B]==R[C]) != A) pc++ */
+            /* ABC: if ((R[B]==R[C]) != A) pc++
+             * Gap #4: when lhs is a user object, try "==" slot before
+             * falling back to identity/structural equality. */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
-            bool eq = uvalue_equal(b, c);
+            bool eq;
+            if (b->kind == (uint8_t)UVAL_OBJECT) {
+                USymbol *op = ustr_op_name(vm, "==", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &eq, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
+            }
+            eq = uvalue_equal(b, c);
             if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_NEQ) {
-            /* ABC: if ((R[B]!=R[C]) != A) pc++ */
+            /* ABC: if ((R[B]!=R[C]) != A) pc++
+             * Gap #4: when lhs is a user object, try "!=" slot first. */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
-            bool neq = !uvalue_equal(b, c);
+            bool neq;
+            if (b->kind == (uint8_t)UVAL_OBJECT) {
+                USymbol *op = ustr_op_name(vm, "!=", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &neq, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
+            }
+            neq = !uvalue_equal(b, c);
             if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
@@ -720,6 +775,13 @@ dispatch:
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool lt = false;
             if (uvalue_lt(b, c, &lt) != UVAL_CMP_OK) {
+                /* Gap #4: type-error fallback to "<" slot on lhs. */
+                USymbol *op = ustr_op_name(vm, "<", 1);
+                if (op != NULL && vm_cmp_method_fallback(vm, &lt, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
@@ -735,6 +797,13 @@ dispatch:
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool le = false;
             if (uvalue_le(b, c, &le) != UVAL_CMP_OK) {
+                /* Gap #4: type-error fallback to "<=" slot on lhs. */
+                USymbol *op = ustr_op_name(vm, "<=", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &le, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);

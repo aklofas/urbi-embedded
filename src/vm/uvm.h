@@ -141,6 +141,9 @@ typedef struct UOpOverloadIC {
     uint8_t  n[URBI_OP_OVERLOAD_IC_SITES];             /* live entries per site */
     uint8_t  cursor[URBI_OP_OVERLOAD_IC_SITES];        /* eviction cursor per site */
 } UOpOverloadIC;
+/* UVM holds a heap pointer to UOpOverloadIC to avoid inflating the per-UVM
+ * stack footprint in tests that allocate `UVM vm;` on the C stack.  The IC
+ * is heap-allocated at urbi_vm_init time and freed at urbi_vm_destroy. */
 
 /* --- VM state --- */
 
@@ -527,9 +530,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t     heap_locked;
     uint8_t     pad_stdlib[6];          /* padding; zeroed */
     UValue      last_recv;
-    /* Operator-overload IC (Gap #4, M6 Wave 3).  Allocated inline; zeroed by
-     * urbi_vm_init's urbi_zero call.  See UOpOverloadIC for the layout. */
-    UOpOverloadIC op_overload_ic;
+    /* Operator-overload IC (Gap #4, M6 Wave 3).  Heap-allocated at
+     * urbi_vm_init time via vm->alloc_fn; freed at urbi_vm_destroy.
+     * NULL until first allocation (urbi_vm_init ensures it is allocated).
+     * Pointer to UOpOverloadIC keeps the UVM struct small so tests that
+     * put `UVM vm;` on the C stack do not overflow. */
+    UOpOverloadIC *op_overload_ic;
 } UVM;
 
 /* --- API --- */

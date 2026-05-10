@@ -48,8 +48,9 @@ static uint32_t site_index(uint32_t pc_off)
 static struct UClosure *
 ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
 {
+    if (vm->op_overload_ic == NULL) return NULL;   /* IC not allocated (OOM at init) */
     uint32_t si = site_index(pc_off);
-    UOpOverloadIC *ic = &vm->op_overload_ic;
+    UOpOverloadIC *ic = vm->op_overload_ic;
     uint8_t n = ic->n[si];
     for (uint8_t k = 0; k < n; k++) {
         UOpOverloadICEntry *e = &ic->entries[si][k];
@@ -67,8 +68,9 @@ ic_lookup(UVM *vm, uint32_t pc_off, const USymbol *op_name)
 static void
 ic_fill(UVM *vm, uint32_t pc_off, USymbol *op_name, struct UClosure *cl)
 {
+    if (vm->op_overload_ic == NULL) return;   /* IC not allocated; skip fill */
     uint32_t si = site_index(pc_off);
-    UOpOverloadIC *ic = &vm->op_overload_ic;
+    UOpOverloadIC *ic = vm->op_overload_ic;
     uint8_t cur = ic->cursor[si];
     UOpOverloadICEntry *e = &ic->entries[si][cur];
     e->pc_offset    = pc_off;
