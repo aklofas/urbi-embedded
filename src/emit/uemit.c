@@ -519,6 +519,7 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
     switch (n->kind) {
     case AST_INT:        return emit_int_arm(e, n);
     case AST_FLOAT_LIT:  return emit_float_arm(e, n);
+    case AST_THIS:       return emit_this_arm(e, n);
     case AST_BOOL:       return emit_bool_arm(e, n);
     case AST_NIL:        return emit_nil_arm(e, n);
     case AST_STR:        return emit_string_arm(e, n);
@@ -658,6 +659,7 @@ const char *uemit_error_name(UEmitError code) {
     case EMIT_RESERVED_KEYWORD_AS_IDENT:   return "EMIT_RESERVED_KEYWORD_AS_IDENT";
     case EMIT_TOO_MANY_ARGS:               return "EMIT_TOO_MANY_ARGS";
     case EMIT_TAG_SPILL_OUT_OF_RANGE:      return "EMIT_TAG_SPILL_OUT_OF_RANGE";
+    case EMIT_NO_THIS_OUTSIDE_METHOD:      return "EMIT_NO_THIS_OUTSIDE_METHOD";
     }
     return "EMIT_UNKNOWN";
 }

@@ -243,6 +243,7 @@ uint8_t emit_float_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_string_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_this_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);

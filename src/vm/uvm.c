@@ -287,6 +287,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
         [OP_LOAD_REALM_GLOBAL]     = &&label_OP_LOAD_REALM_GLOBAL,
+        [OP_LOAD_RECV]             = &&label_OP_LOAD_RECV,
     };
 
     DISPATCH();
@@ -674,6 +675,10 @@ dispatch:
             new_frame->pc              = s->pc;    /* points AT OP_CALL in caller */
             new_frame->base            = s->R;     /* caller's register base */
             new_frame->result_dest_reg = (int)a;  /* where to write result */
+            /* Gap #3 (v0.6.2 Phase 2): save receiver for OP_LOAD_RECV (`this`
+             * keyword).  vm->last_recv was set by the OP_GETSLOT that loaded
+             * the callee (method-call pattern).  Nil for plain-variable calls. */
+            new_frame->recv            = vm->last_recv;
 
             /* Switch to callee frame. Args R[a+1..a+nargs] become R[0..nargs-1]. */
             s->R        = &s->R[a + 1];
@@ -986,13 +991,13 @@ dispatch:
                         NEXT();
                     }
                     UValue loaded = *ic->slots[k];
-                    /* M6 Phase 3: publish receiver if this is a native
-                     * method dispatch.  Reading closure->native_fn here
-                     * is safe because UClosure is heap-stable post-OP_GETSLOT
-                     * (the slot's UValue holds a pointer to it). */
+                    /* Publish receiver for any closure load (native or bytecode).
+                     * Native dispatch (native_fn != NULL) needs it immediately
+                     * for the call; bytecode dispatch needs it for OP_LOAD_RECV
+                     * (`this` keyword, Gap #3 v0.6.2 Phase 2) which copies
+                     * last_recv into UCallFrame.recv at OP_CALL time. */
                     if (loaded.kind == (uint8_t)UVAL_CLOSURE
-                        && loaded.v.p != NULL
-                        && ((UClosure *)loaded.v.p)->native_fn != NULL) {
+                        && loaded.v.p != NULL) {
                         vm->last_recv = pending_recv;
                     }
                     s->R[dst_reg] = loaded;
@@ -1039,11 +1044,10 @@ dispatch:
                 s->R[dst_reg] = getter_result;
                 NEXT();
             }
-            /* M6 Phase 3: publish receiver if the resolved value is a
-             * native method. */
+            /* Publish receiver for any closure load (native or bytecode)
+             * — mirrors the fast-path arm above. */
             if (v.kind == (uint8_t)UVAL_CLOSURE
-                && v.v.p != NULL
-                && ((UClosure *)v.v.p)->native_fn != NULL) {
+                && v.v.p != NULL) {
                 vm->last_recv = pending_recv;
             }
             s->R[dst_reg] = v;
@@ -1659,6 +1663,22 @@ dispatch:
             }
             s->R[A].kind = (uint8_t)UVAL_OBJECT;
             s->R[A].v.p  = r->global_object;
+            NEXT();
+        }
+
+        /* v0.6.2 Phase 2 — OP_LOAD_RECV: loads the receiver saved in the
+         * current call frame's .recv field into R[A].  The receiver is
+         * set at OP_CALL dispatch time from vm->last_recv (which is
+         * populated by the OP_GETSLOT that loaded the callee in a
+         * method-call pattern).  Emitted by the compiler for `this`
+         * inside a method body (AST_THIS with fs->parent != NULL). */
+        CASE(OP_LOAD_RECV) {
+            uint8_t A = uinstr_a(*s->pc);
+            /* recv is a UValue (nil when called from top-level or plain
+             * variable call; the receiver object for method-call pattern). */
+            s->R[A] = s->frame_count > 0
+                      ? s->frames[s->frame_count - 1].recv
+                      : urbi_value_nil();
             NEXT();
         }
 

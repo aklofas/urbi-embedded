@@ -258,15 +258,15 @@ struct UStrand {
 };
 
 /* Layout pin (Wave-1 v0.5.3 audit CHSTR-041): the bulk of UStrand's size
- * is the embedded frames[UVM_MAX_FRAMES] call-frame array (64 × ~40 B);
+ * is the embedded frames[UVM_MAX_FRAMES] call-frame array (64 × ~56 B);
  * any change to that or the surrounding fields must update this assert
  * deliberately.  Default + footprint presets share this size — preset
  * tunables change runtime budgets, not struct layout.
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UStrand) == 2880,
-               "UStrand size pin (CHSTR-041) on 64-bit");
+_Static_assert(sizeof(struct UStrand) == 3904,
+               "UStrand size pin (CHSTR-041) on 64-bit — bumped at v0.6.2 Phase 2 (Gap #3): UCallFrame.recv UValue field added 16 bytes × 64 frames = 1024 bytes");
 #endif
 
 /* === Lifecycle functions ===

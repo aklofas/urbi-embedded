@@ -60,6 +60,11 @@ typedef struct UCallFrame {
     const uint32_t  *pc;              /* current instruction pointer */
     UValue          *base;            /* base of register window in shared stack */
     int              result_dest_reg; /* where caller wants the return value */
+    UValue           recv;            /* receiver value saved from vm->last_recv at
+                                         OP_CALL dispatch; loaded by OP_LOAD_RECV for
+                                         `this` access (Gap #3 — v0.6.2 Phase 2).
+                                         Nil for top-level frames and calls through
+                                         plain variable references. */
 } UCallFrame;
 
 #ifdef __cplusplus

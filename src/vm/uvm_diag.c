@@ -72,6 +72,7 @@ const char *op_name(uint8_t op) {
         case OP_AT_EVENT_SYNC_INSTALL:return "OP_AT_EVENT_SYNC_INSTALL";
         case OP_GETSLOT_CHANGE_EVENT: return "OP_GETSLOT_CHANGE_EVENT";
         case OP_LOAD_REALM_GLOBAL:    return "OP_LOAD_REALM_GLOBAL";
+        case OP_LOAD_RECV:            return "OP_LOAD_RECV";
     }
     return "unknown";
 }
