@@ -9,4 +9,5 @@
 # per-VM UModuleInstance after all C-native registration completes.
 # The blob's top-level statements run during realm-globals population.
 
+mixins.u
 exception_subclasses.u

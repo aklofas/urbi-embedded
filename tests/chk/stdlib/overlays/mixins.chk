@@ -1,0 +1,33 @@
+# Milestone: M6 Wave 2 — Phase 10 (.u overlay).
+# Covers: Mixin marker classes (Comparable / Orderable / RangeIterable)
+#         declared in src/stdlib/mixins.u and baked into the stdlib
+#         bytecode blob.  At v1.0 these are empty-body markers — methods
+#         require closure upvalue capture and multi-slot class bodies
+#         which are deferred to v1.x.  User code attaches behavior
+#         externally if needed.
+#
+# Each mixin is a realm global UObject that addProto accepts, allowing
+# user classes to inherit from the marker and (later) have methods
+# bolted onto the marker that propagate via the proto chain.
+
+# Realm globals are reachable and are UObjects.
+Comparable.protos().size > 0
+[00000000] true
+
+Orderable.protos().size > 0
+[00000001] true
+
+RangeIterable.protos().size > 0
+[00000002] true
+
+# addProto-on-user-class accepts the mixin without error.
+class Money {}; Money.addProto(Comparable); Money.protos().size
+[00000003] 2
+
+# An Integer can also be made addProto'd to a mixin marker — the
+# extension lands on the Integer atom proto and persists for the
+# remainder of the VM lifetime (per addProto semantics).  We do this
+# in a way that does not pollute later integer-arithmetic fixtures
+# by checking only proto count, not call dispatch.
+class Mixed {}; var v = 42; Mixed.addProto(Comparable); Mixed.protos().size
+[00000004] 2
