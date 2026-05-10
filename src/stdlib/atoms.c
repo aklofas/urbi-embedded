@@ -380,6 +380,94 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
+/* === Float.asString / asInteger / asBoolean (T44) =========================
+ *
+ * asString uses the same UVALUE_FLOAT_FMT (%.14g + Lua trailing-.0) as the
+ * REPL printer for round-trip parity.  Wave 2 doesn't expose alternate
+ * format selectors; %g is canonical.
+ *
+ * asInteger truncates toward zero (C99 (int64_t) cast).  Inf/NaN
+ * conversions are implementation-defined in C; we explicitly raise
+ * TypeError on those so the v1.0 surface is well-defined. */
+
+static int
+flt_asString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.asString", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.asString: self must be Float", out);
+
+#if __STDC_HOSTED__
+    char buf[40];
+    int n = snprintf(buf, sizeof(buf), "%.14g", (double)self.v.f);
+    if (n <= 0 || (size_t)n >= sizeof(buf))
+        return urbi_raise_type(vm, "Float.asString: format failure", out);
+
+    /* Lua 5.4 trailing-.0: append .0 if the result looks integer-valued
+     * (no '.', 'e', 'E', 'n' for nan, 'i' for inf).  Mirrors the REPL
+     * printer in src/value/uvalue.c. */
+    int needs_dot_zero = 1;
+    for (int k = 0; k < n; k++) {
+        char c = buf[k];
+        if (c == '.' || c == 'e' || c == 'E' || c == 'n' || c == 'i') {
+            needs_dot_zero = 0;
+            break;
+        }
+    }
+    if (needs_dot_zero && (size_t)n + 2U < sizeof(buf)) {
+        buf[n++] = '.';
+        buf[n++] = '0';
+        buf[n] = '\0';
+    }
+
+    int oom = 0;
+    UValue v = val_str_intern(vm, buf, (size_t)n, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+#else
+    return urbi_raise_type(vm,
+        "Float.asString: freestanding decimal formatter not yet linked", out);
+#endif
+}
+
+static int
+flt_asInteger(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.asInteger", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.asInteger: self must be Float", out);
+
+    double f = (double)self.v.f;
+    /* Reject NaN / Inf — C99 conversion is implementation-defined; we
+     * raise TypeError so callers get a clear failure mode. */
+    if (f != f) return urbi_raise_type(vm, "Float.asInteger: NaN", out);
+    if (f != 0.0 && (f - f) != 0.0) return urbi_raise_type(vm, "Float.asInteger: infinite", out);
+    /* Out-of-range conversion is also implementation-defined; clamp at
+     * INT64_MIN / INT64_MAX for safety. */
+    if (f >= (double)INT64_MAX) { *out = val_int(INT64_MAX); return UEXEC_OK; }
+    if (f <= (double)INT64_MIN) { *out = val_int(INT64_MIN); return UEXEC_OK; }
+    *out = val_int((int64_t)f);
+    return UEXEC_OK;
+}
+
+static int
+flt_asBoolean(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.asBoolean", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.asBoolean: self must be Float", out);
+
+    double f = (double)self.v.f;
+    /* Legacy semantics: NaN is truthy (non-comparable but not zero).
+     * Inf is also truthy.  Only +/- zero is falsy. */
+    *out = val_bool(f != 0.0);
+    return UEXEC_OK;
+}
+
 /* === Float.isNaN / isInfinite (T43) ====================================== */
 
 static int
@@ -470,7 +558,10 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
     { "abs",   flt_abs   },
     { "round", flt_round },
     { "isNaN",      flt_isNaN      },
-    { "isInfinite", flt_isInfinite }
+    { "isInfinite", flt_isInfinite },
+    { "asString",   flt_asString   },
+    { "asInteger",  flt_asInteger  },
+    { "asBoolean",  flt_asBoolean  }
 };
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 
