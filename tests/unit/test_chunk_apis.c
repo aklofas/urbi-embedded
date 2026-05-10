@@ -167,6 +167,17 @@ UTEST(repl_eval_compile_error_path)
      * "1+" leaves a parse hole — expected expression at col 3 or similar. */
     UASSERT(buf[0] != '\0');  /* some diagnostic was written */
 
+    /* CHSTR-007 closure (regression net): the buffer must NOT degrade to the
+     * literal "compile error" fallback string.  Pre-CPPCHK-005 the diagnostic
+     * was always overwritten with the literal; today the parser's static
+     * message + line/col are passed through, and the literal only surfaces
+     * if no message info is available (an intrinsically-unreachable path
+     * because parser AST_ERROR nodes always carry a message pointer +
+     * line/col).  Pin the user-facing improvement here so any future
+     * regression to the legacy fallback fails the test. */
+    UASSERT(strcmp(buf, "compile error") != 0);
+    UASSERT(strstr(buf, "<stdin>:") != NULL);  /* hosted format includes location */
+
     urbi_vm_destroy(&vm);
 }
 
