@@ -1,0 +1,20 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 Triplet (immutable 3-tuple).
+#
+# Triplet.new(a, b, c) clones the Triplet proto and installs first /
+# second / third as ordinary slots.
+
+var t = Triplet.new(1, 2, 3); t.first
+[00000000] 1
+
+var t = Triplet.new(1, 2, 3); t.second
+[00000001] 2
+
+var t = Triplet.new(1, 2, 3); t.third
+[00000002] 3
+
+var t = Triplet.new("a", "b", "c"); t.first
+[00000003] "a"
+
+var t = Triplet.new("a", "b", "c"); t.third
+[00000004] "c"

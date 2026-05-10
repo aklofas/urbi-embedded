@@ -1,0 +1,23 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 Tuple (variadic immutable n-tuple).
+#
+# Tuple.new(...) is variadic — populates a UList backing buffer with
+# the supplied args.  length() returns the arg count; get(i) returns
+# the i-th element.
+
+var t = Tuple.new(10, 20, 30, 40, 50); t.length()
+[00000000] 5
+
+var t = Tuple.new(10, 20, 30, 40, 50); t.get(0)
+[00000001] 10
+
+var t = Tuple.new(10, 20, 30, 40, 50); t.get(4)
+[00000002] 50
+
+# Empty tuple — length is zero; get on out-of-range is a TypeError.
+Tuple.new().length()
+[00000003] 0
+
+# Single-element tuple.
+var t = Tuple.new(42); t.get(0)
+[00000004] 42
