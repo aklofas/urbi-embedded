@@ -41,6 +41,10 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
   fixtures). Cross-arm + cross-riscv verified.
 - **Footprint vs v0.6.1:** host +0.6 % / arm +0.8 % / riscv +1.0 %.
 
+### Phase 3 — Multi-slot class body (Gap #2)
+
+- Phase 3: multi-slot class body via AST_BIN_SEP/AST_NARY recursion in emit_class_body_stmt; no AST changes. ~30 LOC.
+
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
 **Tag:** `v0.6.1-stdlib`
