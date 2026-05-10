@@ -24,6 +24,7 @@
 #include "stdlib/stdlib_boot.h"
 #include "stdlib/object_root.h"
 #include "stdlib/atom_protos.h"
+#include "stdlib/atoms.h"
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -46,6 +47,13 @@ urbi_stdlib_boot(UVM *vm)
      * exist but inherit clone + getSlot/etc. from Object root via the
      * prototype chain. */
     rc = urbi_atom_protos_register(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* Phase 5 (atom-proto Tier 1 methods).  Installs C-native methods on
+     * Boolean / Integer / Float / String atom protos.  Symbolic operators
+     * (`+`, `==`, …) remain inline VM opcodes; only named methods (asString,
+     * bitand, sqrt, length, …) land here.  See src/stdlib/atoms.c banner. */
+    rc = urbi_stdlib_register_atom_methods(vm);
     if (rc != URBI_OK) return rc;
 
     /* Phase 7 (Event.new / Tag.new scripted constructors) hooks in here. */
