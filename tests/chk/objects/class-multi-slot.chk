@@ -1,0 +1,41 @@
+# Milestone: M6 Wave 3
+# Covers: Phase 3 (Gap #2) — multi-slot class body via AST_BIN_SEP /
+# AST_NARY recursion in emit_class_body_stmt.
+#
+# Before Wave 3, `class C { var x; var y; }` raised EMIT_UNSUPPORTED_AST
+# because emit_class_body_stmt handled only single leaf nodes.  Wave 3
+# adds recursive descent through AST_BIN_SEP and AST_NARY so each `var`
+# decl in a multi-statement class body emits as a sibling Foo.<name> = …
+# site.
+
+# Two slots: x and y survive as independent slots on the class object.
+class Point { var x = 1; var y = 2 }; Point.x
+[00000000] 1
+
+class Point2 { var x = 1; var y = 2 }; Point2.y
+[00000001] 2
+
+# Three slots.
+class Vec3 { var x = 0; var y = 0; var z = 0 }; Vec3.x
+[00000002] 0
+
+class Vec3b { var x = 0; var y = 0; var z = 0 }; Vec3b.z
+[00000003] 0
+
+# Slot sum after mutation (verifies all three slots emitted correctly).
+var v = Vec3.new(); v.x = 1; v.y = 2; v.z = 3; v.x + v.y + v.z
+[00000004] 6
+
+# .new() inherits all slots from a multi-slot class (COW).
+class Pair { var first = 10; var second = 20 }; var p = Pair.new(); p.first
+[00000005] 10
+
+class Pair2 { var first = 10; var second = 20 }; var p2 = Pair2.new(); p2.second
+[00000006] 20
+
+# Mixed: var + function-literal + var (freereg discipline between siblings).
+class Mixed { var a = 7; var fn = function() { return 42 }; var b = 8 }; Mixed.a
+[00000007] 7
+
+class Mixed2 { var a = 7; var fn = function() { return 42 }; var b = 8 }; Mixed2.b
+[00000008] 8
