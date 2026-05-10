@@ -141,8 +141,12 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  *
  * urbi_run_script: thin wrapper around urbi_run_chunk that discards the result.
  *
- * urbi_load_module: register a module under module_name in the VM's import table.
- * Returns URBI_ERR_INVALID_ARG at M3; real implementation lands at M6. */
+ * urbi_load_module: bind a pre-compiled module into the VM and run its root
+ * chunk under the global Realm so top-level bindings install into realm
+ * globals.  module_name is currently advisory (no import-table lookup yet —
+ * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
+ * argument is NULL, URBI_ERR_OOM on UModuleInstance allocation failure, or
+ * a UVMError-derived code if root-chunk execution fails. */
 
 struct UModule;       /* forward decl — definition in umodule.h */
 
