@@ -93,6 +93,54 @@
   method group (boolean / integer_conversion / integer_bitops /
   float_math / float_classify / float_conversion / string_basic /
   string_case / string_search / string_parse / string_char).
+- (Phase 6) **C-native containers.**  New `src/stdlib/containers.c`
+  registers the v1.0 container surface:
+  - `Pair` (immutable 2-tuple via clone + `first` / `second` slots)
+  - `Triplet` (immutable 3-tuple via clone + `first` / `second` /
+    `third` slots)
+  - `Tuple` (variadic immutable n-tuple over a heap UList backing;
+    methods: `length`, `get(i)`)
+  - `List` (mutable, growable UValue array; methods: `new` (variadic),
+    `length`, `isEmpty`, `get(i)`, `set(i, v)`, `add(v)`, `contains(v)`,
+    `concat(other)`, `diff(other)`)
+  - `Dict` (mutable string-keyed open-address linear-probe hash table
+    with FNV-1a hashing; methods: `new`, `length`, `isEmpty`,
+    `set(key, value)`, `get(key)`, `has(key)`, `remove(key)`).
+    Iteration order is unspecified at v1.0 (REVIVAL §14 — joins
+    Lua / Ruby<1.9 / CPython pre-3.7).  Keys must be String at v1.0;
+    non-String keys raise TypeError.
+
+  Storage: List / Dict / Tuple instances pair a visible-side UObject
+  (proto-chained to the corresponding atom proto for method
+  resolution) with a backing UList / UDict struct allocated via
+  `vm->alloc_fn` and threaded onto a new `vm->stdlib_containers`
+  head pointer.  Backing buffers are freed at `urbi_vm_destroy` via
+  `urbi_stdlib_containers_destroy`.  The pointer round-trips through
+  a hidden `_storage` slot encoded as `UVAL_INT` (cast through
+  `uintptr_t`) so the GC walker treats it as a scalar leaf —
+  VM-lifetime ownership is intentional at v1.0; proper
+  `UTYPE_LIST` / `UTYPE_DICT` GC cell types defer to v1.x.
+
+  Method registration: List / Dict reuse the existing
+  `URBI_ATOM_LIST` / `URBI_ATOM_DICT` atom-proto singletons (the
+  realm-populate registry already publishes "List" / "Dict" as
+  realm globals).  Pair / Triplet / Tuple are fresh
+  `URBI_ATOM_OBJECT`-family proto UObjects stashed in new
+  `vm->container_*_proto` fields and bound to realm globals via a
+  post-loop hook (`urbi_stdlib_register_container_globals`) called
+  from `urbi_populate_realm_globals` after the 15-row registry
+  loop — this keeps the v1.0 packed-flag CONSTANT enforcement range
+  (slots 0..7: Object..List) intact.
+
+  Method-name choice: every operation is a named method.  v1.0 lex
+  has no `<<` or `[]` operator tokens; `at` is the reactive `at(...)`
+  keyword so list indexing is `.get(i)` (matches `Dict.get`).
+  Phase 10's `.u` overlay can synthesize operator wrappers if/when
+  the lex/parse extensions land.
+- (Phase 6) **6 `tests/chk/stdlib/containers/` fixtures** —
+  `pair.chk`, `triplet.chk`, `tuple.chk`, `list_core.chk`,
+  `list_concat.chk`, `dict_core.chk`.  Test count delta:
+  189 → 195 chk fixtures.
 
 ### Changed
 
