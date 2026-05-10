@@ -314,6 +314,7 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->system_proto           != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
     if (vm->platform_proto         != NULL) gc_shade_gray(vm, (UCell *)vm->platform_proto);
     if (vm->global_namespace_proto != NULL) gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
+    if (vm->callmessage_proto      != NULL) gc_shade_gray(vm, (UCell *)vm->callmessage_proto);
 
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);

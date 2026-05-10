@@ -344,6 +344,26 @@ urbi_stdlib_register_namespaces(UVM *vm)
                          GLOBAL_METHODS, GLOBAL_METHODS_COUNT);
     if (rc != URBI_OK) return rc;
 
+    /* --- T91 CallMessage: stub proto ---
+     *
+     * REVIVAL §14 L14 reserves CallMessage for the legacy fallback()
+     * reflection that lands at v1.x.  At v1.0 the proto exists as a
+     * realm global so script code can pattern-match on its presence,
+     * but no actual reflection methods are installed.  Expose a `kind`
+     * marker slot so fixtures can verify the proto is bound non-nil. */
+    if (vm->callmessage_proto == NULL) {
+        UObject *c = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (c == NULL) return URBI_ERR_OOM;
+        vm->callmessage_proto = c;
+    }
+    {
+        int oom = 0;
+        UValue k = val_str_intern(vm, "callmessage", 11, &oom);
+        if (oom) return URBI_ERR_OOM;
+        rc = install_const_slot(vm, vm->callmessage_proto, "kind", k);
+        if (rc != URBI_OK) return rc;
+    }
+
     return URBI_OK;
 }
 
@@ -370,6 +390,11 @@ urbi_stdlib_register_namespace_globals(UVM *vm, URealm *realm)
     if (vm->global_namespace_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "Global", 6,
                                    val_obj(vm->global_namespace_proto));
+        if (rc != URBI_OK) return rc;
+    }
+    if (vm->callmessage_proto != NULL) {
+        rc = urbi_realm_set_global(vm, realm, "CallMessage", 11,
+                                   val_obj(vm->callmessage_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;
