@@ -361,11 +361,66 @@ and `this.method()` from method bodies join it on the same
 backlog row — the three features are tightly coupled and would
 need to ship together for the deeper overlays to compile.
 
+(Phase 12) **`defer:M6` audit IDs migrated to v1.x** — 4 of 15
+carry-forward IDs need architectural work that was not in v1.0
+scope and were filed against the design-risks register:
+
+- **GC-003 + GC-037 + VM-007 (clustered)** — 'UClosure cells
+  GC-managed promotion + slot-write barrier real index'.  UClosure
+  cells today are allocated through `vm->alloc_fn` directly (not
+  `urbi_gc_alloc`) and threaded onto a per-strand `closure_list`
+  legacy free-list; the missing UTYPE_CLOSURE walker is benign
+  because cells are never enrolled on `all_cells_head`.  The
+  proper fix promotes both allocation paths (`vm_alloc_closure` +
+  `urbi_native_closure_create`) to `urbi_gc_alloc` + adds a
+  `walk_uclosure` strand-walker entry; the same pass naturally
+  closes the slot-write barrier placeholder index (VM-007).
+  Filed in design-risks as 'v1.x: UClosure cells GC-managed
+  promotion'.
+- **GC-005** — Cross-references VM-007 (same root issue).
+  Slow-path `OP_SETSLOT` calls `urbi_gc_slot_write` with hardcoded
+  slot_index = 0; observer_dirty ignores the key argument entirely
+  at v1.0, so the placeholder is benign.  Closes when v1.x
+  preemptive scheduler or per-slot dirty-bit work needs the real
+  index.  Filed in design-risks as 'v1.x: slot-write barrier
+  placeholder index'.
+
 ### Changed
 
 - (filled in)
 
 ### Fixed
+
+- (Phase 12) **`defer:M6` cleanup absorption** — 11 of 15 carry-forward
+  audit IDs closed under TDD-per-fix-commit discipline (Wave-5 G1):
+  EMIT-030 (dead break_chain/continue_chain UBlockCtx fields removed),
+  PARSE-032 (doc-only — lex absorbs time/angle suffix into TOK_INT),
+  PARSE-033 (doc-only — tag-prefix onleave is v1.x scope; AST field
+  retained on union variant for v1.x parse+emit addition),
+  CHSTR-007 (regression net asserting REPL diagnostic NEVER falls
+  back to literal "compile error" string; pinned `<stdin>:line:col:`
+  format pass-through),
+  CHSTR-009 (annotated existing load_module live-path test as
+  closure pointer; M6 Wave 1 / API-021 had landed the real impl),
+  CHSTR-026 + CHSTR-030 (regression net asserting urbi_run_chunk
+  realm parameter is honored vs silently replaced by global; Wave 5
+  API-004 had threaded realm through urbi_vm_run; new test installs
+  K=1234 on a non-default realm and reads it back),
+  CPPCHK-001 (annotated existing CPPCHK-011 inline-suppression as
+  covering both IDs — duplicate filings),
+  TAGCH-018 (annotated existing tag_enter_setter_throws_protected_slot
+  test as the audit-ID closure pointer),
+  VM-009 (doc-only — OP_CALL native-arm short-circuit prevents the
+  audit's failure shape; comment block at the dispatch site pins the
+  contract),
+  REALM-002 (regression net pinning past-slot-7 install + best-effort
+  const enforcement contract; v1.0 architectural limit on
+  packed-nibble UShape.flags is documented).
+
+  Per-ID disposition lines appended to the
+  `2026-05-05-v0.5.x-cleanup-audit-findings.md` audit doc.  Phase 12
+  closure summary in `docs/urbi-embedded-design-risks.md` 'v0.6.1-stdlib
+  Phase 12' section.
 
 - T41 install-time arity validation for `get` / `set`: rejects
   wrong-param-count getters / setters (getter must take 0 params,
