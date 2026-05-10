@@ -112,19 +112,23 @@ ustrand_destroy_idempotent_on_freed_stack(void)
     ustrand_destroy(s, &vm);
     vm.alloc_fn(s, 0, vm.alloc_ud);
 
-    /* Verify: armed_stack appears AT MOST ONCE in the free log (the explicit
-     * urbi_strand_register_stack_free call); ustrand_destroy did NOT free it
-     * a second time. */
-    int armed_stack_free_count = 0;
-    for (int i = 0; i < spy.free_count; i++) {
-        if (spy.seen_free_ptrs[i] == armed_stack) armed_stack_free_count++;
+    /* Verify: armed_stack does NOT appear in the free log AFTER the
+     * pre-free we just issued (frees_before_destroy is the index of the
+     * first event that ustrand_destroy could have produced).  Pre-Phase-10
+     * the test asserted "1 occurrence in the whole log"; that is no longer
+     * stable because urbi_realm_create now runs the baked stdlib chunk
+     * via a transient strand, and malloc happily hands armed_stack's
+     * memory back to us when that transient's stack frees just before
+     * urbi_strand_create is called below.  The contract under test is
+     * specifically about ustrand_destroy not re-freeing s->stack — so we
+     * scope the assertion to the post-destroy window. */
+    int armed_stack_free_count_after_destroy = 0;
+    for (int i = frees_before_destroy; i < spy.free_count; i++) {
+        if (spy.seen_free_ptrs[i] == armed_stack) {
+            armed_stack_free_count_after_destroy++;
+        }
     }
-    UASSERT_EQ(1, armed_stack_free_count);
-
-    /* Sanity: the destroy path did issue some other frees (cleanup stack etc.)
-     * — we are not over-asserting "no frees after destroy", just no double-free
-     * of the register stack. */
-    (void)frees_before_destroy;
+    UASSERT_EQ(0, armed_stack_free_count_after_destroy);
 
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);

@@ -441,6 +441,31 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
         }
     }
 
+    /* M6 Phase 10: run the baked-in stdlib bytecode chunk.  Top-level
+     * statements (currently only `class X : public Y {}` declarations)
+     * install themselves as realm globals at this point — the C-native
+     * registry is fully populated, so resolved-name references inside the
+     * .u source (e.g. `public Exception`) walk the same realm-global
+     * lookup that any user chunk does.
+     *
+     * This step is gated on vm->stdlib_module being non-NULL — empty
+     * STDLIB_ORDER.txt → no module → skip cleanly.  We pass the realm
+     * directly (not NULL) because urbi_run_chunk's NULL-realm path calls
+     * urbi_realm_global(vm) which would recurse back into
+     * urbi_realm_create / urbi_populate_realm_globals while the global
+     * Realm is mid-population.
+     *
+     * The class-decl emit path writes Foo into the realm-global slot
+     * directly via OP_SETSLOT on global_object — no further wiring
+     * needed here. */
+    if (vm->stdlib_module != NULL) {
+        UValue out;
+        int rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
     return URBI_OK;
 }
 
