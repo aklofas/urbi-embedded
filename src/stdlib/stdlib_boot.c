@@ -25,6 +25,7 @@
 #include "stdlib/object_root.h"
 #include "stdlib/atom_protos.h"
 #include "stdlib/atoms.h"
+#include "stdlib/containers.h"
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -54,6 +55,17 @@ urbi_stdlib_boot(UVM *vm)
      * (`+`, `==`, …) remain inline VM opcodes; only named methods (asString,
      * bitand, sqrt, length, …) land here.  See src/stdlib/atoms.c banner. */
     rc = urbi_stdlib_register_atom_methods(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* Phase 6 (M6 Wave 2): C-native containers.  Installs methods on the
+     * existing URBI_ATOM_LIST / URBI_ATOM_DICT atom protos (the
+     * realm-populate registry already publishes these as "List" / "Dict"
+     * globals).  Pair / Triplet / Tuple realm-global registration is
+     * deferred to a post-loop hook in urbi_populate_realm_globals so the
+     * registry's slot 0..7 layout (Object .. List) stays stable for the
+     * v1.0 packed-flag CONSTANT enforcement range.  See
+     * src/stdlib/containers.c. */
+    rc = urbi_stdlib_register_containers(vm);
     if (rc != URBI_OK) return rc;
 
     /* Phase 7 (Event.new / Tag.new scripted constructors) hooks in here. */

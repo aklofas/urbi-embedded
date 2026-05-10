@@ -22,6 +22,7 @@
                                *   urbi_object_install_property */
 #include "object/ushape.h"    /* urbi_shape_find_slot */
 #include "stdlib/stdlib_boot.h" /* urbi_stdlib_boot — M6 Phase 3 */
+#include "stdlib/containers.h"  /* urbi_stdlib_register_container_globals — M6 Phase 6 */
 #include "urbi/urbi.h"        /* UErrCode, URBI_OK, URBI_ERR_OOM */
 #include "urbi/object.h"      /* URBI_ATOM_* family tags */
 #include "module/umodule.h"
@@ -393,6 +394,17 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
             if (rc != 0) {
                 return URBI_ERR_OOM;
             }
+        }
+    }
+
+    /* M6 Phase 6: post-registry container globals (Pair / Triplet / Tuple).
+     * Lands at slots 15+, past the v1.0 packed-flag CONSTANT enforcement
+     * range (slots 0..7), so it cannot displace the registry's stable
+     * Object..List layout. */
+    {
+        int rc = urbi_stdlib_register_container_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
         }
     }
 

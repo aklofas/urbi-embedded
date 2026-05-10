@@ -444,6 +444,19 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
     struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
+    /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
+     * instances allocated via urbi_stdlib_register_containers.  Each
+     * buffer begins with a (void *next) header that threads onto this
+     * head pointer.  Freed in urbi_vm_destroy via
+     * urbi_stdlib_containers_destroy.  See src/stdlib/containers.c. */
+    void       *stdlib_containers;
+    /* M6 Phase 6: Pair / Triplet / Tuple proto singletons.  Allocated
+     * by urbi_stdlib_register_containers; bound to realm globals by
+     * urbi_stdlib_register_container_globals after the registry loop.
+     * NULL until first VM boot. */
+    struct UObject *container_pair_proto;
+    struct UObject *container_triplet_proto;
+    struct UObject *container_tuple_proto;
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;

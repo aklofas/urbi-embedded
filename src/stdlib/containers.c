@@ -1,0 +1,959 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* containers.c — M6 Phase 6: C-native container types.
+ *
+ * Pair / Triplet / Tuple / List / Dict — see banner in containers.h.
+ *
+ * Storage strategy at v1.0:
+ *   - Pair / Triplet are stateless: each instance is a clone of the
+ *     proto with `first` / `second` (/ `third`) installed as ordinary
+ *     UObject slots.  Lookup goes through OP_GETSLOT → walks proto
+ *     chain → finds the slot.
+ *   - Tuple / List / Dict carry a heap-allocated backing buffer
+ *     (UList / UDict struct).  The pointer is stashed in a hidden
+ *     `_storage` slot as UVAL_INT (cast through uintptr_t) so the
+ *     GC walker treats it as a leaf scalar.  Each backing buffer
+ *     starts with a void *next header threading onto vm->stdlib_-
+ *     containers; freed at urbi_vm_destroy via
+ *     urbi_stdlib_containers_destroy.
+ *
+ * VM-lifetime backing buffers are intentional at v1.0 (tracked at
+ * docs/urbi-embedded-design-risks.md "stdlib container backing buffers
+ * vm-lifetime"); proper UTYPE_LIST / UTYPE_DICT GC types land at v1.x
+ * when the cross-cutting walker plumbing arrives.
+ *
+ * Method registration mirrors atom_protos.c / atoms.c: each method
+ * tabulates {name, fn} pairs, install_methods walks the table and
+ * binds via urbi_native_closure_create + urbi_object_set_local_slot.
+ *
+ * Pair / Triplet / Tuple are exposed as fresh UObjects via
+ * urbi_realm_set_global (the realm-populate registry has no row for
+ * them; see src/realm/urealm_globals.c).  List and Dict reuse the
+ * existing URBI_ATOM_LIST / URBI_ATOM_DICT atom-proto singletons —
+ * the registry already exposes "List" / "Dict" as realm globals
+ * pointing at those protos, so installing methods on the protos is
+ * sufficient.
+ */
+
+#include "stdlib/containers.h"
+#include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
+
+#include "module/umodule.h"            /* UValue / UVAL_* */
+#include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
+#include "realm/urealm.h"              /* URealm + global_object */
+#include "runtime/uclosure.h"          /* urbi_native_method_fn */
+#include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */
+#include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
+#include "urbi/object.h"               /* URBI_ATOM_LIST / DICT / OBJECT */
+#include "urbi/types.h"                /* urbi_value_nil */
+#include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
+#include "value/uintern.h"             /* ustr_intern + USymbol */
+#include "value/uvalue.h"              /* uvalue_equal */
+#include "vm/uvm.h"                    /* UVM */
+
+#include <stdint.h>
+#include <stddef.h>
+
+/* === Backing-buffer header ================================================
+ *
+ * Every UList / UDict allocation begins with this header so urbi_stdlib_-
+ * containers_destroy can walk the chain at VM teardown.  `next` threads onto
+ * vm->stdlib_containers (declared as void * in uvm.h to keep that header
+ * decoupled from this struct).  `kind` distinguishes UList vs UDict for
+ * teardown (UDict carries a separately-allocated entries[] array). */
+
+typedef enum {
+    UCONTAINER_LIST = 1,
+    UCONTAINER_DICT = 2
+} UContainerKind;
+
+typedef struct UContainerHdr {
+    struct UContainerHdr *next;
+    uint8_t               kind;
+    uint8_t               _pad[7];
+} UContainerHdr;
+
+/* === UList — backing for List, Tuple ===================================== */
+
+typedef struct UList {
+    UContainerHdr hdr;
+    UValue       *items;         /* heap array, len * sizeof(UValue) */
+    size_t        len;
+    size_t        cap;
+} UList;
+
+/* === UDict — backing for Dict (open-address linear-probe) ================ */
+
+#define UDICT_EMPTY 0
+#define UDICT_USED  1
+#define UDICT_TOMB  2
+
+typedef struct UDictEntry {
+    UValue   key;     /* UVAL_STR only at v1.0 */
+    UValue   val;
+    uint32_t hash;
+    uint8_t  state;
+    uint8_t  _pad[3];
+} UDictEntry;
+
+typedef struct UDict {
+    UContainerHdr hdr;
+    UDictEntry   *entries;       /* heap array, cap entries; cap is power of two */
+    size_t        cap;
+    size_t        len;           /* USED entries (TOMB excluded) */
+} UDict;
+
+/* === Container-list helpers ============================================== */
+
+static void
+container_register(UVM *vm, UContainerHdr *hdr, uint8_t kind)
+{
+    hdr->kind = kind;
+    hdr->next = (UContainerHdr *)vm->stdlib_containers;
+    vm->stdlib_containers = hdr;
+}
+
+void
+urbi_stdlib_containers_destroy(UVM *vm)
+{
+    if (vm == NULL || vm->alloc_fn == NULL) return;
+    UContainerHdr *h = (UContainerHdr *)vm->stdlib_containers;
+    while (h != NULL) {
+        UContainerHdr *next = h->next;
+        if (h->kind == (uint8_t)UCONTAINER_LIST) {
+            UList *l = (UList *)h;
+            if (l->items != NULL) {
+                vm->alloc_fn(l->items, 0, vm->alloc_ud);
+                l->items = NULL;
+            }
+        } else if (h->kind == (uint8_t)UCONTAINER_DICT) {
+            UDict *d = (UDict *)h;
+            if (d->entries != NULL) {
+                vm->alloc_fn(d->entries, 0, vm->alloc_ud);
+                d->entries = NULL;
+            }
+        }
+        vm->alloc_fn(h, 0, vm->alloc_ud);
+        h = next;
+    }
+    vm->stdlib_containers = NULL;
+}
+
+/* === UList / UDict alloc helpers ========================================= */
+
+static UList *
+list_alloc(UVM *vm, size_t initial_cap)
+{
+    if (vm->alloc_fn == NULL) return NULL;
+    UList *l = (UList *)vm->alloc_fn(NULL, sizeof(UList), vm->alloc_ud);
+    if (l == NULL) return NULL;
+    urbi_zero(l, sizeof(UList));
+    if (initial_cap > 0U) {
+        l->items = (UValue *)vm->alloc_fn(NULL, initial_cap * sizeof(UValue), vm->alloc_ud);
+        if (l->items == NULL) {
+            vm->alloc_fn(l, 0, vm->alloc_ud);
+            return NULL;
+        }
+        urbi_zero(l->items, initial_cap * sizeof(UValue));
+    }
+    l->len = 0U;
+    l->cap = initial_cap;
+    container_register(vm, &l->hdr, (uint8_t)UCONTAINER_LIST);
+    return l;
+}
+
+static int
+list_grow(UVM *vm, UList *l, size_t need)
+{
+    size_t new_cap = l->cap > 0U ? l->cap : 4U;
+    while (new_cap < need) new_cap *= 2U;
+    if (new_cap == l->cap) return 0;
+    UValue *fresh = (UValue *)vm->alloc_fn(NULL, new_cap * sizeof(UValue), vm->alloc_ud);
+    if (fresh == NULL) return -1;
+    urbi_zero(fresh, new_cap * sizeof(UValue));
+    size_t i;
+    for (i = 0U; i < l->len; i++) fresh[i] = l->items[i];
+    if (l->items != NULL) vm->alloc_fn(l->items, 0, vm->alloc_ud);
+    l->items = fresh;
+    l->cap   = new_cap;
+    return 0;
+}
+
+static UDict *
+dict_alloc(UVM *vm, size_t initial_cap)
+{
+    if (vm->alloc_fn == NULL) return NULL;
+    UDict *d = (UDict *)vm->alloc_fn(NULL, sizeof(UDict), vm->alloc_ud);
+    if (d == NULL) return NULL;
+    urbi_zero(d, sizeof(UDict));
+    if (initial_cap > 0U) {
+        d->entries = (UDictEntry *)vm->alloc_fn(NULL, initial_cap * sizeof(UDictEntry), vm->alloc_ud);
+        if (d->entries == NULL) {
+            vm->alloc_fn(d, 0, vm->alloc_ud);
+            return NULL;
+        }
+        urbi_zero(d->entries, initial_cap * sizeof(UDictEntry));
+    }
+    d->cap = initial_cap;
+    d->len = 0U;
+    container_register(vm, &d->hdr, (uint8_t)UCONTAINER_DICT);
+    return d;
+}
+
+/* === Hidden _storage slot helpers ========================================
+ *
+ * The UObject visible to scripts holds the underlying UList* / UDict* in a
+ * UVAL_INT slot named `_storage`.  The pointer is round-tripped through
+ * uintptr_t.  GC sees a UVAL_INT and treats it as a scalar leaf — the
+ * backing buffer's lifetime is owned by vm->stdlib_containers, not by GC. */
+
+static UValue
+val_from_ptr(void *p)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i = (int64_t)(intptr_t)p;
+    return v;
+}
+
+static void *
+ptr_from_val(UValue v)
+{
+    if (v.kind != (uint8_t)UVAL_INT) return NULL;
+    /* NOLINT(performance-no-int-to-ptr) — UList/UDict backing pointer
+     * stashed as int64 in a hidden _storage slot.  See file banner; the
+     * cast is the inverse of val_from_ptr above. */
+    return (void *)(intptr_t)v.v.i;  /* NOLINT(performance-no-int-to-ptr) */
+}
+
+static int
+attach_storage(UVM *vm, UObject *o, void *storage)
+{
+    USymbol *sym = (USymbol *)ustr_intern(vm, "_storage", 8);
+    if (sym == NULL) return -1;
+    return urbi_object_set_local_slot(vm, o, sym, val_from_ptr(storage));
+}
+
+static void *
+fetch_storage_ptr(UVM *vm, UObject *o)
+{
+    if (o == NULL) return NULL;
+    USymbol *sym = (USymbol *)ustr_intern(vm, "_storage", 8);
+    if (sym == NULL) return NULL;
+    UObject *holder = NULL;
+    uint32_t idx = 0U;
+    int rc = urbi_object_resolve_slot(vm, o, sym, &holder, &idx);
+    if (rc != 1 || holder == NULL || holder->slots == NULL) return NULL;
+    return ptr_from_val(holder->slots[idx]);
+}
+
+static UList *
+list_storage(UVM *vm, UValue self)
+{
+    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL) return NULL;
+    return (UList *)fetch_storage_ptr(vm, (UObject *)self.v.p);
+}
+
+static UDict *
+dict_storage(UVM *vm, UValue self)
+{
+    if (self.kind != (uint8_t)UVAL_OBJECT || self.v.p == NULL) return NULL;
+    return (UDict *)fetch_storage_ptr(vm, (UObject *)self.v.p);
+}
+
+/* === UValue construction helpers ========================================= */
+
+static UValue
+val_int(int64_t i)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_INT;
+    v.v.i  = i;
+    return v;
+}
+
+static UValue
+val_bool(int b)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_BOOL;
+    v.v.i  = b ? 1 : 0;
+    return v;
+}
+
+static UValue
+val_obj(UObject *o)
+{
+    UValue v = urbi_value_nil();
+    v.kind = (uint8_t)UVAL_OBJECT;
+    v.v.p  = o;
+    return v;
+}
+
+/* === Method-table install helper ========================================= */
+
+typedef struct {
+    const char           *name;
+    urbi_native_method_fn fn;
+} ContainerMethodEntry;
+
+static int
+install_methods(UVM *vm, UObject *proto,
+                const ContainerMethodEntry *table, size_t count)
+{
+    if (proto == NULL) return URBI_ERR_OOM;
+    size_t i;
+    for (i = 0U; i < count; i++) {
+        UClosure *cl = urbi_native_closure_create(vm, table[i].fn);
+        if (cl == NULL) return URBI_ERR_OOM;
+
+        USymbol *sym = (USymbol *)ustr_intern(vm, table[i].name,
+                                              urbi_strlen(table[i].name));
+        if (sym == NULL) return URBI_ERR_OOM;
+
+        UValue v = urbi_value_nil();
+        v.kind = (uint8_t)UVAL_CLOSURE;
+        v.v.p  = cl;
+        int rc = urbi_object_set_local_slot(vm, proto, sym, v);
+        if (rc != 0) return URBI_ERR_OOM;
+    }
+    return URBI_OK;
+}
+
+/* === Pair (immutable 2-tuple) ============================================
+ *
+ * Pair.new(a, b) clones the Pair proto (urbi_object_clone) and installs
+ * `first` + `second` as ordinary slots.  No backing storage. */
+
+static int
+pair_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 2) return urbi_raise_arity(vm, "Pair.new", 2, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Pair.new: self must be Pair proto", out);
+
+    UObject *p = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (p == NULL) return urbi_raise_oom(vm, out);
+
+    USymbol *sym_first  = (USymbol *)ustr_intern(vm, "first",  5);
+    USymbol *sym_second = (USymbol *)ustr_intern(vm, "second", 6);
+    if (sym_first == NULL || sym_second == NULL) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, p, sym_first,  args[0]) != 0)
+        return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, p, sym_second, args[1]) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = val_obj(p);
+    return UEXEC_OK;
+}
+
+/* === Triplet (immutable 3-tuple) ========================================= */
+
+static int
+triplet_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 3) return urbi_raise_arity(vm, "Triplet.new", 3, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Triplet.new: self must be Triplet proto", out);
+
+    UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (t == NULL) return urbi_raise_oom(vm, out);
+
+    USymbol *sf = (USymbol *)ustr_intern(vm, "first",  5);
+    USymbol *ss = (USymbol *)ustr_intern(vm, "second", 6);
+    USymbol *st = (USymbol *)ustr_intern(vm, "third",  5);
+    if (sf == NULL || ss == NULL || st == NULL) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, t, sf, args[0]) != 0) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, t, ss, args[1]) != 0) return urbi_raise_oom(vm, out);
+    if (urbi_object_set_local_slot(vm, t, st, args[2]) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(t);
+    return UEXEC_OK;
+}
+
+/* === Tuple (variadic immutable n-tuple) ==================================
+ *
+ * Backed by a UList that's populated at construction and never grown.
+ * Methods: length, at(i). */
+
+static int
+tuple_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Tuple.new: self must be Tuple proto", out);
+
+    UList *l = list_alloc(vm, (size_t)nargs > 0U ? (size_t)nargs : 1U);
+    if (l == NULL) return urbi_raise_oom(vm, out);
+
+    uint8_t i;
+    for (i = 0U; i < nargs; i++) l->items[i] = args[i];
+    l->len = (size_t)nargs;
+
+    UObject *t = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (t == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, t, l) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(t);
+    return UEXEC_OK;
+}
+
+static int
+list_or_tuple_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
+    *out = val_int((int64_t)l->len);
+    return UEXEC_OK;
+}
+
+static int
+list_or_tuple_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "get", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "get: index must be Integer", out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
+    int64_t i = args[0].v.i;
+    if (i < 0 || (size_t)i >= l->len)
+        return urbi_raise_type(vm, "get: index out of range", out);
+    *out = l->items[(size_t)i];
+    return UEXEC_OK;
+}
+
+/* === List ================================================================
+ *
+ * Mutable, growable.  `List.new(...)` constructs from variadic args.
+ * Methods: new, length, isEmpty, at(i), add(v), set(i, v), concat(other),
+ * diff(other), contains(v). */
+
+static int
+list_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "List.new: self must be List proto", out);
+
+    size_t cap = (size_t)nargs > 0U ? (size_t)nargs : 4U;
+    UList *l = list_alloc(vm, cap);
+    if (l == NULL) return urbi_raise_oom(vm, out);
+
+    uint8_t i;
+    for (i = 0U; i < nargs; i++) l->items[i] = args[i];
+    l->len = (size_t)nargs;
+
+    UObject *o = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, o, l) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(o);
+    return UEXEC_OK;
+}
+
+static int
+list_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
+    *out = val_bool(l->len == 0U);
+    return UEXEC_OK;
+}
+
+static int
+list_add(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "add", 1, nargs, out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "add: missing _storage", out);
+    if (l->len == l->cap) {
+        if (list_grow(vm, l, l->len + 1U) != 0)
+            return urbi_raise_oom(vm, out);
+    }
+    l->items[l->len++] = args[0];
+    *out = self;   /* allow chaining */
+    return UEXEC_OK;
+}
+
+static int
+list_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 2) return urbi_raise_arity(vm, "set", 2, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "set: index must be Integer", out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "set: missing _storage", out);
+    int64_t i = args[0].v.i;
+    if (i < 0 || (size_t)i >= l->len)
+        return urbi_raise_type(vm, "set: index out of range", out);
+    l->items[(size_t)i] = args[1];
+    *out = self;
+    return UEXEC_OK;
+}
+
+static int
+list_contains(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "contains", 1, nargs, out);
+    UList *l = list_storage(vm, self);
+    if (l == NULL) return urbi_raise_type(vm, "contains: missing _storage", out);
+    size_t i;
+    for (i = 0U; i < l->len; i++) {
+        if (uvalue_equal(&l->items[i], &args[0])) {
+            *out = val_bool(1);
+            return UEXEC_OK;
+        }
+    }
+    *out = val_bool(0);
+    return UEXEC_OK;
+}
+
+static int
+list_concat(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "concat", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "concat: argument must be a List", out);
+    UList *a = list_storage(vm, self);
+    UList *b = list_storage(vm, args[0]);
+    if (a == NULL || b == NULL)
+        return urbi_raise_type(vm, "concat: missing _storage", out);
+
+    /* Allocate a fresh List proto-clone backed by a new UList. */
+    UList *o = list_alloc(vm, a->len + b->len > 0U ? a->len + b->len : 1U);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+    size_t i;
+    for (i = 0U; i < a->len; i++) o->items[o->len++] = a->items[i];
+    for (i = 0U; i < b->len; i++) o->items[o->len++] = b->items[i];
+
+    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (ret == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(ret);
+    return UEXEC_OK;
+}
+
+static int
+list_diff(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "diff", 1, nargs, out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "diff: argument must be a List", out);
+    UList *a = list_storage(vm, self);
+    UList *b = list_storage(vm, args[0]);
+    if (a == NULL || b == NULL)
+        return urbi_raise_type(vm, "diff: missing _storage", out);
+
+    /* Allocate a fresh List backed by a UList with capacity a->len. */
+    UList *o = list_alloc(vm, a->len > 0U ? a->len : 1U);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+
+    size_t i, j;
+    for (i = 0U; i < a->len; i++) {
+        int present = 0;
+        for (j = 0U; j < b->len; j++) {
+            if (uvalue_equal(&a->items[i], &b->items[j])) { present = 1; break; }
+        }
+        if (!present) o->items[o->len++] = a->items[i];
+    }
+
+    UObject *ret = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (ret == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, ret, o) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(ret);
+    return UEXEC_OK;
+}
+
+/* === Dict ================================================================
+ *
+ * Mutable, string-keyed open-address hash table.  Methods: new, length,
+ * isEmpty, get(key), set(key, value), has(key), remove(key).
+ *
+ * Iteration order is unspecified at v1.0 (REVIVAL §14 — Dict iteration
+ * order joins Lua/Ruby<1.9 in declining the insertion-order guarantee).
+ *
+ * Hash: FNV-1a over string bytes.  Capacity grows by doubling when load
+ * factor crosses 0.5. */
+
+static uint32_t
+dict_hash_bytes(const char *s, size_t n)
+{
+    uint32_t h = 0x811C9DC5U;
+    size_t i;
+    for (i = 0U; i < n; i++) {
+        h ^= (uint32_t)(unsigned char)s[i];
+        h *= 0x01000193U;
+    }
+    return h;
+}
+
+static int
+dict_key_check(UVM *vm, UValue key, UValue *out, const char *fn_name)
+{
+    (void)fn_name;
+    if (key.kind != (uint8_t)UVAL_STR || key.v.p == NULL) {
+        return urbi_raise_type(vm, "Dict op: key must be String", out);
+    }
+    return UEXEC_OK;
+}
+
+/* dict_lookup walks the open-address probe sequence and returns either the
+ * matching USED entry or the first EMPTY/TOMB slot suitable for insert.
+ * Returns NULL only when the table is full of USED entries (caller must
+ * grow first).  d->cap must be a power of two. */
+static UDictEntry *
+dict_lookup(UDict *d, const char *ks, size_t kn, uint32_t h)
+{
+    if (d->cap == 0U) return NULL;
+    UDictEntry *first_avail = NULL;
+    size_t mask = d->cap - 1U;
+    size_t start = (size_t)h & mask;
+    size_t probe;
+    for (probe = 0U; probe < d->cap; probe++) {
+        UDictEntry *e = &d->entries[(start + probe) & mask];
+        if (e->state == UDICT_EMPTY) {
+            return first_avail != NULL ? first_avail : e;
+        }
+        if (e->state == UDICT_TOMB) {
+            if (first_avail == NULL) first_avail = e;
+            continue;
+        }
+        /* USED — compare. */
+        if (e->hash == h && e->key.kind == (uint8_t)UVAL_STR
+            && e->key.v.p != NULL) {
+            const char *sk = (const char *)e->key.v.p;
+            size_t sklen = urbi_strlen(sk);
+            if (sklen == kn) {
+                size_t i;
+                int eq = 1;
+                for (i = 0U; i < kn; i++) {
+                    if (sk[i] != ks[i]) { eq = 0; break; }
+                }
+                if (eq) return e;
+            }
+        }
+    }
+    return first_avail;   /* table full of USED + TOMB */
+}
+
+static int
+dict_grow(UVM *vm, UDict *d)
+{
+    size_t new_cap = d->cap > 0U ? d->cap * 2U : 8U;
+    UDictEntry *fresh = (UDictEntry *)vm->alloc_fn(NULL,
+        new_cap * sizeof(UDictEntry), vm->alloc_ud);
+    if (fresh == NULL) return -1;
+    urbi_zero(fresh, new_cap * sizeof(UDictEntry));
+    UDictEntry *old = d->entries;
+    size_t old_cap = d->cap;
+    d->entries = fresh;
+    d->cap     = new_cap;
+    d->len     = 0U;
+    if (old != NULL) {
+        size_t i;
+        for (i = 0U; i < old_cap; i++) {
+            if (old[i].state != UDICT_USED) continue;
+            const char *sk = (const char *)old[i].key.v.p;
+            size_t sklen = urbi_strlen(sk);
+            UDictEntry *slot = dict_lookup(d, sk, sklen, old[i].hash);
+            if (slot == NULL) {
+                /* should never happen — fresh table has empty slots */
+                vm->alloc_fn(old, 0, vm->alloc_ud);
+                return -1;
+            }
+            *slot = old[i];
+            d->len++;
+        }
+        vm->alloc_fn(old, 0, vm->alloc_ud);
+    }
+    return 0;
+}
+
+static int
+dict_new(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Dict.new", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Dict.new: self must be Dict proto", out);
+
+    UDict *d = dict_alloc(vm, 8U);
+    if (d == NULL) return urbi_raise_oom(vm, out);
+
+    UObject *o = urbi_object_clone(vm, (UObject *)self.v.p);
+    if (o == NULL) return urbi_raise_oom(vm, out);
+    if (attach_storage(vm, o, d) != 0) return urbi_raise_oom(vm, out);
+
+    *out = val_obj(o);
+    return UEXEC_OK;
+}
+
+static int
+dict_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "length", 0, nargs, out);
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "length: missing _storage", out);
+    *out = val_int((int64_t)d->len);
+    return UEXEC_OK;
+}
+
+static int
+dict_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "isEmpty", 0, nargs, out);
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "isEmpty: missing _storage", out);
+    *out = val_bool(d->len == 0U);
+    return UEXEC_OK;
+}
+
+static int
+dict_set(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 2) return urbi_raise_arity(vm, "set", 2, nargs, out);
+    int rc = dict_key_check(vm, args[0], out, "set");
+    if (rc != UEXEC_OK) return rc;
+
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "set: missing _storage", out);
+
+    /* Grow if load factor would exceed 0.5 after potential insert. */
+    if ((d->len + 1U) * 2U > d->cap) {
+        if (dict_grow(vm, d) != 0) return urbi_raise_oom(vm, out);
+    }
+
+    const char *ks = (const char *)args[0].v.p;
+    size_t kn = urbi_strlen(ks);
+    uint32_t h = dict_hash_bytes(ks, kn);
+    UDictEntry *e = dict_lookup(d, ks, kn, h);
+    if (e == NULL) return urbi_raise_oom(vm, out);
+
+    if (e->state != UDICT_USED) {
+        e->key   = args[0];
+        e->hash  = h;
+        e->state = UDICT_USED;
+        d->len++;
+    }
+    e->val = args[1];
+    *out = self;
+    return UEXEC_OK;
+}
+
+static int
+dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "get", 1, nargs, out);
+    int rc = dict_key_check(vm, args[0], out, "get");
+    if (rc != UEXEC_OK) return rc;
+
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
+    if (d->cap == 0U) { *out = urbi_value_nil(); return UEXEC_OK; }
+
+    const char *ks = (const char *)args[0].v.p;
+    size_t kn = urbi_strlen(ks);
+    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
+    if (e == NULL || e->state != UDICT_USED) {
+        *out = urbi_value_nil();
+        return UEXEC_OK;
+    }
+    *out = e->val;
+    return UEXEC_OK;
+}
+
+static int
+dict_has(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "has", 1, nargs, out);
+    int rc = dict_key_check(vm, args[0], out, "has");
+    if (rc != UEXEC_OK) return rc;
+
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "has: missing _storage", out);
+    if (d->cap == 0U) { *out = val_bool(0); return UEXEC_OK; }
+
+    const char *ks = (const char *)args[0].v.p;
+    size_t kn = urbi_strlen(ks);
+    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
+    *out = val_bool(e != NULL && e->state == UDICT_USED);
+    return UEXEC_OK;
+}
+
+static int
+dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "remove", 1, nargs, out);
+    int rc = dict_key_check(vm, args[0], out, "remove");
+    if (rc != UEXEC_OK) return rc;
+
+    UDict *d = dict_storage(vm, self);
+    if (d == NULL) return urbi_raise_type(vm, "remove: missing _storage", out);
+    if (d->cap == 0U) { *out = self; return UEXEC_OK; }
+
+    const char *ks = (const char *)args[0].v.p;
+    size_t kn = urbi_strlen(ks);
+    UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
+    if (e != NULL && e->state == UDICT_USED) {
+        e->state = UDICT_TOMB;
+        e->key   = urbi_value_nil();
+        e->val   = urbi_value_nil();
+        d->len--;
+    }
+    *out = self;
+    return UEXEC_OK;
+}
+
+/* === Method tables ======================================================= */
+
+static const ContainerMethodEntry PAIR_METHODS[] = {
+    { "new", pair_new }
+};
+
+static const ContainerMethodEntry TRIPLET_METHODS[] = {
+    { "new", triplet_new }
+};
+
+static const ContainerMethodEntry TUPLE_METHODS[] = {
+    { "new",    tuple_new            },
+    { "length", list_or_tuple_length },
+    { "get",    list_or_tuple_get     }
+};
+
+static const ContainerMethodEntry LIST_METHODS[] = {
+    { "new",      list_new             },
+    { "length",   list_or_tuple_length },
+    { "isEmpty",  list_isEmpty         },
+    { "get",      list_or_tuple_get     },
+    { "add",      list_add             },
+    { "set",      list_set             },
+    { "contains", list_contains        },
+    { "concat",   list_concat          },
+    { "diff",     list_diff            }
+};
+
+static const ContainerMethodEntry DICT_METHODS[] = {
+    { "new",     dict_new     },
+    { "length",  dict_length  },
+    { "isEmpty", dict_isEmpty },
+    { "set",     dict_set     },
+    { "get",     dict_get     },
+    { "has",     dict_has     },
+    { "remove",  dict_remove  }
+};
+
+#define PAIR_METHODS_COUNT    (sizeof(PAIR_METHODS)    / sizeof(PAIR_METHODS[0]))
+#define TRIPLET_METHODS_COUNT (sizeof(TRIPLET_METHODS) / sizeof(TRIPLET_METHODS[0]))
+#define TUPLE_METHODS_COUNT   (sizeof(TUPLE_METHODS)   / sizeof(TUPLE_METHODS[0]))
+#define LIST_METHODS_COUNT    (sizeof(LIST_METHODS)    / sizeof(LIST_METHODS[0]))
+#define DICT_METHODS_COUNT    (sizeof(DICT_METHODS)    / sizeof(DICT_METHODS[0]))
+
+/* === urbi_stdlib_register_containers ====================================
+ *
+ * Boot phase (called from urbi_stdlib_boot AFTER atom_protos_register and
+ * atoms.c register_atom_methods, BEFORE the realm-populate registry loop):
+ *
+ *   1. Install List / Dict methods on the existing URBI_ATOM_LIST /
+ *      URBI_ATOM_DICT atom-proto singletons.  The realm-populate registry
+ *      already publishes these as "List" / "Dict" globals.
+ *   2. Allocate fresh Pair / Triplet / Tuple proto UObjects, install
+ *      their methods, and stash the pointers in vm fields.
+ *      Realm-global binding for these names is deferred to
+ *      urbi_stdlib_register_container_globals (called after the registry
+ *      loop) so the registry's stable slot 0..7 layout for the v1.0
+ *      packed-flag CONSTANT enforcement range stays intact.
+ *
+ * Idempotent — guarded by vm->stdlib_booted upstream. */
+
+int
+urbi_stdlib_register_containers(UVM *vm)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+
+    int rc;
+
+    /* 1. List / Dict atom protos (existing singletons; realm-populate
+     *    registry already binds the names). */
+    UObject *list_proto = urbi_object_atom(vm, URBI_ATOM_LIST);
+    if (list_proto == NULL) return URBI_ERR_OOM;
+    rc = install_methods(vm, list_proto, LIST_METHODS, LIST_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    UObject *dict_proto = urbi_object_atom(vm, URBI_ATOM_DICT);
+    if (dict_proto == NULL) return URBI_ERR_OOM;
+    rc = install_methods(vm, dict_proto, DICT_METHODS, DICT_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    /* 2. Pair / Triplet / Tuple fresh protos.  Each is a vanilla
+     *    URBI_ATOM_OBJECT-family UObject with the proper methods installed.
+     *    GC reachability comes from object_roots_walker (uobject.c) which
+     *    shades vm->container_*_proto during MARK_ROOTS. */
+    if (vm->container_pair_proto == NULL) {
+        UObject *p = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (p == NULL) return URBI_ERR_OOM;
+        vm->container_pair_proto = p;
+    }
+    rc = install_methods(vm, vm->container_pair_proto,
+                         PAIR_METHODS, PAIR_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    if (vm->container_triplet_proto == NULL) {
+        UObject *t = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (t == NULL) return URBI_ERR_OOM;
+        vm->container_triplet_proto = t;
+    }
+    rc = install_methods(vm, vm->container_triplet_proto,
+                         TRIPLET_METHODS, TRIPLET_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    if (vm->container_tuple_proto == NULL) {
+        UObject *t = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (t == NULL) return URBI_ERR_OOM;
+        vm->container_tuple_proto = t;
+    }
+    rc = install_methods(vm, vm->container_tuple_proto,
+                         TUPLE_METHODS, TUPLE_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
+    return URBI_OK;
+}
+
+/* === urbi_stdlib_register_container_globals =============================
+ *
+ * Post-registry hook: installs Pair / Triplet / Tuple as realm globals on
+ * `realm`.  Called by urbi_populate_realm_globals AFTER the 15-row
+ * registry loop completes, so these names occupy slots 15+ and don't
+ * displace the registry's slot 0..7 CONSTANT-enforcement layout.
+ *
+ * The protos themselves are allocated by urbi_stdlib_register_containers
+ * (which runs at BOOT TIME, before this function); this hook just binds
+ * names to the existing protos. */
+
+int
+urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
+{
+    if (vm == NULL || realm == NULL) return URBI_ERR_INVALID_ARG;
+
+    int rc;
+    if (vm->container_pair_proto != NULL) {
+        rc = urbi_realm_set_global(vm, realm, "Pair", 4,
+                                   val_obj(vm->container_pair_proto));
+        if (rc != URBI_OK) return rc;
+    }
+    if (vm->container_triplet_proto != NULL) {
+        rc = urbi_realm_set_global(vm, realm, "Triplet", 7,
+                                   val_obj(vm->container_triplet_proto));
+        if (rc != URBI_OK) return rc;
+    }
+    if (vm->container_tuple_proto != NULL) {
+        rc = urbi_realm_set_global(vm, realm, "Tuple", 5,
+                                   val_obj(vm->container_tuple_proto));
+        if (rc != URBI_OK) return rc;
+    }
+    return URBI_OK;
+}

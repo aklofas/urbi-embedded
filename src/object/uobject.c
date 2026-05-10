@@ -299,6 +299,11 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->event_proto != NULL) gc_shade_gray(vm, (UCell *)vm->event_proto);
     if (vm->tag_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->tag_proto);
 
+    /* M6 Phase 6: container proto singletons for Pair / Triplet / Tuple. */
+    if (vm->container_pair_proto    != NULL) gc_shade_gray(vm, (UCell *)vm->container_pair_proto);
+    if (vm->container_triplet_proto != NULL) gc_shade_gray(vm, (UCell *)vm->container_triplet_proto);
+    if (vm->container_tuple_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->container_tuple_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 

@@ -88,3 +88,15 @@ unreadVariable:src/module/uchunk.c:143
 // cascade through every native-method registration site.  Mirrors the
 // rationale at CPPCHK-012 above.
 constParameterPointer:src/stdlib/atoms.c
+
+// audit:CPPCHK-Phase6 — src/stdlib/containers.c native-method callbacks
+// are bound by the same urbi_native_method_fn typedef as atoms.c
+// (CPPCHK-Phase5 above).  cppcheck flags `args` as constable plus
+// several local UList* / UDict* / UDictEntry* pointers loaded via
+// list_storage / dict_storage / dict_lookup that are read-only in their
+// branches; promoting those locals to `const` cascades into the helper
+// signatures, which the broader Phase 6 design keeps non-const so the
+// same locals can take a write-through path on the mutating method
+// branches (set / add / remove / dict_set / etc.).
+constParameterPointer:src/stdlib/containers.c
+constVariablePointer:src/stdlib/containers.c

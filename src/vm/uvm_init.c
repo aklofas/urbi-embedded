@@ -23,6 +23,7 @@
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
 #include "runtime/uhandle.h"      /* host_handle_walk_roots */
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
+#include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
 #include "tag/utag_native.h"      /* tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
@@ -294,10 +295,14 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_drain_handler = NULL;
 
     /* M6 Phase 3: stdlib state. */
-    vm->stdlib_closures = NULL;
-    vm->stdlib_upvalues = NULL;
-    vm->stdlib_module   = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
-    vm->stdlib_booted   = 0U;
+    vm->stdlib_closures        = NULL;
+    vm->stdlib_upvalues        = NULL;
+    vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
+    vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
+    vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
+    vm->container_triplet_proto = NULL;
+    vm->container_tuple_proto   = NULL;
+    vm->stdlib_booted          = 0U;
     {
         int i;
         for (i = 0; i < 7; i++) vm->pad_stdlib[i] = 0U;
@@ -377,6 +382,13 @@ void urbi_vm_destroy(UVM *vm) {
             vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
             vm->stdlib_module = NULL;
         }
+
+        /* M6 Phase 6: free container backing buffers (List/Dict/Tuple
+         * storage) threaded onto vm->stdlib_containers.  Runs after
+         * urbi_gc_destroy so the per-instance UObjects (which carry the
+         * pointer in a hidden _storage slot) have already been reaped —
+         * no dangling buffer reference can survive. */
+        urbi_stdlib_containers_destroy(vm);
     }
     /* Note: open_upvals is now on the strand, not the VM.
        The urbi_vm_run adapter cleans up strand.open_upvals before destroy. */
