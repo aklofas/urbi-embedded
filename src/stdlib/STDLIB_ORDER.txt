@@ -1,0 +1,12 @@
+# STDLIB_ORDER.txt — Phase 10 .u overlay manifest.
+#
+# Each non-blank, non-comment line names a basename of a .u file under
+# src/stdlib/.  tools/urbi-compile-stdlib walks this list in order,
+# concatenates the source bodies, and bakes the resulting v1.5 bytecode
+# into urbi_stdlib_bytecode[] (src/stdlib/urbi_stdlib_bytecode.gen.c).
+#
+# Boot order: urbi_stdlib_boot deserializes the blob and binds it as a
+# per-VM UModuleInstance after all C-native registration completes.
+# The blob's top-level statements run during realm-globals population.
+
+exception_subclasses.u

@@ -30,19 +30,24 @@
 
 #define UTEST(name) static void name(void)
 
-/* === Test 1: vm_init succeeds when blob is empty ============== */
+/* === Test 1: vm_init succeeds and boot binds the stdlib blob ============== */
 
-UTEST(vm_init_succeeds_with_empty_blob) {
-    UASSERT_EQ(urbi_stdlib_bytecode_len, 0u);
+UTEST(vm_init_succeeds_and_binds_blob) {
+    /* Phase 10: STDLIB_ORDER.txt is non-empty.  The bake produced a
+     * positive-length blob; urbi_stdlib_boot deserializes it and binds
+     * vm->stdlib_module on first realm creation. */
+    UASSERT(urbi_stdlib_bytecode_len > 0u);
 
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    /* Force realm-create + populate, which calls urbi_stdlib_boot. */
+    /* Force realm-create + populate, which calls urbi_stdlib_boot
+     * and (Phase 10) runs the stdlib chunk so its top-level class
+     * declarations install themselves as realm globals. */
     struct URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
     UASSERT_EQ((int)vm.stdlib_booted, 1);
-    UASSERT(vm.stdlib_module == NULL);   /* empty blob → no allocation */
+    UASSERT(vm.stdlib_module != NULL);   /* non-empty blob → bound */
 
     urbi_vm_destroy(&vm);
 }
@@ -109,16 +114,49 @@ UTEST(ic_name_resolution_post_boot) {
     urbi_vm_destroy(&vm);
 }
 
-/* === Test 4: blob size baseline ============================== */
+/* === Test 4: blob is non-empty post-Phase-10 ================== */
 /*
- * At Phase 4 baseline urbi_stdlib_bytecode_len is 0 — STDLIB_ORDER.txt
- * is empty.  Phase 10 will replace this with a fixed-size assertion
- * once the order file is populated; at that point the test pins the
- * baked blob to a known size so any unintended drift from a re-baked
- * stdlib gets caught at unit-test time. */
+ * Phase 10 populated STDLIB_ORDER.txt with the .u overlay manifest.
+ * The baked blob is now non-empty.  An exact-size pin would catch
+ * unintended drift but is fragile under any minor lex/emit/serialize
+ * change; the looser non-zero assertion is sufficient signal that
+ * the bake produced output.  Wave-3 may tighten this to a hash. */
 
 UTEST(blob_size_baseline) {
-    UASSERT_EQ(urbi_stdlib_bytecode_len, 0u);
+    UASSERT(urbi_stdlib_bytecode_len > 0u);
+}
+
+/* === Test 6: Phase 10 overlay realm globals reachable ==========
+ *
+ * The .u overlay shipped at Phase 10 declares Exception subclasses
+ * (TypeError, KeyError, IndexError, etc.) as top-level
+ * `class X : public Exception {}` decls.  Each desugars to a
+ * realm-global write.  This test pins that the run-the-stdlib-chunk
+ * step inside urbi_populate_realm_globals actually executed and the
+ * subclass names resolve. */
+
+UTEST(phase10_exception_subclasses_reachable) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    struct URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    static const char *kSubclasses[] = {
+        "TypeError", "ArityError", "LookupError", "KeyError",
+        "IndexError", "RangeError", "DivByZero", "IOError",
+        "CapacityError"
+    };
+    size_t i;
+    for (i = 0; i < sizeof kSubclasses / sizeof kSubclasses[0]; i++) {
+        UValue v = urbi_value_nil();
+        const char *name = kSubclasses[i];
+        size_t      nlen = 0;
+        while (name[nlen]) nlen++;
+        int rc = urbi_realm_get_global(&vm, realm, name, nlen, &v);
+        UASSERT_EQ(rc, URBI_OK);
+        UASSERT_EQ((int)v.kind, (int)UVAL_OBJECT);
+    }
+    urbi_vm_destroy(&vm);
 }
 
 /* === Test 5: two-VM determinism (per-VM realm state independent) ===
@@ -165,8 +203,8 @@ UTEST(two_vm_determinism) {
 void
 test_stdlib_boot_suite(void)
 {
-    utest_run("vm_init_succeeds_with_empty_blob",
-              vm_init_succeeds_with_empty_blob);
+    utest_run("vm_init_succeeds_and_binds_blob",
+              vm_init_succeeds_and_binds_blob);
     utest_run("wave1_realm_globals_reachable",
               wave1_realm_globals_reachable);
     utest_run("ic_name_resolution_post_boot",
@@ -175,4 +213,6 @@ test_stdlib_boot_suite(void)
               blob_size_baseline);
     utest_run("two_vm_determinism",
               two_vm_determinism);
+    utest_run("phase10_exception_subclasses_reachable",
+              phase10_exception_subclasses_reachable);
 }

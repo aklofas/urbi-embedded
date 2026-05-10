@@ -1,0 +1,21 @@
+// Exception subclass hierarchy.  Each class is an empty-body declaration
+// whose only effect is to install a derived proto under Exception (or under
+// another error subclass for two-level hierarchies).  No method bodies —
+// they all inherit Exception.new + Exception.raise from the parent proto
+// chain, and isA-style dispatch routes via the proto-walk in catch.
+//
+// At v1.0, typed catch (`catch (TypeError e)`) is not yet syntax — the
+// generic `catch (e)` form binds the raised UObject directly, and
+// e.message resolves through the proto chain to the Exception locals.
+// User code that wants per-class branching uses .isA-equivalent host
+// predicates, deferred to v1.x.
+
+class TypeError     : public Exception {} |
+class ArityError    : public Exception {} |
+class LookupError   : public Exception {} |
+class KeyError      : public LookupError {} |
+class IndexError    : public LookupError {} |
+class RangeError    : public Exception {} |
+class DivByZero     : public Exception {} |
+class IOError       : public Exception {} |
+class CapacityError : public Exception {} |
