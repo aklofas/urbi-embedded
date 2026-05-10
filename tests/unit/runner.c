@@ -35,6 +35,7 @@ extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_lex_keywords_suite(void);
 extern void test_lex_string_suite(void);
+extern void test_lex_unicode_suite(void);
 extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
@@ -181,6 +182,7 @@ static const struct suite_entry suites[] = {
     {"lexer",                      test_lexer_suite},
     {"lex_keywords",               test_lex_keywords_suite},
     {"lex_string",                 test_lex_string_suite},
+    {"lex_unicode",                test_lex_unicode_suite},
     {"ast_string",                 test_ast_string_suite},
     {"emit_string",                test_emit_string_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},

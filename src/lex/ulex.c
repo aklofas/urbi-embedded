@@ -2,6 +2,7 @@
 /* ULexer. */
 
 #include "lex/ulex.h"
+#include "lex/ulex_internal.h"
 #include "runtime/umacros.h"
 
 #include <limits.h>
@@ -448,6 +449,34 @@ static UToken scan_ident(ULexer *lex) {
     t.u.str.start = start;
     t.u.str.len = len;
     return t;
+}
+
+/* urbi_encode_utf8 — emit 1-4 UTF-8 bytes for a code point.  See the
+ * docstring in src/lex/ulex_internal.h for the full contract; this
+ * helper is non-validating and assumes the caller has already rejected
+ * out-of-range and lone-surrogate inputs. */
+int urbi_encode_utf8(uint32_t cp, unsigned char buf[4]) {
+    if (cp <= 0x7F) {
+        buf[0] = (unsigned char)cp;
+        return 1;
+    }
+    if (cp <= 0x7FF) {
+        buf[0] = (unsigned char)(0xC0 | (cp >> 6));
+        buf[1] = (unsigned char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp <= 0xFFFF) {
+        buf[0] = (unsigned char)(0xE0 | (cp >> 12));
+        buf[1] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
+        buf[2] = (unsigned char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    /* cp <= 0x10FFFF (caller-validated). */
+    buf[0] = (unsigned char)(0xF0 | (cp >> 18));
+    buf[1] = (unsigned char)(0x80 | ((cp >> 12) & 0x3F));
+    buf[2] = (unsigned char)(0x80 | ((cp >> 6) & 0x3F));
+    buf[3] = (unsigned char)(0x80 | (cp & 0x3F));
+    return 4;
 }
 
 /* lex_string — consume a "..." string literal (LEX-035 / Phase 1).
