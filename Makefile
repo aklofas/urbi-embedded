@@ -714,6 +714,22 @@ audit-globals:
 clean:
 	rm -rf build compile_commands.json
 
+# bake-clean — force the bake tool to regenerate
+# src/stdlib/urbi_stdlib_bytecode.gen.c from STDLIB_ORDER.txt + .u files.
+#
+# Routine builds do not need this — the dep-graph picks up .u changes
+# automatically.  Use this when the committed .gen.c drifts from what
+# the current sources would produce (e.g. a .u was edited but `make`
+# did not notice because the file timestamp regressed).
+#
+# Distinct from `make clean` — it does not touch build/ at all, only
+# the tracked .gen.c source.
+bake-clean: tools/urbi-compile-stdlib
+	./tools/urbi-compile-stdlib \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    src/stdlib/urbi_stdlib_bytecode.gen.c
+
 # ---- documentation verification ------------------------------------------
 #
 # docs-check runs markdown lint + intra-repo link checking over docs/ and the
@@ -742,4 +758,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke
