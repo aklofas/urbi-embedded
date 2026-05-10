@@ -87,7 +87,7 @@ typedef enum {
                              * matching the AST_IDENT pattern). */
 
     /* M6 wave 1 — class declaration (T38) */
-    AST_CLASS_DECL = 34     /* class Foo [: public A, B] { body }
+    AST_CLASS_DECL = 34,    /* class Foo [: public A, B] { body }
                              * Carries the class name (zero-copy lexeme view),
                              * an optional declaration-order proto array, and
                              * the body block.  Per S-class-name-scope, the
@@ -98,7 +98,28 @@ typedef enum {
                              * preserves left-to-right declaration order;
                              * emit reverses during insertFront so the chain
                              * ends up [P1, P2, Object] for `: public P1, P2`. */
+
+    /* M6 wave 2 — get/set parse sugar (T41) */
+    AST_PROPERTY_DECL = 35  /* get name() { body } / set name(v) { body }
+                             * Parse-only desugar — emit installs the closure
+                             * as the slot's `oget` (URBI_SLOT_FLAG_OGET) or
+                             * `oset` (URBI_SLOT_FLAG_OSET) property.  The
+                             * runtime slot-property dispatch path is the M4
+                             * baseline; T41 only adds the parse sugar.
+                             *
+                             * `recv` is NULL when the property-decl appears
+                             * at the start of a class body — emit treats the
+                             * implicit receiver as the class object.  When
+                             * `recv` is non-NULL (e.g. `Foo.get value() {}`)
+                             * the receiver is emitted explicitly. */
 } UAstKind;
+
+/* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
+typedef enum {
+    UAST_METHOD_PLAIN  = 0,
+    UAST_METHOD_GETTER = 1,
+    UAST_METHOD_SETTER = 2
+} UAstMethodKind;
 
 typedef enum {
     UOP_NEG = 0,
@@ -211,6 +232,9 @@ typedef enum {
  *   u.at_slot_change — AST_AT_SLOT_CHANGE: at (obj.x.changed?) slot-change form
  *   u.str_lit     — AST_STR:             escape-resolved string bytes view
  *   u.class_decl  — AST_CLASS_DECL:      class name + protos + body block
+ *   u.property_decl — AST_PROPERTY_DECL: get/set sugar — receiver + slot
+ *                                        name + getter/setter kind + params
+ *                                        + body
  *
  * Slot/prop name storage: zero-copy lexeme view (name_start + name_len), as
  * with var_decl/assign/param.  The parser has no UVM and therefore cannot
@@ -377,6 +401,14 @@ struct UAstNode {
             int         proto_count;       /* number of protos in declaration order */
             UAstNode   *body;              /* AST_BLOCK */
         } class_decl;
+        struct {                                            /* AST_PROPERTY_DECL */
+            UAstNode      *recv;           /* explicit receiver (e.g. `Foo.`)
+                                            * or NULL for class-body implicit-self */
+            const char    *name_start;     /* slot name (zero-copy lexeme view) */
+            int            name_len;
+            UAstMethodKind kind;           /* UAST_METHOD_GETTER / UAST_METHOD_SETTER */
+            UAstNode      *func;           /* AST_FUNCTION carrying params + body */
+        } property_decl;
     } u;
 };
 
