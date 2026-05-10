@@ -20,6 +20,26 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
 
 (Filled at Phase 7 with final numbers.)
 
+### Phase 1 — Float literals (Gap #5)
+
+- **Lex:** `TOK_FLOAT` token kind + `double f` union member in `UToken`.
+  Three new `ULexError` codes: `LEX_FLOAT_TRAILING_DOT`,
+  `LEX_FLOAT_EXPONENT_NO_DIGITS`, `LEX_FLOAT_OVERFLOW`.
+  `scan_float_body` helper (stack-buffer `strtod` conversion, no heap);
+  `scan_float_leading_dot` for the `.5` form; float promotion in
+  `scan_number` for `1.5`, `1e3`, and `1.` (trailing-dot error) patterns.
+  Disambiguation: `0.foo` keeps `INT(0) DOT IDENT(foo)`.
+  Freestanding: `<stdlib.h>` guarded by `__STDC_HOSTED__`; `isinf()`
+  replaced with IEEE-754 inline idiom (matches `atoms.c` pattern).
+- **Parse:** `AST_FLOAT_LIT = 36` in `UAstKind`; `double f` member in
+  `UAstNode` union; `case TOK_FLOAT` in `parse_atom`.
+- **Emit:** `add_const_float` (linear-scan `UVAL_FLOAT` pool dedup);
+  `emit_float_arm` via `OP_LOADK`; `case AST_FLOAT_LIT` in `emit_expr`.
+- **Tests:** 12 unit tests in `test_lex_float_literals.c` (all pass);
+  `tests/chk/lex/float-literals.chk` (10 end-to-end cases; 215 → 216
+  fixtures). Cross-arm + cross-riscv verified.
+- **Footprint vs v0.6.1:** host +0.6 % / arm +0.8 % / riscv +1.0 %.
+
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
 **Tag:** `v0.6.1-stdlib`
