@@ -1,0 +1,28 @@
+# Milestone: M6 wave 2
+# Covers: multi-byte UTF-8 bytes in source string literals pass through
+#         the lexer / parser / interner end-to-end without any escape
+#         processing.  This is the existing byte-passthrough lex path
+#         from Wave 1 — the lexer treats anything that is not an
+#         opening / closing quote, a backslash, or a recognized escape
+#         body as an opaque byte.  Wave 2's \u escape support does not
+#         change this path; multi-byte UTF-8 source is still lex-clean.
+#         Mixed escape + literal-UTF-8 in the same literal interns to
+#         the same canonical bytes as the all-escape form.
+# Audit:   delta-spec section 3.2 Unicode-escape decision (out-of-scope:
+#         UTF-8 validation on source bytes — legacy didn't validate
+#         either; deferred to v1.x).
+
+# Direct UTF-8: 'héllo' is h (0x68) + é (0xC3 0xA9) + llo = 6 bytes.
+"héllo"
+[00000000] "h\xc3\xa9llo"
+
+# Direct-UTF-8 source bytes intern to the same UVAL_STR as the \u-escape
+# form.  Equality is pointer-compare on canonical interned bytes so the
+# byte-passthrough lex path and the escape-decoder produce the same
+# canonical bytes for U+00E9.
+"héllo" == "h\u00E9llo"
+[00000001] true
+
+# Adjacent-string concat composing direct UTF-8 + \u escape.
+"h" "\u00E9" "llo" == "héllo"
+[00000002] true
