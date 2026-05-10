@@ -481,6 +481,22 @@ scope and were filed against the design-risks register:
   blob.  Cross-arch builds consume the host-baked `.gen.c` source
   unchanged (the bake tool is host-only).  See
   `docs/internals/build-system.md`.
+- (Phase 14) **Final footprint at `v0.6.1-stdlib`** (host gcc 14 -O2,
+  arm-none-eabi-gcc -Os, riscv64-unknown-elf-gcc -Os):
+  - host: 193 994 B / 198 882 B total (.text + .data) — vs v0.6.0
+    149 360 B = +44 634 B (+30 %).  Master spec §7 Linux total cap
+    400 KB: 49 % of budget consumed.
+  - arm: 94 191 B — vs v0.6.0 68 908 B = +25 283 B (+37 %).  ARM
+    cap 100 KB: 94 % of budget consumed.
+  - riscv: 118 460 B — vs v0.6.0 88 579 B = +29 881 B (+34 %).
+    RISC-V cap 130 KB: 91 % of budget consumed.
+  Wave 2 expected delta per spec §7 was +25-40 KB host before
+  contraction, +15-25 KB after.  Actual +44 KB host is over the
+  contraction-adjusted target but well under the absolute cap; no
+  contraction applied at v0.6.1 (room remains for future Wave 2
+  bytecode-blob growth + Phase 10 deferred overlays + M7 C-API
+  formalization).  Captured at
+  `tests/golden/v0.6.1-stdlib-footprint.txt`.
 
 ## v0.6.0-stdlib-scaffold — 2026-05-09 — Wave 1 of M6 stdlib
 
