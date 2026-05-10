@@ -380,6 +380,43 @@ flt_atan2(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
+/* === Float.isNaN / isInfinite (T43) ====================================== */
+
+static int
+flt_isNaN(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.isNaN", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.isNaN: self must be Float", out);
+
+    /* IEEE-754 NaN-detection: x != x is true iff x is NaN.  Avoids the
+     * isnan() macro dependency on freestanding builds. */
+    double f = (double)self.v.f;
+    *out = val_bool(f != f);
+    return UEXEC_OK;
+}
+
+static int
+flt_isInfinite(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.isInfinite", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.isInfinite: self must be Float", out);
+
+    double f = (double)self.v.f;
+    /* +/- inf detection: NaN compares unordered, so subtraction yields
+     * NaN — guards the f - f == 0 trick.  inf - inf = NaN, so the
+     * predicate excludes NaN.  Finite values: f - f = 0.  Infinity:
+     * f - f = NaN (NaN != 0), and f != 0.
+     *
+     * Equivalent to isinf() under POSIX; we open-code to keep the
+     * freestanding path identical. */
+    *out = val_bool(f != 0.0 && (f - f) != 0.0 && f == f);
+    return UEXEC_OK;
+}
+
 /* pow(self, exponent) — two-arg method */
 static int
 flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
@@ -431,7 +468,9 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
     { "floor", flt_floor },
     { "ceil",  flt_ceil  },
     { "abs",   flt_abs   },
-    { "round", flt_round }
+    { "round", flt_round },
+    { "isNaN",      flt_isNaN      },
+    { "isInfinite", flt_isInfinite }
 };
 static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 
