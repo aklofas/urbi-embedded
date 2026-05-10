@@ -175,6 +175,7 @@ extern void test_class_decl_emit_suite(void);
 extern void test_bake_tool_suite(void);
 extern void test_stdlib_boot_suite(void);
 extern void test_lock_heap_suite(void);
+extern void test_emit_class_multi_slot_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -326,6 +327,7 @@ static const struct suite_entry suites[] = {
     {"bake_tool",                 test_bake_tool_suite},
     {"stdlib_boot",               test_stdlib_boot_suite},
     {"lock_heap",                 test_lock_heap_suite},
+    {"emit_class_multi_slot",    test_emit_class_multi_slot_suite},
     /* Add new suites here as test files are added. */
 };
 
