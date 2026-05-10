@@ -12,6 +12,7 @@
 **Spec:** `docs/superpowers/specs/2026-05-10-v0.6.2-language-completion-design.md`
 
 Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
+
 1. Closure upvalue capture across method boundaries (Gap #1, audit + general fix)
 2. Multi-slot class bodies via AST_SEPARATOR recursion (Gap #2)
 3. `this` keyword (TOK_KW_THIS + AST_THIS) — method-body only at v1.0 (Gap #3)
