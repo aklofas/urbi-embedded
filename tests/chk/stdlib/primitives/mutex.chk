@@ -1,0 +1,36 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 9 (T94) Mutex primitive — cooperative single-VM lock.
+#
+# Mutex.new()       — fresh proto-clone with a hidden `_locked` slot.
+# m.lock()          — sets _locked to true; returns nil.
+# m.unlock()        — clears _locked; returns nil.
+# m.tryLock()       — returns true and locks if free; returns false otherwise.
+# m.locked()        — returns the current locked-state.
+#
+# v1.0 single-VM contract (URBI_SCHED_COOPERATIVE) means lock/unlock are
+# non-blocking flag flips.  Cooperative wait via `waituntil m.locked() == false`
+# lands at Phase 10's Mutex.synchronized .u overlay.
+
+# Fresh mutex starts unlocked.
+var m = Mutex.new(); m.locked()
+[00000000] false
+
+# Lock flips the flag.
+m.lock(); m.locked()
+[00000001] true
+
+# Unlock flips it back.
+m.unlock(); m.locked()
+[00000002] false
+
+# tryLock returns true on a free mutex and locks it.
+m.tryLock()
+[00000003] true
+
+# Now locked, tryLock returns false without re-locking.
+m.tryLock()
+[00000004] false
+
+# Unlock so subsequent tests can re-acquire.
+m.unlock(); m.locked()
+[00000005] false
