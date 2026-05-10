@@ -1,0 +1,41 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/maths-errors.chk
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# Legacy fixture asserts:
+#   - `1 / 0` raises `/: division by 0` — v1.0 returns IEEE-754 `inf`
+#     (REVIVAL §14.x divergence: arithmetic is float-IEEE-754, no
+#     domain-error wrapping at the bytecode level).
+#   - `Math.sqrt(-10.0) / log(-10.0) / acos(-100.0) / asin(-100.0)`
+#     raise domain-specific diagnostics — v0.6.1 has no Math.sqrt /
+#     log / acos / asin (Math has only constants pi/e/nan/infinity).
+#   - `Math.sqr("foo")` raises `sqr: lookup failed: sqr` — v1.0 also
+#     raises a sqr lookup failure but via the Float atom-proto fallback.
+#
+# This port keeps the legacy file's "lookup failure on missing Math
+# slot" assertion (the only one that remains semantically sharp at
+# v1.0) and documents the IEEE-754 inf divergence.
+#
+# Wave-2 deferred (full port): all Math.{sqrt,log,acos,asin,sqr}
+# methods + their domain-error diagnostics; `1 % 0` parsing (legacy
+# ran modulo-by-0 as an integer-only operation).  See PORT_NOTES.md.
+
+# `1 / 0` returns inf at v1.0 (IEEE-754).  Legacy raised
+# `/: division by 0`.  Documented divergence; not a bug.
+1 / 0
+[00000000] inf
+
+# Math at v0.6.1 ships constants only; method lookups fail as
+# `slot 'NAME' not found` via the GETSLOT proto-walk diagnostic.
+Math.sqrt(4)
+[00000001:error] !!! TypeError: GETSLOT: slot 'sqrt' not found
+
+Math.log(1)
+[00000002:error] !!! TypeError: GETSLOT: slot 'log' not found
+
+Math.sqr(2)
+[00000003:error] !!! TypeError: GETSLOT: slot 'sqr' not found
+
+# Math.nan exists; Math.nan.isNaN() routes through the Float atom-
+# proto installed at Phase 5.
+Math.nan.isNaN()
+[00000004] true
