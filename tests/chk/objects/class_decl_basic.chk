@@ -1,0 +1,15 @@
+# Milestone: M6
+# Covers: Phase 6 (T38) — basic class declaration without protos.
+#
+# `class Foo { var x = 1 }` desugars to:
+#   var Foo = Object.clone()
+#   Foo.x = 1
+#
+# Foo is a realm-global UObject; Foo.x is reachable via the slot lookup.
+
+class Foo { var x = 1 }; Foo.x
+[00000000] 1
+
+# A method on the class is callable on the class object directly.
+class Bar { var greet = function() { return 100 } }; Bar.greet()
+[00000001] 100

@@ -1,0 +1,17 @@
+# Milestone: M6
+# Covers: Phase 6 (T38) — nested-class shadow scoping (S-class-name-scope).
+#
+# When a class shadows a binding by the same name, its proto reference
+# must resolve to the OUTER binding.  Per spec, the parser does not bind
+# the class name before parsing the proto list and body; the emit binds
+# the class name as a local AFTER body emit completes.  So inside
+#
+#   class a { var foo = 40 }; class a : public a { var bar = 2 }
+#
+# the second `: public a` resolves to the FIRST class `a` (the one that
+# defined foo).  The inner `a` then inherits foo from the outer and adds
+# bar locally.
+
+# b inherits foo (via outer a) and bar (via inner a).
+class a { var foo = 40 }; class a : public a { var bar = 2 }; var b = a.new(); b.foo + b.bar
+[00000000] 42

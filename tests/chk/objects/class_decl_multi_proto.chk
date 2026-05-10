@@ -1,0 +1,27 @@
+# Milestone: M6
+# Covers: Phase 6 (T38) — multi-proto class declaration with declaration-
+# order MRO (S-mro-declaration-order).
+#
+# `class C : public A, B { ... }` puts A before B in the proto chain:
+#
+#   class A { var x = 1 }
+#   class B { var x = 2 }
+#   class C : public A, B { var z = 3 }
+#
+# C.x must resolve through the chain head, which is A (since A appears
+# first in the declaration list).  The emit reverses iteration during
+# insertFront so the chain ends up [C, A, B, Object].
+
+class A { var x = 1 }; class B { var x = 2 }; class C : public A, B { var z = 3 }; C.x
+[00000000] 1
+
+# Slots from B are also reachable when not shadowed by A.
+class P { var p_only = 100 }; class Q { var q_only = 200 }; class R : public P, Q { var r = 99 }; R.p_only
+[00000001] 100
+
+class P2 { var p_only = 100 }; class Q2 { var q_only = 200 }; class R2 : public P2, Q2 { var r = 99 }; R2.q_only
+[00000002] 200
+
+# Local slot resolves before either proto.
+class S { var x = 1 }; class T : public S { var x = 99 }; T.x
+[00000003] 99
