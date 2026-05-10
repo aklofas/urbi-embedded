@@ -1,0 +1,52 @@
+# Milestone: M6
+# Covers: Phase 7 — scripted Event.new() + at-watcher + emit (e!).
+#
+# Phase 7 of M6 stdlib exposes Event.new() at the scripted level.  The
+# C-side machinery (urbi_event_create + UEvent GC cell + at_watchers
+# linked list) shipped with M5 R5; Phase 7 wraps it as a Phase-3 native
+# method on the Event proto and unifies vm->event_proto with
+# vm->atom_event so atom-dispatch finds the methods.
+#
+# After Phase 7:
+#   - var e = Event.new() returns a UVAL_EVENT.
+#   - at (e?) body installs an AT_EVENT watcher subscribed to e.
+#   - e! desugars to e.emit() and async-fires every subscriber body.
+#
+# The framed value of `var e = Event.new()` is <event> (the event
+# value's display).  Each subsequent emit + Realm.counter pair pins
+# the counter increment after the body strand drains.
+
+# Construct the event and install the watcher.
+var e = Event.new()
+[00000000] <event>
+
+at (e?) Realm.counter = Realm.counter + 1
+[00000001] nil
+
+# Initialize Realm.counter; framed value reads back cleanly.
+Realm.counter = 0
+[00000002] 0
+
+# First emit: body fires once.
+e!
+[00000003] nil
+
+Realm.counter
+[00000003] 1
+
+# Second emit: body fires again (no rising-edge gate on event watchers).
+e!
+[00000003] nil
+
+Realm.counter
+[00000003] 2
+
+# Pair of emits: counter advances by 2.
+e!
+[00000003] nil
+
+e!
+[00000003] nil
+
+Realm.counter
+[00000003] 4
