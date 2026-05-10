@@ -37,6 +37,27 @@
   `set` remain plain identifiers (no keyword reservation breakage).
   Required for clean port of legacy `share/urbi/object.u` (lines 104,
   109, 208-209) and `list.u` (line 121).
+- (Phase 4) **Stdlib boot integration.** `urbi_module_load`-style
+  `umodule_deserialize` + `urbi_get_or_create_module_instance` wired
+  into `urbi_stdlib_boot` after the C-native protos register.  Single
+  ordered module load; topologically sorted within the blob.
+  Parser-independent (verified by Phase 13's `URBI_BYTECODE_ONLY`
+  smoke).  At Phase 4 baseline the blob is empty
+  (`urbi_stdlib_bytecode_len == 0`), so the deserialize+bind branch
+  is dead — Phase 10 populates `STDLIB_ORDER.txt` and the branch
+  becomes live.  The deserialized `UModule` lives on
+  `vm->stdlib_module`, freed via `umodule_destroy` +
+  `vm->alloc_fn(_, 0, _)` in `urbi_vm_destroy` after
+  `urbi_gc_destroy` reaps any `UModuleInstance` referencing it.
+- (Phase 4) **`tests/unit/test_stdlib_boot.c`** — 5 baseline boot
+  smokes (vm-init success with empty blob; Wave 1 realm globals
+  Boolean / Nil / Void / Object reachable post-boot; positive +
+  negative IC name resolution post-boot; blob size baseline; two-VM
+  determinism asserting per-VM realm state independence).
+- (Phase 4) **`URBI_ERR_STDLIB_BOOT_FAILED` error code** (slot −15
+  in `UErrCode`).  Returned by `urbi_stdlib_boot` when deserialize
+  or bind fails; distinct from `URBI_ERR_OOM` (allocation) and
+  `URBI_ERR_BYTECODE_VERSION_MISMATCH` (file-load surface).
 
 ### Changed
 
