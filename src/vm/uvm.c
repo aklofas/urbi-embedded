@@ -566,7 +566,21 @@ dispatch:
              * The receiver (`self`) comes from vm->last_recv (set by the
              * most recent OP_GETSLOT load).  Result lands in R[A]; nargs
              * supplied to the native via the caller's existing argument
-             * registers R[A+1..A+B-1]. */
+             * registers R[A+1..A+B-1].
+             *
+             * VM-009 closure (defer:M6 → closed at v0.6.1): the audit
+             * flagged that native-register paths allocate UClosure cells
+             * with `proto_inst = NULL`, leaving any subsequent OP_GETSLOT
+             * inside the callee with no IC table to bind.  This native-
+             * dispatch arm short-circuits BEFORE the new bytecode frame is
+             * pushed and BEFORE proto_inst is read — the C function runs
+             * inline on the caller's frame.  Bytecode-bodied closures are
+             * exclusively allocated through OP_CLOSURE which DOES bind
+             * proto_inst (line ~488 above).  Hence the audit's stated
+             * failure mode does not manifest at v0.6.1.  The contract
+             * ('native_fn != NULL implies caller-frame inline dispatch;
+             * proto_inst is irrelevant on native closures') is pinned by
+             * test_object_root::native_fn_dispatched_via_op_call. */
             if (callee->native_fn != NULL) {
                 UValue *args_ptr = (nargs > 0) ? &s->R[a + 1] : NULL;
                 UValue native_out;
