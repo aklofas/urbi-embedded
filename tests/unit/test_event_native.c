@@ -1,24 +1,30 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Unit tests: Event prototype native methods (spec #3 §7.3).
  *
- * Source-level tests (e.g. `Event.new()`) are blocked by globals exposure
- * (T59) and class-decl infrastructure.  These tests drive via C-API:
+ * Phase 7 (M6 stdlib): Event proto slots are UVAL_CLOSURE values whose
+ * native_fn pointer routes OP_CALL through the Phase-3 native-method ABI
+ * (vm, self, args, nargs, out).  Pre-Phase-7 they were UVAL_HOST_FN slots
+ * carrying a (strand, argc, argv) host-fn — that legacy ABI is retired.
+ *
+ * Tests drive the natives directly through the closure->native_fn pointer
+ * (mirroring what OP_CALL does); scripted-level coverage is in
+ * test_event_new_scripted.c (Phase 7).
  *
  *   1. event_new_creates_uevent:
- *      After urbi_native_protos_init, vm->event_proto is non-NULL and has a
- *      "new" slot holding a UVAL_HOST_FN.  Calling the native fn directly
- *      returns a UVAL_EVENT wrapping a fresh UEvent.
+ *      vm->event_proto holds a "new" slot of kind UVAL_CLOSURE whose
+ *      native_fn allocates a fresh UEvent and writes it into *out.
  *
  *   2. event_emit_method_dispatches_to_async:
- *      The "emit" slot exists.  Calling the native fn with an event receiver
- *      and an int payload wakes a parked waiter and deposits the payload.
+ *      Calling Event.emit's native fn with self=UVAL_EVENT, args=[42] wakes
+ *      a parked waiter and deposits the payload.
  *
  *   3. event_proto_has_all_four_slots:
- *      new / emit / syncEmit / waituntil all exist as UVAL_HOST_FN slots.
+ *      new / emit / syncEmit / waituntil all exist as UVAL_CLOSURE slots
+ *      with native_fn != NULL.
  *
- *   4. event_new_returns_canonical_nil_on_oom (EVENT-011):
- *      When urbi_event_create fails (alloc-spy injected OOM), the native
- *      Event.new returns a value byte-identical to urbi_value_nil(). */
+ *   4. event_new_raises_on_oom (EVENT-011 carry-forward):
+ *      When urbi_event_create fails (alloc-spy injected OOM), Event.new
+ *      returns UEXEC_THROW; *out is left as canonical urbi_value_nil(). */
 
 #include "utest.h"
 
@@ -29,11 +35,32 @@
 #include "value/uintern.h"
 #include "sched/ustrand.h"
 #include "module/umodule.h"
+#include "runtime/uclosure.h"
+#include "urbi/urbi.h"
+#include "urbi/types.h"
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define UTEST(name) static void name(void)
+
+/* === Helper: pull the Phase-3 native_fn out of a UVAL_CLOSURE slot. === */
+static urbi_native_method_fn
+fetch_native_fn(UVM *vm, UObject *proto, const char *name, size_t name_len)
+{
+    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    if (sym == NULL) return NULL;
+
+    UValue slot;
+    slot.kind = (uint8_t)UVAL_NIL;
+    if (urbi_object_lookup(vm, proto, sym, &slot) != 0) return NULL;
+    if (slot.kind != (uint8_t)UVAL_CLOSURE || slot.v.p == NULL) return NULL;
+
+    UClosure *cl = (UClosure *)slot.v.p;
+    return cl->native_fn;
+}
 
 /* ===================================================================
  * Test 1: event_new_creates_uevent
@@ -48,7 +75,7 @@ UTEST(event_new_creates_uevent)
     UASSERT(vm.event_proto != NULL);
     if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* "new" slot must exist and be UVAL_HOST_FN. */
+    /* "new" slot must exist as UVAL_CLOSURE with a native_fn. */
     USymbol *sym_new = (USymbol *)ustr_intern(&vm, "new", 3);
     UASSERT(sym_new != NULL);
     if (sym_new == NULL) { urbi_vm_destroy(&vm); return; }
@@ -56,25 +83,24 @@ UTEST(event_new_creates_uevent)
     UValue slot_val;
     slot_val.kind = (uint8_t)UVAL_NIL;
     UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_new, &slot_val) == 0);
-    UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { urbi_vm_destroy(&vm); return; }
+    UASSERT_EQ((int)slot_val.kind, (int)UVAL_CLOSURE);
+    if (slot_val.kind != (uint8_t)UVAL_CLOSURE) { urbi_vm_destroy(&vm); return; }
 
-    /* Create a minimal stack-local strand so s->vm is valid. */
-    UStrand s;
-    ustrand_init(&s, &vm);
+    UClosure *cl = (UClosure *)slot_val.v.p;
+    UASSERT(cl != NULL && cl->native_fn != NULL);
+    if (cl == NULL || cl->native_fn == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* argv[0] = proto receiver; nargs = 1. */
-    UValue argv[1];
-    argv[0].kind = (uint8_t)UVAL_OBJECT;
-    argv[0].v.p  = (void *)vm.event_proto;
+    /* Receiver = Event proto; nargs = 0. */
+    UValue self;
+    self.kind = (uint8_t)UVAL_OBJECT;
+    self.v.p  = (void *)vm.event_proto;
 
-    UHostFn fn  = (UHostFn)(uintptr_t)slot_val.v.p;
-    UValue result = fn(&s, 1, argv);
-
-    /* Returned value must be UVAL_EVENT. */
-    UASSERT_EQ((int)result.kind, (int)UVAL_EVENT);
-    if (result.kind == (uint8_t)UVAL_EVENT) {
-        UEvent *e = uvalue_as_event(result);
+    UValue out = urbi_value_nil();
+    int rc = cl->native_fn(&vm, self, NULL, 0, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
+    UASSERT_EQ((int)out.kind, (int)UVAL_EVENT);
+    if (out.kind == (uint8_t)UVAL_EVENT) {
+        UEvent *e = uvalue_as_event(out);
         UASSERT(e != NULL);
         if (e != NULL) {
             UASSERT_EQ((int)e->type_tag, (int)UTYPE_EVENT);
@@ -83,7 +109,6 @@ UTEST(event_new_creates_uevent)
         }
     }
 
-    ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -100,16 +125,9 @@ UTEST(event_emit_method_dispatches_to_async)
     UASSERT(vm.event_proto != NULL);
     if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* Locate the "emit" slot. */
-    USymbol *sym_emit = (USymbol *)ustr_intern(&vm, "emit", 4);
-    UASSERT(sym_emit != NULL);
-    if (sym_emit == NULL) { urbi_vm_destroy(&vm); return; }
-
-    UValue slot_val;
-    slot_val.kind = (uint8_t)UVAL_NIL;
-    UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_emit, &slot_val) == 0);
-    UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-    if (slot_val.kind != (uint8_t)UVAL_HOST_FN) { urbi_vm_destroy(&vm); return; }
+    urbi_native_method_fn fn = fetch_native_fn(&vm, vm.event_proto, "emit", 4);
+    UASSERT(fn != NULL);
+    if (fn == NULL) { urbi_vm_destroy(&vm); return; }
 
     /* Create an event and a waiter strand. */
     UEvent *e = urbi_event_create(&vm);
@@ -125,29 +143,25 @@ UTEST(event_emit_method_dispatches_to_async)
     waiter.last_event_payload.v.i  = 0;
     e->waiters_head            = &waiter;
 
-    /* Call the native emit fn: argv = [event, payload=42]. */
-    UStrand caller;
-    ustrand_init(&caller, &vm);
+    /* Phase-3 ABI: self = UEvent, args = [42], nargs = 1. */
+    UValue self = uvalue_from_event(e);
+    UValue args[1];
+    args[0].kind = (uint8_t)UVAL_INT;
+    args[0].v.i  = 42;
 
-    UValue argv[2];
-    argv[0] = uvalue_from_event(e);
-    argv[1].kind = (uint8_t)UVAL_INT;
-    argv[1].v.i  = 42;
-
-    UHostFn fn  = (UHostFn)(uintptr_t)slot_val.v.p;
-    UValue ret  = fn(&caller, 2, argv);
+    UValue out = urbi_value_nil();
+    int rc = fn(&vm, self, args, 1, &out);
+    UASSERT_EQ(rc, UEXEC_OK);
 
     /* emit returns NIL. */
-    UASSERT_EQ((int)ret.kind, (int)UVAL_NIL);
+    UASSERT_EQ((int)out.kind, (int)UVAL_NIL);
 
     /* Waiter should have been woken: state → READY, payload deposited. */
     UASSERT_EQ((int)waiter.state, (int)USTRAND_STATE_READY);
     UASSERT_EQ((int)waiter.last_event_payload.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)waiter.last_event_payload.v.i, (long long)42);
-    /* waiters_head cleared. */
     UASSERT(e->waiters_head == NULL);
 
-    ustrand_destroy(&caller, &vm);
     ustrand_destroy(&waiter, &vm);
     urbi_vm_destroy(&vm);
 }
@@ -182,7 +196,11 @@ UTEST(event_proto_has_all_four_slots)
         int hit = (urbi_object_lookup(&vm, vm.event_proto, sym, &v) == 0);
         UASSERT(hit);
         if (hit) {
-            UASSERT_EQ((int)v.kind, (int)UVAL_HOST_FN);
+            UASSERT_EQ((int)v.kind, (int)UVAL_CLOSURE);
+            if (v.kind == (uint8_t)UVAL_CLOSURE) {
+                UClosure *cl = (UClosure *)v.v.p;
+                UASSERT(cl != NULL && cl->native_fn != NULL);
+            }
         }
     }
 
@@ -190,13 +208,11 @@ UTEST(event_proto_has_all_four_slots)
 }
 
 /* ===================================================================
- * Test 4 (EVENT-011): event_new_returns_canonical_nil_on_oom
+ * Test 4 (EVENT-011 carry-forward): event_new_raises_on_oom
  *
- * Replaces the legacy `UValue nil = {0}; nil.kind = UVAL_NIL;` pattern with
- * `urbi_value_nil()`.  Verifies the OOM branch returns a value bit-identical
- * to the canonical helper.  Drives the alloc spy to fail the next request
- * after VM init, then invokes Event.new (which calls urbi_event_create,
- * which calls urbi_gc_alloc, which calls the spy).
+ * Pre-Phase-7 the host-fn ABI returned a NIL UValue on OOM (silent failure
+ * masquerading as success).  Phase 7's Phase-3 ABI surfaces OOM as a
+ * UEXEC_THROW return; *out is left at canonical urbi_value_nil().
  * =================================================================== */
 
 typedef struct {
@@ -218,7 +234,7 @@ event_native_spy_alloc(void *ptr, size_t n, void *ud)
     return realloc(ptr, n);
 }
 
-UTEST(event_new_returns_canonical_nil_on_oom)
+UTEST(event_new_raises_on_oom)
 {
     EventNativeAllocSpy spy = { 0, -1 };
 
@@ -229,43 +245,30 @@ UTEST(event_new_returns_canonical_nil_on_oom)
     UASSERT(vm.event_proto != NULL);
     if (vm.event_proto == NULL) { urbi_vm_destroy(&vm); return; }
 
-    UStrand s;
-    ustrand_init(&s, &vm);
+    urbi_native_method_fn fn = fetch_native_fn(&vm, vm.event_proto, "new", 3);
+    UASSERT(fn != NULL);
+    if (fn == NULL) { urbi_vm_destroy(&vm); return; }
 
-    /* Look up the "new" host fn on Event proto. */
-    USymbol *sym_new = (USymbol *)ustr_intern(&vm, "new", 3);
-    UASSERT(sym_new != NULL);
-    if (sym_new == NULL) {
-        ustrand_destroy(&s, &vm);
-        urbi_vm_destroy(&vm);
-        return;
-    }
-    UValue slot_val;
-    slot_val.kind = (uint8_t)UVAL_NIL;
-    UASSERT(urbi_object_lookup(&vm, vm.event_proto, sym_new, &slot_val) == 0);
-    UASSERT_EQ((int)slot_val.kind, (int)UVAL_HOST_FN);
-
-    /* Arm the spy to fail the next allocation; urbi_event_create then
-     * returns NULL and the host fn must take the OOM branch. */
+    /* Arm the spy to fail the next allocation — urbi_event_create then
+     * returns NULL and the native must take the OOM raise branch. */
     spy.fail_at = spy.alloc_calls;
 
-    UValue argv[1];
-    argv[0].kind = (uint8_t)UVAL_OBJECT;
-    argv[0].v.p  = (void *)vm.event_proto;
+    UValue self;
+    self.kind = (uint8_t)UVAL_OBJECT;
+    self.v.p  = (void *)vm.event_proto;
 
-    UHostFn fn = (UHostFn)(uintptr_t)slot_val.v.p;
-    UValue result = fn(&s, 1, argv);
+    UValue out = urbi_value_nil();
+    int rc = fn(&vm, self, NULL, 0, &out);
 
-    /* Result must be bit-identical to the canonical urbi_value_nil(). */
+    UASSERT_EQ(rc, UEXEC_THROW);
+
+    /* *out must be bit-identical to canonical urbi_value_nil(). */
     UValue canonical = urbi_value_nil();
-    UASSERT_EQ((int)result.kind, (int)UVAL_NIL);
-    UASSERT_EQ((int)result.kind, (int)canonical.kind);
-    /* memcmp covers _pad and union payload. */
-    UASSERT(memcmp(&result, &canonical, sizeof(UValue)) == 0);
+    UASSERT_EQ((int)out.kind, (int)canonical.kind);
+    UASSERT(memcmp(&out, &canonical, sizeof(UValue)) == 0);
 
     /* Disarm spy before teardown. */
     spy.fail_at = -1;
-    ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -278,6 +281,5 @@ test_event_native_suite(void)
     utest_run("event_new_creates_uevent",              event_new_creates_uevent);
     utest_run("event_emit_method_dispatches_to_async", event_emit_method_dispatches_to_async);
     utest_run("event_proto_has_all_four_slots",        event_proto_has_all_four_slots);
-    utest_run("event_new_returns_canonical_nil_on_oom",
-              event_new_returns_canonical_nil_on_oom);
+    utest_run("event_new_raises_on_oom",               event_new_raises_on_oom);
 }

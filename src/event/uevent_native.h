@@ -46,13 +46,6 @@ static inline int uvalue_is_event(UValue v) {
     return v.kind == (uint8_t)UVAL_EVENT;
 }
 
-/* === urbi_register_fn ===
- *
- * Install a UVAL_HOST_FN slot on proto under the given name.
- * Returns 0 on success, -1 on OOM or NULL argument. */
-int urbi_register_fn(struct UVM *vm, struct UObject *proto,
-                     const char *name, UHostFn fn);
-
 /* === event_native_register ===
  *
  * Allocate vm->event_proto and install the four native method slots.
