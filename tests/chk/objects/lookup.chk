@@ -1,0 +1,16 @@
+# Milestone: M6 wave 1
+# Origin: legacy tests/2.x/lookup.chk
+# Covers: unbound-identifier lookup raises a slot-not-found diagnostic.
+#
+# The legacy fixture's diagnostic format was
+#   `!!! input.u:@.1-8: lookup failed: asdfjklm`
+# v1.0 emits `!!! TypeError: GETSLOT: slot 'NAME' not found` from the
+# urbi binary's REPL eval path.  Both forms encode the same semantic;
+# the chk runner matches the post-`[]` text verbatim, so the actual
+# v1.0 message is what is asserted here.
+
+asdfjklm
+[00000000:error] !!! TypeError: GETSLOT: slot 'asdfjklm' not found
+
+aoeuhtns
+[00000001:error] !!! TypeError: GETSLOT: slot 'aoeuhtns' not found
