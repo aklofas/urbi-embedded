@@ -64,7 +64,22 @@
 
 ### Tooling
 
-- (filled in)
+- (Phase 3) **`tools/urbi-compile-stdlib` build-time bake tool**
+  (~110 LOC C; links host `liburbi.a`).  Walks
+  `src/stdlib/STDLIB_ORDER.txt`, will compile each listed `.u` via
+  the public Urbi compile API, and emits the bytecode blob as
+  `src/stdlib/urbi_stdlib_bytecode.gen.c`.  Phase-3 baseline ships
+  the empty-walk scaffold (0-length blob); Phase 10 fills in the
+  compile loop.  Two-pass build wired in `Makefile`: pass 1 builds
+  `liburbi.a` against the tracked placeholder `.gen.c`; pass 2
+  links the bake tool; pass 3 regenerates `.gen.c` and re-links
+  `liburbi.a` whenever `STDLIB_ORDER.txt` or any `.u` changes.
+  Determinism gate (`tests/scripts/bake_smoke.sh`, 3-run
+  byte-identity) wired into `make releasetest` as
+  `test-bake-smoke`.  `make bake-clean` force-regenerates the
+  blob.  Cross-arch builds consume the host-baked `.gen.c` source
+  unchanged (the bake tool is host-only).  See
+  `docs/internals/build-system.md`.
 
 ## v0.6.0-stdlib-scaffold — 2026-05-09 — Wave 1 of M6 stdlib
 
