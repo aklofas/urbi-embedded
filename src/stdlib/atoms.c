@@ -44,6 +44,7 @@
 #if __STDC_HOSTED__
 #  include <math.h>                    /* sqrt, sin, cos, ... for Float math */
 #  include <stdio.h>                   /* snprintf for asString */
+#  include <stdlib.h>                  /* strtoll, strtod for parse methods */
 #endif
 
 /* === Method-table entry + per-proto installer ============================= */
@@ -523,6 +524,72 @@ flt_pow(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
+/* === String basic methods (T45) ===========================================
+ *
+ * UVAL_STR.v.p is a NUL-terminated `const char *` from ustr_intern.
+ * Wave 1's Boolean.toString + String.length already use urbi_strlen;
+ * the runtime guarantees no embedded NULs in v1.0 strings (escape
+ * `\0` is rejected by the lex; FUTURE Wave 2 backlog item LEX-035
+ * extension).
+ *
+ * Strings are BYTE-counted at v1.0 (delta §3.2): length / size return
+ * byte count, charAt indexes by byte.  Unicode-aware code-point indexing
+ * is a Wave 2 follow-up. */
+
+static int
+str_size(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.size", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.size: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String.size: NULL string", out);
+    *out = val_int((int64_t)urbi_strlen(s));
+    return UEXEC_OK;
+}
+
+static int
+str_isEmpty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "String.isEmpty", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.isEmpty: self must be String", out);
+
+    const char *s = (const char *)self.v.p;
+    *out = val_bool(s == NULL || s[0] == '\0');
+    return UEXEC_OK;
+}
+
+static int
+str_charAt(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "String.charAt", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_STR)
+        return urbi_raise_type(vm, "String.charAt: self must be String", out);
+    if (args[0].kind != (uint8_t)UVAL_INT)
+        return urbi_raise_type(vm, "String.charAt: index must be Integer", out);
+
+    const char *s = (const char *)self.v.p;
+    if (s == NULL) return urbi_raise_type(vm, "String.charAt: NULL string", out);
+    size_t n = urbi_strlen(s);
+    int64_t i = args[0].v.i;
+    if (i < 0 || (size_t)i >= n)
+        return urbi_raise_type(vm, "String.charAt: index out of range", out);
+
+    /* Single-byte slice — interns into a 1-byte string. */
+    char tmp[2];
+    tmp[0] = s[i];
+    tmp[1] = '\0';
+    int oom = 0;
+    UValue v = val_str_intern(vm, tmp, 1U, &oom);
+    if (oom) return urbi_raise_oom(vm, out);
+    *out = v;
+    return UEXEC_OK;
+}
+
 /* === Per-family method tables (filled across T36-T54) ===================== */
 
 static const AtomMethodEntry BOOL_METHODS[] = {
@@ -563,7 +630,11 @@ static const AtomMethodEntry FLOAT_METHODS[] = {
     { "asInteger",  flt_asInteger  },
     { "asBoolean",  flt_asBoolean  }
 };
-static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
+static const AtomMethodEntry STR_METHODS[] = {
+    { "size",    str_size    },
+    { "isEmpty", str_isEmpty },
+    { "charAt",  str_charAt  }
+};
 
 /* Empty tables retain a `{NULL, NULL}` sentinel so the array has at
  * least one element (C99 forbids zero-size arrays).  Tables with real
@@ -572,7 +643,7 @@ static const AtomMethodEntry STR_METHODS[]     = { {NULL, NULL} };
 #define BOOL_METHODS_COUNT    (sizeof(BOOL_METHODS)  / sizeof(BOOL_METHODS[0]))
 #define INT_METHODS_COUNT     (sizeof(INT_METHODS)   / sizeof(INT_METHODS[0]))
 #define FLOAT_METHODS_COUNT   (sizeof(FLOAT_METHODS) / sizeof(FLOAT_METHODS[0]))
-#define STR_METHODS_COUNT     ((sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))   - 1U)
+#define STR_METHODS_COUNT     (sizeof(STR_METHODS)   / sizeof(STR_METHODS[0]))
 
 /* === urbi_stdlib_register_atom_methods (T35 entry) ========================
  *
