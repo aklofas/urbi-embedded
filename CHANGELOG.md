@@ -298,6 +298,22 @@
   `exception_subclasses.chk` (.new / .message / try-catch end-to-
   end for all nine subclasses).  Test count delta: 206 → 208 chk
   fixtures.
+- (Phase 11) **7 `tests/chk/stdlib/legacy/` ports** of subsets from
+  `legacy/repos/aldebaran-urbi/tests/2.x/`: `dict_legacy.chk`,
+  `list_legacy.chk`, `mutex_legacy.chk`, `date_legacy.chk`,
+  `system_legacy.chk`, `large_string_legacy.chk`,
+  `maths_errors_legacy.chk`.  Each is a focused subset of its legacy
+  counterpart; the per-fixture rationale + sections deferred to v1.x
+  live in `tests/chk/stdlib/legacy/PORT_NOTES.md`.  Plan envisioned
+  9-12 ports + 3 Wave-1-deferred-section activations
+  (atoms.chk / fallback.chk / inheritance.chk).  Reality: most legacy
+  fixtures depend on Phase 10 v1.0 emit gaps (no float literals,
+  list / dict literals, closure upvalue capture, multi-slot class
+  bodies, `var x.foo = ...` slot install, `assert` / `echo` realm
+  globals, string concat, fallback protocol, `do (recv) { ... }`),
+  so 7 ports landed and 0 Wave-1 activations.  PORT_NOTES.md catalogs
+  the deferred-to-v1.x full-fixture port backlog.  Test count delta:
+  208 → 215 chk fixtures.
 
 ### Deferred to v1.x
 
