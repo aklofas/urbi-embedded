@@ -1,0 +1,16 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 8 (T90) Global namespace reflective surface.
+#
+# Global is a stub namespace exposing a reflective view of the active
+# realm's bindings.  At v1.0 only `length` is defined — the count of
+# slots installed on realm->global_object's hidden class.
+#
+# Future v1.x: Global.names() returning a List<String> of slot names,
+# Global.at(name) for slot lookup, etc.  Tracked in backlog.
+
+# The active realm has at least the 15 v1.0 built-in globals plus
+# whatever the post-loop hooks add (Pair / Triplet / Tuple / Exception /
+# Math / System / Global / CallMessage at Phase 8).  Length > 15 is
+# a stable conservative lower bound.
+Global.length() > 15
+[00000000] true

@@ -310,9 +310,10 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     /* M6 Phase 8: namespace proto singletons.  T86 onwards.  platform_-
      * proto is reached transitively via System's "Platform" slot but is
      * shaded directly to keep the walker uniform. */
-    if (vm->math_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
-    if (vm->system_proto   != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
-    if (vm->platform_proto != NULL) gc_shade_gray(vm, (UCell *)vm->platform_proto);
+    if (vm->math_proto             != NULL) gc_shade_gray(vm, (UCell *)vm->math_proto);
+    if (vm->system_proto           != NULL) gc_shade_gray(vm, (UCell *)vm->system_proto);
+    if (vm->platform_proto         != NULL) gc_shade_gray(vm, (UCell *)vm->platform_proto);
+    if (vm->global_namespace_proto != NULL) gc_shade_gray(vm, (UCell *)vm->global_namespace_proto);
 
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);

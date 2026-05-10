@@ -472,6 +472,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *math_proto;
     struct UObject *system_proto;
     struct UObject *platform_proto;
+    struct UObject *global_namespace_proto;
     uint8_t     stdlib_booted;
     uint8_t     pad_stdlib[7];          /* padding; zeroed */
     UValue      last_recv;

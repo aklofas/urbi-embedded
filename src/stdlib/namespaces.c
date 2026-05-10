@@ -18,6 +18,7 @@
 #include "gc/ugc.h"                    /* urbi_gc_collect */
 #include "module/umodule.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_alloc + set_local_slot */
+#include "object/ushape.h"             /* UShape.count for Global.length */
 #include "realm/urealm.h"              /* URealm */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */
 #include "runtime/umacros.h"           /* urbi_strlen */
@@ -239,6 +240,36 @@ static const NsMethodEntry SYSTEM_METHODS[] = {
 
 #define SYSTEM_METHODS_COUNT (sizeof(SYSTEM_METHODS) / sizeof(SYSTEM_METHODS[0]))
 
+/* === Global.length =======================================================
+ *
+ * Returns the number of slots currently installed on the active realm's
+ * global_object as an Integer.  Reflective access surface — at v1.0 the
+ * count is the only slot exposed; v1.x can grow Global.names() / .at()
+ * etc. via the same hook once String/List shapes solidify. */
+
+static int
+global_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Global.length", 0, nargs, out);
+
+    int64_t n = 0;
+    if (vm->cur_strand != NULL && vm->cur_strand->realm != NULL) {
+        URealm *r = vm->cur_strand->realm;
+        if (r->global_object != NULL && r->global_object->shape != NULL) {
+            n = (int64_t)r->global_object->shape->count;
+        }
+    }
+    *out = val_int(n);
+    return UEXEC_OK;
+}
+
+static const NsMethodEntry GLOBAL_METHODS[] = {
+    { "length", global_length }
+};
+
+#define GLOBAL_METHODS_COUNT (sizeof(GLOBAL_METHODS) / sizeof(GLOBAL_METHODS[0]))
+
 /* === urbi_stdlib_register_namespaces ====================================
  *
  * Allocates Math / System / Global / CallMessage proto UObjects per task.
@@ -303,6 +334,16 @@ urbi_stdlib_register_namespaces(UVM *vm)
                             val_obj(vm->platform_proto));
     if (rc != URBI_OK) return rc;
 
+    /* --- T90 Global: length --- */
+    if (vm->global_namespace_proto == NULL) {
+        UObject *g = urbi_object_alloc(vm, URBI_ATOM_OBJECT);
+        if (g == NULL) return URBI_ERR_OOM;
+        vm->global_namespace_proto = g;
+    }
+    rc = install_methods(vm, vm->global_namespace_proto,
+                         GLOBAL_METHODS, GLOBAL_METHODS_COUNT);
+    if (rc != URBI_OK) return rc;
+
     return URBI_OK;
 }
 
@@ -324,6 +365,11 @@ urbi_stdlib_register_namespace_globals(UVM *vm, URealm *realm)
     }
     if (vm->system_proto != NULL) {
         rc = urbi_realm_set_global(vm, realm, "System", 6, val_obj(vm->system_proto));
+        if (rc != URBI_OK) return rc;
+    }
+    if (vm->global_namespace_proto != NULL) {
+        rc = urbi_realm_set_global(vm, realm, "Global", 6,
+                                   val_obj(vm->global_namespace_proto));
         if (rc != URBI_OK) return rc;
     }
     return URBI_OK;
