@@ -213,6 +213,43 @@
   (kind String non-empty), `global.chk` (length > 15 lower bound),
   `callmessage.chk` (proto bound).  Test count delta: 197 → 202 chk
   fixtures.
+- (Phase 9) **C-native primitives — `Mutex`, `Date`, `Duration`.**
+  New `src/stdlib/primitives.{c,h}` registers three primitive proto
+  UObjects bound as realm globals via the same post-loop hook pattern
+  as containers + runtime types + namespaces (slot 15+, past the
+  packed-flag CONSTANT enforcement range):
+  - `Mutex`: cooperative single-VM lock.  `Mutex.new()` clones the
+    proto with a hidden `_locked` bool slot; `m.lock()` /
+    `m.unlock()` / `m.tryLock()` / `m.locked()` are non-blocking
+    flag flips.  v1.0 `URBI_SCHED_COOPERATIVE` contract means the
+    "wait" semantics defer to Phase 10's `.u` overlay
+    (`Mutex.synchronized` via `waituntil`).
+  - `Date`: wall-clock access via libc `time()`.  `Date.now()` /
+    `Date.fromSeconds(s)` clone the proto with a hidden `_seconds`
+    int slot; `d.seconds()` reads it; `d.asString()` formats UTC
+    "YYYY-MM-DD HH:MM:SS" via `gmtime_r` + `strftime` on hosted
+    builds (POSIX feature-test macros gate the `time.h` symbols);
+    freestanding builds return `0` / `""` since `time()` /
+    `strftime` aren't available without libc.  `d.plus(dur)` returns
+    a fresh Date advanced by Duration's microseconds-to-seconds
+    quotient (Phase 10 overlay can promote to operator form).
+  - `Duration`: thin wrapper over integer microseconds.  Time
+    literals (`100ms` / `2s` / `1d`) lex to integer microseconds at
+    M2; `Duration.fromMicroseconds(us)` wraps such an integer in a
+    typed Duration UObject via a hidden `_microseconds` slot.
+    `d.asMicroseconds()` / `asMilliseconds()` / `asSeconds()` are
+    integer-arithmetic accessors.
+- (Phase 9) **VM fields + GC roots.** `UVM` grows three proto-singleton
+  pointers (`mutex_proto`, `date_proto`, `duration_proto`).  Allocated
+  by `urbi_stdlib_register_primitives` (boot-phase); shaded by
+  `object_roots_walker` to keep them alive across GC.
+- (Phase 9) **4 `tests/chk/stdlib/primitives/` fixtures** —
+  `mutex.chk` (lock / unlock / tryLock / locked flag flips),
+  `date.chk` (now / fromSeconds round-trip / asString / monotonic
+  granularity), `duration.chk` (fromMicroseconds + as*),
+  `date_duration_seam.chk` (`Date.plus(Duration)` arithmetic with
+  positive / zero / sub-second-truncate / negative inputs).  Test
+  count delta: 202 → 206 chk fixtures.
 
 ### Changed
 
