@@ -11,6 +11,29 @@
 
 ### Added
 
+- (Phase 13) **`urbi_lock_heap(vm)` public C API** — post-init heap
+  lock for v2.0 hard-RT mode.  One-way latch; `urbi_gc_alloc`
+  declines new allocations after the call (returns NULL — the
+  standard OOM-shaped failure mode the rest of the runtime already
+  handles via `urbi_raise_oom` on the script surface).  Surface
+  lands at v1.0; enforcement is opt-in.  Idempotent + NULL-safe.
+  No unlock primitive at v1.0 (one-way matches the hard-RT
+  contract).  4 new unit cases in `tests/unit/test_lock_heap.c`.
+- (Phase 13) **`tests/scripts/build-bytecode-only.sh` smoke gate** —
+  `URBI_BYTECODE_ONLY` emulation (parser-stripped link test).
+  The real build flag lands at M7 per master spec §1.1; Phase 13
+  ships a smoke approximation that proves the architectural shape
+  is sound: lex/parse/emit + the two parser-coupled root sources
+  (`src/urbi.c` + `src/module/uchunk.c`) CAN be elided, and the
+  resulting archive still exports `urbi_stdlib_boot` /
+  `urbi_vm_init` / `urbi_vm_destroy` / `urbi_lock_heap`.  Wired
+  into `make releasetest` Phase 1 via `test-bytecode-only`.
+- (Phase 13) **REVIVAL §14 compatibility-ledger entries** (workspace
+  root, not committed): S25 (byte-counted `String.length`),
+  S26 (Date / Duration v1.0 surface — no timezones, no leap
+  seconds), S27 (namespace bouncing bind-time vs lookup-time —
+  defer to v1.x), S28 (Dict insertion-order iteration).  §14.9
+  cross-references updated for each.
 - (Phase 1) **String-literal Unicode escapes.** `\uXXXX` (4-hex BMP)
   and `\u{HHHHHH}` (1-6 hex full-plane up to U+10FFFF) escape forms
   added at the lexer, materialized as UTF-8 bytes in `UVAL_STR` via
