@@ -9,8 +9,7 @@
  *  5.  realm_flags_default_zero: fresh Realm has flags == 0.
  *  6.  realm_global_sets_global_flag: global Realm has REALM_GLOBAL set.
  *  7.  realm_user_data_round_trip: user_data survives round-trip through create.
- *  8.  realm_reflective_nil_at_m3: reflective.kind == UVAL_NIL after create.
- *  9.  realm_linked_list_invariants_after_create_destroy_create: list stitched correctly.
+ *  8.  realm_linked_list_invariants_after_create_destroy_create: list stitched correctly.
  * 10.  realm_destroy_unlinks_middle: destroy middle element fixes both neighbours.
  * 11.  realm_destroy_null_safe: urbi_realm_destroy(vm, NULL) is a no-op.
  * 12.  realm_namespace_set_get_round_trip: set then get returns stored value.
@@ -189,21 +188,7 @@ UTEST(realm_user_data_round_trip)
     urbi_vm_destroy(&vm);
 }
 
-/* 8. realm_reflective_nil_at_m3: reflective.kind == UVAL_NIL after create. */
-UTEST(realm_reflective_nil_at_m3)
-{
-    UVM vm;
-    urbi_vm_init(&vm, NULL, NULL);
-
-    URealm *r = urbi_realm_create(&vm);
-    UASSERT(r != NULL);
-    UASSERT(r->reflective.kind == UVAL_NIL);
-
-    urbi_realm_destroy(&vm, r);
-    urbi_vm_destroy(&vm);
-}
-
-/* 9. realm_linked_list_invariants_after_create_destroy_create:
+/* 8. realm_linked_list_invariants_after_create_destroy_create:
  *    create A, destroy A, create B → list has exactly B, B->prev == NULL. */
 UTEST(realm_linked_list_invariants_after_create_destroy_create)
 {
@@ -355,7 +340,7 @@ UTEST(realm_walk_roots_invokes_callback_per_namespace_entry)
     int count = 0;
     realm_list_walk_roots(&vm, root_count_cb, &count);
 
-    /* 3 namespace entries + 1 reflective UValue = 4 callbacks. */
+    /* 3 namespace entries → 3 callbacks. */
     UASSERT(count >= 3);
 
     urbi_realm_destroy(&vm, r);
@@ -493,7 +478,6 @@ test_realm_suite(void)
     utest_run("realm_flags_default_zero",                           realm_flags_default_zero);
     utest_run("realm_global_sets_global_flag",                      realm_global_sets_global_flag);
     utest_run("realm_user_data_round_trip",                         realm_user_data_round_trip);
-    utest_run("realm_reflective_nil_at_m3",                         realm_reflective_nil_at_m3);
     utest_run("realm_linked_list_invariants_after_create_destroy_create",
               realm_linked_list_invariants_after_create_destroy_create);
     utest_run("realm_destroy_unlinks_middle",                       realm_destroy_unlinks_middle);

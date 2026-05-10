@@ -52,10 +52,6 @@ urbi_realm_create(struct UVM *vm)
     r->id    = ++vm->realm_id_seq;  /* per-VM counter; 0 means uninitialized */
     r->flags = 0;
 
-    /* reflective: UVAL_NIL at M3; populated at M5+. */
-    r->reflective.kind = UVAL_NIL;
-    r->reflective.v.i  = 0;
-
     /* tag: root cleanup boundary for all strands in this realm. */
     r->tag = utag_create(vm);
     if (r->tag == NULL) goto fail_tag;
@@ -106,9 +102,8 @@ fail_tag:
  * Destruction order per spec §4.4:
  *   1. Stop the realm's tag.
  *   2. Free namespace.
- *   3. Drop reflective (becomes unreachable; GC reclaims at M5+).
- *   4. Unlink from VM's realm list.
- *   5. Free the URealm struct itself.
+ *   3. Unlink from VM's realm list.
+ *   4. Free the URealm struct itself.
  *
  * Precondition: All strands attached to this realm's tag must be dead
  * before calling this function. The urbi_tag_stop call deposits TAG_STOP
@@ -183,11 +178,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * the realm-root-provider no longer shades it. */
     realm->global_object = NULL;
 
-    /* Step 4: reflective — zero it (GC owns the object if non-nil at M5+). */
-    realm->reflective.kind = UVAL_NIL;
-    realm->reflective.v.i  = 0;
-
-    /* Step 5: Unlink from VM realm list. */
+    /* Step 4: Unlink from VM realm list. */
     if (realm->prev_in_vm != NULL) {
         realm->prev_in_vm->next_in_vm = realm->next_in_vm;
     } else {
@@ -203,7 +194,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         vm->global_realm = NULL;
     }
 
-    /* Step 6: Free struct. */
+    /* Step 5: Free struct. */
     realm->vm   = NULL;
     vm->alloc_fn(realm, 0, vm->alloc_ud);
 }
@@ -294,8 +285,8 @@ urealm_teardown_all(struct UVM *vm)
  *
  * GC root provider: enumerates all UValues reachable from every Realm in
  * vm->realms_head linked list.  For each Realm:
- *   1. realm->reflective (UVAL_NIL at M5; UValue slot still walked).
- *   2. namespace entries (via unamespace_walk_roots).
+ *   1. namespace entries (via unamespace_walk_roots).
+ *   2. realm->global_object — GC-managed UObject; shade so slot walker runs.
  *   3. realm->tag — GC-managed since M5 via urbi_gc_alloc / UTYPE_TAG.
  *      Shaded via gc_shade_gray so the UTYPE_TAG walker runs and yields
  *      name + enter_event + leave_event + member_watchers_head chain.
@@ -322,18 +313,15 @@ realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx)
     UREALM_ASSERT(cb != NULL);
 
     for (r = vm->realms_head; r != NULL; r = r->next_in_vm) {
-        /* 1. reflective handle. */
-        cb(vm, &r->reflective, ctx);
-
-        /* 2. namespace bindings. */
+        /* 1. namespace bindings. */
         unamespace_walk_roots(r->bindings, cb, vm, ctx);
 
-        /* 3. global_object — GC-managed UObject; shade so slot walker runs. */
+        /* 2. global_object — GC-managed UObject; shade so slot walker runs. */
         if (r->global_object != NULL) {
             gc_shade_gray(vm, (UCell *)r->global_object);
         }
 
-        /* 4. tag — GC-managed since M5; shade so the UTag walker runs. */
+        /* 3. tag — GC-managed since M5; shade so the UTag walker runs. */
         if (r->tag != NULL) {
             gc_shade_gray(vm, (UCell *)r->tag);
         }
