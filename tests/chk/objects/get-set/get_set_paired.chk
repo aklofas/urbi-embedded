@@ -1,0 +1,10 @@
+# Milestone: M6 Wave 2
+# Covers: T41 — paired get + set on the same slot, the typical accessor pattern.
+#
+# Setter stores into a sibling slot; getter reads it back doubled.
+
+var Foo = Object.clone(); Foo.setSlot("data", 0); Foo.get value() { Foo.data * 2 }; Foo.set value(v) { Foo.setSlot("data", v) }; Foo.value = 5; Foo.value
+[00000000] 10
+
+var Bar = Object.clone(); Bar.setSlot("data", 0); Bar.get value() { Bar.data * 2 }; Bar.set value(v) { Bar.setSlot("data", v) }; Bar.value = 100; Bar.value
+[00000001] 200
