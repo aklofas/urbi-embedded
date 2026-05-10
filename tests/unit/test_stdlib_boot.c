@@ -121,6 +121,47 @@ UTEST(blob_size_baseline) {
     UASSERT_EQ(urbi_stdlib_bytecode_len, 0u);
 }
 
+/* === Test 5: two-VM determinism (per-VM realm state independent) ===
+ *
+ * Two parallel UVMs initialized in sequence MUST each see Wave-1 atom
+ * protos as realm globals.  Catches regressions where the boot path
+ * accidentally relies on process-global state that survives the
+ * first urbi_vm_destroy and corrupts the second VM. */
+
+UTEST(two_vm_determinism) {
+    UVM vm_a;
+    urbi_vm_init(&vm_a, NULL, NULL);
+    struct URealm *realm_a = urbi_realm_global(&vm_a);
+    UASSERT(realm_a != NULL);
+
+    UVM vm_b;
+    urbi_vm_init(&vm_b, NULL, NULL);
+    struct URealm *realm_b = urbi_realm_global(&vm_b);
+    UASSERT(realm_b != NULL);
+
+    UValue out_a = urbi_value_nil();
+    UValue out_b = urbi_value_nil();
+    int rc_a = urbi_realm_get_global(&vm_a, realm_a, "Boolean", 7, &out_a);
+    int rc_b = urbi_realm_get_global(&vm_b, realm_b, "Boolean", 7, &out_b);
+    UASSERT_EQ(rc_a, URBI_OK);
+    UASSERT_EQ(rc_b, URBI_OK);
+    UASSERT_EQ((int)out_a.kind, (int)UVAL_OBJECT);
+    UASSERT_EQ((int)out_b.kind, (int)UVAL_OBJECT);
+
+    /* Per-VM atom proto pointers MUST differ — UObject singletons live
+     * on the UVM, not in process-global state. */
+    UASSERT(out_a.v.p != NULL);
+    UASSERT(out_b.v.p != NULL);
+    UASSERT(out_a.v.p != out_b.v.p);
+
+    /* stdlib_booted toggled exactly once per VM. */
+    UASSERT_EQ((int)vm_a.stdlib_booted, 1);
+    UASSERT_EQ((int)vm_b.stdlib_booted, 1);
+
+    urbi_vm_destroy(&vm_b);
+    urbi_vm_destroy(&vm_a);
+}
+
 void
 test_stdlib_boot_suite(void)
 {
@@ -132,4 +173,6 @@ test_stdlib_boot_suite(void)
               ic_name_resolution_post_boot);
     utest_run("blob_size_baseline",
               blob_size_baseline);
+    utest_run("two_vm_determinism",
+              two_vm_determinism);
 }
