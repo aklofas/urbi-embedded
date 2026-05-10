@@ -345,14 +345,19 @@ UTEST(load_module_null_args_rejected)
 }
 
 /* Case 10: load_module installs top-level bindings into the global Realm
- * (API-021 v0.6.0 regression).
+ * (API-021 v0.6.0 regression; also closes CHSTR-009).
  *
  * Compile a tiny module with a top-level `var x = 42` binding, hand it to
  * urbi_load_module, then read back via urbi_realm_get_global.  The original
  * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
  * binds a UModuleInstance and runs the root chunk under the global Realm
  * so top-level bindings install.  module_name is advisory at v0.6.0
- * (no import-table lookup yet — v1.x backlog). */
+ * (no import-table lookup yet — v1.x backlog).
+ *
+ * CHSTR-009 closure: the audit flagged this surface as 'stub returning
+ * INVALID_ARG; M6 lands real impl' and was filed defer:M6.  M6 Wave 1
+ * (API-021 / v0.6.0) landed the real body; this test pins the live
+ * functional path so the audit ID is closed-with-coverage at v0.6.1. */
 UTEST(load_module_installs_top_level_var)
 {
     UVM vm;
