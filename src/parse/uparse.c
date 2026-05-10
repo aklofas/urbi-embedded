@@ -47,7 +47,8 @@ const char * const kErrorMessages[] = {
     "bare '.changed' outside at(...) is a slot-change event; use: at (obj.x.changed?) body",
     "slot-change event cannot be emitted; use slot assignment to trigger subscribers",
     "named-function declarations are not supported at v1.0; use 'var name = function(...){...}'",
-    "'onleave' is not allowed with 'at sync' — at sync has no leave edge; use 'at (cond) body onleave handler'"
+    "'onleave' is not allowed with 'at sync' — at sync has no leave edge; use 'at (cond) body onleave handler'",
+    "statement-start 'get name() {...}' / 'set name(v) {...}' is not supported at v1.0 outside a class body; use 'recv.get name() {...}' or 'class C { get name() {...} }'"
 };
 
 static const char * const kErrorNames[] = {
@@ -75,7 +76,8 @@ static const char * const kErrorNames[] = {
     "PARSE_SLOT_CHANGED_BARE_V1",
     "PARSE_SLOT_CHANGED_EMIT_V1",
     "PARSE_NAMED_FUNCTION_NOT_SUPPORTED",
-    "PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE"
+    "PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE",
+    "PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED"
 };
 
 #define N_PARSE_ERROR_CODES ((int)(sizeof kErrorNames / sizeof kErrorNames[0]))
@@ -85,10 +87,10 @@ static const char * const kErrorNames[] = {
  * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
  * enumerator (added in M5 spec #4); update both forms together when
  * adding a new code.  Closes PARSE-017. */
-_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE + 1,
+_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED + 1,
                "kErrorNames length must match UParseError enum count");
 _Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
-               == (int)PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE + 1,
+               == (int)PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED + 1,
                "kErrorMessages length must match UParseError enum count");
 
 /* --- Postfix-emit method name.  Promoted to file scope so the postfix

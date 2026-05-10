@@ -1,0 +1,12 @@
+# Milestone: M6 Wave 2 (Phase 2 follow-up)
+# Covers: T41 statement-start `get`/`set` form is rejected at parse
+# time with a dedicated diagnostic.  The implicit-receiver form is
+# legal in class bodies (`class Foo { get x() {} }`) and on explicit
+# receivers (`Foo.get x() {}`) — the bare statement-start form has no
+# v1.0 implicit-`this` resolver and is deferred to v1.x.
+
+get x() { 42 }
+[00000000] !!! <stdin>:1:1: statement-start 'get name() {...}' / 'set name(v) {...}' is not supported at v1.0 outside a class body; use 'recv.get name() {...}' or 'class C { get name() {...} }'
+
+set y(v) { 42 }
+[00000001] !!! <stdin>:1:1: statement-start 'get name() {...}' / 'set name(v) {...}' is not supported at v1.0 outside a class body; use 'recv.get name() {...}' or 'class C { get name() {...} }'

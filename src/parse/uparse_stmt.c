@@ -102,6 +102,16 @@ static UAstNode *parse_assign_or_expr(UParser *p, UToken name) {
     if ((ident_equals(name.u.str.start, name.u.str.len, "get", 3) ||
          ident_equals(name.u.str.start, name.u.str.len, "set", 3))
         && peek(p).type == TOK_IDENT && peek2(p).type == TOK_LPAREN) {
+        /* T41 (Phase 2 follow-up): the implicit-receiver form is legal
+         * only inside a `class { ... }` body.  At statement start there
+         * is no v1.0 resolver for the implicit `this`; reject with a
+         * dedicated diagnostic instead of falling through to a generic
+         * EMIT_UNSUPPORTED_AST at emit time.  Deferred to v1.x. */
+        if (p->class_body_depth == 0) {
+            return make_error(p, PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED,
+                              kErrorMessages[PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED],
+                              name.line, name.col);
+        }
         UAstMethodKind kind =
             ident_equals(name.u.str.start, name.u.str.len, "get", 3)
                 ? UAST_METHOD_GETTER : UAST_METHOD_SETTER;
@@ -202,14 +212,20 @@ UAstNode *parse_class_declaration(UParser *p) {
     }
 
     /* Body — block.  Class name is NOT yet in scope; the body parses
-     * with whatever outer binding `name` has (per S-class-name-scope). */
+     * with whatever outer binding `name` has (per S-class-name-scope).
+     * Bump class_body_depth around the parse so statement-start
+     * `get`/`set` inside the body skip the top-level rejection in
+     * parse_assign_or_expr (T41 implicit-receiver form is legal in
+     * class bodies, illegal at statement-start). */
     UToken body_tok = peek(p);
     if (body_tok.type != TOK_LBRACE) {
         return make_error(p, PARSE_EXPECTED_LBRACE,
                           kErrorMessages[PARSE_EXPECTED_LBRACE],
                           body_tok.line, body_tok.col);
     }
+    p->class_body_depth++;
     UAstNode *body = parse_block(p);
+    p->class_body_depth--;
     if (body == NULL) return NULL;
     if (body->kind == AST_ERROR) return body;
 

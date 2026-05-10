@@ -186,10 +186,18 @@ typedef enum {
     PARSE_NAMED_FUNCTION_NOT_SUPPORTED, /* `function name(...){...}` — v1.0 has no
                                             named-function decls; use
                                             `var name = function(...){...}` */
-    PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE /* `at sync (cond) body onleave h` —
+    PARSE_AT_SYNC_DOES_NOT_SUPPORT_ONLEAVE, /* `at sync (cond) body onleave h` —
                                               at sync fires inline on the
                                               changed thread and has no leave
                                               edge to hook (M5 spec §3) */
+
+    /* M6 Wave 2 additions */
+    PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED /* T41: `get name() {...}` /
+                                            `set name(v) {...}` at statement
+                                            start.  The implicit-receiver form
+                                            has no v1.0 resolver outside a
+                                            class body; deferred to v1.x
+                                            implicit-this. */
 } UParseError;
 
 /*
