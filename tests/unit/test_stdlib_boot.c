@@ -109,6 +109,18 @@ UTEST(ic_name_resolution_post_boot) {
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 4: blob size baseline ============================== */
+/*
+ * At Phase 4 baseline urbi_stdlib_bytecode_len is 0 — STDLIB_ORDER.txt
+ * is empty.  Phase 10 will replace this with a fixed-size assertion
+ * once the order file is populated; at that point the test pins the
+ * baked blob to a known size so any unintended drift from a re-baked
+ * stdlib gets caught at unit-test time. */
+
+UTEST(blob_size_baseline) {
+    UASSERT_EQ(urbi_stdlib_bytecode_len, 0u);
+}
+
 void
 test_stdlib_boot_suite(void)
 {
@@ -118,4 +130,6 @@ test_stdlib_boot_suite(void)
               wave1_realm_globals_reachable);
     utest_run("ic_name_resolution_post_boot",
               ic_name_resolution_post_boot);
+    utest_run("blob_size_baseline",
+              blob_size_baseline);
 }
