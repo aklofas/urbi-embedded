@@ -29,10 +29,13 @@
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "vm/uvm.h"                    /* UVM */
 
-#include <math.h>                      /* NAN / INFINITY macros */
 #include <stdint.h>
 #include <stddef.h>
-#include <stdlib.h>                    /* getenv */
+
+#if __STDC_HOSTED__
+#  include <math.h>                    /* NAN / INFINITY macros */
+#  include <stdlib.h>                  /* getenv */
+#endif
 
 /* === UValue construction helpers ========================================= */
 
@@ -295,14 +298,15 @@ urbi_stdlib_register_namespaces(UVM *vm)
     if (rc != URBI_OK) return rc;
     rc = install_const_slot(vm, vm->math_proto, "e",        val_float(2.718281828459045));
     if (rc != URBI_OK) return rc;
-    /* IEEE-754 NaN / +Inf via <math.h> macros — cppcheck rejects 0.0/0.0
-     * with duplicateExpression, and the macros expand to the appropriate
-     * compiler builtin (__builtin_nan / HUGE_VAL) on all supported
-     * targets. */
+    /* IEEE-754 NaN / +Inf via <math.h> macros on hosted; freestanding
+     * targets omit the constants (no libm contract — embedded code that
+     * needs IEEE-754 sentinels constructs them via bit-pattern). */
+#if __STDC_HOSTED__
     rc = install_const_slot(vm, vm->math_proto, "nan",      val_float((double)NAN));
     if (rc != URBI_OK) return rc;
     rc = install_const_slot(vm, vm->math_proto, "infinity", val_float((double)INFINITY));
     if (rc != URBI_OK) return rc;
+#endif
 
     /* --- T87 System: time / cycle / getenv / gc --- */
     if (vm->system_proto == NULL) {
