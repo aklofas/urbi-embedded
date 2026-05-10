@@ -147,7 +147,6 @@ UAstNode *parse_class_declaration(UParser *p) {
     /* Optional `: public P1[, P2, ...]`. */
     UAstNode **protos = NULL;
     int proto_count = 0;
-    int proto_cap = 0;
     if (peek(p).type == TOK_COLON) {
         consume(p);  /* consume ':' */
         UToken pub_tok = peek(p);
@@ -161,7 +160,7 @@ UAstNode *parse_class_declaration(UParser *p) {
         /* Seed an initial proto array.  parse_prefix gives a single primary
          * expression — not a separator-tier or comma-tier expression — so
          * the comma stays available as the proto-list separator. */
-        proto_cap = 4;
+        int proto_cap = 4;
         protos = (UAstNode **)uarena_alloc(p->arena,
                                            (size_t)proto_cap * sizeof(UAstNode *));
         if (protos == NULL) return (UAstNode *)&uparser_oom_sentinel;
