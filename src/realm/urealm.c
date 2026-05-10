@@ -221,35 +221,34 @@ urbi_realm_global(struct UVM *vm)
     return vm->global_realm;
 }
 
-/* === urbi_realm_has_live_work ===
+/* === urbi_vm_has_live_work ===
  *
- * Reads VM-global liveness counters.
- * TODO(M5+): per-realm walk via realm->tag.member_strands_head — strands now linked
- * but counter partition still VM-wide at M3; partitioning deferred for M5+ work.
+ * Reads VM-wide liveness counters.  Renamed from urbi_realm_has_live_work
+ * at v0.6.0 (REALM-017): the function never read per-realm state — only
+ * vm->{strand_runnable_count, watcher_active_count, wakeup_pending_count}.
+ * Per-realm partitioning is a v1.x deferral (urbi-embedded-design-risks.md).
  *
- * Returns true if there is any live work visible to this realm at M3.
+ * Returns true if any of the three VM-wide counters is positive.
  * out_strands, out_watchers, out_wakes may be NULL. */
 
 bool
-urbi_realm_has_live_work(URealm *realm,
-                         uint32_t *out_strands,
-                         uint32_t *out_watchers,
-                         uint32_t *out_wakes)
+urbi_vm_has_live_work(struct UVM *vm,
+                      uint32_t *out_strands,
+                      uint32_t *out_watchers,
+                      uint32_t *out_wakes)
 {
     uint32_t strands, watchers, wakes;
 
-    if (realm == NULL || realm->vm == NULL) {
+    if (vm == NULL) {
         if (out_strands)  *out_strands  = 0;
         if (out_watchers) *out_watchers = 0;
         if (out_wakes)    *out_wakes    = 0;
         return false;
     }
 
-    /* TODO(M5+): real per-realm walk via realm->tag.member_strands_head.
-     * At M3, counters are VM-global; all are attributed to every realm query. */
-    strands  = realm->vm->strand_runnable_count;
-    watchers = realm->vm->watcher_active_count;
-    wakes    = realm->vm->wakeup_pending_count;
+    strands  = vm->strand_runnable_count;
+    watchers = vm->watcher_active_count;
+    wakes    = vm->wakeup_pending_count;
 
     if (out_strands)  *out_strands  = strands;
     if (out_watchers) *out_watchers = watchers;

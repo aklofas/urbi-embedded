@@ -133,14 +133,18 @@ URealm *urbi_realm_create(struct UVM *vm);
 void    urbi_realm_destroy(struct UVM *vm, URealm *realm);
 URealm *urbi_realm_global(struct UVM *vm);
 
-/* Per-Realm liveness inspection.
- * Reads VM-global counters at M3 (per-realm partitioning lands at T15+).
- * out_strands, out_watchers, out_wakes may be NULL.
- * Returns non-zero if any liveness counter is positive. */
-bool    urbi_realm_has_live_work(URealm *realm,
-                                 uint32_t *out_strands,
-                                 uint32_t *out_watchers,
-                                 uint32_t *out_wakes);
+/* VM-wide liveness inspection.
+ * Reads vm->strand_runnable_count / vm->watcher_active_count /
+ * vm->wakeup_pending_count.  out_strands, out_watchers, out_wakes may be
+ * NULL.  Returns true if any liveness counter is positive.
+ *
+ * Per-realm partitioning is a v1.x deferral (see urbi-embedded-design-risks.md).
+ * The realm-tagged predecessor `urbi_realm_has_live_work` was renamed at
+ * v0.6.0 to match the function's actual VM-wide semantic. */
+bool    urbi_vm_has_live_work(struct UVM *vm,
+                              uint32_t *out_strands,
+                              uint32_t *out_watchers,
+                              uint32_t *out_wakes);
 
 #ifdef __cplusplus
 }

@@ -90,13 +90,19 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
-/* Liveness query: reads VM-global counters (per-realm partitioning at T15+).
- * Populates out_strands / out_watchers / out_wakes (any may be NULL).
- * Returns non-zero if any liveness counter is positive. */
-bool           urbi_realm_has_live_work(struct URealm *realm,
-                                        uint32_t *out_strands,
-                                        uint32_t *out_watchers,
-                                        uint32_t *out_wakes);
+/* Liveness query: reads VM-wide runnable / active-watcher / pending-wakeup
+ * counters.  Populates out_strands / out_watchers / out_wakes (any may be
+ * NULL).  Returns true if any counter is positive.
+ *
+ * The function is VM-wide despite the per-realm spec wording: the counters
+ * themselves are not partitioned per realm.  Per-realm partitioning is a
+ * v1.x deferral (see docs/urbi-embedded-design-risks.md).  The realm-tagged
+ * predecessor `urbi_realm_has_live_work` was renamed at v0.6.0 to match
+ * actual semantic. */
+bool           urbi_vm_has_live_work(struct UVM *vm,
+                                     uint32_t *out_strands,
+                                     uint32_t *out_watchers,
+                                     uint32_t *out_wakes);
 
 /* === M5 realm globals C API (spec #5 §7) ===
  *

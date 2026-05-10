@@ -17,7 +17,7 @@
  * 14.  realm_walk_roots_invokes_callback_per_namespace_entry: walker visits each entry.
  * 15.  realm_create_oom_returns_null: allocator returning NULL yields NULL from create.
  * 16.  realm_destroy_does_not_free_strand_on_ready_queue: REALM-011 ready_queue splice.
- * 17.  realm_has_live_work_null_out_params: NULL out-params accepted (REALM-034). */
+ * 17.  vm_has_live_work_null_out_params: NULL out-params accepted (REALM-034 / REALM-017). */
 
 #include "utest.h"
 #include "realm/urealm.h"
@@ -407,34 +407,35 @@ UTEST(realm_destroy_does_not_free_strand_on_ready_queue)
     urbi_vm_destroy(&vm);
 }
 
-/* 17. realm_has_live_work_null_out_params (REALM-034)
+/* 17. vm_has_live_work_null_out_params (REALM-034 / REALM-017)
  *
- * The has_live_work API documents that out_strands / out_watchers / out_wakes
- * may be NULL.  Coverage was missing — every existing caller passed all
- * three.  Pin the contract so future refactors that drop the NULL guard
- * (or shift the early-return ordering) trip a test rather than crash a
- * caller.
+ * urbi_vm_has_live_work documents that out_strands / out_watchers /
+ * out_wakes may be NULL.  Coverage was missing — every existing caller
+ * passed all three.  Pin the contract so future refactors that drop the
+ * NULL guard (or shift the early-return ordering) trip a test rather
+ * than crash a caller.
+ *
+ * Renamed from urbi_realm_has_live_work at v0.6.0 (REALM-017): the
+ * function reads VM-wide counters, not per-realm — the realm parameter
+ * was misleading.  Test now passes &vm directly.
  *
  * Verified shapes:
- *   a) realm == NULL with all out-params NULL → returns false, no crash.
- *   b) realm != NULL with all out-params NULL → returns the bool result,
- *      no crash.
- *   c) realm != NULL with a mix of NULL / non-NULL out-params → only the
+ *   a) vm == NULL with all out-params NULL → returns false, no crash.
+ *   b) vm != NULL with all out-params NULL → returns whatever the counters
+ *      say, no crash.
+ *   c) vm != NULL with a mix of NULL / non-NULL out-params → only the
  *      non-NULL slots are written. */
-UTEST(realm_has_live_work_null_out_params)
+UTEST(vm_has_live_work_null_out_params)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    URealm *r = urbi_realm_create(&vm);
-    UASSERT(r != NULL);
+    /* a) NULL vm + all-NULL out-params → returns false. */
+    UASSERT_EQ(false, urbi_vm_has_live_work(NULL, NULL, NULL, NULL));
 
-    /* a) NULL realm + all-NULL out-params → returns false. */
-    UASSERT_EQ(false, urbi_realm_has_live_work(NULL, NULL, NULL, NULL));
-
-    /* b) Live realm + all-NULL out-params → returns whatever the counters
+    /* b) Live vm + all-NULL out-params → returns whatever the counters
      *    say, no crash.  At rest (no strands/watchers/wakes) → false. */
-    UASSERT_EQ(false, urbi_realm_has_live_work(r, NULL, NULL, NULL));
+    UASSERT_EQ(false, urbi_vm_has_live_work(&vm, NULL, NULL, NULL));
 
     /* c) Mixed NULL / non-NULL → non-NULL slots are written, NULL slots
      *    are silently skipped.  Sentinel-fill the non-NULL receivers and
@@ -443,25 +444,24 @@ UTEST(realm_has_live_work_null_out_params)
     uint32_t watchers = 0xDEADBEEFu;
     uint32_t wakes    = 0xDEADBEEFu;
 
-    UASSERT_EQ(false, urbi_realm_has_live_work(r, &strands, NULL, NULL));
+    UASSERT_EQ(false, urbi_vm_has_live_work(&vm, &strands, NULL, NULL));
     UASSERT_EQ((uint32_t)0, strands);
 
     strands = 0xDEADBEEFu;
-    UASSERT_EQ(false, urbi_realm_has_live_work(r, NULL, &watchers, NULL));
+    UASSERT_EQ(false, urbi_vm_has_live_work(&vm, NULL, &watchers, NULL));
     UASSERT_EQ((uint32_t)0, watchers);
 
     watchers = 0xDEADBEEFu;
-    UASSERT_EQ(false, urbi_realm_has_live_work(r, NULL, NULL, &wakes));
+    UASSERT_EQ(false, urbi_vm_has_live_work(&vm, NULL, NULL, &wakes));
     UASSERT_EQ((uint32_t)0, wakes);
 
-    /* d) NULL realm + non-NULL out-params → all out-params zeroed. */
+    /* d) NULL vm + non-NULL out-params → all out-params zeroed. */
     strands = watchers = wakes = 0xDEADBEEFu;
-    UASSERT_EQ(false, urbi_realm_has_live_work(NULL, &strands, &watchers, &wakes));
+    UASSERT_EQ(false, urbi_vm_has_live_work(NULL, &strands, &watchers, &wakes));
     UASSERT_EQ((uint32_t)0, strands);
     UASSERT_EQ((uint32_t)0, watchers);
     UASSERT_EQ((uint32_t)0, wakes);
 
-    urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
 
@@ -489,6 +489,6 @@ test_realm_suite(void)
     utest_run("realm_create_oom_returns_null",                      realm_create_oom_returns_null);
     utest_run("realm_destroy_does_not_free_strand_on_ready_queue (T69)",
               realm_destroy_does_not_free_strand_on_ready_queue);
-    utest_run("realm_has_live_work_null_out_params",
-              realm_has_live_work_null_out_params);
+    utest_run("vm_has_live_work_null_out_params",
+              vm_has_live_work_null_out_params);
 }
