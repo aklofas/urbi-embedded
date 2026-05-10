@@ -100,3 +100,10 @@ constParameterPointer:src/stdlib/atoms.c
 // branches (set / add / remove / dict_set / etc.).
 constParameterPointer:src/stdlib/containers.c
 constVariablePointer:src/stdlib/containers.c
+
+// audit:CPPCHK-Phase7 — src/stdlib/runtime_types.c native-method callbacks
+// expose UValue *args as part of the urbi_native_method_fn typedef; the
+// Exception primitive's exc_new only reads args[0] so cppcheck flags it,
+// but the function-pointer signature is pinned and cannot be const-qualified
+// without breaking every callback registration site.
+constParameterPointer:src/stdlib/runtime_types.c

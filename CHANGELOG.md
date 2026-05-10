@@ -141,6 +141,41 @@
   `pair.chk`, `triplet.chk`, `tuple.chk`, `list_core.chk`,
   `list_concat.chk`, `dict_core.chk`.  Test count delta:
   189 → 195 chk fixtures.
+- (Phase 7) **Exception primitive root.**  New
+  `src/stdlib/runtime_types.{c,h}` registers `Exception` as a fresh
+  `URBI_ATOM_OBJECT`-family proto with two C-native methods:
+  `Exception.new(message)` clones the proto and binds a per-instance
+  `message` slot; `Exception.raise` calls `urbi_throw` on
+  `vm->cur_strand`, depositing `pending_unwind = UEXEC_THROW` and
+  `unwind_value = self` so `try/catch` absorbs the Exception
+  instance as the catch variable (`catch (e) { e.message }`).
+  Realm-global binding lands at slots 15+ via a post-loop hook
+  (`urbi_stdlib_register_runtime_globals`), mirroring the container
+  globals pattern so the v1.0 packed-flag CONSTANT enforcement range
+  (slots 0..7) stays intact.  Exception subclasses (`TypeError`,
+  `IndexError`, …) defer to Phase 10's `.u` overlay.
+- (Phase 7) **`vm->cur_strand` wired through `urbi_vm_run`.**  Pre-
+  Phase-7 only `ustep.c`'s incremental driver set `vm->cur_strand`
+  during dispatch; the synchronous `urbi_vm_run` path was a gap.
+  Native methods that call `urbi_throw` / `urbi_return_val` /
+  `urbi_tag_stop_local` (Exception.raise being the first user) need
+  the running strand pointer to deposit unwind state.
+- (Phase 7) **OP_CALL native arm: catchable native raise.**  When a
+  native_fn returns `UEXEC_OK` with `pending_unwind != UEXEC_OK`
+  (i.e. it called `urbi_throw` from inside the C body), the dispatch
+  arm now routes through `safepoint:` instead of `NEXT()`, so the
+  cleanup-stack walker can absorb the deposited THROW under any
+  enclosing `try/catch` frame.  Native functions that return
+  `UEXEC_THROW` directly (the legacy `urbi_raise_arity` /
+  `urbi_raise_type` / `urbi_raise_oom` path) still fatal-halt with
+  the pre-Phase-7 "CALL: native method raised" TypeError — preserves
+  `tests/chk/objects/get-set/get_set_arity_reject.chk`-style fixtures
+  while enabling the catchable-raise path for stdlib code.
+- (Phase 7) **2 `tests/chk/stdlib/runtime/` fixtures** —
+  `exception_basic.chk` (constructor, `.message`, `.raise` +
+  try/catch absorption, named-instance round-trip),
+  `exception_chain.chk` (nested raise/catch, inner-raise-through-
+  finally to outer catch).  Test count delta: 195 → 197 chk fixtures.
 
 ### Changed
 
