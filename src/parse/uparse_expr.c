@@ -280,6 +280,13 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_INT:
         consume(p);
         return make_int(p, t.u.i, t.line, t.col);
+    case TOK_FLOAT: {
+        consume(p);
+        UAstNode *n = make_node(p, AST_FLOAT_LIT, t.line, t.col);
+        if (!n) return NULL;
+        n->u.f = t.u.f;
+        return n;
+    }
     case TOK_STRING:
         return parse_string_literal(p);
     case TOK_IDENT:
