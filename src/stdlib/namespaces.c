@@ -29,6 +29,7 @@
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "vm/uvm.h"                    /* UVM */
 
+#include <math.h>                      /* NAN / INFINITY macros */
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>                    /* getenv */
@@ -294,12 +295,13 @@ urbi_stdlib_register_namespaces(UVM *vm)
     if (rc != URBI_OK) return rc;
     rc = install_const_slot(vm, vm->math_proto, "e",        val_float(2.718281828459045));
     if (rc != URBI_OK) return rc;
-    /* IEEE-754 NaN / +Inf via 0.0/0.0 / 1.0/0.0.  Compilers fold these at
-     * compile time per IEEE arithmetic; if a target's compiler refuses,
-     * switch to (double)NAN / (double)INFINITY from <math.h>. */
-    rc = install_const_slot(vm, vm->math_proto, "nan",      val_float(0.0 / 0.0));
+    /* IEEE-754 NaN / +Inf via <math.h> macros — cppcheck rejects 0.0/0.0
+     * with duplicateExpression, and the macros expand to the appropriate
+     * compiler builtin (__builtin_nan / HUGE_VAL) on all supported
+     * targets. */
+    rc = install_const_slot(vm, vm->math_proto, "nan",      val_float((double)NAN));
     if (rc != URBI_OK) return rc;
-    rc = install_const_slot(vm, vm->math_proto, "infinity", val_float(1.0 / 0.0));
+    rc = install_const_slot(vm, vm->math_proto, "infinity", val_float((double)INFINITY));
     if (rc != URBI_OK) return rc;
 
     /* --- T87 System: time / cycle / getenv / gc --- */

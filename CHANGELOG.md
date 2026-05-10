@@ -176,6 +176,43 @@
   try/catch absorption, named-instance round-trip),
   `exception_chain.chk` (nested raise/catch, inner-raise-through-
   finally to outer catch).  Test count delta: 195 → 197 chk fixtures.
+- (Phase 8) **C-native namespaces.**  New
+  `src/stdlib/namespaces.{c,h}` registers five namespace proto
+  UObjects bound as realm globals via the same post-loop hook
+  pattern as containers + runtime types (slot 15+, past the
+  packed-flag CONSTANT enforcement range):
+  - `Math`: IEEE-754 constants `pi`, `e`, `nan`, `infinity` (the
+    method surface — `sin` / `cos` / `sqrt` / etc. — defers to
+    Phase 10's `.u` overlay, which bounces to the Float atom-proto
+    methods Phase 5 installed).
+  - `System`: host primitives `time` (monotonic-microseconds → Float
+    seconds via `vm->host_time_us`), `cycle` (per-VM `lookup_id`
+    counter as Integer), `getenv(name)` (libc shim, freestanding-
+    nil), `gc` (explicit `urbi_gc_collect`).  Wall-clock-since-epoch
+    `System.time` from legacy 2.x narrows to monotonic-since-VM-
+    start at v1.0 to avoid a libc `time()` dependency on freestanding
+    targets — wall-clock access lands later via the Date primitive
+    (Phase 9).
+  - `System.Platform.kind`: compile-time string set via `#ifdef`
+    cascade — `"linux"` / `"darwin"` / `"windows"` / `"freertos"` /
+    `"unknown"`.  Nested as a slot on `System` (not a top-level
+    realm global).
+  - `Global.length`: reflective slot count of the active realm's
+    `global_object`.  Stub for v1.x reflection (`Global.names()`
+    etc.).
+  - `CallMessage`: stub proto with a `kind` marker slot, reserved per
+    REVIVAL §14 L14 for v1.x legacy-`fallback()` reflection.
+- (Phase 8) **VM fields + GC roots.** `UVM` grows five proto-singleton
+  pointers (`math_proto`, `system_proto`, `platform_proto`,
+  `global_namespace_proto`, `callmessage_proto`).  Allocated by
+  `urbi_stdlib_register_namespaces` (boot-phase); shaded by
+  `object_roots_walker` to keep them alive across GC.
+- (Phase 8) **5 `tests/chk/stdlib/namespaces/` fixtures** —
+  `math.chk` (constants + Float-method dispatch), `system.chk`
+  (time / cycle monotonicity / gc / getenv), `system_platform.chk`
+  (kind String non-empty), `global.chk` (length > 15 lower bound),
+  `callmessage.chk` (proto bound).  Test count delta: 197 → 202 chk
+  fixtures.
 
 ### Changed
 
