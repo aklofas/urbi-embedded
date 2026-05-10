@@ -27,6 +27,7 @@
 #include "stdlib/atoms.h"
 #include "stdlib/containers.h"
 #include "stdlib/runtime_types.h"
+#include "stdlib/namespaces.h"
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -76,6 +77,15 @@ urbi_stdlib_boot(UVM *vm)
      * globals so the registry's slot 0..7 layout stays stable.  See
      * src/stdlib/runtime_types.c. */
     rc = urbi_stdlib_register_runtime_types(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* Phase 8 (M6 Wave 2): namespace protos.  Allocates Math / System /
+     * System.Platform / Global / CallMessage proto UObjects with their
+     * constants + native methods.  Realm-global binding for the
+     * namespace names is deferred to urbi_stdlib_register_namespace_-
+     * globals, again preserving the registry's slot 0..7 layout.  See
+     * src/stdlib/namespaces.c. */
+    rc = urbi_stdlib_register_namespaces(vm);
     if (rc != URBI_OK) return rc;
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
