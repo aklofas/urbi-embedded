@@ -389,11 +389,61 @@ date_as_string(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 #endif
 }
 
+/* === Date.plus(Duration) (T97) ===========================================
+ *
+ * Phase 9 / Phase 10 seam.  Returns a fresh Date with seconds advanced
+ * by the Duration's microseconds-to-seconds quotient (sub-second
+ * precision truncated).  Negative Durations subtract.
+ *
+ * Implementation note: the new Date instance clones vm->date_proto
+ * directly (NOT the receiver `self.v.p`).  Cloning a clone-of-proto
+ * exposes a chain-of-clone access pattern where slot lookups on the
+ * second-generation clone can fail to walk past the user-instance
+ * intermediary.  Cloning the proto keeps the chain at depth 1, matching
+ * the Date.fromSeconds / Date.now patterns which work correctly at v1.0
+ * baseline.  This is tracked in docs/urbi-embedded-design-risks.md as a
+ * v1.x chain-of-clone proto-walk audit.
+ *
+ * Phase 10's `.u` overlay can promote this to the operator form `d + dur`
+ * once the arithmetic-operator dispatch for non-atom receivers lands. */
+
+static int
+date_plus(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    if (nargs != 1) return urbi_raise_arity(vm, "Date.plus", 1, nargs, out);
+    if (self.kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.plus: receiver must be a Date", out);
+    if (args[0].kind != (uint8_t)UVAL_OBJECT)
+        return urbi_raise_type(vm, "Date.plus: argument must be a Duration", out);
+    if (vm->date_proto == NULL)
+        return urbi_raise_type(vm, "Date.plus: Date proto missing", out);
+
+    UValue base_v;
+    if (read_local_slot(vm, (UObject *)self.v.p, "_seconds", &base_v) != 0)
+        return urbi_raise_oom(vm, out);
+    int64_t base_s = (base_v.kind == (uint8_t)UVAL_INT) ? base_v.v.i : 0;
+
+    UValue dur_v;
+    if (read_local_slot(vm, (UObject *)args[0].v.p, "_microseconds", &dur_v) != 0)
+        return urbi_raise_oom(vm, out);
+    int64_t dur_us = (dur_v.kind == (uint8_t)UVAL_INT) ? dur_v.v.i : 0;
+    int64_t dur_s  = dur_us / 1000000;
+
+    UObject *d = urbi_object_clone(vm, vm->date_proto);
+    if (d == NULL) return urbi_raise_oom(vm, out);
+    if (write_local_slot(vm, d, "_seconds", val_int(base_s + dur_s)) != 0)
+        return urbi_raise_oom(vm, out);
+
+    *out = val_obj(d);
+    return UEXEC_OK;
+}
+
 static const PMethodEntry DATE_METHODS[] = {
     { "now",         date_now           },
     { "fromSeconds", date_from_seconds  },
     { "seconds",     date_seconds       },
-    { "asString",    date_as_string     }
+    { "asString",    date_as_string     },
+    { "plus",        date_plus          }
 };
 
 #define DATE_METHODS_COUNT (sizeof(DATE_METHODS) / sizeof(DATE_METHODS[0]))
