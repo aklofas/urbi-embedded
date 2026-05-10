@@ -1,0 +1,28 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/date.chk
+# Milestone: M6 Wave 2 (Phase 11 partial port)
+#
+# Legacy fixture exercises `Date.epoch - Date.epoch + 9220000`, an
+# arithmetic seam over a Date "epoch zero" instance.  v0.6.1 has no
+# Date.epoch slot; the equivalent semantic check is to construct a
+# Date directly from a seconds offset and read .seconds() back.
+#
+# Wave-2 deferred (full port): Date.epoch constant slot, Date `-`
+# returning a Duration, Date `+` Integer, Date arithmetic operator
+# overrides via .u overlay (Phase 10 finding #4 — operator-via-slot-
+# install doesn't intercept inline VM opcodes yet).  See PORT_NOTES.md.
+
+Date.fromSeconds(9220000).seconds()
+[00000000] 9220000
+
+Date.fromSeconds(9230000).seconds()
+[00000001] 9230000
+
+Date.fromSeconds(0).seconds()
+[00000002] 0
+
+Date.fromSeconds(0).asString()
+[00000003] "1970-01-01 00:00:00"
+
+# Date.now() returns a Date with non-zero seconds (post-epoch).
+Date.now().seconds() > 0
+[00000004] true
