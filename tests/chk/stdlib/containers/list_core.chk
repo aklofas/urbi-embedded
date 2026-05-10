@@ -1,0 +1,44 @@
+# Milestone: M6 Wave 2
+# Covers: Phase 6 List core operations.
+#
+# List.new(...) is variadic; the result is a fresh List backed by a
+# heap UList buffer.  Methods: length, isEmpty, get(i), set(i, v),
+# add(v), contains(v), concat(other), diff(other).
+#
+# v1.0 lex has no `<<` or `[]` operator tokens, so all operations
+# go through named methods.  Phase 10's .u overlay can synthesize
+# operator wrappers if/when those tokens land.
+
+# Empty + grow.
+var l = List.new(); l.isEmpty()
+[00000000] true
+
+var l = List.new(); l.length()
+[00000001] 0
+
+var l = List.new(); l.add(1); l.add(2); l.add(3); l.length()
+[00000002] 3
+
+var l = List.new(1, 2, 3); l.length()
+[00000003] 3
+
+var l = List.new(1, 2, 3); l.get(0)
+[00000004] 1
+
+var l = List.new(1, 2, 3); l.get(2)
+[00000005] 3
+
+# In-place mutation.
+var l = List.new(10, 20, 30); l.set(1, 99); l.get(1)
+[00000006] 99
+
+# contains scans by uvalue_equal (interned-string equality, integer
+# value equality, etc.).
+List.new(1, 2, 3).contains(2)
+[00000007] true
+
+List.new(1, 2, 3).contains(99)
+[00000008] false
+
+List.new("a", "b", "c").contains("b")
+[00000009] true
