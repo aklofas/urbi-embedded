@@ -71,6 +71,33 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
+# --- Stdlib bake tool (host-only) ---------------------------------------
+#
+# tools/urbi-compile-stdlib is the Wave-2 build-time bake tool.  It
+# walks src/stdlib/STDLIB_ORDER.txt, compiles each listed .u file via
+# the public Urbi compile API, and emits the bytecode blob as
+# src/stdlib/urbi_stdlib_bytecode.gen.c.
+#
+# The tool is HOST-ONLY: it always links against build/host/liburbi.a,
+# never the cross-target archive.  Cross-arch builds consume the
+# already-emitted .gen.c source (compiled for the target like any
+# other src/stdlib/*.c).  This keeps the chicken-and-egg out of the
+# cross build: the bake runs once on the host, its output ships as
+# portable C source.
+#
+# Two-pass build (delta spec §3.1):
+#   1. liburbi.a builds with the placeholder .gen.c (tracked in repo)
+#   2. tools/urbi-compile-stdlib links against that intermediate library
+#   3. Subsequent builds regenerate .gen.c on .u or order changes,
+#      causing liburbi.a to re-link with the populated blob.
+#
+# The bake-rule for src/stdlib/urbi_stdlib_bytecode.gen.c lands in a
+# follow-up commit; this commit only wires the tool's own build.
+
+tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c build/host/liburbi.a
+	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
+	    -Iinclude -o $@ $< build/host/liburbi.a
+
 # --- Integration tests --------------------------------------------------
 #
 # test-integration runs the REPL shell harness against the built binary.
