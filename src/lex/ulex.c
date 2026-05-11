@@ -18,9 +18,11 @@
 /* Forward declaration for newlib / picolibc strtod on embedded targets.
  * On a pure freestanding build without a C library this will produce a
  * linker error for any float literal in the input — acceptable because
- * the URBI_BYTECODE_ONLY strip path removes the lex/parse/emit subsystem
- * entirely for bare-metal deploys.  The cross-compile gate only verifies
- * that the code compiles; actual float-literal parse is host-only. */
+ * the URBI_BYTECODE_ONLY=1 build strips src/lex/, src/parse/, src/emit/
+ * from the source list entirely for bare-metal deploys (Makefile
+ * COMPILER_FRONTEND_DIRS_EXCLUDED, T15 in v0.7.0-c-api).  The
+ * cross-compile gate only verifies that the code compiles; actual
+ * float-literal parse is host-only. */
 extern double strtod(const char *, char **);
 #endif
 

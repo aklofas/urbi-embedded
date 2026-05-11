@@ -170,9 +170,16 @@ UStepResult urbi_step(struct UVM *vm,
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
                    const struct UModule *module, UValue *out_result);
 
+/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+ * compiler frontend (src/lex, src/parse, src/emit) is not linked in
+ * bytecode-only builds, so urbi_repl_eval cannot function — embedders
+ * trying to call it get a compile error at the call site rather than
+ * an unresolved link symbol. */
+#if !defined(URBI_BYTECODE_ONLY)
 int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
                    const char *line, size_t line_len,
                    char *out_buf, size_t out_buf_size);
+#endif
 
 int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *module);
 
@@ -213,11 +220,17 @@ int urbi_load_translate_load_err(int load_err);
  *   URBI_ERR_INVALID_ARG — NULL vm/src/out_buf/out_len.
  *   URBI_ERR_OOM         — allocation or serialize failure.
  *   URBI_ERR_INVALID_ARG — parse or emit error (see err_buf for details). */
+/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+ * compiler frontend (src/lex, src/parse, src/emit) is not linked in
+ * bytecode-only builds.  Pre-baked bytecode is loaded through
+ * urbi_load_module / urbi_run_chunk instead. */
+#if !defined(URBI_BYTECODE_ONLY)
 int urbi_compile_source(struct UVM *vm,
                         const char *src, size_t src_len,
                         const char *src_name,
                         unsigned char **out_buf, size_t *out_len,
                         char *err_buf, size_t err_cap);
+#endif
 
 /* === Row 9 strand lifecycle C API (M3 / T20) ===
  *

@@ -4,11 +4,25 @@
 # CONTRIBUTING.md "Aux layer governance" and include/urbi/aux.h.
 AUX_SRCS := src/urbi_aux.c
 
+# URBI_BYTECODE_ONLY=1 promotes the v0.6.1 smoke approximation to a real
+# pure-strip build: src/lex/, src/parse/, src/emit/ are removed from the
+# source list.  Source-taking public entry points (urbi_compile_source,
+# urbi_repl_eval) become compile-errors at the call site via header
+# gating in <urbi/urbi.h>.  Bytecode-only entry points (urbi_run_chunk,
+# urbi_run_script, urbi_load_module) stay unconditional.  T15 + T16 in
+# M7 Wave 1.  T17 will follow up to clean any libc-leak unresolved
+# symbols surfaced by the real strip.
+ifeq ($(URBI_BYTECODE_ONLY),1)
+  CFLAGS += -DURBI_BYTECODE_ONLY=1
+  CPPFLAGS += -DURBI_BYTECODE_ONLY=1
+  COMPILER_FRONTEND_DIRS_EXCLUDED := 1
+endif
+
 SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/*.c)) \
-       $(wildcard src/lex/*.c) \
-       $(wildcard src/parse/*.c) \
-       $(wildcard src/emit/*.c) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/parse/*.c)) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/emit/*.c)) \
        $(wildcard src/vm/*.c) \
        $(wildcard src/gc/*.c) \
        $(wildcard src/sched/*.c) \
@@ -225,17 +239,14 @@ test-docstring-coverage:
 test-bake-smoke: tools/urbi-compile-stdlib
 	@./tests/scripts/bake_smoke.sh
 
-# Phase 13 (v0.6.1-stdlib Wave 2) URBI_BYTECODE_ONLY emulation gate.
-# The real URBI_BYTECODE_ONLY build flag — compile out the
-# lex/parse/emit subsystems, ship a runtime that can only execute
-# pre-baked bytecode — lands at M7 per the v1.0 implementation
-# design spec §1.1.  Phase 13 lands a smoke approximation that
-# proves the architectural shape is sound: lex/parse/emit + the
-# two parser-coupled root sources (src/urbi.c + src/module/uchunk.c)
-# CAN be elided, and the resulting archive still exports
-# urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
-# urbi_lock_heap.  Hard-fail in releasetest below.
-# See tests/scripts/build-bytecode-only.sh.
+# URBI_BYTECODE_ONLY smoke gate — originally a Phase 13 (v0.6.1-stdlib
+# Wave 2) shape-only approximation; promoted at v0.7.0-c-api T15 to a
+# real strip via the main Makefile (see COMPILER_FRONTEND_DIRS_EXCLUDED
+# above).  This script still drives a standalone bypass-build to verify
+# the architectural shape independently of the main Makefile and to
+# confirm urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
+# urbi_lock_heap remain exported after the strip.  Hard-fail in
+# releasetest below.  See tests/scripts/build-bytecode-only.sh.
 .PHONY: test-bytecode-only
 test-bytecode-only:
 	@./tests/scripts/build-bytecode-only.sh
