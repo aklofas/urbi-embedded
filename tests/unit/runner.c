@@ -42,6 +42,7 @@ extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
 extern void test_api_version_suite(void);
 extern void test_arena_suite(void);
+extern void test_aux_version_check_suite(void);
 extern void test_parser_suite(void);
 extern void test_varint_suite(void);
 extern void test_module_suite(void);
@@ -199,6 +200,7 @@ static const struct suite_entry suites[] = {
     {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"api_version",                test_api_version_suite},
     {"arena",                      test_arena_suite},
+    {"aux_version_check",          test_aux_version_check_suite},
     {"parser",                     test_parser_suite},
     {"varint",                     test_varint_suite},
     {"module",                     test_module_suite},

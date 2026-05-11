@@ -1,4 +1,11 @@
-SRC := $(wildcard src/*.c) \
+# Aux layer — separate translation unit, separate archive. Filtered out
+# of the core SRC list below so liburbi.a (core) stays free of aux symbols.
+# Embedders opt into the aux layer by linking -laux at link time. See
+# CONTRIBUTING.md "Aux layer governance" and include/urbi/aux.h.
+AUX_SRCS := src/urbi_aux.c
+
+SRC := $(filter-out $(AUX_SRCS), \
+       $(wildcard src/*.c)) \
        $(wildcard src/lex/*.c) \
        $(wildcard src/parse/*.c) \
        $(wildcard src/emit/*.c) \
@@ -23,18 +30,27 @@ TARGET ?= host
 BUILDDIR := build/$(TARGET)
 
 OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+AUX_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(AUX_SRCS))
 TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
 LIB := $(BUILDDIR)/liburbi.a
+LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 
-all: $(LIB)
+all: $(LIB) $(LIBURBI_AUX)
 
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
+
+# Aux layer archive — separate from $(LIB). Embedders link -laux at
+# link time; liburbi.a contains zero aux symbols (nm-verified).
+$(LIBURBI_AUX): $(AUX_OBJS)
+	$(AR) rcs $@ $^
+
+aux: $(LIBURBI_AUX)
 
 $(BUILDDIR)/src/%.o: src/%.c
 	@mkdir -p $(@D)
@@ -180,8 +196,8 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(TEST_OBJ) test-integration test-chk
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB) -lm
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
 .PHONY: test-loc-cap
@@ -805,4 +821,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
