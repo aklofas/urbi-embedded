@@ -11,3 +11,5 @@
 
 mixins.u
 exception_subclasses.u
+singleton.u
+number.u
