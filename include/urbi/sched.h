@@ -1,11 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Per-scheduler API umbrella.  Consumers include this header (not usched.h
-   directly) to get both the chosen scheduler's interface and the
-   URBI_SCHED_HAS_* flags with correct defaults.
-   Include order: urbi/sched.h → usched.h → usched_cooperative.h (for M3).
-   usched_cooperative.h hard-defines URBI_SCHED_HAS_* to 0; the #ifndef
-   guards below are no-ops for cooperative and provide defaults for future
-   RT/deadline schedulers that omit some flags. */
+/* Per-scheduler API umbrella.
+ *
+ * Stability: core.
+ *
+ * Consumers include this header (not usched.h directly) to get both the
+ * chosen scheduler's interface and the URBI_SCHED_HAS_* flags with correct
+ * defaults.
+ * Include order: urbi/sched.h → usched.h → usched_cooperative.h (for M3).
+ * usched_cooperative.h hard-defines URBI_SCHED_HAS_* to 0; the #ifndef
+ * guards below are no-ops for cooperative and provide defaults for future
+ * RT/deadline schedulers that omit some flags. */
 
 #ifndef URBI_SCHED_H
 #define URBI_SCHED_H

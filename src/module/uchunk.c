@@ -16,18 +16,20 @@
 #include "vm/uvm.h"
 #include "module/umodule.h"
 #include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
-#include "value/uarena.h"
-#include "parse/uast.h"
-#include "emit/uemit.h"
-#include "lex/ulex.h"
-#include "parse/uparse.h"
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for vm->stdlib_closures walk */
 #include <stddef.h>    /* size_t */
 
-#if __STDC_HOSTED__
-#  include <stdio.h>  /* snprintf: used in urbi_repl_eval to format "src:line:col: msg" */
+#if !defined(URBI_BYTECODE_ONLY)
+#  include "value/uarena.h"
+#  include "parse/uast.h"
+#  include "emit/uemit.h"
+#  include "lex/ulex.h"
+#  include "parse/uparse.h"
+#  if __STDC_HOSTED__
+#    include <stdio.h>  /* snprintf: used in urbi_repl_eval to format "src:line:col: msg" */
+#  endif
 #endif
 
 
@@ -86,6 +88,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, const UModule *module, UValue *out_result
     return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
 }
 
+#if !defined(URBI_BYTECODE_ONLY)
 /* ---------------------------------------------------------------------------
  * urbi_steal_repl_protos (file-private helper)
  *
@@ -323,6 +326,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     uarena_destroy(&arena);
     return URBI_OK;
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 /* ---------------------------------------------------------------------------
  * urbi_run_script

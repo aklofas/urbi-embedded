@@ -61,7 +61,7 @@ knownConditionTrueFalse:src/object/uobject_slot.c:550
 // CPPCHK-001 (defer:M6) is the same finding under a different ID — filed
 // before CPPCHK-011 from a different cppcheck pass and resolved transitively
 // when Phase 19 closed CPPCHK-011.  Both close at v0.6.1-stdlib (Phase 12).
-knownConditionTrueFalse:src/runtime/uunwind.c:288
+knownConditionTrueFalse:src/runtime/uunwind.c:313
 
 // audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
 // dictated by the native-event callback function-pointer type registered
@@ -80,8 +80,8 @@ constParameterCallback:src/event/uevent_native.c:174
 // are correctness-needed under hosted builds (REPL diagnostics) and dead
 // under freestanding builds.  Line numbers updated when Phase 6 added
 // (void) sentinel initializations earlier in the function.
-unreadVariable:src/module/uchunk.c:236
-unreadVariable:src/module/uchunk.c:237
+unreadVariable:src/module/uchunk.c:239
+unreadVariable:src/module/uchunk.c:240
 
 // audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
 // expands to native-method callbacks whose signature is pinned by the

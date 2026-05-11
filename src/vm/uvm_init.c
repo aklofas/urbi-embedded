@@ -30,6 +30,7 @@
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
 #include "module/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
+#include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>
@@ -62,7 +63,12 @@ static uint64_t default_host_time_us_stub(void) {
 #endif
 }
 
-void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
+int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
+    /* T23 (VM-010 + VM-024): promoted from void to int return.  Sub-system
+     * allocations that can OOM now surface URBI_ERR_OOM; callers can detect
+     * partial init.  urbi_vm_destroy stays safe on any partial-init state
+     * reached before the bailout. */
+    int oom_seen = 0;
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
 #if __STDC_HOSTED__
@@ -138,8 +144,12 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
                 NULL, sizeof(UEventRing), vm->alloc_ud);
         if (vm->event_ring) {
             uevent_ring_init(vm->event_ring);
+        } else {
+            /* T23: surface partial-init OOM to caller via URBI_ERR_OOM.
+             * inject/drain still guard against NULL event_ring so the
+             * remainder of init runs without aborting; destroy is safe. */
+            oom_seen = 1;
         }
-        /* OOM: leave event_ring NULL; inject/drain guard against it. */
     }
 
     /* GC state machine.
@@ -258,13 +268,12 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Watcher pool: allocate after field zero-init and after GC init
      * so pool_alloc can use vm->current_white and vm->alloc_fn is set. */
-    uwatcher_pool_init(vm);
-    /* OOM note: if uwatcher_pool_init returns -1, watcher_pool_base stays NULL.
-     * pool_alloc will return NULL on any install attempt — still safe. Matches the
-     * event_ring OOM pattern from row 9 scheduler work: silently leaves the pointer
-     * NULL; the install API returns NULL on first use, surfacing the failure at the
-     * use site rather than at vm_init. The embedded caller should check
-     * vm->watcher_pool_base != NULL post-init. */
+    if (uwatcher_pool_init(vm) != 0) {
+        /* T23: surface OOM.  pool_alloc still returns NULL at use sites,
+         * so the install path remains safe even if we did not bail.
+         * Pre-T23 this was a silent leave-NULL. */
+        oom_seen = 1;
+    }
 
     /* Deferred slot-change ring (spec #4 §3.5): one allocation per VM. */
     vm->slot_change_reentrancy_warned = 0U;
@@ -284,8 +293,11 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
             urbi_zero(ring, ring_bytes);
             vm->deferred_slot_changes     = ring;
             vm->deferred_slot_changes_cap = (uint16_t)URBI_DEFERRED_SLOT_CHANGE_RING_SIZE;
+        } else {
+            /* T23: surface partial-init OOM.  drain/enqueue still guard
+             * against NULL so the remainder of init runs without aborting. */
+            oom_seen = 1;
         }
-        /* OOM: leave deferred_slot_changes NULL; drain/enqueue guards against it. */
     }
 
     /* Host time hook: default stub; embedded callers override post-init. */
@@ -321,6 +333,10 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     }
     vm->last_recv = urbi_value_nil();
 
+    /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
+     * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
+    vm->watcher_body_done_fn = NULL;
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
@@ -331,9 +347,19 @@ void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         if (ic != NULL) {
             urbi_zero(ic, sizeof(UOpOverloadIC));
             vm->op_overload_ic = ic;
+        } else {
+            /* T23: surface partial-init OOM.  Fallback helpers in
+             * uvm_op_overload.c guard against NULL so dispatch survives. */
+            oom_seen = 1;
         }
-        /* OOM: leave op_overload_ic NULL; fallback helpers guard against it. */
     }
+
+    /* T23 (VM-010 + VM-024): single return point for the success/OOM
+     * decision.  The destroy path is safe to call on partial-init state,
+     * so we let every sub-system init run before reporting OOM (this keeps
+     * the use-site guards live and exercises them in the OOM-coverage
+     * tests). */
+    return oom_seen ? URBI_ERR_OOM : URBI_OK;
 }
 
 void urbi_vm_destroy(UVM *vm) {

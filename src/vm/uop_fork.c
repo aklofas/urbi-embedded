@@ -250,13 +250,18 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
      * wait_next is otherwise only used when the parent is on a sleep queue
      * (REASON_SLEEP); here we repurpose it for the join-chain.  This is
      * safe because a strand cannot be simultaneously sleep-blocked AND
-     * join-blocked. */
+     * join-blocked.
+     *
+     * T31 / VM-004: block-then-link ordering.  Previously the parent was
+     * linked onto child->joiners_head BEFORE sched_strand_block, which
+     * meant a concurrent walker (e.g. an unwind walker reaching DEAD on
+     * the child between the two writes) could observe the parent on the
+     * join chain while its state was still RUNNING.  Block first so the
+     * parent's state transitions to WAITING|JOIN before it becomes
+     * reachable via the join chain. */
+    sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     s->wait_next         = child->joiners_head;
     child->joiners_head  = s;
-
-    /* Transition parent to WAITING_JOIN; sched_strand_block decrements
-     * strand_runnable_count and sets state = USTRAND_WAITING | REASON_JOIN. */
-    sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
 
     /* Signal caller to goto exit_strand. */
     return 1;

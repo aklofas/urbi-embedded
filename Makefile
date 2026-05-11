@@ -1,7 +1,28 @@
-SRC := $(wildcard src/*.c) \
-       $(wildcard src/lex/*.c) \
-       $(wildcard src/parse/*.c) \
-       $(wildcard src/emit/*.c) \
+# Aux layer — separate translation unit, separate archive. Filtered out
+# of the core SRC list below so liburbi.a (core) stays free of aux symbols.
+# Embedders opt into the aux layer by linking -laux at link time. See
+# CONTRIBUTING.md "Aux layer governance" and include/urbi/aux.h.
+AUX_SRCS := src/urbi_aux.c
+
+# URBI_BYTECODE_ONLY=1 promotes the v0.6.1 smoke approximation to a real
+# pure-strip build: src/lex/, src/parse/, src/emit/ are removed from the
+# source list.  Source-taking public entry points (urbi_compile_source,
+# urbi_repl_eval) become compile-errors at the call site via header
+# gating in <urbi/urbi.h>.  Bytecode-only entry points (urbi_run_chunk,
+# urbi_run_script, urbi_load_module) stay unconditional.  T15 + T16 in
+# M7 Wave 1.  T17 will follow up to clean any libc-leak unresolved
+# symbols surfaced by the real strip.
+ifeq ($(URBI_BYTECODE_ONLY),1)
+  CFLAGS += -DURBI_BYTECODE_ONLY=1
+  CPPFLAGS += -DURBI_BYTECODE_ONLY=1
+  COMPILER_FRONTEND_DIRS_EXCLUDED := 1
+endif
+
+SRC := $(filter-out $(AUX_SRCS), \
+       $(wildcard src/*.c)) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/parse/*.c)) \
+       $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/emit/*.c)) \
        $(wildcard src/vm/*.c) \
        $(wildcard src/gc/*.c) \
        $(wildcard src/sched/*.c) \
@@ -23,18 +44,27 @@ TARGET ?= host
 BUILDDIR := build/$(TARGET)
 
 OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+AUX_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(AUX_SRCS))
 TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
 LIB := $(BUILDDIR)/liburbi.a
+LIBURBI_AUX := $(BUILDDIR)/liburbi_aux.a
 RUNNER := $(BUILDDIR)/tests/unit/runner
 
 CFLAGS ?= -std=c99 -Wall -Wextra -Wpedantic -Os
 CPPFLAGS += -Iinclude -Isrc -Itests/unit
 RUNNER_WRAPPER ?=
 
-all: $(LIB)
+all: $(LIB) $(LIBURBI_AUX)
 
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
+
+# Aux layer archive — separate from $(LIB). Embedders link -laux at
+# link time; liburbi.a contains zero aux symbols (nm-verified).
+$(LIBURBI_AUX): $(AUX_OBJS)
+	$(AR) rcs $@ $^
+
+aux: $(LIBURBI_AUX)
 
 $(BUILDDIR)/src/%.o: src/%.c
 	@mkdir -p $(@D)
@@ -119,10 +149,42 @@ build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
 	@mkdir -p $(@D)
 	cc -std=c99 -Os -Iinclude -Isrc -c -o $@ $<
 
-HOST_OBJ      := $(patsubst src/%.c,build/host/src/%.o,$(SRC))
-HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o,$(HOST_OBJ))
+# T17 / Wave 1: bake-tool host source list must always include lex/parse/
+# emit, regardless of URBI_BYTECODE_ONLY.  The bake tool runs at host build
+# time and CALLS urbi_compile_source — both the symbol and the compiler
+# frontend must be present.  Computed as a flag-independent enumeration of
+# every src/**/*.c (matching the unfiltered $(SRC) expansion) minus the
+# self-referential .gen.o.
+HOST_BAKE_SRC := \
+       $(filter-out $(AUX_SRCS),$(wildcard src/*.c)) \
+       $(wildcard src/lex/*.c) \
+       $(wildcard src/parse/*.c) \
+       $(wildcard src/emit/*.c) \
+       $(wildcard src/vm/*.c) \
+       $(wildcard src/gc/*.c) \
+       $(wildcard src/sched/*.c) \
+       $(wildcard src/watcher/*.c) \
+       $(wildcard src/event/*.c) \
+       $(wildcard src/tag/*.c) \
+       $(wildcard src/changed/*.c) \
+       $(wildcard src/module/*.c) \
+       $(wildcard src/value/*.c) \
+       $(wildcard src/runtime/*.c) \
+       $(wildcard src/realm/*.c) \
+       $(wildcard src/object/*.c) \
+       $(wildcard src/stdlib/*.c)
+HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
+                              $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
 
+# T17 / Wave 1: the bake tool is a HOST-ONLY build-time helper.  Under
+# URBI_BYTECODE_ONLY=1 the main $(SRC) excludes lex/parse/emit and
+# urbi_compile_source becomes a header-gated absent symbol — neither of
+# which the bake tool can use.  Solution: when URBI_BYTECODE_ONLY=1,
+# don't try to (re)build the bake tool.  The committed
+# src/stdlib/urbi_stdlib_bytecode.gen.c is consumed as-is.  Cross-arch
+# bytecode-only builds never invoke the bake tool by design.
+ifneq ($(URBI_BYTECODE_ONLY),1)
 tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_STUB_O)
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
@@ -150,6 +212,7 @@ src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
 	    src/stdlib/STDLIB_ORDER.txt \
 	    src/stdlib \
 	    $@
+endif  # URBI_BYTECODE_ONLY != 1
 
 # --- Integration tests --------------------------------------------------
 #
@@ -180,13 +243,22 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(TEST_OBJ) test-integration test-chk
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIB) -lm
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
 .PHONY: test-loc-cap
 test-loc-cap:
 	@./tests/scripts/check_loc_cap.sh
+
+# T34 (v0.7.0 Wave 1): GC roots-coverage gate.  Asserts every UVAL_*
+# enum value declared in include/urbi/types.h is referenced at least
+# once under src/gc/.  Closes the bug class that surfaced as the
+# M4-era UVAL_OBJECT / UVAL_EVENT shading gap (fixed inline at v0.6.2
+# Phase 6).  Hard-fail in releasetest Phase 1 below.
+.PHONY: test-gc-roots-coverage
+test-gc-roots-coverage:
+	@./tests/scripts/check-gc-roots-coverage.sh
 
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
@@ -209,17 +281,14 @@ test-docstring-coverage:
 test-bake-smoke: tools/urbi-compile-stdlib
 	@./tests/scripts/bake_smoke.sh
 
-# Phase 13 (v0.6.1-stdlib Wave 2) URBI_BYTECODE_ONLY emulation gate.
-# The real URBI_BYTECODE_ONLY build flag — compile out the
-# lex/parse/emit subsystems, ship a runtime that can only execute
-# pre-baked bytecode — lands at M7 per the v1.0 implementation
-# design spec §1.1.  Phase 13 lands a smoke approximation that
-# proves the architectural shape is sound: lex/parse/emit + the
-# two parser-coupled root sources (src/urbi.c + src/module/uchunk.c)
-# CAN be elided, and the resulting archive still exports
-# urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
-# urbi_lock_heap.  Hard-fail in releasetest below.
-# See tests/scripts/build-bytecode-only.sh.
+# URBI_BYTECODE_ONLY smoke gate — originally a Phase 13 (v0.6.1-stdlib
+# Wave 2) shape-only approximation; promoted at v0.7.0-c-api T15 to a
+# real strip via the main Makefile (see COMPILER_FRONTEND_DIRS_EXCLUDED
+# above).  This script still drives a standalone bypass-build to verify
+# the architectural shape independently of the main Makefile and to
+# confirm urbi_stdlib_boot / urbi_vm_init / urbi_vm_destroy /
+# urbi_lock_heap remain exported after the strip.  Hard-fail in
+# releasetest below.  See tests/scripts/build-bytecode-only.sh.
 .PHONY: test-bytecode-only
 test-bytecode-only:
 	@./tests/scripts/build-bytecode-only.sh
@@ -423,7 +492,7 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
-    test-bake-smoke test-bytecode-only
+    test-bake-smoke test-bytecode-only test-gc-roots-coverage
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -618,6 +687,54 @@ cross-riscv:
 		AR=riscv64-unknown-elf-ar \
 		all
 
+# T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
+# Used by `make test-freestanding` (T18) to verify the freestanding subset
+# contract on the embedded targets (no hosted libc fallthrough).
+#
+# Distinct TARGET names give each variant its own $(BUILDDIR) tree
+# (build/cross-arm-bytecode-only/, build/cross-riscv-bytecode-only/), so
+# `make cross-arm cross-arm-bytecode-only` can coexist without rebuild
+# churn.  URBI_BYTECODE_ONLY=1 propagates through the recursive $(MAKE)
+# invocation (-DURBI_BYTECODE_ONLY=1 reaches the CFLAGS+CPPFLAGS append
+# in the top-of-Makefile gate).
+cross-arm-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-arm-bytecode-only \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		all
+
+cross-riscv-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-riscv-bytecode-only \
+		CC=riscv64-unknown-elf-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DURBI_WATCHER_POOL_SIZE=64" \
+		AR=riscv64-unknown-elf-ar \
+		all
+
+# T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
+# liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
+# fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
+# (T19).  Not wired into `releasetest` — the cross-toolchain dependency makes
+# it ill-suited as a default local gate (matches the existing releasetest
+# policy that excludes cross-arm/cross-riscv).  CI invokes it directly.
+.PHONY: test-freestanding
+test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only
+	sh tests/scripts/test-freestanding.sh build/cross-arm-bytecode-only/liburbi.a
+	sh tests/scripts/test-freestanding.sh build/cross-riscv-bytecode-only/liburbi.a
+
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
 # adding/removing source files.
@@ -805,4 +922,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage oracle-diff

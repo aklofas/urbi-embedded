@@ -26,7 +26,11 @@ struct UVM;
  *
  * On OOM: returns NULL. Caller must check and propagate.
  *
- * Thread-safety: NOT thread-safe. Single-threaded per VM at v1.0.
+ * Thread-safety: NOT thread-safe. Single-threaded per VM at v1.0.  Public
+ * entry points (ustr_intern, uintern_destroy, uintern_count) are guarded
+ * by URBI_ASSERT_NOT_ISR since T30 / FOUND-011 — ISR-deposited events that
+ * intern would race the cooperative-VM intern table.  ustr_op_name
+ * inherits the guard via its forward to ustr_intern.
  *
  * Lifetime invariants (FOUND-044, v0.5.5):
  *   - Intern pointers are NOT cross-VM-stable.  Two distinct UVMs each own

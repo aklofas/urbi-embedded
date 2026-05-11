@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* include/urbi/types.h
  *
+ * Stability: core (value types layout-pinned via _Static_assert; see T6).
+ *
  * Public-facing type declarations needed by the rest of the public API.
  *
  * Created at v0.5.5 (Wave 3) to break the cycle where include/urbi/urbi.h
@@ -108,6 +110,28 @@ static inline UValue urbi_value_nil(void) {
     return v;
 }
 
+/* === UValue layout pin (Wave 1 T6) ===
+ *
+ * Compile-time assertion that mirrors the runtime invariants tested in
+ * tests/unit/test_uvalue_layout.c. Catches header/lib mismatches at
+ * compile time when host code includes this header against a different
+ * library build.
+ *
+ * Behind URBI_API_PIN_LAYOUT (default ON). Hosts that intentionally rebuild
+ * with non-standard alignment / packing can define this to 0 to skip. */
+#ifndef URBI_API_PIN_LAYOUT
+#define URBI_API_PIN_LAYOUT 1
+#endif
+
+#if URBI_API_PIN_LAYOUT
+_Static_assert(sizeof(UValue) == 16,
+               "UValue must be exactly 16 bytes (ABI pin)");
+_Static_assert(offsetof(UValue, v) == 8,
+               "UValue.v must be at offset 8 (ABI pin)");
+_Static_assert(offsetof(UValue, kind) == 0,
+               "UValue.kind must be at offset 0 (ABI pin)");
+#endif
+
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
@@ -145,7 +169,12 @@ typedef enum {
      * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
      * urbi_load_translate_load_err for the file-load surface).  M6
      * Phase 4 reserves this code; the empty-blob path never reaches it. */
-    URBI_ERR_STDLIB_BOOT_FAILED         = -15
+    URBI_ERR_STDLIB_BOOT_FAILED         = -15,
+    /* URBI_ERR_API_VERSION_MISMATCH: returned by urbi_aux_check_version
+     * (lands in Phase 2 T13) when the runtime library's API version
+     * disagrees with what the embedder compiled against. MINOR-additive
+     * per the bump policy in <urbi/version.h>. */
+    URBI_ERR_API_VERSION_MISMATCH       = -16
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===

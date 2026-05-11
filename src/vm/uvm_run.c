@@ -150,17 +150,13 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         if (strand.state == USTRAND_STATE_READY) {
             /* OP_YIELD (between separator children) or per-strand budget.
                Remove from ready queue (sched_strand_yield enqueued it),
-               reset to RUNNING, and re-enter dispatch. */
+               reset to RUNNING, and re-enter dispatch.
+               T24 / VM-011: route through sched_dequeue_ready_head so the
+               runnable-count post-condition (and ready-queue link cleanup)
+               lives at the sched boundary, not at the driver site.  Future
+               drivers that pop the ready head get the invariant for free. */
             if (vm->ready_head == &strand) {
-                vm->ready_head = strand.ready_next;
-                if (vm->ready_head != NULL)
-                    vm->ready_head->ready_prev = NULL;
-                else
-                    vm->ready_tail = NULL;
-                if (vm->strand_runnable_count > 0)
-                    vm->strand_runnable_count--;
-                strand.ready_next = NULL;
-                strand.ready_prev = NULL;
+                sched_dequeue_ready_head(vm);
             }
             strand.state = USTRAND_STATE_RUNNING;
             continue;

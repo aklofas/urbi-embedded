@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Public C API. */
+/* Public C API.
+ *
+ * Stability: core. PR-review rule: changes here need an ABI-bump
+ * justification per <urbi/version.h> policy.
+ *
+ * Holding a pointer to an opaque type (UVM*, UStrand*, etc.) is part of
+ * the ABI; reading through it is not. */
 
 #ifndef URBI_H
 #define URBI_H
@@ -32,6 +38,17 @@ const char *urbi_version(void);
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.
+ *
+ * WARNING (T28 / FOUND-013): not ISR-safe.  Walks tag->member_strands_head
+ * and is reentrant via host callbacks invoked by waker logic (e.g.
+ * sched_strand_unblock through urbi_event_drain_handler).  Embedders
+ * calling from ISR contexts must use the urbi_inject_event ring instead
+ * and let the safepoint drain (run on the consumer thread) translate the
+ * event id into a tag stop.  The urbi_in_isr(vm) check fires as
+ * URBI_ASSERT_NOT_ISR in debug builds when called from an ISR context
+ * detected by the caller-installed ISR check function (see
+ * urbi_set_isr_check_fn / urbi_in_isr below).
+ *
  * T31 wires the real cross-strand walk; T12 provides a validity-check stub. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
@@ -164,9 +181,16 @@ UStepResult urbi_step(struct UVM *vm,
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
                    const struct UModule *module, UValue *out_result);
 
+/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+ * compiler frontend (src/lex, src/parse, src/emit) is not linked in
+ * bytecode-only builds, so urbi_repl_eval cannot function — embedders
+ * trying to call it get a compile error at the call site rather than
+ * an unresolved link symbol. */
+#if !defined(URBI_BYTECODE_ONLY)
 int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
                    const char *line, size_t line_len,
                    char *out_buf, size_t out_buf_size);
+#endif
 
 int urbi_run_script(struct UVM *vm, struct URealm *realm, const struct UModule *module);
 
@@ -207,11 +231,17 @@ int urbi_load_translate_load_err(int load_err);
  *   URBI_ERR_INVALID_ARG — NULL vm/src/out_buf/out_len.
  *   URBI_ERR_OOM         — allocation or serialize failure.
  *   URBI_ERR_INVALID_ARG — parse or emit error (see err_buf for details). */
+/* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
+ * compiler frontend (src/lex, src/parse, src/emit) is not linked in
+ * bytecode-only builds.  Pre-baked bytecode is loaded through
+ * urbi_load_module / urbi_run_chunk instead. */
+#if !defined(URBI_BYTECODE_ONLY)
 int urbi_compile_source(struct UVM *vm,
                         const char *src, size_t src_len,
                         const char *src_name,
                         unsigned char **out_buf, size_t *out_len,
                         char *err_buf, size_t err_cap);
+#endif
 
 /* === Row 9 strand lifecycle C API (M3 / T20) ===
  *
@@ -253,7 +283,14 @@ void            urbi_strand_destroy(struct UStrand *s);
  * Returns URBI_ERR_EVENT_RING_FULL if the ring is full.
  *
  * The VM drains injected events at the start of each urbi_step() call.
- * Single-producer / single-consumer: one ISR writer + one thread reader. */
+ * Single-producer / single-consumer: one ISR writer + one thread reader.
+ *
+ * Payload alignment: 8 bytes (T25 / EVENT-003).  Embedders pushing typed
+ * payloads (uint64_t, double, struct fields) from ISR contexts may rely
+ * on natural alignment for atomic-load semantics on aligned-only
+ * architectures.  The underlying ring entry's payload field is
+ * _Alignas(8); copy-in via the `payload` argument preserves this
+ * alignment in the stored entry. */
 int urbi_inject_event(struct UVM *vm, uint32_t event_id,
                       const void *payload, size_t len);
 
@@ -279,6 +316,29 @@ typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          uint32_t event_id,
                                          UValue payload);
 void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
+
+/* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
+ *
+ * urbi_watcher_handle_t is an opaque int — Wave 2 (ESP-IDF port) defines
+ * the real watcher-identity story; Wave 1 provides the seam.  Embedders
+ * can observe watcher body completion for telemetry, profiling, or
+ * hot-reload diagnostics.
+ *
+ * Callback is invoked from urbi_watcher_body_completed after internal
+ * cleanup (back-pointers cleared) and before any re-spawn triggered by
+ * URBI_WATCHER_PENDING_REFIRE.  At Wave 1 the handle is a placeholder
+ * (always 0); the completion_status mirrors the strand's fatal_status
+ * (UEXEC_OK / THROW / TAG_STOP / CANCEL) cast to int.
+ *
+ * Default is NULL after urbi_vm_init; pass NULL to uninstall. */
+typedef int urbi_watcher_handle_t;
+
+typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
+                                          urbi_watcher_handle_t handle,
+                                          int completion_status);
+
+void urbi_set_watcher_body_done_fn(struct UVM *vm,
+                                   urbi_watcher_body_done_fn fn);
 
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
@@ -433,7 +493,13 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  *
  * Conservative scope: pure rename.  Signatures, semantics, and error
  * codes are byte-identical to the pre-v0.5.5 internal forms. */
-void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+/* T23 (v0.7.0 Wave 1) — returns URBI_OK on success, URBI_ERR_OOM if any
+ * sub-system allocation (event_ring, deferred_slot_changes, watcher pool,
+ * op_overload IC, ...) fails.  Pre-v0.7.0 this returned void; the change
+ * is permitted under the pre-v1.0 ABI escape clause documented in
+ * <urbi/version.h>.  urbi_vm_destroy remains safe to call regardless of
+ * the return value (partial-init state is reaped on the destroy path). */
+int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UModule *module, UValue *out);

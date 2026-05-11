@@ -764,6 +764,86 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 14 (T29 / FOUND-009): run_cleanup_with_replace recursion bound.
+   Pre-set cleanup_run_depth = URBI_CLEANUP_MAX so the very first cleanup-body
+   invocation hits the overflow branch.  Push a TRY_FRAME with HAS_FINALLY and
+   set pending_unwind = THROW so the unwind walker would invoke
+   run_cleanup_with_replace for the finally body.
+
+   Verify: strand transitions to DEAD with fatal_status set; pending_unwind is
+   cleared (so the dispatcher doesn't re-enter the unwind walker at the next
+   safepoint); fatal_value carries URBI_ERR_CLEANUP_OVERFLOW. */
+UTEST(unwind_cleanup_run_depth_overflow_marks_fatal)
+{
+    UVM vm;
+    UStrand s;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue *reg_stack = strand_setup_minimal(&s, &vm);
+    UASSERT(reg_stack != NULL);
+
+    /* Push a TRY_FRAME with HAS_FINALLY — would normally call
+     * run_cleanup_with_replace during a THROW walk. */
+    UCleanupEntry *e = strand_cleanup_push(&s);
+    UASSERT(e != NULL);
+    e->kind           = (uint8_t)UCLEANUP_TRY_FRAME;
+    e->flags          = FLAG_HAS_FINALLY;
+    e->register_base  = 0;
+    e->register_count = 0;
+    e->handler_pc     = 0;
+    e->owning_tag     = NULL;
+    e->catch_pattern  = NULL;
+
+    /* Pre-set the recursion counter to the bound so the first
+     * run_cleanup_with_replace entry escalates. */
+    s.cleanup_run_depth = (uint16_t)URBI_CLEANUP_MAX;
+
+    UValue throwval;
+    throwval.kind = (uint8_t)UVAL_INT;
+    throwval.v.i  = 99;
+    s.unwind_value   = throwval;
+    s.pending_unwind = UEXEC_THROW;
+
+    urbi_unwind(&s);
+
+    /* Strand is dead; fatal_value carries the overflow error code.
+     * UEXEC_CANCEL is used (highest-priority fatal kind per row 7 C-1).
+     * fatal_status is set to CANCEL, fatal_value to URBI_ERR_CLEANUP_OVERFLOW. */
+    UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
+    UASSERT_EQ((int)s.fatal_status, (int)UEXEC_CANCEL);
+    UASSERT_EQ((int)s.fatal_value.kind, (int)UVAL_INT);
+    UASSERT_EQ((long)s.fatal_value.v.i, (long)URBI_ERR_CLEANUP_OVERFLOW);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* Case 15 (T29 / FOUND-009): counter is properly decremented after a normal
+   cleanup-body invocation completes.  Push a CALL_FRAME entry (will absorb
+   RETURN) and a TRY_FRAME with HAS_FINALLY ahead of it.  Set pending_unwind
+   to THROW.  After the walker runs, cleanup_run_depth must be back to 0
+   (the finally body's invocation incremented then decremented). */
+UTEST(unwind_cleanup_run_depth_decrements_after_normal_return)
+{
+    /* Sanity check: counter starts at 0 in a fresh strand. */
+    UVM vm;
+    UStrand s;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    UValue *reg_stack = strand_setup_minimal(&s, &vm);
+    UASSERT(reg_stack != NULL);
+
+    UASSERT_EQ((unsigned)s.cleanup_run_depth, 0U);
+
+    /* Drive a no-op unwind: pending_unwind = OK -> walker is no-op. */
+    s.pending_unwind = UEXEC_OK;
+    urbi_unwind(&s);
+    UASSERT_EQ((unsigned)s.cleanup_run_depth, 0U);
+
+    ustrand_destroy(&s, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===== Suite registration ===== */
 
 void test_unwind_suite(void) {
@@ -794,4 +874,8 @@ void test_unwind_suite(void) {
               unwind_nested_try_frames_innermost_catches);
     utest_run("unwind: THROW propagates through TAG_SCOPE (M3 stub passthrough)",
               unwind_throw_propagates_through_tag_scope);
+    utest_run("unwind: cleanup_run_depth overflow marks strand fatal (T29 / FOUND-009)",
+              unwind_cleanup_run_depth_overflow_marks_fatal);
+    utest_run("unwind: cleanup_run_depth decrements after normal walk (T29 / FOUND-009)",
+              unwind_cleanup_run_depth_decrements_after_normal_return);
 }

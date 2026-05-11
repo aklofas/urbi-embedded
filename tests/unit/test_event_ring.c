@@ -7,6 +7,7 @@
 #include "event/uevent_ring.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
+#include <stdalign.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -209,8 +210,9 @@ UTEST(event_ring_zero_payload_null_ptr_accepted)
     urbi_vm_destroy(&vm);
 }
 
-/* ---- Case 10: event_queue_count tracks drain count --------------------- */
-UTEST(event_ring_drain_increments_event_queue_count)
+/* ---- Case 10 (T26 / EVENT-017): drain without handler advances read_idx
+ *      but no longer bumps event_queue_count (M3-compat fallback removed). */
+UTEST(event_ring_drain_without_handler_advances_read_idx_only)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -225,8 +227,10 @@ UTEST(event_ring_drain_increments_event_queue_count)
 
     uevent_ring_drain(&vm);
 
-    /* Each drained entry should increment event_queue_count by 1. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 3U));
+    /* T26: no drain handler registered → entries silently discarded;
+     * event_queue_count is owned by M5+ UEvent emit paths, not by the
+     * ISR-ring drain. */
+    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);
@@ -319,6 +323,16 @@ UTEST(event_ring_multi_thread_fuzz_100k)
 }
 #endif /* __linux__ */
 
+/* ---- Case 12 (T25 / EVENT-003): payload field is 8-byte aligned ------- */
+UTEST(uevent_ring_entry_payload_is_8aligned)
+{
+    UEventRingEntry e;
+    /* The payload field itself must be 8-byte aligned within the entry. */
+    UASSERT_EQ((long long)((uintptr_t)&e.payload % 8U), 0LL);
+    /* The struct as a whole inherits >= 8-byte alignment from the field. */
+    UASSERT_EQ((long long)_Alignof(UEventRingEntry), 8LL);
+}
+
 /* ---- Test suite registration ------------------------------------------ */
 
 void test_event_ring_suite(void)
@@ -341,8 +355,10 @@ void test_event_ring_suite(void)
               event_ring_overflow_not_bumped_on_success);
     utest_run("event_ring_zero_payload_null_ptr_accepted",
               event_ring_zero_payload_null_ptr_accepted);
-    utest_run("event_ring_drain_increments_event_queue_count",
-              event_ring_drain_increments_event_queue_count);
+    utest_run("event_ring_drain_without_handler_advances_read_idx_only",
+              event_ring_drain_without_handler_advances_read_idx_only);
+    utest_run("uevent_ring_entry_payload_is_8aligned",
+              uevent_ring_entry_payload_is_8aligned);
 #ifdef __linux__
     utest_run("event_ring_multi_thread_fuzz_100k",
               event_ring_multi_thread_fuzz_100k);

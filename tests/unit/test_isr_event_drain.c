@@ -80,8 +80,8 @@ UTEST(drain_handler_payload_is_nil)
     urbi_vm_destroy(&vm);
 }
 
-/* ---- Case 3: no handler → falls back to event_queue_count -------------- */
-UTEST(no_handler_increments_event_queue_count)
+/* ---- Case 3 (T26 / EVENT-017): no handler → entries silently discarded -- */
+UTEST(no_handler_silently_discards_entries)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -93,7 +93,11 @@ UTEST(no_handler_increments_event_queue_count)
     urbi_inject_event(&vm, 2U, NULL, 0U);
     uevent_ring_drain(&vm);
 
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 2U));
+    /* T26: M3-compat fallback removed; event_queue_count is no longer
+     * bumped by uevent_ring_drain when no handler is registered.  Entries
+     * are still consumed from the ring (read_idx advances), but they
+     * don't surface as UEvents in the scheduler's queue. */
+    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
     UASSERT(!uevent_ring_has_pending(vm.event_ring));
 
     urbi_vm_destroy(&vm);
@@ -116,8 +120,8 @@ UTEST(null_handler_removes_drain_callback)
 
     /* Handler must NOT have been called. */
     UASSERT_EQ((long long)g_capture.call_count, 0LL);
-    /* Fallback path must have incremented event_queue_count. */
-    UASSERT_EQ((long long)vm.event_queue_count, (long long)(before + 1U));
+    /* T26: M3-compat fallback removed; event_queue_count stays put. */
+    UASSERT_EQ((long long)vm.event_queue_count, (long long)before);
 
     urbi_vm_destroy(&vm);
 }
@@ -173,8 +177,8 @@ void test_isr_event_drain_suite(void)
               drain_handler_called_per_entry);
     utest_run("drain_handler_payload_is_nil",
               drain_handler_payload_is_nil);
-    utest_run("no_handler_increments_event_queue_count",
-              no_handler_increments_event_queue_count);
+    utest_run("no_handler_silently_discards_entries",
+              no_handler_silently_discards_entries);
     utest_run("null_handler_removes_drain_callback",
               null_handler_removes_drain_callback);
     utest_run("drain_empty_ring_does_not_call_handler",

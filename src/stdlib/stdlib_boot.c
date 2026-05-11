@@ -15,7 +15,8 @@
  * baseline the blob is empty (STDLIB_ORDER.txt empty), so this branch
  * is dead code that becomes live in Phase 10 when the order file is
  * populated.  Parser-independent: the blob is bytecode, not source —
- * verified by Phase 13's URBI_BYTECODE_ONLY smoke build.
+ * verified by the URBI_BYTECODE_ONLY=1 build (T15 in v0.7.0-c-api)
+ * which strips src/lex/, src/parse/, src/emit/ entirely.
  *
  * The deserialized UModule lives on vm->stdlib_module, freed at
  * urbi_vm_destroy (see src/vm/uvm_init.c).  Idempotent:

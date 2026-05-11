@@ -40,7 +40,9 @@ extern void test_lex_unicode_suite(void);
 extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
+extern void test_api_version_suite(void);
 extern void test_arena_suite(void);
+extern void test_aux_version_check_suite(void);
 extern void test_parser_suite(void);
 extern void test_varint_suite(void);
 extern void test_module_suite(void);
@@ -48,6 +50,7 @@ extern void test_emit_suite(void);
 extern void test_vm_suite(void);
 extern void test_pipeline_suite(void);
 extern void test_uvalue_suite(void);
+extern void test_uvalue_layout_suite(void);
 extern void test_multi_vm_suite(void);
 extern void test_intern_suite(void);
 extern void test_funcstate_suite(void);
@@ -179,6 +182,8 @@ extern void test_emit_class_multi_slot_suite(void);
 extern void test_vm_operator_overload_suite(void);
 extern void test_emit_this_suite(void);
 extern void test_emit_closure_capture_suite(void);
+extern void test_vm_init_oom_suite(void);
+extern void test_watcher_body_done_fn_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -195,7 +200,9 @@ static const struct suite_entry suites[] = {
     {"ast_string",                 test_ast_string_suite},
     {"emit_string",                test_emit_string_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
+    {"api_version",                test_api_version_suite},
     {"arena",                      test_arena_suite},
+    {"aux_version_check",          test_aux_version_check_suite},
     {"parser",                     test_parser_suite},
     {"varint",                     test_varint_suite},
     {"module",                     test_module_suite},
@@ -203,6 +210,7 @@ static const struct suite_entry suites[] = {
     {"vm",                         test_vm_suite},
     {"pipeline",                   test_pipeline_suite},
     {"uvalue",                     test_uvalue_suite},
+    {"uvalue_layout",              test_uvalue_layout_suite},
     {"multi_vm",                   test_multi_vm_suite},
     {"intern",                     test_intern_suite},
     {"funcstate",                  test_funcstate_suite},
@@ -334,6 +342,8 @@ static const struct suite_entry suites[] = {
     {"vm_operator_overload",     test_vm_operator_overload_suite},
     {"emit_this",                test_emit_this_suite},
     {"emit_closure_capture",    test_emit_closure_capture_suite},
+    {"vm_init_oom",             test_vm_init_oom_suite},
+    {"watcher_body_done_fn",    test_watcher_body_done_fn_suite},
     /* Add new suites here as test files are added. */
 };
 

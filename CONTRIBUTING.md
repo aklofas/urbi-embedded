@@ -97,6 +97,37 @@ Other:
 - No `#include` cycles.
 - Direct `#include` for everything used; do not rely on transitive pulls. `make tidy` flags `misc-include-cleaner` violations (system-wide sweep at v0.5.5; some intentional skips for the public/internal layer split).
 
+## ABI version policy
+
+The public C API surface is versioned via `<urbi/version.h>` macros:
+`URBI_API_VERSION_MAJOR`, `URBI_API_VERSION_MINOR`, `URBI_API_VERSION_PATCH`.
+Strictly separate from `URBI_BYTECODE_VERSION_BYTE` (wire format) and
+`urbi_version()` (project release string).
+
+### Bump categories
+
+- **MAJOR** — removed function, changed signature, removed/renumbered enum value, struct-layout change visible across the boundary, removed `URBI_ERR_*` slot.
+- **MINOR** — additive: new function, new enum value appended, new `URBI_ERR_*` slot at the next free index, new build flag.
+- **PATCH** — bug fix only, no header change at all.
+
+### Pre-v1.0 escape clause
+
+While `URBI_API_VERSION_MAJOR == 0`, MINOR bumps **may** break ABI per standard semver convention. Each MINOR bump must enumerate breakages in CHANGELOG. Strict policy goes live at v1.0.0.
+
+### What versions track
+
+| Concept | Macro / Getter | Scope | Bumps when |
+|---|---|---|---|
+| C API ABI | `URBI_API_VERSION_*` / `urbi_api_version()` | Public headers | Per categories above |
+| Bytecode wire format | `URBI_BYTECODE_VERSION_BYTE` (0x16) | Loader/runtime | New opcode / wire layout change |
+| Project release | `urbi_version()` | This file's heading | Each tag |
+
+Keeping these independent matches Lua's `LUA_VERSION_NUM` / `LUAC_VERSION` / `LUA_RELEASE` pattern.
+
+### Aux layer governance
+
+`<urbi/aux.h>` + `liburbi_aux.a` is the convenience layer. Rule: every aux function must be **strictly implementable via `<urbi/urbi.h>` public API**. No private header access, no internal state peeking, no performance shortcuts. Enforced at PR review: if a proposed aux function can't meet the rule, either refactor until it can, or propose the addition to core (paying the cost against the < 80-fn `urbi.h` budget per REVIVAL §6).
+
 ## Layout policy
 
 Source files live under per-subsystem folders:

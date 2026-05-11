@@ -17,6 +17,7 @@
 #ifndef UEVENT_RING_H
 #define UEVENT_RING_H
 
+#include <stdalign.h>  /* T25 / EVENT-003: _Alignas on UEventRingEntry.payload */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -38,10 +39,28 @@ typedef char uevent_ring_depth_must_be_power_of_two[
     ((URBI_EVENT_RING_DEPTH & (URBI_EVENT_RING_DEPTH - 1)) == 0) ? 1 : -1
 ];
 
+/* T27 / EVENT-024: sanity floor + ceiling on URBI_EVENT_RING_DEPTH.
+ * The header advertises that M4 footprint builds override the default 256
+ * to 32; both ends of that range must remain compile-time enforced so a
+ * future override that breaks invariants (e.g. depth=4 starves the budget
+ * loop, depth=4096 blows arm cap) fails at compile rather than at runtime.
+ * The pre-existing power-of-2 typedef trick above stays. */
+_Static_assert(URBI_EVENT_RING_DEPTH >= 8,
+               "URBI_EVENT_RING_DEPTH must be at least 8 (sanity floor)");
+_Static_assert(URBI_EVENT_RING_DEPTH <= 1024,
+               "URBI_EVENT_RING_DEPTH must be at most 1024 (sanity ceiling)");
+
 typedef struct UEventRingEntry {
     uint32_t event_id;
     uint16_t payload_len;
-    uint8_t  payload[URBI_EVENT_PAYLOAD_MAX];
+    /* T25 / EVENT-003: payload is 8-byte aligned so embedders pushing typed
+     * payloads (uint64_t, double, struct fields) from ISR contexts get
+     * atomic-load semantics on aligned-only architectures.  Pads the
+     * entry to 24 B on host (was 22 B unaligned).  Public contract is
+     * captured at urbi_inject_event in <urbi/urbi.h>. Using GCC/clang
+     * __attribute__((aligned)) instead of C11 _Alignas to keep -std=c99
+     * compatibility (project compiles with -std=c99). */
+    uint8_t payload[URBI_EVENT_PAYLOAD_MAX] __attribute__((aligned(8)));
 } UEventRingEntry;
 
 /* Indices stored as plain volatile uint32_t; acquire/release ordering is

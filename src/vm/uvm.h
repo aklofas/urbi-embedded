@@ -356,7 +356,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *
      * Invariant: vm->in_watcher_eval implies that any urbi_emit_slot_change_slow
      * invocation routes the slot-change emit through the deferred ring, NOT the
-     * immediate path. See src/emit/uchanged_emit.c for the routing. */
+     * immediate path. See src/changed/uchanged_emit.c for the routing. */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     /* in_watcher_scratch (WATCH-036): caller-owned re-entry guard.  Set
      * TRUE before calling urbi_run_closure_on_scratch[_with_payload];
@@ -567,17 +567,33 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Pointer to UOpOverloadIC keeps the UVM struct small so tests that
      * put `UVM vm;` on the C stack do not overflow. */
     UOpOverloadIC *op_overload_ic;
+
+    /* T33 (v0.7.0 Wave 1): host-callback hook fired by
+     * urbi_watcher_body_completed after internal cleanup, before any
+     * re-spawn.  NULL default; installed via urbi_set_watcher_body_done_fn.
+     * Declared as inline function-pointer to keep uvm.h independent of
+     * <urbi/urbi.h> (which forward-declares UVM and would create a
+     * circular include).  The public typedef urbi_watcher_body_done_fn
+     * in <urbi/urbi.h> expands to a function pointer with the exact same
+     * shape, so the setter wires through cleanly across the seam. */
+    void (*watcher_body_done_fn)(struct UVM *vm, int handle, int completion_status);
 } UVM;
 
 /* --- API --- */
 
 /* Initialize vm. On hosted builds, passing alloc_fn == NULL wires up a
    stdlib-realloc shim internally. On freestanding builds the caller MUST
-   supply alloc_fn; if NULL is passed, urbi_vm_init still returns (cannot fail
-   at M1), but any subsequent urbi_vm_run will NULL-deref in the frame
-   allocation path — caller's bug. Zero-initializes last_error and
-   last_errmsg. */
-void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+   supply alloc_fn; if NULL is passed, urbi_vm_init returns URBI_OK (no
+   subsystem allocations attempt to run through the NULL alloc_fn), but
+   any subsequent urbi_vm_run will NULL-deref in the frame allocation
+   path — caller's bug. Zero-initializes last_error and last_errmsg.
+
+   T23 (VM-010 + VM-024, v0.7.0 Wave 1) — promoted from void to int return.
+   Returns URBI_OK on success, URBI_ERR_OOM if any sub-system allocation
+   fails (event_ring, watcher pool, deferred_slot_changes ring, operator
+   overload IC).  urbi_vm_destroy remains safe to call regardless of the
+   return value; partial-init state is reaped by the destroy path. */
+int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
 /* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)
