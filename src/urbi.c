@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 
 #include "urbi/urbi.h"
+#include "urbi/version.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "module/umodule.h"
@@ -32,6 +33,12 @@
 #define URBI_VERSION "0.5.7-fixes"
 
 const char *urbi_version(void) { return URBI_VERSION; }
+
+void urbi_api_version(int *out_major, int *out_minor, int *out_patch) {
+    if (out_major) *out_major = URBI_API_VERSION_MAJOR;
+    if (out_minor) *out_minor = URBI_API_VERSION_MINOR;
+    if (out_patch) *out_patch = URBI_API_VERSION_PATCH;
+}
 
 /* urbi_panic: fatal runtime error.
  * Hosted: writes msg to stderr, then aborts.
