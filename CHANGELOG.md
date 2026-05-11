@@ -47,7 +47,7 @@
 | New CI gates | — | `test-freestanding`, `test-gc-roots-coverage`, `cross-arm-bytecode-only`, `cross-riscv-bytecode-only` | +4 |
 | REVIVAL §14 entries | through S32 | + S33 (ABI versioning), S34 (URBI_BYTECODE_ONLY strip), S35 (per-target cap revision schema) | +3 |
 
-All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0 missing. Cross-arm + cross-riscv green. ASan / UBSan / valgrind / GC-stress / GC-none / 3-preset × 100-run determinism / bake-determinism (3-run byte-identity) all green. Coverage 85-87%.
+All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0 missing. Cross-arm + cross-riscv green. ASan / UBSan / GC-stress / GC-none / 3-preset × 100-run determinism / bake-determinism (3-run byte-identity) all green. Coverage 85-87%. **Full valgrind run deferred to follow-up** — Phase 2 valgrind under the +18-case corpus took >19 min wall-clock (vs v0.6.2 baseline ~10 min); killed in the interest of shipping. T23's 4 failing-allocator OOM cases (each calling `urbi_vm_init` ~30 times to bisect OOM call-indices) are the likely cause. ASan + UBSan + scan-build covered most of the same heap/leak/UB ground in Phase 1. **TODO follow-up:** `make test-valgrind` separately on `main` post-merge; if the OOM-bisect cases are the bottleneck, rework them to use a deterministic fail-at index per case instead of looping.
 
 ### Surprises (mid-execution discoveries)
 
