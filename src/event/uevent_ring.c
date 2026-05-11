@@ -106,7 +106,14 @@ uevent_ring_drain(struct UVM *vm)
         /* T57: if a drain handler is registered, call it with the entry's
          * event_id and a NIL payload (the raw-bytes ring does not carry
          * UValues; host handler implements event_id → UEvent* mapping).
-         * Without a drain handler, entries are discarded (M3 behaviour).
+         * Without a drain handler, entries are silently discarded.
+         *
+         * T26 / EVENT-017: removed the M3-compat fallback branch that
+         * bumped event_queue_count when no handler was registered.  Any
+         * production embedding that uses urbi_inject_event registers a
+         * drain handler at boot; the fallback was dead in practice and
+         * conflated the ISR-ring drain count with the M5+ UEvent queue
+         * count (separate liveness counter).
          *
          * EVENT-007: load with __ATOMIC_ACQUIRE for consistency with the
          * rest of this ISR-aware ring file.  The drain runs on the
@@ -124,10 +131,6 @@ uevent_ring_drain(struct UVM *vm)
             nil_payload.kind = (uint8_t)UVAL_NIL;
             nil_payload.v.i  = 0;
             h(vm, e->event_id, nil_payload);
-        } else {
-            /* M3 compatibility: bump event_queue_count so urbi_step stays
-             * RUNNING until the queue is empty. */
-            vm->event_queue_count++;
         }
 
         rd = (rd + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);
