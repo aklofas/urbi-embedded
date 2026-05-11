@@ -678,6 +678,43 @@ cross-riscv:
 		AR=riscv64-unknown-elf-ar \
 		all
 
+# T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
+# Used by `make test-freestanding` (T18) to verify the freestanding subset
+# contract on the embedded targets (no hosted libc fallthrough).
+#
+# Distinct TARGET names give each variant its own $(BUILDDIR) tree
+# (build/cross-arm-bytecode-only/, build/cross-riscv-bytecode-only/), so
+# `make cross-arm cross-arm-bytecode-only` can coexist without rebuild
+# churn.  URBI_BYTECODE_ONLY=1 propagates through the recursive $(MAKE)
+# invocation (-DURBI_BYTECODE_ONLY=1 reaches the CFLAGS+CPPFLAGS append
+# in the top-of-Makefile gate).
+cross-arm-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-arm-bytecode-only \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		all
+
+cross-riscv-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-riscv-bytecode-only \
+		CC=riscv64-unknown-elf-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DURBI_WATCHER_POOL_SIZE=64" \
+		AR=riscv64-unknown-elf-ar \
+		all
+
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
 # adding/removing source files.
@@ -865,4 +902,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
