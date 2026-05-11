@@ -4,22 +4,94 @@
 
 (empty)
 
-## v0.6.2-language-completion — Wave 3 of M6 stdlib (language completion)
+## v0.6.2-language-completion — 2026-05-10 (Wave 3 of M6 stdlib — language completion)
 
-**Shipped:** TBD (Phase 7 fills this)
-**Branch:** `topic/v0.6.2-language-completion`
-**Plan:** `docs/superpowers/plans/2026-05-10-v0.6.2-language-completion.md`
-**Spec:** `docs/superpowers/specs/2026-05-10-v0.6.2-language-completion-design.md`
+**Tag:** `v0.6.2-language-completion`
+**Theme:** Close the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x; unblock the deferred `.u` overlay content; ship M7 (C-API + ports) on a clean language baseline.
 
-Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
+### Headline
 
-1. Closure upvalue capture across method boundaries (Gap #1, audit + general fix)
-2. Multi-slot class bodies via AST_SEPARATOR recursion (Gap #2)
-3. `this` keyword (TOK_KW_THIS + AST_THIS) — method-body only at v1.0 (Gap #3)
-4. Operator-via-slot-install dispatch — type-error fallback on 9 ops (Gap #4)
-5. Float literals in lex — full IEEE-style decimal (Gap #5)
+1. Closure upvalue capture across method boundaries (Gap #1) — audit + general fix; cross-session UClosure lifetime fix.
+2. Multi-slot class bodies via AST_SEPARATOR recursion (Gap #2) — `class C { var x; var y; }` now lowers cleanly.
+3. `this` keyword (TOK_KW_THIS + AST_THIS + OP_LOAD_RECV) — method-body only at v1.0 (Gap #3).
+4. Operator overload via slot-install dispatch on 9 ops (Gap #4) — type-error fallback; per-site IC.
+5. Float literals in lex — full IEEE-style decimal (Gap #5); closes LEX-035 partial.
 
-(Filled at Phase 7 with final numbers.)
+### Numeric outcomes
+
+| | v0.6.1 baseline | v0.6.2 close | Delta |
+|---|---|---|---|
+| Unit cases | 1429 | ~1500 | +~70 |
+| `.chk` fixtures | 215 | 236 | +21 |
+| Footprint host | 193 994 B | 207 362 B | +13 368 B (+6.9 %), 51.8 % of 400 KB cap |
+| Footprint arm | 94 191 B | 100 300 B | +6 109 B (+6.5 %), **over 100 KB nominal cap by 300 B; v1.0 cap revised to 105 KB (REVIVAL §S32)** |
+| Footprint riscv | 118 460 B | 126 460 B | +8 000 B (+6.8 %), 97.3 % of 130 KB cap |
+| Wire format | v1.5 (0x15) | **v1.6 (0x16)** | bumped: new opcode `OP_LOAD_RECV=46` + UCallFrame.recv field |
+| Bytecode blob (`urbi_stdlib_bytecode`) | 1071 B | 4205 B | +3134 B (3.9×) |
+| Public C API surface | (no change) | (no change) | (M7 will formalise) |
+| New stdlib overlays | 2 (mixins, exception_subclasses) | 7 (+singleton, number, list, dict, string) | +5 |
+| REVIVAL §14 entries | through S28 | through S32 | +4 (S29-S32) |
+| Wave commits | — | 45 | (on `topic/v0.6.2-language-completion`) |
+
+### Process notes
+
+- Wave 3 used `superpowers:subagent-driven-development` with one implementer per phase (autonomous mode after Phase 0).
+- Phase order: 0 → 1 → 3 → 4 → 2 → 5 → 6 → 7 (sequential, smallest-first within parallel-eligible set; Phase 5 last because it was largest).
+- urbiforge oracle stood up at Phase 0 via native CMake build inside this sandbox; `urbi-launch -s --` is the invocation pattern. Advisory only — not in releasetest gate set.
+- Plan-precondition Rule 3 caught two drifts mid-execution: Phase 2's `OP_MOVE dst, R0` was wrong (calling convention shifts R-base on OP_CALL); Phase 5's audit found the real bug was cross-session UClosure lifetime, not parent-funcstate linkage. Both corrections landed inline; both retrospectively confirm the precondition discipline.
+
+### Wire format
+
+**v1.5 → v1.6.** New opcode `OP_LOAD_RECV = 46` (loads `UCallFrame.recv` into a destination register) added at Phase 2. `OP_MAX` 46 → 47. v1.5 bytecode modules are no longer accepted; recompile from source. (Wave 3 has no bytecode-upgrade tooling; live-system bytecode upgrade defers to v1.x per the design-risks register.)
+
+### Added
+
+- **Lex (Phase 1):** `TOK_FLOAT` + `double f` UToken union member; `LEX_FLOAT_TRAILING_DOT` / `_EXPONENT_NO_DIGITS` / `_OVERFLOW` error codes; `scan_float_body` + `scan_float_leading_dot` helpers; full IEEE-style decimal float lex (`1.5`, `.5`, `1.5e3`, `1e3`, `1E-3`, `1.5e-3`). `<stdlib.h>` guarded by `__STDC_HOSTED__`; `isinf` replaced by IEEE inline. Disambiguation: `0.foo` stays INT(0) DOT IDENT(foo).
+- **Lex (Phase 2):** `TOK_KW_THIS` keyword recognition.
+- **Parse (Phase 1):** `AST_FLOAT_LIT = 36` + `double f` union member + `make_float_lit_node` constructor; `case TOK_FLOAT` in `parse_atom`.
+- **Parse (Phase 2):** `AST_THIS = 37` + `make_this_node` constructor; `case TOK_KW_THIS` in `parse_atom`.
+- **Emit (Phase 1):** `add_const_float` (linear-scan UVAL_FLOAT pool dedup); `emit_float_arm` via OP_LOADK.
+- **Emit (Phase 2):** `emit_this_arm` resolving to `OP_LOAD_RECV`; `EMIT_NO_THIS_OUTSIDE_METHOD` error code (top-level `this` raises).
+- **Emit (Phase 3):** Multi-slot class body via AST_BIN_SEP / AST_NARY recursion in `emit_class_body_stmt` (~33 LOC).
+- **VM (Phase 2):** New opcode `OP_LOAD_RECV = 46` reads `UCallFrame.recv` (new 16-byte UValue field snapshotting `vm->last_recv` at every bytecode frame push). UCallFrame grew 40 → 56 B; UStrand size pin 2880 → 3904.
+- **VM (Phase 4):** `vm_arith_method_fallback` / `_unary` / `vm_cmp_method_fallback` helpers in new file `src/vm/uvm_op_overload.{h,c}` (~282 LOC). 9 dispatch arms (OP_ADD/SUB/MUL/DIV/NEG/EQ/NEQ/LT/LE) call the helper on UVM_TYPE_ERROR. `UOpOverloadIC` table on UVM (4 entries × 64 sites max) caches the operator-method lookup; allocated in `urbi_vm_init`, freed in destroy.
+- **VM (Phase 5):** `urbi_steal_repl_protos` (in `src/module/uchunk.c`) — before `umodule_destroy`, scans `vm->stdlib_closures` for closures rooted in the session module and steals the entire `nested[]` array onto `vm->stdlib_nested_arrays`. `OP_CLOSURE` uses `current_frame.closure->origin_nested[bx]` for cross-session resolution. New UClosure fields: `origin_nested` / `origin_nested_count` / `origin_module_instance`. New UVM fields: `stdlib_protos` / `stdlib_nested_arrays`. New UProto field: `next_alloc`.
+- **GC (Phase 6):** `mark_root_callback` now shades `UVAL_OBJECT` and `UVAL_EVENT` cells (M4-era latent bug fixed inline at commit `a402ed1`). Likely class of use-after-free hazards that would have surfaced at M9 (ROS2 integration) without this fix.
+- **Stdlib (Phase 6):** 5 new `.u` overlays — `singleton.u`, `number.u`, `list_overlay.u`, `dict_overlay.u`, `string_overlay.u`. Bytecode blob 1071 B → 4205 B (3.9×).
+- **Stdlib (Phase 6):** `Integer.even` / `Integer.odd` fixed to use `bitand(1)` instead of float division (Wave-2 carry-forward bug).
+- **Value (Phase 4):** `ustr_op_name(vm, op)` helper interning operator slot names (`"+"`, `"-"`, `"*"`, `"/"`, `"=="`, `"!="`, `"<"`, `"<="`).
+- **Build (Phase 0):** `make oracle-diff` target + `tests/scripts/oracle-diff.sh` harness (urbiforge oracle parity check; advisory only, NOT in releasetest).
+- **Tests (Phases 1-6):** ~70 new unit cases, 21 new `.chk` fixtures, 4 legacy-corpus subset ports.
+- **Docs:** Plan-precondition evidence file; Phase 5 audit doc; REVIVAL §14 S29-S32 + §14.9 cross-references; this CHANGELOG; m6-wave3-language-completion retrospective.
+
+### Wire format / bytecode
+
+- `URBI_BYTECODE_VERSION_BYTE` 0x15 → 0x16 (v1.5 → v1.6).
+- `OP_MAX` 46 → 47 (`OP_LOAD_RECV = 46` added).
+- New AST kinds: `AST_FLOAT_LIT = 36`, `AST_THIS = 37`.
+- v1.5 bytecode modules rejected as `ULOAD_UNSUPPORTED_VERSION` per exact-match policy.
+
+### Footprint
+
+- host: 207 362 B / 400 000 B cap = 51.8 % (vs v0.6.1 49 % — +6.9 %).
+- arm-cortex-m7: **100 300 B / 105 000 B revised cap = 95.5 %** (vs v0.6.1 94 % of original 100 KB cap — +6.5 %). Cap revised from 100 KB to 105 KB at v1.0 per REVIVAL §S32; M7 will revisit per-target caps under actual STM32H7 / ESP32-S3 flash constraints.
+- riscv-rv32imc: 126 460 B / 130 000 B cap = 97.3 % (vs v0.6.1 91 % — +6.8 %).
+
+### Strict-tooling state
+
+All four hard-fail gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0 missing. Cross-arm + cross-riscv green. ASan / UBSan / valgrind / GC-stress / GC-none / 3-preset × 100-run determinism / bake-determinism (3-run byte-identity) all green. Coverage 85-87 %.
+
+### Out of scope (deferred to v1.x or later)
+
+- Top-level `this == lobby` semantic
+- `self` keyword as alias for `this`
+- Hex float literals (`0x1.8p3`)
+- In-function class declarations
+- Modulo (`%`) and shift (`<<`/`>>`) operator overloading (no opcodes today)
+- `vm->last_recv` clobbering in nested method calls (Wave 2 carry-forward; workaround = `var` intermediates)
+- UClosure cells GC-managed promotion + slot-write barrier real index (GC-003 + GC-005 + GC-037 + VM-007 cluster)
+- Property-getter/setter dispatch hardening (M4 carry-forward)
+- Live-system bytecode upgrade tooling for v1.5 → v1.6 migration
 
 ### Phase 1 — Float literals (Gap #5)
 
