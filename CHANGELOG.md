@@ -4,6 +4,19 @@
 
 (empty)
 
+## v0.7.0-c-api — UNRELEASED (M7 Wave 1 — C-API formalization + URBI_BYTECODE_ONLY)
+
+**Tag:** `v0.7.0-c-api`
+**Theme:** Formalise the public C API surface (ABI versioning + `urbi_aux.h` split + opaque-type audit), land real `URBI_BYTECODE_ONLY` pure strip with freestanding CI gate, revise per-target footprint caps, absorb 10 `defer:M7` cleanup IDs, add `test-gc-roots-coverage` release gate, introduce `urbi_watcher_body_done_fn` reactive hook seam.
+
+### Headline
+
+(populate at Phase 7)
+
+### Numeric outcomes
+
+(populate at Phase 7)
+
 ## v0.6.2-language-completion — 2026-05-10 (Wave 3 of M6 stdlib — language completion)
 
 **Tag:** `v0.6.2-language-completion`
