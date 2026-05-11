@@ -715,6 +715,17 @@ cross-riscv-bytecode-only:
 		AR=riscv64-unknown-elf-ar \
 		all
 
+# T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
+# liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
+# fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
+# (T19).  Not wired into `releasetest` — the cross-toolchain dependency makes
+# it ill-suited as a default local gate (matches the existing releasetest
+# policy that excludes cross-arm/cross-riscv).  CI invokes it directly.
+.PHONY: test-freestanding
+test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only
+	sh tests/scripts/test-freestanding.sh build/cross-arm-bytecode-only/liburbi.a
+	sh tests/scripts/test-freestanding.sh build/cross-riscv-bytecode-only/liburbi.a
+
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
 # adding/removing source files.
@@ -902,4 +913,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding oracle-diff
