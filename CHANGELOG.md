@@ -4,18 +4,77 @@
 
 (empty)
 
-## v0.7.0-c-api — UNRELEASED (M7 Wave 1 — C-API formalization + URBI_BYTECODE_ONLY)
+## v0.7.0-c-api — 2026-05-10 (M7 Wave 1 — C-API formalization + URBI_BYTECODE_ONLY)
 
 **Tag:** `v0.7.0-c-api`
 **Theme:** Formalise the public C API surface (ABI versioning + `urbi_aux.h` split + opaque-type audit), land real `URBI_BYTECODE_ONLY` pure strip with freestanding CI gate, revise per-target footprint caps, absorb 10 `defer:M7` cleanup IDs, add `test-gc-roots-coverage` release gate, introduce `urbi_watcher_body_done_fn` reactive hook seam.
 
 ### Headline
 
-(populate at Phase 7)
+1. **ABI version macros** + semver policy + opaque-type discipline. New `<urbi/version.h>` with `URBI_API_VERSION_MAJOR/MINOR/PATCH = 0/7/0` + `URBI_API_VERSION_NUM = 700` + `urbi_api_version()` NULL-tolerant getter.
+2. **`urbi_aux.h` TU split.** New `<urbi/aux.h>` + separate `liburbi_aux.a` archive. `liburbi.a` (core) stays aux-symbol-free; embedders opt into aux by linking `-laux`. Initial helper: `urbi_aux_check_version()` (returns `URBI_OK` on header/library match, new `URBI_ERR_API_VERSION_MISMATCH = -16` slot otherwise).
+3. **Real `URBI_BYTECODE_ONLY` pure strip.** Promotes v0.6.1 smoke approximation to genuine build flag. Excludes `src/lex/`, `src/parse/`, `src/emit/` from source list when on. Source-taking entry points (`urbi_compile_source`, `urbi_repl_eval`) compile-error-gated in public headers. New `make test-freestanding` + `cross-arm-bytecode-only` + `cross-riscv-bytecode-only` CI gates.
+4. **Per-target footprint cap revisions.** Two-cap schema (full + bytecode-only). arm: 105→120 KB full / 80 KB bytecode-only. riscv: 130→145 KB full / 95 KB bytecode-only. host: 400 KB unchanged.
+5. **10 `defer:M7` cleanup IDs absorbed.** VM-010, VM-024, VM-011, EVENT-003, EVENT-017, EVENT-024, FOUND-013, FOUND-009, FOUND-011, VM-004. C-API hardening + diagnostics. Plus OBJ-008 verified-closed (was actually wave-5-fixes commit ef8dddf).
+6. **`urbi_watcher_body_done_fn` reactive hook.** Minimal Wave 1 seam — `urbi_watcher_handle_t` opaque-int typedef + host callback fired after watcher body completion. Wave 2 (ESP-IDF) defines real watcher-identity semantics.
+7. **`test-gc-roots-coverage` release gate.** Source-level enum/case cross-check; closes the bug class that surfaced as the M4-era `mark_root_callback` UVAL_OBJECT/UVAL_EVENT shading gap (fixed inline at v0.6.2 Phase 6).
+
+### ABI breakage (pre-v1.0 escape clause)
+
+- **`urbi_vm_init` signature changed from `void` to `int`** (returns `URBI_OK` on success, `URBI_ERR_OOM` on partial init OOM). Closes VM-010 + VM-024. Existing 858 call sites compile clean (legal C ignores the new int return); embedders that want OOM detection MUST update to check the return. Per `<urbi/version.h>` pre-v1.0 escape clause, this signature break is MINOR-tagged with explicit enumeration here.
 
 ### Numeric outcomes
 
-(populate at Phase 7)
+| | v0.6.2 baseline | v0.7.0 close | Delta |
+|---|---|---|---|
+| Unit cases | 1483 | **1501** | +18 |
+| Checks | 8232 | 8269 | +37 |
+| `.chk` fixtures | 236 | 236 | (no new fixtures this wave) |
+| Footprint host | 207,362 B | 207,625 B | +263 B (~49% of 400 KB cap) |
+| Footprint arm | 100,300 B | 100,520 B | +220 B (~80% of revised 120 KB cap; was over 100 KB nominal cap by 300 B at v0.6.2) |
+| Footprint riscv | 126,460 B | 126,636 B | +176 B (~84% of revised 145 KB cap) |
+| Footprint arm BO | (new) | 68,710 B | new ~86% of 80 KB cap |
+| Footprint riscv BO | (new) | 84,760 B | new ~89% of 95 KB cap |
+| Wire format | v1.6 (0x16) | v1.6 (0x16) | unchanged |
+| Bytecode blob | 4205 B | 4205 B (byte-identical) | (no stdlib changes) |
+| New opcodes | 47 | 47 | 0 |
+| New public C API symbols | — | +6 (urbi_api_version, urbi_aux_check_version, urbi_set_watcher_body_done_fn, plus typedef + macro additions) |
+| Wave commits | — | 28 | (on `topic/v0.7.0-c-api`) |
+| New ABI version macros | (none) | URBI_API_VERSION_MAJOR/MINOR/PATCH/NUM, urbi_api_version() | first introduction |
+| New error codes | URBI_ERR_STDLIB_BOOT_FAILED (-15) was last | URBI_ERR_API_VERSION_MISMATCH (-16) | +1 |
+| Public headers | 5 | 7 (added `<urbi/version.h>`, `<urbi/aux.h>`) | +2 |
+| Build archives | `liburbi.a` | `liburbi.a` + `liburbi_aux.a` | +1 (separate aux archive) |
+| New CI gates | — | `test-freestanding`, `test-gc-roots-coverage`, `cross-arm-bytecode-only`, `cross-riscv-bytecode-only` | +4 |
+| REVIVAL §14 entries | through S32 | + S33 (ABI versioning), S34 (URBI_BYTECODE_ONLY strip), S35 (per-target cap revision schema) | +3 |
+
+All four hard-fail strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0 missing. Cross-arm + cross-riscv green. ASan / UBSan / valgrind / GC-stress / GC-none / 3-preset × 100-run determinism / bake-determinism (3-run byte-identity) all green. Coverage 85-87%.
+
+### Surprises (mid-execution discoveries)
+
+1. **Audit-finding drift on 3 of 10 `defer:M7` IDs.** VM-011 cited `sched_strand_block` but actual issue was at `uvm_run.c:154-164`. EVENT-017 claimed M5 baseline always registers a drain handler — actually NULL by default. FOUND-013 claimed "ABI exposes no warning" — runtime ISR-guard was already in place; only docstring was missing. Subagents caught these via Rule 3 (verify-then-act) and adapted commits accordingly.
+2. **`urbi_vm_init` cascade was zero-friction.** 858 call sites across 132 files all kept compiling cleanly when the signature changed from void to int — legal C silently discards the new return. Tests are the contract enforcer. No `__attribute__((warn_unused_result))` added (avoids forcing the cascade).
+3. **4 OOM-prone allocations in `urbi_vm_init`**, not 3 (the audit named 3). `uwatcher_pool_init` was returning -1 silently and is now wired into the aggregate OOM return.
+4. **`src/emit/uchanged_emit.c` was misfiled.** Slot-change runtime emit (not bytecode emit); relocated to `src/changed/` so URBI_BYTECODE_ONLY=1 strip doesn't break runtime functionality.
+5. **`URBI_ERR_CLEANUP_OVERFLOW = -6` already existed** at v0.6.2 (plan T29 assumed it needed to be added). T29 just added the runtime depth-counter guard.
+6. **OBJ-008 already closed at wave-5-fixes** (commit `ef8dddf`). The backlog "defer:M7 (10)" count was off by one; total IDs disposed: 10 closed + 1 verified-closed.
+7. **Branch-drift on a Haiku-model implementer dispatch.** T2 (CHANGELOG skeleton) committed to local `main` instead of `topic/v0.7.0-c-api`. Code-quality reviewer caught it; recovery was a cherry-pick onto topic + `update-ref` to restore main. Switched all subsequent implementer dispatches to a stronger model (sonnet). No corruption escaped — origin/main was untouched throughout.
+
+### Plan-precondition discipline (Rule 1 / Rule 3 catches)
+
+- **T17 surfaced 3 categories of bytecode-only-incompatible code**: source-taking entry-point bodies in `src/urbi.c` + `src/module/uchunk.c`; misfiled `src/emit/uchanged_emit.c`; host-build-only `tools/urbi-compile-stdlib` flag-leak. All handled per Phase 3 plan + subagent's choices.
+- **T24 audit-finding cited wrong site** (`sched_strand_block` was correct; site was elsewhere). Subagent re-localized to `uvm_run.c:154-164` and factored to use the existing `sched_dequeue_ready_head` helper. Cleaner than original plan would have been.
+- **T26 audit-finding wrong about M5 always-register drain**. Subagent verified field was NULL by default; the M3-compat path was still reachable. 3 existing tests updated for the new behavior.
+
+### Out of scope (filed for later)
+
+- Reactive C-API full surface (`urbi_register_watcher` etc.) → Wave 2 (ESP-IDF surfaces real reqs).
+- Parser depth + compile-budget guard → M8 (no untrusted-source forcing function before REPL hot-patch).
+- Sandboxing readonly-bit (Luau prior art) → M8/M9.
+- Embedded REPL TU split → M8.
+- `urbi_force` C API + `URBI_FN_AUTO_FORCE` host-fn flag → v1.x post-M7.
+- `URBI_BIG_VM` compilation flag → v2.0.
+- Per-target caps for STM32H7 / ESP32-S3 / RP2040 → Wave 2/3.
+- `urbi_aux.h` seeded content → Wave 2+ (organic growth).
 
 ## v0.6.2-language-completion — 2026-05-10 (Wave 3 of M6 stdlib — language completion)
 
