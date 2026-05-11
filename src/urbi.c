@@ -10,10 +10,12 @@
 #include "runtime/umacros.h"
 #include "object/uic.h"
 #include "object/umodule_instance.h"
-#include "lex/ulex.h"
-#include "parse/uparse.h"
-#include "parse/uast.h"
-#include "emit/uemit.h"
+#if !defined(URBI_BYTECODE_ONLY)
+#  include "lex/ulex.h"
+#  include "parse/uparse.h"
+#  include "parse/uast.h"
+#  include "emit/uemit.h"
+#endif
 #include <stdint.h>
 
 #if __STDC_HOSTED__
@@ -74,11 +76,16 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
     vm->isr_check_fn = fn;
 }
 
+#if !defined(URBI_BYTECODE_ONLY)
 /* urbi_compile_source: compile source → serialized v1.5 bytecode.  See
  * urbi.h for the full contract.  The pipeline is the same one tools/urbi.c
  * uses for in-process REPL/-e/-f compile; this entry point exposes it for
  * the build-time stdlib bake (tools/urbi-compile-stdlib) and any embedder
- * that wants to pre-compile a module. */
+ * that wants to pre-compile a module.
+ *
+ * URBI_BYTECODE_ONLY=1 strips this entire function (M7 Wave 1 T17): the
+ * header gates the declaration, so the symbol is intentionally absent from
+ * freestanding liburbi.a; callers get a compile error at the call site. */
 int
 urbi_compile_source(struct UVM *vm,
                     const char *src, size_t src_len,
@@ -191,6 +198,7 @@ urbi_compile_source(struct UVM *vm,
     return URBI_ERR_INVALID_ARG;
 #endif
 }
+#endif /* !URBI_BYTECODE_ONLY */
 
 #ifdef URBI_DEBUG
 /* urbi_in_isr: query the registered ISR-context predicate.  Hides

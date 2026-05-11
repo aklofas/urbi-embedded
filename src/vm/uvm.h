@@ -356,7 +356,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *
      * Invariant: vm->in_watcher_eval implies that any urbi_emit_slot_change_slow
      * invocation routes the slot-change emit through the deferred ring, NOT the
-     * immediate path. See src/emit/uchanged_emit.c for the routing. */
+     * immediate path. See src/changed/uchanged_emit.c for the routing. */
     uint8_t  in_watcher_eval;          /* reentrancy guard */
     /* in_watcher_scratch (WATCH-036): caller-owned re-entry guard.  Set
      * TRUE before calling urbi_run_closure_on_scratch[_with_payload];
