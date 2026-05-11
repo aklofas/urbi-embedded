@@ -49,6 +49,7 @@ extern void test_emit_suite(void);
 extern void test_vm_suite(void);
 extern void test_pipeline_suite(void);
 extern void test_uvalue_suite(void);
+extern void test_uvalue_layout_suite(void);
 extern void test_multi_vm_suite(void);
 extern void test_intern_suite(void);
 extern void test_funcstate_suite(void);
@@ -205,6 +206,7 @@ static const struct suite_entry suites[] = {
     {"vm",                         test_vm_suite},
     {"pipeline",                   test_pipeline_suite},
     {"uvalue",                     test_uvalue_suite},
+    {"uvalue_layout",              test_uvalue_layout_suite},
     {"multi_vm",                   test_multi_vm_suite},
     {"intern",                     test_intern_suite},
     {"funcstate",                  test_funcstate_suite},

@@ -108,6 +108,28 @@ static inline UValue urbi_value_nil(void) {
     return v;
 }
 
+/* === UValue layout pin (Wave 1 T6) ===
+ *
+ * Compile-time assertion that mirrors the runtime invariants tested in
+ * tests/unit/test_uvalue_layout.c. Catches header/lib mismatches at
+ * compile time when host code includes this header against a different
+ * library build.
+ *
+ * Behind URBI_API_PIN_LAYOUT (default ON). Hosts that intentionally rebuild
+ * with non-standard alignment / packing can define this to 0 to skip. */
+#ifndef URBI_API_PIN_LAYOUT
+#define URBI_API_PIN_LAYOUT 1
+#endif
+
+#if URBI_API_PIN_LAYOUT
+_Static_assert(sizeof(UValue) == 16,
+               "UValue must be exactly 16 bytes (ABI pin)");
+_Static_assert(offsetof(UValue, v) == 8,
+               "UValue.v must be at offset 8 (ABI pin)");
+_Static_assert(offsetof(UValue, kind) == 0,
+               "UValue.kind must be at offset 0 (ABI pin)");
+#endif
+
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
