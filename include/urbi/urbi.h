@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Public C API. */
+/* Public C API.
+ *
+ * Stability: core. PR-review rule: changes here need an ABI-bump
+ * justification per <urbi/version.h> policy.
+ *
+ * Holding a pointer to an opaque type (UVM*, UStrand*, etc.) is part of
+ * the ABI; reading through it is not. */
 
 #ifndef URBI_H
 #define URBI_H

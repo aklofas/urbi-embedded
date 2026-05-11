@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* GC strategy-dispatch router.
  *
+ * Stability: core.
+ *
  * Selects the active GC strategy header based on URBI_GC, then declares
  * the strategy-neutral interface that all callers use.
  *

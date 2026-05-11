@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* include/urbi/types.h
  *
+ * Stability: core (value types layout-pinned via _Static_assert; see T6).
+ *
  * Public-facing type declarations needed by the rest of the public API.
  *
  * Created at v0.5.5 (Wave 3) to break the cycle where include/urbi/urbi.h

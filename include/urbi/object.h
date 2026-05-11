@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Public C API for the urbi object model (M4 / T8).
  *
+ * Stability: core.
+ *
  * Atom-family singletons + prototype-list mutators.  Internals (UObject
  * layout, UPROTOS_FOREACH macro, etc.) live in src/object/uobject.h and
  * are not exposed to host embedders.  The URBIAtomFamily enum (single
