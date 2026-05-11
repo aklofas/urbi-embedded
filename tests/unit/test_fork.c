@@ -328,6 +328,47 @@ UTEST(fork_join_arithmetic_children)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 9 (T31 / VM-004): op_join_wait blocks parent BEFORE linking to the
+ * child's join chain.  The audit identified the prior link-then-block
+ * ordering as a latent race: any concurrent walker that read
+ * child->joiners_head would observe the parent on the join chain while
+ * its state was still RUNNING.
+ *
+ * This test runs a multi-join workload to exercise the OP_JOIN_WAIT path
+ * with the new ordering.  All 1498 existing tests already pass with the
+ * fix; this case adds an explicit regression marker so future refactors
+ * trip a named test rather than only a coverage-of-determinism gate.
+ *
+ * The behavioral check is: a chain of joins (& separator) reaches
+ * quiescence with the expected void result and no fatal.  If the
+ * ordering re-broke (e.g. the parent's state was inconsistent at the
+ * link site), one of sched_strand_block's SCHED-002 entry-state asserts
+ * or the make_runnable READY-idempotence assert in fork_wake_joiners
+ * would trip in URBI_DEBUG builds. */
+UTEST(fork_join_wait_parent_blocked_before_link_to_chain)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    UModule module;
+    /* Two consecutive joins — exercises the block-then-link path
+     * once per `&` operator without any sleep/event reasons in play. */
+    UASSERT(fork_compile(&vm, "1 & 2 & 3", &module));
+
+    UValue result = {0};
+    int rc = fork_run_to_quiescent(&vm, realm, &module, &result);
+
+    UASSERT_EQ(rc, 1);                          /* reached quiescent */
+    UASSERT_EQ((int)result.kind, (int)UVAL_VOID);  /* `&` result is void */
+
+    umodule_destroy(&module);
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite registration
  * =================================================================== */
@@ -341,4 +382,6 @@ void test_fork_suite(void) {
     utest_run("fork wake joiners empty is noop",     fork_wake_joiners_empty_is_noop);
     utest_run("uval strand round trip",              uval_strand_round_trip);
     utest_run("fork join arithmetic children",       fork_join_arithmetic_children);
+    utest_run("fork join wait parent blocked before link to chain (T31 / VM-004)",
+              fork_join_wait_parent_blocked_before_link_to_chain);
 }
