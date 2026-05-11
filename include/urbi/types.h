@@ -167,7 +167,12 @@ typedef enum {
      * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
      * urbi_load_translate_load_err for the file-load surface).  M6
      * Phase 4 reserves this code; the empty-blob path never reaches it. */
-    URBI_ERR_STDLIB_BOOT_FAILED         = -15
+    URBI_ERR_STDLIB_BOOT_FAILED         = -15,
+    /* URBI_ERR_API_VERSION_MISMATCH: returned by urbi_aux_check_version
+     * (lands in Phase 2 T13) when the runtime library's API version
+     * disagrees with what the embedder compiled against. MINOR-additive
+     * per the bump policy in <urbi/version.h>. */
+    URBI_ERR_API_VERSION_MISMATCH       = -16
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===
