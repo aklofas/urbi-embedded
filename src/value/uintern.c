@@ -27,6 +27,7 @@
 
 #include "vm/uvm.h"
 #include "gc/ugc.h"
+#include "urbi/urbi.h"     /* URBI_ASSERT_NOT_ISR (T30 / FOUND-011) */
 
 #define INTERN_INITIAL_CAP    16U     /* power of two */
 #define INTERN_LOAD_NUM       7U      /* grow when count*10 > cap*7 */
@@ -149,6 +150,7 @@ static int table_grow(UVM *vm, UInternTable *t) {
 
 const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
     if (vm == NULL) return NULL;
+    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
 
     /* Lazy table init. */
     UInternTable *t = (UInternTable *)vm->intern_table;
@@ -197,6 +199,7 @@ const char *ustr_intern(UVM *vm, const char *bytes, size_t nbytes) {
 
 void uintern_destroy(UVM *vm) {
     if (vm == NULL) return;
+    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
     UInternTable *t = (UInternTable *)vm->intern_table;
     if (t == NULL) return;
 
@@ -214,6 +217,7 @@ void uintern_destroy(UVM *vm) {
 
 size_t uintern_count(UVM *vm) {
     if (vm == NULL || vm->intern_table == NULL) return 0;
+    URBI_ASSERT_NOT_ISR(vm);   /* T30 / FOUND-011: intern table is single-threaded */
     return ((UInternTable *)vm->intern_table)->count;
 }
 
