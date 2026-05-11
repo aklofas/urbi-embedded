@@ -155,8 +155,16 @@ deliver_return_value(UStrand *s, UValue val, int result_dest_reg)
      original is silently suppressed (warning deferred to T16/T19 diag infra).
 
    Re-enters dispatch_loop_until_yield; recursion depth bounded by
-   URBI_CLEANUP_MAX (see file-level comment). */
-static void
+   URBI_CLEANUP_MAX (see file-level comment).
+
+   T29 / FOUND-009: the recursion bound is now enforced via the per-strand
+   cleanup_run_depth counter.  Before the guard a misbehaving cleanup body
+   that itself raised an unwind whose handler raised again ad infinitum
+   could exhaust the C stack.  Returns 0 on normal completion (including
+   C-1 replace-on-raise) or URBI_ERR_CLEANUP_OVERFLOW when the recursion
+   bound is hit — the walker handles the latter by marking the strand
+   fatal and returning. */
+static int
 run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
 {
     UExecStatus saved_unwind = s->pending_unwind;
@@ -165,6 +173,20 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
 
     nil.kind = 0;
     nil.v.i  = 0;
+
+    /* T29 / FOUND-009: enforce the documented URBI_CLEANUP_MAX recursion
+     * bound.  Returning the error code (rather than escalating in place)
+     * lets the walker handle the failure with the same fatal-state shape
+     * it uses for unhandled THROW (avoids duplicating cleanup logic). */
+    if (s->cleanup_run_depth >= (uint16_t)URBI_CLEANUP_MAX) {
+        if (s->vm != NULL && s->vm->host_log_fn != NULL) {
+            s->vm->host_log_fn(s->vm, URBI_LOG_ERROR,
+                               "URBI_ERR_CLEANUP_OVERFLOW: run_cleanup_with_replace "
+                               "exceeded URBI_CLEANUP_MAX recursion depth");
+        }
+        return URBI_ERR_CLEANUP_OVERFLOW;
+    }
+    s->cleanup_run_depth++;
 
     /* Clear unwind state so the cleanup body executes as normal code. */
     s->pending_unwind = UEXEC_OK;
@@ -192,6 +214,9 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
                                "original unwind dropped");
         }
     }
+
+    s->cleanup_run_depth--;
+    return 0;
 }
 
 /* ===== urbi_unwind: main 3-kind walker =====
@@ -298,10 +323,22 @@ urbi_unwind(UStrand *s)
 
             if (e->flags & FLAG_HAS_FINALLY) {
                 /* Finally execution: run body, then continue unwinding.
-                 * C-1 replace-on-raise: if body raises, new state wins. */
+                 * C-1 replace-on-raise: if body raises, new state wins.
+                 * T29 / FOUND-009: helper returns URBI_ERR_CLEANUP_OVERFLOW
+                 * when recursion depth would exceed URBI_CLEANUP_MAX. */
                 uint16_t handler_pc = e->handler_pc;
+                int      rc;
                 strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
-                run_cleanup_with_replace(s, handler_pc);
+                rc = run_cleanup_with_replace(s, handler_pc);
+                if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
+                    UValue overflow_marker;
+                    overflow_marker.kind = (uint8_t)UVAL_INT;
+                    overflow_marker.v.i  = (int64_t)URBI_ERR_CLEANUP_OVERFLOW;
+                    s->fatal_status = UEXEC_CANCEL;
+                    s->fatal_value  = overflow_marker;
+                    s->state        = USTRAND_STATE_DEAD;
+                    return;
+                }
                 /* After run_cleanup_with_replace, s->pending_unwind is either
                  * the original (body OK) or a new one (C-1 replace).
                  * Either way, continue the walker loop. */
@@ -321,10 +358,21 @@ urbi_unwind(UStrand *s)
              * TODO T29: implement tag-stop absorption per row 7 §6.1. */
 
             if (e->flags & FLAG_HAS_ONLEAVE) {
-                /* onleave handler: run under C-1 replace-on-raise. */
+                /* onleave handler: run under C-1 replace-on-raise.
+                 * T29 / FOUND-009: handle URBI_ERR_CLEANUP_OVERFLOW from helper. */
                 uint16_t handler_pc = e->handler_pc;
+                int      rc;
                 strand_cleanup_pop(s, UCLEANUP_TAG_SCOPE);
-                run_cleanup_with_replace(s, handler_pc);
+                rc = run_cleanup_with_replace(s, handler_pc);
+                if (rc == URBI_ERR_CLEANUP_OVERFLOW) {
+                    UValue overflow_marker;
+                    overflow_marker.kind = (uint8_t)UVAL_INT;
+                    overflow_marker.v.i  = (int64_t)URBI_ERR_CLEANUP_OVERFLOW;
+                    s->fatal_status = UEXEC_CANCEL;
+                    s->fatal_value  = overflow_marker;
+                    s->state        = USTRAND_STATE_DEAD;
+                    return;
+                }
                 continue;
             }
 
@@ -547,14 +595,15 @@ urbi_strand_reset(struct UStrand *strand)
     if (!strand) return URBI_ERR_INVALID_ARG;
     if (strand->vm) { URBI_ASSERT_NOT_ISR(strand->vm); }
 
-    strand->pending_unwind  = UEXEC_OK;
-    strand->unwind_value    = nil;
-    strand->unwind_target   = NULL;
-    strand->fatal_status    = UEXEC_OK;
-    strand->fatal_value     = nil;
-    strand->cleanup_depth   = 0;
-    strand->cleanup_top     = NULL;
-    strand->state           = USTRAND_STATE_DORMANT;
+    strand->pending_unwind    = UEXEC_OK;
+    strand->unwind_value      = nil;
+    strand->unwind_target     = NULL;
+    strand->fatal_status      = UEXEC_OK;
+    strand->fatal_value       = nil;
+    strand->cleanup_depth     = 0;
+    strand->cleanup_run_depth = 0;        /* T29 / FOUND-009: clear recursion counter */
+    strand->cleanup_top       = NULL;
+    strand->state             = USTRAND_STATE_DORMANT;
     return URBI_OK;
 }
 

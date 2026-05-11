@@ -139,6 +139,17 @@ struct UStrand {
     struct UCleanupEntry   *cleanup_top;
     uint16_t                cleanup_depth;
     uint16_t                cleanup_cap;
+    /* T29 / FOUND-009: recursion bound for run_cleanup_with_replace().
+     * Distinct from cleanup_depth (cleanup-stack push/pop counter); this
+     * tracks how deeply run_cleanup_with_replace has re-entered
+     * dispatch_loop_until_yield via finally/onleave handlers.  Without
+     * this guard, a misbehaving cleanup body that itself triggers a new
+     * unwind could push past URBI_CLEANUP_MAX levels of recursion and
+     * exhaust the C stack.  Lives in the natural alignment gap between
+     * the two cleanup_* uint16_t fields and the cleanup_base pointer,
+     * keeping UStrand size stable (CHSTR-041 layout pin holds). */
+    uint16_t                cleanup_run_depth;
+    uint16_t                cleanup_run_pad;
     struct UCleanupEntry   *cleanup_base;
     UExecStatus             fatal_status;
     uint8_t                 fatal_pad[3];
