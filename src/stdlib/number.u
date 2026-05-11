@@ -15,8 +15,8 @@ class IntegerMath {
     var sqr  = function() { this * this };
     var abs  = function() { if (this < 0) { 0 - this } else { this } };
     var sign = function() { if (this < 0) { -1 } else { if (this > 0) { 1 } else { 0 } } };
-    var even = function() { (this - (this / 2) * 2) == 0 };
-    var odd  = function() { (this - (this / 2) * 2) != 0 }
+    var even = function() { this.bitand(1) == 0 };
+    var odd  = function() { this.bitand(1) != 0 }
 } |
 
 class FloatMath {
@@ -25,4 +25,4 @@ class FloatMath {
 } |
 
 Integer.addProto(IntegerMath) |
-Float.addProto(FloatMath) |
+Float.addProto(FloatMath);
