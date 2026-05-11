@@ -215,8 +215,22 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
     }
     /* TAG_STOP, CANCEL, UEXEC_OK: silent */
 
+    /* Snapshot completion status before clearing back-pointers so the
+     * host-callback hook (below) sees the original strand state. */
+    int completion_status = (int)s->fatal_status;
+
     s->watcher_body_owner = NULL;
     w->body_strand        = NULL;
+
+    /* T33 (v0.7.0 Wave 1): fire body-done callback if installed.  After
+     * internal cleanup (back-pointers cleared) so observers see a
+     * consistent state; before any re-spawn so re-spawn-aware embedders
+     * can correlate the completion event with the subsequent fresh body
+     * strand on a later callback.  Handle is a Wave 1 placeholder (0);
+     * Wave 2 (ESP-IDF port) defines the real watcher-identity meaning. */
+    if (vm->watcher_body_done_fn != NULL) {
+        vm->watcher_body_done_fn(vm, /* handle */ 0, completion_status);
+    }
 
     if ((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0) {
         w->flags &= (uint8_t)~URBI_WATCHER_PENDING_REFIRE;

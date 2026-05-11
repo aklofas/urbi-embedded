@@ -76,6 +76,17 @@ urbi_set_isr_check_fn(struct UVM *vm, bool (*fn)(void))
     vm->isr_check_fn = fn;
 }
 
+/* urbi_set_watcher_body_done_fn: install the watcher-body-completion hook.
+ * Pass NULL to uninstall (the default after urbi_vm_init).  NULL vm is a
+ * no-op; the cast accepts the public typedef and stores it through the
+ * inline-typed slot on UVM (shape-identical).  T33 / spec §7. */
+void
+urbi_set_watcher_body_done_fn(struct UVM *vm, urbi_watcher_body_done_fn fn)
+{
+    if (!vm) return;
+    vm->watcher_body_done_fn = fn;
+}
+
 #if !defined(URBI_BYTECODE_ONLY)
 /* urbi_compile_source: compile source → serialized v1.5 bytecode.  See
  * urbi.h for the full contract.  The pipeline is the same one tools/urbi.c

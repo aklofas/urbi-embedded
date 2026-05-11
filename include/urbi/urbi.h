@@ -317,6 +317,29 @@ typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          UValue payload);
 void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
 
+/* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
+ *
+ * urbi_watcher_handle_t is an opaque int — Wave 2 (ESP-IDF port) defines
+ * the real watcher-identity story; Wave 1 provides the seam.  Embedders
+ * can observe watcher body completion for telemetry, profiling, or
+ * hot-reload diagnostics.
+ *
+ * Callback is invoked from urbi_watcher_body_completed after internal
+ * cleanup (back-pointers cleared) and before any re-spawn triggered by
+ * URBI_WATCHER_PENDING_REFIRE.  At Wave 1 the handle is a placeholder
+ * (always 0); the completion_status mirrors the strand's fatal_status
+ * (UEXEC_OK / THROW / TAG_STOP / CANCEL) cast to int.
+ *
+ * Default is NULL after urbi_vm_init; pass NULL to uninstall. */
+typedef int urbi_watcher_handle_t;
+
+typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
+                                          urbi_watcher_handle_t handle,
+                                          int completion_status);
+
+void urbi_set_watcher_body_done_fn(struct UVM *vm,
+                                   urbi_watcher_body_done_fn fn);
+
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
  * URBI_LOG_* — log level constants for host_log_fn callback.

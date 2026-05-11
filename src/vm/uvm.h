@@ -567,6 +567,16 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Pointer to UOpOverloadIC keeps the UVM struct small so tests that
      * put `UVM vm;` on the C stack do not overflow. */
     UOpOverloadIC *op_overload_ic;
+
+    /* T33 (v0.7.0 Wave 1): host-callback hook fired by
+     * urbi_watcher_body_completed after internal cleanup, before any
+     * re-spawn.  NULL default; installed via urbi_set_watcher_body_done_fn.
+     * Declared as inline function-pointer to keep uvm.h independent of
+     * <urbi/urbi.h> (which forward-declares UVM and would create a
+     * circular include).  The public typedef urbi_watcher_body_done_fn
+     * in <urbi/urbi.h> expands to a function pointer with the exact same
+     * shape, so the setter wires through cleanly across the seam. */
+    void (*watcher_body_done_fn)(struct UVM *vm, int handle, int completion_status);
 } UVM;
 
 /* --- API --- */

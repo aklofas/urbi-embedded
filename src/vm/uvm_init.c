@@ -333,6 +333,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     }
     vm->last_recv = urbi_value_nil();
 
+    /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
+     * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
+    vm->watcher_body_done_fn = NULL;
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
