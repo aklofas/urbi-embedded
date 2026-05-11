@@ -182,6 +182,7 @@ extern void test_emit_class_multi_slot_suite(void);
 extern void test_vm_operator_overload_suite(void);
 extern void test_emit_this_suite(void);
 extern void test_emit_closure_capture_suite(void);
+extern void test_vm_init_oom_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -340,6 +341,7 @@ static const struct suite_entry suites[] = {
     {"vm_operator_overload",     test_vm_operator_overload_suite},
     {"emit_this",                test_emit_this_suite},
     {"emit_closure_capture",    test_emit_closure_capture_suite},
+    {"vm_init_oom",             test_vm_init_oom_suite},
     /* Add new suites here as test files are added. */
 };
 

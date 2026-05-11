@@ -573,11 +573,17 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
 /* Initialize vm. On hosted builds, passing alloc_fn == NULL wires up a
    stdlib-realloc shim internally. On freestanding builds the caller MUST
-   supply alloc_fn; if NULL is passed, urbi_vm_init still returns (cannot fail
-   at M1), but any subsequent urbi_vm_run will NULL-deref in the frame
-   allocation path — caller's bug. Zero-initializes last_error and
-   last_errmsg. */
-void urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+   supply alloc_fn; if NULL is passed, urbi_vm_init returns URBI_OK (no
+   subsystem allocations attempt to run through the NULL alloc_fn), but
+   any subsequent urbi_vm_run will NULL-deref in the frame allocation
+   path — caller's bug. Zero-initializes last_error and last_errmsg.
+
+   T23 (VM-010 + VM-024, v0.7.0 Wave 1) — promoted from void to int return.
+   Returns URBI_OK on success, URBI_ERR_OOM if any sub-system allocation
+   fails (event_ring, watcher pool, deferred_slot_changes ring, operator
+   overload IC).  urbi_vm_destroy remains safe to call regardless of the
+   return value; partial-init state is reaped by the destroy path. */
+int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 
 /* Strand-driven dispatch loop (T6).  Runs s's bytecode until one of:
    - strand reaches DEAD (top-level OP_RET or halt_error)

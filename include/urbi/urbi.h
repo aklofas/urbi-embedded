@@ -452,7 +452,13 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  *
  * Conservative scope: pure rename.  Signatures, semantics, and error
  * codes are byte-identical to the pre-v0.5.5 internal forms. */
-void     urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
+/* T23 (v0.7.0 Wave 1) — returns URBI_OK on success, URBI_ERR_OOM if any
+ * sub-system allocation (event_ring, deferred_slot_changes, watcher pool,
+ * op_overload IC, ...) fails.  Pre-v0.7.0 this returned void; the change
+ * is permitted under the pre-v1.0 ABI escape clause documented in
+ * <urbi/version.h>.  urbi_vm_destroy remains safe to call regardless of
+ * the return value (partial-init state is reaped on the destroy path). */
+int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
                          const struct UModule *module, UValue *out);
