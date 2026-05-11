@@ -1,0 +1,3 @@
+host:  222299 B    (INFORMATIONAL — host bytecode-only not a deployment target; cap 300 KB nominal)
+arm:    68510 B    (cap 80 KB; ~86% used — bytecode-only embedded preset)
+riscv:  84604 B    (cap 95 KB; ~89% used — bytecode-only embedded preset)
