@@ -7,21 +7,21 @@
 # the .u stdlib overlay bouncing to the Float atom-proto methods that
 # Phase 5 installed.
 #
-# Wave 2 lex still has no float literal (TOK_FLOAT deferred); range
-# checks use Integer.asFloat() bounds to avoid the missing token.
+# Float literals (Gap #5) closed at v0.6.2; range checks now use direct
+# float literals.
 
 # pi within IEEE-754 tolerance (3 < pi < 4).
-Math.pi > 3.asFloat()
+Math.pi > 3.0
 [00000000] true
 
-Math.pi < 4.asFloat()
+Math.pi < 4.0
 [00000001] true
 
 # e within IEEE-754 tolerance (2 < e < 3).
-Math.e > 2.asFloat()
+Math.e > 2.0
 [00000002] true
 
-Math.e < 3.asFloat()
+Math.e < 3.0
 [00000003] true
 
 # NaN identifies as NaN via the Float.isNaN atom-proto method (Phase 5).

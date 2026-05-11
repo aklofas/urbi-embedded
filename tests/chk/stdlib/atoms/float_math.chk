@@ -1,12 +1,8 @@
-# Milestone: M6 Wave 2
+# Milestone: M6 Wave 2 (updated v0.6.2: float literals now available)
 # Covers: Phase 5 Float math methods.
 #
-# Wave 2 lex still has no float literal (TOK_FLOAT deferred), so float
-# values are constructed via Integer.asFloat() and verified via
-# Float.asInteger() (truncation) where exact rendering is fragile.
-#
-# sqrt / abs / floor / ceil / round are exact-result on the test values;
-# trig / log / exp are tested for parity rather than exact output.
+# Float literals (Gap #5) closed at v0.6.2, so tests now use direct float
+# syntax alongside the original asFloat() construction form.
 
 # sqrt(4) = 2.0
 4.asFloat().sqrt()
@@ -16,27 +12,24 @@
 0.asFloat().sqrt()
 [00000001] 0.0
 
-# abs(-5.0) — construct via (-5).asFloat()
+# abs(-5.0) — both construction forms.
 (-5).asFloat().abs()
 [00000002] 5.0
 
-# floor(7.5) construction: 75.asFloat() / 10.asFloat() avoids float lex.
-# Use 4.asFloat() which is already 4.0 — abs/floor identity.
-4.asFloat().floor()
-[00000003] 4.0
+# floor(7.5) using direct float literal (Gap #5 activated at v0.6.2).
+7.5.floor()
+[00000003] 7.0
 
-# ceil on an exact-int float is identity.
-4.asFloat().ceil()
+# ceil(3.2) using direct float literal.
+3.2.ceil()
 [00000004] 4.0
 
-# pow(2, 10) = 1024.0 — store the exponent first to avoid the v1.0
-# vm->last_recv single-cell limitation when the arg evaluation also
-# dispatches a native method.
+# pow(2, 10) = 1024.0
 var x = 10.asFloat()
 [00000005] 10.0
 2.asFloat().pow(x)
 [00000006] 1024.0
 
 # round(3.0) = 3.0
-3.asFloat().round()
+3.0.round()
 [00000007] 3.0

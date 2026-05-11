@@ -1,0 +1,41 @@
+# Milestone: v0.6.2 — Phase 6 (.u overlay).
+# Covers: List higher-order methods declared in src/stdlib/list_overlay.u
+#         via the class-body / addProto pattern (ListMethods class).
+#
+# Methods: map, filter, foldl, has, any, all.
+#
+# Gap requirements: multi-slot class body (Gap #2, v0.6.2), this
+# resolution (Gap #3, v0.6.2), closure upvalue capture (Gap #1, v0.6.2).
+
+# map: transform each element.
+var l = List.new(1, 2, 3); l.map(function(x) { x * 2 }).get(1)
+[00000000] 4
+
+# filter: keep elements matching predicate.
+var l2 = List.new(1, 2, 3, 4); l2.filter(function(x) { x.even() }).length()
+[00000001] 2
+
+# foldl: left fold accumulates sum.
+var l3 = List.new(1, 2, 3, 4, 5); l3.foldl(function(acc, x) { acc + x }, 0)
+[00000002] 15
+
+# has: membership test via contains delegate.
+var l4 = List.new(1, 2, 3); l4.has(2)
+[00000003] true
+
+var l5 = List.new(1, 2, 3); l5.has(99)
+[00000004] false
+
+# any: true if at least one element satisfies predicate.
+var l6 = List.new(1, 2, 3); l6.any(function(x) { x > 2 })
+[00000005] true
+
+var l7 = List.new(1, 2, 3); l7.any(function(x) { x > 10 })
+[00000006] false
+
+# all: true if every element satisfies predicate.
+var l8 = List.new(1, 2, 3); l8.all(function(x) { x > 0 })
+[00000007] true
+
+var l9 = List.new(1, 2, 3); l9.all(function(x) { x > 1 })
+[00000008] false
