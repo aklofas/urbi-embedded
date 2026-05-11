@@ -38,7 +38,7 @@
 | Wire format | v1.6 (0x16) | v1.6 (0x16) | unchanged |
 | Bytecode blob | 4205 B | 4205 B (byte-identical) | (no stdlib changes) |
 | New opcodes | 47 | 47 | 0 |
-| New public C API symbols | — | +6 (urbi_api_version, urbi_aux_check_version, urbi_set_watcher_body_done_fn, plus typedef + macro additions) |
+| New public C API symbols | — | +3 functions (`urbi_api_version`, `urbi_aux_check_version`, `urbi_set_watcher_body_done_fn`) | + typedef + macros |
 | Wave commits | — | 28 | (on `topic/v0.7.0-c-api`) |
 | New ABI version macros | (none) | URBI_API_VERSION_MAJOR/MINOR/PATCH/NUM, urbi_api_version() | first introduction |
 | New error codes | URBI_ERR_STDLIB_BOOT_FAILED (-15) was last | URBI_ERR_API_VERSION_MISMATCH (-16) | +1 |
