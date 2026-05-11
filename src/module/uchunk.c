@@ -133,7 +133,7 @@ urbi_steal_repl_protos(UVM *vm, UModule *module)
      * nested[] array. */
     int needs_steal = 0;
     for (size_t ni = 0; ni < module->nested_count && !needs_steal; ni++) {
-        UProto *p = module->nested[ni];
+        const UProto *p = module->nested[ni];
         if (p == NULL) continue;
         UClosure *cl = vm->stdlib_closures;
         while (cl != NULL) {
@@ -226,6 +226,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     bool has_error = false;
     const char *parse_errmsg = NULL;  /* static message from AST_ERROR node */
     int  parse_err_line = 0, parse_err_col = 0;
+    /* Used inside #if __STDC_HOSTED__ snprintf path below; silence
+     * cppcheck unreadVariable on freestanding builds. */
+    (void)parse_err_line; (void)parse_err_col;
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {

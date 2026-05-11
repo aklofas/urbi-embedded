@@ -595,11 +595,10 @@ dispatch:
              * (same fallback logic as proto_inst above). */
             {
                 struct UModuleInstance *mi = s->module_instance;
-                if (mi != NULL
-                        && mi->proto_instances != NULL
-                        && (size_t)bx + 1U < (size_t)mi->proto_instances->n) {
-                    cl->origin_module_instance = mi;
-                } else if (s->frame_count > 0) {
+                if (s->frame_count > 0
+                        && !(mi != NULL
+                             && mi->proto_instances != NULL
+                             && (size_t)bx + 1U < (size_t)mi->proto_instances->n)) {
                     UClosure *par_cl = s->frames[s->frame_count - 1].closure;
                     cl->origin_module_instance = par_cl
                                                  ? par_cl->origin_module_instance

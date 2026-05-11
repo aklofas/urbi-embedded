@@ -442,7 +442,7 @@ void urbi_vm_destroy(UVM *vm) {
             while (na != NULL) {
                 UNestedArrayNode *next = na->next;
                 /* Free the nested[] array. */
-                na->alloc_fn(na->arr, 0, na->alloc_ud);
+                na->alloc_fn((void *)na->arr, 0, na->alloc_ud);
                 /* Free the node itself (allocated with vm->alloc_fn). */
                 vm->alloc_fn(na, 0, vm->alloc_ud);
                 na = next;
