@@ -251,6 +251,15 @@ test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk
 test-loc-cap:
 	@./tests/scripts/check_loc_cap.sh
 
+# T34 (v0.7.0 Wave 1): GC roots-coverage gate.  Asserts every UVAL_*
+# enum value declared in include/urbi/types.h is referenced at least
+# once under src/gc/.  Closes the bug class that surfaced as the
+# M4-era UVAL_OBJECT / UVAL_EVENT shading gap (fixed inline at v0.6.2
+# Phase 6).  Hard-fail in releasetest Phase 1 below.
+.PHONY: test-gc-roots-coverage
+test-gc-roots-coverage:
+	@./tests/scripts/check-gc-roots-coverage.sh
+
 .PHONY: test-wire-format-determinism
 test-wire-format-determinism: $(BUILDDIR)/urbi
 	@./tests/scripts/check_wire_format_determinism.sh
@@ -483,7 +492,7 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
-    test-bake-smoke test-bytecode-only
+    test-bake-smoke test-bytecode-only test-gc-roots-coverage
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -913,4 +922,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage oracle-diff

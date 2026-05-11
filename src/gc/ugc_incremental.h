@@ -165,17 +165,31 @@ void observer_dirty(struct UVM *vm, UCell *cell, uint32_t key);
 
 /* === uvalue_is_heap / uvalue_as_cell ===
  *
- * Heap-bearing UValKinds at M4: UVAL_CLOSURE (UClosure*) and UVAL_OBJECT
- * (UObject*).  Both store a pointer in v.v.p; both embed UCell as the
- * first struct member, so the cast in uvalue_as_cell is well-defined.
+ * Heap-bearing UValKinds at v0.7.0: UVAL_CLOSURE (UClosure*), UVAL_OBJECT
+ * (UObject*), and UVAL_EVENT (UEvent*).  All three store a pointer in
+ * v.v.p and embed UCell as the first struct member, so the cast in
+ * uvalue_as_cell is well-defined.
  *
- * Other kinds (NIL, INT, FLOAT, BOOL, STR, VOID, STRAND) are either inline
- * scalars or not GC-managed via UCell.  STRAND deliberately skipped: M3
- * strands are sched-managed, not GC cells.
+ * Non-heap-bearing UValKinds (deliberately NOT shaded by mark_root_callback;
+ * each documented here so the T34 test-gc-roots-coverage gate sees them):
+ *   - UVAL_NIL      — inline scalar (zero payload).
+ *   - UVAL_INT      — inline int64_t payload.
+ *   - UVAL_FLOAT    — inline f32/f64 payload.
+ *   - UVAL_BOOL     — inline 0/1 stored in i payload.
+ *   - UVAL_STR      — interned char* in v.v.p; intern table is a
+ *                     non-GC root (separate provider walks it).
+ *   - UVAL_VOID     — inline scalar (no payload).
+ *   - UVAL_STRAND   — sched-managed UStrand*; strand walker provider
+ *                     visits these as roots, not the mark callback.
+ *   - UVAL_HOST_FN  — non-GC C function pointer; never reaches the heap.
+ *
+ * Future heap-bearing UVAL_* additions MUST extend uvalue_is_heap and
+ * the heap-bearing list above.  The T34 gate
+ * (tests/scripts/check-gc-roots-coverage.sh) enforces that every UVAL_*
+ * declared in <urbi/types.h> appears at least once under src/gc/.
  *
  * TODO(M5+): extend for UVAL_STRING (when strings move to heap), UVAL_ARRAY,
- * UVAL_TAG, UVAL_WATCHER once those UValKinds exist.
- * M5: UVAL_EVENT added (UEvent embeds UCell at offset 0). */
+ * UVAL_TAG, UVAL_WATCHER once those UValKinds exist. */
 
 static inline bool
 uvalue_is_heap(UValue v)
