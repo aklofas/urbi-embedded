@@ -149,10 +149,42 @@ build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
 	@mkdir -p $(@D)
 	cc -std=c99 -Os -Iinclude -Isrc -c -o $@ $<
 
-HOST_OBJ      := $(patsubst src/%.c,build/host/src/%.o,$(SRC))
-HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o,$(HOST_OBJ))
+# T17 / Wave 1: bake-tool host source list must always include lex/parse/
+# emit, regardless of URBI_BYTECODE_ONLY.  The bake tool runs at host build
+# time and CALLS urbi_compile_source — both the symbol and the compiler
+# frontend must be present.  Computed as a flag-independent enumeration of
+# every src/**/*.c (matching the unfiltered $(SRC) expansion) minus the
+# self-referential .gen.o.
+HOST_BAKE_SRC := \
+       $(filter-out $(AUX_SRCS),$(wildcard src/*.c)) \
+       $(wildcard src/lex/*.c) \
+       $(wildcard src/parse/*.c) \
+       $(wildcard src/emit/*.c) \
+       $(wildcard src/vm/*.c) \
+       $(wildcard src/gc/*.c) \
+       $(wildcard src/sched/*.c) \
+       $(wildcard src/watcher/*.c) \
+       $(wildcard src/event/*.c) \
+       $(wildcard src/tag/*.c) \
+       $(wildcard src/changed/*.c) \
+       $(wildcard src/module/*.c) \
+       $(wildcard src/value/*.c) \
+       $(wildcard src/runtime/*.c) \
+       $(wildcard src/realm/*.c) \
+       $(wildcard src/object/*.c) \
+       $(wildcard src/stdlib/*.c)
+HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
+                              $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
 
+# T17 / Wave 1: the bake tool is a HOST-ONLY build-time helper.  Under
+# URBI_BYTECODE_ONLY=1 the main $(SRC) excludes lex/parse/emit and
+# urbi_compile_source becomes a header-gated absent symbol — neither of
+# which the bake tool can use.  Solution: when URBI_BYTECODE_ONLY=1,
+# don't try to (re)build the bake tool.  The committed
+# src/stdlib/urbi_stdlib_bytecode.gen.c is consumed as-is.  Cross-arch
+# bytecode-only builds never invoke the bake tool by design.
+ifneq ($(URBI_BYTECODE_ONLY),1)
 tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_STUB_O)
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
@@ -180,6 +212,7 @@ src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
 	    src/stdlib/STDLIB_ORDER.txt \
 	    src/stdlib \
 	    $@
+endif  # URBI_BYTECODE_ONLY != 1
 
 # --- Integration tests --------------------------------------------------
 #
