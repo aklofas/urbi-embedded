@@ -17,6 +17,7 @@
 #ifndef UEVENT_RING_H
 #define UEVENT_RING_H
 
+#include <stdalign.h>  /* T25 / EVENT-003: _Alignas on UEventRingEntry.payload */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -41,7 +42,12 @@ typedef char uevent_ring_depth_must_be_power_of_two[
 typedef struct UEventRingEntry {
     uint32_t event_id;
     uint16_t payload_len;
-    uint8_t  payload[URBI_EVENT_PAYLOAD_MAX];
+    /* T25 / EVENT-003: payload is _Alignas(8) so embedders pushing typed
+     * payloads (uint64_t, double, struct fields) from ISR contexts get
+     * atomic-load semantics on aligned-only architectures.  Pads the
+     * entry to 24 B on host (was 22 B unaligned).  Public contract is
+     * captured at urbi_inject_event in <urbi/urbi.h>. */
+    _Alignas(8) uint8_t payload[URBI_EVENT_PAYLOAD_MAX];
 } UEventRingEntry;
 
 /* Indices stored as plain volatile uint32_t; acquire/release ordering is

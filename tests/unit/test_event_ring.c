@@ -7,6 +7,7 @@
 #include "event/uevent_ring.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
+#include <stdalign.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -319,6 +320,16 @@ UTEST(event_ring_multi_thread_fuzz_100k)
 }
 #endif /* __linux__ */
 
+/* ---- Case 12 (T25 / EVENT-003): payload field is 8-byte aligned ------- */
+UTEST(uevent_ring_entry_payload_is_8aligned)
+{
+    UEventRingEntry e;
+    /* The payload field itself must be 8-byte aligned within the entry. */
+    UASSERT_EQ((long long)((uintptr_t)&e.payload % 8U), 0LL);
+    /* The struct as a whole inherits >= 8-byte alignment from the field. */
+    UASSERT_EQ((long long)_Alignof(UEventRingEntry), 8LL);
+}
+
 /* ---- Test suite registration ------------------------------------------ */
 
 void test_event_ring_suite(void)
@@ -343,6 +354,8 @@ void test_event_ring_suite(void)
               event_ring_zero_payload_null_ptr_accepted);
     utest_run("event_ring_drain_increments_event_queue_count",
               event_ring_drain_increments_event_queue_count);
+    utest_run("uevent_ring_entry_payload_is_8aligned",
+              uevent_ring_entry_payload_is_8aligned);
 #ifdef __linux__
     utest_run("event_ring_multi_thread_fuzz_100k",
               event_ring_multi_thread_fuzz_100k);

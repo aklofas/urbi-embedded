@@ -272,7 +272,14 @@ void            urbi_strand_destroy(struct UStrand *s);
  * Returns URBI_ERR_EVENT_RING_FULL if the ring is full.
  *
  * The VM drains injected events at the start of each urbi_step() call.
- * Single-producer / single-consumer: one ISR writer + one thread reader. */
+ * Single-producer / single-consumer: one ISR writer + one thread reader.
+ *
+ * Payload alignment: 8 bytes (T25 / EVENT-003).  Embedders pushing typed
+ * payloads (uint64_t, double, struct fields) from ISR contexts may rely
+ * on natural alignment for atomic-load semantics on aligned-only
+ * architectures.  The underlying ring entry's payload field is
+ * _Alignas(8); copy-in via the `payload` argument preserves this
+ * alignment in the stored entry. */
 int urbi_inject_event(struct UVM *vm, uint32_t event_id,
                       const void *payload, size_t len);
 
