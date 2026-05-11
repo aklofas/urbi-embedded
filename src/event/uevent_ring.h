@@ -53,12 +53,14 @@ _Static_assert(URBI_EVENT_RING_DEPTH <= 1024,
 typedef struct UEventRingEntry {
     uint32_t event_id;
     uint16_t payload_len;
-    /* T25 / EVENT-003: payload is _Alignas(8) so embedders pushing typed
+    /* T25 / EVENT-003: payload is 8-byte aligned so embedders pushing typed
      * payloads (uint64_t, double, struct fields) from ISR contexts get
      * atomic-load semantics on aligned-only architectures.  Pads the
      * entry to 24 B on host (was 22 B unaligned).  Public contract is
-     * captured at urbi_inject_event in <urbi/urbi.h>. */
-    _Alignas(8) uint8_t payload[URBI_EVENT_PAYLOAD_MAX];
+     * captured at urbi_inject_event in <urbi/urbi.h>. Using GCC/clang
+     * __attribute__((aligned)) instead of C11 _Alignas to keep -std=c99
+     * compatibility (project compiles with -std=c99). */
+    uint8_t payload[URBI_EVENT_PAYLOAD_MAX] __attribute__((aligned(8)));
 } UEventRingEntry;
 
 /* Indices stored as plain volatile uint32_t; acquire/release ordering is
