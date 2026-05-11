@@ -39,6 +39,17 @@ typedef char uevent_ring_depth_must_be_power_of_two[
     ((URBI_EVENT_RING_DEPTH & (URBI_EVENT_RING_DEPTH - 1)) == 0) ? 1 : -1
 ];
 
+/* T27 / EVENT-024: sanity floor + ceiling on URBI_EVENT_RING_DEPTH.
+ * The header advertises that M4 footprint builds override the default 256
+ * to 32; both ends of that range must remain compile-time enforced so a
+ * future override that breaks invariants (e.g. depth=4 starves the budget
+ * loop, depth=4096 blows arm cap) fails at compile rather than at runtime.
+ * The pre-existing power-of-2 typedef trick above stays. */
+_Static_assert(URBI_EVENT_RING_DEPTH >= 8,
+               "URBI_EVENT_RING_DEPTH must be at least 8 (sanity floor)");
+_Static_assert(URBI_EVENT_RING_DEPTH <= 1024,
+               "URBI_EVENT_RING_DEPTH must be at most 1024 (sanity ceiling)");
+
 typedef struct UEventRingEntry {
     uint32_t event_id;
     uint16_t payload_len;
