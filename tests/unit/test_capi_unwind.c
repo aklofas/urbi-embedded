@@ -298,6 +298,43 @@ UTEST(capi_strand_cancel_unblocks_waiting_strand)
     urbi_vm_destroy(&vm);
 }
 
+/* 10a (T28 / FOUND-013): urbi_tag_stop runs cleanly when an ISR-check fn is
+ *      registered that returns false (i.e. NOT in ISR context).  Pins the
+ *      ABI contract documented at urbi_tag_stop in <urbi/urbi.h>: the
+ *      URBI_ASSERT_NOT_ISR guard only fires when the registered predicate
+ *      returns true, so a host that wires the check fn but is not currently
+ *      in ISR sees no behavioural change. */
+static bool isr_check_always_false(void) { return false; }
+
+UTEST(capi_tag_stop_passes_isr_guard_when_not_in_isr)
+{
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+
+    /* Register an ISR-check predicate that says "no, not in ISR".  The
+     * URBI_ASSERT_NOT_ISR macro inside urbi_tag_stop must observe the
+     * negative result and proceed without tripping the panic. */
+    urbi_set_isr_check_fn(&vm, isr_check_always_false);
+
+    struct UTag real_tag;
+    real_tag.type_tag             = 5U; /* UTYPE_TAG */
+    real_tag.gc_byte              = 0;
+    real_tag.pad0                 = 0;
+    real_tag.flags                = 0;
+    real_tag.pad1[0]              = 0;
+    real_tag.pad1[1]              = 0;
+    real_tag.pad1[2]              = 0;
+    real_tag.member_strands_head  = NULL;
+    real_tag.member_watchers_head = NULL;
+    real_tag.name.kind            = UVAL_NIL;
+    real_tag.name.v.i             = 0;
+
+    int rc = urbi_tag_stop(&vm, &real_tag, make_nil());
+    UASSERT_EQ(rc, URBI_OK);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* 10. strand_cleanup_stack_init returns -1 when the allocator returns NULL.
  *     Covers the allocation-failure path in ucleanup.c (lines 66-70). */
 static void *
@@ -352,6 +389,8 @@ test_capi_unwind_suite(void)
               capi_tag_stop_local_deposits_tag_stop);
     utest_run("capi_tag_stop_validates_args",
               capi_tag_stop_validates_args);
+    utest_run("capi_tag_stop_passes_isr_guard_when_not_in_isr",
+              capi_tag_stop_passes_isr_guard_when_not_in_isr);
     utest_run("capi_strand_cancel_unblocks_waiting_strand",
               capi_strand_cancel_unblocks_waiting_strand);
     utest_run("capi_cleanup_stack_init_fails_on_null_alloc",

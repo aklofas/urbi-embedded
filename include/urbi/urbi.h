@@ -38,6 +38,17 @@ const char *urbi_version(void);
 
 /* Cross-strand: deposit TAG_STOP on `tag`'s member strands.
  * Synchronous deposit + queue, runs zero bytecode on the caller.
+ *
+ * WARNING (T28 / FOUND-013): not ISR-safe.  Walks tag->member_strands_head
+ * and is reentrant via host callbacks invoked by waker logic (e.g.
+ * sched_strand_unblock through urbi_event_drain_handler).  Embedders
+ * calling from ISR contexts must use the urbi_inject_event ring instead
+ * and let the safepoint drain (run on the consumer thread) translate the
+ * event id into a tag stop.  The urbi_in_isr(vm) check fires as
+ * URBI_ASSERT_NOT_ISR in debug builds when called from an ISR context
+ * detected by the caller-installed ISR check function (see
+ * urbi_set_isr_check_fn / urbi_in_isr below).
+ *
  * T31 wires the real cross-strand walk; T12 provides a validity-check stub. */
 int urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value);
 
