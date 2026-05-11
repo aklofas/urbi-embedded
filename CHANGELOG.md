@@ -156,6 +156,48 @@ Closes the five v1.0 emit/VM gaps Wave 2 surfaced for v1.0 parity with urbi 2.x:
   `operators_legacy.chk` subset port.  228 chk fixtures pass.
   OOM-test alloc index updated (#4 → #5 for call-frame stack).
 
+### Phase 6 — stdlib .u overlays (Singleton / Number / List / Dict / String)
+
+- **5 new `.u` overlay files** baked into the stdlib bytecode blob.  All use the
+  class-body / `addProto` pattern (not top-level `setSlot`) to persist through the
+  blob run boundary.  Blob grows 2054 → 4141 B.
+  - `singleton.u` — `Singleton` mixin class; `clone()` and `new()` return `this`.
+  - `number.u` — `IntegerMath` (sqr, abs, sign, even, odd) + `FloatMath` (sqr,
+    sign) attached via `Integer.addProto` / `Float.addProto`.
+    `even`/`odd` use `this.bitand(1)` (integer modulo alternative since `/` is float
+    division in urbiscript).
+  - `list_overlay.u` — `ListMethods` (map, filter, foldl, has, any, all) attached
+    via `List.addProto`.
+  - `dict_overlay.u` — `DictMethods` (getWithDefault, setIfAbsent) attached via
+    `Dict.addProto`.  map/filter/each deferred pending `Dict.keys()` protocol.
+  - `string_overlay.u` — `StringMethods` (nonEmpty, hasPrefix, hasSuffix) attached
+    via `String.addProto`.
+- **GC root-callback fix** (`src/gc/ugc_incremental.c`): `mark_root_callback` was
+  only shading `UVAL_CLOSURE` values; `UVAL_OBJECT` and `UVAL_EVENT` heap-bearing
+  kinds were silently skipped.  Fixed to call `uvalue_is_heap()` — all heap-bearing
+  kinds are now shaded.  This fixed a use-after-free that crashed when an atom-proto
+  overlay method was called from a closure inside a while loop.
+- **5 new `.chk` fixture files** under `tests/chk/stdlib/overlays/`: `singleton.chk`,
+  `number.chk`, `list_overlay.chk`, `dict_overlay.chk`, `string_overlay.chk`.
+  3 existing fixtures updated: `atom_method_dispatch.chk` (float atom-proto dispatch
+  activated, Gap #5), `float_math.chk` and `math.chk` (direct float literals replace
+  asFloat() construction forms, Gap #5 closed).  `class_legacy.chk` Greeter test
+  activated (Gap #3 + Gap #2 closed).
+- **STDLIB_ORDER.txt** updated with 5 overlay entries in dependency order.
+- **parser interop note:** `expr |` followed by `class X {}` fails to parse (class
+  is a declaration, not an expression).  Overlay files that chain classes via `|`
+  work; overlay files ending with `expr |` are fixed to end with `;`.
+- **Strict-tooling fixes** (cppcheck + tidy-strict driven to 0):
+  `uchunk.c` `const UProto *p` fix + `(void)` casts for `#if __STDC_HOSTED__`-guarded
+  variables + suppression table updated to new line numbers; `uvm.c`
+  `bugprone-branch-clone` fix (merged redundant else to else-only); `uvm_init.c`
+  explicit `(void *)` cast for multilevel-pointer-to-void conversion.
+- **Markdown:** `docs/superpowers/plans/2026-05-10-v0.6.2-phase5-audit.md` — 8
+  MD031/MD040/MD026 lint errors fixed (blank lines around fences, language tags,
+  removed trailing punctuation in heading).
+- **Test corpus:** 1483 unit / 8232 checks; **236 .chk fixtures** (was 215 at
+  v0.6.1; was 231 at Phase 5).
+
 ## v0.6.1-stdlib — 2026-05-10 (Wave 2 of M6 stdlib)
 
 **Tag:** `v0.6.1-stdlib`
