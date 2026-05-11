@@ -1,0 +1,15 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Covers: OP_NEG falls back to "-" (unary) slot on user-type operand;
+#         atom fast-path unaffected; slot has 0 parameters.
+
+# Atom fast-path: unary neg on int still works.
+-5
+[00000000] -5
+
+# User-type overload: "-" slot (0-param) called with no argument.
+class Vec {}; Vec.setSlot("-", function() { 55 }); var a = Vec.new(); -a
+[00000001] 55
+
+# Missing slot falls through to original type error.
+class NoNeg {}; var n = NoNeg.new(); -n
+[00000002] !!! line 1: TypeError: OP_NEG operand must be Integer or Float (got unknown)

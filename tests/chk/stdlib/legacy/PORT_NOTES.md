@@ -17,7 +17,7 @@ language features that v0.6.1 does not yet ship — primarily:
   `EMIT_UNRESOLVED_NAME`.  Blocks every legacy fixture using `for&`,
   `each(closure (x) { ... })`, fresh-default-value tricks, etc.
 - **Multi-slot class bodies.**  `class C { var x; var y; method m() {} }`
-  raises `EMIT_UNSUPPORTED_AST`.  Single-slot bodies only.
+  raised `EMIT_UNSUPPORTED_AST`.  Fixed in Wave 3 (Gap #2).
 - **No `var x.foo = "..."` slot-install form.**  Wave 1 partial-port
   remainders (`atoms.chk`, `fallback.chk`) need this.
 - **No `assert`, `echo` realm globals.**  Legacy fixtures lean on
@@ -82,6 +82,43 @@ parity".
   + `call.message` + `do (recv) { ... }`.
 - `tests/2.x/inheritance.chk` Wave-1 deferred section: list literals
   for `setProtos([Global, Math])`.
+
+## Wave 3 additions (M6 Wave 3 / Phase 3-4, 2026-05-10)
+
+- `class_legacy.chk`: port of `tests/2.x/class.chk`.  The original
+  wraps tests in bare `{ ... }` blocks (illegal at top-level in v1.0
+  line-oriented REPL); adapted with same-line shadow chaining.  Skipped
+  lines involving `this` (Gap #3) and closure upvalue capture (Gap #1),
+  which are not yet landed in Wave 3.  Multi-slot class body extension
+  added (Gap #2, now closed).  This note is superseded for Gap #3 by
+  Phase 2 (`this` keyword); the skipped line can be activated when that
+  branch lands.
+
+- `operators_legacy.chk`: subset port of `tests/2.x/operators.chk`.
+  Tests that operator-named slots (+, -, *, /, ==) installed via
+  `setSlot` are called by the VM's Gap #4 type-error fallback.
+  Deferred: `.operator +(1)` explicit-method call syntax, `bitor`,
+  and `in` operator are not in the v0.6.x parser.
+
+- `this.chk` (deferred entirely to v1.x): port of `tests/2.x/this.chk`.
+  The legacy fixture has 3 test lines, all using `this` at the top level
+  to access the Lobby object (`this == this`, `this == { this }`,
+  `this.type`).  At v1.0 `this` is only valid inside a method body;
+  top-level `this` is a compile-time error (`EMIT_NO_THIS_OUTSIDE_METHOD`).
+  The "Lobby" concept (a singleton global namespace object) is not
+  modelled in the v1.0 runtime.  No subset is shippable: all three lines
+  are structurally deferred.  Tracked in `docs/urbi-embedded-backlog.md`
+  under "legacy fixture parity."
+
+- `operator-parens.chk` (deferred to v1.x): requires the `'()'` slot
+  name for the call operator and `call.evalArgs()` (CallMessage
+  reflection).  Neither is available in v0.6.x.
+
+- `edit-container.chk` (deferred to v1.x): tests `l[i] += N` compound
+  subscript assignment on List and Dict.  Requires list/dict literal
+  syntax (`[1, 2, 3]`, `["a" => 0]`) and compound-assignment desugar
+  (`l[i] += v` → `l.set(i, l.get(i) + v)`), none of which exist in
+  v0.6.x.
 
 ## Adjustments applied during port
 

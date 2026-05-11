@@ -217,6 +217,19 @@ size_t uintern_count(UVM *vm) {
     return ((UInternTable *)vm->intern_table)->count;
 }
 
+/* === ustr_op_name ===
+ *
+ * Intern `op` (length `len`) and return the canonical USymbol*.  Used by the
+ * operator-method-fallback dispatch (Gap #4, M6 Wave 3) to look up operator-
+ * named slots on user-type objects when an arith_* call returns a type error.
+ *
+ * Forwards to ustr_intern; returns NULL on OOM (caller must propagate). */
+USymbol *
+ustr_op_name(UVM *vm, const char *op, size_t len)
+{
+    return (USymbol *)ustr_intern(vm, op, len);
+}
+
 /* === intern_table_walk_roots ===
  *
  * GC root provider for the intern table (row 10 §5.5).

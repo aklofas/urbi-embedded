@@ -72,17 +72,16 @@ knownConditionTrueFalse:src/runtime/uunwind.c:288
 // directly (not via function-pointer table); only this one is.
 constParameterCallback:src/event/uevent_native.c:174
 
-// audit:CPPCHK-013 (Phase 19) — parse_err_line / parse_err_col are written
-// in the parse-error breakout (lines 141-142) and read inside the
-// `__STDC_HOSTED__` guarded snprintf at line 164-167.  Under freestanding
-// builds the read-side is preprocessed out, leaving the write apparently
-// dead — cppcheck doesn't track the configuration-conditional read.
-// The values are correctness-needed under hosted builds (REPL diagnostics)
-// and dead under freestanding builds (where the only outcome is a fixed
-// "compile error" string fallback).
-unreadVariable:src/module/uchunk.c:137
-unreadVariable:src/module/uchunk.c:142
-unreadVariable:src/module/uchunk.c:143
+// audit:CPPCHK-013 (Phase 19, updated Phase 6) — parse_err_line /
+// parse_err_col are written in the parse-error breakout and read inside
+// the `__STDC_HOSTED__` guarded snprintf.  Under freestanding builds the
+// read-side is preprocessed out, leaving the write apparently dead —
+// cppcheck doesn't track the configuration-conditional read.  The values
+// are correctness-needed under hosted builds (REPL diagnostics) and dead
+// under freestanding builds.  Line numbers updated when Phase 6 added
+// (void) sentinel initializations earlier in the function.
+unreadVariable:src/module/uchunk.c:236
+unreadVariable:src/module/uchunk.c:237
 
 // audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
 // expands to native-method callbacks whose signature is pinned by the

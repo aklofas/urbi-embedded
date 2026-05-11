@@ -35,6 +35,7 @@ extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_lex_keywords_suite(void);
 extern void test_lex_string_suite(void);
+extern void test_lex_float_literals_suite(void);
 extern void test_lex_unicode_suite(void);
 extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
@@ -174,6 +175,10 @@ extern void test_class_decl_emit_suite(void);
 extern void test_bake_tool_suite(void);
 extern void test_stdlib_boot_suite(void);
 extern void test_lock_heap_suite(void);
+extern void test_emit_class_multi_slot_suite(void);
+extern void test_vm_operator_overload_suite(void);
+extern void test_emit_this_suite(void);
+extern void test_emit_closure_capture_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -185,6 +190,7 @@ static const struct suite_entry suites[] = {
     {"lexer",                      test_lexer_suite},
     {"lex_keywords",               test_lex_keywords_suite},
     {"lex_string",                 test_lex_string_suite},
+    {"lex_float_literals",         test_lex_float_literals_suite},
     {"lex_unicode",                test_lex_unicode_suite},
     {"ast_string",                 test_ast_string_suite},
     {"emit_string",                test_emit_string_suite},
@@ -324,6 +330,10 @@ static const struct suite_entry suites[] = {
     {"bake_tool",                 test_bake_tool_suite},
     {"stdlib_boot",               test_stdlib_boot_suite},
     {"lock_heap",                 test_lock_heap_suite},
+    {"emit_class_multi_slot",    test_emit_class_multi_slot_suite},
+    {"vm_operator_overload",     test_vm_operator_overload_suite},
+    {"emit_this",                test_emit_this_suite},
+    {"emit_closure_capture",    test_emit_closure_capture_suite},
     /* Add new suites here as test files are added. */
 };
 

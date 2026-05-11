@@ -1,0 +1,28 @@
+// Number overlay — Phase 6.
+//
+// Adds scripted utility methods to Integer and Float atom protos via addProto.
+//
+// v0.6.2 blob-scope constraint: top-level setSlot calls on realm-global objects
+// (including atom protos) do not persist after the blob run due to slot-array
+// lifetime semantics.  The workaround is to declare extension classes with
+// methods in their bodies (class body slots use OP_SETSLOT which applies at
+// class-construction time and persists), then use addProto to wire them into
+// the atom proto chains.
+//
+// Legacy reference: share/urbi/float.u (Gostai 2008-2012).
+
+class IntegerMath {
+    var sqr  = function() { this * this };
+    var abs  = function() { if (this < 0) { 0 - this } else { this } };
+    var sign = function() { if (this < 0) { -1 } else { if (this > 0) { 1 } else { 0 } } };
+    var even = function() { this.bitand(1) == 0 };
+    var odd  = function() { this.bitand(1) != 0 }
+} |
+
+class FloatMath {
+    var sqr  = function() { this * this };
+    var sign = function() { if (this < 0.0) { -1 } else { if (this > 0.0) { 1 } else { 0 } } }
+} |
+
+Integer.addProto(IntegerMath) |
+Float.addProto(FloatMath);

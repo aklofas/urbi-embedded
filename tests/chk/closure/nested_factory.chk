@@ -1,0 +1,7 @@
+# Milestone: M6 Wave 3 (v0.6.2 — Phase 5 / Gap #1)
+# Covers: doubly-nested closure factory; outer() → middle() → inner() cascade;
+#         each level captures a local from the outer frame as an upvalue.
+#         Validates OP_CLOSURE origin_nested propagation through call chains.
+
+var outer = function() { var x = 7; function() { function() { x } } }; outer()()()
+[00000001] 7

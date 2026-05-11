@@ -1,0 +1,55 @@
+# Milestone: v0.6.2 — Phase 6 (.u overlay).
+# Covers: Integer and Float extension methods declared in
+#         src/stdlib/number.u via the class-body / addProto pattern.
+#
+# Integer methods: sqr, abs, sign, even, odd.
+# Float methods: sqr, sign.
+#
+# Gap requirements: multi-slot class body (Gap #2, v0.6.2), this
+# resolution (Gap #3, v0.6.2).
+
+# Integer.sqr: square of positive integer.
+5.sqr()
+[00000000] 25
+
+# Integer.abs: absolute value of negative integer.
+(-3).abs()
+[00000001] 3
+
+# Integer.sign: negative, zero, positive.
+(-5).sign()
+[00000002] -1
+
+0.sign()
+[00000003] 0
+
+4.sign()
+[00000004] 1
+
+# Integer.even: parity check.
+4.even()
+[00000005] true
+
+3.even()
+[00000006] false
+
+# Integer.odd: parity check.
+3.odd()
+[00000007] true
+
+4.odd()
+[00000008] false
+
+# Float.sqr: square of a float.
+2.5.sqr()
+[00000009] 6.25
+
+# Float.sign: negative, zero, positive.
+(-1.5).sign()
+[00000010] -1
+
+1.5.sign()
+[00000011] 1
+
+0.0.sign()
+[00000012] 0

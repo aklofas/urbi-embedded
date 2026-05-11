@@ -239,9 +239,11 @@ uint8_t emit_function_arm(UEmitter *e, UAstNode *n);
 /* Leaf-expression AST arm helpers (defined in uemit_expr.c).
  * Called from emit_expr via forwarding stubs; bodies live in uemit_expr.c. */
 uint8_t emit_int_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_float_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_string_arm(UEmitter *e, const UAstNode *n);
+uint8_t emit_this_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_noop_arm(UEmitter *e, const UAstNode *n);
 uint8_t emit_unary_arm(UEmitter *e, UAstNode *n);
 uint8_t emit_binary_arm(UEmitter *e, UAstNode *n);
@@ -256,6 +258,7 @@ uint8_t emit_block_arm(UEmitter *e, UAstNode *n);
 /* Constant-pool helpers (defined in uemit.c).
  * Promoted from static so uemit_expr.c can call them cross-TU. */
 uint16_t add_const_int(UEmitter *e, int64_t v);
+uint16_t add_const_float(UEmitter *e, double v);
 uint16_t add_const_str(UEmitter *e, const char *interned);
 UOpcode  binop_to_opcode(UAstBinaryOp op);
 

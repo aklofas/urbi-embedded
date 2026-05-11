@@ -51,6 +51,25 @@ void uintern_destroy(struct UVM *vm);
  * Returns 0 if intern_table is NULL. */
 size_t uintern_count(struct UVM *vm);
 
+/* Operator-name interning helpers (Gap #4 — operator overload via method
+ * dispatch, M6 Wave 3).
+ *
+ * Each helper interns the operator's slot-name string on the first call and
+ * caches the result in a static (valid for the process lifetime, since intern
+ * pointers are stable within a VM until urbi_vm_destroy).
+ *
+ * IMPORTANT: these caches are per-process-lifetime, NOT per-VM.  If two VMs
+ * are created in the same process the second VM will produce a DIFFERENT
+ * pointer for the same string (intern tables are per-VM), but the VM that
+ * did the first call will have its pointer cached.  Because urbi is always
+ * single-VM in practice (URBI_SCHED_COOPERATIVE), and unit tests call
+ * urbi_vm_destroy between runs, the static-cache shortcut is safe at v1.0.
+ * A multi-VM aware version would key on vm pointer; that is a v1.x concern.
+ *
+ * Unary negation ("-") and binary subtraction ("-") share a slot name by
+ * the locked convention in the Wave 3 plan; dispatch is contextual. */
+USymbol *ustr_op_name(struct UVM *vm, const char *op, size_t len);
+
 /* GC root provider for the intern table (row 10 §5.5).
  *
  * No-op by design through v1.0 (FOUND-024, v0.5.5).  Interned strings are

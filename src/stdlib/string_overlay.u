@@ -1,0 +1,26 @@
+// String overlay — Phase 6.
+//
+// Adds scripted utility methods to String via an extension class attached
+// with addProto.  Uses the class-body / addProto pattern required by the
+// v0.6.2 blob-scope constraint (see number.u for details).
+//
+// Legacy reference: share/urbi/string.u (Gostai 2008-2012).
+// Note: most legacy String methods require concat (+) or split(), which
+// are not available at v1.0.  This overlay provides thin convenience
+// wrappers over the C-native String atom-proto methods.
+//
+// Note: `this` resolution inside class body methods works correctly at
+// v0.6.2 (Gap #3 closed).
+
+class StringMethods {
+    // nonEmpty(): inverse of isEmpty().
+    var nonEmpty = function() { this.isEmpty() == false };
+
+    // hasPrefix(s): alias for startsWith(s).
+    var hasPrefix = function(s) { this.startsWith(s) };
+
+    // hasSuffix(s): alias for endsWith(s).
+    var hasSuffix = function(s) { this.endsWith(s) }
+} |
+
+String.addProto(StringMethods);

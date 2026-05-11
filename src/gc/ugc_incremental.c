@@ -181,8 +181,10 @@ mark_root_callback(UVM *vm, UValue *slot, void *ctx)
 {
     (void)ctx;  /* ctx == vm; not needed separately */
 
-    /* Only UVAL_CLOSURE carries a GC-managed cell pointer at M3. */
-    if (slot->kind != UVAL_CLOSURE) return;
+    /* Shade any heap-bearing value (UVAL_CLOSURE, UVAL_OBJECT, UVAL_EVENT).
+     * M3 baseline only handled UVAL_CLOSURE; M4 added UVAL_OBJECT and M5
+     * UVAL_EVENT as heap-managed cell types. */
+    if (!uvalue_is_heap(*slot)) return;
     if (slot->v.p == NULL) return;
 
     UCell *cell = (UCell *)(slot->v.p);

@@ -1,0 +1,27 @@
+# Milestone: v0.6.2 — Phase 6 (.u overlay).
+# Covers: Singleton mixin declared in src/stdlib/singleton.u and baked
+#         into urbi_stdlib_bytecode.  clone() and new() return the
+#         receiver itself, preventing instance creation.
+#
+# Gap requirements: multi-slot class body (Gap #2, v0.6.2) and this
+# resolution (Gap #3, v0.6.2).
+
+# Singleton is a realm global.
+Singleton.protos().size > 0
+[00000000] true
+
+# Singleton.clone() returns itself (not a new object).
+Singleton.clone() == Singleton
+[00000001] true
+
+# Singleton.new() returns itself (not a new object).
+Singleton.new() == Singleton
+[00000002] true
+
+# User class with addProto(Singleton) inherits the no-clone behaviour.
+class S {}; S.addProto(Singleton); S.clone() == S
+[00000003] true
+
+# new() also returns self for the derived class.
+class T {}; T.addProto(Singleton); T.new() == T
+[00000004] true

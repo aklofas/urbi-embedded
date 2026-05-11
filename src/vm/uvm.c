@@ -29,6 +29,9 @@
 #include "object/umodule_instance.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
+#include "vm/uvm_op_overload.h"  /* vm_arith_method_fallback / _unary / _cmp (Gap #4) */
+#include "value/uintern.h"       /* ustr_op_name (Gap #4 operator-name interning) */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -284,6 +287,7 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_AT_EVENT_SYNC_INSTALL] = &&label_OP_AT_EVENT_SYNC_INSTALL,
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
         [OP_LOAD_REALM_GLOBAL]     = &&label_OP_LOAD_REALM_GLOBAL,
+        [OP_LOAD_RECV]             = &&label_OP_LOAD_RECV,
     };
 
     DISPATCH();
@@ -308,6 +312,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_add(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "+", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -323,6 +333,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_sub(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "-", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -338,6 +354,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_mul(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "*", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -353,6 +375,12 @@ dispatch:
             const UValue *cc = &s->R[uinstr_c(*s->pc)];
             UVMError rc = arith_div(a, b, cc);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch. */
+                USymbol *op = ustr_op_name(vm, "/", 1);
+                if (op != NULL && vm_arith_method_fallback(vm, a, b, cc, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -367,6 +395,13 @@ dispatch:
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             UVMError rc = arith_neg(a, b);
             if (rc != UVM_OK) {
+                /* Gap #4: type-error fallback to operator-method dispatch.
+                 * Unary neg uses "-" slot name (same as binary minus; contextual). */
+                USymbol *op = ustr_op_name(vm, "-", 1);
+                if (op != NULL && vm_arith_method_fallback_unary(vm, a, b, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    NEXT();
+                }
                 vm->last_error = rc;
                 vm_format_type_error_unary(vm, s->module,
                     (size_t)(s->pc - s->pc_base),
@@ -470,15 +505,40 @@ dispatch:
         CASE(OP_CLOSURE) {
             /* ABx: R[A] := new closure from module->nested[Bx].
              * Reads nupvals pseudo-instructions (OP_MOVE-encoded) immediately
-             * after, each specifying (B=in_stack, C=src_idx). */
+             * after, each specifying (B=in_stack, C=src_idx).
+             *
+             * Phase 5 (Gap #1): when executing inside a bytecode closure call
+             * (frame_count > 0), use the current frame's closure->origin_nested
+             * array instead of s->module->nested.  s->module always points at
+             * the TOP-LEVEL session module; for cross-session closure calls that
+             * module is the new session's (empty) module, not the closure's
+             * originating module.  origin_nested was captured at OP_CLOSURE
+             * creation time from the then-current s->module->nested and remains
+             * valid because urbi_steal_repl_protos keeps the array alive. */
             uint8_t  a  = uinstr_a(*s->pc);
             uint16_t bx = uinstr_bx(*s->pc);
-            if ((size_t)bx >= s->module->nested_count) {
+            /* Resolve the nested[] array to use for this OP_CLOSURE. */
+            struct UProto **nested_arr;
+            size_t          nested_cnt;
+            if (s->frame_count > 0) {
+                UClosure *cur_cl = s->frames[s->frame_count - 1].closure;
+                if (cur_cl != NULL && cur_cl->origin_nested != NULL) {
+                    nested_arr = cur_cl->origin_nested;
+                    nested_cnt = (size_t)cur_cl->origin_nested_count;
+                } else {
+                    nested_arr = s->module ? s->module->nested : NULL;
+                    nested_cnt = s->module ? s->module->nested_count : 0U;
+                }
+            } else {
+                nested_arr = s->module ? s->module->nested : NULL;
+                nested_cnt = s->module ? s->module->nested_count : 0U;
+            }
+            if (nested_arr == NULL || (size_t)bx >= nested_cnt) {
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CLOSURE: proto index out of range");
                 HALT();
             }
-            UProto *child_proto = s->module->nested[bx];
+            UProto *child_proto = nested_arr[bx];
             UClosure *cl = vm_alloc_closure(vm, child_proto, &s->closure_list);
             if (cl == NULL) {
                 vm->last_error = UVM_OOM;
@@ -487,15 +547,66 @@ dispatch:
             }
             /* M4 follow-up: bind proto_inst so the new closure can dispatch
              * OP_GETSLOT/OP_SETSLOT against the per-VM IC table.  entries[0]
-             * is the root chunk; entries[bx + 1] is the matching nested proto. */
-            if (s->module_instance != NULL
-                && s->module_instance->proto_instances != NULL
-                && (size_t)bx + 1U < (size_t)s->module_instance->proto_instances->n) {
-                cl->proto_inst = &s->module_instance->proto_instances->entries[bx + 1U];
+             * is the root chunk; entries[bx + 1] is the matching nested proto.
+             *
+             * Phase 5 (Gap #1): when executing inside a cross-session closure
+             * call, s->module_instance belongs to the current session's module
+             * (not the closure's originating session), so entries[bx+1] may
+             * be out of range.  Fall back to the current frame's closure's
+             * origin_module_instance — that was the active module_instance
+             * when the parent closure was compiled, and its entries[] array
+             * covers all nested protos from the originating module. */
+            {
+                struct UModuleInstance *mi = s->module_instance;
+                if (mi != NULL
+                        && mi->proto_instances != NULL
+                        && (size_t)bx + 1U < (size_t)mi->proto_instances->n) {
+                    cl->proto_inst = &mi->proto_instances->entries[bx + 1U];
+                } else if (s->frame_count > 0) {
+                    /* Try the parent frame's closure's origin_module_instance. */
+                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
+                    struct UModuleInstance *omi = par_cl
+                                                  ? par_cl->origin_module_instance
+                                                  : NULL;
+                    if (omi != NULL
+                            && omi->proto_instances != NULL
+                            && (size_t)bx + 1U < (size_t)omi->proto_instances->n) {
+                        cl->proto_inst = &omi->proto_instances->entries[bx + 1U];
+                    }
+                }
+                /* If neither path worked, proto_inst stays NULL.  A subsequent
+                 * OP_GETSLOT will produce "no IC table bound" — this is the
+                 * pre-Phase-5 megamorphic bail, now limited to truly unusual
+                 * cases (VM init without module_instance wiring). */
             }
-            /* If no module_instance is bound (defensive — urbi_vm_run wires it for
-             * every normal execution path), proto_inst stays NULL and
-             * OP_GETSLOT/SETSLOT will diagnose cleanly. */
+
+            /* Phase 5 (Gap #1): propagate the resolved nested[] array and
+             * the originating module_instance to the new closure.
+             * origin_nested uses nested_arr (the already-resolved array from
+             * the parent frame, if any) so transitive closure chains share
+             * the same stolen nested[] array pointer.
+             * origin_module_instance is always set from s->module_instance
+             * (the current session's module_instance) — if origin_nested is
+             * from a parent's stolen array, we also need the parent's
+             * origin_module_instance for IC resolution.  Resolve it now. */
+            cl->origin_nested       = nested_arr;
+            cl->origin_nested_count = (uint16_t)nested_cnt;
+            /* Set origin_module_instance to the resolved module_instance
+             * (same fallback logic as proto_inst above). */
+            {
+                struct UModuleInstance *mi = s->module_instance;
+                if (s->frame_count > 0
+                        && !(mi != NULL
+                             && mi->proto_instances != NULL
+                             && (size_t)bx + 1U < (size_t)mi->proto_instances->n)) {
+                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
+                    cl->origin_module_instance = par_cl
+                                                 ? par_cl->origin_module_instance
+                                                 : mi;
+                } else {
+                    cl->origin_module_instance = mi;
+                }
+            }
 
             /* Read nupvals pseudo-instructions. */
             {
@@ -640,6 +751,10 @@ dispatch:
             new_frame->pc              = s->pc;    /* points AT OP_CALL in caller */
             new_frame->base            = s->R;     /* caller's register base */
             new_frame->result_dest_reg = (int)a;  /* where to write result */
+            /* Gap #3 (v0.6.2 Phase 2): save receiver for OP_LOAD_RECV (`this`
+             * keyword).  vm->last_recv was set by the OP_GETSLOT that loaded
+             * the callee (method-call pattern).  Nil for plain-variable calls. */
+            new_frame->recv            = vm->last_recv;
 
             /* Switch to callee frame. Args R[a+1..a+nargs] become R[0..nargs-1]. */
             s->R        = &s->R[a + 1];
@@ -697,19 +812,40 @@ dispatch:
         }
 
         CASE(OP_EQ) {
-            /* ABC: if ((R[B]==R[C]) != A) pc++ */
+            /* ABC: if ((R[B]==R[C]) != A) pc++
+             * Gap #4: when lhs is a user object, try "==" slot before
+             * falling back to identity/structural equality. */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
-            bool eq = uvalue_equal(b, c);
+            bool eq;
+            if (b->kind == (uint8_t)UVAL_OBJECT) {
+                USymbol *op = ustr_op_name(vm, "==", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &eq, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
+            }
+            eq = uvalue_equal(b, c);
             if ((int)eq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
 
         CASE(OP_NEQ) {
-            /* ABC: if ((R[B]!=R[C]) != A) pc++ */
+            /* ABC: if ((R[B]!=R[C]) != A) pc++
+             * Gap #4: when lhs is a user object, try "!=" slot first. */
             const UValue *b = &s->R[uinstr_b(*s->pc)];
             const UValue *c = &s->R[uinstr_c(*s->pc)];
-            bool neq = !uvalue_equal(b, c);
+            bool neq;
+            if (b->kind == (uint8_t)UVAL_OBJECT) {
+                USymbol *op = ustr_op_name(vm, "!=", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &neq, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
+            }
+            neq = !uvalue_equal(b, c);
             if ((int)neq != (int)uinstr_a(*s->pc)) { s->pc++; }
             NEXT();
         }
@@ -720,6 +856,13 @@ dispatch:
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool lt = false;
             if (uvalue_lt(b, c, &lt) != UVAL_CMP_OK) {
+                /* Gap #4: type-error fallback to "<" slot on lhs. */
+                USymbol *op = ustr_op_name(vm, "<", 1);
+                if (op != NULL && vm_cmp_method_fallback(vm, &lt, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)lt != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
@@ -735,6 +878,13 @@ dispatch:
             const UValue *c = &s->R[uinstr_c(*s->pc)];
             bool le = false;
             if (uvalue_le(b, c, &le) != UVAL_CMP_OK) {
+                /* Gap #4: type-error fallback to "<=" slot on lhs. */
+                USymbol *op = ustr_op_name(vm, "<=", 2);
+                if (op != NULL && vm_cmp_method_fallback(vm, &le, b, c, op,
+                        (uint32_t)(s->pc - s->pc_base)) == VM_OP_OVERLOAD_OK) {
+                    if ((int)le != (int)uinstr_a(*s->pc)) { s->pc++; }
+                    NEXT();
+                }
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_binary(vm, s->module,
                     (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);
@@ -917,13 +1067,13 @@ dispatch:
                         NEXT();
                     }
                     UValue loaded = *ic->slots[k];
-                    /* M6 Phase 3: publish receiver if this is a native
-                     * method dispatch.  Reading closure->native_fn here
-                     * is safe because UClosure is heap-stable post-OP_GETSLOT
-                     * (the slot's UValue holds a pointer to it). */
+                    /* Publish receiver for any closure load (native or bytecode).
+                     * Native dispatch (native_fn != NULL) needs it immediately
+                     * for the call; bytecode dispatch needs it for OP_LOAD_RECV
+                     * (`this` keyword, Gap #3 v0.6.2 Phase 2) which copies
+                     * last_recv into UCallFrame.recv at OP_CALL time. */
                     if (loaded.kind == (uint8_t)UVAL_CLOSURE
-                        && loaded.v.p != NULL
-                        && ((UClosure *)loaded.v.p)->native_fn != NULL) {
+                        && loaded.v.p != NULL) {
                         vm->last_recv = pending_recv;
                     }
                     s->R[dst_reg] = loaded;
@@ -970,11 +1120,10 @@ dispatch:
                 s->R[dst_reg] = getter_result;
                 NEXT();
             }
-            /* M6 Phase 3: publish receiver if the resolved value is a
-             * native method. */
+            /* Publish receiver for any closure load (native or bytecode)
+             * — mirrors the fast-path arm above. */
             if (v.kind == (uint8_t)UVAL_CLOSURE
-                && v.v.p != NULL
-                && ((UClosure *)v.v.p)->native_fn != NULL) {
+                && v.v.p != NULL) {
                 vm->last_recv = pending_recv;
             }
             s->R[dst_reg] = v;
@@ -1590,6 +1739,22 @@ dispatch:
             }
             s->R[A].kind = (uint8_t)UVAL_OBJECT;
             s->R[A].v.p  = r->global_object;
+            NEXT();
+        }
+
+        /* v0.6.2 Phase 2 — OP_LOAD_RECV: loads the receiver saved in the
+         * current call frame's .recv field into R[A].  The receiver is
+         * set at OP_CALL dispatch time from vm->last_recv (which is
+         * populated by the OP_GETSLOT that loaded the callee in a
+         * method-call pattern).  Emitted by the compiler for `this`
+         * inside a method body (AST_THIS with fs->parent != NULL). */
+        CASE(OP_LOAD_RECV) {
+            uint8_t A = uinstr_a(*s->pc);
+            /* recv is a UValue (nil when called from top-level or plain
+             * variable call; the receiver object for method-call pattern). */
+            s->R[A] = s->frame_count > 0
+                      ? s->frames[s->frame_count - 1].recv
+                      : urbi_value_nil();
             NEXT();
         }
 

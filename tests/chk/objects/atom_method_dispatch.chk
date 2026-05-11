@@ -8,10 +8,9 @@
 # atom-method dispatch (pre-Phase 2), the literal lookup would error
 # with "GETSLOT: receiver is not an Object" before atom-routing existed.
 #
-# Float-literal coverage is deferred: the v1.0 lexer does not currently
-# emit a single TOK_FLOAT for `3.14`; literal `3.14.fmark` parses as
-# `(3 . 14) . fmark` and fails before atom dispatch.  Int + String are
-# sufficient to validate the dispatch-arm wiring.
+# Float-literal coverage activated at v0.6.2: Gap #5 (float literals)
+# closed; `3.14` now parses as a single FLOAT token so `3.14.fmark`
+# dispatches correctly through the Float atom proto.
 
 # Stash a slot on Integer that we can resolve from any int literal.
 Integer.marker = 42
@@ -29,3 +28,10 @@ String.smark = 200
 
 "abc".smark
 [00000004] 200
+
+# Float atom-proto dispatch with a float literal (Gap #5 closed at v0.6.2).
+Float.fmark = 555
+[00000005] 555
+
+3.14.fmark
+[00000006] 555

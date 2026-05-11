@@ -1,0 +1,28 @@
+# Origin: legacy/repos/aldebaran-urbi/tests/2.x/class.chk
+# Milestone: M6 Wave 3 (Phase 3 — Gap #2 multi-slot class body)
+#
+# The legacy fixture tests S-class-name-scope: the name of the class
+# being defined is not available during parsing of its proto list.  As a
+# consequence, `class a : public a { ... }` resolves the proto `a` to the
+# OUTER `a`.
+#
+# The original fixture wraps everything in `{ ... }` bare blocks which
+# are not legal as top-level statements in v1.0 line-oriented REPL;
+# adapted here with same-line shadow chaining (identical semantics, see
+# tests/chk/objects/class.chk for the primary port).
+#
+# Wave 3 extension: extends the port with multi-slot class bodies
+# (Gap #2) which were blocked before this wave.
+
+# Core S-class-name-scope semantic (port of original single test case).
+class a { var foo = 40 }; class a : public a { var bar = 2 }; var b = a.new(); b.foo + b.bar
+[00000000] 42
+
+# Wave 3 extension: multi-slot class body with shadow scoping.
+class Base { var x = 1; var y = 2 }; class Child : public Base { var z = 3 }; var c = Child.new(); c.x + c.y + c.z
+[00000001] 6
+
+# Gap #3 (`this` in methods) and Gap #2 (multi-slot class body) both landed
+# at v0.6.2; the Greeter class body method test is now activated.
+class Greeter { var name = "hi"; var greet = function() { this.name } }; Greeter.new().greet()
+[00000002] "hi"

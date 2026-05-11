@@ -1,0 +1,22 @@
+# Milestone: M6 Wave 3 (Gap #4: operator-method fallback)
+# Covers: OP_EQ falls back to "==" slot on user-type lhs; atom fast-path
+#         (identity / structural) unaffected; result coerced to bool.
+
+# Atom fast-path: int == int still works.
+if (1 == 1) { "eq" } else { "neq" }
+[00000000] "eq"
+
+if (1 == 2) { "eq" } else { "neq" }
+[00000001] "neq"
+
+# User-type overload: "==" slot returning 1 (truthy) → branch taken as equal.
+class Vec {}; Vec.setSlot("==", function(other) { 1 }); var a = Vec.new(); var b = Vec.new(); if (a == b) { "eq" } else { "neq" }
+[00000002] "eq"
+
+# User-type overload: "==" slot returning 0 (falsy) → branch taken as not-equal.
+class Vec2 {}; Vec2.setSlot("==", function(other) { 0 }); var a2 = Vec2.new(); var b2 = Vec2.new(); if (a2 == b2) { "eq" } else { "neq" }
+[00000003] "neq"
+
+# Missing "==" slot falls through to identity equality (two different objects → not equal).
+class NoEq {}; var n1 = NoEq.new(); var n2 = NoEq.new(); if (n1 == n2) { "eq" } else { "neq" }
+[00000004] "neq"

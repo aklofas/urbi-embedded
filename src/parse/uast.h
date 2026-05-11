@@ -101,7 +101,7 @@ typedef enum {
                              * ends up [P1, P2, Object] for `: public P1, P2`. */
 
     /* M6 wave 2 — get/set parse sugar (T41) */
-    AST_PROPERTY_DECL = 35  /* get name() { body } / set name(v) { body }
+    AST_PROPERTY_DECL = 35, /* get name() { body } / set name(v) { body }
                              * Parse-only desugar — emit installs the closure
                              * as the slot's `oget` (URBI_SLOT_FLAG_OGET) or
                              * `oset` (URBI_SLOT_FLAG_OSET) property.  The
@@ -113,6 +113,19 @@ typedef enum {
                              * implicit receiver as the class object.  When
                              * `recv` is non-NULL (e.g. `Foo.get value() {}`)
                              * the receiver is emitted explicitly. */
+
+    /* v0.6.2 Phase 1 — float literal (Gap #5) */
+    AST_FLOAT_LIT = 36,     /* floating-point literal — 1.5, .5, 1.5e3, 1e3.
+                             * Parsed from TOK_FLOAT; emit routes through
+                             * OP_LOADK with a UVAL_FLOAT constant. */
+
+    /* v0.6.2 Phase 2 — this keyword (Gap #3) */
+    AST_THIS = 37           /* `this` keyword — resolves to receiver (R0) in
+                             * method bodies.  Carries no payload; line+col
+                             * are inherited from the base node.  Top-level
+                             * `this` (lobby alias) is deferred to v1.x;
+                             * emitter raises EMIT_NO_THIS_OUTSIDE_METHOD when
+                             * fs->parent == NULL. */
 } UAstKind;
 
 /* Method/property-decl kind discriminator (T41 — M6 Wave 2). */
@@ -210,6 +223,7 @@ typedef enum {
  *
  * Union invariants (active member per kind):
  *   u.i           — AST_INT:        parsed integer value
+ *   u.f           — AST_FLOAT_LIT: parsed double value
  *   u.ident       — AST_IDENT:      zero-copy lexeme view
  *   u.unary       — AST_UNARY:      prefix operator + operand pointer
  *   u.binary      — AST_BINARY:     infix operator + two operand pointers
@@ -260,6 +274,7 @@ struct UAstNode {
     int col;
     union {
         int64_t i;                                          /* AST_INT */
+        double  f;                                          /* AST_FLOAT_LIT */
         struct {                                            /* AST_IDENT */
             const char *start;
             int len;

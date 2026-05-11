@@ -207,6 +207,21 @@ test-bake-smoke: tools/urbi-compile-stdlib
 test-bytecode-only:
 	@./tests/scripts/build-bytecode-only.sh
 
+# v0.6.2 Wave 3 oracle-diff — third-party sanity check against urbiforge
+# 3.x (CMake-built, installed at $(URBI_ORACLE_ROOT)).  Diffs our urbi
+# binary's stdout against the urbiforge engine (`urbi-launch -s --`)
+# for selected legacy fixtures.  NOT a CI gate — opt-in for Wave 3
+# parity validation on Gaps #1 + #4.
+URBI_ORACLE_ROOT ?= /tmp/urbi-oracle
+
+.PHONY: oracle-diff
+oracle-diff: $(BUILDDIR)/urbi
+	@if [ ! -x "$(URBI_ORACLE_ROOT)/bin/urbi-launch" ]; then \
+	    echo "oracle-diff: $(URBI_ORACLE_ROOT)/bin/urbi-launch not built; see Phase 0 Task 4 of v0.6.2 plan"; \
+	    exit 1; \
+	fi
+	@URBI_ORACLE_ROOT=$(URBI_ORACLE_ROOT) bash tests/scripts/oracle-diff.sh $(ORACLE_FIXTURES)
+
 test-debug:
 	$(MAKE) TARGET=host-debug \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_DEBUG=1" \
@@ -773,4 +788,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only
+.PHONY: all test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only oracle-diff

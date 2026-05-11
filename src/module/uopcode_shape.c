@@ -74,4 +74,6 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
      * shape extension is deferred — needs a concrete realm symbol-table
      * layout (see backlog). */
     [OP_LOAD_REALM_GLOBAL]     = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
+    /* OP_LOAD_RECV: A=dst_reg, B=C=0 (unused). */
+    [OP_LOAD_RECV]             = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
 };

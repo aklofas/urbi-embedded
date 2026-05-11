@@ -1,0 +1,31 @@
+# Milestone: v0.6.2 — Phase 6 (.u overlay).
+# Covers: String utility methods declared in src/stdlib/string_overlay.u
+#         via the class-body / addProto pattern (StringMethods class).
+#
+# Methods: nonEmpty, hasPrefix, hasSuffix.
+# Note: concat-dependent methods (repeat, reverse, split) deferred to
+# v1.x pending String + operator and split() native support.
+#
+# Gap requirements: multi-slot class body (Gap #2, v0.6.2), this
+# resolution (Gap #3, v0.6.2).
+
+# nonEmpty: inverse of isEmpty.
+"hello".nonEmpty()
+[00000000] true
+
+"".nonEmpty()
+[00000001] false
+
+# hasPrefix: alias for startsWith.
+"hello world".hasPrefix("hello")
+[00000002] true
+
+"hello world".hasPrefix("world")
+[00000003] false
+
+# hasSuffix: alias for endsWith.
+"hello world".hasSuffix("world")
+[00000004] true
+
+"hello world".hasSuffix("hello")
+[00000005] false

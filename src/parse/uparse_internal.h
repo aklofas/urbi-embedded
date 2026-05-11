@@ -70,6 +70,7 @@ UAstNode *make_compare(UParser *p, UAstCompareOp op, UAstNode *lhs, UAstNode *rh
                        int line, int col);
 UAstNode *make_bool_node(UParser *p, bool value, int line, int col);
 UAstNode *make_nil_node(UParser *p, int line, int col);
+UAstNode *make_this_node(UParser *p, int line, int col);
 UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec);
 UAstNode *parse_expression(UParser *p, int min_prec);
 UAstNode *parse_prefix(UParser *p);

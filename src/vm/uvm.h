@@ -108,6 +108,61 @@ typedef struct UDeferredSlotChange {
     UValue          new_value;
 } UDeferredSlotChange;
 
+/* --- Operator-overload IC (Gap #4, M6 Wave 3) ---
+ *
+ * Per-call-site inline cache for operator-method lookup.  When an arithmetic
+ * or comparison opcode raises a type error and the lhs is a user object, the
+ * fallback walks the proto chain to find the operator-named slot ("+", "-",
+ * etc.).  This IC caches the result so the second and subsequent calls at the
+ * same pc_offset skip the proto-chain walk.
+ *
+ * Sizing: URBI_OP_OVERLOAD_IC_SITES × URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE.
+ * Defaults: 64 sites × 4 entries = 256 IC slots.  Embedded footprint preset
+ * may halve these; they are independently tunable compile-time constants.
+ * Allocated inline in the UVM struct (not heap-allocated) so the IC is always
+ * available after urbi_vm_init without a separate alloc. */
+#ifndef URBI_OP_OVERLOAD_IC_SITES
+#define URBI_OP_OVERLOAD_IC_SITES          32U
+#endif
+#ifndef URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE
+#define URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE 4U
+#endif
+
+typedef struct UOpOverloadICEntry {
+    uint32_t         pc_offset;    /* call-site identifier (offset from proto base) */
+    uint64_t         topology_gen; /* vm->topology_gen at fill time; stale on mismatch */
+    struct USymbol  *op_name;      /* interned operator-name symbol */
+    struct UClosure *cached;       /* cached method closure; NULL = miss */
+} UOpOverloadICEntry;
+
+typedef struct UOpOverloadIC {
+    UOpOverloadICEntry entries[URBI_OP_OVERLOAD_IC_SITES]
+                              [URBI_OP_OVERLOAD_IC_ENTRIES_PER_SITE];
+    uint8_t  n[URBI_OP_OVERLOAD_IC_SITES];             /* live entries per site */
+    uint8_t  cursor[URBI_OP_OVERLOAD_IC_SITES];        /* eviction cursor per site */
+} UOpOverloadIC;
+/* UVM holds a heap pointer to UOpOverloadIC to avoid inflating the per-UVM
+ * stack footprint in tests that allocate `UVM vm;` on the C stack.  The IC
+ * is heap-allocated at urbi_vm_init time and freed at urbi_vm_destroy. */
+
+/* --- Phase 5 (Gap #1): stolen nested-array bookkeeping ---
+ *
+ * When urbi_steal_repl_protos rescues a closure from a REPL-session
+ * UModule that is about to be destroyed, it steals the entire nested[]
+ * array by setting module->nested = NULL (so umodule_destroy skips it)
+ * and threading the array pointer onto vm->stdlib_nested_arrays via this
+ * node type.  The stolen array remains valid for the lifetime of any
+ * surviving UClosure whose origin_nested points at it.
+ *
+ * urbi_vm_destroy walks the list and frees each array via the stored
+ * alloc_fn/alloc_ud before the proto structs in stdlib_protos are freed. */
+typedef struct UNestedArrayNode {
+    struct UProto         **arr;       /* stolen nested[] array pointer     */
+    UVMAllocFn              alloc_fn;  /* allocator used to free arr        */
+    void                   *alloc_ud;  /* user data for alloc_fn            */
+    struct UNestedArrayNode *next;     /* linked-list link                  */
+} UNestedArrayNode;
+
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -443,6 +498,19 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   arm reads this only on the native_fn != NULL branch. */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
+    /* stdlib_protos: linked list of UProto objects stolen from REPL-session
+     * UModules by urbi_steal_repl_protos before umodule_destroy.  Stolen
+     * protos are owned by the VM and freed at urbi_vm_destroy.  Threaded via
+     * UProto.next_alloc (runtime-only field; not serialized).  NULL until the
+     * first REPL session produces a realm-global closure (the common case for
+     * embedded one-shot runs with no REPL). */
+    struct UProto      *stdlib_protos;
+    /* stdlib_nested_arrays: list of UNestedArrayNode records tracking nested[]
+     * arrays stolen from REPL-session UModules.  Each node stores the array
+     * pointer + allocator; freed in urbi_vm_destroy after the UProto structs
+     * in stdlib_protos are freed (order doesn't matter since the nodes hold
+     * the array memory, not the proto structs). */
+    UNestedArrayNode   *stdlib_nested_arrays;
     struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
@@ -493,6 +561,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t     heap_locked;
     uint8_t     pad_stdlib[6];          /* padding; zeroed */
     UValue      last_recv;
+    /* Operator-overload IC (Gap #4, M6 Wave 3).  Heap-allocated at
+     * urbi_vm_init time via vm->alloc_fn; freed at urbi_vm_destroy.
+     * NULL until first allocation (urbi_vm_init ensures it is allocated).
+     * Pointer to UOpOverloadIC keeps the UVM struct small so tests that
+     * put `UVM vm;` on the C stack do not overflow. */
+    UOpOverloadIC *op_overload_ic;
 } UVM;
 
 /* --- API --- */

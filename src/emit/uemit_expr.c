@@ -42,6 +42,41 @@ uint8_t emit_int_arm(UEmitter *e, const UAstNode *n) {
     return r;
 }
 
+/* --- AST_FLOAT_LIT --- */
+
+uint8_t emit_float_arm(UEmitter *e, const UAstNode *n) {
+    const uint16_t k = add_const_float(e, n->u.f);
+    if (e->error != EMIT_OK) return 0U;
+    const uint8_t r = alloc_reg(e);
+    if (e->error != EMIT_OK) return 0U;
+    emit_instr(e, uinstr_enc_abx(OP_LOADK, r, k), (uint32_t)n->line);
+    return r;
+}
+
+/* --- AST_THIS (v0.6.2 Phase 2 — Gap #3) ---
+ *
+ * `this` resolves to the receiver object, which the OP_CALL convention
+ * places in register R0 of the callee's frame.  Emits OP_MOVE dst, R0.
+ *
+ * Top-level `this` (fs->parent == NULL) is a v1.x feature (lobby alias);
+ * raise EMIT_NO_THIS_OUTSIDE_METHOD for now (REVIVAL §14 S29). */
+
+uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
+    const UFuncState *fs = e->current_fs;
+    if (fs == NULL || fs->parent == NULL) {
+        e->error = EMIT_NO_THIS_OUTSIDE_METHOD;
+        return 0U;
+    }
+    const uint8_t dst = alloc_reg(e);
+    if (e->error != EMIT_OK) return 0U;
+    /* OP_LOAD_RECV loads the receiver saved in the call frame at dispatch
+     * time (UCallFrame.recv ← vm->last_recv at OP_CALL).  This is reliable
+     * across subsequent OP_GETSLOT calls within the method body, unlike
+     * reading vm->last_recv directly. */
+    emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
+    return dst;
+}
+
 /* --- AST_BOOL --- */
 
 uint8_t emit_bool_arm(UEmitter *e, const UAstNode *n) {

@@ -1,0 +1,15 @@
+// Singleton mixin — Phase 6 overlay.
+//
+// Singleton.clone and Singleton.new return the receiver itself rather
+// than allocating a fresh copy.  Any class that addProto(Singleton)
+// inherits this behaviour: only one instance ever exists per class.
+//
+// Legacy reference: share/urbi/singleton.u (Gostai 2008–2012).
+// v1.0 adaptation: clone and new are declared inside the class body
+// (multi-slot class body, Gap #2, landed at v0.6.2) so they install as
+// const-overridable local slots on the class proto at declaration time.
+
+class Singleton {
+    var clone = function() { this };
+    var new   = function() { this }
+} |

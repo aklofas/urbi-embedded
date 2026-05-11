@@ -89,6 +89,10 @@ UAstNode *make_nil_node(UParser *p, int line, int col) {
     return make_node(p, AST_NIL, line, col);
 }
 
+UAstNode *make_this_node(UParser *p, int line, int col) {
+    return make_node(p, AST_THIS, line, col);
+}
+
 /* hex_digit_unchecked — convert one ASCII hex digit to its 0..15 value.
  * Caller has already passed the byte through the lexer's
  * validate_unicode_escape pass, which guarantees `c` is in [0-9a-fA-F].
@@ -280,6 +284,13 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_INT:
         consume(p);
         return make_int(p, t.u.i, t.line, t.col);
+    case TOK_FLOAT: {
+        consume(p);
+        UAstNode *n = make_node(p, AST_FLOAT_LIT, t.line, t.col);
+        if (!n) return NULL;
+        n->u.f = t.u.f;
+        return n;
+    }
     case TOK_STRING:
         return parse_string_literal(p);
     case TOK_IDENT:
@@ -294,6 +305,10 @@ UAstNode *parse_atom(UParser *p) {
     case TOK_KW_NIL:
         consume(p);
         return make_nil_node(p, t.line, t.col);
+    case TOK_KW_THIS: {
+        UToken tok = consume(p);
+        return make_this_node(p, tok.line, tok.col);
+    }
     case TOK_LPAREN: {
         consume(p);
         UAstNode *inner = parse_expression(p, 0);

@@ -1,0 +1,3 @@
+host:    199365	   4920	      0	 204285	  31dfd	(TOTALS)
+arm:      97226	      0	      0	  97226	  17bca	(TOTALS)
+riscv:   123378	      0	      0	 123378	  1e1f2	(TOTALS)

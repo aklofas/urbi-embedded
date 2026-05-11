@@ -59,11 +59,17 @@ typedef enum {
     EMIT_TOO_MANY_ARGS,             /* EMIT-014: AST_CALL with >= 254 args
                                        (B field encodes nargs+1 as uint8_t,
                                        wraps at 256) */
-    EMIT_TAG_SPILL_OUT_OF_RANGE     /* EMIT-015: AST_TAG_PREFIX spill register
+    EMIT_TAG_SPILL_OUT_OF_RANGE,    /* EMIT-015: AST_TAG_PREFIX spill register
                                        does not fit OP_PUSH_TAG's 4-bit
                                        reg-nibble.  v1.x bytecode change widens
                                        the encoding (filed as backlog under
                                        T129/Phase 22). */
+
+    /* v0.6.2 Phase 2 — Gap #3 (this keyword) */
+    EMIT_NO_THIS_OUTSIDE_METHOD     /* `this` used at top-level (fs->parent ==
+                                       NULL).  Top-level `this` resolves to the
+                                       lobby object — deferred to v1.x
+                                       (REVIVAL §14 S29). */
 } UEmitError;
 
 /* Forward declaration for M2 FuncState lifecycle. */

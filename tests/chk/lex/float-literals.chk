@@ -1,0 +1,38 @@
+# Milestone: v0.6.2-language-completion Phase 1
+# Covers: float-literal lex + parse + emit + VM round-trip.
+#         Decimal float only (hex floats out of scope per v0.6.2 locked
+#         sub-decisions).  Disambiguation rule: `0.foo` is INT(0) DOT
+#         IDENT(foo); only INT followed by '.' then a digit promotes to
+#         TOK_FLOAT.  Leading-dot form `.5` dispatched from ulex_next when
+#         the first char is '.'.
+# Audit:  Closes Gap #5 of v0.6.2-language-completion.
+
+1.5
+[00000000] 1.5
+
+.5
+[00000000] 0.5
+
+0.5
+[00000000] 0.5
+
+1.5e3
+[00000000] 1500.0
+
+1.5E3
+[00000000] 1500.0
+
+1e3
+[00000000] 1000.0
+
+1.5e-3
+[00000000] 0.0015
+
+var x = 1.5; x
+[00000000] 1.5
+
+0.5 + 0.5
+[00000000] 1.0
+
+1.5 * 2
+[00000000] 3.0

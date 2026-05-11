@@ -1,0 +1,25 @@
+# Milestone: v0.6.2 — Phase 6 (.u overlay).
+# Covers: Dict utility methods declared in src/stdlib/dict_overlay.u
+#         via the class-body / addProto pattern (DictMethods class).
+#
+# Methods: getWithDefault, setIfAbsent.
+# Note: map/filter/each deferred to v1.x pending Dict.keys() protocol.
+#
+# Gap requirements: multi-slot class body (Gap #2, v0.6.2), this
+# resolution (Gap #3, v0.6.2).
+
+# getWithDefault: returns the value when key is present.
+var d = Dict.new(); d.set("a", 1); d.getWithDefault("a", 99)
+[00000000] 1
+
+# getWithDefault: returns the default when key is absent.
+var d2 = Dict.new(); d2.getWithDefault("x", 99)
+[00000001] 99
+
+# setIfAbsent: returns existing value when key is already present.
+var d3 = Dict.new(); d3.set("a", 1); d3.setIfAbsent("a", 999)
+[00000002] 1
+
+# setIfAbsent: sets and returns new value when key is absent.
+var d4 = Dict.new(); d4.setIfAbsent("x", 42); d4.get("x")
+[00000003] 42

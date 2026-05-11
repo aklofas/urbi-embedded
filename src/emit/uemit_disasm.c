@@ -324,6 +324,14 @@ static bool fmt_load_realm_global(char *buf, size_t cap, size_t *off,
                       (unsigned)uinstr_b(ins), (unsigned)uinstr_c(ins));
 }
 
+static bool fmt_load_recv(char *buf, size_t cap, size_t *off,
+                          size_t *ip, uint32_t ins,
+                          const UModule *module) {
+    (void)module;
+    return dis_printf(buf, cap, off, "%04zu  LOAD_RECV R%u\n",
+                      *ip, (unsigned)uinstr_a(ins));
+}
+
 /* --- opname helper (used by the generic fallback in uemit_disassemble) --- */
 
 static const char *opname(const UOpcode op) {
@@ -375,6 +383,7 @@ static const char *opname(const UOpcode op) {
     case OP_AT_EVENT_SYNC_INSTALL:return "AT_EVENT_SYNC_INSTALL";
     case OP_GETSLOT_CHANGE_EVENT: return "GETSLOT_CHANGE_EVENT";
     case OP_LOAD_REALM_GLOBAL:    return "LOAD_REALM_GLOBAL";
+    case OP_LOAD_RECV:            return "LOAD_RECV";
     case OP_MAX:                  break;
     }
     return "OP?";
@@ -434,6 +443,7 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 43 OP_AT_EVENT_SYNC_INSTALL */ fmt_at_event_sync_install,
     /* 44 OP_GETSLOT_CHANGE_EVENT  */ fmt_getslot_change_event,
     /* 45 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
+    /* 46 OP_LOAD_RECV          */ fmt_load_recv,
 };
 
 size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {

@@ -9,13 +9,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* strtod (for float literal parsing): from stdlib.h on hosted; declared
+ * explicitly for freestanding builds (newlib / picolibc supply it at link
+ * time for embedded targets; no header pull-in needed for the declaration). */
+#if __STDC_HOSTED__
+#  include <stdlib.h>
+#else
+/* Forward declaration for newlib / picolibc strtod on embedded targets.
+ * On a pure freestanding build without a C library this will produce a
+ * linker error for any float literal in the input — acceptable because
+ * the URBI_BYTECODE_ONLY strip path removes the lex/parse/emit subsystem
+ * entirely for bare-metal deploys.  The cross-compile gate only verifies
+ * that the code compiles; actual float-literal parse is host-only. */
+extern double strtod(const char *, char **);
+#endif
+
 /* Length of a radix prefix ("0x", "0b", "0o").  Used by scan_radix to size
    the EMPTY_RADIX error span; LEX_RADIX_PREFIX_LEN + 1 sizes the MALFORMED
    span (prefix + the bad digit-ish byte we consumed for recovery). */
 #define LEX_RADIX_PREFIX_LEN 2
 
 static const char * const TOKEN_NAMES[] = {
-    "TOK_EOF", "TOK_INT", "TOK_STRING", "TOK_IDENT",
+    "TOK_EOF", "TOK_INT", "TOK_FLOAT", "TOK_STRING", "TOK_IDENT",
     "TOK_PLUS", "TOK_MINUS", "TOK_STAR", "TOK_SLASH",
     "TOK_LPAREN", "TOK_RPAREN",
     "TOK_PIPE", "TOK_SEMI", "TOK_COMMA", "TOK_AMP",
@@ -31,6 +46,7 @@ static const char * const TOKEN_NAMES[] = {
     "TOK_KW_ONLEAVE", "TOK_KW_SYNC", "TOK_KW_ASYNC",
     "TOK_QUESTION", "TOK_BANG",
     "TOK_KW_CLASS", "TOK_KW_PUBLIC",
+    "TOK_KW_THIS",
     "TOK_ERROR"
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
@@ -55,7 +71,10 @@ static const char * const ERR_MSG[] = {
     "invalid escape sequence in string literal",
     "unicode escape requires 4 hex digits",
     "unicode code point exceeds U+10FFFF",
-    "unicode escape resolves to a lone surrogate"
+    "unicode escape resolves to a lone surrogate",
+    "float literal has no fraction digits after the decimal point",
+    "float literal exponent marker has no digits",
+    "float literal exceeds representable range"
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
 _Static_assert(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
@@ -351,10 +370,106 @@ static int apply_duration_suffix(ULexer *lex, int64_t *value) {
     return 0;
 }
 
+/* scan_float_body — called when a float literal is confirmed.  lex->cur
+   points at the first character AFTER the part already scanned (either the
+   decimal point that we just confirmed is followed by a digit, or the 'e'/'E'
+   of an exponent).  start points at the beginning of the entire numeric
+   literal in the source buffer.
+   Consumes: optional remaining fraction digits + optional exponent form
+             ([eE][+-]?[0-9]+).
+   Returns a TOK_FLOAT token on success or a TOK_ERROR on bad exponent form
+   or out-of-range value.
+   Precondition: lex->cur points at the '.' that starts the fraction (for the
+   fraction path) or at 'e'/'E' (for the integer-plus-exponent path). */
+static UToken scan_float_body(ULexer *lex, const char *start,
+                              const int start_line, const int start_col) {
+    /* Consume fraction digits if we are sitting on a '.'. */
+    if (lex->cur < lex->end && *lex->cur == '.') {
+        /* Peek: next char must be a digit (caller should have verified this
+           for the INT+'.<digit>' promotion path, but be defensive). */
+        if (lex->cur + 1 >= lex->end ||
+            !(lex->cur[1] >= '0' && lex->cur[1] <= '9')) {
+            /* Trailing dot — no fraction digits. */
+            lex->cur++;   /* consume the dot for recovery */
+            const int len = (int)(lex->cur - start);
+            return make_error(LEX_FLOAT_TRAILING_DOT, start_line, start_col, len);
+        }
+        lex->cur++;   /* consume '.' */
+        while (lex->cur < lex->end && *lex->cur >= '0' && *lex->cur <= '9') {
+            lex->cur++;
+        }
+    }
+
+    /* Consume optional exponent [eE][+-]?[0-9]+. */
+    if (lex->cur < lex->end && (*lex->cur == 'e' || *lex->cur == 'E')) {
+        lex->cur++;   /* consume 'e'/'E' */
+        /* Optional sign. */
+        if (lex->cur < lex->end && (*lex->cur == '+' || *lex->cur == '-')) {
+            lex->cur++;
+        }
+        /* Must have at least one digit. */
+        if (lex->cur >= lex->end || !(*lex->cur >= '0' && *lex->cur <= '9')) {
+            const int len = (int)(lex->cur - start);
+            return make_error(LEX_FLOAT_EXPONENT_NO_DIGITS,
+                              start_line, start_col, len);
+        }
+        while (lex->cur < lex->end && *lex->cur >= '0' && *lex->cur <= '9') {
+            lex->cur++;
+        }
+    }
+
+    /* Use strtod to convert the full source span to double. */
+    const int span = (int)(lex->cur - start);
+    /* strtod needs a NUL-terminated string; the source buffer may not have
+       one at lex->cur.  We copy the span into a stack buffer — float literal
+       lengths are bounded (no underscores, no radix prefixes) so 64 bytes
+       is ample.  If somehow the span is larger, strtod will stop at the
+       first non-float character, which is correct. */
+    char buf[64];
+    int copy_len = span < 63 ? span : 63;
+    int ci;
+    for (ci = 0; ci < copy_len; ci++) buf[ci] = start[ci];
+    buf[copy_len] = '\0';
+
+    char *endp = NULL;
+    const double val = strtod(buf, &endp);
+    /* Detect overflow: strtod returns ±infinity when the value exceeds the
+     * representable double range.  We check without <math.h> by using the
+     * IEEE-754 identity that (val - val) is NaN (not 0.0) for infinite
+     * operands; this avoids a <math.h> dependency in the lexer (freestanding
+     * targets may not have isinf() without the header). */
+    if (val != 0.0 && val - val != 0.0) {
+        return make_error(LEX_FLOAT_OVERFLOW, start_line, start_col, span);
+    }
+
+    UToken t = make_tok_base(TOK_FLOAT, start_line, start_col);
+    t.len = span;
+    t.u.f = val;
+    return t;
+}
+
+/* scan_float_leading_dot — called from ulex_next when '.' is followed by a
+   decimal digit.  lex->cur points at the '.'. */
+static UToken scan_float_leading_dot(ULexer *lex) {
+    const char *start = lex->cur;
+    const int start_col = (int)(start - lex->line_start) + 1;
+    const int start_line = lex->line;
+    /* scan_float_body will consume the '.' and all subsequent float parts. */
+    return scan_float_body(lex, start, start_line, start_col);
+}
+
 /* Scan a numeric literal starting at lex->cur.  Caller has confirmed
    *lex->cur is a decimal digit; this function dispatches to the radix
    path on a leading '0' and otherwise scans a decimal integer with an
-   optional duration suffix.  Renamed from scan_decimal (LEX-018). */
+   optional duration suffix or float promotion.  Renamed from scan_decimal
+   (LEX-018).
+   Float promotion rules (Gap #5):
+     - After accumulating decimal digits, if the next char is '.' followed by
+       a digit, promote to TOK_FLOAT (calls scan_float_body at the '.').
+     - If the next char after digits is 'e' or 'E', promote to TOK_FLOAT
+       (calls scan_float_body at the 'e'/'E').
+     - Disambiguation: '0.foo' keeps INT(0) DOT IDENT(foo) because '.' is not
+       followed by a digit. */
 static UToken scan_number(ULexer *lex) {
     const char *start = lex->cur;
     const int start_col = (int)(start - lex->line_start) + 1;
@@ -366,6 +481,40 @@ static UToken scan_number(ULexer *lex) {
     const UDigitAccResult dr = scan_decimal_digits(lex, start, start_line, start_col);
     if (!dr.ok) return dr.err;
     int64_t value = dr.value;
+
+    /* Float promotion: '.<digit>', '.<EOF>', or 'e'/'E' after the integer
+       part.
+       Disambiguation:
+         '1.5'  → TOK_FLOAT (dot followed by digit)
+         '1.'   → TOK_ERROR / LEX_FLOAT_TRAILING_DOT (dot at EOF or before
+                  non-ident-non-digit; scan_float_body reports the error)
+         '1.foo'→ TOK_INT + TOK_DOT + TOK_IDENT (dot followed by ident char;
+                  keep as-is for member-access)
+       Rule: enter scan_float_body on '.' only when the char after '.' is
+       a decimal digit OR there is no char after '.' (EOF).  If '.' is
+       followed by an ident-start character, leave the integer as-is so
+       '0.foo', 'obj.method' patterns work. */
+    if (lex->cur < lex->end) {
+        const char c = *lex->cur;
+        if (c == '.') {
+            /* Peek at what follows the dot. */
+            if (lex->cur + 1 >= lex->end) {
+                /* Dot at end of input → trailing-dot error. */
+                return scan_float_body(lex, start, start_line, start_col);
+            }
+            const char after_dot = lex->cur[1];
+            if (after_dot >= '0' && after_dot <= '9') {
+                /* Dot followed by digit → valid fraction. */
+                return scan_float_body(lex, start, start_line, start_col);
+            }
+            /* Dot followed by ident char or other punctuation: leave as INT;
+               '.' will become TOK_DOT on the next ulex_next call. */
+        }
+        /* Check for bare exponent: 'e'/'E' without a fraction. */
+        if (c == 'e' || c == 'E') {
+            return scan_float_body(lex, start, start_line, start_col);
+        }
+    }
 
     if (apply_duration_suffix(lex, &value)) {
         return make_error(LEX_INT_OVERFLOW, start_line, start_col,
@@ -409,6 +558,7 @@ static const UKeyword KEYWORDS[] = {
     KW_ENTRY("public",    TOK_KW_PUBLIC),
     KW_ENTRY("return",    TOK_KW_RETURN),
     KW_ENTRY("sync",      TOK_KW_SYNC),
+    KW_ENTRY("this",      TOK_KW_THIS),
     KW_ENTRY("throw",     TOK_KW_THROW),
     KW_ENTRY("true",      TOK_KW_TRUE),
     KW_ENTRY("try",       TOK_KW_TRY),
@@ -779,6 +929,14 @@ UToken ulex_next(ULexer *lex) {
         const int start_line = lex->line;
         const int start_col = (int)(start - lex->line_start) + 1;
         return lex_string(lex, start_line, start_col);
+    }
+
+    /* Leading-dot float: '.5', '.123', etc.  Must be checked before the
+     * punct table fast-path (which would otherwise emit TOK_DOT).
+     * Disambiguation: '.' followed by a non-digit remains TOK_DOT. */
+    if (c == '.' && lex->cur + 1 < lex->end &&
+        lex->cur[1] >= '0' && lex->cur[1] <= '9') {
+        return scan_float_leading_dot(lex);
     }
 
     /* Fast path: purely single-char punctuation. */

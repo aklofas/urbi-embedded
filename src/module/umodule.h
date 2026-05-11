@@ -198,7 +198,8 @@ typedef enum {
     /* Slot 38 was OP_INVOKE (M4 reserve for collapsed GETSLOT+CALL).
      * Retired at v0.5.6 T16; the gap was collapsed at v0.5.6 T17 by
      * renumbering M5 reactive opcodes 39-46 down to 38-45.  Opcode space
-     * is now contiguous 0-45; OP_MAX = 46. */
+     * was contiguous 0-45 (OP_MAX = 46) before v0.6.2 Phase 2 added
+     * OP_LOAD_RECV at slot 46 (OP_MAX = 47). */
 
     /* M5 reactive runtime — pre-M5 spec #2 (at/whenever/waituntil) */
     OP_AT_INSTALL              = 38,  /* ABC: cond_reg, body_reg, onleave_or_FF  */
@@ -218,6 +219,13 @@ typedef enum {
                                          extension deferred — needs concrete
                                          realm symbol-table layout, see
                                          backlog) */
+
+    /* v0.6.2 Phase 2 — `this` keyword (Gap #3) */
+    OP_LOAD_RECV               = 46,  /* A: dst_reg; loads the receiver stored
+                                         in the current call frame's .recv field
+                                         (set at OP_CALL dispatch from
+                                         vm->last_recv).  Emitted for AST_THIS
+                                         inside a method body. */
 
     OP_MAX
 } UOpcode;
@@ -310,6 +318,14 @@ typedef struct UProto {
     /* Allocator hook inherited from the owning module. */
     UModuleAllocFn alloc_fn;
     void          *alloc_ud;
+
+    /* [runtime-only, NOT serialized] Intrusive list link used when this proto
+     * is "stolen" from its owning UModule by urbi_steal_repl_protos before
+     * umodule_destroy.  Stolen protos are threaded onto vm->stdlib_protos and
+     * freed at urbi_vm_destroy.  NULL when the proto is still owned by its
+     * originating module (the normal case).  Zero-initialized alongside the
+     * rest of UProto at alloc time (umodule_alloc_nested_proto). */
+    struct UProto *next_alloc;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
