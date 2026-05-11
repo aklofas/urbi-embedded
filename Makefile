@@ -78,37 +78,54 @@ urbi-bin: $(BUILDDIR)/urbi
 # the public Urbi compile API, and emits the bytecode blob as
 # src/stdlib/urbi_stdlib_bytecode.gen.c.
 #
-# The tool is HOST-ONLY: it always links against build/host/liburbi.a,
-# never the cross-target archive.  Cross-arch builds consume the
-# already-emitted .gen.c source (compiled for the target like any
-# other src/stdlib/*.c).  This keeps the chicken-and-egg out of the
-# cross build: the bake runs once on the host, its output ships as
-# portable C source.
+# HOST-ONLY: the bake tool always builds with native cc, never the
+# cross toolchain.  Cross-arch builds consume the already-emitted
+# .gen.c source (compiled for the target like any other src/stdlib/*.c).
+# This keeps the chicken-and-egg out of the cross build: the bake
+# runs once on the host, its output ships as portable C source.
 #
-# Two-pass build (delta spec §3.1):
-#   1. liburbi.a builds with the placeholder .gen.c (tracked in repo)
-#   2. tools/urbi-compile-stdlib links against that intermediate library
-#   3. Subsequent builds regenerate .gen.c on .u or order changes,
-#      causing liburbi.a to re-link with the populated blob.
+# Cycle break:
+#   The bake tool needs the urbi runtime to call urbi_compile_source,
+#   but MUST NOT depend on .gen.o — that's the file it produces, and
+#   the dep would form a build cycle:
+#       liburbi.a → .gen.o → .gen.c → bake-tool → liburbi.a
+#   So the bake tool links against host .o files DIRECTLY (excluding
+#   .gen.o) plus a small stub (tools/stub_stdlib_bytecode.c) that
+#   defines urbi_stdlib_bytecode[]=0 / urbi_stdlib_bytecode_len=0.
+#   urbi_stdlib_boot gates on _len > 0 (see src/stdlib/stdlib_boot.c),
+#   so the stub yields a clean no-op boot; the bake tool only needs
+#   lex/parse/emit, not a populated stdlib.
 #
-# The bake-rule for src/stdlib/urbi_stdlib_bytecode.gen.c lands in a
-# follow-up commit; this commit only wires the tool's own build.
+# Two-pass stdlib bake (per delta spec §3.1):
+#   1. liburbi.a builds with the committed .gen.c
+#   2. tools/urbi-compile-stdlib links against host .o files + stub
+#   3. .gen.c regenerates whenever a .u or STDLIB_ORDER.txt is newer,
+#      and liburbi.a re-links from the regenerated .gen.o.
 
-# Order-only dependency on build/host/liburbi.a (after the `|`):
-# the bake tool needs the archive to LINK against, but does not need
-# to relink whenever liburbi.a's contents change.
-#
-# A cycle exists in the dep graph:
-#     liburbi.a → .gen.o → .gen.c → bake-tool → liburbi.a
-# GNU make detects this and silently drops one edge with a one-line
-# "Circular ... dependency dropped" warning.  This is intentional and
-# correctness-safe: .gen.c is a TRACKED source so the first build of
-# liburbi.a does not need the bake tool, and subsequent rebakes only
-# happen when STDLIB_ORDER.txt or a .u changes (then liburbi.a
-# re-links from the regenerated .gen.o).  See docs/internals/build-system.md.
-tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c | build/host/liburbi.a
-	$(CC) -std=c99 -Wall -Wextra -Wpedantic -Os \
-	    -Iinclude -Isrc -o $@ $< build/host/liburbi.a -lm
+# Host-build pattern for the bake tool's deps: always native cc, so
+# cross-arch sub-makes (TARGET=arm-*, TARGET=riscv-*, TARGET=host-asan,
+# etc.) can still produce build/host/src/*.o for the host tool.
+# Guarded by TARGET != host so it does NOT shadow the standard
+# $(BUILDDIR)/src/%.o pattern when $(BUILDDIR) == build/host (default
+# target) — same paths, same recipe, but a duplicate rule would emit
+# a warning.
+ifneq ($(TARGET),host)
+build/host/src/%.o: src/%.c
+	@mkdir -p $(@D)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -Iinclude -Isrc -c -o $@ $<
+endif
+
+build/host/tools/stub_stdlib_bytecode.o: tools/stub_stdlib_bytecode.c
+	@mkdir -p $(@D)
+	cc -std=c99 -Os -Iinclude -Isrc -c -o $@ $<
+
+HOST_OBJ      := $(patsubst src/%.c,build/host/src/%.o,$(SRC))
+HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o,$(HOST_OBJ))
+BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
+
+tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_STUB_O)
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
+	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
 
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
