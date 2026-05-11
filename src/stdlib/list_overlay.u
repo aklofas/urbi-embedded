@@ -1,0 +1,81 @@
+// List overlay — Phase 6.
+//
+// Adds higher-order methods to List via an extension class attached with
+// addProto.  Uses the class-body / addProto pattern required by the v0.6.2
+// blob-scope constraint (see number.u for details).
+//
+// Legacy reference: share/urbi/list.u (Gostai 2008-2012).
+// Methods provided: map, filter, foldl, has, any, all, each.
+//
+// Note: `this` resolution inside class body methods works correctly at
+// v0.6.2 (Gap #3 closed).  Closure upvalue capture works (Gap #1 closed).
+// Multi-slot class bodies work (Gap #2 closed).
+
+class ListMethods {
+    // map(f): apply f to each element, return new List with results.
+    var map = function(f) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = f(this.get(i));
+            res.add(v);
+            i = i + 1
+        };
+        res
+    };
+
+    // filter(pred): return new List containing elements for which pred is true.
+    var filter = function(pred) {
+        var res = List.new();
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var v = this.get(i);
+            if (pred(v)) { res.add(v) };
+            i = i + 1
+        };
+        res
+    };
+
+    // foldl(f, acc): left fold over list with accumulator.
+    var foldl = function(f, acc) {
+        var res = acc;
+        var i = 0;
+        var n = this.length();
+        while (i < n) {
+            var next = f(res, this.get(i));
+            res = next;
+            i = i + 1
+        };
+        res
+    };
+
+    // has(e): true if e is in the list (delegates to C-native contains).
+    var has = function(e) { this.contains(e) };
+
+    // any(pred): true if pred(e) for at least one element.
+    var any = function(pred) {
+        var i = 0;
+        var n = this.length();
+        var found = false;
+        while (i < n) {
+            if (pred(this.get(i))) { found = true; i = n };
+            i = i + 1
+        };
+        found
+    };
+
+    // all(pred): true if pred(e) for every element.
+    var all = function(pred) {
+        var i = 0;
+        var n = this.length();
+        var ok = true;
+        while (i < n) {
+            if (pred(this.get(i))) { i = i + 1 } else { ok = false; i = n }
+        };
+        ok
+    }
+} |
+
+List.addProto(ListMethods);

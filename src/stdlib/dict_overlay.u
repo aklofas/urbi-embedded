@@ -1,0 +1,27 @@
+// Dict overlay — Phase 6.
+//
+// Adds scripted utility methods to Dict via an extension class attached
+// with addProto.  Uses the class-body / addProto pattern required by the
+// v0.6.2 blob-scope constraint (see number.u for details).
+//
+// Legacy reference: share/urbi/dict.u (Gostai 2008-2012).
+// Note: methods requiring key iteration (map, filter, each) are deferred
+// to v1.x when a keys() / iteration protocol lands on Dict.  v1.0 Dict
+// has: new, length, isEmpty, set, get, has, remove.
+//
+// Note: `this` resolution inside class body methods works correctly at
+// v0.6.2 (Gap #3 closed).
+
+class DictMethods {
+    // getWithDefault(key, default): return value for key, or default.
+    var getWithDefault = function(key, dflt) {
+        if (this.has(key)) { this.get(key) } else { dflt }
+    };
+
+    // setIfAbsent(key, value): set key only if not already present.
+    var setIfAbsent = function(key, val) {
+        if (this.has(key)) { this.get(key) } else { this.set(key, val); val }
+    }
+} |
+
+Dict.addProto(DictMethods);
