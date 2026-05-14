@@ -199,6 +199,7 @@ extern void test_set_time_us_suite(void);
 extern void test_set_wake_fn_suite(void);
 extern void test_register_host_fn_suite(void);
 extern void test_register_dup_name_suite(void);
+extern void test_atomic_batch_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -374,6 +375,7 @@ static const struct suite_entry suites[] = {
     {"set_wake_fn",            test_set_wake_fn_suite},
     {"register_host_fn",      test_register_host_fn_suite},
     {"register_dup_name",     test_register_dup_name_suite},
+    {"atomic_batch",          test_atomic_batch_suite},
     /* Add new suites here as test files are added. */
 };
 
