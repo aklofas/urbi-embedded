@@ -218,6 +218,11 @@ extern void test_error_ring_cascade_suite(void);
 extern void test_ref_basic_suite(void);
 extern void test_ref_gc_root_suite(void);
 extern void test_ref_capacity_suite(void);
+extern void test_aux_event_table_suite(void);
+extern void test_aux_function_table_suite(void);
+extern void test_aux_set_error_suite(void);
+extern void test_aux_load_and_run_suite(void);
+extern void test_aux_dump_value_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -412,6 +417,11 @@ static const struct suite_entry suites[] = {
     {"ref_basic",                    test_ref_basic_suite},
     {"ref_gc_root",                  test_ref_gc_root_suite},
     {"ref_capacity",                 test_ref_capacity_suite},
+    {"aux_event_table",              test_aux_event_table_suite},
+    {"aux_function_table",           test_aux_function_table_suite},
+    {"aux_set_error",                test_aux_set_error_suite},
+    {"aux_load_and_run",             test_aux_load_and_run_suite},
+    {"aux_dump_value",               test_aux_dump_value_suite},
     /* Add new suites here as test files are added. */
 };
 
