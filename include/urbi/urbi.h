@@ -269,6 +269,51 @@ int urbi_compile_source(struct UVM *vm,
 
 struct UClosure;   /* forward decl — definition in umodule.h */
 
+/* urbi_native_method_fn: signature for host C functions that back a
+ * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
+ * set (M6 Phase 3 dispatch arm, v0.6.0+).
+ *
+ * Parameters:
+ *   vm    — the VM executing the call.
+ *   self  — receiver value (the object the slot was loaded from).
+ *   args  — argument array (NULL when nargs == 0).
+ *   nargs — argument count.
+ *   out   — write the return value here; initialised to NIL before the call.
+ *
+ * Return UEXEC_OK (0) on success, UEXEC_THROW (1) to signal an exception
+ * (see urbi_raise_* helpers in <urbi/urbi.h>).
+ *
+ * Promoted to the public API at v0.7.1 (was internal-only in
+ * src/runtime/uclosure.h).  urbi_make_native_closure (Gap L) takes this
+ * type; so does the Gap A urbi_register helper.
+ *
+ * Guard prevents double-typedef when internal src/runtime/uclosure.h is
+ * also included (identical definition — C99 §6.7 allows re-typedef only
+ * when both are the same type). */
+#ifndef URBI_NATIVE_METHOD_FN_DEFINED
+#define URBI_NATIVE_METHOD_FN_DEFINED
+typedef int (*urbi_native_method_fn)(struct UVM *vm,
+                                     UValue self,
+                                     UValue *args,
+                                     uint8_t nargs,
+                                     UValue *out);
+#endif /* URBI_NATIVE_METHOD_FN_DEFINED */
+
+/* urbi_make_native_closure: allocate a GC-managed UClosure backed by a
+ * host C function (Gap L — foundation for urbi_register, Gap A).
+ *
+ * The returned closure has native_fn = fn and no bytecode body.  It becomes
+ * script-callable when stored in a realm global, an object slot, or wrapped
+ * as a UValue (kind UVAL_CLOSURE).  Until reachable from a GC root it may
+ * be collected — embedders should either install it immediately (urbi_register
+ * does this atomically) or hold a urbi_ref to it (Gap Q).
+ *
+ * Returns NULL on OOM or if vm == NULL or fn == NULL.
+ *
+ * Thread safety: MAIN. */
+struct UClosure *urbi_make_native_closure(struct UVM *vm,
+                                          urbi_native_method_fn fn);
+
 struct UStrand *urbi_strand_create(struct URealm *realm, struct UClosure *entry);
 void            urbi_strand_start(struct UStrand *s);
 struct UStrand *urbi_strand_spawn(struct URealm *realm, struct UClosure *entry);

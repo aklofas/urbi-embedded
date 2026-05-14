@@ -40,15 +40,19 @@
  * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*).
  * `next_alloc` threads all closures allocated in one run into a free list
  * so they can be reclaimed at halt (pre-GC bookkeeping). */
-/* Native-method extension forward typedef — full definition in
- * src/stdlib/object_root.h.  When set on a UClosure, OP_CALL invokes
- * this C function instead of dispatching the proto's bytecode body. */
+/* Native-method extension typedef — promoted to the public API at v0.7.1
+ * (<urbi/urbi.h>).  The definition is identical in both locations; the
+ * guard URBI_NATIVE_METHOD_FN_DEFINED prevents a duplicate-typedef error
+ * in translation units that include both headers. */
 struct UVM;
+#ifndef URBI_NATIVE_METHOD_FN_DEFINED
+#define URBI_NATIVE_METHOD_FN_DEFINED
 typedef int (*urbi_native_method_fn)(struct UVM *vm,
                                      UValue self,
                                      UValue *args,
                                      uint8_t nargs,
                                      UValue *out);
+#endif /* URBI_NATIVE_METHOD_FN_DEFINED */
 
 struct UClosure {
     UCell             cell;        /* 2 B — type_tag + gc_byte at offset 0/1 */
