@@ -93,6 +93,36 @@ typedef struct {
     } v;
 } UValue;
 
+/* === urbi_value_kind_t: public mirror of the internal UValKind enum ===
+ *
+ * Numeric values are identical to the corresponding UVAL_* constants so
+ * code using either name works without conversion.  Six compile-time
+ * assertions enforce this invariant for the kinds exposed to embedders.
+ *
+ * URBI_VALUE_PTR is a public-only kind (no internal UVAL_PTR counterpart):
+ * embedders use it to store arbitrary host C pointers as UValues.  Numeric
+ * value 11 is one past UVAL_HOST_FN=10 and reserved here; the internal VM
+ * never produces UValues with this kind. */
+typedef enum {
+    URBI_VALUE_NIL     = 0,   /* == UVAL_NIL */
+    URBI_VALUE_INT     = 1,   /* == UVAL_INT */
+    URBI_VALUE_FLOAT   = 2,   /* == UVAL_FLOAT */
+    URBI_VALUE_BOOL    = 3,   /* == UVAL_BOOL */
+    URBI_VALUE_STR     = 4,   /* == UVAL_STR */
+    URBI_VALUE_CLOSURE = 5,   /* == UVAL_CLOSURE */
+    URBI_VALUE_VOID    = 6,   /* == UVAL_VOID */
+    URBI_VALUE_OBJECT  = 8,   /* == UVAL_OBJECT */
+    URBI_VALUE_EVENT   = 9,   /* == UVAL_EVENT */
+    URBI_VALUE_PTR     = 11   /* public-only: host opaque pointer, no UVAL_* mirror */
+} urbi_value_kind_t;
+
+_Static_assert((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
+_Static_assert((int)URBI_VALUE_FLOAT   == (int)UVAL_FLOAT,   "urbi_value_kind_t/UVAL_* drift: FLOAT");
+_Static_assert((int)URBI_VALUE_STR     == (int)UVAL_STR,     "urbi_value_kind_t/UVAL_* drift: STR");
+_Static_assert((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kind_t/UVAL_* drift: OBJECT");
+_Static_assert((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
+_Static_assert((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
+
 /* === urbi_value_nil: canonical zero-init UValue ===
  *
  * Sole nil constructor: explicitly clears kind + pad + union payload so the
