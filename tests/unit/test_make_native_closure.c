@@ -99,8 +99,7 @@ static void make_native_closure_oom(void)
     UASSERT_EQ(URBI_OK, rc);
 
     /* Reset so the very next allocating call returns NULL. */
-    ctx.fail_at   = ctx.call_count;   /* fail on the next call */
-    ctx.call_count = ctx.call_count;  /* no change needed */
+    ctx.fail_at = ctx.call_count;
 
     struct UClosure *cl = urbi_make_native_closure(&vm, test_host_fn);
     UASSERT(cl == NULL);
