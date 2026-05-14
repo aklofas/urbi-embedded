@@ -184,6 +184,7 @@ extern void test_emit_this_suite(void);
 extern void test_emit_closure_capture_suite(void);
 extern void test_vm_init_oom_suite(void);
 extern void test_watcher_body_done_fn_suite(void);
+extern void test_event_payload_layout_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -344,6 +345,7 @@ static const struct suite_entry suites[] = {
     {"emit_closure_capture",    test_emit_closure_capture_suite},
     {"vm_init_oom",             test_vm_init_oom_suite},
     {"watcher_body_done_fn",    test_watcher_body_done_fn_suite},
+    {"event_payload_layout",   test_event_payload_layout_suite},
     /* Add new suites here as test files are added. */
 };
 
