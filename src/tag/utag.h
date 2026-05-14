@@ -101,18 +101,27 @@ typedef struct UTag {
     struct UEvent *enter_event;  /* fires when a strand enters this tag scope */
     struct UEvent *leave_event;  /* fires when a strand leaves this tag scope */
 
+    /* --- parent tag pointer (v0.7.1 / Gap M) ---
+     * Set by urbi_tag_create to the realm's root tag so urbi_tag_info can
+     * report has_parent = true for host-created child tags.  NULL for the
+     * realm-root tag itself (created by urbi_realm_create via utag_create).
+     * Not walked by the GC walker today — parent tags are always reachable
+     * via the realm's GC root path, so no grey-shade is needed here.
+     * Walked by the UTYPE_TAG GC walker when/if cyclic parent chains
+     * become possible (not the case at v1.0). */
+    struct UTag   *parent;               /* NULL for realm-root tags */
+
     /* --- name (M6 stdlib) --- */
     UValue   name;                      /* UVAL_NIL at M5; populated at M6 */
 } UTag;
 
-/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041 + sibling): UTag is 56 B at
- * v0.5.x default layout (M5 GC-promoted from the M3 host-managed form).
- * Adding fields requires deliberate update of this assert.  Guarded on
- * pointer width to avoid a hard failure on 32-bit cross targets,
- * matching the UEvent / UObject pattern. */
+/* Layout pin: UTag is 64 B on 64-bit hosts after the v0.7.1 parent-pointer
+ * addition (+8 B from 56 B).  Guarded on pointer width to avoid a hard
+ * failure on 32-bit cross targets (mirrors UEvent / UObject pattern).
+ * Update this assert whenever UTag fields change. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UTag) == 56,
-               "UTag size pin on 64-bit (M5 GC-promoted layout)");
+_Static_assert(sizeof(UTag) == 64,
+               "UTag size pin on 64-bit (v0.7.1 parent-pointer layout)");
 #endif
 
 /* === UTag lifecycle API ===

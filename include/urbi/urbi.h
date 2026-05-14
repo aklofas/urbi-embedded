@@ -314,6 +314,38 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
                                           urbi_native_method_fn fn);
 
+/* === Gap M — tag state types (v0.7.1) ===
+ *
+ * urbi_tag_state_t: observable state of a UTag derived from its flags byte.
+ *
+ *   URBI_TAG_RUNNING — default state; no flags set.
+ *   URBI_TAG_STOPPED — UTAG_FLAG_STOPPED (0x02) set via urbi_tag_stop.
+ *   URBI_TAG_FROZEN  — UTAG_FLAG_FROZEN  (0x01) set (reserved; M7+ stdlib).
+ *   URBI_TAG_BLOCKED — reserved for future scheduler-integration state.
+ *
+ * urbi_tag_info_t: aggregate tag state snapshot returned by urbi_tag_info.
+ *   state        — decoded from UTag.flags.
+ *   member_count — number of UCleanupEntry nodes on UTag.member_strands_head.
+ *   has_parent   — true if UTag.parent != NULL (set by urbi_tag_create). */
+typedef enum {
+    URBI_TAG_RUNNING = 0,
+    URBI_TAG_STOPPED = 1,
+    URBI_TAG_FROZEN  = 2,
+    URBI_TAG_BLOCKED = 3
+} urbi_tag_state_t;
+
+typedef struct {
+    urbi_tag_state_t state;
+    size_t           member_count;
+    bool             has_parent;
+} urbi_tag_info_t;
+
+/* Drift-detection: the urbi_tag_state_t encoding in urbi_tag_info is derived
+ * from UTAG_FLAG_* bits.  The _Static_asserts that verify UTAG_FLAG_FROZEN ==
+ * 0x01 and UTAG_FLAG_STOPPED == 0x02 live in src/tag/utag_api.c (which includes
+ * the internal utag.h header); they cannot live here because urbi.h is a public
+ * header that must not include internal src/ headers. */
+
 /* === Gap K — slot read/write from host C (v0.7.1) ===
  *
  * urbi_slot_get: read slot `name[0..name_len)` from receiver `obj`.
