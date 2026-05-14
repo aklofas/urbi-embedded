@@ -411,7 +411,11 @@ typedef enum {
     URBI_ERR_API_VERSION_MISMATCH       = -16,
     /* URBI_ERR_EVENT_NAME_TAKEN: returned by urbi_event_register (Gap B)
      * when name is already registered in the event registry for this VM. */
-    URBI_ERR_EVENT_NAME_TAKEN           = -17
+    URBI_ERR_EVENT_NAME_TAKEN           = -17,
+    /* URBI_ERR_HEAP_LOCKED: returned by operations that require a live heap
+     * (allocation or registry mutation) when urbi_lock_heap has been called.
+     * Covers urbi_event_unregister and future Gap-B unregister paths. */
+    URBI_ERR_HEAP_LOCKED                = -18
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===

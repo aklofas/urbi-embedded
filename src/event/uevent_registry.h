@@ -44,6 +44,7 @@ typedef struct {
     void                                 *destruct_ud;
     const char                           *name;         /* interned; stable for VM lifetime */
     size_t                                name_len;
+    uint8_t                               tombstoned;   /* 1 after urbi_event_unregister */
 } UEventRegistryEntry;
 
 /* === Registry container === */
@@ -83,6 +84,11 @@ UEventRegistryEntry *uevent_registry_lookup_by_name(UEventRegistry *r,
  * The entry's id and index are pre-filled to registry->next_id.
  * Returns NULL on OOM; the registry is left unchanged. */
 UEventRegistryEntry *uevent_registry_add(UEventRegistry *r, struct UVM *vm);
+
+/* uevent_registry_tombstone: mark entry[id] as tombstoned so it is skipped
+ * by lookup_by_id, lookup_by_name, and drain routing.
+ * Returns 0 on success, -1 if id is out of range or already tombstoned. */
+int uevent_registry_tombstone(UEventRegistry *r, urbi_event_id_t id);
 
 #ifdef __cplusplus
 }

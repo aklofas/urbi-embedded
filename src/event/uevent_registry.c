@@ -7,10 +7,12 @@
 #include "event/uevent_registry.h"
 #include "event/uevent.h"            /* urbi_event_create */
 #include "event/uevent_native.h"     /* uvalue_from_event */
-#include "vm/uvm.h"                  /* UVM, alloc_fn, last_error */
-#include "realm/urealm.h"            /* URealm (forward used by urbi.h decls) */
+#include "event/uevent_emit.h"       /* c_event_emit_async (sentinel dispatch) */
+#include "vm/uvm.h"                  /* UVM, alloc_fn, last_error, heap_locked */
+#include "realm/urealm.h"            /* URealm, global_object */
 #include "runtime/umacros.h"         /* urbi_zero, urbi_memeq, urbi_strlen */
 #include "value/uintern.h"           /* ustr_intern */
+#include "object/uobject.h"          /* urbi_object_remove_slot */
 #include "urbi/urbi.h"               /* urbi_realm_set_global_const, urbi_event_id_t */
 #include "urbi/types.h"              /* URBI_EVENT_ID_INVALID, UErrCode */
 
@@ -59,6 +61,7 @@ uevent_registry_lookup_by_id(UEventRegistry *r, urbi_event_id_t id)
 {
     if (id == URBI_EVENT_ID_INVALID) return NULL;
     if ((size_t)id >= r->count) return NULL;
+    if (r->entries[id].tombstoned) return NULL;
     return &r->entries[id];
 }
 
@@ -74,6 +77,7 @@ uevent_registry_lookup_by_name(UEventRegistry *r, const char *name,
     if (r == NULL || name == NULL || r->entries == NULL) return NULL;
     for (i = 0; i < r->count; i++) {
         UEventRegistryEntry *e = &r->entries[i];
+        if (e->tombstoned) continue;
         if (e->name_len == name_len && urbi_memeq(e->name, name, name_len)) {
             return e;
         }
@@ -209,4 +213,95 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
     }
 
     return entry->id;
+}
+
+/* =========================================================================
+ * uevent_registry_tombstone
+ * ========================================================================= */
+
+/* uevent_registry_tombstone: mark entries[id] as tombstoned so it is skipped
+ * by lookup, drain routing, and duplicate-name check on re-registration.
+ * Returns 0 on success, -1 if id is out of range or already tombstoned. */
+int
+uevent_registry_tombstone(UEventRegistry *r, urbi_event_id_t id)
+{
+    if (id == URBI_EVENT_ID_INVALID) return -1;
+    if ((size_t)id >= r->count) return -1;
+    if (r->entries[id].tombstoned) return -1;
+    r->entries[id].tombstoned = 1U;
+    return 0;
+}
+
+/* =========================================================================
+ * urbi_event_unregister — public C API (Gap B)
+ * ========================================================================= */
+
+/* urbi_event_unregister: reverse a previous urbi_event_register call.
+ *
+ * 1. Validates vm + id.
+ * 2. Rejects if vm->heap_locked (no registry mutations on locked heap).
+ * 3. Looks up entry by id; rejects URBI_ERR_INVALID_ARG if not found.
+ * 4. Fires sentinel async-emit (NIL payload) so existing `at(name)` watchers
+ *    execute one final body invocation with NIL payload.
+ * 5. Removes the realm-global slot for the event name from global_object.
+ *    Falls back to set_global with nil when remove_slot returns an error.
+ * 6. Tombstones the registry entry (id no longer routes at drain time).
+ * 7. Returns URBI_OK.
+ *
+ * Thread safety: MAIN. */
+int
+urbi_event_unregister(struct UVM *vm, struct URealm *realm,
+                      urbi_event_id_t id)
+{
+    UEventRegistryEntry *entry;
+    UValue               nil_payload;
+    const USymbol       *sym;
+
+    /* --- Argument validation --- */
+    if (vm == NULL || realm == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* --- Heap-lock guard: registry mutation disallowed after lock_heap --- */
+    if (vm->heap_locked) {
+        return URBI_ERR_HEAP_LOCKED;
+    }
+
+    /* --- Lookup entry by id --- */
+    entry = uevent_registry_lookup_by_id(&vm->event_registry, id);
+    if (entry == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* --- Sentinel dispatch: fire NIL payload through UEvent so bound
+     *     watchers run one final body.  c_event_emit_async is non-allocating
+     *     for the dispatch walk itself; body coroutines allocate UStrands but
+     *     that is safe here (main-thread context, heap not locked above).
+     *     Watcher bodies may observe NIL in R[0] — sentinels are documented
+     *     in the embedding guide §4 as a last-fire signal. --- */
+    if (entry->event != NULL) {
+        nil_payload.kind = (uint8_t)UVAL_NIL;
+        nil_payload.v.i  = 0;
+        c_event_emit_async(vm, entry->event, nil_payload);
+    }
+
+    /* --- Unbind realm-global slot for the event name.
+     *     urbi_object_remove_slot drops the slot from global_object's shape
+     *     and rebuilds the slot array; it returns 0 on success or silent
+     *     no-op (slot already absent).  On OOM (-1) we tolerate the stale
+     *     slot — the entry is still tombstoned so drain routing is dead, and
+     *     the slot value is a GC-managed UEvent that will not corrupt anything.
+     *     The realm parameter is used to resolve global_object. --- */
+    if (realm->global_object != NULL && entry->name != NULL) {
+        sym = (const USymbol *)ustr_intern(vm, entry->name, entry->name_len);
+        if (sym != NULL) {
+            (void)urbi_object_remove_slot(vm, realm->global_object, sym);
+        }
+        /* If intern OOM: tolerate stale slot (non-fatal; drain is dead). */
+    }
+
+    /* --- Tombstone registry entry --- */
+    (void)uevent_registry_tombstone(&vm->event_registry, id);
+
+    return URBI_OK;
 }

@@ -525,6 +525,23 @@ urbi_event_id_t urbi_event_register(struct UVM *vm, struct URealm *realm,
                                     urbi_event_payload_destructure_fn destruct_fn,
                                     void *destruct_ud);
 
+/* urbi_event_unregister: reverse a previous urbi_event_register call.
+ *
+ * Fires a final sentinel async-emit (NIL payload) through the UEvent so any
+ * `at(name)` watchers still bound to it execute one last body invocation.
+ * Unbinds the realm-global slot (sets it to nil) for the event's name.
+ * Tombstones the registry entry so id is no longer routed at drain time.
+ * The UEvent cell itself remains live until the next GC sweep (GC-managed).
+ *
+ * Returns:
+ *   URBI_OK                — success
+ *   URBI_ERR_INVALID_ARG   — vm NULL or id not found in registry
+ *   URBI_ERR_HEAP_LOCKED   — heap-locked VM (post-urbi_lock_heap)
+ *
+ * Thread safety: MAIN. */
+int urbi_event_unregister(struct UVM *vm, struct URealm *realm,
+                          urbi_event_id_t id);
+
 /* === Gap E — Pluggable I/O writer (v0.7.1) ===
  *
  * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
