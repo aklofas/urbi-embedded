@@ -314,6 +314,37 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
                                           urbi_native_method_fn fn);
 
+/* === Gap K — slot read/write from host C (v0.7.1) ===
+ *
+ * urbi_slot_get: read slot `name[0..name_len)` from receiver `obj`.
+ *   Dispatches on obj's kind:
+ *     UVAL_OBJECT → walk prototype chain (left-first DFS, cycle-safe).
+ *     Atom kinds (INT/FLOAT/STR/BOOL/NIL/VOID) → route through the
+ *       per-kind atom proto (M6 Wave 1 baseline; mirrors OP_GETSLOT).
+ *   Returns URBI_OK + *out_value on success.
+ *   Returns URBI_ERR_INVALID_ARG if vm, name, or out_value is NULL.
+ *   Returns URBI_ERR_SLOT_NOT_FOUND if the name is absent.
+ *   Returns URBI_ERR_OOM if name interning fails.
+ *
+ * urbi_slot_set: write `value` to local slot `name[0..name_len)` on `obj`.
+ *   Only UVAL_OBJECT receivers are supported; atoms are immutable.
+ *   Respects the CONSTANT flag on locally-owned slots: rejects writes
+ *   with URBI_ERR_CONST_SLOT_WRITE.  COW-inherited slots (slot on a
+ *   prototype) receive a mutable local copy per pre-M2 §6.1.
+ *   Returns URBI_OK on success.
+ *   Returns URBI_ERR_INVALID_ARG if vm or name is NULL, or obj is not UVAL_OBJECT.
+ *   Returns URBI_ERR_CONST_SLOT_WRITE if the slot is locally const-flagged.
+ *   Returns URBI_ERR_OOM on allocation failure.
+ *
+ * Thread safety: MAIN (not ISR-safe). */
+int urbi_slot_get(struct UVM *vm, UValue obj,
+                  const char *name, size_t name_len,
+                  UValue *out_value);
+
+int urbi_slot_set(struct UVM *vm, UValue obj,
+                  const char *name, size_t name_len,
+                  UValue value);
+
 /* urbi_make_str_interned: intern s[0..len) and return a UVAL_STR UValue.
  *
  * Two calls with byte-equal inputs always return a UValue whose v.p points
