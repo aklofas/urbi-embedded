@@ -49,13 +49,13 @@ static void payload_u32_roundtrip_le(void)
 
 static void payload_f64_roundtrip(void)
 {
-    /* Use memcpy for type-punning to avoid UB. */
     urbi_event_payload_t p;
     memset(&p, 0, sizeof(p));
 
     double val = 3.14159;
-    memcpy(&p.bytes[0], &val, sizeof(double));
+    p.f64[0] = val;   /* write through f64 union arm */
 
+    /* Read back via bytes[] — uint8_t == unsigned char gets C's aliasing exemption. */
     double result;
     memcpy(&result, &p.bytes[0], sizeof(double));
 
