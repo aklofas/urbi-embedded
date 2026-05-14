@@ -12,28 +12,29 @@
 #include "urbi/aux.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
-#include "vm/uvm.h"
+#include "vm/uvm.h"   /* UVM stack-allocation */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #define UTEST(name) static void name(void)
 
-/* Simple host functions that return a constant int. */
-static int fn_forty_two(struct UVM *vm, struct UStrand *strand,
-                         UValue *args, int nargs, void *ud)
+/* Simple host functions that return a constant int.
+ * Signature must match urbi_native_method_fn exactly. */
+static int fn_forty_two(struct UVM *vm, UValue self,
+                         UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)vm; (void)strand; (void)args; (void)nargs; (void)ud;
-    urbi_return_val(strand, urbi_make_int(42));
-    return URBI_OK;
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_int(42);
+    return UEXEC_OK;
 }
 
-static int fn_seven(struct UVM *vm, struct UStrand *strand,
-                     UValue *args, int nargs, void *ud)
+static int fn_seven(struct UVM *vm, UValue self,
+                     UValue *args, uint8_t nargs, UValue *out)
 {
-    (void)vm; (void)strand; (void)args; (void)nargs; (void)ud;
-    urbi_return_val(strand, urbi_make_int(7));
-    return URBI_OK;
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_int(7);
+    return UEXEC_OK;
 }
 
 /* =========================================================================

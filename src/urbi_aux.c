@@ -87,7 +87,7 @@ urbi_aux_set_error(struct UVM *vm, int code,
     char msg[256];
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(msg, sizeof msg, fmt, ap);
+    (void)vsnprintf(msg, sizeof msg, fmt != NULL ? fmt : "", ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
 
     urbi_set_error(vm, code, msg, source_name, source_line,
