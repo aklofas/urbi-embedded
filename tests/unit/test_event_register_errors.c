@@ -26,14 +26,13 @@
 
 /* =========================================================================
  * Sub-test 1: duplicate name returns URBI_EVENT_ID_INVALID.
- *
- * Phase 8 note: when urbi_last_error lands, add:
- *   UASSERT_EQ((int)urbi_last_error(&vm).code, (int)URBI_ERR_EVENT_NAME_TAKEN);
  * ========================================================================= */
 
 UTEST(register_dup_name_returns_invalid)
 {
     UVM vm;
+    urbi_error_info_t err_info;
+
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     struct URealm *realm = urbi_realm_global(&vm);
@@ -44,9 +43,11 @@ UTEST(register_dup_name_returns_invalid)
     UASSERT(id1 != URBI_EVENT_ID_INVALID);
 
     /* Second registration with same name: must fail. */
-    /* TODO Phase 8: also assert urbi_last_error code == URBI_ERR_EVENT_NAME_TAKEN */
     urbi_event_id_t id2 = urbi_event_register(&vm, realm, "foo", NULL, NULL);
     UASSERT(id2 == URBI_EVENT_ID_INVALID);
+    /* Phase 8 reactivation: assert urbi_last_error code == URBI_ERR_EVENT_NAME_TAKEN */
+    UASSERT_EQ((int)URBI_ERR_EVENT_NAME_TAKEN, urbi_last_error(&vm, &err_info));
+    UASSERT_EQ((int)URBI_ERR_EVENT_NAME_TAKEN, err_info.code);
 
     urbi_vm_destroy(&vm);
 }
@@ -89,6 +90,8 @@ UTEST(register_null_name_returns_invalid)
 UTEST(register_oom_uevent_alloc_returns_invalid)
 {
     UVM vm;
+    urbi_error_info_t err_info;
+
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     struct URealm *realm = urbi_realm_global(&vm);
@@ -97,9 +100,11 @@ UTEST(register_oom_uevent_alloc_returns_invalid)
     /* Lock the heap so urbi_gc_alloc inside urbi_event_create returns NULL. */
     urbi_lock_heap(&vm);
 
-    /* TODO Phase 8: also assert urbi_last_error code == URBI_ERR_OOM */
     urbi_event_id_t id = urbi_event_register(&vm, realm, "myOomEvent", NULL, NULL);
     UASSERT(id == URBI_EVENT_ID_INVALID);
+    /* Phase 8 reactivation: assert urbi_last_error code == URBI_ERR_OOM */
+    UASSERT_EQ((int)URBI_ERR_OOM, urbi_last_error(&vm, &err_info));
+    UASSERT_EQ((int)URBI_ERR_OOM, err_info.code);
 
     urbi_vm_destroy(&vm);
 }
