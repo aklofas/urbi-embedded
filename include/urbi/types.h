@@ -322,6 +322,16 @@ _Static_assert(offsetof(UValue, kind) == 0,
                "UValue.kind must be at offset 0 (ABI pin)");
 #endif
 
+/* === Named-event ID (Gap B) ===
+ *
+ * urbi_event_id_t: opaque handle returned by urbi_event_register.
+ * Stable for the lifetime of the UVM; used to route urbi_inject_event calls
+ * through the named-event drain in O(1) without string lookup at ISR time.
+ *
+ * URBI_EVENT_ID_INVALID: sentinel returned on registration failure. */
+typedef uint16_t urbi_event_id_t;
+#define URBI_EVENT_ID_INVALID ((urbi_event_id_t)0xFFFF)
+
 /* === ISR event payload contract (Gap C) ===
  *
  * urbi_event_payload_t is the typed-union form of the raw bytes passed to
@@ -398,7 +408,10 @@ typedef enum {
      * (lands in Phase 2 T13) when the runtime library's API version
      * disagrees with what the embedder compiled against. MINOR-additive
      * per the bump policy in <urbi/version.h>. */
-    URBI_ERR_API_VERSION_MISMATCH       = -16
+    URBI_ERR_API_VERSION_MISMATCH       = -16,
+    /* URBI_ERR_EVENT_NAME_TAKEN: returned by urbi_event_register (Gap B)
+     * when name is already registered in the event registry for this VM. */
+    URBI_ERR_EVENT_NAME_TAKEN           = -17
 } UErrCode;
 
 /* === UExecStatus: strand-level execution status ===
