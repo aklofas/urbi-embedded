@@ -415,8 +415,17 @@ typedef enum {
     /* URBI_ERR_HEAP_LOCKED: returned by operations that require a live heap
      * (allocation or registry mutation) when urbi_lock_heap has been called.
      * Covers urbi_event_unregister and future Gap-B unregister paths. */
-    URBI_ERR_HEAP_LOCKED                = -18
+    URBI_ERR_HEAP_LOCKED                = -19
 } UErrCode;
+
+/* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn
+ * callbacks (Gap J, v0.7.1).  A host-side watcher callback returns this
+ * value to request auto-unregistration after this firing.  It is NOT a
+ * UErrCode enum member because it must pass through the `int` return of
+ * urbi_watcher_fn without conflicting with URBI_OK (0) or any negative
+ * error.  Chosen as -18 (first slot outside UErrCode range, held by
+ * Sub-Bundle 2 for this purpose). */
+#define URBI_ERR_WATCHER_UNREGISTER  (-18)
 
 /* === UExecStatus: strand-level execution status ===
  *

@@ -646,19 +646,28 @@ void urbi_atomic_end(struct UVM *vm);
 
 /* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
  *
- * urbi_watcher_handle_t is an opaque int — Wave 2 (ESP-IDF port) defines
- * the real watcher-identity story; Wave 1 provides the seam.  Embedders
+ * urbi_watcher_handle_t is an opaque int — non-zero identifies a live
+ * host-installed watcher (urbi_register_watcher); zero (URBI_WATCHER_HANDLE_INVALID)
+ * is used by script-side watcher body-completion notifications.  Embedders
  * can observe watcher body completion for telemetry, profiling, or
  * hot-reload diagnostics.
  *
  * Callback is invoked from urbi_watcher_body_completed after internal
  * cleanup (back-pointers cleared) and before any re-spawn triggered by
- * URBI_WATCHER_PENDING_REFIRE.  At Wave 1 the handle is a placeholder
- * (always 0); the completion_status mirrors the strand's fatal_status
- * (UEXEC_OK / THROW / TAG_STOP / CANCEL) cast to int.
+ * URBI_WATCHER_PENDING_REFIRE.  For script-side watchers the handle is
+ * always 0 (URBI_WATCHER_HANDLE_INVALID); for host-side watchers (Gap J)
+ * it matches the handle returned by urbi_register_watcher.
+ * completion_status mirrors the strand's fatal_status (UEXEC_OK / THROW /
+ * TAG_STOP / CANCEL) cast to int for script-side; for host-side it is
+ * URBI_OK or URBI_ERR_WATCHER_UNREGISTER.
  *
  * Default is NULL after urbi_vm_init; pass NULL to uninstall. */
 typedef int urbi_watcher_handle_t;
+
+/* URBI_WATCHER_HANDLE_INVALID: sentinel — not a live handle.
+ * Returned when urbi_register_watcher fails; used as the handle value
+ * for script-side watcher-body-done notifications. */
+#define URBI_WATCHER_HANDLE_INVALID  ((urbi_watcher_handle_t)0)
 
 typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
                                           urbi_watcher_handle_t handle,
@@ -666,6 +675,61 @@ typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
 
 void urbi_set_watcher_body_done_fn(struct UVM *vm,
                                    urbi_watcher_body_done_fn fn);
+
+/* === Gap J — host-side reactive watchers (v0.7.1) ===
+ *
+ * urbi_register_watcher installs a C callback that fires at safepoint drain
+ * whenever a named event is dispatched.  Coexists with script-side
+ * `at(name?)` watchers — both fire on the same dispatch.
+ *
+ * urbi_watcher_fn: host watcher callback signature.
+ *   vm       — VM that owns the event.
+ *   event_id — the event that fired.
+ *   args     — destructured UValue arguments; argc is their count.
+ *              NULL when argc == 0.
+ *   argc     — number of valid entries in args[].
+ *   ud       — user-data pointer registered with urbi_register_watcher.
+ *
+ * Return value contract:
+ *   URBI_OK (0)                  — remain registered; fire again on next event.
+ *   URBI_ERR_WATCHER_UNREGISTER  — auto-unregister after this firing.
+ *   Any other value              — treated as URBI_OK (future extension point).
+ *
+ * Thread safety: MAIN — invoked from the safepoint drain on the main thread. */
+typedef int (*urbi_watcher_fn)(struct UVM *vm,
+                               urbi_event_id_t event_id,
+                               const UValue *args, int argc,
+                               void *ud);
+
+/* urbi_register_watcher: install a host-side reactive watcher for event_id.
+ *
+ * event_id must be a valid id returned by urbi_event_register for this vm.
+ * cb must be non-NULL.  ud is forwarded to each cb invocation.
+ *
+ * Returns a non-zero handle on success; URBI_WATCHER_HANDLE_INVALID on
+ * failure (NULL vm, NULL cb, unknown event_id, or OOM growing the table).
+ *
+ * Multiple watchers may be registered for the same event_id; each fires
+ * independently in registration order.
+ *
+ * Thread safety: MAIN. */
+urbi_watcher_handle_t urbi_register_watcher(struct UVM *vm,
+                                            struct URealm *realm,
+                                            urbi_event_id_t event_id,
+                                            urbi_watcher_fn cb, void *ud);
+
+/* urbi_unregister_watcher: deferred-removal of a host-side watcher.
+ *
+ * In-flight firings at the moment of this call still complete; subsequent
+ * firings are suppressed.  Actual removal (compaction of the table slot)
+ * occurs at the end of the current drain pass.
+ *
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_INVALID_ARG if handle == URBI_WATCHER_HANDLE_INVALID
+ *   or handle is not found in the watcher table.
+ *
+ * Thread safety: MAIN. */
+int urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle);
 
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
