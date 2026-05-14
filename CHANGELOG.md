@@ -1,34 +1,109 @@
 # Changelog
 
-## Unreleased — v0.7.1-embedding-api
+## v0.7.1-embedding-api — 2026-05-14 (M7 Wave 2 — library-complete C embedding API)
 
-### Added
+**Tag:** `v0.7.1-embedding-api`
+**Theme:** Close the 18 embedding-API gaps (A–R) identified in the peer-language audit against Lua/Berry/MicroPython/AtomVM. Every new entry point is exercised by a unit test and documented in the new embedding guide.
 
-- TBD
+### Headline
+
+1. **Host-function registration** (`urbi_register`, `urbi_make_native_closure`). Composite of closure construction + realm-global const-bind; closes Gap A/L.
+2. **Named-event system** (`urbi_event_register`/`urbi_event_unregister` + `urbi_event_payload_destructure_fn`). Drain auto-routes registered IDs to `UEvent` dispatch; unregistered IDs fall through to the Wave 1 legacy drain handler. Gap B.
+3. **ISR-payload contract** (`urbi_event_payload_t` typed union, 16-byte/8-byte size+align pins). Gap C.
+4. **ISR atomic sections** (`urbi_atomic_begin`/`urbi_atomic_end`). Brackets correlated ISR-injected events so the drain sees the whole sample atomically (IMU multi-axis use case). Gap R.
+5. **Host-side reactive watchers** (`urbi_register_watcher`/`urbi_unregister_watcher`). C callbacks fire at safepoint drain alongside script-side `at` bodies. Return `URBI_ERR_WATCHER_UNREGISTER` for auto-unregister. Gap J.
+6. **Slot read/write from C** (`urbi_slot_get`/`urbi_slot_set`). Dispatches through atom-proto layer for atom receivers. Gap K.
+7. **Tag creation + inspection from C** (`urbi_tag_create`, `urbi_tag_info`, `urbi_tag_state_t`, `urbi_tag_info_t`). Gap M.
+8. **Pluggable I/O writer** (`urbi_set_writer`, `urbi_writer_fn`). Freestanding targets MUST install a writer; default restores the stdout/stderr behavior. Gap E.
+9. **Pluggable time source** (`urbi_set_time_us`, `urbi_time_us_fn`). Microsecond precision; 1 kHz control-loop capable. Gap F.
+10. **Wake-notification hook** (`urbi_set_wake_fn`, `urbi_wake_fn`). Fired after each successful `urbi_inject_event` ring deposit; FreeRTOS-style task-notification hook. Gap S.
+11. **Structured error inspection** (`urbi_last_error`/`urbi_clear_error`/`urbi_set_error`, `urbi_error_info_t`). Per-VM error ring; `urbi_set_error` is the new public entry for aux and host-fn error publishing. Gap P.
+12. **GC-safe reference management** (`urbi_ref`/`urbi_ref_get`/`urbi_unref`, `urbi_ref_t`). luaL_ref precedent; 24-bit slot + 8-bit generation counter. Gap Q.
+13. **Value constructors** (`urbi_make_nil`/`bool`/`int`/`float`/`void`/`ptr`/`object`/`event`/`closure` inlines + `urbi_make_str_interned`). Gap N. Replaces `urbi_value_nil()` (renamed to `urbi_make_nil()`).
+14. **Value introspection** (`urbi_value_kind`, `urbi_value_as_int`/`float`/`bool`/`str`/`ptr`/`object`/`event`/`closure` inlines, `urbi_value_kind_t`). Gap O.
+15. **Aux batch registration helpers** (`urbi_aux_register_event_table`, `urbi_aux_register_function_table`, `urbi_aux_event_decl_t`, `urbi_aux_function_decl_t`). Stop-at-first-failure semantics, no rollback.
+16. **Aux error formatter** (`urbi_aux_set_error`). printf-style wrapper around `urbi_set_error`.
+17. **Aux load-and-run composite** (`urbi_aux_load_and_run`). Deserialize + run-chunk + free in one call.
+18. **Aux value dump** (`urbi_aux_dump_value`). Human-readable per-kind formatting for logging/debugging.
+19. **Public bytecode deserialization** (`urbi_module_from_bytes`, `urbi_module_free`). Separate public entry point for embedders loading pre-compiled `.uc` blobs.
+20. **`urbi-compile-stdlib --to-header` mode**. Emits a C header with `const uint8_t name[]` + `size_t name_size` for pre-baked bytecode embedding in freestanding targets.
+
+### Added (symbols)
+
+**Core (`<urbi/urbi.h>` / `<urbi/types.h>`):**
+
+- Functions: `urbi_register`, `urbi_make_native_closure`, `urbi_event_register`, `urbi_event_unregister`, `urbi_register_watcher`, `urbi_unregister_watcher`, `urbi_atomic_begin`, `urbi_atomic_end`, `urbi_slot_get`, `urbi_slot_set`, `urbi_make_str_interned`, `urbi_tag_create`, `urbi_tag_info`, `urbi_set_writer`, `urbi_vm_write`, `urbi_set_time_us`, `urbi_set_wake_fn`, `urbi_last_error`, `urbi_clear_error`, `urbi_set_error`, `urbi_ref`, `urbi_ref_get`, `urbi_unref`, `urbi_module_from_bytes`, `urbi_module_free`
+- Inline functions (value constructors): `urbi_make_nil`, `urbi_make_bool`, `urbi_make_int`, `urbi_make_float`, `urbi_make_void`, `urbi_make_ptr`, `urbi_make_object`, `urbi_make_event`, `urbi_make_closure`
+- Inline functions (value accessors): `urbi_value_kind`, `urbi_value_as_bool`, `urbi_value_as_int`, `urbi_value_as_float`, `urbi_value_as_ptr`, `urbi_value_as_str`, `urbi_value_as_object`, `urbi_value_as_event`, `urbi_value_as_closure`
+- Typedefs: `urbi_native_method_fn` (promoted from internal), `urbi_event_id_t`, `urbi_event_payload_destructure_fn`, `urbi_watcher_fn`, `urbi_watcher_handle_t`, `urbi_writer_fn`, `urbi_time_us_fn`, `urbi_wake_fn`, `urbi_ref_t`, `urbi_event_payload_t`
+- Enums: `urbi_value_kind_t`, `urbi_tag_state_t`
+- Structs: `urbi_error_info_t`, `urbi_tag_info_t`
+- Constants/macros: `URBI_EVENT_ID_INVALID`, `URBI_EVENT_PAYLOAD_MAX`, `URBI_EVENT_PAYLOAD_ALIGN`, `URBI_WATCHER_HANDLE_INVALID`, `URBI_ERR_WATCHER_UNREGISTER`, `URBI_ATOMIC_MAX_US`, `URBI_REF_INVALID`
+- Error codes: `URBI_ERR_EVENT_NAME_TAKEN = -17` (Gap B), `URBI_ERR_HEAP_LOCKED = -19` (lifecycle guard)
+
+**Aux (`<urbi/aux.h>` / `liburbi_aux.a`):**
+
+- Functions: `urbi_aux_register_event_table`, `urbi_aux_register_function_table`, `urbi_aux_set_error`, `urbi_aux_load_and_run`, `urbi_aux_dump_value`
+- Structs: `urbi_aux_event_decl_t`, `urbi_aux_function_decl_t`
 
 ### Changed
 
-- TBD
+- **`urbi_value_nil()` → `urbi_make_nil()`** (pre-v1.0 escape clause). Renamed for consistency with the `urbi_make_*` constructor family introduced in Gap N. The old name is removed; callers must update. ~3-5 internal call sites cascaded.
+- **`urbi_native_method_fn` promoted from internal to public API.** Previously declared only in `src/runtime/uclosure.h`; now the canonical declaration is in `<urbi/urbi.h>`. Guard macro `URBI_NATIVE_METHOD_FN_DEFINED` prevents double-typedef.
+- **`urbi_make_float` explicit f32-narrowing on 32-bit float targets.** `(float)` cast added; `-Wfloat-conversion` clean.
+- **`UTag` struct grew** to accommodate `parent` pointer added for `urbi_tag_info.has_parent` reporting (Gap M). Tagged in `_Static_assert` in `src/tag/utag.h`.
+- **ABI version 0/7/0 → 0/7/1.** `URBI_API_VERSION_PATCH` bumped from 0 to 1 (`URBI_API_VERSION_NUM` 700 → 701). Pre-v1.0 escape clause per `<urbi/version.h>` policy.
 
 ### Fixed
 
-- TBD
+- **Latent OOB in `URefSlot` pad array** (value/uvm_ref.c): slot-0 permanent-reserve sentinel was not initialised; writes to slot 0 could alias into adjacent fields. Caught by unit test `test_urbi_ref.c`.
+- **6 cppcheck-strict violations in new Phase 4/7/8 code**: `readSize` misuse in event destructure helper, `variableScope` in watcher-drain loop, `uninitvar` in aux batch-table bounds check, 3 redundant-assignments in error-ring setter.
+- **`urbi_event_payload_destructure_fn` typedef arity** (`void *ud` missing in first pass, caught by T18 watcher-dispatch integration test).
 
 ### Tests
 
-- TBD
+- **1686 unit cases / 12 034 checks** (was 1501/8 269 at v0.7.0; +185 cases, +3 765 checks)
+- **236 `.chk` fixtures** unchanged (all pass)
+- Key new test files: `test_urbi_register.c`, `test_urbi_event_register.c`, `test_urbi_event_payload.c`, `test_urbi_atomic.c`, `test_urbi_watcher_host.c`, `test_urbi_slot.c`, `test_urbi_tag_api.c`, `test_urbi_writer.c`, `test_urbi_ref.c`, `test_urbi_error.c`, `test_urbi_aux_batch.c`
 
 ### Build
 
-- TBD
+- **`urbi-compile-stdlib --to-header`** mode added. Emits `const uint8_t <symbol>[]` + `size_t <symbol>_size` C header for pre-baked bytecode; deterministic across runs (gate: `test-bake-smoke`).
+- ABI version macros bumped: `URBI_API_VERSION_PATCH` 0 → 1, `URBI_API_VERSION_NUM` 700 → 701.
 
 ### CI
 
-- TBD
+- **`make test-aux-symbols`** gate added. `nm`-greps `liburbi.a` core for `urbi_aux_*` symbol leakage; inverse of Wave-1 freestanding gate. Wired into `RELEASETEST_PHASE1`.
+- **`make test-embedding-guide`** gate added. Extracts all 20 C code blocks from `docs/embedding-guide.md` and compiles each (1 standalone + 19 fragments) against `liburbi.a` + `liburbi_aux.a` to detect API-drift. Wired into `RELEASETEST_PHASE1` (<5 s).
 
 ### Docs
 
-- TBD
+- **`docs/embedding-guide.md`** ships (~4 200 words, 10 sections). Covers: Quick Start, Allocator Strategy, Event Flow (with IMU multi-axis worked example), Host Function Registration, Tag Management, Reference Management, Lifecycle contracts (Gap D), Common Patterns, Anti-Patterns, Threading Model (four-row table from spec §1.4).
+
+### Numeric outcomes
+
+| | v0.7.0 baseline | v0.7.1 close | Delta |
+|---|---|---|---|
+| Unit cases | 1 501 | **1 686** | +185 |
+| Checks | 8 269 | **12 034** | +3 765 |
+| `.chk` fixtures | 236 | 236 | unchanged |
+| Wire format | v1.6 (0x16) | v1.6 (0x16) | unchanged |
+| Bytecode blob | 4 205 B (byte-identical) | 4 205 B (byte-identical) | unchanged |
+| ABI version | 0/7/0 (NUM=700) | **0/7/1 (NUM=701)** | PATCH bump |
+| New public API symbols | — | ~55 (25 fns + 9 constructor inlines + 9 accessor inlines + typedefs/structs/enums/consts) | see Added |
+| New aux symbols | — | +7 (5 fns + 2 structs) | see Added |
+| New CI gates | — | `test-aux-symbols`, `test-embedding-guide` | +2 |
+| Docs | — | `docs/embedding-guide.md` | new |
+| Wave commits | — | ~70 (on `topic/v0.7.1-embedding-api`) | |
+
+All strict-tooling gates green at ship: cppcheck-strict 0 / tidy-strict 0 / scan-build 0 / docstring-coverage 0.
+
+### Surprises (mid-execution discoveries)
+
+1. **`UHostFn` vs `urbi_native_method_fn` spec oversight.** Plan T103 referenced `UHostFn` as the host-function typedef. Actual type is `urbi_native_method_fn` (the Gap A/L type). `UHostFn` is a different, legacy typedef (`UValue (*)(struct UStrand *, int, UValue *)`) used by the watchdog infrastructure. Corrected throughout guide + CHANGELOG; internal uses of `UHostFn` in watchdog path unchanged.
+2. **Cross-arm/cross-riscv `all` target builds `liburbi_aux.a`**, which requires `<stdio.h>` (not available with `-ffreestanding`). Pre-existing since v0.7.0's aux-TU-split. Not in `RELEASETEST_PHASE1` (excluded per Makefile comment). Noted for v0.7.2 — `cross-arm` should only build the `$(LIB)` target, not `all`.
+3. **`sensor_destructure` and `fn_*` in guide fragments** required forward declarations to make each fragment self-contained for the compile gate. Added to respective fragments; pedagogically correct (forward declarations are typical in C driver files).
+4. **Standalone Quick Start needed `-Isrc`** to stack-allocate `struct UVM` (definition lives in `src/vm/uvm.h`; `include/urbi/types.h` only forward-declares). Noted in guide with explanation; pattern matches the embed-target setup where `src/` headers are part of the component include path.
 
 ## v0.7.0-c-api — 2026-05-10 (M7 Wave 1 — C-API formalization + URBI_BYTECODE_ONLY)
 
