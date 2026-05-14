@@ -367,6 +367,12 @@ walk_utag(struct UVM *vm, void *payload,
         gc_shade_gray(vm, (UCell *)t->leave_event);
     }
 
+    /* parent tag (v0.7.1 Gap M): shade so the parent stays reachable
+     * as long as the child tag is live.  Parent is always a UTag GC cell. */
+    if (t->parent != NULL) {
+        gc_shade_gray(vm, (UCell *)t->parent);
+    }
+
     /* Walk the member_watchers_head intrusive list.  UWatcher embeds UCell
      * as its first member (type_tag at offset 0), so the cast is well-defined
      * (same as the UObject/UShape walkers above). */

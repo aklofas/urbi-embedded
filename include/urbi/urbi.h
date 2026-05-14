@@ -346,6 +346,27 @@ typedef struct {
  * the internal utag.h header); they cannot live here because urbi.h is a public
  * header that must not include internal src/ headers. */
 
+/* === Gap M — tag lifecycle + query C API (v0.7.1) ===
+ *
+ * urbi_tag_create: allocate a GC-managed UTag, intern its name, and parent
+ *   it under realm->tag so urbi_tag_info reports has_parent = true.
+ *   Returns NULL on OOM or if vm/realm is NULL.
+ *   The returned UTag is GC-managed: it lives until it becomes unreachable
+ *   from the GC root set.  The caller is responsible for keeping it reachable
+ *   (e.g. store it in an object slot or hold a urbi_ref — Gap Q).
+ *   Thread safety: MAIN.
+ *
+ * urbi_tag_info: populate *out with an observable snapshot of `tag`:
+ *   state        — derived from tag->flags (RUNNING/STOPPED/FROZEN).
+ *   member_count — number of strands currently scoped to this tag.
+ *   has_parent   — true if the tag has a parent (set by urbi_tag_create).
+ *   Returns URBI_OK on success, URBI_ERR_INVALID_ARG if tag or out is NULL.
+ *   Thread safety: MAIN (reads tag->flags without synchronisation). */
+struct UTag *urbi_tag_create(struct UVM *vm, struct URealm *realm,
+                             const char *name, size_t name_len);
+
+int urbi_tag_info(const struct UTag *tag, urbi_tag_info_t *out);
+
 /* === Gap K — slot read/write from host C (v0.7.1) ===
  *
  * urbi_slot_get: read slot `name[0..name_len)` from receiver `obj`.
