@@ -314,6 +314,22 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
                                           urbi_native_method_fn fn);
 
+/* urbi_make_str_interned: intern s[0..len) and return a UVAL_STR UValue.
+ *
+ * Two calls with byte-equal inputs always return a UValue whose v.p points
+ * to the same canonical address (pointer-equality implies content-equality).
+ * Suitable for use as dict keys, slot names, and any comparison-heavy string
+ * usage.
+ *
+ * s need not be NUL-terminated; len bytes are interned.  Passing s == NULL
+ * with len == 0 interns the empty string.  Passing s == NULL with len > 0
+ * returns urbi_make_nil() (invalid argument).
+ *
+ * On OOM: returns urbi_make_nil().  Caller must check kind == UVAL_NIL.
+ *
+ * Thread safety: MAIN. */
+UValue urbi_make_str_interned(struct UVM *vm, const char *s, size_t len);
+
 struct UStrand *urbi_strand_create(struct URealm *realm, struct UClosure *entry);
 void            urbi_strand_start(struct UStrand *s);
 struct UStrand *urbi_strand_spawn(struct URealm *realm, struct UClosure *entry);
