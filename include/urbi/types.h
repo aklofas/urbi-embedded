@@ -170,7 +170,11 @@ static inline UValue urbi_make_float(double f)
     UValue v;
     v.kind = (uint8_t)UVAL_FLOAT;
     for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+#if URBI_FLOAT_TYPE == 8
     v.v.f = f;
+#else
+    v.v.f = (float)f;   /* explicit narrowing on f32 builds (-Wfloat-conversion clean) */
+#endif
     return v;
 }
 
@@ -235,6 +239,13 @@ static inline UValue urbi_make_closure(struct UClosure *c)
  * exposed because USymbol is an opaque typedef (the intern table stores
  * raw const char* blocks, not a struct-with-len); this is simpler and
  * avoids adding struct layout to the public ABI.
+ *
+ * KNOWN LIMITATION: the NUL-scan is correct today because the lexer
+ * rejects embedded NULs (the \0 / \xNN string escapes are still on the
+ * v1.x lex backlog — see LEX-035).  When those escapes land, intern keys
+ * may contain embedded NULs and this accessor will silently return a
+ * truncated length.  Tracked in docs/urbi-embedded-design-risks.md as
+ * "urbi_value_as_str NUL-scan fragility".
  *
  * urbi_value_as_bool: returns true/false from the v.i payload (0=false,
  * non-zero=true), consistent with internal val_bool convention. */
