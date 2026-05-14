@@ -272,6 +272,16 @@ test-wire-format-determinism: $(BUILDDIR)/urbi
 test-docstring-coverage:
 	@./tests/scripts/check_docstring_coverage.sh
 
+# Phase 9 (v0.7.1-embedding-api) aux-symbols gate.
+# Asserts that liburbi.a (core) contains NO urbi_aux_* symbols.
+# Aux functions live in liburbi_aux.a; leaking them into core breaks the
+# aux governance contract (CONTRIBUTING.md "Aux layer governance") and
+# the embedder's ability to strip the aux layer at link time.
+# Inverse of the Wave-1 freestanding gate (test-freestanding).
+.PHONY: test-aux-symbols
+test-aux-symbols: $(LIB)
+	@./scripts/check_aux_symbols.sh $(BUILDDIR)/liburbi.a
+
 # Phase 3 (v0.6.1-stdlib Wave 2) bake-tool determinism smoke gate.
 # Runs tools/urbi-compile-stdlib three times against
 # src/stdlib/STDLIB_ORDER.txt + src/stdlib/*.u and asserts that the
@@ -493,7 +503,8 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
-    test-bake-smoke test-bytecode-only test-gc-roots-coverage
+    test-bake-smoke test-bytecode-only test-gc-roots-coverage \
+    test-aux-symbols
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -923,4 +934,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage test-aux-symbols oracle-diff
