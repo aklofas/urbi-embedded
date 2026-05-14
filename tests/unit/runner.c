@@ -194,6 +194,7 @@ extern void test_slot_get_suite(void);
 extern void test_slot_set_suite(void);
 extern void test_tag_create_suite(void);
 extern void test_tag_info_suite(void);
+extern void test_set_writer_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -364,6 +365,7 @@ static const struct suite_entry suites[] = {
     {"slot_set",               test_slot_set_suite},
     {"tag_create",             test_tag_create_suite},
     {"tag_info",               test_tag_info_suite},
+    {"set_writer",             test_set_writer_suite},
     /* Add new suites here as test files are added. */
 };
 
