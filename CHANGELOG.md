@@ -1,8 +1,27 @@
 # Changelog
 
-## Unreleased
+## Unreleased — v0.7.1-embedding-api
 
-(empty)
+### Added
+- TBD
+
+### Changed
+- TBD
+
+### Fixed
+- TBD
+
+### Tests
+- TBD
+
+### Build
+- TBD
+
+### CI
+- TBD
+
+### Docs
+- TBD
 
 ## v0.7.0-c-api — 2026-05-10 (M7 Wave 1 — C-API formalization + URBI_BYTECODE_ONLY)
 
