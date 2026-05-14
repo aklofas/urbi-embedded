@@ -217,6 +217,7 @@ extern void test_error_string_lifetime_suite(void);
 extern void test_error_ring_cascade_suite(void);
 extern void test_ref_basic_suite(void);
 extern void test_ref_gc_root_suite(void);
+extern void test_ref_capacity_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -410,6 +411,7 @@ static const struct suite_entry suites[] = {
     {"error_ring_cascade",           test_error_ring_cascade_suite},
     {"ref_basic",                    test_ref_basic_suite},
     {"ref_gc_root",                  test_ref_gc_root_suite},
+    {"ref_capacity",                 test_ref_capacity_suite},
     /* Add new suites here as test files are added. */
 };
 
