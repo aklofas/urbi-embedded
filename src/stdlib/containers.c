@@ -44,7 +44,7 @@
 #include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */
 #include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
 #include "urbi/object.h"               /* URBI_ATOM_LIST / DICT / OBJECT */
-#include "urbi/types.h"                /* urbi_value_nil */
+#include "urbi/types.h"                /* urbi_make_nil */
 #include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "value/uvalue.h"              /* uvalue_equal */
@@ -209,7 +209,7 @@ dict_alloc(UVM *vm, size_t initial_cap)
 static UValue
 val_from_ptr(void *p)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_INT;
     v.v.i = (int64_t)(intptr_t)p;
     return v;
@@ -265,7 +265,7 @@ dict_storage(UVM *vm, UValue self)
 static UValue
 val_int(int64_t i)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_INT;
     v.v.i  = i;
     return v;
@@ -274,7 +274,7 @@ val_int(int64_t i)
 static UValue
 val_bool(int b)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_BOOL;
     v.v.i  = b ? 1 : 0;
     return v;
@@ -283,7 +283,7 @@ val_bool(int b)
 static UValue
 val_obj(UObject *o)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_OBJECT;
     v.v.p  = o;
     return v;
@@ -310,7 +310,7 @@ install_methods(UVM *vm, UObject *proto,
                                               urbi_strlen(table[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p  = cl;
         int rc = urbi_object_set_local_slot(vm, proto, sym, v);
@@ -754,13 +754,13 @@ dict_get(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 
     UDict *d = dict_storage(vm, self);
     if (d == NULL) return urbi_raise_type(vm, "get: missing _storage", out);
-    if (d->cap == 0U) { *out = urbi_value_nil(); return UEXEC_OK; }
+    if (d->cap == 0U) { *out = urbi_make_nil(); return UEXEC_OK; }
 
     const char *ks = (const char *)args[0].v.p;
     size_t kn = urbi_strlen(ks);
     UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
     if (e == NULL || e->state != UDICT_USED) {
-        *out = urbi_value_nil();
+        *out = urbi_make_nil();
         return UEXEC_OK;
     }
     *out = e->val;
@@ -801,8 +801,8 @@ dict_remove(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     UDictEntry *e = dict_lookup(d, ks, kn, dict_hash_bytes(ks, kn));
     if (e != NULL && e->state == UDICT_USED) {
         e->state = UDICT_TOMB;
-        e->key   = urbi_value_nil();
-        e->val   = urbi_value_nil();
+        e->key   = urbi_make_nil();
+        e->val   = urbi_make_nil();
         d->len--;
     }
     *out = self;

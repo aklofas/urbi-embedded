@@ -169,10 +169,10 @@ UTEST(new_chunk_capacity_assert) {
     uarena_destroy(&a);
 }
 
-/* --- T88: zero-init UValue via urbi_value_nil() helper --- */
+/* --- T88: zero-init UValue via urbi_make_nil() helper --- */
 
 UTEST(uvalue_nil_zero_init_clears_pad_field) {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     UASSERT_EQ(v.kind, (int)UVAL_NIL);
     UASSERT_EQ((long long)v.v.i, 0LL);
     /* _pad must be zeroed for memcmp-style equality. */
@@ -364,7 +364,7 @@ void test_foundations_suite(void) {
               uarena_alloc_rejects_size_near_overflow);
     utest_run("T87: new_chunk capacity invariants asserted (smoke)",
               new_chunk_capacity_assert);
-    utest_run("T88: zero-init UValue via urbi_value_nil()",
+    utest_run("T88: zero-init UValue via urbi_make_nil()",
               uvalue_nil_zero_init_clears_pad_field);
     utest_run("T90: pop_call_frame uses vm_set_consts_from_frame helper",
               pop_call_frame_consts_lookup_matches_op_call);

@@ -852,14 +852,15 @@ UTEST(watcher_root_walker_skips_null_closures)
     urbi_vm_destroy(&vm);
 }
 
-/* 24. watcher_root_provider_count_is_6_after_init:
- *     Verify 6 root providers are registered at urbi_vm_init time
- *     (sched, realm, intern, host_handle, watcher_table, T36 m4_object). */
+/* 24. watcher_root_provider_count_is_7_after_init:
+ *     Verify 7 root providers are registered at urbi_vm_init time
+ *     (sched, realm, intern, host_handle, watcher_table, T36 m4_object,
+ *     ref_table — Gap Q v0.7.1). */
 UTEST(watcher_root_provider_count_is_6_after_init)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UASSERT_EQ(6U, vm.root_provider_count);
+    UASSERT_EQ(7U, vm.root_provider_count);
     urbi_vm_destroy(&vm);
 }
 

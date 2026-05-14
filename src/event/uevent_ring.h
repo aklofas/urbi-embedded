@@ -22,16 +22,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* URBI_EVENT_PAYLOAD_MAX is authoritative in <urbi/types.h> (Gap C / T13).
+ * Pull it from there so the internal ring uses the same pinned value. */
+#include "urbi/types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifndef URBI_EVENT_RING_DEPTH
 #  define URBI_EVENT_RING_DEPTH  256   /* must be a power of 2 */
-#endif
-
-#ifndef URBI_EVENT_PAYLOAD_MAX
-#  define URBI_EVENT_PAYLOAD_MAX 16
 #endif
 
 /* Compile-time guard: ring depth must be a power of 2 for bitmask indexing. */

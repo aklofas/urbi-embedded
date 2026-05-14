@@ -28,22 +28,23 @@ struct UEvent;
 /* === UTag flag bits (stored in UTag.flags) === */
 
 #define UTAG_FLAG_FROZEN  0x01U  /* RESERVED — Tag.freeze (M5/M6) */
-#define UTAG_FLAG_STOPPED 0x02U  /* RESERVED — Tag.stop state (M5/M6) */
+#define UTAG_FLAG_STOPPED 0x02U  /* set by urbi_tag_stop since v0.7.1 (Gap M) */
 
 /* === UTag struct (row 11 §3.2, extended M5 spec #3 §3.4) ===
  *
  * Pure scope-nesting topology: member lists, no parent/child tree.
  * The "hierarchy" emerges from scope nesting via the cleanup-stack.
  *
- * Layout at M5 (64-bit host): pinned at exactly 56 B by _Static_assert below.
+ * Layout (64-bit host): pinned at exactly 64 B by _Static_assert below.
  *   Cell header  : type_tag(1) + gc_byte(1) + pad0(2) = 4 B
  *   Flags + pad  : flags(1) + pad1[3] = 4 B
  *   Pointers     : member_strands_head(8) + member_watchers_head(8) = 16 B
  *   Event ptrs   : enter_event(8) + leave_event(8) = 16 B    (spec #3 §3.4)
+ *   Parent ptr   : parent(8) = 8 B                            (v0.7.1 Gap M)
  *   Name UValue  : 16 B
- *   Total        : 56 B  (TAGCH-006: no trailing compiler pad — pad1[3] +
- *                         pad0 already absorb alignment to the first 8 B
- *                         pointer; UValue ends on an 8 B boundary).
+ *   Total        : 64 B  (TAGCH-006 + parent: pad1[3] + pad0 absorb alignment
+ *                         to the first 8 B pointer; UValue ends on an 8 B
+ *                         boundary).
  *
  * type_tag = UTYPE_TAG (5); gc_byte = current_white (set by urbi_gc_alloc).
  * enter_event / leave_event are NULL at create; lazy-allocated by getter
@@ -101,18 +102,25 @@ typedef struct UTag {
     struct UEvent *enter_event;  /* fires when a strand enters this tag scope */
     struct UEvent *leave_event;  /* fires when a strand leaves this tag scope */
 
+    /* --- parent tag pointer (v0.7.1 / Gap M) ---
+     * Set by urbi_tag_create to the realm's root tag so urbi_tag_info can
+     * report has_parent = true for host-created child tags.  NULL for the
+     * realm-root tag itself (created by urbi_realm_create via utag_create).
+     * Walked by the UTYPE_TAG GC walker so a host-created tag held only via
+     * a child's parent pointer cannot be collected before the child. */
+    struct UTag   *parent;               /* NULL for realm-root tags */
+
     /* --- name (M6 stdlib) --- */
     UValue   name;                      /* UVAL_NIL at M5; populated at M6 */
 } UTag;
 
-/* Layout pin (Wave-1 v0.5.3 audit CHSTR-041 + sibling): UTag is 56 B at
- * v0.5.x default layout (M5 GC-promoted from the M3 host-managed form).
- * Adding fields requires deliberate update of this assert.  Guarded on
- * pointer width to avoid a hard failure on 32-bit cross targets,
- * matching the UEvent / UObject pattern. */
+/* Layout pin: UTag is 64 B on 64-bit hosts after the v0.7.1 parent-pointer
+ * addition (+8 B from 56 B).  Guarded on pointer width to avoid a hard
+ * failure on 32-bit cross targets (mirrors UEvent / UObject pattern).
+ * Update this assert whenever UTag fields change. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UTag) == 56,
-               "UTag size pin on 64-bit (M5 GC-promoted layout)");
+_Static_assert(sizeof(UTag) == 64,
+               "UTag size pin on 64-bit (v0.7.1 parent-pointer layout)");
 #endif
 
 /* === UTag lifecycle API ===

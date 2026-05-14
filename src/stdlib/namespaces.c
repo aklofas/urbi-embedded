@@ -24,7 +24,7 @@
 #include "runtime/umacros.h"           /* urbi_strlen */
 #include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */
-#include "urbi/types.h"                /* urbi_value_nil */
+#include "urbi/types.h"                /* urbi_make_nil */
 #include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_* / urbi_realm_set_global */
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "vm/uvm.h"                    /* UVM */
@@ -42,7 +42,7 @@
 static UValue
 val_int(int64_t i)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_INT;
     v.v.i  = i;
     return v;
@@ -51,7 +51,7 @@ val_int(int64_t i)
 static UValue
 val_float(double d)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_FLOAT;
     v.v.f  = d;
     return v;
@@ -60,7 +60,7 @@ val_float(double d)
 static UValue
 val_obj(UObject *o)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_OBJECT;
     v.v.p  = o;
     return v;
@@ -69,7 +69,7 @@ val_obj(UObject *o)
 static UValue
 val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
     if (sym == NULL) {
         if (oom != NULL) *oom = 1;
@@ -132,7 +132,7 @@ install_methods(UVM *vm, UObject *proto,
                                               urbi_strlen(table[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p  = cl;
         if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
@@ -207,7 +207,7 @@ sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     if (name == NULL) return urbi_raise_type(vm, "System.getenv: NULL String", out);
     const char *v = getenv(name);
     if (v == NULL) {
-        *out = urbi_value_nil();
+        *out = urbi_make_nil();
         return UEXEC_OK;
     }
     int oom = 0;
@@ -216,7 +216,7 @@ sys_getenv(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 #else
     (void)args;
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     return UEXEC_OK;
 #endif
 }
@@ -231,7 +231,7 @@ sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     (void)self; (void)args;
     if (nargs != 0) return urbi_raise_arity(vm, "System.gc", 0, nargs, out);
     urbi_gc_collect(vm);
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     return UEXEC_OK;
 }
 

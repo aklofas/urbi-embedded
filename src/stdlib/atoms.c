@@ -33,7 +33,7 @@
 #include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */
 #include "sched/ustrand.h"             /* UEXEC_OK / UEXEC_THROW */
 #include "urbi/object.h"               /* URBI_ATOM_* */
-#include "urbi/types.h"                /* urbi_value_nil, UExecStatus */
+#include "urbi/types.h"                /* urbi_make_nil, UExecStatus */
 #include "urbi/urbi.h"                 /* URBI_OK / URBI_ERR_OOM */
 #include "value/uintern.h"             /* ustr_intern + USymbol */
 #include "vm/uvm.h"                    /* UVM */
@@ -68,7 +68,7 @@ install_methods(UVM *vm, UObject *proto,
             vm, table[i].name, urbi_strlen(table[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p = cl;
         int rc = urbi_object_set_local_slot(vm, proto, sym, v);
@@ -82,7 +82,7 @@ install_methods(UVM *vm, UObject *proto,
 static UValue
 val_int(int64_t i)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_INT;
     v.v.i = i;
     return v;
@@ -91,7 +91,7 @@ val_int(int64_t i)
 static UValue
 val_float(double f)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_FLOAT;
 #if URBI_FLOAT_TYPE == 8
     v.v.f = f;
@@ -104,7 +104,7 @@ val_float(double f)
 static UValue
 val_bool(int b)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_BOOL;
     v.v.i = b ? 1 : 0;
     return v;
@@ -113,7 +113,7 @@ val_bool(int b)
 static UValue
 val_str_intern(UVM *vm, const char *s, size_t n, int *oom)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     USymbol *sym = (USymbol *)ustr_intern(vm, s, n);
     if (sym == NULL) {
         if (oom != NULL) *oom = 1;

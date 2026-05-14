@@ -27,7 +27,7 @@
 static UValue realm_get(UVM *vm, const char *name)
 {
     URealm *realm = urbi_realm_global(vm);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     (void)urbi_realm_get_global(vm, realm, name, (int)strlen(name), &out);
     return out;
 }
@@ -36,7 +36,7 @@ static UValue realm_get(UVM *vm, const char *name)
 static UValue obj_lookup(UVM *vm, UObject *obj, const char *name)
 {
     USymbol *sym = (USymbol *)ustr_intern(vm, name, strlen(name));
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     (void)urbi_object_lookup(vm, obj, sym, &out);
     return out;
 }

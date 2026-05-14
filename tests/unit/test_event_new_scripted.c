@@ -54,7 +54,7 @@ UTEST(event_new_returns_uvalevent)
     UASSERT_EQ(URBI_OK, rc);
     if (rc != URBI_OK) { urbi_vm_destroy(&vm); return; }
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, gr, "e", 1, &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_EVENT, (int)out.kind);
@@ -100,7 +100,7 @@ UTEST(event_new_then_at_watcher_fires)
     UASSERT_EQ(URBI_OK, rc);
     if (rc != URBI_OK) { urbi_vm_destroy(&vm); return; }
 
-    UValue fired = urbi_value_nil();
+    UValue fired = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, gr, "fired", 5, &fired);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_INT, (int)fired.kind);

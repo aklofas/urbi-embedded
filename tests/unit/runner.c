@@ -184,6 +184,45 @@ extern void test_emit_this_suite(void);
 extern void test_emit_closure_capture_suite(void);
 extern void test_vm_init_oom_suite(void);
 extern void test_watcher_body_done_fn_suite(void);
+extern void test_event_payload_layout_suite(void);
+extern void test_make_native_closure_suite(void);
+extern void test_value_kind_drift_suite(void);
+extern void test_make_value_suite(void);
+extern void test_value_as_suite(void);
+extern void test_make_str_interned_suite(void);
+extern void test_slot_get_suite(void);
+extern void test_slot_set_suite(void);
+extern void test_tag_create_suite(void);
+extern void test_tag_info_suite(void);
+extern void test_set_writer_suite(void);
+extern void test_set_time_us_suite(void);
+extern void test_set_wake_fn_suite(void);
+extern void test_register_host_fn_suite(void);
+extern void test_register_dup_name_suite(void);
+extern void test_atomic_batch_suite(void);
+extern void test_atomic_nesting_suite(void);
+extern void test_atomic_watchdog_suite(void);
+extern void test_event_register_success_suite(void);
+extern void test_event_register_errors_suite(void);
+extern void test_event_unregister_suite(void);
+extern void test_drain_routing_registered_suite(void);
+extern void test_drain_routing_unregistered_suite(void);
+extern void test_register_watcher_callback_suite(void);
+extern void test_watcher_auto_unregister_suite(void);
+extern void test_unregister_watcher_suite(void);
+extern void test_watcher_done_fanout_suite(void);
+extern void test_imu_integration_suite(void);
+extern void test_last_error_populated_suite(void);
+extern void test_error_string_lifetime_suite(void);
+extern void test_error_ring_cascade_suite(void);
+extern void test_ref_basic_suite(void);
+extern void test_ref_gc_root_suite(void);
+extern void test_ref_capacity_suite(void);
+extern void test_aux_event_table_suite(void);
+extern void test_aux_function_table_suite(void);
+extern void test_aux_set_error_suite(void);
+extern void test_aux_load_and_run_suite(void);
+extern void test_aux_dump_value_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -344,6 +383,45 @@ static const struct suite_entry suites[] = {
     {"emit_closure_capture",    test_emit_closure_capture_suite},
     {"vm_init_oom",             test_vm_init_oom_suite},
     {"watcher_body_done_fn",    test_watcher_body_done_fn_suite},
+    {"event_payload_layout",   test_event_payload_layout_suite},
+    {"make_native_closure",    test_make_native_closure_suite},
+    {"value_kind_drift",       test_value_kind_drift_suite},
+    {"make_value",             test_make_value_suite},
+    {"value_as",               test_value_as_suite},
+    {"make_str_interned",      test_make_str_interned_suite},
+    {"slot_get",               test_slot_get_suite},
+    {"slot_set",               test_slot_set_suite},
+    {"tag_create",             test_tag_create_suite},
+    {"tag_info",               test_tag_info_suite},
+    {"set_writer",             test_set_writer_suite},
+    {"set_time_us",            test_set_time_us_suite},
+    {"set_wake_fn",            test_set_wake_fn_suite},
+    {"register_host_fn",      test_register_host_fn_suite},
+    {"register_dup_name",     test_register_dup_name_suite},
+    {"atomic_batch",          test_atomic_batch_suite},
+    {"atomic_nesting",        test_atomic_nesting_suite},
+    {"atomic_watchdog",       test_atomic_watchdog_suite},
+    {"event_register_success", test_event_register_success_suite},
+    {"event_register_errors",  test_event_register_errors_suite},
+    {"event_unregister",             test_event_unregister_suite},
+    {"drain_routing_registered",     test_drain_routing_registered_suite},
+    {"drain_routing_unregistered",   test_drain_routing_unregistered_suite},
+    {"register_watcher_callback",    test_register_watcher_callback_suite},
+    {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
+    {"unregister_watcher",           test_unregister_watcher_suite},
+    {"watcher_done_fanout",          test_watcher_done_fanout_suite},
+    {"imu_integration",              test_imu_integration_suite},
+    {"last_error_populated",         test_last_error_populated_suite},
+    {"error_string_lifetime",        test_error_string_lifetime_suite},
+    {"error_ring_cascade",           test_error_ring_cascade_suite},
+    {"ref_basic",                    test_ref_basic_suite},
+    {"ref_gc_root",                  test_ref_gc_root_suite},
+    {"ref_capacity",                 test_ref_capacity_suite},
+    {"aux_event_table",              test_aux_event_table_suite},
+    {"aux_function_table",           test_aux_function_table_suite},
+    {"aux_set_error",                test_aux_set_error_suite},
+    {"aux_load_and_run",             test_aux_load_and_run_suite},
+    {"aux_dump_value",               test_aux_dump_value_suite},
     /* Add new suites here as test files are added. */
 };
 

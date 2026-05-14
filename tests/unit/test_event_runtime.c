@@ -38,7 +38,7 @@
 #include "module/umodule.h"
 #include "runtime/uclosure.h"   /* Phase 7: UClosure->native_fn dispatch shape */
 #include "urbi/urbi.h"
-#include "urbi/types.h"         /* urbi_value_nil */
+#include "urbi/types.h"         /* urbi_make_nil */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -99,7 +99,7 @@ UTEST(native_event_functions_validate_argv)
         args[0].v.i  = 7;
 
         uint8_t nargs = (i == 2) ? 0U : 1U;  /* waituntil = 0, emit/syncEmit = 1 */
-        UValue out = urbi_value_nil();
+        UValue out = urbi_make_nil();
         int rc = cl->native_fn(&vm, self, args, nargs, &out);
 
         UASSERT_EQ(rc, UEXEC_THROW);

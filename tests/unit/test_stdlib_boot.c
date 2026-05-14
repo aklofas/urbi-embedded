@@ -60,22 +60,22 @@ UTEST(wave1_realm_globals_reachable) {
     struct URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = urbi_realm_get_global(&vm, realm, "Boolean", 7, &out);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_OBJECT);
 
-    out = urbi_value_nil();
+    out = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, realm, "Nil", 3, &out);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_OBJECT);
 
-    out = urbi_value_nil();
+    out = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, realm, "Void", 4, &out);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_OBJECT);
 
-    out = urbi_value_nil();
+    out = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, realm, "Object", 6, &out);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_OBJECT);
@@ -99,14 +99,14 @@ UTEST(ic_name_resolution_post_boot) {
     UASSERT(realm != NULL);
 
     /* Positive: a Wave-1 stdlib name resolves. */
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = urbi_realm_get_global(&vm, realm, "Object", 6, &out);
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_OBJECT);
 
     /* Negative: an unbound name does not resolve, but the lookup path
      * itself is reachable (no fatal / OOM). */
-    out = urbi_value_nil();
+    out = urbi_make_nil();
     rc = urbi_realm_get_global(&vm, realm,
                                "__no_such_global__", 18, &out);
     UASSERT_EQ(rc, URBI_ERR_SLOT_NOT_FOUND);
@@ -148,7 +148,7 @@ UTEST(phase10_exception_subclasses_reachable) {
     };
     size_t i;
     for (i = 0; i < sizeof kSubclasses / sizeof kSubclasses[0]; i++) {
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         const char *name = kSubclasses[i];
         size_t      nlen = 0;
         while (name[nlen]) nlen++;
@@ -177,8 +177,8 @@ UTEST(two_vm_determinism) {
     struct URealm *realm_b = urbi_realm_global(&vm_b);
     UASSERT(realm_b != NULL);
 
-    UValue out_a = urbi_value_nil();
-    UValue out_b = urbi_value_nil();
+    UValue out_a = urbi_make_nil();
+    UValue out_b = urbi_make_nil();
     int rc_a = urbi_realm_get_global(&vm_a, realm_a, "Boolean", 7, &out_a);
     int rc_b = urbi_realm_get_global(&vm_b, realm_b, "Boolean", 7, &out_b);
     UASSERT_EQ(rc_a, URBI_OK);

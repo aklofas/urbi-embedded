@@ -30,6 +30,12 @@ struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
 struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h */
 
+/* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
+#include "event/uevent_registry.h"
+
+/* Gap J (v0.7.1): host-side watcher table — full type needed in UVM struct. */
+#include "watcher/uwatcher_host.h"
+
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
@@ -162,6 +168,72 @@ typedef struct UNestedArrayNode {
     void                   *alloc_ud;  /* user data for alloc_fn            */
     struct UNestedArrayNode *next;     /* linked-list link                  */
 } UNestedArrayNode;
+
+/* --- Gap P (v0.7.1): per-VM error ring buffer storage ---
+ *
+ * UErrorRingEntry: one ring slot — owns the string buffers so the
+ *   urbi_error_info_t const char* pointers never dangle.
+ * UErrorRing: capacity-4 ring.  Inline in UVM (~4 KB).
+ *
+ * Size note: 4 entries × (sizeof urbi_error_info_t + 3×256 B) ≈ 3.2 KB
+ * on 64-bit hosts.  Tests that allocate `UVM vm;` on the stack add this
+ * to the frame; safe on hosted (8 MB default stack) but FreeRTOS embedders
+ * with tight task stacks should allocate UVM on the heap or a static region.
+ *
+ * urbi_error_info_t lives in <urbi/urbi.h> (public header); included
+ * transitively through urbi/types.h → urbi/urbi.h when urbi/urbi.h is
+ * included.  We forward-include it here to keep uvm.h self-contained. */
+#include "urbi/urbi.h"  /* urbi_error_info_t (Gap P struct) */
+
+#define URBI_ERROR_RING_DEPTH  4U
+#define URBI_ERROR_STRING_BUF  256U
+
+typedef struct {
+    urbi_error_info_t info;
+    char              message_buf    [URBI_ERROR_STRING_BUF];
+    char              source_name_buf[URBI_ERROR_STRING_BUF];
+    char              context_buf    [URBI_ERROR_STRING_BUF];
+} UErrorRingEntry;
+
+typedef struct {
+    UErrorRingEntry entries[URBI_ERROR_RING_DEPTH];
+    size_t          head;   /* next write slot index (mod URBI_ERROR_RING_DEPTH) */
+    size_t          count;  /* 0..URBI_ERROR_RING_DEPTH; 0 == empty */
+} UErrorRing;
+
+/* --- Gap Q (v0.7.1): per-VM reference table storage ---
+ *
+ * URefSlot: one table slot — holds the pinned UValue, a generation counter
+ *   (0..255; increments on each urbi_unref to invalidate old handles), and
+ *   an in_use flag.
+ * URefTable: growable heap-allocated array + free-list.  NULL slots == empty.
+ *
+ * Handle encoding: (slot_index << 8) | generation.  Slot 0 is permanently
+ * reserved so URBI_REF_INVALID (== 0) can never be a valid handle.  Valid
+ * handles always have (handle >> 8) >= 1.
+ *
+ * GC integration: ref_table_walk_roots is registered at urbi_vm_init via
+ * urbi_gc_register_root_provider; it calls cb for every in_use slot value
+ * so the GC marks those values live. */
+#define URBI_REF_INDEX_BITS  24U
+#define URBI_REF_GEN_BITS    8U
+#define URBI_REF_INDEX_MASK  ((1U << URBI_REF_INDEX_BITS) - 1U)
+#define URBI_REF_MAX_SLOTS   URBI_REF_INDEX_MASK
+
+typedef struct {
+    UValue  value;
+    uint8_t generation;  /* 0..255; increments on each urbi_unref */
+    uint8_t in_use;      /* 1 = slot is live; 0 = free */
+    uint8_t pad[6];      /* free-list next-index in pad[0..2] (24-bit, 3 bytes);
+                          * pad[3..5] reserved / alignment filler */
+} URefSlot;
+
+typedef struct {
+    URefSlot *slots;          /* heap-allocated array; NULL until first urbi_ref */
+    size_t    capacity;       /* number of allocated slots (includes slot 0 sentinel) */
+    size_t    used;           /* number of live (in_use) slots */
+    size_t    free_list_head; /* index of next free slot, or SIZE_MAX if none */
+} URefTable;
 
 /* --- VM state --- */
 
@@ -459,6 +531,25 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* --- Row 9 host time hook --- */
     uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
 
+    /* --- Gap E pluggable I/O writer (v0.7.1) ---
+     * writer_fn: channel-multiplexed write callback.  NULL = default writer
+     *   (hosted: cout/clog→stdout, cerr→stderr, others discarded;
+     *    freestanding: silent sink).
+     * writer_ud: opaque user-data pointer forwarded to every writer_fn call.
+     * Thread safety: MAIN. */
+    void   (*writer_fn)(void *ud, const char *channel, size_t channel_len,
+                        const char *msg, size_t msg_len, uint64_t ts_us);
+    void    *writer_ud;
+
+    /* --- Gap S wake notification hook (v0.7.1) ---
+     * wake_fn: called after each successful urbi_inject_event ring deposit.
+     *   May run in ISR context.  MUST be O(1), non-blocking, non-allocating.
+     *   NULL = no wake signal (embedder polls urbi_step directly).
+     * wake_ud: opaque user-data pointer forwarded to every wake_fn call.
+     * Thread safety: ISR or MAIN. */
+    void   (*wake_fn)(void *ud);
+    void    *wake_ud;
+
     /* --- T19 ISR-check + debug watchdog hooks ---
      * isr_check_fn: returns true when called from ISR context; NULL = no check.
      *   In URBI_DEBUG builds, every non-ISR-safe function asserts isr_check_fn() == false.
@@ -577,6 +668,57 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * in <urbi/urbi.h> expands to a function pointer with the exact same
      * shape, so the setter wires through cleanly across the seam. */
     void (*watcher_body_done_fn)(struct UVM *vm, int handle, int completion_status);
+
+    /* --- Gap R: atomic event section state (v0.7.1) ---
+     * atomic_active: true while urbi_atomic_begin has been called and
+     *   urbi_atomic_end has not yet been called.  When true, uevent_ring_drain
+     *   is a no-op so ISR-deposited events stay queued until urbi_atomic_end
+     *   clears the flag and triggers a drain pass.
+     * atomic_begin_us: monotonic timestamp (microseconds) captured at
+     *   urbi_atomic_begin; used by the URBI_DEBUG watchdog in urbi_step to
+     *   detect sections held beyond URBI_ATOMIC_MAX_US.  Only valid when
+     *   atomic_active is true.
+     * Both fields are zeroed by urbi_vm_init (part of the zero-init UVM). */
+    uint8_t  atomic_active;
+    uint8_t  pad_atomic[7];     /* alignment padding; zeroed */
+    uint64_t atomic_begin_us;
+
+    /* --- Gap B (v0.7.1): named-event registry ---
+     * Maps urbi_event_id_t → (UEvent *, destruct_fn, name) triples.
+     * Zero-initialized at urbi_vm_init.  Entries[] array heap-allocated
+     * on first urbi_event_register call and freed at urbi_vm_destroy
+     * via uevent_registry_destroy.
+     *
+     * GC note: UEvent cells in entries[i].event are GC-managed; the registry
+     * holds a raw pointer that acts as an unrooted reference.  This is safe
+     * because urbi_event_register also installs the event as a const
+     * realm-global (strong root), keeping it alive for the VM lifetime.
+     * A future GC root walker for the registry is deferred to v1.x if
+     * urbi_event_unregister needs to support explicit removal. */
+    UEventRegistry event_registry;
+
+    /* --- Gap J (v0.7.1): host-side reactive watcher table ---
+     * Growable array of UHostWatcher entries installed via
+     * urbi_register_watcher.  Zero-initialized at urbi_vm_init.
+     * Freed at urbi_vm_destroy via uhost_watcher_table_destroy.
+     *
+     * Walking and dispatch happen in uevent_ring_drain after the
+     * script-side UEvent dispatch (c_event_emit_async) completes.
+     * Single-threaded at v1.0 — no locking required. */
+    UHostWatcherTable host_watcher_table;
+
+    /* --- Gap P (v0.7.1): per-VM error ring buffer ---
+     * Inline storage (~3.2 KB on 64-bit hosts).  See UErrorRing definition
+     * above for the size note and stack-allocation warning.
+     * Zero-initialized at urbi_vm_init (head=0, count=0 → empty ring).
+     * No heap to free in urbi_vm_destroy (all storage is inline). */
+    UErrorRing error_ring;
+
+    /* --- Gap Q (v0.7.1): reference table ---
+     * Heap-allocated URefSlot array; NULL until the first urbi_ref call.
+     * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
+     * (registered at urbi_vm_init). */
+    URefTable ref_table;
 } UVM;
 
 /* --- API --- */

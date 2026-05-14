@@ -30,7 +30,7 @@
 #include "runtime/umacros.h"           /* urbi_strlen */
 #include "sched/ustrand.h"             /* UEXEC_OK, UEXEC_THROW, UStrand */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */
-#include "urbi/types.h"                /* urbi_value_nil */
+#include "urbi/types.h"                /* urbi_make_nil */
 #include "urbi/urbi.h"                 /* URBI_OK, URBI_ERR_*, urbi_throw */
 #include "value/uintern.h"             /* ustr_intern, USymbol */
 #include "vm/uvm.h"                    /* UVM, vm->exception_proto */
@@ -43,7 +43,7 @@
 static UValue
 val_obj(UObject *o)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_OBJECT;
     v.v.p  = o;
     return v;
@@ -107,7 +107,7 @@ exc_raise(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     }
 
     urbi_throw(vm->cur_strand, self);
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     /* Return UEXEC_OK so OP_CALL doesn't fatal-halt; safepoint picks up
      * the deposited pending_unwind. */
     return UEXEC_OK;
@@ -134,7 +134,7 @@ install_methods(UVM *vm, UObject *proto,
                                               urbi_strlen(table[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p  = cl;
         if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
@@ -184,7 +184,7 @@ urbi_stdlib_register_runtime_types(UVM *vm)
     USymbol *sym_message = (USymbol *)ustr_intern(vm, "message", 7);
     if (sym_message == NULL) return URBI_ERR_OOM;
     if (urbi_object_set_local_slot(vm, vm->exception_proto, sym_message,
-                                   urbi_value_nil()) != 0) {
+                                   urbi_make_nil()) != 0) {
         return URBI_ERR_OOM;
     }
 

@@ -107,7 +107,7 @@ static int compile_and_run(UVM *vm, const char *src)
 static UValue realm_get(UVM *vm, const char *name)
 {
     URealm *realm = urbi_realm_global(vm);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     (void)urbi_realm_get_global(vm, realm, name, (int)strlen(name), &out);
     return out;
 }

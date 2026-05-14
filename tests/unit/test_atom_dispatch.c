@@ -73,7 +73,7 @@ UTEST(atom_proto_for_int) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_INT;
     v.v.i = 42;
 
@@ -88,7 +88,7 @@ UTEST(atom_proto_for_float) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_FLOAT;
     v.v.f = 3.14;
 
@@ -103,7 +103,7 @@ UTEST(atom_proto_for_string) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_STR;
     v.v.p = NULL;  /* helper only inspects kind */
 
@@ -121,7 +121,7 @@ UTEST(atom_proto_for_object_returns_self) {
     UObject *obj = urbi_object_alloc(&vm, URBI_ATOM_OBJECT);
     UASSERT(obj != NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_OBJECT;
     v.v.p = obj;
 
@@ -144,7 +144,7 @@ UTEST(int_method_dispatch_via_atom_proto) {
     USymbol *sym = (USymbol *)ustr_intern(&vm, "marker", 6);
     UASSERT(sym != NULL);
 
-    UValue marker = urbi_value_nil();
+    UValue marker = urbi_make_nil();
     marker.kind = UVAL_INT;
     marker.v.i = 42;
 
@@ -155,7 +155,7 @@ UTEST(int_method_dispatch_via_atom_proto) {
     rc = compile_and_run(&vm, "var v = 1.marker");
     UASSERT_EQ(rc, URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out);
     UASSERT_EQ(grc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
@@ -181,7 +181,7 @@ UTEST(int_method_dispatch_returns_slot_value) {
     USymbol *sym = (USymbol *)ustr_intern(&vm, "kind_check", 10);
     UASSERT(sym != NULL);
 
-    UValue marker = urbi_value_nil();
+    UValue marker = urbi_make_nil();
     marker.kind = UVAL_BOOL;
     marker.v.i = 1;
 
@@ -191,7 +191,7 @@ UTEST(int_method_dispatch_returns_slot_value) {
     rc = compile_and_run(&vm, "var v = 5.kind_check");
     UASSERT_EQ(rc, URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out);
     UASSERT_EQ(grc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_BOOL);
@@ -216,7 +216,7 @@ UTEST(slot_set_slow_returns_const_slot_write_on_const_overwrite) {
     USymbol *sym = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(sym != NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_INT;
     v.v.i = 1;
 
@@ -234,7 +234,7 @@ UTEST(slot_set_slow_returns_const_slot_write_on_const_overwrite) {
     memset(&ic, 0, sizeof(ic));
     ic.name = sym;
 
-    UValue v2 = urbi_value_nil();
+    UValue v2 = urbi_make_nil();
     v2.kind = UVAL_INT;
     v2.v.i = 99;
 

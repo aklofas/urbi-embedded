@@ -63,14 +63,11 @@ knownConditionTrueFalse:src/object/uobject_slot.c:550
 // when Phase 19 closed CPPCHK-011.  Both close at v0.6.1-stdlib (Phase 12).
 knownConditionTrueFalse:src/runtime/uunwind.c:313
 
-// audit:CPPCHK-012 (Phase 19) — urbi_native_event_waituntil's signature is
-// dictated by the native-event callback function-pointer type registered
-// via event_native_register; declaring `argv` const here would cascade
-// into casts at every callback registration site.  cppcheck itself notes
-// the callback caveat in the diagnostic.  Equivalent native callbacks
-// in src/event/uevent_native.c don't trigger this because they're called
-// directly (not via function-pointer table); only this one is.
-constParameterCallback:src/event/uevent_native.c:174
+// audit:CPPCHK-012 (Phase 19, closed Phase 9) — constParameterCallback
+// previously fired on event_sync_emit_method in uevent_native.c when
+// the callback function-pointer type was registered via event_native_register.
+// Subsequent refactoring moved the callback to direct-call registration;
+// cppcheck no longer detects the pattern.  Suppression retired.
 
 // audit:CPPCHK-013 (Phase 19, updated Phase 6) — parse_err_line /
 // parse_err_col are written in the parse-error breakout and read inside

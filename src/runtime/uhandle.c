@@ -59,7 +59,7 @@ urbi_handle_get(UVM *vm, UHandle h)
 {
     /* FOUND-010: ISR-safety symmetry with urbi_handle_create / _release. */
     URBI_ASSERT_NOT_ISR(vm);
-    UValue nil = urbi_value_nil();
+    UValue nil = urbi_make_nil();
     if (h == URBI_HANDLE_INVALID) return nil;
     /* h is 1-indexed; slot = h - 1. */
     uint32_t slot = h - 1U;
@@ -75,7 +75,7 @@ urbi_handle_release(UVM *vm, UHandle h)
     uint32_t slot = h - 1U;
     if (slot >= vm->handle_table_cap) return;
     /* FOUND-019 + FOUND-048: zero-init UValue via canonical helper. */
-    vm->handle_table[slot] = urbi_value_nil();
+    vm->handle_table[slot] = urbi_make_nil();
     /* Slot is logically free but not reused at M3 — no free-list.
      * v1.x adds slot reuse by threading nil slots as a free-list. */
 }

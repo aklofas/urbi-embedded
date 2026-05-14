@@ -13,6 +13,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"
+#include "vm/uvm_ref.h"           /* ref_table_walk_roots */
 #include "runtime/umacros.h"      /* urbi_zero */
 #include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
@@ -25,6 +26,7 @@
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
+#include "event/uevent_registry.h" /* uevent_registry_init, uevent_registry_destroy */
 #include "tag/utag_native.h"      /* tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
@@ -51,7 +53,10 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
 /* --- Default host time source ---
    Returns monotonic microseconds on POSIX hosts (Linux/macOS/BSD); returns 0
    on freestanding targets and non-POSIX hosted targets.
-   Embedded callers MUST override via the host_time_us field after urbi_vm_init(). */
+   Embedded callers MUST override via urbi_set_time_us() after urbi_vm_init().
+   urbi_default_host_time_us is the non-static alias used by uvm_writer.c so
+   that urbi_set_time_us(vm, NULL) can restore the built-in default without
+   duplicating the #ifdef logic. */
 static uint64_t default_host_time_us_stub(void) {
 #if defined(UVM_INIT_HAVE_CLOCK_GETTIME)
     struct timespec ts;
@@ -61,6 +66,11 @@ static uint64_t default_host_time_us_stub(void) {
     /* Freestanding or non-POSIX hosted: no clock without platform BSP. */
     return 0U;
 #endif
+}
+
+/* Non-static alias: lets uvm_writer.c restore the built-in time source. */
+uint64_t urbi_default_host_time_us(void) {
+    return default_host_time_us_stub();
 }
 
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
@@ -303,6 +313,14 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
 
+    /* Gap E (v0.7.1): pluggable I/O writer; NULL selects the built-in default. */
+    vm->writer_fn = NULL;
+    vm->writer_ud = NULL;
+
+    /* Gap S (v0.7.1): wake notification hook; NULL = embedder polls urbi_step. */
+    vm->wake_fn = NULL;
+    vm->wake_ud = NULL;
+
     /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
     vm->event_drain_handler = NULL;
 
@@ -331,11 +349,43 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         int i;
         for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
     }
-    vm->last_recv = urbi_value_nil();
+    vm->last_recv = urbi_make_nil();
 
     /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
      * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
     vm->watcher_body_done_fn = NULL;
+
+    /* Gap R (v0.7.1): atomic event section state.
+     * atomic_active must be zero so that uevent_ring_drain is NOT gated on
+     * entry.  Forgetting this init would make every test that puts `UVM vm;`
+     * on the C stack see garbage in atomic_active, silently blocking drains. */
+    vm->atomic_active   = 0U;
+    vm->atomic_begin_us = 0U;
+    {
+        int i;
+        for (i = 0; i < 7; i++) vm->pad_atomic[i] = 0U;
+    }
+
+    /* Gap B (v0.7.1): named-event registry.
+     * Zero-initialize so uevent_registry_add knows entries == NULL on first use. */
+    uevent_registry_init(&vm->event_registry);
+
+    /* Gap J (v0.7.1): host-side watcher table.
+     * Zero-initialize so uhost_watcher_table_add knows entries == NULL on first use. */
+    uhost_watcher_table_init(&vm->host_watcher_table);
+
+    /* Gap P (v0.7.1): error ring buffer — inline storage, no heap.
+     * Only head and count need zeroing (bufs are uninitialized until written). */
+    vm->error_ring.head  = 0U;
+    vm->error_ring.count = 0U;
+
+    /* Gap Q (v0.7.1): reference table — heap-allocated lazily on first urbi_ref.
+     * Register the GC root walker so pinned values survive collection. */
+    vm->ref_table.slots          = NULL;
+    vm->ref_table.capacity       = 0U;
+    vm->ref_table.used           = 0U;
+    vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
+    urbi_gc_register_root_provider(vm, ref_table_walk_roots);
 
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
@@ -395,6 +445,24 @@ void urbi_vm_destroy(UVM *vm) {
     if (vm->op_overload_ic != NULL && vm->alloc_fn != NULL) {
         vm->alloc_fn(vm->op_overload_ic, 0, vm->alloc_ud);
         vm->op_overload_ic = NULL;
+    }
+
+    /* Gap B (v0.7.1): free named-event registry entries[] array.
+     * Must run after urbi_gc_destroy (above) so GC has already reaped any
+     * UEvent cells; the registry only held raw (non-owning) pointers to them.
+     * Interned name strings are freed by uintern_destroy (below). */
+    uevent_registry_destroy(&vm->event_registry, vm);
+
+    /* Gap J (v0.7.1): free host-watcher table entries[] array. */
+    uhost_watcher_table_destroy(&vm->host_watcher_table, vm);
+
+    /* Gap P (v0.7.1): error ring — inline storage; no heap to free. */
+
+    /* Gap Q (v0.7.1): reference table — free heap-allocated slots array. */
+    if (vm->ref_table.slots != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->ref_table.slots, 0, vm->alloc_ud);
+        vm->ref_table.slots    = NULL;
+        vm->ref_table.capacity = 0U;
     }
 
     /* M2 baseline teardown. */

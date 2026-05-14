@@ -44,7 +44,7 @@
 #include "stdlib/object_root.h" /* urbi_native_closure_create, urbi_raise_* */
 #include "runtime/uclosure.h"  /* struct UClosure for UVAL_CLOSURE registration */
 #include "urbi/urbi.h"         /* UErrCode, URBI_ERR_* */
-#include "urbi/types.h"        /* urbi_value_nil */
+#include "urbi/types.h"        /* urbi_make_nil */
 #include "urbi/gc.h"           /* gc_shade_gray (write barrier in set_local_slot) */
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 
@@ -71,7 +71,7 @@ event_optional_payload(uint8_t nargs, UValue *args)
     if (nargs >= 1) {
         return args[0];
     }
-    return urbi_value_nil();
+    return urbi_make_nil();
 }
 
 /* === register_native_method ===
@@ -100,7 +100,7 @@ register_native_method(struct UVM *vm, struct UObject *proto,
     USymbol *sym = (USymbol *)ustr_intern(vm, name, urbi_strlen(name));
     if (sym == NULL) return URBI_ERR_OOM;
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_CLOSURE;
     v.v.p = (void *)cl;
     if (urbi_object_set_local_slot(vm, proto, sym, v) != 0) {
@@ -157,7 +157,7 @@ event_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     UEvent *e = uvalue_as_event(self);
     c_event_emit_async(vm, e, event_optional_payload(nargs, args));
 
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     return UEXEC_OK;
 }
 
@@ -174,7 +174,7 @@ event_sync_emit_method(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
     UEvent *e = uvalue_as_event(self);
     c_event_emit_sync(vm, e, event_optional_payload(nargs, args));
 
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     return UEXEC_OK;
 }
 

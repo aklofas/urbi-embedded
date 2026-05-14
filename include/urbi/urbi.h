@@ -269,6 +269,172 @@ int urbi_compile_source(struct UVM *vm,
 
 struct UClosure;   /* forward decl — definition in umodule.h */
 
+/* urbi_native_method_fn: signature for host C functions that back a
+ * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
+ * set (M6 Phase 3 dispatch arm, v0.6.0+).
+ *
+ * Parameters:
+ *   vm    — the VM executing the call.
+ *   self  — receiver value (the object the slot was loaded from).
+ *   args  — argument array (NULL when nargs == 0).
+ *   nargs — argument count.
+ *   out   — write the return value here; initialised to NIL before the call.
+ *
+ * Return UEXEC_OK (0) on success, UEXEC_THROW (1) to signal an exception
+ * (see urbi_raise_* helpers in <urbi/urbi.h>).
+ *
+ * Promoted to the public API at v0.7.1 (was internal-only in
+ * src/runtime/uclosure.h).  urbi_make_native_closure (Gap L) takes this
+ * type; so does the Gap A urbi_register helper.
+ *
+ * Guard prevents double-typedef when internal src/runtime/uclosure.h is
+ * also included (identical definition — C99 §6.7 allows re-typedef only
+ * when both are the same type). */
+#ifndef URBI_NATIVE_METHOD_FN_DEFINED
+#define URBI_NATIVE_METHOD_FN_DEFINED
+typedef int (*urbi_native_method_fn)(struct UVM *vm,
+                                     UValue self,
+                                     UValue *args,
+                                     uint8_t nargs,
+                                     UValue *out);
+#endif /* URBI_NATIVE_METHOD_FN_DEFINED */
+
+/* urbi_make_native_closure: allocate a GC-managed UClosure backed by a
+ * host C function (Gap L — foundation for urbi_register, Gap A).
+ *
+ * The returned closure has native_fn = fn and no bytecode body.  It becomes
+ * script-callable when stored in a realm global, an object slot, or wrapped
+ * as a UValue (kind UVAL_CLOSURE).  Until reachable from a GC root it may
+ * be collected — embedders should either install it immediately (urbi_register
+ * does this atomically) or hold a urbi_ref to it (Gap Q).
+ *
+ * Returns NULL on OOM or if vm == NULL or fn == NULL.
+ *
+ * Thread safety: MAIN. */
+struct UClosure *urbi_make_native_closure(struct UVM *vm,
+                                          urbi_native_method_fn fn);
+
+/* === Gap A — host-function registration (v0.7.1) ===
+ *
+ * urbi_register: install a native C function as a script-visible global.
+ * Composite of urbi_make_native_closure (Gap L) + urbi_realm_set_global_const.
+ * The binding is const by default — re-registering the same name returns
+ * URBI_ERR_CONST_SLOT_WRITE.
+ *
+ * vm     — the VM owning the closure allocation.
+ * realm  — target realm; NULL uses the VM's global realm.
+ * name   — NUL-terminated symbol name (e.g., "myFn").
+ * fn     — the C function to back the closure; must be non-NULL.
+ *
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_INVALID_ARG if vm, name, or fn is NULL.
+ * Returns URBI_ERR_OOM if the closure allocation or slot intern fails.
+ * Returns URBI_ERR_CONST_SLOT_WRITE if a binding with this name already exists.
+ *
+ * Thread safety: MAIN. */
+int urbi_register(struct UVM *vm, struct URealm *realm,
+                  const char *name, urbi_native_method_fn fn);
+
+/* === Gap M — tag state types (v0.7.1) ===
+ *
+ * urbi_tag_state_t: observable state of a UTag derived from its flags byte.
+ *
+ *   URBI_TAG_RUNNING — default state; no flags set.
+ *   URBI_TAG_STOPPED — UTAG_FLAG_STOPPED (0x02) set via urbi_tag_stop.
+ *   URBI_TAG_FROZEN  — UTAG_FLAG_FROZEN  (0x01) set (reserved; M7+ stdlib).
+ *   URBI_TAG_BLOCKED — reserved for future scheduler-integration state.
+ *
+ * urbi_tag_info_t: aggregate tag state snapshot returned by urbi_tag_info.
+ *   state        — decoded from UTag.flags.
+ *   member_count — number of UCleanupEntry nodes on UTag.member_strands_head.
+ *   has_parent   — true if UTag.parent != NULL (set by urbi_tag_create). */
+typedef enum {
+    URBI_TAG_RUNNING = 0,
+    URBI_TAG_STOPPED = 1,
+    URBI_TAG_FROZEN  = 2,
+    URBI_TAG_BLOCKED = 3
+} urbi_tag_state_t;
+
+typedef struct {
+    urbi_tag_state_t state;
+    size_t           member_count;
+    bool             has_parent;
+} urbi_tag_info_t;
+
+/* Drift-detection: the urbi_tag_state_t encoding in urbi_tag_info is derived
+ * from UTAG_FLAG_* bits.  The _Static_asserts that verify UTAG_FLAG_FROZEN ==
+ * 0x01 and UTAG_FLAG_STOPPED == 0x02 live in src/tag/utag_api.c (which includes
+ * the internal utag.h header); they cannot live here because urbi.h is a public
+ * header that must not include internal src/ headers. */
+
+/* === Gap M — tag lifecycle + query C API (v0.7.1) ===
+ *
+ * urbi_tag_create: allocate a GC-managed UTag, intern its name, and parent
+ *   it under realm->tag so urbi_tag_info reports has_parent = true.
+ *   Returns NULL on OOM or if vm/realm is NULL.
+ *   The returned UTag is GC-managed: it lives until it becomes unreachable
+ *   from the GC root set.  The caller is responsible for keeping it reachable
+ *   (e.g. store it in an object slot or hold a urbi_ref — Gap Q).
+ *   Thread safety: MAIN.
+ *
+ * urbi_tag_info: populate *out with an observable snapshot of `tag`:
+ *   state        — derived from tag->flags (RUNNING/STOPPED/FROZEN).
+ *   member_count — number of strands currently scoped to this tag.
+ *   has_parent   — true if the tag has a parent (set by urbi_tag_create).
+ *   Returns URBI_OK on success, URBI_ERR_INVALID_ARG if tag or out is NULL.
+ *   Thread safety: MAIN (reads tag->flags without synchronisation). */
+struct UTag *urbi_tag_create(struct UVM *vm, struct URealm *realm,
+                             const char *name, size_t name_len);
+
+int urbi_tag_info(const struct UTag *tag, urbi_tag_info_t *out);
+
+/* === Gap K — slot read/write from host C (v0.7.1) ===
+ *
+ * urbi_slot_get: read slot `name[0..name_len)` from receiver `obj`.
+ *   Dispatches on obj's kind:
+ *     UVAL_OBJECT → walk prototype chain (left-first DFS, cycle-safe).
+ *     Atom kinds (INT/FLOAT/STR/BOOL/NIL/VOID) → route through the
+ *       per-kind atom proto (M6 Wave 1 baseline; mirrors OP_GETSLOT).
+ *   Returns URBI_OK + *out_value on success.
+ *   Returns URBI_ERR_INVALID_ARG if vm, name, or out_value is NULL.
+ *   Returns URBI_ERR_SLOT_NOT_FOUND if the name is absent.
+ *   Returns URBI_ERR_OOM if name interning fails.
+ *
+ * urbi_slot_set: write `value` to local slot `name[0..name_len)` on `obj`.
+ *   Only UVAL_OBJECT receivers are supported; atoms are immutable.
+ *   Respects the CONSTANT flag on locally-owned slots: rejects writes
+ *   with URBI_ERR_CONST_SLOT_WRITE.  COW-inherited slots (slot on a
+ *   prototype) receive a mutable local copy per pre-M2 §6.1.
+ *   Returns URBI_OK on success.
+ *   Returns URBI_ERR_INVALID_ARG if vm or name is NULL, or obj is not UVAL_OBJECT.
+ *   Returns URBI_ERR_CONST_SLOT_WRITE if the slot is locally const-flagged.
+ *   Returns URBI_ERR_OOM on allocation failure.
+ *
+ * Thread safety: MAIN (not ISR-safe). */
+int urbi_slot_get(struct UVM *vm, UValue obj,
+                  const char *name, size_t name_len,
+                  UValue *out_value);
+
+int urbi_slot_set(struct UVM *vm, UValue obj,
+                  const char *name, size_t name_len,
+                  UValue value);
+
+/* urbi_make_str_interned: intern s[0..len) and return a UVAL_STR UValue.
+ *
+ * Two calls with byte-equal inputs always return a UValue whose v.p points
+ * to the same canonical address (pointer-equality implies content-equality).
+ * Suitable for use as dict keys, slot names, and any comparison-heavy string
+ * usage.
+ *
+ * s need not be NUL-terminated; len bytes are interned.  Passing s == NULL
+ * with len == 0 interns the empty string.  Passing s == NULL with len > 0
+ * returns urbi_make_nil() (invalid argument).
+ *
+ * On OOM: returns urbi_make_nil().  Caller must check kind == UVAL_NIL.
+ *
+ * Thread safety: MAIN. */
+UValue urbi_make_str_interned(struct UVM *vm, const char *s, size_t len);
+
 struct UStrand *urbi_strand_create(struct URealm *realm, struct UClosure *entry);
 void            urbi_strand_start(struct UStrand *s);
 struct UStrand *urbi_strand_spawn(struct URealm *realm, struct UClosure *entry);
@@ -317,21 +483,191 @@ typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          UValue payload);
 void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
 
+/* === Gap B — Named-event payload destructure fn (v0.7.1) ===
+ *
+ * urbi_event_payload_destructure_fn: convert raw ISR payload bytes into
+ * UValues for `at(name ?(args))` watcher body.
+ *
+ * Runs on MAIN thread at safepoint drain; may allocate; may call urbi_make_*.
+ * Returns argc (>= 0) on success, -1 on error (drain logs the failure and
+ * drops the event body arguments for this occurrence).
+ *
+ * out_args   — caller-allocated array of UValues, capacity max_args.
+ * max_args   — maximum number of UValue arguments to write.
+ * payload    — raw ISR-injected bytes (may be NULL when len == 0).
+ * payload_len — byte count of payload buffer.
+ * ud         — user-data pointer registered with urbi_event_register.
+ *
+ * Thread safety: MAIN. */
+typedef int (*urbi_event_payload_destructure_fn)(
+    struct UVM *vm,
+    const urbi_event_payload_t *payload, size_t payload_len,
+    UValue *out_args, int max_args, void *ud);
+
+/* urbi_event_register: allocate a UEvent, install it as a const realm-global
+ * under `name`, and record the (id, event, destruct_fn) triple in the VM's
+ * event registry.
+ *
+ * Subsequent urbi_inject_event with the returned id routes through this UEvent
+ * at drain time.  destruct_fn may be NULL (no-args event); when non-NULL it
+ * runs on MAIN thread at drain to convert raw ISR payload bytes into UValues
+ * for the `at(name ?(args))` body.
+ *
+ * Returns URBI_EVENT_ID_INVALID on error; consult urbi_last_error (Phase 8)
+ * for the specific code:
+ *   URBI_ERR_INVALID_ARG      — NULL vm, realm, or name
+ *   URBI_ERR_EVENT_NAME_TAKEN — name already registered in this VM
+ *   URBI_ERR_OOM              — UEvent alloc or registry grow failed
+ *
+ * Thread safety: MAIN. */
+urbi_event_id_t urbi_event_register(struct UVM *vm, struct URealm *realm,
+                                    const char *name,
+                                    urbi_event_payload_destructure_fn destruct_fn,
+                                    void *destruct_ud);
+
+/* urbi_event_unregister: reverse a previous urbi_event_register call.
+ *
+ * Fires a final sentinel async-emit (NIL payload) through the UEvent so any
+ * `at(name)` watchers still bound to it execute one last body invocation.
+ * Unbinds the realm-global slot (sets it to nil) for the event's name.
+ * Tombstones the registry entry so id is no longer routed at drain time.
+ * The UEvent cell itself remains live until the next GC sweep (GC-managed).
+ *
+ * Returns:
+ *   URBI_OK                — success
+ *   URBI_ERR_INVALID_ARG   — vm NULL or id not found in registry
+ *   URBI_ERR_HEAP_LOCKED   — heap-locked VM (post-urbi_lock_heap)
+ *
+ * Thread safety: MAIN. */
+int urbi_event_unregister(struct UVM *vm, struct URealm *realm,
+                          urbi_event_id_t id);
+
+/* === Gap E — Pluggable I/O writer (v0.7.1) ===
+ *
+ * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
+ *   ud         — user-data pointer registered with urbi_set_writer.
+ *   channel    — NUL-terminated channel name (e.g., "cout", "cerr", "clog").
+ *   channel_len — length of channel name in bytes (not including NUL).
+ *   msg        — message bytes (not NUL-terminated; may be empty).
+ *   msg_len    — length of message in bytes.
+ *   ts_us      — timestamp in monotonic microseconds from vm->host_time_us,
+ *                or 0 if the time hook is not installed.
+ *
+ * Default writer (hosted builds): "cout"/"clog" → stdout (with newline),
+ *   "cerr" → stderr (with newline), all other channels silently discarded.
+ *   Freestanding builds default to a silent sink; embedders MUST install a
+ *   writer or all output goes nowhere.
+ *
+ * Pass NULL writer to urbi_set_writer to restore the default.
+ *
+ * Thread safety: MAIN. */
+typedef void (*urbi_writer_fn)(void *ud,
+                               const char *channel, size_t channel_len,
+                               const char *msg,     size_t msg_len,
+                               uint64_t ts_us);
+
+void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
+
+/* urbi_vm_write: write `msg[0..msg_len)` to `channel[0..channel_len)` on `vm`.
+ *
+ * Routes through the installed urbi_writer_fn (or the default writer if none
+ * has been set).  `ts_us` is set to vm->host_time_us() when available.
+ * NULL vm is a no-op.  Embedders call this to emit host-generated output
+ * through the same channel as urbiscript's cout / cerr.
+ *
+ * Thread safety: MAIN. */
+void urbi_vm_write(struct UVM *vm,
+                   const char *channel, size_t channel_len,
+                   const char *msg,     size_t msg_len);
+
+/* === Gap F — Pluggable time source (v0.7.1) ===
+ *
+ * urbi_time_us_fn: callback returning monotonic microseconds.  urbi uses
+ *   this for every/sleep precision; 1 kHz control loops need µs granularity.
+ *
+ * Default: clock_gettime(CLOCK_MONOTONIC) on hosted builds.
+ *   Freestanding: default returns 0 (sleep/every are effectively disabled).
+ *
+ * Pass NULL to urbi_set_time_us to restore the default.
+ *
+ * Thread safety: MAIN. */
+typedef uint64_t (*urbi_time_us_fn)(void);
+
+void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn);
+
+/* === Gap S — Wake notification hook (v0.7.1) ===
+ *
+ * urbi_wake_fn: callback fired after each successful urbi_inject_event ring
+ *   deposit.  May run from ISR context.  The callback MUST be O(1),
+ *   non-blocking, and MUST NOT allocate memory.  Typical use: post a
+ *   FreeRTOS task notification (xTaskNotifyGiveFromISR) or POSIX sem_post so
+ *   the urbi task wakes from its blocking wait.
+ *
+ *   ud — user-data pointer registered with urbi_set_wake_fn.
+ *
+ * Default: NULL (no wake signal — embedder polls urbi_step directly).
+ * Pass NULL fn to urbi_set_wake_fn to restore the default (silent).
+ *
+ * Thread safety: ISR or MAIN. */
+typedef void (*urbi_wake_fn)(void *ud);
+
+void urbi_set_wake_fn(struct UVM *vm, urbi_wake_fn fn, void *ud);
+
+/* === Gap R — atomic event sections (v0.7.1) ===
+ *
+ * urbi_atomic_begin / urbi_atomic_end: bracket a group of ISR-deposited
+ * events that must be observed together.  While atomic_active is true,
+ * uevent_ring_drain is a no-op; all ring entries stay queued until
+ * urbi_atomic_end clears the flag and triggers a drain pass.
+ *
+ * Typical use (IMU pattern — accelerometer + gyroscope simultaneously):
+ *   urbi_atomic_begin(vm);
+ *   urbi_inject_event(vm, ACCEL_ID);
+ *   urbi_inject_event(vm, GYRO_ID);
+ *   urbi_atomic_end(vm);
+ *   // Both watcher bodies see the same tick; no partial observation.
+ *
+ * Nesting: NOT supported.  In URBI_DEBUG builds, calling urbi_atomic_begin
+ * while already active triggers urbi_panic ("atomic section nested").
+ * Release builds have undefined behaviour for double-begin.
+ *
+ * Watchdog: in URBI_DEBUG builds, urbi_step checks whether the section
+ * has been held for more than URBI_ATOMIC_MAX_US microseconds and calls
+ * urbi_panic if so.  Requires vm->host_time_us to be installed.
+ *
+ * Thread safety: MAIN (urbi_atomic_begin and urbi_atomic_end must be
+ * called from the same thread that drives urbi_step). */
+#ifndef URBI_ATOMIC_MAX_US
+#  define URBI_ATOMIC_MAX_US 100U
+#endif
+
+void urbi_atomic_begin(struct UVM *vm);
+void urbi_atomic_end(struct UVM *vm);
+
 /* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
  *
- * urbi_watcher_handle_t is an opaque int — Wave 2 (ESP-IDF port) defines
- * the real watcher-identity story; Wave 1 provides the seam.  Embedders
+ * urbi_watcher_handle_t is an opaque int — non-zero identifies a live
+ * host-installed watcher (urbi_register_watcher); zero (URBI_WATCHER_HANDLE_INVALID)
+ * is used by script-side watcher body-completion notifications.  Embedders
  * can observe watcher body completion for telemetry, profiling, or
  * hot-reload diagnostics.
  *
  * Callback is invoked from urbi_watcher_body_completed after internal
  * cleanup (back-pointers cleared) and before any re-spawn triggered by
- * URBI_WATCHER_PENDING_REFIRE.  At Wave 1 the handle is a placeholder
- * (always 0); the completion_status mirrors the strand's fatal_status
- * (UEXEC_OK / THROW / TAG_STOP / CANCEL) cast to int.
+ * URBI_WATCHER_PENDING_REFIRE.  For script-side watchers the handle is
+ * always 0 (URBI_WATCHER_HANDLE_INVALID); for host-side watchers (Gap J)
+ * it matches the handle returned by urbi_register_watcher.
+ * completion_status mirrors the strand's fatal_status (UEXEC_OK / THROW /
+ * TAG_STOP / CANCEL) cast to int for script-side; for host-side it is
+ * URBI_OK or URBI_ERR_WATCHER_UNREGISTER.
  *
  * Default is NULL after urbi_vm_init; pass NULL to uninstall. */
 typedef int urbi_watcher_handle_t;
+
+/* URBI_WATCHER_HANDLE_INVALID: sentinel — not a live handle.
+ * Returned when urbi_register_watcher fails; used as the handle value
+ * for script-side watcher-body-done notifications. */
+#define URBI_WATCHER_HANDLE_INVALID  ((urbi_watcher_handle_t)0)
 
 typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
                                           urbi_watcher_handle_t handle,
@@ -339,6 +675,61 @@ typedef void (*urbi_watcher_body_done_fn)(struct UVM *vm,
 
 void urbi_set_watcher_body_done_fn(struct UVM *vm,
                                    urbi_watcher_body_done_fn fn);
+
+/* === Gap J — host-side reactive watchers (v0.7.1) ===
+ *
+ * urbi_register_watcher installs a C callback that fires at safepoint drain
+ * whenever a named event is dispatched.  Coexists with script-side
+ * `at(name?)` watchers — both fire on the same dispatch.
+ *
+ * urbi_watcher_fn: host watcher callback signature.
+ *   vm       — VM that owns the event.
+ *   event_id — the event that fired.
+ *   args     — destructured UValue arguments; argc is their count.
+ *              NULL when argc == 0.
+ *   argc     — number of valid entries in args[].
+ *   ud       — user-data pointer registered with urbi_register_watcher.
+ *
+ * Return value contract:
+ *   URBI_OK (0)                  — remain registered; fire again on next event.
+ *   URBI_ERR_WATCHER_UNREGISTER  — auto-unregister after this firing.
+ *   Any other value              — treated as URBI_OK (future extension point).
+ *
+ * Thread safety: MAIN — invoked from the safepoint drain on the main thread. */
+typedef int (*urbi_watcher_fn)(struct UVM *vm,
+                               urbi_event_id_t event_id,
+                               const UValue *args, int argc,
+                               void *ud);
+
+/* urbi_register_watcher: install a host-side reactive watcher for event_id.
+ *
+ * event_id must be a valid id returned by urbi_event_register for this vm.
+ * cb must be non-NULL.  ud is forwarded to each cb invocation.
+ *
+ * Returns a non-zero handle on success; URBI_WATCHER_HANDLE_INVALID on
+ * failure (NULL vm, NULL cb, unknown event_id, or OOM growing the table).
+ *
+ * Multiple watchers may be registered for the same event_id; each fires
+ * independently in registration order.
+ *
+ * Thread safety: MAIN. */
+urbi_watcher_handle_t urbi_register_watcher(struct UVM *vm,
+                                            struct URealm *realm,
+                                            urbi_event_id_t event_id,
+                                            urbi_watcher_fn cb, void *ud);
+
+/* urbi_unregister_watcher: deferred-removal of a host-side watcher.
+ *
+ * In-flight firings at the moment of this call still complete; subsequent
+ * firings are suppressed.  Actual removal (compaction of the table slot)
+ * occurs at the end of the current drain pass.
+ *
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_INVALID_ARG if handle == URBI_WATCHER_HANDLE_INVALID
+ *   or handle is not found in the watcher table.
+ *
+ * Thread safety: MAIN. */
+int urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle);
 
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
@@ -549,6 +940,139 @@ void urbi_lock_heap(struct UVM *vm);
  * URBI_DEBUG only: zero overhead in non-debug builds (function absent). */
 uint64_t urbi_get_determinism_checksum(struct UVM *vm);
 #endif /* URBI_DEBUG */
+
+/* === Gap P — error inspection (v0.7.1) ===
+ *
+ * urbi_error_info_t: structured error detail for the most-recent API failure.
+ *
+ *   code        — UErrCode value (negative; URBI_OK == 0 means no error).
+ *   message     — human-readable description (may be empty string).
+ *   source_name — source file or script name (may be empty string).
+ *   source_line — source line number (0 if unknown).
+ *   context     — caller-supplied context tag, e.g. "urbi_event_register"
+ *                 (may be empty string).
+ *
+ * Lifetime: all const char* fields point into UVM-owned storage.  They are
+ * valid until the next API call that mutates error state (any call that
+ * internally invokes urbi_set_error_internal, including itself if it fails).
+ * Copy the strings if you need them across subsequent API calls. */
+typedef struct {
+    int         code;
+    const char *message;
+    const char *source_name;
+    int         source_line;
+    const char *context;
+} urbi_error_info_t;
+
+/* urbi_last_error: read the most-recent error from the per-VM ring.
+ *
+ * Populates *out_info with the most-recent error entry and returns its code.
+ * If the ring is empty (no error since the last urbi_clear_error, or since
+ * VM init), zeroes *out_info and returns URBI_OK (0).
+ *
+ * vm == NULL or out_info == NULL: returns URBI_OK and zeroes *out_info if
+ * out_info is non-NULL.
+ *
+ * Thread safety: MAIN. */
+int  urbi_last_error (struct UVM *vm, urbi_error_info_t *out_info);
+
+/* urbi_clear_error: empty the per-VM error ring.
+ *
+ * After this call, urbi_last_error returns URBI_OK + zeroed info until
+ * the next API call that sets an error.  vm == NULL is a no-op.
+ *
+ * Thread safety: MAIN. */
+void urbi_clear_error(struct UVM *vm);
+
+/* === Gap Q — reference management (v0.7.1) ===
+ *
+ * urbi_ref_t: opaque GC-root handle.  Encodes a 24-bit slot index and an
+ * 8-bit generation counter.  URBI_REF_INVALID (== 0) is the sentinel.
+ *
+ * The ref table is a per-VM growable array.  Slot 0 is permanently reserved
+ * so that URBI_REF_INVALID can never encode a valid slot+generation pair.
+ * Valid handles always have (index >> 8) >= 1. */
+typedef uint32_t urbi_ref_t;
+#define URBI_REF_INVALID ((urbi_ref_t)0)
+
+/* urbi_ref: pin a UValue as a GC root and return an opaque handle.
+ *
+ * The returned handle keeps the value alive across GC cycles until
+ * urbi_unref is called.  Returns URBI_REF_INVALID on OOM (table can't
+ * grow) or if vm == NULL.
+ *
+ * Thread safety: MAIN. */
+urbi_ref_t urbi_ref    (struct UVM *vm, UValue value);
+
+/* urbi_ref_get: retrieve the pinned UValue for a live handle.
+ *
+ * Returns the originally pinned UValue if the handle is valid and live.
+ * Returns urbi_make_nil() if the handle is URBI_REF_INVALID, stale
+ * (generation mismatch after urbi_unref), or vm == NULL.
+ *
+ * Thread safety: MAIN. */
+UValue     urbi_ref_get(struct UVM *vm, urbi_ref_t ref);
+
+/* urbi_unref: release a pinned handle, freeing the slot for reuse.
+ *
+ * Increments the slot's generation counter so any copy of the old handle
+ * becomes stale.  No-op on URBI_REF_INVALID, stale handles, or vm == NULL.
+ * After urbi_unref the value is no longer pinned — the GC may collect it
+ * if no other root keeps it alive.
+ *
+ * Thread safety: MAIN. */
+void       urbi_unref  (struct UVM *vm, urbi_ref_t ref);
+
+/* === Public error publishing (v0.7.1 spec amendment) ===
+ *
+ * urbi_set_error: publish an error entry to the per-VM error ring.
+ *
+ * Thin public wrapper around the internal urbi_set_error_internal; exposes
+ * the entry point needed by the aux layer (urbi_aux_set_error) without
+ * violating the aux governance rule that aux functions may not include
+ * internal headers.
+ *
+ * vm          — owning VM; NULL is a no-op.
+ * code        — UErrCode value (negative int).
+ * message     — human-readable description; NULL → empty string.
+ * source_name — source file or script name; NULL → empty string.
+ * source_line — source line number; 0 if unknown.
+ * context     — caller-supplied context tag; NULL → empty string.
+ *
+ * Thread safety: MAIN. */
+void urbi_set_error(struct UVM *vm, int code,
+                    const char *message,
+                    const char *source_name, int source_line,
+                    const char *context);
+
+/* === Public bytecode deserialization (v0.7.1 spec amendment) ===
+ *
+ * urbi_module_from_bytes: deserialize a wire-format bytecode buffer into a
+ * caller-owned UModule on the heap.
+ *
+ * On success: returns a non-NULL pointer that must be freed with
+ * urbi_module_free when no longer needed.  The caller must ensure no live VM
+ * is executing inside the module when urbi_module_free is called.
+ *
+ * On error: returns NULL; if errmsg is non-NULL, writes a diagnostic into
+ * errmsg[0..errcap) (NUL-terminated).
+ *
+ * Error conditions:
+ *   NULL buf or zero len                → returns NULL (URBI_ERR_INVALID_ARG)
+ *   bytecode version mismatch           → returns NULL
+ *   any other deserialize or OOM error  → returns NULL
+ *
+ * Thread safety: MAIN (calls the heap allocator). */
+struct UModule *urbi_module_from_bytes(const uint8_t *buf, size_t len,
+                                       char *errmsg, size_t errcap);
+
+/* urbi_module_free: free a UModule returned by urbi_module_from_bytes.
+ *
+ * Calls the internal destructor (frees all owned buffers), then frees the
+ * UModule allocation itself.  NULL is a no-op.
+ *
+ * Thread safety: MAIN. */
+void urbi_module_free(struct UModule *module);
 
 #ifdef __cplusplus
 }

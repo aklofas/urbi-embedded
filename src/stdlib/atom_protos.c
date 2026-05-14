@@ -30,7 +30,7 @@
 #include "runtime/umacros.h"       /* urbi_strlen */
 #include "sched/ustrand.h"         /* UEXEC_OK, UEXEC_THROW */
 #include "urbi/object.h"           /* URBI_ATOM_* family tags */
-#include "urbi/types.h"            /* UErrCode, urbi_value_nil */
+#include "urbi/types.h"            /* UErrCode, urbi_make_nil */
 #include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
 #include "value/uintern.h"         /* ustr_intern + USymbol */
 #include "vm/uvm.h"                /* UVM */
@@ -52,7 +52,7 @@ bool_toString(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     USymbol *sym = (USymbol *)ustr_intern(vm, s, urbi_strlen(s));
     if (sym == NULL) return urbi_raise_oom(vm, out);
 
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     out->kind = (uint8_t)UVAL_STR;
     out->v.p = sym;
     return UEXEC_OK;
@@ -79,7 +79,7 @@ string_length(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     const char *s = (const char *)self.v.p;
     if (s == NULL) return urbi_raise_type(vm, "String.length: NULL string", out);
 
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     out->kind = (uint8_t)UVAL_INT;
     out->v.i = (int64_t)urbi_strlen(s);
     return UEXEC_OK;
@@ -105,7 +105,7 @@ register_methods_on_proto(UVM *vm, UObject *proto,
             vm, table[i].name, urbi_strlen(table[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p = cl;
         int rc = urbi_object_set_local_slot(vm, proto, sym, v);

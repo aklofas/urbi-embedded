@@ -391,6 +391,81 @@ urbi_load_translate_load_err(int load_err)
     return URBI_ERR_INVALID_ARG;
 }
 
+/* ---------------------------------------------------------------------------
+ * urbi_module_from_bytes / urbi_module_free  (v0.7.1 spec amendment)
+ *
+ * Public thin wrappers around umodule_deserialize / umodule_destroy.
+ * These exist so the aux layer (urbi_aux_load_and_run) can deserialize
+ * bytecode without including internal headers — aux governance requires
+ * that aux functions use only the public <urbi/urbi.h> surface.
+ *
+ * urbi_module_from_bytes:
+ *   Heap-allocates a UModule, calls umodule_deserialize on buf[0..len),
+ *   and returns the pointer on success.  On failure returns NULL and
+ *   writes a diagnostic into errmsg if non-NULL.
+ *
+ * urbi_module_free:
+ *   Calls umodule_destroy (frees all owned allocations) then frees the
+ *   UModule itself.  NULL is a no-op.
+ * --------------------------------------------------------------------------- */
+
+#if __STDC_HOSTED__
+#  include <stdlib.h>   /* malloc, free */
+#endif
+
+struct UModule *
+urbi_module_from_bytes(const uint8_t *buf, size_t len,
+                       char *errmsg, size_t errcap)
+{
+#if __STDC_HOSTED__
+    if (buf == NULL || len == 0) {
+        if (errmsg && errcap > 0) {
+            errmsg[0] = '\0';
+        }
+        return NULL;
+    }
+    UModule *m = (UModule *)malloc(sizeof(UModule));
+    if (m == NULL) {
+        if (errmsg && errcap > 0) {
+            errmsg[0] = '\0';
+        }
+        return NULL;
+    }
+    /* zero-init: umodule_deserialize requires a clean UModule */
+    {
+        size_t i;
+        unsigned char *p = (unsigned char *)m;
+        for (i = 0; i < sizeof(UModule); i++) p[i] = 0;
+    }
+    char local_err[256] = {0};
+    char *ebuf = errmsg ? errmsg : local_err;
+    size_t ecap = errmsg ? errcap : sizeof(local_err);
+    UModuleLoadError lerr = umodule_deserialize(m, buf, len, ebuf, ecap);
+    if (lerr != ULOAD_OK) {
+        free(m);
+        return NULL;
+    }
+    return m;
+#else
+    /* Freestanding: not available — callers on bare-metal manage UModule
+     * lifetime themselves (static allocation + umodule_deserialize). */
+    (void)buf; (void)len; (void)errmsg; (void)errcap;
+    return NULL;
+#endif
+}
+
+void
+urbi_module_free(struct UModule *module)
+{
+#if __STDC_HOSTED__
+    if (module == NULL) return;
+    umodule_destroy(module);
+    free(module);
+#else
+    (void)module;
+#endif
+}
+
 int
 urbi_load_module(UVM *vm, UModule *module, const char *module_name)
 {
