@@ -459,6 +459,25 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* --- Row 9 host time hook --- */
     uint64_t (*host_time_us)(void);    /* returns monotonic microseconds; default set at init */
 
+    /* --- Gap E pluggable I/O writer (v0.7.1) ---
+     * writer_fn: channel-multiplexed write callback.  NULL = default writer
+     *   (hosted: cout/clog→stdout, cerr→stderr, others discarded;
+     *    freestanding: silent sink).
+     * writer_ud: opaque user-data pointer forwarded to every writer_fn call.
+     * Thread safety: MAIN. */
+    void   (*writer_fn)(void *ud, const char *channel, size_t channel_len,
+                        const char *msg, size_t msg_len, uint64_t ts_us);
+    void    *writer_ud;
+
+    /* --- Gap S wake notification hook (v0.7.1) ---
+     * wake_fn: called after each successful urbi_inject_event ring deposit.
+     *   May run in ISR context.  MUST be O(1), non-blocking, non-allocating.
+     *   NULL = no wake signal (embedder polls urbi_step directly).
+     * wake_ud: opaque user-data pointer forwarded to every wake_fn call.
+     * Thread safety: ISR or MAIN. */
+    void   (*wake_fn)(void *ud);
+    void    *wake_ud;
+
     /* --- T19 ISR-check + debug watchdog hooks ---
      * isr_check_fn: returns true when called from ISR context; NULL = no check.
      *   In URBI_DEBUG builds, every non-ISR-safe function asserts isr_check_fn() == false.

@@ -51,7 +51,10 @@ static void *uvm_stdlib_realloc(void *ptr, size_t nbytes, void *ud) {
 /* --- Default host time source ---
    Returns monotonic microseconds on POSIX hosts (Linux/macOS/BSD); returns 0
    on freestanding targets and non-POSIX hosted targets.
-   Embedded callers MUST override via the host_time_us field after urbi_vm_init(). */
+   Embedded callers MUST override via urbi_set_time_us() after urbi_vm_init().
+   urbi_default_host_time_us is the non-static alias used by uvm_writer.c so
+   that urbi_set_time_us(vm, NULL) can restore the built-in default without
+   duplicating the #ifdef logic. */
 static uint64_t default_host_time_us_stub(void) {
 #if defined(UVM_INIT_HAVE_CLOCK_GETTIME)
     struct timespec ts;
@@ -61,6 +64,11 @@ static uint64_t default_host_time_us_stub(void) {
     /* Freestanding or non-POSIX hosted: no clock without platform BSP. */
     return 0U;
 #endif
+}
+
+/* Non-static alias: lets uvm_writer.c restore the built-in time source. */
+uint64_t urbi_default_host_time_us(void) {
+    return default_host_time_us_stub();
 }
 
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
@@ -302,6 +310,14 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
 
     /* Host time hook: default stub; embedded callers override post-init. */
     vm->host_time_us = default_host_time_us_stub;
+
+    /* Gap E (v0.7.1): pluggable I/O writer; NULL selects the built-in default. */
+    vm->writer_fn = NULL;
+    vm->writer_ud = NULL;
+
+    /* Gap S (v0.7.1): wake notification hook; NULL = embedder polls urbi_step. */
+    vm->wake_fn = NULL;
+    vm->wake_ud = NULL;
 
     /* T57: ISR drain handler (spec #3 §9): NULL until host registers one. */
     vm->event_drain_handler = NULL;

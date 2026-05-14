@@ -462,6 +462,77 @@ typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          UValue payload);
 void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
 
+/* === Gap E — Pluggable I/O writer (v0.7.1) ===
+ *
+ * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
+ *   ud         — user-data pointer registered with urbi_set_writer.
+ *   channel    — NUL-terminated channel name (e.g., "cout", "cerr", "clog").
+ *   channel_len — length of channel name in bytes (not including NUL).
+ *   msg        — message bytes (not NUL-terminated; may be empty).
+ *   msg_len    — length of message in bytes.
+ *   ts_us      — timestamp in monotonic microseconds from vm->host_time_us,
+ *                or 0 if the time hook is not installed.
+ *
+ * Default writer (hosted builds): "cout"/"clog" → stdout (with newline),
+ *   "cerr" → stderr (with newline), all other channels silently discarded.
+ *   Freestanding builds default to a silent sink; embedders MUST install a
+ *   writer or all output goes nowhere.
+ *
+ * Pass NULL writer to urbi_set_writer to restore the default.
+ *
+ * Thread safety: MAIN. */
+typedef void (*urbi_writer_fn)(void *ud,
+                               const char *channel, size_t channel_len,
+                               const char *msg,     size_t msg_len,
+                               uint64_t ts_us);
+
+void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
+
+/* urbi_vm_write: write `msg[0..msg_len)` to `channel[0..channel_len)` on `vm`.
+ *
+ * Routes through the installed urbi_writer_fn (or the default writer if none
+ * has been set).  `ts_us` is set to vm->host_time_us() when available.
+ * NULL vm is a no-op.  Embedders call this to emit host-generated output
+ * through the same channel as urbiscript's cout / cerr.
+ *
+ * Thread safety: MAIN. */
+void urbi_vm_write(struct UVM *vm,
+                   const char *channel, size_t channel_len,
+                   const char *msg,     size_t msg_len);
+
+/* === Gap F — Pluggable time source (v0.7.1) ===
+ *
+ * urbi_time_us_fn: callback returning monotonic microseconds.  urbi uses
+ *   this for every/sleep precision; 1 kHz control loops need µs granularity.
+ *
+ * Default: clock_gettime(CLOCK_MONOTONIC) on hosted builds.
+ *   Freestanding: default returns 0 (sleep/every are effectively disabled).
+ *
+ * Pass NULL to urbi_set_time_us to restore the default.
+ *
+ * Thread safety: MAIN. */
+typedef uint64_t (*urbi_time_us_fn)(void);
+
+void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn);
+
+/* === Gap S — Wake notification hook (v0.7.1) ===
+ *
+ * urbi_wake_fn: callback fired after each successful urbi_inject_event ring
+ *   deposit.  May run from ISR context.  The callback MUST be O(1),
+ *   non-blocking, and MUST NOT allocate memory.  Typical use: post a
+ *   FreeRTOS task notification (xTaskNotifyGiveFromISR) or POSIX sem_post so
+ *   the urbi task wakes from its blocking wait.
+ *
+ *   ud — user-data pointer registered with urbi_set_wake_fn.
+ *
+ * Default: NULL (no wake signal — embedder polls urbi_step directly).
+ * Pass NULL fn to urbi_set_wake_fn to restore the default (silent).
+ *
+ * Thread safety: ISR or MAIN. */
+typedef void (*urbi_wake_fn)(void *ud);
+
+void urbi_set_wake_fn(struct UVM *vm, urbi_wake_fn fn, void *ud);
+
 /* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
  *
  * urbi_watcher_handle_t is an opaque int — Wave 2 (ESP-IDF port) defines

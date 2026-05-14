@@ -78,6 +78,20 @@ urbi_inject_event(struct UVM *vm, uint32_t event_id,
     /* Publish the new entry: RELEASE so the consumer sees the entry data. */
     __atomic_store_n(&r->write_idx, next_w, __ATOMIC_RELEASE);
 
+    /* Gap S (v0.7.1): notify the embedder that the ring has a new entry.
+     * wake_fn may be called from ISR context; it MUST be O(1), non-blocking,
+     * and non-allocating (e.g., xTaskNotifyGiveFromISR on FreeRTOS).
+     * Load wake_fn with ACQUIRE to pair with the RELEASE store in
+     * urbi_set_wake_fn — defensive for future URBI_SCHED_PREEMPTIVE work. */
+    {
+        void (*wfn)(void *) = (void (*)(void *))
+            __atomic_load_n(&vm->wake_fn, __ATOMIC_ACQUIRE);
+        if (wfn) {
+            void *wud = vm->wake_ud;
+            wfn(wud);
+        }
+    }
+
     return URBI_OK;
 }
 
