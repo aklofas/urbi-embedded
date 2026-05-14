@@ -483,6 +483,27 @@ typedef void (*urbi_event_drain_handler)(struct UVM *vm,
                                          UValue payload);
 void urbi_register_event_drain(struct UVM *vm, urbi_event_drain_handler h);
 
+/* === Gap B — Named-event payload destructure fn (v0.7.1) ===
+ *
+ * urbi_event_payload_destructure_fn: convert raw ISR payload bytes into
+ * UValues for `at(name ?(args))` watcher body.
+ *
+ * Runs on MAIN thread at safepoint drain; may allocate; may call urbi_make_*.
+ * Returns argc (>= 0) on success, -1 on error (drain logs the failure and
+ * drops the event body arguments for this occurrence).
+ *
+ * out_args   — caller-allocated array of UValues, capacity max_args.
+ * max_args   — maximum number of UValue arguments to write.
+ * payload    — raw ISR-injected bytes (may be NULL when len == 0).
+ * payload_len — byte count of payload buffer.
+ * ud         — user-data pointer registered with urbi_event_register.
+ *
+ * Thread safety: MAIN. */
+typedef int (*urbi_event_payload_destructure_fn)(
+    struct UVM *vm,
+    const urbi_event_payload_t *payload, size_t payload_len,
+    UValue *out_args, int max_args, void *ud);
+
 /* === Gap E — Pluggable I/O writer (v0.7.1) ===
  *
  * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
