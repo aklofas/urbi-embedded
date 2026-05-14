@@ -25,6 +25,7 @@
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
+#include "event/uevent_registry.h" /* uevent_registry_init, uevent_registry_destroy */
 #include "tag/utag_native.h"      /* tag_native_register */
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
@@ -364,6 +365,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         for (i = 0; i < 7; i++) vm->pad_atomic[i] = 0U;
     }
 
+    /* Gap B (v0.7.1): named-event registry.
+     * Zero-initialize so uevent_registry_add knows entries == NULL on first use. */
+    uevent_registry_init(&vm->event_registry);
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
@@ -423,6 +428,12 @@ void urbi_vm_destroy(UVM *vm) {
         vm->alloc_fn(vm->op_overload_ic, 0, vm->alloc_ud);
         vm->op_overload_ic = NULL;
     }
+
+    /* Gap B (v0.7.1): free named-event registry entries[] array.
+     * Must run after urbi_gc_destroy (above) so GC has already reaped any
+     * UEvent cells; the registry only held raw (non-owning) pointers to them.
+     * Interned name strings are freed by uintern_destroy (below). */
+    uevent_registry_destroy(&vm->event_registry, vm);
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);

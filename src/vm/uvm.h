@@ -30,6 +30,9 @@ struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
 struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h */
 
+/* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
+#include "event/uevent_registry.h"
+
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
@@ -610,6 +613,20 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t  atomic_active;
     uint8_t  pad_atomic[7];     /* alignment padding; zeroed */
     uint64_t atomic_begin_us;
+
+    /* --- Gap B (v0.7.1): named-event registry ---
+     * Maps urbi_event_id_t → (UEvent *, destruct_fn, name) triples.
+     * Zero-initialized at urbi_vm_init.  Entries[] array heap-allocated
+     * on first urbi_event_register call and freed at urbi_vm_destroy
+     * via uevent_registry_destroy.
+     *
+     * GC note: UEvent cells in entries[i].event are GC-managed; the registry
+     * holds a raw pointer that acts as an unrooted reference.  This is safe
+     * because urbi_event_register also installs the event as a const
+     * realm-global (strong root), keeping it alive for the VM lifetime.
+     * A future GC root walker for the registry is deferred to v1.x if
+     * urbi_event_unregister needs to support explicit removal. */
+    UEventRegistry event_registry;
 } UVM;
 
 /* --- API --- */
