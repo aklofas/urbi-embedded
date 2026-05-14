@@ -207,6 +207,10 @@ extern void test_event_register_errors_suite(void);
 extern void test_event_unregister_suite(void);
 extern void test_drain_routing_registered_suite(void);
 extern void test_drain_routing_unregistered_suite(void);
+extern void test_register_watcher_callback_suite(void);
+extern void test_watcher_auto_unregister_suite(void);
+extern void test_unregister_watcher_suite(void);
+extern void test_watcher_done_fanout_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -390,6 +394,10 @@ static const struct suite_entry suites[] = {
     {"event_unregister",             test_event_unregister_suite},
     {"drain_routing_registered",     test_drain_routing_registered_suite},
     {"drain_routing_unregistered",   test_drain_routing_unregistered_suite},
+    {"register_watcher_callback",    test_register_watcher_callback_suite},
+    {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
+    {"unregister_watcher",           test_unregister_watcher_suite},
+    {"watcher_done_fanout",          test_watcher_done_fanout_suite},
     /* Add new suites here as test files are added. */
 };
 
