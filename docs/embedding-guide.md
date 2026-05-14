@@ -12,9 +12,17 @@ The minimum viable embedding: allocate a VM, initialize it with a heap allocator
 
 ```c
 /* STANDALONE EXAMPLE — compile with:
- *   cc -std=c99 -Iinclude quick_start.c build/host/liburbi.a -lm -o quick_start
+ *   cc -std=c99 -Iinclude -Isrc quick_start.c build/host/liburbi.a \
+ *      build/host/liburbi_aux.a -lm -o quick_start
  *
- * Requires: liburbi.a already built (run `make`). */
+ * Note: `-Isrc` is needed to get the full UVM struct definition from
+ * src/vm/uvm.h so you can stack-allocate `struct UVM`. On embedded
+ * targets this header is copied into your component's include path as
+ * part of the integration setup. Public headers in include/urbi/ provide
+ * the opaque forward declaration; the full definition for stack allocation
+ * lives in src/vm/uvm.h.
+ *
+ * Requires: liburbi.a and liburbi_aux.a already built (run `make`). */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +30,7 @@ The minimum viable embedding: allocate a VM, initialize it with a heap allocator
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "urbi/aux.h"
+#include "vm/uvm.h"   /* full UVM definition for stack allocation */
 
 /* Simple allocator that wraps the system heap. */
 static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
@@ -58,10 +67,11 @@ int main(void)
 
     /* Compile a one-line script and run it. */
     const char *src = "cout << 42 + 1 << endl;";
+    size_t src_len = 23;
     unsigned char *bc  = NULL;
     size_t         bc_len = 0;
     char           errbuf[256];
-    if (urbi_compile_source(&vm, src, 21, "<quick_start>",
+    if (urbi_compile_source(&vm, src, src_len, "<quick_start>",
                              &bc, &bc_len, errbuf, sizeof(errbuf)) != URBI_OK) {
         fprintf(stderr, "compile error: %s\n", errbuf);
         urbi_vm_destroy(&vm);
@@ -275,12 +285,19 @@ This example shows the canonical pattern for correlated sensor data: three axes 
 
 ```c
 /* FRAGMENT — IMU ISR with atomic event injection */
+/* Forward declaration — sensor_destructure is defined in the event
+ * registration section; see the Event Flow section for the full definition. */
+static int sensor_destructure(struct UVM *vm,
+                               const urbi_event_payload_t *payload,
+                               size_t payload_len,
+                               UValue *out_args, int max_args, void *ud);
+
 static urbi_event_id_t EV_ACCEL;
 static urbi_event_id_t EV_GYRO;
 static urbi_event_id_t EV_MAG;
 
 /* Register all three events during init (not in ISR). */
-void register_imu_events(struct UVM *vm, struct URealm *realm)
+static void register_imu_events(struct UVM *vm, struct URealm *realm)
 {
     EV_ACCEL = urbi_event_register(vm, realm, "accel", sensor_destructure, NULL);
     EV_GYRO  = urbi_event_register(vm, realm, "gyro",  sensor_destructure, NULL);
@@ -412,12 +429,18 @@ When registering many functions at once, the aux helper is more concise:
 /* FRAGMENT — batch function registration */
 #include "urbi/aux.h"
 
+/* Forward declarations of functions defined earlier in this driver file. */
+static int fn_read_temperature(struct UVM *vm, UValue self,
+                                UValue *args, uint8_t nargs, UValue *out);
+static int fn_set_led(struct UVM *vm, UValue self,
+                       UValue *args, uint8_t nargs, UValue *out);
+
 static const urbi_aux_function_decl_t DRIVER_FNS[] = {
     { "readTemperature", fn_read_temperature },
     { "setLed",          fn_set_led          },
 };
 
-void register_driver(struct UVM *vm, struct URealm *realm)
+static void register_driver(struct UVM *vm, struct URealm *realm)
 {
     int rc = urbi_aux_register_function_table(
         vm, realm, DRIVER_FNS,
