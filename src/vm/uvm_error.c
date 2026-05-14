@@ -133,3 +133,18 @@ urbi_clear_error(struct UVM *vm)
     vm->error_ring.count = 0U;
     vm->error_ring.head  = 0U;
 }
+
+/* urbi_set_error: public thin wrapper around urbi_set_error_internal.
+ *
+ * Exposes the entry point needed by urbi_aux_set_error (aux layer) without
+ * requiring aux to include internal headers.  All arguments pass through
+ * unchanged.  NULL vm is a no-op. */
+void
+urbi_set_error(struct UVM *vm, int code,
+               const char *message,
+               const char *source_name, int source_line,
+               const char *context)
+{
+    urbi_set_error_internal(vm, code, message, source_name, source_line,
+                            context);
+}

@@ -1023,6 +1023,57 @@ UValue     urbi_ref_get(struct UVM *vm, urbi_ref_t ref);
  * Thread safety: MAIN. */
 void       urbi_unref  (struct UVM *vm, urbi_ref_t ref);
 
+/* === Public error publishing (v0.7.1 spec amendment) ===
+ *
+ * urbi_set_error: publish an error entry to the per-VM error ring.
+ *
+ * Thin public wrapper around the internal urbi_set_error_internal; exposes
+ * the entry point needed by the aux layer (urbi_aux_set_error) without
+ * violating the aux governance rule that aux functions may not include
+ * internal headers.
+ *
+ * vm          — owning VM; NULL is a no-op.
+ * code        — UErrCode value (negative int).
+ * message     — human-readable description; NULL → empty string.
+ * source_name — source file or script name; NULL → empty string.
+ * source_line — source line number; 0 if unknown.
+ * context     — caller-supplied context tag; NULL → empty string.
+ *
+ * Thread safety: MAIN. */
+void urbi_set_error(struct UVM *vm, int code,
+                    const char *message,
+                    const char *source_name, int source_line,
+                    const char *context);
+
+/* === Public bytecode deserialization (v0.7.1 spec amendment) ===
+ *
+ * urbi_module_from_bytes: deserialize a wire-format bytecode buffer into a
+ * caller-owned UModule on the heap.
+ *
+ * On success: returns a non-NULL pointer that must be freed with
+ * urbi_module_free when no longer needed.  The caller must ensure no live VM
+ * is executing inside the module when urbi_module_free is called.
+ *
+ * On error: returns NULL; if errmsg is non-NULL, writes a diagnostic into
+ * errmsg[0..errcap) (NUL-terminated).
+ *
+ * Error conditions:
+ *   NULL buf or zero len                → returns NULL (URBI_ERR_INVALID_ARG)
+ *   bytecode version mismatch           → returns NULL
+ *   any other deserialize or OOM error  → returns NULL
+ *
+ * Thread safety: MAIN (calls the heap allocator). */
+struct UModule *urbi_module_from_bytes(const uint8_t *buf, size_t len,
+                                       char *errmsg, size_t errcap);
+
+/* urbi_module_free: free a UModule returned by urbi_module_from_bytes.
+ *
+ * Calls the internal destructor (frees all owned buffers), then frees the
+ * UModule allocation itself.  NULL is a no-op.
+ *
+ * Thread safety: MAIN. */
+void urbi_module_free(struct UModule *module);
+
 #ifdef __cplusplus
 }
 #endif
