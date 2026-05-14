@@ -234,6 +234,76 @@ static inline UValue urbi_make_closure(struct UClosure *c)
     return v;
 }
 
+/* === Gap O: urbi_value_kind + urbi_value_as_* typed accessors (inline) ===
+ *
+ * urbi_value_kind: extract the public kind enum from a UValue.
+ *
+ * urbi_value_as_*: access the payload without any kind check.  Caller MUST
+ * verify kind first via urbi_value_kind(); mismatched access is undefined
+ * behaviour.  No checked variants are provided — same pattern as Lua's
+ * lua_type + lua_to* (caller performs the guard).
+ *
+ * urbi_value_as_str: the interned string stored in UVAL_STR values is a
+ * NUL-terminated const char* held in v.p.  The inline returns the pointer
+ * directly and computes length via an inline NUL-scan loop (no <string.h>
+ * dependency — freestanding compatible).  No USymbol struct layout is
+ * exposed because USymbol is an opaque typedef (the intern table stores
+ * raw const char* blocks, not a struct-with-len); this is simpler and
+ * avoids adding struct layout to the public ABI.
+ *
+ * urbi_value_as_bool: returns true/false from the v.i payload (0=false,
+ * non-zero=true), consistent with internal val_bool convention. */
+static inline urbi_value_kind_t urbi_value_kind(UValue v)
+{
+    return (urbi_value_kind_t)v.kind;
+}
+
+static inline bool urbi_value_as_bool(UValue v)
+{
+    return v.v.i != 0;
+}
+
+static inline int64_t urbi_value_as_int(UValue v)
+{
+    return v.v.i;
+}
+
+static inline double urbi_value_as_float(UValue v)
+{
+    return v.v.f;
+}
+
+static inline void *urbi_value_as_ptr(UValue v)
+{
+    return v.v.p;
+}
+
+static inline const char *urbi_value_as_str(UValue v, size_t *out_len)
+{
+    const char *s = (const char *)v.v.p;
+    if (out_len) {
+        size_t n = 0;
+        if (s) { while (s[n] != '\0') n++; }
+        *out_len = n;
+    }
+    return s;
+}
+
+static inline struct UObject *urbi_value_as_object(UValue v)
+{
+    return (struct UObject *)v.v.p;
+}
+
+static inline struct UEvent *urbi_value_as_event(UValue v)
+{
+    return (struct UEvent *)v.v.p;
+}
+
+static inline struct UClosure *urbi_value_as_closure(UValue v)
+{
+    return (struct UClosure *)v.v.p;
+}
+
 /* === UValue layout pin (Wave 1 T6) ===
  *
  * Compile-time assertion that mirrors the runtime invariants tested in
