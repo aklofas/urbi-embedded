@@ -504,6 +504,27 @@ typedef int (*urbi_event_payload_destructure_fn)(
     const urbi_event_payload_t *payload, size_t payload_len,
     UValue *out_args, int max_args, void *ud);
 
+/* urbi_event_register: allocate a UEvent, install it as a const realm-global
+ * under `name`, and record the (id, event, destruct_fn) triple in the VM's
+ * event registry.
+ *
+ * Subsequent urbi_inject_event with the returned id routes through this UEvent
+ * at drain time.  destruct_fn may be NULL (no-args event); when non-NULL it
+ * runs on MAIN thread at drain to convert raw ISR payload bytes into UValues
+ * for the `at(name ?(args))` body.
+ *
+ * Returns URBI_EVENT_ID_INVALID on error; consult urbi_last_error (Phase 8)
+ * for the specific code:
+ *   URBI_ERR_INVALID_ARG      — NULL vm, realm, or name
+ *   URBI_ERR_EVENT_NAME_TAKEN — name already registered in this VM
+ *   URBI_ERR_OOM              — UEvent alloc or registry grow failed
+ *
+ * Thread safety: MAIN. */
+urbi_event_id_t urbi_event_register(struct UVM *vm, struct URealm *realm,
+                                    const char *name,
+                                    urbi_event_payload_destructure_fn destruct_fn,
+                                    void *destruct_ud);
+
 /* === Gap E — Pluggable I/O writer (v0.7.1) ===
  *
  * urbi_writer_fn: callback invoked by urbi_vm_write for every channel write.
