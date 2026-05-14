@@ -1754,7 +1754,7 @@ dispatch:
              * variable call; the receiver object for method-call pattern). */
             s->R[A] = s->frame_count > 0
                       ? s->frames[s->frame_count - 1].recv
-                      : urbi_value_nil();
+                      : urbi_make_nil();
             NEXT();
         }
 

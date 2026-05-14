@@ -236,7 +236,7 @@ urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode)
  * Times fn() using vm->host_time_us; logs or panics if elapsed exceeds
  * vm->callback_warn_us.  Non-debug builds use the macro in urbi.h.
  *
- * API-010: NULL vm or NULL fn returns urbi_value_nil() defensively rather
+ * API-010: NULL vm or NULL fn returns urbi_make_nil() defensively rather
  * than dereferencing.  Non-debug builds use the macro form which has no
  * defensive layer — those callers are expected to validate args themselves. */
 #ifdef URBI_DEBUG
@@ -244,7 +244,7 @@ UValue
 urbi_call_host_with_watchdog(struct UVM *vm, struct UStrand *s,
                              UHostFn fn, int argc, UValue *argv)
 {
-    if (!vm || !fn) return urbi_value_nil();
+    if (!vm || !fn) return urbi_make_nil();
     uint64_t t0      = vm->host_time_us();
     UValue   r       = fn(s, argc, argv);
     uint64_t elapsed = vm->host_time_us() - t0;

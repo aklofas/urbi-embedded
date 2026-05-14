@@ -56,7 +56,7 @@ static int compile_and_run(UVM *vm, const char *src)
         umodule_destroy(&module);
         return URBI_ERR_COMPILE;
     }
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = urbi_run_chunk(vm, NULL, &module, &out);
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -109,7 +109,7 @@ UTEST(atom_proto_for_bool_routes_to_boolean) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_BOOL;
     v.v.i = 1;
 
@@ -123,7 +123,7 @@ UTEST(atom_proto_for_nil_routes_to_nil) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();   /* kind == UVAL_NIL */
+    UValue v = urbi_make_nil();   /* kind == UVAL_NIL */
 
     UObject *proto = urbi_atom_proto_for_value(&vm, v);
     UASSERT(proto == urbi_object_atom(&vm, URBI_ATOM_NIL));
@@ -135,7 +135,7 @@ UTEST(atom_proto_for_void_routes_to_void) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = UVAL_VOID;
 
     UObject *proto = urbi_atom_proto_for_value(&vm, v);
@@ -155,7 +155,7 @@ UTEST(boolean_toString_true) {
     int rc = compile_and_run(&vm, "var v = true.toString()");
     UASSERT_EQ(rc, URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out);
     UASSERT_EQ(grc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_STR);
@@ -170,7 +170,7 @@ UTEST(string_length_returns_byte_count) {
     int rc = compile_and_run(&vm, "var v = \"hello\".length()");
     UASSERT_EQ(rc, URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out);
     UASSERT_EQ(grc, URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
@@ -185,7 +185,7 @@ UTEST(realm_global_Boolean_is_atom_boolean) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                     "Boolean", 7, &out);
     UASSERT_EQ(grc, URBI_OK);
@@ -199,7 +199,7 @@ UTEST(realm_global_Nil_is_atom_nil_proto) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                     "Nil", 3, &out);
     UASSERT_EQ(grc, URBI_OK);
@@ -213,7 +213,7 @@ UTEST(realm_global_Void_is_atom_void_proto) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                     "Void", 4, &out);
     UASSERT_EQ(grc, URBI_OK);
@@ -228,7 +228,7 @@ UTEST(realm_global_lower_nil_is_value_singleton) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     out.kind = UVAL_INT;   /* poison so we can detect it gets overwritten */
     int grc = urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                     "nil", 3, &out);

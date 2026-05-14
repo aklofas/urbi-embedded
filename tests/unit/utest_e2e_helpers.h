@@ -74,7 +74,7 @@ int utest_e2e_run_to_no_runnable(UVM *vm);
 
 /* utest_e2e_make_int / utest_e2e_make_nil: small UValue constructors
  * used as expected-value literals in assertions.  make_nil delegates to
- * urbi_value_nil() (introduced in v0.5.7) for canonical zero-init.
+ * urbi_make_nil() (introduced in v0.5.7) for canonical zero-init.
  */
 UValue utest_e2e_make_int(int64_t n);
 UValue utest_e2e_make_nil(void);

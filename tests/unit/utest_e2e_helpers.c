@@ -32,7 +32,7 @@ utest_e2e_make_int(int64_t n)
 UValue
 utest_e2e_make_nil(void)
 {
-    return urbi_value_nil();
+    return urbi_make_nil();
 }
 
 int

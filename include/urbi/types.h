@@ -125,30 +125,15 @@ _Static_assert((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kind_t/
 _Static_assert((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
 _Static_assert((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
 
-/* === urbi_value_nil: canonical zero-init UValue ===
- *
- * Sole nil constructor: explicitly clears kind + pad + union payload so the
- * resulting UValue is bit-equivalent across compilers (some C99 aggregate-
- * init forms can leave _pad in implementation-defined state when the union
- * is partially initialised).
- *
- * Use this helper everywhere a "nil" UValue is needed instead of
- * `UValue v = {0};` aggregate init.  Closes FOUND-019 + FOUND-048 (Wave 5). */
-static inline UValue urbi_value_nil(void) {
-    UValue v;
-    v.kind = (uint8_t)UVAL_NIL;
-    for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
-    v.v.i = 0;
-    return v;
-}
-
 /* === Gap N: urbi_make_* value constructors (inline) ===
  *
  * Typed constructors for all UValue kinds exposed at the public API surface.
  * These are zero-overhead inlines that set kind + clear pad + fill the
- * appropriate union arm.  urbi_make_nil supersedes urbi_value_nil (renamed
- * at v0.7.1 for consistency); urbi_make_str_interned is declared in
+ * appropriate union arm.  urbi_make_str_interned is declared in
  * <urbi/urbi.h> (requires a live UVM for interning).
+ *
+ * urbi_make_nil replaces the pre-v0.7.1 urbi_value_nil() (renamed for
+ * consistency with the Gap N family; pre-v1.0 escape clause).
  *
  * Pointer-bearing constructors (object/event/closure/ptr) store via v.p.
  * Boolean uses v.i with 0/1 (same convention as internal val_bool).

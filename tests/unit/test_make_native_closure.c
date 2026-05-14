@@ -44,7 +44,7 @@ static int test_host_fn(struct UVM *vm, UValue self, UValue *args,
                         uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     return 0;
 }
 

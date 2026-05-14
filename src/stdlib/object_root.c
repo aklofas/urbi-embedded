@@ -29,7 +29,7 @@
 #include "runtime/uclosure.h"      /* struct UClosure full def */
 #include "runtime/umacros.h"       /* urbi_zero, urbi_strlen */
 #include "sched/ustrand.h"         /* UEXEC_OK, UEXEC_THROW */
-#include "urbi/types.h"            /* UErrCode, urbi_value_nil */
+#include "urbi/types.h"            /* UErrCode, urbi_make_nil */
 #include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
 #include "value/uintern.h"         /* ustr_intern */
 #include "vm/uvm.h"                /* UVM, vm->stdlib_closures */
@@ -66,7 +66,7 @@ static int obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t na
 static UValue
 uval_obj(UObject *o)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_OBJECT;
     v.v.p = o;
     return v;
@@ -75,7 +75,7 @@ uval_obj(UObject *o)
 static UValue
 uval_bool(int b)
 {
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_BOOL;
     v.v.i = b ? 1 : 0;
     return v;
@@ -121,7 +121,7 @@ urbi_raise_arity(UVM *vm, const char *fn_name, uint8_t expected,
                  uint8_t got, UValue *out)
 {
     (void)vm;
-    if (out != NULL) *out = urbi_value_nil();
+    if (out != NULL) *out = urbi_make_nil();
 #if __STDC_HOSTED__
     fprintf(stderr, "ArityError: %s expected %u args, got %u\n",
             (fn_name != NULL ? fn_name : "<unknown>"),
@@ -136,7 +136,7 @@ int
 urbi_raise_type(UVM *vm, const char *msg, UValue *out)
 {
     (void)vm;
-    if (out != NULL) *out = urbi_value_nil();
+    if (out != NULL) *out = urbi_make_nil();
 #if __STDC_HOSTED__
     fprintf(stderr, "TypeError: %s\n", (msg != NULL ? msg : "<unspecified>"));
 #else
@@ -149,7 +149,7 @@ int
 urbi_raise_oom(UVM *vm, UValue *out)
 {
     (void)vm;
-    if (out != NULL) *out = urbi_value_nil();
+    if (out != NULL) *out = urbi_make_nil();
 #if __STDC_HOSTED__
     fprintf(stderr, "OutOfMemoryError\n");
 #endif
@@ -160,7 +160,7 @@ int
 urbi_raise_lookup(UVM *vm, USymbol *name, UValue *out)
 {
     (void)vm; (void)name;
-    if (out != NULL) *out = urbi_value_nil();
+    if (out != NULL) *out = urbi_make_nil();
 #if __STDC_HOSTED__
     fprintf(stderr, "LookupError: slot not found\n");
 #endif
@@ -187,7 +187,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
     USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
     if (sym_size == NULL) return NULL;
 
-    UValue n = urbi_value_nil();
+    UValue n = urbi_make_nil();
     n.kind = (uint8_t)UVAL_INT;
     n.v.i = (int64_t)urbi_object_proto_count(recv);
     if (urbi_object_set_local_slot(vm, list, sym_size, n) != 0) return NULL;
@@ -198,7 +198,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
      * prefixed hidden slot is sufficient. */
     USymbol *sym_owner = (USymbol *)ustr_intern(vm, "_owner", 6);
     if (sym_owner == NULL) return NULL;
-    UValue owner = urbi_value_nil();
+    UValue owner = urbi_make_nil();
     owner.kind = (uint8_t)UVAL_OBJECT;
     /* Owner is a live UObject; insertFront on the synthetic list mutates
      * its proto chain in place via urbi_object_set_protos. */
@@ -214,7 +214,7 @@ urbi_proto_list_create(UVM *vm, UObject *recv)
     if (cl == NULL) return NULL;
     USymbol *sym_iF = (USymbol *)ustr_intern(vm, "insertFront", 11);
     if (sym_iF == NULL) return NULL;
-    UValue clv = urbi_value_nil();
+    UValue clv = urbi_make_nil();
     clv.kind = (uint8_t)UVAL_CLOSURE;
     clv.v.p = cl;
     if (urbi_object_set_local_slot(vm, list, sym_iF, clv) != 0) return NULL;
@@ -565,7 +565,7 @@ obj_protos_insertFront(UVM *vm, UValue self, UValue *args, uint8_t nargs,
      * a fresh synthetic, but the caller may chain off this same list.) */
     USymbol *sym_size = (USymbol *)ustr_intern(vm, "size", 4);
     if (sym_size != NULL) {
-        UValue nval = urbi_value_nil();
+        UValue nval = urbi_make_nil();
         nval.kind = (uint8_t)UVAL_INT;
         nval.v.i = (int64_t)urbi_object_proto_count(owner);
         (void)urbi_object_set_local_slot(vm, list, sym_size, nval);
@@ -663,7 +663,7 @@ obj_setProperty(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         /* Slot missing on the receiver's local shape (or only present on
          * a proto).  Install a nil placeholder on the receiver so the
          * subsequent install_property call finds the slot. */
-        UValue placeholder = urbi_value_nil();
+        UValue placeholder = urbi_make_nil();
         int rc_set = urbi_object_set_local_slot(vm, recv, name, placeholder);
         if (rc_set != 0) return urbi_raise_oom(vm, out);
     }
@@ -722,7 +722,7 @@ urbi_object_root_register(UVM *vm)
             urbi_strlen(OBJECT_METHODS[i].name));
         if (sym == NULL) return URBI_ERR_OOM;
 
-        UValue v = urbi_value_nil();
+        UValue v = urbi_make_nil();
         v.kind = (uint8_t)UVAL_CLOSURE;
         v.v.p = cl;
         int rc = urbi_object_set_local_slot(vm, root, sym, v);

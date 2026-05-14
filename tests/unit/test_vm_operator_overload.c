@@ -33,7 +33,7 @@ UTEST(vm_op_add_atom_fast_path_unaffected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm, "1 + 2", &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
@@ -45,7 +45,7 @@ UTEST(vm_op_sub_atom_fast_path_unaffected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm, "5 - 3", &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
@@ -57,7 +57,7 @@ UTEST(vm_op_mul_atom_fast_path_unaffected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm, "3 * 4", &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
@@ -70,7 +70,7 @@ UTEST(vm_op_div_atom_fast_path_unaffected)
     /* Int/Int division promotes to Float: 6/3 = 2.0 */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm, "6 / 3", &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_FLOAT, (int)out.kind);
@@ -82,7 +82,7 @@ UTEST(vm_op_neg_atom_fast_path_unaffected)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm, "-7", &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
@@ -106,7 +106,7 @@ UTEST(vm_op_add_user_type_overload)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecAdd { var v = 0 };\n"
         "VecAdd.setSlot(\"+\", function(other) { 99 });\n"
@@ -124,7 +124,7 @@ UTEST(vm_op_sub_user_type_overload)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecSub { var v = 0 };\n"
         "VecSub.setSlot(\"-\", function(other) { 77 });\n"
@@ -142,7 +142,7 @@ UTEST(vm_op_mul_user_type_overload)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecMul { var v = 0 };\n"
         "VecMul.setSlot(\"*\", function(other) { 55 });\n"
@@ -160,7 +160,7 @@ UTEST(vm_op_div_user_type_overload)
 {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecDiv { var v = 0 };\n"
         "VecDiv.setSlot(\"/\", function(other) { 33 });\n"
@@ -179,7 +179,7 @@ UTEST(vm_op_neg_user_type_overload)
     /* Unary negation: "-" slot with no args (arity-0 method). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecNeg { var v = 0 };\n"
         "VecNeg.setSlot(\"-\", function() { 11 });\n"
@@ -199,7 +199,7 @@ UTEST(vm_op_eq_user_type_overload)
      * checks that the overloaded value is used. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecEq { var v = 0 };\n"
         "VecEq.setSlot(\"==\", function(other) { 1 });\n"
@@ -219,7 +219,7 @@ UTEST(vm_op_neq_user_type_overload)
      * The "!=" slot returns 1 (not-equal), so the if-branch fires. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecNeq { var v = 0 };\n"
         "VecNeq.setSlot(\"!=\", function(other) { 1 });\n"
@@ -238,7 +238,7 @@ UTEST(vm_op_lt_user_type_overload)
     /* OP_LT: overload fires on user object lhs. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecLt { var v = 0 };\n"
         "VecLt.setSlot(\"<\", function(other) { 1 });\n"
@@ -257,7 +257,7 @@ UTEST(vm_op_le_user_type_overload)
     /* OP_LE: overload fires on user object lhs. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecLe { var v = 0 };\n"
         "VecLe.setSlot(\"<=\", function(other) { 1 });\n"
@@ -280,7 +280,7 @@ UTEST(vm_op_overload_missing_falls_to_type_error)
     /* No "+" slot on the object: original type-error must be preserved. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "var bare = Object.clone();\n"
         "bare + 1",
@@ -294,7 +294,7 @@ UTEST(vm_op_lt_missing_falls_to_type_error)
     /* OP_LT with no slot: type-error must propagate. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "var bare2 = Object.clone();\n"
         "bare2 < 1",
@@ -312,7 +312,7 @@ UTEST(vm_op_add_overload_ic_cached)
     /* Two consecutive a + b calls: second hit should use IC cache. */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = utest_e2e_compile_and_run(&vm,
         "class VecIc { var v = 0 };\n"
         "VecIc.setSlot(\"+\", function(other) { 7 });\n"

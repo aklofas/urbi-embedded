@@ -24,7 +24,7 @@
  *
  *   4. event_new_raises_on_oom (EVENT-011 carry-forward):
  *      When urbi_event_create fails (alloc-spy injected OOM), Event.new
- *      returns UEXEC_THROW; *out is left as canonical urbi_value_nil(). */
+ *      returns UEXEC_THROW; *out is left as canonical urbi_make_nil(). */
 
 #include "utest.h"
 
@@ -95,7 +95,7 @@ UTEST(event_new_creates_uevent)
     self.kind = (uint8_t)UVAL_OBJECT;
     self.v.p  = (void *)vm.event_proto;
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = cl->native_fn(&vm, self, NULL, 0, &out);
     UASSERT_EQ(rc, UEXEC_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_EVENT);
@@ -149,7 +149,7 @@ UTEST(event_emit_method_dispatches_to_async)
     args[0].kind = (uint8_t)UVAL_INT;
     args[0].v.i  = 42;
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = fn(&vm, self, args, 1, &out);
     UASSERT_EQ(rc, UEXEC_OK);
 
@@ -212,7 +212,7 @@ UTEST(event_proto_has_all_four_slots)
  *
  * Pre-Phase-7 the host-fn ABI returned a NIL UValue on OOM (silent failure
  * masquerading as success).  Phase 7's Phase-3 ABI surfaces OOM as a
- * UEXEC_THROW return; *out is left at canonical urbi_value_nil().
+ * UEXEC_THROW return; *out is left at canonical urbi_make_nil().
  * =================================================================== */
 
 typedef struct {
@@ -257,13 +257,13 @@ UTEST(event_new_raises_on_oom)
     self.kind = (uint8_t)UVAL_OBJECT;
     self.v.p  = (void *)vm.event_proto;
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = fn(&vm, self, NULL, 0, &out);
 
     UASSERT_EQ(rc, UEXEC_THROW);
 
-    /* *out must be bit-identical to canonical urbi_value_nil(). */
-    UValue canonical = urbi_value_nil();
+    /* *out must be bit-identical to canonical urbi_make_nil(). */
+    UValue canonical = urbi_make_nil();
     UASSERT_EQ((int)out.kind, (int)canonical.kind);
     UASSERT(memcmp(&out, &canonical, sizeof(UValue)) == 0);
 

@@ -20,7 +20,7 @@
  *
  * Return:
  *   UEXEC_OK   — success; *out holds the return value.
- *   UEXEC_THROW — error raised; *out is left at urbi_value_nil() and the
+ *   UEXEC_THROW — error raised; *out is left at urbi_make_nil() and the
  *                 OP_CALL arm propagates a TypeError to the strand.
  *
  * Phase 3 baseline error helpers (urbi_raise_arity / _type / _oom / _lookup)

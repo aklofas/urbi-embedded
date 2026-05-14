@@ -66,7 +66,7 @@ static int compile_and_run(UVM *vm, const char *src)
         umodule_destroy(&module);
         return URBI_ERR_COMPILE;
     }
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     int rc = urbi_run_chunk(vm, NULL, &module, &out);
     uarena_destroy(&arena);
     umodule_destroy(&module);
@@ -80,7 +80,7 @@ test_native_returns_42(UVM *vm, UValue self, UValue *args, uint8_t nargs,
                        UValue *out)
 {
     (void)vm; (void)self; (void)args; (void)nargs;
-    *out = urbi_value_nil();
+    *out = urbi_make_nil();
     out->kind = (uint8_t)UVAL_INT;
     out->v.i = 42;
     return UEXEC_OK;
@@ -101,7 +101,7 @@ UTEST(native_fn_dispatched_via_op_call) {
 
     USymbol *sym = (USymbol *)ustr_intern(&vm, "fortyTwo", 8);
     UASSERT(sym != NULL);
-    UValue v = urbi_value_nil();
+    UValue v = urbi_make_nil();
     v.kind = (uint8_t)UVAL_CLOSURE;
     v.v.p = cl;
     UASSERT_EQ(urbi_object_set_local_slot(&vm, root, sym, v), 0);
@@ -109,7 +109,7 @@ UTEST(native_fn_dispatched_via_op_call) {
     /* var v = Object.fortyTwo()  →  42 */
     UASSERT_EQ(compile_and_run(&vm, "var v = Object.fortyTwo()"), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                      "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
@@ -131,7 +131,7 @@ UTEST(object_set_slot_then_read_back) {
         "var v = o.getSlot(\"x\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm),
                                      "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
@@ -154,8 +154,8 @@ UTEST(object_has_slot_present_and_absent) {
         "var b = o.hasSlot(\"y\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue va = urbi_value_nil();
-    UValue vb = urbi_value_nil();
+    UValue va = urbi_make_nil();
+    UValue vb = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "a", 1, &va), URBI_OK);
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "b", 1, &vb), URBI_OK);
     UASSERT_EQ((int)va.kind, (int)UVAL_BOOL);
@@ -178,7 +178,7 @@ UTEST(object_remove_slot_removes) {
         "var b = o.hasSlot(\"x\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue vb = urbi_value_nil();
+    UValue vb = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "b", 1, &vb), URBI_OK);
     UASSERT_EQ((int)vb.kind, (int)UVAL_BOOL);
     UASSERT_EQ((int)vb.v.i, 0);
@@ -201,7 +201,7 @@ UTEST(object_add_proto_inherits_slot) {
         "var v = c.foo";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 100);
@@ -223,7 +223,7 @@ UTEST(object_remove_proto_drops_inheritance) {
         "var b = c.hasSlot(\"foo\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue vb = urbi_value_nil();
+    UValue vb = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "b", 1, &vb), URBI_OK);
     UASSERT_EQ((int)vb.kind, (int)UVAL_BOOL);
     UASSERT_EQ((int)vb.v.i, 0);
@@ -240,7 +240,7 @@ UTEST(clone_int_returns_int) {
 
     UASSERT_EQ(compile_and_run(&vm, "var v = 1.clone()"), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 1);
@@ -262,8 +262,8 @@ UTEST(clone_object_allocates_fresh) {
         "var cv = c.x";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue ov = urbi_value_nil();
-    UValue cv = urbi_value_nil();
+    UValue ov = urbi_make_nil();
+    UValue cv = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "ov", 2, &ov), URBI_OK);
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "cv", 2, &cv), URBI_OK);
     UASSERT_EQ((int)ov.v.i, 42);
@@ -326,7 +326,7 @@ UTEST(object_new_returns_clone) {
         "var v = c.x";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 42);
@@ -364,7 +364,7 @@ UTEST(clone_can_overwrite_const_inherited_slot) {
     USymbol *sym_x = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(sym_x != NULL);
 
-    UValue zero = urbi_value_nil();
+    UValue zero = urbi_make_nil();
     zero.kind = (uint8_t)UVAL_INT;
     zero.v.i = 0;
     UASSERT_EQ(urbi_object_set_local_slot(&vm, p, sym_x, zero), 0);
@@ -381,7 +381,7 @@ UTEST(clone_can_overwrite_const_inherited_slot) {
     memset(&ic, 0, sizeof(ic));
     ic.name = sym_x;
 
-    UValue twelve = urbi_value_nil();
+    UValue twelve = urbi_make_nil();
     twelve.kind = (uint8_t)UVAL_INT;
     twelve.v.i = 12;
     UASSERT_EQ(urbi_slot_set_slow(&vm, b, &ic, twelve), URBI_OK);
@@ -392,13 +392,13 @@ UTEST(clone_can_overwrite_const_inherited_slot) {
     memset(&ic, 0, sizeof(ic));
     ic.name = sym_x;
 
-    UValue pv = urbi_value_nil();
+    UValue pv = urbi_make_nil();
     UASSERT_EQ(urbi_slot_get_slow(&vm, p, &ic, &pv), 0);
     UASSERT_EQ((int)pv.v.i, 0);
 
     memset(&ic, 0, sizeof(ic));
     ic.name = sym_x;
-    UValue bv = urbi_value_nil();
+    UValue bv = urbi_make_nil();
     UASSERT_EQ(urbi_slot_get_slow(&vm, b, &ic, &bv), 0);
     UASSERT_EQ((int)bv.v.i, 12);
 
@@ -425,8 +425,8 @@ UTEST(new_then_local_write_does_not_modify_proto) {
         "var cv = c.x";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue pv = urbi_value_nil();
-    UValue cv = urbi_value_nil();
+    UValue pv = urbi_make_nil();
+    UValue cv = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "pv", 2, &pv), URBI_OK);
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "cv", 2, &cv), URBI_OK);
     UASSERT_EQ((int)pv.v.i, 42);
@@ -462,8 +462,8 @@ UTEST(protos_insert_front_prepends_proto) {
         "var v1 = c.foo";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue v0 = urbi_value_nil();
-    UValue v1 = urbi_value_nil();
+    UValue v0 = urbi_make_nil();
+    UValue v1 = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v0", 2, &v0), URBI_OK);
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v1", 2, &v1), URBI_OK);
     UASSERT_EQ((int)v0.v.i, 2);
@@ -490,7 +490,7 @@ UTEST(object_remove_local_slot_alias) {
         "var b = o.hasSlot(\"x\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "b", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_BOOL);
     UASSERT_EQ((int)out.v.i, 0);
@@ -516,7 +516,7 @@ UTEST(object_get_slot_value_alias) {
         "var v = c.getSlotValue(\"foo\")";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 100);
@@ -543,7 +543,7 @@ UTEST(clone_chain_three_levels) {
         "var v = c.x";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 42);
@@ -566,7 +566,7 @@ UTEST(atom_new_returns_self) {
 
     UASSERT_EQ(compile_and_run(&vm, "var v = 7.new()"), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 7);
@@ -574,7 +574,7 @@ UTEST(atom_new_returns_self) {
     /* String literal: identity-preserving (the interned USymbol pointer
      * is the same as the source 1-shot literal). */
     UASSERT_EQ(compile_and_run(&vm, "var s = \"foo\".new()"), URBI_OK);
-    UValue sout = urbi_value_nil();
+    UValue sout = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "s", 1, &sout), URBI_OK);
     UASSERT_EQ((int)sout.kind, (int)UVAL_STR);
 
@@ -595,8 +595,8 @@ UTEST(new_and_clone_are_equivalent) {
         "var bv = b.x";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue av = urbi_value_nil();
-    UValue bv = urbi_value_nil();
+    UValue av = urbi_make_nil();
+    UValue bv = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "av", 2, &av), URBI_OK);
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "bv", 2, &bv), URBI_OK);
     UASSERT_EQ((int)av.v.i, 100);
@@ -620,7 +620,7 @@ UTEST(object_set_protos_single) {
         "var v = c.foo";
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
-    UValue out = urbi_value_nil();
+    UValue out = urbi_make_nil();
     UASSERT_EQ(urbi_realm_get_global(&vm, urbi_realm_global(&vm), "v", 1, &out), URBI_OK);
     UASSERT_EQ((int)out.kind, (int)UVAL_INT);
     UASSERT_EQ((int)out.v.i, 100);

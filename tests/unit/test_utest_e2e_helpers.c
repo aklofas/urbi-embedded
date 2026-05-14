@@ -42,12 +42,12 @@ UTEST(make_int_round_trip)
 }
 
 /* make_nil_matches_canonical: utest_e2e_make_nil must be byte-identical
- * to the public urbi_value_nil() — it is just a delegate. */
+ * to the public urbi_make_nil() — it is just a delegate. */
 UTEST(make_nil_matches_canonical)
 {
     UValue v = utest_e2e_make_nil();
     UASSERT_EQ((int)UVAL_NIL, (int)v.kind);
-    UValue canonical = urbi_value_nil();
+    UValue canonical = urbi_make_nil();
     UASSERT_EQ(0, memcmp(&v, &canonical, sizeof(UValue)));
 }
 
