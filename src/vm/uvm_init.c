@@ -353,6 +353,17 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */
     vm->watcher_body_done_fn = NULL;
 
+    /* Gap R (v0.7.1): atomic event section state.
+     * atomic_active must be zero so that uevent_ring_drain is NOT gated on
+     * entry.  Forgetting this init would make every test that puts `UVM vm;`
+     * on the C stack see garbage in atomic_active, silently blocking drains. */
+    vm->atomic_active   = 0U;
+    vm->atomic_begin_us = 0U;
+    {
+        int i;
+        for (i = 0; i < 7; i++) vm->pad_atomic[i] = 0U;
+    }
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
