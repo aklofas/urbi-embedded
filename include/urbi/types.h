@@ -55,6 +55,8 @@ struct UTag;
 struct URealm;
 struct UModule;
 struct UClosure;
+struct UObject;
+struct UEvent;
 
 /* === UValKind: tag byte for UValue's union discriminant ===
  *
@@ -137,6 +139,98 @@ static inline UValue urbi_value_nil(void) {
     v.kind = (uint8_t)UVAL_NIL;
     for (size_t i = 0; i < sizeof(v._pad); i++) v._pad[i] = 0;
     v.v.i = 0;
+    return v;
+}
+
+/* === Gap N: urbi_make_* value constructors (inline) ===
+ *
+ * Typed constructors for all UValue kinds exposed at the public API surface.
+ * These are zero-overhead inlines that set kind + clear pad + fill the
+ * appropriate union arm.  urbi_make_nil supersedes urbi_value_nil (renamed
+ * at v0.7.1 for consistency); urbi_make_str_interned is declared in
+ * <urbi/urbi.h> (requires a live UVM for interning).
+ *
+ * Pointer-bearing constructors (object/event/closure/ptr) store via v.p.
+ * Boolean uses v.i with 0/1 (same convention as internal val_bool).
+ * Numeric kinds (int, float) use v.i and v.f respectively. */
+static inline UValue urbi_make_nil(void)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_NIL;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.i = 0;
+    return v;
+}
+
+static inline UValue urbi_make_bool(bool b)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_BOOL;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.i = b ? 1 : 0;
+    return v;
+}
+
+static inline UValue urbi_make_int(int64_t n)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_INT;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.i = n;
+    return v;
+}
+
+static inline UValue urbi_make_float(double f)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_FLOAT;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.f = f;
+    return v;
+}
+
+static inline UValue urbi_make_void(void)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_VOID;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.i = 0;
+    return v;
+}
+
+static inline UValue urbi_make_ptr(void *p)
+{
+    UValue v;
+    v.kind = (uint8_t)URBI_VALUE_PTR;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.p = p;
+    return v;
+}
+
+static inline UValue urbi_make_object(struct UObject *o)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_OBJECT;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.p = (void *)o;
+    return v;
+}
+
+static inline UValue urbi_make_event(struct UEvent *e)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_EVENT;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.p = (void *)e;
+    return v;
+}
+
+static inline UValue urbi_make_closure(struct UClosure *c)
+{
+    UValue v;
+    v.kind = (uint8_t)UVAL_CLOSURE;
+    for (size_t _pi = 0; _pi < sizeof(v._pad); _pi++) v._pad[_pi] = 0;
+    v.v.p = (void *)c;
     return v;
 }
 
