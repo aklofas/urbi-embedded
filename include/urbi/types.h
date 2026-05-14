@@ -132,6 +132,40 @@ _Static_assert(offsetof(UValue, kind) == 0,
                "UValue.kind must be at offset 0 (ABI pin)");
 #endif
 
+/* === ISR event payload contract (Gap C) ===
+ *
+ * urbi_event_payload_t is the typed-union form of the raw bytes passed to
+ * urbi_inject_event.  Embedders writing typed payloads from ISR context
+ * (e.g. IMU readings as float[4], GPIO state as uint32_t) cast their data
+ * to this union before injecting.
+ *
+ * Size and alignment are compile-time-pinned via _Static_assert below so
+ * any future change to URBI_EVENT_PAYLOAD_MAX or URBI_EVENT_PAYLOAD_ALIGN
+ * is caught at compile time rather than silently breaking ISR-side code.
+ *
+ * URBI_EVENT_PAYLOAD_MAX is the authoritative definition; the internal
+ * header src/event/uevent_ring.h defers to this value via an #ifndef guard.
+ *
+ * Alignment is achieved with __attribute__((aligned(8))) rather than C11
+ * _Alignas to preserve -std=c99 compatibility (project convention, see
+ * uevent_ring.h T25 / EVENT-003 note). */
+#define URBI_EVENT_PAYLOAD_MAX   16
+#define URBI_EVENT_PAYLOAD_ALIGN 8
+
+typedef union {
+    uint8_t  bytes[URBI_EVENT_PAYLOAD_MAX];
+    uint32_t u32  [URBI_EVENT_PAYLOAD_MAX / sizeof(uint32_t)];
+    uint64_t u64  [URBI_EVENT_PAYLOAD_MAX / sizeof(uint64_t)];
+    float    f32  [URBI_EVENT_PAYLOAD_MAX / sizeof(float)];
+    double   f64  [URBI_EVENT_PAYLOAD_MAX / sizeof(double)];
+    void    *ptr  [URBI_EVENT_PAYLOAD_MAX / sizeof(void *)];
+} __attribute__((aligned(URBI_EVENT_PAYLOAD_ALIGN))) urbi_event_payload_t;
+
+_Static_assert(sizeof(urbi_event_payload_t)  == URBI_EVENT_PAYLOAD_MAX,
+               "ISR payload size pinned at 16 bytes");
+_Static_assert(__alignof__(urbi_event_payload_t) == URBI_EVENT_PAYLOAD_ALIGN,
+               "ISR payload alignment pinned at 8 bytes");
+
 /* === UErrCode: public error codes ===
  *
  * Functions in the public C API return int: 0 = URBI_OK, negative = error.
