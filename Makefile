@@ -280,6 +280,7 @@ test-docstring-coverage:
 .PHONY: test-bake-smoke
 test-bake-smoke: tools/urbi-compile-stdlib
 	@./tests/scripts/bake_smoke.sh
+	@./tests/scripts/test_compile_stdlib_to_header.sh
 
 # URBI_BYTECODE_ONLY smoke gate — originally a Phase 13 (v0.6.1-stdlib
 # Wave 2) shape-only approximation; promoted at v0.7.0-c-api T15 to a

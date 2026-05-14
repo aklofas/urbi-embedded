@@ -38,6 +38,53 @@
 #define MAX_LINE        256
 #define MAX_SOURCE      (1024 * 1024)  /* 1 MiB cap on combined .u sources */
 
+/* emit_header: emit a C header file with the bytecode as a const uint8_t
+ * array named `symbol`, plus a `<symbol>_size` constant.
+ *
+ *   const uint8_t <symbol>[] = { 0xXX, 0xXX, ... };
+ *   const size_t  <symbol>_size = sizeof <symbol>;
+ *
+ * Format is the canonical embedder pre-bake form: the embedder #includes this
+ * header and passes <symbol> / <symbol>_size to urbi_aux_load_and_run (or the
+ * lower-level urbi_module_from_bytes). */
+static void
+emit_header(FILE *out, const unsigned char *blob, size_t blob_len,
+            const char *symbol)
+{
+    fprintf(out,
+        "/* Auto-generated from urbiscript source via urbi-compile-stdlib.\n"
+        " * Do not edit — regenerate with:\n"
+        " *   tools/urbi-compile-stdlib --to-header -i <source>.u -o <file>.h --symbol %s\n"
+        " */\n"
+        "#ifndef URBI_BC_%s_H\n"
+        "#define URBI_BC_%s_H\n"
+        "\n"
+        "#include <stddef.h>\n"
+        "#include <stdint.h>\n"
+        "\n"
+        "static const uint8_t %s[] = {\n",
+        symbol, symbol, symbol, symbol);
+
+    if (blob_len == 0) {
+        fprintf(out, "    0x00\n");
+    } else {
+        for (size_t i = 0; i < blob_len; i++) {
+            if (i % 12 == 0) fprintf(out, "    ");
+            fprintf(out, "0x%02X", blob[i]);
+            if (i + 1 < blob_len) fprintf(out, ",");
+            if ((i + 1) % 12 == 0 || i + 1 == blob_len) fprintf(out, "\n");
+            else fprintf(out, " ");
+        }
+    }
+
+    fprintf(out,
+        "};\n"
+        "static const size_t %s_size = sizeof %s;\n"
+        "\n"
+        "#endif /* URBI_BC_%s_H */\n",
+        symbol, symbol, symbol);
+}
+
 /* Emit the .gen.c file: header comment, byte array, length variable.
  * Output format must be byte-stable for the determinism smoke gate
  * (tests/scripts/bake_smoke.sh): no timestamps, no input-path strings,
@@ -156,15 +203,99 @@ append_source_file(const char *path, char **src, size_t *len, size_t *cap)
 int
 main(int argc, char **argv)
 {
+    /* === --to-header mode ===
+     *
+     * usage: urbi-compile-stdlib --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME
+     *
+     * Compiles a single .u source file and emits a C header with a
+     * `const uint8_t <NAME>[]` array + `const size_t <NAME>_size`.
+     * Intended for embedder pre-bake: include the generated header in
+     * your firmware and pass it to urbi_aux_load_and_run / urbi_module_from_bytes.
+     */
+    int to_header = 0;
+    const char *input_path  = NULL;
+    const char *symbol_name = NULL;
+    const char *out_path    = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--to-header") == 0) {
+            to_header = 1;
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            input_path = argv[++i];
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            out_path = argv[++i];
+        } else if (strcmp(argv[i], "--symbol") == 0 && i + 1 < argc) {
+            symbol_name = argv[++i];
+        }
+    }
+
+    if (to_header) {
+        if (input_path == NULL || out_path == NULL || symbol_name == NULL) {
+            fprintf(stderr,
+                "usage: %s --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME\n",
+                argv[0]);
+            return 2;
+        }
+
+        char  *src     = NULL;
+        size_t src_len = 0;
+        size_t src_cap = 0;
+        if (append_source_file(input_path, &src, &src_len, &src_cap) != 0) {
+            free(src);
+            return 1;
+        }
+
+        unsigned char *bc    = NULL;
+        size_t         bc_len = 0;
+
+        if (src_len > 0) {
+            UVM vm;
+            urbi_vm_init(&vm, NULL, NULL);
+
+            char err[512] = {0};
+            int rc = urbi_compile_source(&vm, src, src_len, input_path,
+                                         &bc, &bc_len, err, sizeof err);
+            urbi_vm_destroy(&vm);
+            free(src);
+
+            if (rc != URBI_OK) {
+                fprintf(stderr, "[bake] compile failed: %s\n",
+                        err[0] ? err : "(no diagnostic)");
+                return 1;
+            }
+        } else {
+            free(src);
+        }
+
+        FILE *out = fopen(out_path, "w");
+        if (!out) {
+            free(bc);
+            fprintf(stderr, "[bake] cannot open %s for writing\n", out_path);
+            return 1;
+        }
+        emit_header(out, bc, bc_len, symbol_name);
+        fclose(out);
+        free(bc);
+
+        fprintf(stderr, "[bake] --to-header: wrote %s (symbol %s, %zu bytes)\n",
+                out_path, symbol_name, bc_len);
+        return 0;
+    }
+
+    /* === Legacy stdlib bake mode ===
+     *
+     * usage: urbi-compile-stdlib STDLIB_ORDER.txt SRC_DIR OUTPUT.gen.c
+     */
     if (argc != 4) {
         fprintf(stderr,
-            "usage: %s STDLIB_ORDER.txt SRC_DIR OUTPUT.gen.c\n",
-            argv[0]);
+            "usage: %s STDLIB_ORDER.txt SRC_DIR OUTPUT.gen.c\n"
+            "   or: %s --to-header -i SOURCE.u -o OUTPUT.h --symbol NAME\n",
+            argv[0], argv[0]);
         return 2;
     }
     const char *order_path = argv[1];
     const char *src_dir    = argv[2];
-    const char *out_path   = argv[3];
+    out_path               = argv[3];
 
     FILE *order = fopen(order_path, "r");
     if (!order) {
