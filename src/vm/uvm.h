@@ -224,7 +224,8 @@ typedef struct {
     UValue  value;
     uint8_t generation;  /* 0..255; increments on each urbi_unref */
     uint8_t in_use;      /* 1 = slot is live; 0 = free */
-    uint8_t pad[2];      /* alignment; zeroed */
+    uint8_t pad[6];      /* free-list next-index in pad[0..2] (24-bit, 3 bytes);
+                          * pad[3..5] reserved / alignment filler */
 } URefSlot;
 
 typedef struct {

@@ -192,7 +192,7 @@ urbi_register_watcher(struct UVM *vm,
 
     /* Verify the event_id is registered (not tombstoned). */
     {
-        UEventRegistryEntry *re = uevent_registry_lookup_by_id(
+        const UEventRegistryEntry *re = uevent_registry_lookup_by_id(
                 &vm->event_registry, event_id);
         if (re == NULL) {
             urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,

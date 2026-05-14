@@ -94,16 +94,14 @@ UEventRegistryEntry *
 uevent_registry_add(UEventRegistry *r, struct UVM *vm)
 {
     UEventRegistryEntry *new_entries;
-    size_t               new_cap;
-    size_t               new_bytes;
 
     /* Reject if next_id would overflow the valid range. */
     if (r->next_id == URBI_EVENT_ID_INVALID) return NULL;
 
     /* Grow array when at capacity. */
     if (r->count >= r->capacity) {
-        new_cap = (r->capacity == 0) ? REGISTRY_INIT_CAPACITY : r->capacity * 2U;
-        new_bytes = new_cap * sizeof(UEventRegistryEntry);
+        size_t new_cap = (r->capacity == 0) ? REGISTRY_INIT_CAPACITY : r->capacity * 2U;
+        size_t new_bytes = new_cap * sizeof(UEventRegistryEntry);
 
         /* Allocate via vm's realloc-style hook:
          *   ptr != NULL, nbytes > 0 → realloc (or first alloc when ptr == NULL). */
@@ -267,8 +265,6 @@ urbi_event_unregister(struct UVM *vm, struct URealm *realm,
                       urbi_event_id_t id)
 {
     UEventRegistryEntry *entry;
-    UValue               nil_payload;
-    const USymbol       *sym;
 
     /* --- Argument validation --- */
     if (vm == NULL || realm == NULL) {
@@ -293,6 +289,7 @@ urbi_event_unregister(struct UVM *vm, struct URealm *realm,
      *     Watcher bodies may observe NIL in R[0] — sentinels are documented
      *     in the embedding guide §4 as a last-fire signal. --- */
     if (entry->event != NULL) {
+        UValue nil_payload;
         nil_payload.kind = (uint8_t)UVAL_NIL;
         nil_payload.v.i  = 0;
         c_event_emit_async(vm, entry->event, nil_payload);
@@ -306,7 +303,7 @@ urbi_event_unregister(struct UVM *vm, struct URealm *realm,
      *     the slot value is a GC-managed UEvent that will not corrupt anything.
      *     The realm parameter is used to resolve global_object. --- */
     if (realm->global_object != NULL && entry->name != NULL) {
-        sym = (const USymbol *)ustr_intern(vm, entry->name, entry->name_len);
+        const USymbol *sym = (const USymbol *)ustr_intern(vm, entry->name, entry->name_len);
         if (sym != NULL) {
             (void)urbi_object_remove_slot(vm, realm->global_object, sym);
         }

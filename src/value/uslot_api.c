@@ -121,10 +121,6 @@ urbi_slot_set(struct UVM *vm, UValue obj,
               const char *name, size_t name_len,
               UValue value)
 {
-    USymbol *sym;
-    int32_t local_idx;
-    int rc;
-
     if (vm == NULL || name == NULL) {
         urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
             "urbi_slot_set: vm or name is NULL",
@@ -141,6 +137,10 @@ urbi_slot_set(struct UVM *vm, UValue obj,
 
     {
         UObject *recv = (UObject *)obj.v.p;
+        USymbol *sym;
+        int32_t  local_idx;
+        int      rc;
+
         if (recv == NULL) {
             urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
                 "urbi_slot_set: object pointer is NULL",

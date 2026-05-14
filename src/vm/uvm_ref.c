@@ -238,7 +238,7 @@ urbi_ref_get(struct UVM *vm, urbi_ref_t ref)
 {
     size_t idx;
     uint8_t gen;
-    URefSlot *s;
+    const URefSlot *s;
 
     if (vm == NULL || ref == URBI_REF_INVALID) return urbi_make_nil();
 
