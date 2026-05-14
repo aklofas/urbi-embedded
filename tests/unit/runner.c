@@ -191,6 +191,7 @@ extern void test_make_value_suite(void);
 extern void test_value_as_suite(void);
 extern void test_make_str_interned_suite(void);
 extern void test_slot_get_suite(void);
+extern void test_slot_set_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -358,6 +359,7 @@ static const struct suite_entry suites[] = {
     {"value_as",               test_value_as_suite},
     {"make_str_interned",      test_make_str_interned_suite},
     {"slot_get",               test_slot_get_suite},
+    {"slot_set",               test_slot_set_suite},
     /* Add new suites here as test files are added. */
 };
 
