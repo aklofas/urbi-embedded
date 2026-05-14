@@ -169,6 +169,71 @@ typedef struct UNestedArrayNode {
     struct UNestedArrayNode *next;     /* linked-list link                  */
 } UNestedArrayNode;
 
+/* --- Gap P (v0.7.1): per-VM error ring buffer storage ---
+ *
+ * UErrorRingEntry: one ring slot — owns the string buffers so the
+ *   urbi_error_info_t const char* pointers never dangle.
+ * UErrorRing: capacity-4 ring.  Inline in UVM (~4 KB).
+ *
+ * Size note: 4 entries × (sizeof urbi_error_info_t + 3×256 B) ≈ 3.2 KB
+ * on 64-bit hosts.  Tests that allocate `UVM vm;` on the stack add this
+ * to the frame; safe on hosted (8 MB default stack) but FreeRTOS embedders
+ * with tight task stacks should allocate UVM on the heap or a static region.
+ *
+ * urbi_error_info_t lives in <urbi/urbi.h> (public header); included
+ * transitively through urbi/types.h → urbi/urbi.h when urbi/urbi.h is
+ * included.  We forward-include it here to keep uvm.h self-contained. */
+#include "urbi/urbi.h"  /* urbi_error_info_t (Gap P struct) */
+
+#define URBI_ERROR_RING_DEPTH  4U
+#define URBI_ERROR_STRING_BUF  256U
+
+typedef struct {
+    urbi_error_info_t info;
+    char              message_buf    [URBI_ERROR_STRING_BUF];
+    char              source_name_buf[URBI_ERROR_STRING_BUF];
+    char              context_buf    [URBI_ERROR_STRING_BUF];
+} UErrorRingEntry;
+
+typedef struct {
+    UErrorRingEntry entries[URBI_ERROR_RING_DEPTH];
+    size_t          head;   /* next write slot index (mod URBI_ERROR_RING_DEPTH) */
+    size_t          count;  /* 0..URBI_ERROR_RING_DEPTH; 0 == empty */
+} UErrorRing;
+
+/* --- Gap Q (v0.7.1): per-VM reference table storage ---
+ *
+ * URefSlot: one table slot — holds the pinned UValue, a generation counter
+ *   (0..255; increments on each urbi_unref to invalidate old handles), and
+ *   an in_use flag.
+ * URefTable: growable heap-allocated array + free-list.  NULL slots == empty.
+ *
+ * Handle encoding: (slot_index << 8) | generation.  Slot 0 is permanently
+ * reserved so URBI_REF_INVALID (== 0) can never be a valid handle.  Valid
+ * handles always have (handle >> 8) >= 1.
+ *
+ * GC integration: ref_table_walk_roots is registered at urbi_vm_init via
+ * urbi_gc_register_root_provider; it calls cb for every in_use slot value
+ * so the GC marks those values live. */
+#define URBI_REF_INDEX_BITS  24U
+#define URBI_REF_GEN_BITS    8U
+#define URBI_REF_INDEX_MASK  ((1U << URBI_REF_INDEX_BITS) - 1U)
+#define URBI_REF_MAX_SLOTS   URBI_REF_INDEX_MASK
+
+typedef struct {
+    UValue  value;
+    uint8_t generation;  /* 0..255; increments on each urbi_unref */
+    uint8_t in_use;      /* 1 = slot is live; 0 = free */
+    uint8_t pad[2];      /* alignment; zeroed */
+} URefSlot;
+
+typedef struct {
+    URefSlot *slots;          /* heap-allocated array; NULL until first urbi_ref */
+    size_t    capacity;       /* number of allocated slots (includes slot 0 sentinel) */
+    size_t    used;           /* number of live (in_use) slots */
+    size_t    free_list_head; /* index of next free slot, or SIZE_MAX if none */
+} URefTable;
+
 /* --- VM state --- */
 
 #define UVM_ERRMSG_CAP 128
@@ -640,6 +705,19 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * script-side UEvent dispatch (c_event_emit_async) completes.
      * Single-threaded at v1.0 — no locking required. */
     UHostWatcherTable host_watcher_table;
+
+    /* --- Gap P (v0.7.1): per-VM error ring buffer ---
+     * Inline storage (~3.2 KB on 64-bit hosts).  See UErrorRing definition
+     * above for the size note and stack-allocation warning.
+     * Zero-initialized at urbi_vm_init (head=0, count=0 → empty ring).
+     * No heap to free in urbi_vm_destroy (all storage is inline). */
+    UErrorRing error_ring;
+
+    /* --- Gap Q (v0.7.1): reference table ---
+     * Heap-allocated URefSlot array; NULL until the first urbi_ref call.
+     * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
+     * (registered at urbi_vm_init). */
+    URefTable ref_table;
 } UVM;
 
 /* --- API --- */

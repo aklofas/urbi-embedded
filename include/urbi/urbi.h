@@ -941,6 +941,88 @@ void urbi_lock_heap(struct UVM *vm);
 uint64_t urbi_get_determinism_checksum(struct UVM *vm);
 #endif /* URBI_DEBUG */
 
+/* === Gap P — error inspection (v0.7.1) ===
+ *
+ * urbi_error_info_t: structured error detail for the most-recent API failure.
+ *
+ *   code        — UErrCode value (negative; URBI_OK == 0 means no error).
+ *   message     — human-readable description (may be empty string).
+ *   source_name — source file or script name (may be empty string).
+ *   source_line — source line number (0 if unknown).
+ *   context     — caller-supplied context tag, e.g. "urbi_event_register"
+ *                 (may be empty string).
+ *
+ * Lifetime: all const char* fields point into UVM-owned storage.  They are
+ * valid until the next API call that mutates error state (any call that
+ * internally invokes urbi_set_error_internal, including itself if it fails).
+ * Copy the strings if you need them across subsequent API calls. */
+typedef struct {
+    int         code;
+    const char *message;
+    const char *source_name;
+    int         source_line;
+    const char *context;
+} urbi_error_info_t;
+
+/* urbi_last_error: read the most-recent error from the per-VM ring.
+ *
+ * Populates *out_info with the most-recent error entry and returns its code.
+ * If the ring is empty (no error since the last urbi_clear_error, or since
+ * VM init), zeroes *out_info and returns URBI_OK (0).
+ *
+ * vm == NULL or out_info == NULL: returns URBI_OK and zeroes *out_info if
+ * out_info is non-NULL.
+ *
+ * Thread safety: MAIN. */
+int  urbi_last_error (struct UVM *vm, urbi_error_info_t *out_info);
+
+/* urbi_clear_error: empty the per-VM error ring.
+ *
+ * After this call, urbi_last_error returns URBI_OK + zeroed info until
+ * the next API call that sets an error.  vm == NULL is a no-op.
+ *
+ * Thread safety: MAIN. */
+void urbi_clear_error(struct UVM *vm);
+
+/* === Gap Q — reference management (v0.7.1) ===
+ *
+ * urbi_ref_t: opaque GC-root handle.  Encodes a 24-bit slot index and an
+ * 8-bit generation counter.  URBI_REF_INVALID (== 0) is the sentinel.
+ *
+ * The ref table is a per-VM growable array.  Slot 0 is permanently reserved
+ * so that URBI_REF_INVALID can never encode a valid slot+generation pair.
+ * Valid handles always have (index >> 8) >= 1. */
+typedef uint32_t urbi_ref_t;
+#define URBI_REF_INVALID ((urbi_ref_t)0)
+
+/* urbi_ref: pin a UValue as a GC root and return an opaque handle.
+ *
+ * The returned handle keeps the value alive across GC cycles until
+ * urbi_unref is called.  Returns URBI_REF_INVALID on OOM (table can't
+ * grow) or if vm == NULL.
+ *
+ * Thread safety: MAIN. */
+urbi_ref_t urbi_ref    (struct UVM *vm, UValue value);
+
+/* urbi_ref_get: retrieve the pinned UValue for a live handle.
+ *
+ * Returns the originally pinned UValue if the handle is valid and live.
+ * Returns urbi_make_nil() if the handle is URBI_REF_INVALID, stale
+ * (generation mismatch after urbi_unref), or vm == NULL.
+ *
+ * Thread safety: MAIN. */
+UValue     urbi_ref_get(struct UVM *vm, urbi_ref_t ref);
+
+/* urbi_unref: release a pinned handle, freeing the slot for reuse.
+ *
+ * Increments the slot's generation counter so any copy of the old handle
+ * becomes stale.  No-op on URBI_REF_INVALID, stale handles, or vm == NULL.
+ * After urbi_unref the value is no longer pinned — the GC may collect it
+ * if no other root keeps it alive.
+ *
+ * Thread safety: MAIN. */
+void       urbi_unref  (struct UVM *vm, urbi_ref_t ref);
+
 #ifdef __cplusplus
 }
 #endif

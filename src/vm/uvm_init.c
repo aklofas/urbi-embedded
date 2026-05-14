@@ -13,6 +13,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"
+#include "vm/uvm_ref.h"           /* ref_table_walk_roots */
 #include "runtime/umacros.h"      /* urbi_zero */
 #include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
@@ -373,6 +374,19 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * Zero-initialize so uhost_watcher_table_add knows entries == NULL on first use. */
     uhost_watcher_table_init(&vm->host_watcher_table);
 
+    /* Gap P (v0.7.1): error ring buffer — inline storage, no heap.
+     * Only head and count need zeroing (bufs are uninitialized until written). */
+    vm->error_ring.head  = 0U;
+    vm->error_ring.count = 0U;
+
+    /* Gap Q (v0.7.1): reference table — heap-allocated lazily on first urbi_ref.
+     * Register the GC root walker so pinned values survive collection. */
+    vm->ref_table.slots          = NULL;
+    vm->ref_table.capacity       = 0U;
+    vm->ref_table.used           = 0U;
+    vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
+    urbi_gc_register_root_provider(vm, ref_table_walk_roots);
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
@@ -441,6 +455,15 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* Gap J (v0.7.1): free host-watcher table entries[] array. */
     uhost_watcher_table_destroy(&vm->host_watcher_table, vm);
+
+    /* Gap P (v0.7.1): error ring — inline storage; no heap to free. */
+
+    /* Gap Q (v0.7.1): reference table — free heap-allocated slots array. */
+    if (vm->ref_table.slots != NULL && vm->alloc_fn != NULL) {
+        vm->alloc_fn(vm->ref_table.slots, 0, vm->alloc_ud);
+        vm->ref_table.slots    = NULL;
+        vm->ref_table.capacity = 0U;
+    }
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
