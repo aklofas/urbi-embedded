@@ -20,6 +20,20 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
      * and reset (via urbi_strand_reset) or shut down before calling again. */
     if (vm->fatal_strand) return URBI_STEP_FATAL;
 
+    /* Gap R: URBI_DEBUG watchdog for open atomic sections.
+     * If the embedder called urbi_atomic_begin and hasn't called urbi_atomic_end
+     * before the next urbi_step, check whether the section has been held longer
+     * than URBI_ATOMIC_MAX_US microseconds.  Requires host_time_us. */
+#ifdef URBI_DEBUG
+    if (vm->atomic_active && vm->host_time_us != NULL) {
+        uint64_t now     = vm->host_time_us();
+        uint64_t elapsed = now - vm->atomic_begin_us;
+        if (elapsed > (uint64_t)URBI_ATOMIC_MAX_US) {
+            urbi_panic("atomic section exceeded URBI_ATOMIC_MAX_US");
+        }
+    }
+#endif
+
     /* Drain any ISR-injected events before running bytecode. */
     if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
         uevent_ring_drain(vm);

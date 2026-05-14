@@ -596,6 +596,20 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * in <urbi/urbi.h> expands to a function pointer with the exact same
      * shape, so the setter wires through cleanly across the seam. */
     void (*watcher_body_done_fn)(struct UVM *vm, int handle, int completion_status);
+
+    /* --- Gap R: atomic event section state (v0.7.1) ---
+     * atomic_active: true while urbi_atomic_begin has been called and
+     *   urbi_atomic_end has not yet been called.  When true, uevent_ring_drain
+     *   is a no-op so ISR-deposited events stay queued until urbi_atomic_end
+     *   clears the flag and triggers a drain pass.
+     * atomic_begin_us: monotonic timestamp (microseconds) captured at
+     *   urbi_atomic_begin; used by the URBI_DEBUG watchdog in urbi_step to
+     *   detect sections held beyond URBI_ATOMIC_MAX_US.  Only valid when
+     *   atomic_active is true.
+     * Both fields are zeroed by urbi_vm_init (part of the zero-init UVM). */
+    uint8_t  atomic_active;
+    uint8_t  pad_atomic[7];     /* alignment padding; zeroed */
+    uint64_t atomic_begin_us;
 } UVM;
 
 /* --- API --- */

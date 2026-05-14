@@ -102,6 +102,10 @@ uevent_ring_drain(struct UVM *vm)
     uint32_t w, rd, drained;
 
     if (!vm) return;
+    /* Gap R: atomic section guard.  When atomic_active is set, the
+     * embedder has bracketed a group of ISR events (urbi_atomic_begin /
+     * urbi_atomic_end); hold all ring entries until the section closes. */
+    if (vm->atomic_active) return;
     r = vm->event_ring;
     if (!r) return;
 
