@@ -202,6 +202,7 @@ extern void test_register_dup_name_suite(void);
 extern void test_atomic_batch_suite(void);
 extern void test_atomic_nesting_suite(void);
 extern void test_atomic_watchdog_suite(void);
+extern void test_event_register_success_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -380,6 +381,7 @@ static const struct suite_entry suites[] = {
     {"atomic_batch",          test_atomic_batch_suite},
     {"atomic_nesting",        test_atomic_nesting_suite},
     {"atomic_watchdog",       test_atomic_watchdog_suite},
+    {"event_register_success", test_event_register_success_suite},
     /* Add new suites here as test files are added. */
 };
 
