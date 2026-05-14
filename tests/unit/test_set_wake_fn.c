@@ -81,6 +81,9 @@ UTEST(wake_fires_from_isr_context)
     UASSERT_EQ(rc, URBI_OK);
     UASSERT_EQ(g_wake_count, 1);
 
+    /* Uninstall ISR predicate before VM destroy — destroy calls non-ISR-safe
+     * functions; URBI_ASSERT_NOT_ISR would fire if the predicate stayed. */
+    urbi_set_isr_check_fn(&vm, NULL);
     urbi_vm_destroy(&vm);
 }
 
