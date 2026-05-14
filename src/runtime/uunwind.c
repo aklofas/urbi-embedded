@@ -486,6 +486,11 @@ urbi_tag_stop(struct UVM *vm, struct UTag *tag, UValue value)
         }
     }
 
+    /* (1b) Mark the tag as stopped so urbi_tag_info can report URBI_TAG_STOPPED.
+     * UTAG_FLAG_STOPPED was declared at v0.5.x as RESERVED; v0.7.1 activates it
+     * here (Gap M) so the public urbi_tag_state_t surface reflects real state. */
+    tag->flags |= UTAG_FLAG_STOPPED;
+
     /* (2) Watcher cascade: push each watcher registered on this tag to the
      * pending-onleave queue.  Snapshot-next iteration since push unlinks each
      * watcher from tag->member_watchers_head as it goes. */
