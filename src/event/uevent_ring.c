@@ -6,6 +6,7 @@
 #include "event/uevent_ring.h"
 #include "event/uevent_registry.h"  /* UEventRegistry, uevent_registry_lookup_by_id */
 #include "event/uevent_emit.h"      /* c_event_emit_async */
+#include "watcher/uwatcher_host.h"  /* uhost_watcher_table_walk_event (Gap J) */
 #include "vm/uvm.h"
 #include "urbi/urbi.h"  /* URBI_ERR_EVENT_* error codes, urbi_make_nil */
 #include <stdint.h>
@@ -183,7 +184,9 @@ uevent_ring_drain(struct UVM *vm)
                     }
                 }
 
-                /* Emit: single-payload for now (first arg or NIL). */
+                /* Emit script-side watcher (UEvent dispatch, single-payload).
+                 * Dispatch ordering: script-side UEvent first (so `at(name?)`
+                 * watcher bodies are queued), then host-side callbacks below. */
                 if (argc > 0) {
                     payload = args[0];
                 } else {
@@ -191,6 +194,17 @@ uevent_ring_drain(struct UVM *vm)
                     payload.v.i  = 0;
                 }
                 c_event_emit_async(vm, re->event, payload);
+
+                /* Gap J (v0.7.1): dispatch host-side watchers.
+                 * Pass ALL destructured args (argc, args[0..argc-1]) so host
+                 * watchers receive the full multi-arg payload.  This closes the
+                 * Sub-Bundle 2 multi-arg deferral for the host-watcher path.
+                 * Note: script-side `at(name?)` bodies still see only args[0]
+                 * via c_event_emit_async above — full multi-arg script threading
+                 * is a separate v1.x item. */
+                uhost_watcher_table_walk_event(&vm->host_watcher_table, vm,
+                        (urbi_event_id_t)e->event_id,
+                        (argc > 0) ? args : NULL, argc);
 
                 rd = (rd + 1U) & (uint32_t)(URBI_EVENT_RING_DEPTH - 1U);
                 drained++;

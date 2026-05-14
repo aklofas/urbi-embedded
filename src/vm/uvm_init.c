@@ -369,6 +369,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * Zero-initialize so uevent_registry_add knows entries == NULL on first use. */
     uevent_registry_init(&vm->event_registry);
 
+    /* Gap J (v0.7.1): host-side watcher table.
+     * Zero-initialize so uhost_watcher_table_add knows entries == NULL on first use. */
+    uhost_watcher_table_init(&vm->host_watcher_table);
+
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C
      * stack would overflow with a 4 KB inline IC). */
@@ -434,6 +438,9 @@ void urbi_vm_destroy(UVM *vm) {
      * UEvent cells; the registry only held raw (non-owning) pointers to them.
      * Interned name strings are freed by uintern_destroy (below). */
     uevent_registry_destroy(&vm->event_registry, vm);
+
+    /* Gap J (v0.7.1): free host-watcher table entries[] array. */
+    uhost_watcher_table_destroy(&vm->host_watcher_table, vm);
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);

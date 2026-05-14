@@ -33,6 +33,9 @@ struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h
 /* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
 #include "event/uevent_registry.h"
 
+/* Gap J (v0.7.1): host-side watcher table — full type needed in UVM struct. */
+#include "watcher/uwatcher_host.h"
+
 /* --- M3 capacity macros --- */
 /* Dead path — uvm.h always pulls urbi/gc.h.  Guard retained only to prevent
  * double-definition warnings if ugc_incremental.h is included standalone. */
@@ -627,6 +630,16 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * A future GC root walker for the registry is deferred to v1.x if
      * urbi_event_unregister needs to support explicit removal. */
     UEventRegistry event_registry;
+
+    /* --- Gap J (v0.7.1): host-side reactive watcher table ---
+     * Growable array of UHostWatcher entries installed via
+     * urbi_register_watcher.  Zero-initialized at urbi_vm_init.
+     * Freed at urbi_vm_destroy via uhost_watcher_table_destroy.
+     *
+     * Walking and dispatch happen in uevent_ring_drain after the
+     * script-side UEvent dispatch (c_event_emit_async) completes.
+     * Single-threaded at v1.0 — no locking required. */
+    UHostWatcherTable host_watcher_table;
 } UVM;
 
 /* --- API --- */
