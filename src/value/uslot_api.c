@@ -28,6 +28,7 @@
                                        urbi_atom_proto_for_value */
 #include "object/ushape.h"          /* URBI_SLOT_FLAG_CONSTANT, urbi_shape_find_slot */
 #include "vm/uvm.h"
+#include "vm/uvm_error.h"           /* urbi_set_error_internal (Gap P) */
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 
@@ -47,7 +48,15 @@ urbi_slot_get(struct UVM *vm, UValue obj,
               const char *name, size_t name_len,
               UValue *out_value)
 {
+    int rc;
+    USymbol *sym;
+    UObject *recv;
+    UValue result;
+
     if (vm == NULL || name == NULL || out_value == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_slot_get: vm, name, or out_value is NULL",
+            NULL, 0, "urbi_slot_get");
         return URBI_ERR_INVALID_ARG;
     }
 
@@ -55,26 +64,34 @@ urbi_slot_get(struct UVM *vm, UValue obj,
      * ustr_intern returns const char* which aliases USymbol* by convention
      * (USymbol is an opaque forward-struct whose canonical rep is the
      * interned pointer — see umodule.h / uintern.c). */
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
+    sym = (USymbol *)ustr_intern(vm, name, name_len);
     if (sym == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_OOM,
+            "urbi_slot_get: OOM interning slot name",
+            NULL, 0, "urbi_slot_get");
         return URBI_ERR_OOM;
     }
 
     /* Resolve the receiver object to walk. For atoms, route through the
      * atom proto so slot lookup mirrors OP_GETSLOT slow-path semantics. */
-    UObject *recv = urbi_atom_proto_for_value(vm, obj);
+    recv = urbi_atom_proto_for_value(vm, obj);
     if (recv == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_SLOT_NOT_FOUND,
+            "urbi_slot_get: slot not found",
+            NULL, 0, "urbi_slot_get");
         return URBI_ERR_SLOT_NOT_FOUND;
     }
 
     /* Walk the prototype chain. urbi_object_lookup is the cycle-safe DFS
      * walker that respects the left-first prototype ordering.
      * Returns 0 on hit (out populated), -1 on miss or stack overflow. */
-    UValue result;
     result.kind = (uint8_t)UVAL_NIL;
     result.v.i  = 0;
-    int rc = urbi_object_lookup(vm, recv, sym, &result);
+    rc = urbi_object_lookup(vm, recv, sym, &result);
     if (rc < 0) {
+        urbi_set_error_internal(vm, URBI_ERR_SLOT_NOT_FOUND,
+            "urbi_slot_get: slot not found",
+            NULL, 0, "urbi_slot_get");
         return URBI_ERR_SLOT_NOT_FOUND;
     }
 
@@ -104,46 +121,70 @@ urbi_slot_set(struct UVM *vm, UValue obj,
               const char *name, size_t name_len,
               UValue value)
 {
+    USymbol *sym;
+    int32_t local_idx;
+    int rc;
+
     if (vm == NULL || name == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_slot_set: vm or name is NULL",
+            NULL, 0, "urbi_slot_set");
         return URBI_ERR_INVALID_ARG;
     }
     /* Atoms (non-OBJECT) do not accept local slot writes. */
     if (obj.kind != (uint8_t)UVAL_OBJECT) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_slot_set: receiver is not an object",
+            NULL, 0, "urbi_slot_set");
         return URBI_ERR_INVALID_ARG;
     }
 
-    UObject *recv = (UObject *)obj.v.p;
-    if (recv == NULL) {
-        return URBI_ERR_INVALID_ARG;
-    }
-
-    /* Intern the name (same USymbol* aliasing as urbi_slot_get above). */
-    USymbol *sym = (USymbol *)ustr_intern(vm, name, name_len);
-    if (sym == NULL) {
-        return URBI_ERR_OOM;
-    }
-
-    /* Check whether the slot exists locally on `recv` and is const-flagged.
-     * Only a LOCAL (same-object) const slot rejects the write; a const slot
-     * on a prototype results in a mutable COW copy (pre-M2 §6.1, §8.1). */
-    int32_t local_idx = urbi_shape_find_slot(recv->shape, sym);
-    if (local_idx >= 0) {
-        /* Slot exists locally. Check the CONSTANT flag. */
-        if (local_idx < 8) {
-            uint32_t shift  = (uint32_t)local_idx * 4U;
-            uint32_t nibble = (recv->shape->flags >> shift) & 0x0FU;
-            if (nibble & URBI_SLOT_FLAG_CONSTANT) {
-                return URBI_ERR_CONST_SLOT_WRITE;
-            }
+    {
+        UObject *recv = (UObject *)obj.v.p;
+        if (recv == NULL) {
+            urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+                "urbi_slot_set: object pointer is NULL",
+                NULL, 0, "urbi_slot_set");
+            return URBI_ERR_INVALID_ARG;
         }
-        /* Local mutable slot: in-place update via set_local_slot. */
-    }
-    /* For new slots (local_idx < 0) or inherited slots (COW install):
-     * urbi_object_set_local_slot handles both cases correctly.
-     * For existing local mutable slots, it does an in-place update. */
-    int rc = urbi_object_set_local_slot(vm, recv, sym, value);
-    if (rc != 0) {
-        return URBI_ERR_OOM;
+
+        /* Intern the name (same USymbol* aliasing as urbi_slot_get above). */
+        sym = (USymbol *)ustr_intern(vm, name, name_len);
+        if (sym == NULL) {
+            urbi_set_error_internal(vm, URBI_ERR_OOM,
+                "urbi_slot_set: OOM interning slot name",
+                NULL, 0, "urbi_slot_set");
+            return URBI_ERR_OOM;
+        }
+
+        /* Check whether the slot exists locally on `recv` and is const-flagged.
+         * Only a LOCAL (same-object) const slot rejects the write; a const slot
+         * on a prototype results in a mutable COW copy (pre-M2 §6.1, §8.1). */
+        local_idx = urbi_shape_find_slot(recv->shape, sym);
+        if (local_idx >= 0) {
+            /* Slot exists locally. Check the CONSTANT flag. */
+            if (local_idx < 8) {
+                uint32_t shift  = (uint32_t)local_idx * 4U;
+                uint32_t nibble = (recv->shape->flags >> shift) & 0x0FU;
+                if (nibble & URBI_SLOT_FLAG_CONSTANT) {
+                    urbi_set_error_internal(vm, URBI_ERR_CONST_SLOT_WRITE,
+                        "urbi_slot_set: slot is const",
+                        NULL, 0, "urbi_slot_set");
+                    return URBI_ERR_CONST_SLOT_WRITE;
+                }
+            }
+            /* Local mutable slot: in-place update via set_local_slot. */
+        }
+        /* For new slots (local_idx < 0) or inherited slots (COW install):
+         * urbi_object_set_local_slot handles both cases correctly.
+         * For existing local mutable slots, it does an in-place update. */
+        rc = urbi_object_set_local_slot(vm, recv, sym, value);
+        if (rc != 0) {
+            urbi_set_error_internal(vm, URBI_ERR_OOM,
+                "urbi_slot_set: OOM allocating slot",
+                NULL, 0, "urbi_slot_set");
+            return URBI_ERR_OOM;
+        }
     }
     return URBI_OK;
 }

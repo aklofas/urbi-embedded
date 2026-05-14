@@ -16,6 +16,7 @@
 #include "watcher/uwatcher_host.h"
 #include "vm/uvm.h"                 /* UVM, vm->alloc_fn, vm->host_watcher_table */
 #include "event/uevent_registry.h"  /* uevent_registry_lookup_by_id, UEventRegistryEntry */
+#include "vm/uvm_error.h"           /* urbi_set_error_internal (Gap P) */
 #include "urbi/types.h"             /* URBI_OK, URBI_ERR_INVALID_ARG, UErrCode */
 #include "urbi/urbi.h"              /* urbi_watcher_fn, URBI_WATCHER_HANDLE_INVALID,
                                      * URBI_ERR_WATCHER_UNREGISTER */
@@ -176,18 +177,38 @@ urbi_register_watcher(struct UVM *vm,
 
     (void)realm;   /* realm param: reserved for future per-realm scoping */
 
-    if (vm == NULL || cb == NULL) return URBI_WATCHER_HANDLE_INVALID;
-    if (event_id == URBI_EVENT_ID_INVALID) return URBI_WATCHER_HANDLE_INVALID;
+    if (vm == NULL || cb == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_register_watcher: vm or cb is NULL",
+            NULL, 0, "urbi_register_watcher");
+        return URBI_WATCHER_HANDLE_INVALID;
+    }
+    if (event_id == URBI_EVENT_ID_INVALID) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_register_watcher: event_id is URBI_EVENT_ID_INVALID",
+            NULL, 0, "urbi_register_watcher");
+        return URBI_WATCHER_HANDLE_INVALID;
+    }
 
     /* Verify the event_id is registered (not tombstoned). */
     {
         UEventRegistryEntry *re = uevent_registry_lookup_by_id(
                 &vm->event_registry, event_id);
-        if (re == NULL) return URBI_WATCHER_HANDLE_INVALID;
+        if (re == NULL) {
+            urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+                "urbi_register_watcher: event_id not registered in this VM",
+                NULL, 0, "urbi_register_watcher");
+            return URBI_WATCHER_HANDLE_INVALID;
+        }
     }
 
     entry = uhost_watcher_table_add(&vm->host_watcher_table, vm);
-    if (entry == NULL) return URBI_WATCHER_HANDLE_INVALID;
+    if (entry == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_OOM,
+            "urbi_register_watcher: OOM growing watcher table",
+            NULL, 0, "urbi_register_watcher");
+        return URBI_WATCHER_HANDLE_INVALID;
+    }
 
     entry->event_id = event_id;
     entry->cb       = cb;
@@ -206,14 +227,27 @@ urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle)
 {
     size_t i;
 
-    if (vm == NULL)                            return URBI_ERR_INVALID_ARG;
-    if (handle == URBI_WATCHER_HANDLE_INVALID) return URBI_ERR_INVALID_ARG;
+    if (vm == NULL) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_unregister_watcher: vm is NULL",
+            NULL, 0, "urbi_unregister_watcher");
+        return URBI_ERR_INVALID_ARG;
+    }
+    if (handle == URBI_WATCHER_HANDLE_INVALID) {
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_unregister_watcher: handle is URBI_WATCHER_HANDLE_INVALID",
+            NULL, 0, "urbi_unregister_watcher");
+        return URBI_ERR_INVALID_ARG;
+    }
 
     for (i = 0U; i < vm->host_watcher_table.count; i++) {
         UHostWatcher *e = &vm->host_watcher_table.entries[i];
         if (e->handle == handle) {
             if (e->pending_unregister) {
                 /* Already pending removal: treat as not found. */
+                urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+                    "urbi_unregister_watcher: handle already pending removal",
+                    NULL, 0, "urbi_unregister_watcher");
                 return URBI_ERR_INVALID_ARG;
             }
             e->pending_unregister = 1U;
@@ -221,5 +255,8 @@ urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle)
         }
     }
 
+    urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+        "urbi_unregister_watcher: handle not found",
+        NULL, 0, "urbi_unregister_watcher");
     return URBI_ERR_INVALID_ARG;
 }

@@ -9,6 +9,7 @@
 #include "event/uevent_native.h"     /* uvalue_from_event */
 #include "event/uevent_emit.h"       /* c_event_emit_async (sentinel dispatch) */
 #include "vm/uvm.h"                  /* UVM, alloc_fn, last_error, heap_locked */
+#include "vm/uvm_error.h"            /* urbi_set_error_internal (Gap P) */
 #include "realm/urealm.h"            /* URealm, global_object */
 #include "runtime/umacros.h"         /* urbi_zero, urbi_memeq, urbi_strlen */
 #include "value/uintern.h"           /* ustr_intern */
@@ -160,7 +161,9 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
 
     /* --- Argument validation --- */
     if (vm == NULL || realm == NULL || name == NULL) {
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, URBI_ERR_INVALID_ARG,
+            "urbi_event_register: vm, realm, or name is NULL",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
 
@@ -169,13 +172,17 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
     interned = ustr_intern(vm, name, name_len);
     if (interned == NULL) {
         /* OOM in intern table. */
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, URBI_ERR_OOM,
+            "urbi_event_register: OOM interning event name",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
 
     /* --- Duplicate-name check --- */
     if (uevent_registry_lookup_by_name(&vm->event_registry, interned, name_len) != NULL) {
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, URBI_ERR_EVENT_NAME_TAKEN,
+            "urbi_event_register: event name already registered",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
 
@@ -183,7 +190,9 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
     ev = urbi_event_create(vm);
     if (ev == NULL) {
         /* OOM from GC allocator. */
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, URBI_ERR_OOM,
+            "urbi_event_register: OOM allocating UEvent",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
 
@@ -192,7 +201,9 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
     if (entry == NULL) {
         /* OOM growing the entries[] array.  The UEvent is already allocated
          * and GC-managed; it will be collected naturally — no manual free. */
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, URBI_ERR_OOM,
+            "urbi_event_register: OOM growing registry entries",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
     entry->event       = ev;
@@ -208,7 +219,9 @@ urbi_event_register(struct UVM *vm, struct URealm *realm,
         /* Undo: remove the entry we just appended (shrink count). */
         vm->event_registry.count--;
         vm->event_registry.next_id--;
-        /* TODO Phase 8: set urbi_last_error before returning */
+        urbi_set_error_internal(vm, rc,
+            "urbi_event_register: failed to install realm global",
+            NULL, 0, "urbi_event_register");
         return URBI_EVENT_ID_INVALID;
     }
 
