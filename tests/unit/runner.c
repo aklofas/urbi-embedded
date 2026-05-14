@@ -213,6 +213,7 @@ extern void test_unregister_watcher_suite(void);
 extern void test_watcher_done_fanout_suite(void);
 extern void test_imu_integration_suite(void);
 extern void test_last_error_populated_suite(void);
+extern void test_error_string_lifetime_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -402,6 +403,7 @@ static const struct suite_entry suites[] = {
     {"watcher_done_fanout",          test_watcher_done_fanout_suite},
     {"imu_integration",              test_imu_integration_suite},
     {"last_error_populated",         test_last_error_populated_suite},
+    {"error_string_lifetime",        test_error_string_lifetime_suite},
     /* Add new suites here as test files are added. */
 };
 
