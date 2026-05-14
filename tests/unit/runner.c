@@ -187,6 +187,7 @@ extern void test_watcher_body_done_fn_suite(void);
 extern void test_event_payload_layout_suite(void);
 extern void test_make_native_closure_suite(void);
 extern void test_value_kind_drift_suite(void);
+extern void test_make_value_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -350,6 +351,7 @@ static const struct suite_entry suites[] = {
     {"event_payload_layout",   test_event_payload_layout_suite},
     {"make_native_closure",    test_make_native_closure_suite},
     {"value_kind_drift",       test_value_kind_drift_suite},
+    {"make_value",             test_make_value_suite},
     /* Add new suites here as test files are added. */
 };
 
