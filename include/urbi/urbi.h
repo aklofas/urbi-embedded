@@ -314,6 +314,27 @@ typedef int (*urbi_native_method_fn)(struct UVM *vm,
 struct UClosure *urbi_make_native_closure(struct UVM *vm,
                                           urbi_native_method_fn fn);
 
+/* === Gap A — host-function registration (v0.7.1) ===
+ *
+ * urbi_register: install a native C function as a script-visible global.
+ * Composite of urbi_make_native_closure (Gap L) + urbi_realm_set_global_const.
+ * The binding is const by default — re-registering the same name returns
+ * URBI_ERR_CONST_SLOT_WRITE.
+ *
+ * vm     — the VM owning the closure allocation.
+ * realm  — target realm; NULL uses the VM's global realm.
+ * name   — NUL-terminated symbol name (e.g., "myFn").
+ * fn     — the C function to back the closure; must be non-NULL.
+ *
+ * Returns URBI_OK on success.
+ * Returns URBI_ERR_INVALID_ARG if vm, name, or fn is NULL.
+ * Returns URBI_ERR_OOM if the closure allocation or slot intern fails.
+ * Returns URBI_ERR_CONST_SLOT_WRITE if a binding with this name already exists.
+ *
+ * Thread safety: MAIN. */
+int urbi_register(struct UVM *vm, struct URealm *realm,
+                  const char *name, urbi_native_method_fn fn);
+
 /* === Gap M — tag state types (v0.7.1) ===
  *
  * urbi_tag_state_t: observable state of a UTag derived from its flags byte.
@@ -532,6 +553,37 @@ void urbi_set_time_us(struct UVM *vm, urbi_time_us_fn fn);
 typedef void (*urbi_wake_fn)(void *ud);
 
 void urbi_set_wake_fn(struct UVM *vm, urbi_wake_fn fn, void *ud);
+
+/* === Gap R — atomic event sections (v0.7.1) ===
+ *
+ * urbi_atomic_begin / urbi_atomic_end: bracket a group of ISR-deposited
+ * events that must be observed together.  While atomic_active is true,
+ * uevent_ring_drain is a no-op; all ring entries stay queued until
+ * urbi_atomic_end clears the flag and triggers a drain pass.
+ *
+ * Typical use (IMU pattern — accelerometer + gyroscope simultaneously):
+ *   urbi_atomic_begin(vm);
+ *   urbi_inject_event(vm, ACCEL_ID);
+ *   urbi_inject_event(vm, GYRO_ID);
+ *   urbi_atomic_end(vm);
+ *   // Both watcher bodies see the same tick; no partial observation.
+ *
+ * Nesting: NOT supported.  In URBI_DEBUG builds, calling urbi_atomic_begin
+ * while already active triggers urbi_panic ("atomic section nested").
+ * Release builds have undefined behaviour for double-begin.
+ *
+ * Watchdog: in URBI_DEBUG builds, urbi_step checks whether the section
+ * has been held for more than URBI_ATOMIC_MAX_US microseconds and calls
+ * urbi_panic if so.  Requires vm->host_time_us to be installed.
+ *
+ * Thread safety: MAIN (urbi_atomic_begin and urbi_atomic_end must be
+ * called from the same thread that drives urbi_step). */
+#ifndef URBI_ATOMIC_MAX_US
+#  define URBI_ATOMIC_MAX_US 100U
+#endif
+
+void urbi_atomic_begin(struct UVM *vm);
+void urbi_atomic_end(struct UVM *vm);
 
 /* === Reactive: watcher-body-completion callback (Wave 1 T33) ===
  *
