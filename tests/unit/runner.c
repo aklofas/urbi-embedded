@@ -189,6 +189,7 @@ extern void test_make_native_closure_suite(void);
 extern void test_value_kind_drift_suite(void);
 extern void test_make_value_suite(void);
 extern void test_value_as_suite(void);
+extern void test_make_str_interned_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -354,6 +355,7 @@ static const struct suite_entry suites[] = {
     {"value_kind_drift",       test_value_kind_drift_suite},
     {"make_value",             test_make_value_suite},
     {"value_as",               test_value_as_suite},
+    {"make_str_interned",      test_make_str_interned_suite},
     /* Add new suites here as test files are added. */
 };
 
