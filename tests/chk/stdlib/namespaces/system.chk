@@ -1,13 +1,16 @@
-# Milestone: M6 Wave 2
+# Milestone: M6 Wave 2 (+ M7 Wave 2 part 2: System.time_us)
 # Covers: Phase 8 (T87) System namespace primitives.
 #
-# System.time   — monotonic-microseconds reading scaled to seconds (Float).
-#                 Uses vm->host_time_us which defaults to clock_gettime
-#                 (CLOCK_MONOTONIC) on POSIX hosts; freestanding stub
-#                 returns 0.
-# System.cycle  — per-VM monotonic lookup-id counter (Integer).
-# System.getenv — libc getenv() shim (hosted) or always-nil (freestanding).
-# System.gc     — explicit full GC pass; returns nil.
+# System.time    — monotonic-microseconds reading scaled to seconds (Float).
+#                  Uses vm->host_time_us which defaults to clock_gettime
+#                  (CLOCK_MONOTONIC) on POSIX hosts; freestanding stub
+#                  returns 0.
+# System.time_us — raw monotonic microseconds as Integer (no Float
+#                  conversion).  Companion to System.time for sub-ms
+#                  precision and integer ordering arithmetic.
+# System.cycle   — per-VM monotonic lookup-id counter (Integer).
+# System.getenv  — libc getenv() shim (hosted) or always-nil (freestanding).
+# System.gc      — explicit full GC pass; returns nil.
 #
 # Wall-clock-since-epoch System.time semantics from legacy Urbi 2.x is
 # narrowed to monotonic-since-VM-start at v1.0; full Date primitive
@@ -17,20 +20,28 @@
 System.time() >= 0.asFloat()
 [00000000] true
 
+# System.time_us returns a positive Integer (or zero on freestanding stub).
+System.time_us() >= 0
+[00000001] true
+
+# System.time_us is monotonic — two reads with intervening work return >=.
+var t1 = System.time_us(); var t2 = System.time_us(); t2 >= t1
+[00000002] true
+
 # System.cycle returns a positive Integer (lookup_id starts at 1).
 System.cycle() > 0
-[00000001] true
+[00000003] true
 
 # System.cycle is monotonic — two reads with intervening work return >=.
 var c1 = System.cycle(); var c2 = System.cycle(); c2 >= c1
-[00000002] true
+[00000004] true
 
 # System.gc returns nil and does not crash.
 System.gc()
-[00000003] nil
+[00000005] nil
 
 # System.getenv on a guaranteed-set variable (PATH on POSIX) is non-nil
 # on hosted builds.  Freestanding stub always returns nil.  Either way,
 # the result is acceptable — verify the function exists by calling it.
 System.getenv("PATH") != "URBI_NEVER_SET_THIS"
-[00000004] true
+[00000006] true

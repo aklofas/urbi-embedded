@@ -166,6 +166,26 @@ sys_time(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
     return UEXEC_OK;
 }
 
+/* === System.time_us ======================================================
+ *
+ * Returns monotonic microseconds since VM start as an Integer — the raw
+ * vm->host_time_us reading with no scaling.  Companion to System.time
+ * (which returns the same reading scaled to seconds as Float).
+ *
+ * Use when sub-millisecond precision matters (control loops, frame-timing
+ * deltas, deadline arithmetic) or when integer arithmetic is preferred
+ * over Float for ordering / monotonicity checks. */
+
+static int
+sys_time_us(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "System.time_us", 0, nargs, out);
+    uint64_t us = (vm->host_time_us != NULL) ? vm->host_time_us() : 0U;
+    *out = val_int((int64_t)us);
+    return UEXEC_OK;
+}
+
 /* === System.cycle ========================================================
  *
  * Returns the per-VM monotonic lookup-id counter as an Integer.  This
@@ -236,10 +256,11 @@ sys_gc(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
 }
 
 static const NsMethodEntry SYSTEM_METHODS[] = {
-    { "time",   sys_time   },
-    { "cycle",  sys_cycle  },
-    { "getenv", sys_getenv },
-    { "gc",     sys_gc     }
+    { "time",    sys_time    },
+    { "time_us", sys_time_us },
+    { "cycle",   sys_cycle   },
+    { "getenv",  sys_getenv  },
+    { "gc",      sys_gc      }
 };
 
 #define SYSTEM_METHODS_COUNT (sizeof(SYSTEM_METHODS) / sizeof(SYSTEM_METHODS[0]))
