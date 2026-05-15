@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — v0.7.2-esp32 (M7 Wave 2 part 2 — ESP-IDF port)
+
+**Theme:** First MCU port. ESP-IDF v6.0.1 against ESP32-S3; `components/urbi/` managed-component shell consumes the locked v0.7.1 ABI; ESP32-S3-EYE color blob tracking demo; QEMU reactive-smoke CI gate; ESP-IDF appendix to the embedding guide. Pure additive — zero changes to the v0.7.1 public API surface; wire format unchanged at v1.5 / 0x15. ABI bump 0/7/1 → 0/7/2 (PATCH).
+
+### Added
+
+### Build
+
+### Tests
+
+### CI
+
+### Docs
+
+---
+
 ## v0.7.1-embedding-api — 2026-05-14 (M7 Wave 2 — library-complete C embedding API)
 
 **Tag:** `v0.7.1-embedding-api`
