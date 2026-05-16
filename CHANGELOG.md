@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.7.3-bugfixes — 2026-05-16 (cascade-wake structural fix via UProto refcount)
+
+**Tag:** `v0.7.3-bugfixes`
+**Theme:** Closes the v0.7.2-shipped OPEN cascade-wake bug structurally via Piece A of the closure-lifetime spec — UProto refcount. The frame_count tactical fix (committed as the baseline of this release) gets replaced by a refcount-aware ownership model: each UProto carries a `uint16_t refcount`; `vm_alloc_closure` bumps, `pool_free` decrements, `umodule_destroy` discharges the nested-slot ref and rescues non-zero-refcount protos to `vm->stdlib_protos`. Closes WATCH-015 from the v1.x backlog. Full Phase 2-3 of the original closure-lifetime spec (UClosure GC promotion + dead-infrastructure cleanup) deferred to a future release with its own sizing — the cascade fix doesn't need them, and M6 Phase 3 closure migration already mitigates the function-body dangling-cl case the GC promotion would have addressed.
+
+### Fixed
+
+- **Cascade-wake crash** (v0.7.2-shipped OPEN, design-risks entry "waituntil cascade-wake crashes when 3+ strands wake simultaneously"). Structural fix via UProto refcount makes the proto outlive `pool_free`'s decrement when the nested[] slot still references it. Multi-install of the same compile-time cond proto (function called multiple times via at-event refire-queue) is now safe end-to-end.
+- **WATCH-015** (v1.x backlog item — "UProto refcount for closure-aliasing safety"). The predicted "future caller invariant change" that would surface the proto-aliasing bug was exactly the cascade scenario.
+
+### Changed
+
+- **`umodule_destroy(UModule *)` → `umodule_destroy(UModule *, UVM *vm)`.** vm = NULL is allowed for the bound-to-no-vm case (e.g. failed-compile cleanup). When non-NULL, the rescue path transfers protos with `refcount > 0` to `vm->stdlib_protos` instead of freeing — surviving closures (held by active watchers, `vm->stdlib_closures`, etc.) keep a valid backing proto for the rest of vm lifetime.
+- **`UProto` struct** gains a `uint16_t refcount` field (runtime-only; not serialized — same pattern as `next_alloc`). Saturation at UINT16_MAX: log + leak rather than wrap. Underflow guard at 0 catches missing-bump bugs.
+- **ABI version 0/7/3 → 0/7/4** (URBI_API_VERSION_NUM 703 → 704). Reason: umodule_destroy signature break. Per the pre-v1.0 escape clause in version.h, MINOR/PATCH bumps may break ABI with CHANGELOG enumeration; this is the second use (first was v0.7.2-esp32's S41 0/7/1 → 0/7/3 for the urbi_set_diag_fn addition).
+- **`strand_closure_unlink`** now decrements the proto refcount before nulling the `nested[k]` slot (Piece A nested-slot accounting). Net effect on existing chunk-top install behavior: identical; `nested[k]` still goes to NULL, but the refcount drop is tracked.
+- **`vm_alloc_closure`** bumps `cl->proto->refcount` via `umodule_proto_refcount_inc` after binding the proto pointer.
+- **`pool_free` OWNS_* arms** decrement `cl->proto->refcount` before considering freeing the proto; free-the-proto path now gated by `refcount == 0`.
+
+### Added
+
+- **`tests/unit/test_waituntil_cascade.c`** re-enabled (3-strand wake on shared cond). Previously DISABLED at v0.7.2 ship; goes RED at the tactical-fix baseline (T2 revert) and GREEN once Piece A lands (T7).
+- **`tests/unit/test_dangling_cl_function_body_install.c`** — regression net for the function-body install path (at-handler installed from inside a callee, calling strand dies before fire). Passes via the existing M6 Phase 3 closure migration + OWNS_BODY transfer; guards against future drift that removes either mechanism.
+- **`tests/unit/test_proto_refcount.c`** — direct unit test for the rescue → pool_free → stdlib_protos sweep flow. Pins the no-double-free invariant.
+
+### What was deferred (not in this release)
+
+- **UClosure / UUpvalCell GC promotion** (originally Pieces B + C of the closure-lifetime spec). The cascade-wake fix doesn't need them; the function-body dangling-cl case is already mitigated by M6 Phase 3 migration. Tracked for a future release.
+- **Deletion of `closure_list`, `OWNS_*` flags, `strand_closure_unlink`** (originally Phase 3 cleanup). All still in use; refcount lives alongside them rather than replacing them.
+- **`urbi_steal_repl_protos`** retained — serves an orthogonal `nested[]` array-rescue role (preserves `cl->origin_nested` validity for cross-session inner-closure calls) that the per-proto refcount rescue does not subsume.
+
+### Spec / plan
+
+- Spec: `docs/superpowers/specs/2026-05-16-closure-lifetime-fix-design.md`
+- Plan: `docs/superpowers/plans/2026-05-16-closure-lifetime-fix.md` (executed through T7 + T9 + T28; T8 deferred per investigation; T10-T27 + T29-T33 deferred to a future release)
+
+---
+
 ## v0.7.2-esp32 — 2026-05-16 (M7 Wave 2 part 2 — ESP-IDF port + runtime hardening)
 
 **Tag:** `v0.7.2-esp32`
