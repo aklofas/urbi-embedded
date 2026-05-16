@@ -13,11 +13,14 @@
 #include "freertos/portmacro.h"
 
 #include "esp_camera.h"
+#include "esp_log.h"
 
 #include "urbi/urbi.h"
 
 #include "eye_camera.h"
 #include "detect_blob.h"
+
+static const char *TAG = "eye_camera";
 
 /* === Camera config — ESP32-S3-EYE v2.2 pin map (see board schematic) === */
 static const camera_config_t cam_config = {
@@ -89,7 +92,18 @@ void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
     cam_vm      = vm;
     cam_ev_blob = ev_blob;
 
-    ESP_ERROR_CHECK(esp_camera_init(&cam_config));
+    /* Diagnostic checkpoint — the previous v0.7.2 attempt on real S3-EYE
+     * hardware crashed inside esp_camera_init -> SCCB_Init -> i2c_new_master_bus
+     * (LoadProhibited at intr_alloc.c:192) when esp32-camera was built
+     * against ESP-IDF v6.0.1 with the new sccb-ng.c (i2c_master.h) path.
+     * Forcing CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y in sdkconfig.defaults
+     * routes through the legacy sccb.c (driver/i2c.h) path which IDF v6
+     * retains for back-compat.  This log line bookends the call so a future
+     * crash here is unambiguous about which side of esp_camera_init failed. */
+    ESP_LOGI(TAG, "esp_camera_init: starting");
+    esp_err_t ret = esp_camera_init(&cam_config);
+    ESP_LOGI(TAG, "esp_camera_init: returned %s", esp_err_to_name(ret));
+    ESP_ERROR_CHECK(ret);
 
     /* Static-allocated stack + TCB keep the camera task off the heap;
      * 4 KB is enough for the inline detect_blob loop (no recursion,

@@ -1,5 +1,19 @@
 dependencies:
   idf:
     version: ">=6.0.1"
+  # Pinned to 2.1.x (NOT 2.0.x): 2.0.16 has no IDF v6 awareness in its
+  # CMakeLists (esp_camera.h needs driver/ledc.h which moved out of the
+  # legacy `driver` component in IDF v6, so 2.0.x fails to compile).
+  # The 2.1.x line added IDF v6 CMake conditionals (PR #835, 2026-02-13)
+  # but its sccb-ng.c (new i2c_master.h path) crashes on real ESP32-S3-EYE
+  # hardware inside find_desc_for_source (intr_alloc.c:192) during
+  # i2c_new_master_bus.  Workaround in sdkconfig.defaults:
+  # CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y forces the legacy sccb.c
+  # path (driver/i2c.h) which uses a different interrupt allocation
+  # mechanism and works fine on IDF v6.
+  # 2.1.0 is the first 2.1.x release; constraint allows up through 2.1.x.
+  # The official ESP32-S3-EYE BSP itself dropped esp32-camera in its
+  # v6.0.0 release (2026-03) and switched to esp_video; that migration is
+  # out of scope for v0.7.2 — revisit at v0.7.3 if needed.
   espressif/esp32-camera:
-    version: "^2.0.0"
+    version: "^2.1.0"

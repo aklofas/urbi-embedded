@@ -34,3 +34,20 @@ CONFIG_FREERTOS_HZ=100
 # (see components/partition_table/Kconfig.projbuild for the chain).
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Force esp32-camera to use the LEGACY SCCB driver (driver/i2c.h, not
+# driver/i2c_master.h).  On ESP-IDF v6.0.1 + esp32-camera 2.0.16/2.1.6,
+# the sccb-ng.c code path crashes inside intr_alloc.c:find_desc_for_source
+# during esp_camera_init -> SCCB_Init -> i2c_new_master_bus on real
+# ESP32-S3-EYE hardware (LoadProhibited @ vector_desc_t->flags read).
+# The legacy driver is retained in IDF v6 for back-compat (marked EoL
+# in v7) and uses a different interrupt allocation path not affected by
+# the issue.  Once esp32-camera ships a real fix or we migrate the demo
+# to esp_video (the route the official BSP took for IDF v6 — see plan
+# T54 retro), this can be removed.
+CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y
+
+# Verbose default log level so we see the SCCB/camera-init sequence in
+# the boot log.  Trim back to INFO once camera init is verified.
+CONFIG_LOG_DEFAULT_LEVEL_VERBOSE=y
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
