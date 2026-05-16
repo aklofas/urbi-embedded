@@ -94,3 +94,37 @@ void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
     xTaskCreateStaticPinnedToCore(camera_task_body, "cam", 4096, NULL,
                                   tskIDLE_PRIORITY + 1, cam_stack, &cam_tcb, 0);
 }
+
+/* Signature note: the host-fn type at <urbi/urbi.h>:295 is
+ *
+ *     int (*urbi_native_method_fn)(struct UVM *vm, UValue self,
+ *                                  UValue *args, uint8_t nargs, UValue *out);
+ *
+ * The brainstorm spec sketch in §5.2 used a `UStrand *` / `UValue` return
+ * convention that does not match the real v0.7.1 surface — corrected here
+ * to the canonical urbi_native_method_fn shape so that
+ *
+ *     urbi_register(vm, realm, "set_target_color", c_set_target_color);
+ *
+ * (Gap A in spec §2.3) wires straight through with no shim. */
+int c_set_target_color(struct UVM *vm, UValue self,
+                       UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self;
+
+    if (out) *out = urbi_make_nil();
+    if (nargs < 4 || args == NULL) return UEXEC_OK;
+
+    rgb565_target_t t = {
+        .r   = (uint8_t)urbi_value_as_int(args[0]),
+        .g   = (uint8_t)urbi_value_as_int(args[1]),
+        .b   = (uint8_t)urbi_value_as_int(args[2]),
+        .tol = (uint8_t)urbi_value_as_int(args[3]),
+    };
+
+    portENTER_CRITICAL(&target_mux);
+    target = t;
+    portEXIT_CRITICAL(&target_mux);
+
+    return UEXEC_OK;
+}
