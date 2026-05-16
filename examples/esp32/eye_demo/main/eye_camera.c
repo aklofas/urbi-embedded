@@ -35,12 +35,15 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"   /* heap_caps_malloc — snap buffer PSRAM alloc */
+#include "esp_timer.h"       /* esp_timer_get_time — DQBUF wait histogram */
 
 #include "urbi/urbi.h"
 
 #include "eye_camera.h"
 #include "eye_display.h"
-#include "detect_blob.h"
+#include "detect_blob.h"          /* legacy RGB-distance detector + blob_t */
+#include "detect_blob_chroma.h"   /* chrominance-based detector (2026-05-16) */
 
 static const char *TAG = "eye_camera";
 
@@ -104,12 +107,81 @@ static const esp_video_init_config_t s_video_config = {
 
 static struct UVM        *cam_vm;
 static urbi_event_id_t    cam_ev_blob;
-/* Default target = wide RED that matches actual red objects under typical
- * lighting (camera sensor noise + AWB leak ~5-15 units into "should be
- * zero" channels).  Pure (31,0,0)/tol=4 matched almost nothing on a live
- * feed; the urbi script's button-press handler updates this to the
- * Realm.colors entry for the new zone (see eye_demo.u). */
-static rgb565_target_t    target     = { .r = 24, .g = 6, .b = 6, .tol = 12 };
+static urbi_event_id_t    cam_ev_scan_tick;
+
+/* === urbiscript snap buffer ============================================
+ *
+ * 115 KB PSRAM buffer holding the most-recent fully-captured frame for
+ * urbiscript-side reads (via c_get_pixel_{r,g,b}).  Camera task memcpy's
+ * into this AFTER detect_blob, then injects ev_scan_tick — urbiscript's
+ * BlobScan handler reads bytes here while the camera task moves on to
+ * the next DQBUF.  No locking needed: the camera task's write to snap_buf
+ * + scan_tick inject pair atomically transfers ownership for the
+ * inter-tick interval.  If urbi falls behind (scan still in progress when
+ * next tick fires), the SPSC event ring overflows and ring_ovf increments
+ * — observable, not silent.
+ *
+ * Subsample factor in BlobScan.scan() controls pixel-read load: at the
+ * default subsample=4 the urbiscript loop reads 60x60=3,600 pixels per
+ * scan (~0.2s on LX7@240MHz).  Crank to subsample=1 for 240x240=57,600
+ * pixels (~1.2s) to find the runtime's saturation point. */
+#define SCAN_SNAP_W                  240
+#define SCAN_SNAP_H                  240
+#define SCAN_SNAP_BYTES              ((size_t)SCAN_SNAP_W * SCAN_SNAP_H * 2U)
+#define SCAN_TICK_EVERY_N_FRAMES     50    /* @ 25fps capture = 0.5 Hz scan */
+
+static uint16_t          *cam_snap_buf;     /* PSRAM, SCAN_SNAP_BYTES */
+
+/* In-progress guard: when set (by c_scan_begin from urbiscript), the
+ * camera task skips memcpy + scan_tick inject.  Cleared by c_scan_end at
+ * end of BlobScan.scan().  Single-producer (camera task reads, urbi task
+ * writes via host fns) + word-sized volatile = atomic on LX7 — no mux.
+ *
+ * This lets the camera task self-throttle: subsample=1 in urbiscript
+ * takes several seconds per scan; without the guard, scan_ticks would
+ * pile up in the SPSC event ring at the 0.5 Hz cadence and overflow.
+ * With the guard, the next inject only fires AFTER urbi finishes the
+ * previous scan, so the effective rate adapts to whatever urbiscript
+ * can actually sustain (= the true urbiscript throughput limit). */
+static volatile int       cam_scan_in_progress = 0;
+
+/* === Diagnostic telemetry (added 2026-05-16) =========================
+ *
+ * Periodic per-color probe + frame-center RGB sample + DQBUF wait
+ * histogram.  Updated by camera_task_body at PROBE_EVERY_N_FRAMES
+ * cadence (0.5 Hz @ 25fps).  Reads via c_probe_{red,green,blue}() /
+ * c_center_{r,g,b}() / c_dqbuf_max_wait_us() host fns.  All single-
+ * producer (camera task) + word-sized volatile = atomic on LX7. */
+#define PROBE_EVERY_N_FRAMES 50
+
+/* Hardcoded probe targets — MUST match the Realm.colors entries in
+ * eye_demo.u (RED / GREEN / BLUE).  Out-of-sync = misleading telemetry,
+ * not a runtime bug; review both sites when tuning.  Chrominance-based
+ * (see detect_blob_chroma.h): dominant channel + dominance + min_bright. */
+/* Probe thresholds mirror the Realm.colors per-channel tuning in
+ * eye_demo.u: GREEN uses a more permissive (2/6) since OV2640 AWB
+ * actively suppresses green saturation; RED/BLUE use (4/8). */
+static const chroma_target_t probe_targets[3] = {
+    { .dominant = CHROMA_R, .dominance = 4, .min_bright = 8 },  /* RED   */
+    { .dominant = CHROMA_G, .dominance = 2, .min_bright = 6 },  /* GREEN */
+    { .dominant = CHROMA_B, .dominance = 4, .min_bright = 8 },  /* BLUE  */
+};
+
+static volatile uint32_t  g_probe_hits_red   = 0;
+static volatile uint32_t  g_probe_hits_green = 0;
+static volatile uint32_t  g_probe_hits_blue  = 0;
+static volatile uint32_t  g_center_r         = 0;  /* 0..31 (5-bit) */
+static volatile uint32_t  g_center_g         = 0;  /* 0..63 (6-bit) */
+static volatile uint32_t  g_center_b         = 0;  /* 0..31 (5-bit) */
+static volatile uint32_t  g_dqbuf_max_wait_us = 0; /* reset on read   */
+/* Default target = RED-dominant.  Chrominance-based: a pixel matches
+ * when the dominant channel is ≥ dominance brighter than the other two
+ * AND ≥ min_bright (gates noise in shadows).  See detect_blob_chroma.h.
+ * The urbi script's button-press handler updates this to the
+ * Realm.colors[Realm.idx] entry for the new zone (see eye_demo.u). */
+static chroma_target_t    target     = { .dominant = CHROMA_R,
+                                         .dominance = 4,
+                                         .min_bright = 8 };
 static portMUX_TYPE       target_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static int                cam_fd = -1;
@@ -147,9 +219,28 @@ static void camera_task_body(void *arg)
         memset(&buf, 0, sizeof(buf));
         buf.type   = type;
         buf.memory = V4L2_MEMORY_MMAP;
+        int64_t dqbuf_t0 = esp_timer_get_time();
+        /* DQBUF-failure streak counter — visible alive-but-failing signal.
+         * On 2026-05-16 the camera task silently stopped producing frames
+         * after ~45s (cam=0 in stats with no log); the user observed the
+         * LCD freeze.  This log discriminates "DQBUF still being called
+         * but failing" (sensor / V4L2 issue) from "DQBUF never called"
+         * (camera task crashed / hung elsewhere). */
+        static int dqbuf_err_streak = 0;
         if (ioctl(cam_fd, VIDIOC_DQBUF, &buf) != 0) {
+            if ((++dqbuf_err_streak % 100) == 0) {
+                ESP_LOGW(TAG, "VIDIOC_DQBUF failed %d times consecutively",
+                         dqbuf_err_streak);
+            }
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
+        }
+        dqbuf_err_streak = 0;
+        /* DQBUF wait histogram (max-since-last-read).  Spike here means
+         * camera-task starvation; idle steady-state is ~40ms (one frame). */
+        int64_t dqbuf_wait = esp_timer_get_time() - dqbuf_t0;
+        if ((uint32_t)dqbuf_wait > g_dqbuf_max_wait_us) {
+            g_dqbuf_max_wait_us = (uint32_t)dqbuf_wait;
         }
 
         /* V4L2_BUF_FLAG_ERROR frames are still owned by us — we MUST
@@ -160,13 +251,13 @@ static void camera_task_body(void *arg)
             continue;
         }
 
-        rgb565_target_t t;
+        chroma_target_t t;
         portENTER_CRITICAL(&target_mux);
         t = target;
         portEXIT_CRITICAL(&target_mux);
 
         uint16_t *frame = (uint16_t *)cam_buffers[buf.index];
-        blob_t b = detect_blob(frame, (int)cam_width, (int)cam_height, t);
+        blob_t b = detect_blob_chroma(frame, (int)cam_width, (int)cam_height, t);
         /* Stats counters read by port_stats_task in eye_demo_main.c. */
         extern volatile uint32_t g_cam_frames;
         extern volatile uint32_t g_cam_injects;
@@ -181,6 +272,41 @@ static void camera_task_body(void *arg)
             g_cam_injects++;
         }
 
+        /* Every PROBE_EVERY_N_FRAMES: run detect_blob against ALL three
+         * probe targets + sample frame-center RGB.  Diagnostic only —
+         * results feed c_probe_{red,green,blue}() and c_center_{r,g,b}()
+         * host fns.  Cost: 3 × ~2 ms per probe at 0.5 Hz = 0.12 % CPU. */
+        if ((g_cam_frames % PROBE_EVERY_N_FRAMES) == 0U) {
+            g_probe_hits_red   = (uint32_t)detect_blob_chroma(frame, (int)cam_width,
+                                  (int)cam_height, probe_targets[0]).area;
+            g_probe_hits_green = (uint32_t)detect_blob_chroma(frame, (int)cam_width,
+                                  (int)cam_height, probe_targets[1]).area;
+            g_probe_hits_blue  = (uint32_t)detect_blob_chroma(frame, (int)cam_width,
+                                  (int)cam_height, probe_targets[2]).area;
+            uint16_t center_px = frame[(size_t)(cam_height/2U) * cam_width
+                                        + (size_t)(cam_width/2U)];
+            g_center_r = (uint32_t)((center_px >> 11) & 0x1F);
+            g_center_g = (uint32_t)((center_px >>  5) & 0x3F);
+            g_center_b = (uint32_t)( center_px        & 0x1F);
+        }
+
+        /* Every Nth frame: if no urbi-scan is currently running, snapshot
+         * the frame to cam_snap_buf and fire scan_tick so the urbiscript
+         * BlobScan handler can read pixels.  The cam_scan_in_progress
+         * guard (set by c_scan_begin, cleared by c_scan_end) prevents
+         * scan_tick from queuing while a previous scan is mid-flight —
+         * effective scan rate adapts to urbiscript throughput, not the
+         * fixed camera cadence.  Buffer is private to the urbiscript
+         * path; V4L2 reuses `frame` on its own schedule. */
+        if (cam_snap_buf != NULL && cam_ev_scan_tick != 0U
+            && cam_scan_in_progress == 0
+            && (g_cam_frames % SCAN_TICK_EVERY_N_FRAMES) == 0U) {
+            memcpy(cam_snap_buf, frame, SCAN_SNAP_BYTES);
+            extern volatile uint32_t g_evt_scan_count;
+            g_evt_scan_count++;
+            urbi_inject_event(cam_vm, cam_ev_scan_tick, NULL, 0U);
+        }
+
         /* Hand (buf, index) to the display task; display calls
          * eye_camera_qbuf(index) when it's done with the buffer. */
         display_post_frame(frame, (int)cam_width, (int)cam_height,
@@ -189,10 +315,25 @@ static void camera_task_body(void *arg)
 }
 #endif /* CONFIG_EYE_DEMO_ENABLE_CAMERA */
 
-void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
+void eye_camera_init(struct UVM *vm,
+                     urbi_event_id_t ev_blob,
+                     urbi_event_id_t ev_scan_tick)
 {
-    cam_vm      = vm;
-    cam_ev_blob = ev_blob;
+    cam_vm           = vm;
+    cam_ev_blob      = ev_blob;
+    cam_ev_scan_tick = ev_scan_tick;
+
+    /* Allocate snap buffer in PSRAM (115 KB).  Camera task memcpy's into
+     * here every SCAN_TICK_EVERY_N_FRAMES frames; urbiscript reads via
+     * the c_get_pixel_{r,g,b} host fns.  If allocation fails, scan_tick
+     * is simply never fired — eye_demo runs in C-side-only mode. */
+    cam_snap_buf = heap_caps_malloc(SCAN_SNAP_BYTES,
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (cam_snap_buf == NULL) {
+        ESP_LOGW(TAG, "snap buffer alloc failed (%u bytes PSRAM); "
+                       "urbiscript BlobScan path disabled",
+                 (unsigned)SCAN_SNAP_BYTES);
+    }
 
 #if !CONFIG_EYE_DEMO_ENABLE_CAMERA
     /* Camera path disabled via Kconfig.  This board (or this ESP-IDF
@@ -303,36 +444,150 @@ void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
 #endif /* CONFIG_EYE_DEMO_ENABLE_CAMERA */
 }
 
-/* Signature note: the host-fn type at <urbi/urbi.h>:295 is
+/* Host fn — push a chrominance target from urbiscript to the camera task.
  *
- *     int (*urbi_native_method_fn)(struct UVM *vm, UValue self,
- *                                  UValue *args, uint8_t nargs, UValue *out);
+ *     set_target_chroma(dominant, dominance, min_bright)
  *
- * The brainstorm spec sketch in §5.2 used a `UStrand *` / `UValue` return
- * convention that does not match the real v0.7.1 surface — corrected here
- * to the canonical urbi_native_method_fn shape so that
+ *   dominant   — 0 / 1 / 2 (CHROMA_R / CHROMA_G / CHROMA_B; see header)
+ *   dominance  — min channel-dominance margin (5-bit scale; typ 6-12)
+ *   min_bright — gate noise in dark regions (5-bit scale; typ 10-16)
  *
- *     urbi_register(vm, realm, "set_target_color", c_set_target_color);
- *
- * (Gap A in spec §2.3) wires straight through with no shim. */
-int c_set_target_color(struct UVM *vm, UValue self,
-                       UValue *args, uint8_t nargs, UValue *out)
+ * Replaces the legacy c_set_target_color (RGB-distance) — see
+ * detect_blob_chroma.h for the rationale (GREEN tracking was unusable
+ * with RGB-distance under AWB).  Signature matches the canonical
+ * urbi_native_method_fn from <urbi/urbi.h>:295. */
+int c_set_target_chroma(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm; (void)self;
 
     if (out) *out = urbi_make_nil();
-    if (nargs < 4 || args == NULL) return UEXEC_OK;
+    if (nargs < 3 || args == NULL) return UEXEC_OK;
 
-    rgb565_target_t t = {
-        .r   = (uint8_t)urbi_value_as_int(args[0]),
-        .g   = (uint8_t)urbi_value_as_int(args[1]),
-        .b   = (uint8_t)urbi_value_as_int(args[2]),
-        .tol = (uint8_t)urbi_value_as_int(args[3]),
+    chroma_target_t t = {
+        .dominant   = (uint8_t)urbi_value_as_int(args[0]),
+        .dominance  = (uint8_t)urbi_value_as_int(args[1]),
+        .min_bright = (uint8_t)urbi_value_as_int(args[2]),
     };
 
     portENTER_CRITICAL(&target_mux);
     target = t;
     portEXIT_CRITICAL(&target_mux);
 
+    return UEXEC_OK;
+}
+
+/* === Snap-buffer pixel reads ============================================
+ *
+ * urbiscript reads channel values out of the camera task's snapshot via
+ * these three host fns.  Args are (x, y) integers; out-of-range returns
+ * 0 silently (a 240x240 BlobScan loop runs the bounds check itself, so
+ * the silent clamp is just a final safety net).
+ *
+ * Performance hot path: the urbiscript BlobScan inner loop calls these
+ * three fns per pixel (3 dispatches + 6 arithmetic ops at minimum).  Per-
+ * frame load at subsample=4: 60x60=3,600 pixels × 3 = 10,800 host fn
+ * calls per scan tick.  Each fn body is ~10 instructions so the C work
+ * itself is tiny — most of the cost lives in the urbiscript bytecode
+ * dispatch, which is the point of this stress test. */
+
+#define SNAP_PIXEL_GUARD()                                                 \
+    do {                                                                   \
+        if (out) *out = urbi_make_int(0);                                  \
+        if (cam_snap_buf == NULL) return UEXEC_OK;                         \
+        if (nargs < 2 || args == NULL) return UEXEC_OK;                    \
+    } while (0)
+
+static inline uint16_t snap_pixel_at(int x, int y)
+{
+    if (x < 0 || x >= SCAN_SNAP_W || y < 0 || y >= SCAN_SNAP_H) return 0U;
+    return cam_snap_buf[(size_t)y * SCAN_SNAP_W + (size_t)x];
+}
+
+int c_get_pixel_r(struct UVM *vm, UValue self,
+                  UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self;
+    SNAP_PIXEL_GUARD();
+    uint16_t px = snap_pixel_at((int)urbi_value_as_int(args[0]),
+                                 (int)urbi_value_as_int(args[1]));
+    if (out) *out = urbi_make_int((int64_t)((px >> 11) & 0x1F));
+    return UEXEC_OK;
+}
+
+int c_get_pixel_g(struct UVM *vm, UValue self,
+                  UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self;
+    SNAP_PIXEL_GUARD();
+    uint16_t px = snap_pixel_at((int)urbi_value_as_int(args[0]),
+                                 (int)urbi_value_as_int(args[1]));
+    if (out) *out = urbi_make_int((int64_t)((px >> 5) & 0x3F));
+    return UEXEC_OK;
+}
+
+int c_get_pixel_b(struct UVM *vm, UValue self,
+                  UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self;
+    SNAP_PIXEL_GUARD();
+    uint16_t px = snap_pixel_at((int)urbi_value_as_int(args[0]),
+                                 (int)urbi_value_as_int(args[1]));
+    if (out) *out = urbi_make_int((int64_t)(px & 0x1F));
+    return UEXEC_OK;
+}
+
+/* Scan-in-progress guard (option C — adaptive scan rate).  urbiscript's
+ * BlobScan.scan() brackets its body in c_scan_begin / c_scan_end; the
+ * camera task skips scan_tick injection while the flag is set.  Effective
+ * scan cadence: max(SCAN_TICK_EVERY_N_FRAMES/25 Hz, urbi-scan-duration).
+ * Subsample=1 (240x240 full grid) becomes self-throttling — the system
+ * finds its own steady-state rate based on actual urbiscript throughput. */
+int c_scan_begin(struct UVM *vm, UValue self,
+                 UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    cam_scan_in_progress = 1;
+    if (out) *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+int c_scan_end(struct UVM *vm, UValue self,
+               UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    cam_scan_in_progress = 0;
+    if (out) *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+/* === Diagnostic host fns ============================================ */
+
+/* Per-color probe counts — last measured detect_blob result against the
+ * 3 probe_targets[].  Updated every PROBE_EVERY_N_FRAMES; reads always
+ * return the most-recent snapshot.  RED/GREEN/BLUE in lock-step. */
+#define DEFINE_STAT_INT_GETTER(name, var)                                    \
+int name(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) { \
+    (void)vm; (void)self; (void)args; (void)nargs;                           \
+    if (out) *out = urbi_make_int((int64_t)(var));                           \
+    return UEXEC_OK;                                                         \
+}
+
+DEFINE_STAT_INT_GETTER(c_probe_red,   g_probe_hits_red)
+DEFINE_STAT_INT_GETTER(c_probe_green, g_probe_hits_green)
+DEFINE_STAT_INT_GETTER(c_probe_blue,  g_probe_hits_blue)
+DEFINE_STAT_INT_GETTER(c_center_r,    g_center_r)
+DEFINE_STAT_INT_GETTER(c_center_g,    g_center_g)
+DEFINE_STAT_INT_GETTER(c_center_b,    g_center_b)
+
+/* DQBUF max wait time since last read — auto-resets on read so each
+ * stats interval shows that interval's max, not all-time max. */
+int c_dqbuf_max_wait_us(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    uint32_t v = g_dqbuf_max_wait_us;
+    g_dqbuf_max_wait_us = 0;
+    if (out) *out = urbi_make_int((int64_t)v);
     return UEXEC_OK;
 }

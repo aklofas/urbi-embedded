@@ -52,12 +52,25 @@ void port_wake_from_inject(void *ud)
     }
 }
 
+/* Optional step-instrumentation hook.  An app TU that wants to count
+ * urbi_step result-distribution can define these as strong symbols; the
+ * weak defaults here are no-ops so embedders pay no cost by default.
+ *
+ * Used by examples/esp32/eye_demo to expose c_step_running / quiescent /
+ * wake_at / fatal counters to the urbiscript-side Stats class. */
+__attribute__((weak)) void port_urbi_step_observed(int result_int, uint64_t wake_us)
+{
+    (void)result_int;
+    (void)wake_us;
+}
+
 void port_urbi_task_body(void *arg)
 {
     struct UVM *vm = (struct UVM *)arg;
     for (;;) {
         uint64_t wake_us = 0;
         UStepResult r = urbi_step(vm, URBI_STEP_BUDGET, &wake_us);
+        port_urbi_step_observed((int)r, wake_us);
         switch (r) {
             case URBI_STEP_RUNNING:
                 break;

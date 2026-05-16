@@ -26,9 +26,14 @@
 static struct UVM       *btn_vm;
 static urbi_event_id_t   btn_ev;
 
+/* Defined in eye_demo_main.c; bumped per inject so the Stats class can
+ * report button-press injection rate without a separate counter setup. */
+extern volatile uint32_t g_evt_btn_count;
+
 static void IRAM_ATTR button_isr(void *arg)
 {
     (void)arg;
+    g_evt_btn_count++;
     urbi_inject_event(btn_vm, btn_ev, NULL, 0);
 }
 

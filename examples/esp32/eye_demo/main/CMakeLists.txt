@@ -17,6 +17,7 @@ idf_component_register(
         "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES
         urbi
+        urbi_aux
         espressif__esp_video
         espressif__esp_cam_sensor
         freertos

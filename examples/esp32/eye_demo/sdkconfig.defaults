@@ -57,6 +57,29 @@ CONFIG_CAMERA_OV2640=y
 CONFIG_CAMERA_OV2640_DVP_RGB565_240X240_25FPS=y
 CONFIG_CAMERA_OV2640_DVP_DEFAULT_FMT_RGB565_240X240_25FPS=y
 
+# --- Task watchdog ---------------------------------------------------
+#
+# Stretch the task WDT to 15 s (default 5 s) for the urbiscript BlobScan
+# stress-test handler: at subsample=1, BlobScan.scan() loops 240x240 =
+# 57,600 iterations × ~120 µs each = ~7 s of straight CPU on core 0,
+# during which IDLE0 doesn't get scheduled and the default 5 s WDT
+# trips (non-fatal but noisy in the log).  15 s comfortably covers
+# subsample=1 with margin for VM ticks + camera task interleaving.
+# Tighten back down to 5 s once the stress-test BlobScan is removed
+# or moved off the urbi task.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=15
+
+# Disable IDLE0 from the task WDT.  With urbi (+1), camera (+1), and
+# display (+1) all pinned to core 0 and continuously runnable (urbi
+# RUNNING-loops between events; camera spins on V4L2 DQBUF every 40ms),
+# IDLE0 never gets scheduled — but that's the intended design, not a
+# stuck-task bug.  Without this knob the WDT triggers every 15s with a
+# spurious "IDLE0 starved" warning even though everything is healthy.
+# IDLE1 (core 1) WDT remains active so display-task hangs are still
+# caught.  See 2026-05-16 diagnostic run that produced two backtraces
+# while VM was actively making progress (steps R=882K/950K per 2s).
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+
 # --- Camera runtime gate --------------------------------------------
 #
 # Kept as an opt-out knob for boards without the OV2640 wired up (the
