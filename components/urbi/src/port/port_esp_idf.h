@@ -49,6 +49,22 @@ void port_writer(void *ud,
  * ISR (including nested ISR dispatch). */
 bool port_in_isr(void);
 
+/* FreeRTOS task entry that drives urbi_step in a budget-bounded loop.
+ * Pass to xTaskCreate / xTaskCreateStatic as the task entry; `arg` must
+ * be the `struct UVM *` to step.  Parks on a task-notification when the
+ * VM is QUIESCENT / WAKE_AT; calls esp_restart on URBI_STEP_FATAL.
+ *
+ * Compile-time tunables: URBI_STACK_WORDS (default 8 KB / sizeof(StackType_t))
+ * and URBI_STEP_BUDGET (default 256).  Override via -D... at build time. */
+void port_urbi_task_body(void *arg);
+
+/* Wake-from-injection callback.  Signature matches urbi_wake_fn
+ * (include/urbi/urbi.h:612) — `void (*)(void *ud)`.  `ud` must point to
+ * a TaskHandle_t for the urbi task.  ISR-safe (dispatches via
+ * xPortInIsrContext + vTaskNotifyGiveFromISR + portYIELD_FROM_ISR).
+ * Install via urbi_set_wake_fn(vm, port_wake_from_inject, &urbi_task_handle). */
+void port_wake_from_inject(void *ud);
+
 #ifdef __cplusplus
 }
 #endif
