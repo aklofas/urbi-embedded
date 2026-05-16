@@ -5,9 +5,10 @@
 # liburbi_aux.a archive — embedders opt in independently via the aux
 # header / extra link), and excludes test code.
 #
-# Port glue under src/port/ lands incrementally in Phase 2 of the
-# v0.7.2-esp32 plan (T14-T19); add those entries here as each file
-# ships. Until then the component compiles the platform-neutral core.
+# Port glue under components/urbi/src/port/ lands incrementally in Phase 2
+# of the v0.7.2-esp32 plan (T14-T19).  The glob below picks up new port_*.c
+# files as they drop into place — subsequent tasks only add files, not
+# CMakeLists.txt entries.
 
 set(URBI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 
@@ -33,6 +34,9 @@ file(GLOB URBI_SRC_REALM   "${URBI_ROOT}/src/realm/*.c")
 file(GLOB URBI_SRC_OBJECT  "${URBI_ROOT}/src/object/*.c")
 file(GLOB URBI_SRC_STDLIB  "${URBI_ROOT}/src/stdlib/*.c")
 
+# ESP-IDF port glue (this component's own src/port/ — not under URBI_ROOT).
+file(GLOB URBI_SRC_PORT    "${CMAKE_CURRENT_SOURCE_DIR}/src/port/*.c")
+
 set(SOURCES
     ${URBI_SRC_ROOT}
     ${URBI_SRC_LEX}
@@ -51,11 +55,15 @@ set(SOURCES
     ${URBI_SRC_REALM}
     ${URBI_SRC_OBJECT}
     ${URBI_SRC_STDLIB}
+    ${URBI_SRC_PORT}
 )
 
 idf_component_register(
     SRCS ${SOURCES}
-    INCLUDE_DIRS "${URBI_ROOT}/include" "${URBI_ROOT}/src"
+    INCLUDE_DIRS
+        "${URBI_ROOT}/include"
+        "${URBI_ROOT}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/port"
     REQUIRES freertos esp_timer esp_system heap
 )
 
