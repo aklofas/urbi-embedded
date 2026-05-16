@@ -203,6 +203,17 @@ uint8_t emit_function_literal(UEmitter *e,
             child_fs->max_reg_seen = child_fs->freereg;
     }
 
+    /* Save the parent's flat-register cursor before clobbering it with
+     * the child's.  After the child compile, the parent's `next_reg` is
+     * indispensable for finding a closure-destination slot that does not
+     * alias any still-live temp in the parent — e.g. the `Realm` GETSLOT
+     * result returned by emit_ident_arm's realm-global fallback when
+     * compiling `Realm.fn = function () {...}`.  freereg tracks only the
+     * local-zone floor (locals + params + r_global_slot); live temps live
+     * ABOVE the floor and are tracked by next_reg, so freereg alone is
+     * the wrong source.  Task #22, surfaced 2026-05-16. */
+    uint8_t parent_next_reg_before = e->next_reg;
+
     /* Sync the flat register cursor to the child's freereg so temps
      * inside the function body are allocated above all param slots. */
     e->next_reg = child_fs->freereg;
@@ -242,12 +253,17 @@ uint8_t emit_function_literal(UEmitter *e,
 
     /* 7. In parent, emit OP_CLOSURE + nup pseudo-instructions. */
     {
+        /* Choose dst above any live parent temp.  Pre-fix this was
+         * `current_fs->freereg`, which only covers the local-zone floor
+         * — see `parent_next_reg_before` capture above for the full
+         * rationale (task #22). */
         uint8_t dst = e->current_fs->freereg;
+        if (parent_next_reg_before > dst) dst = parent_next_reg_before;
         if (dst >= (uint8_t)(UFS_MAX_REGS - 1)) {
             e->error = EMIT_REG_EXHAUSTED;
             return 0U;
         }
-        e->current_fs->freereg++;
+        e->current_fs->freereg = (uint8_t)(dst + 1U);
         if (e->current_fs->freereg > e->current_fs->max_reg_seen)
             e->current_fs->max_reg_seen = e->current_fs->freereg;
         e->next_reg = e->current_fs->freereg;
