@@ -9,6 +9,7 @@
  * destructure arguments. */
 
 #include "driver/gpio.h"
+#include "esp_attr.h"
 #include "urbi/urbi.h"
 
 #include "eye_button.h"
