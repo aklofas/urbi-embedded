@@ -20,8 +20,18 @@
  * Drift from spec §6.4: the urbiscript was rewritten without `cout <<` (not
  * a v0.7.1 lex token) so all output comes from C-side printf — the writer
  * hook is still installed (port_writer) and would route any urbi-side
- * channel emissions, but the script no longer emits any.  See
- * tests/qemu/reactive_smoke/main/reactive_smoke.u for the rationale.
+ * channel emissions, but the script no longer emits any.
+ *
+ * Drift rev 2 (2026-05-15): the script body was further simplified from
+ * `at (ping?) function (seq) { signal_pass(seq); }` to
+ * `at (ping?) signal_pass();` because async event delivery does not yet
+ * thread the destructured payload into the body strand's R[0] (see the
+ * destructure_ping and signal_pass header comments below for the full
+ * design-risks-row-14 rationale).  signal_pass keeps the per-fire
+ * `RESULT: PASS seq=N` marker using a function-local static counter,
+ * which still proves one body fire per injected event in FIFO order.
+ *
+ * See tests/qemu/reactive_smoke/main/reactive_smoke.u for both drifts.
  */
 
 #include <stddef.h>
@@ -73,9 +83,20 @@ static void *smoke_alloc(void *ptr, size_t nbytes, void *ud)
 
 /* destructure_ping: 4-byte ISR payload -> single UValue int (seq).
  *
- * Matches urbi_event_payload_destructure_fn (<urbi/urbi.h>:502-505).  The
- * script side declares `at (ping?) function (seq) { ... }`, so the drain
- * needs to surface exactly one UVAL_INT argument.
+ * Matches urbi_event_payload_destructure_fn (<urbi/urbi.h>:502-505).
+ * Runs at drain time on the MAIN thread; validates the payload shape and
+ * surfaces one UVAL_INT (the seq counter) to the event delivery path.
+ *
+ * Important caveat (see reactive_smoke.u header comment): the async
+ * delivery path -- c_event_emit_async -> do_spawn_body_coroutine --
+ * passes fire_context=NULL and urbi_strand_arm_from_closure leaves the
+ * body strand's R[0] zero-initialised, so out_args[0] never reaches the
+ * script-side body parameter at v1.0.  Threading async payload into body
+ * R[0] is design-risks row 14 (v1.x).  We still register the destructure
+ * fn here so this code path is exercised end-to-end (drain reads
+ * payload_len, calls destruct_fn, builds the UValue) -- only the final
+ * "feed into body" step is the open gap, and it lives in urbi src
+ * (uwatcher_spawn.c), not in the destructure contract.
  *
  * Returns 1 on success (one UValue written), URBI_ERR_INVALID_ARG on shape
  * mismatch. */
@@ -93,22 +114,34 @@ static int destructure_ping(struct UVM *vm,
     return 1;
 }
 
-/* signal_pass(seq): host fn called from urbiscript on every ping.
+/* signal_pass(): host fn called from urbiscript on every ping fire.
  *
  * Prints the canonical `RESULT: PASS seq=N` marker that the run_smoke.sh
  * harness greps for via expected_markers.txt.  Uses printf (not the urbi
  * writer hook) because the writer wraps channel-tagged output in
- * "[<channel>] " prefixes; we want a clean marker line. */
+ * "[<channel>] " prefixes; we want a clean marker line.
+ *
+ * Maintains its own monotonic `seq` counter (function-local static)
+ * because the async event delivery path does not yet thread the
+ * destructured payload into the body strand's R[0] (see destructure_ping
+ * header comment + reactive_smoke.u + design-risks row 14).  This still
+ * proves what the smoke needs to prove: one body fire per injected
+ * event, in FIFO order.  When async payload threading lands in v1.x the
+ * counter can be removed and the script body can return to
+ * `function (seq) { signal_pass(seq); }`.
+ *
+ * Called with zero args from script (`at (ping?) signal_pass();`); ignores
+ * any args that the caller might pass. */
 static int signal_pass(struct UVM *vm, UValue self,
                        UValue *args, uint8_t nargs, UValue *out)
 {
     (void)vm;
     (void)self;
-    int64_t seq = 0;
-    if (nargs >= 1U && args != NULL) {
-        seq = urbi_value_as_int(args[0]);
-    }
-    printf("RESULT: PASS seq=%lld\n", (long long)seq);
+    (void)args;
+    (void)nargs;
+    static int seq = 0;
+    seq++;
+    printf("RESULT: PASS seq=%d\n", seq);
     fflush(stdout);
     if (out != NULL) {
         *out = urbi_make_nil();

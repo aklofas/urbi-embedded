@@ -35,12 +35,17 @@ rm -f "${UART_LOG}"
 : > "${UART_LOG}"
 
 echo "[run_smoke] launching idf.py qemu (UART -> ${UART_LOG})"
-# --no-monitor: don't attach the interactive monitor; we tail the log.
-# -no-reboot:   exit QEMU on guest halt instead of looping.
-# -serial file: redirect UART to the capture file.
-idf.py qemu --no-monitor \
-    --qemu-extra-args "-serial file:${UART_LOG} -no-reboot" \
-    >/dev/null 2>&1 &
+# -no-reboot: exit QEMU on guest halt instead of looping.
+#
+# idf.py qemu wires UART0 to `mon:stdio` itself (see idf.py source) and the
+# `-serial` chardev in --qemu-extra-args is ignored / overridden, so a
+# `-serial file:${UART_LOG}` would silently produce a 0-byte file.  The
+# reliable capture path is to redirect idf.py's stdout to the log file --
+# UART0 output appears there (interleaved with bootloader/idf.py status
+# lines, which are filtered by the marker grep at the bottom of this
+# script).  </dev/null on stdin keeps the monitor from blocking on TTY.
+idf.py qemu --qemu-extra-args "-no-reboot" \
+    </dev/null >"${UART_LOG}" 2>&1 &
 QEMU_PID=$!
 
 # Wait up to QEMU_TIMEOUT_S for DONE to appear in the log.
