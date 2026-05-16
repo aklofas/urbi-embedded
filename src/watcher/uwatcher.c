@@ -112,9 +112,15 @@ pool_free(struct UVM *vm, UWatcher *w)
      * and leave both cl and proto with their original owners. */
     if ((w->flags & URBI_WATCHER_OWNS_COND) && w->condition != NULL) {
         if (w->condition->proto != NULL) {
-            umodule_destroy_proto_buffers(w->condition->proto,
-                                          vm->alloc_fn, vm->alloc_ud);
-            vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
+            /* Piece A: drop our ref; free only when no other closure (or
+             * stdlib_protos entry) still references the proto AND it has
+             * been orphaned from any module's nested[]. */
+            umodule_proto_refcount_dec(w->condition->proto);
+            if (w->condition->proto->refcount == 0U) {
+                umodule_destroy_proto_buffers(w->condition->proto,
+                                              vm->alloc_fn, vm->alloc_ud);
+                vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
+            }
         }
         vm->alloc_fn(w->condition, 0, vm->alloc_ud);
         w->condition = NULL;
@@ -122,9 +128,15 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
         if (w->body->proto != NULL) {
-            umodule_destroy_proto_buffers(w->body->proto,
-                                          vm->alloc_fn, vm->alloc_ud);
-            vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
+            /* Piece A: drop our ref; free only when no other closure (or
+             * stdlib_protos entry) still references the proto AND it has
+             * been orphaned from any module's nested[]. */
+            umodule_proto_refcount_dec(w->body->proto);
+            if (w->body->proto->refcount == 0U) {
+                umodule_destroy_proto_buffers(w->body->proto,
+                                              vm->alloc_fn, vm->alloc_ud);
+                vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
+            }
         }
         vm->alloc_fn(w->body, 0, vm->alloc_ud);
         w->body = NULL;
@@ -132,9 +144,15 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
         if (w->onleave->proto != NULL) {
-            umodule_destroy_proto_buffers(w->onleave->proto,
-                                          vm->alloc_fn, vm->alloc_ud);
-            vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
+            /* Piece A: drop our ref; free only when no other closure (or
+             * stdlib_protos entry) still references the proto AND it has
+             * been orphaned from any module's nested[]. */
+            umodule_proto_refcount_dec(w->onleave->proto);
+            if (w->onleave->proto->refcount == 0U) {
+                umodule_destroy_proto_buffers(w->onleave->proto,
+                                              vm->alloc_fn, vm->alloc_ud);
+                vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
+            }
         }
         vm->alloc_fn(w->onleave, 0, vm->alloc_ud);
         w->onleave = NULL;
