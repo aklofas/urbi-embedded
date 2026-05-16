@@ -74,6 +74,12 @@ $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+# tests/unit/test_detect_blob.c includes detect_blob.h from the eye_demo
+# example's main/ directory.  Per-target CPPFLAGS append picks up the
+# extra include path for just this TU; all other unit tests stay isolated
+# from the example tree.
+$(BUILDDIR)/tests/unit/test_detect_blob.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
+
 # --- REPL binary --------------------------------------------------------
 #
 # urbi — the REPL binary.  Builds from tools/urbi.c + vendored linenoise

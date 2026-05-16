@@ -224,6 +224,7 @@ extern void test_aux_function_table_suite(void);
 extern void test_aux_set_error_suite(void);
 extern void test_aux_load_and_run_suite(void);
 extern void test_aux_dump_value_suite(void);
+extern void test_detect_blob_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -424,6 +425,7 @@ static const struct suite_entry suites[] = {
     {"aux_set_error",                test_aux_set_error_suite},
     {"aux_load_and_run",             test_aux_load_and_run_suite},
     {"aux_dump_value",               test_aux_dump_value_suite},
+    {"detect_blob",                  test_detect_blob_suite},
     /* Add new suites here as test files are added. */
 };
 
