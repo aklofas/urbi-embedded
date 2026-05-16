@@ -356,6 +356,19 @@ typedef struct UProto {
      * originating module (the normal case).  Zero-initialized alongside the
      * rest of UProto at alloc time (umodule_alloc_nested_proto). */
     struct UProto *next_alloc;
+
+    /* [runtime-only, NOT serialized] Per-proto reference count used by the
+     * closure-lifetime fix (v0.7.3 closure-lifetime spec).  Bumped by every
+     * OP_CLOSURE that binds a UClosure to this proto; decremented by the
+     * UClosure GC finalizer.  umodule_destroy checks this counter: if 0,
+     * the proto is freed normally; if non-zero, it is transferred to
+     * vm->stdlib_protos so surviving closures keep a valid backing proto.
+     *
+     * uint16_t with saturation: bump clamps at UINT16_MAX and logs a
+     * URBI_LOG_WARN.  Saturated protos leak (acceptable for the v1.0
+     * timeframe; not a security issue).  Widen to uint32_t if a real
+     * 65k+ alias scenario ever emerges. */
+    uint16_t       refcount;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
@@ -459,6 +472,34 @@ typedef enum {
 #define URBI_MAX_INSTRS_PER_PROTO ((size_t)(1U << 20))
 
 /* --- Proto helpers --- */
+
+/* Refcount helpers — declared inline in the header so OP_CLOSURE's hot
+ * path stays cheap.  See UProto.refcount above for the design. */
+static inline void
+umodule_proto_refcount_inc(UProto *p)
+{
+    if (p == NULL) return;
+    if (p->refcount == UINT16_MAX) {
+        /* Saturated: log once-per-proto, no further bumps.  The cell leaks
+         * on the next module_destroy (transferred to stdlib_protos and
+         * never freed because the count never reaches 0). */
+        return;
+    }
+    p->refcount = (uint16_t)(p->refcount + 1U);
+}
+
+static inline void
+umodule_proto_refcount_dec(UProto *p)
+{
+    if (p == NULL) return;
+    if (p->refcount == 0U || p->refcount == UINT16_MAX) {
+        /* Underflow guard + saturation: a 0 refcount on dec means somebody
+         * forgot to bump (we'd corrupt the counter).  Saturation guard
+         * preserves the "leak forever" contract for UINT16_MAX. */
+        return;
+    }
+    p->refcount = (uint16_t)(p->refcount - 1U);
+}
 
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
