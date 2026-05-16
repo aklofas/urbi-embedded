@@ -13,11 +13,19 @@
 
 #include "urbi/urbi.h"   /* struct UVM, urbi_event_id_t, UValue, urbi_native_method_fn */
 
-/* Initialise the OV2640 camera with the S3-EYE v2.2 pin map, then spawn
- * the camera FreeRTOS task pinned to core 0.  Must be called once after
- * urbi_vm_init.  The task takes ownership of vm and ev_blob and uses
- * them for the lifetime of the program. */
+/* Initialise the OV2640 camera via esp_video with the S3-EYE v2.2 pin
+ * map, open /dev/video2, request + mmap 2 buffers, start streaming,
+ * then spawn the camera FreeRTOS task pinned to core 0.  Must be called
+ * once after urbi_vm_init.  The task takes ownership of vm and ev_blob
+ * and uses them for the lifetime of the program. */
 void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob);
+
+/* Return a previously-dequeued V4L2 buffer to the camera driver's pool.
+ * Called by the display task once the blit completes — wraps
+ * VIDIOC_QBUF on the camera's fd, which is camera-local state.  Returns
+ * 0 on success, -1 on failure (qbuf_index out of range, ioctl failed,
+ * or eye_camera_init has not run yet). */
+int eye_camera_qbuf(int qbuf_index);
 
 /* Host-fn (matches urbi_native_method_fn from <urbi/urbi.h>) that
  * urbiscript calls to retarget the blob detector to a different colour.
