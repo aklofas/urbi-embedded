@@ -469,7 +469,17 @@ UAstNode *parse_member_access(UParser *p, UAstNode *recv,
 
     if (peek(p).type == TOK_EQ) {
         consume(p);  /* consume '=' */
-        UAstNode *value = parse_inner_tier(p);
+        /* S48 (2026-05-16): parse RHS as a Pratt expression, NOT
+         * parse_inner_tier — the latter absorbs `|` / `&` separators
+         * into the assignment value, so `Realm.a = 1 | Realm.b = 2`
+         * mis-parses as `Realm.a = (1 | (Realm.b = 2))` instead of
+         * `(Realm.a = 1) | (Realm.b = 2)`.  The mis-parse produces
+         * nested MEMBER_SETs whose emit only writes the last slot
+         * before fataling.  Hardware-observed on eye_demo blob_seen
+         * handler 2026-05-16; host repro confirms.  parse_expression
+         * stops at `|` / `&` since they aren't in the Pratt table,
+         * leaving the separator for the outer inner-tier fold. */
+        UAstNode *value = parse_expression(p, 0);
         if (!value) return NULL;
         if (value->kind == AST_ERROR) return value;
         UAstNode *node = make_node(p, is_arrow ? AST_PROP_SET : AST_MEMBER_SET,
