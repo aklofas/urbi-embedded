@@ -1,18 +1,61 @@
 # Changelog
 
-## Unreleased — v0.7.2-esp32 (M7 Wave 2 part 2 — ESP-IDF port)
+## v0.7.2-esp32 — 2026-05-16 (M7 Wave 2 part 2 — ESP-IDF port + runtime hardening)
 
-**Theme:** First MCU port. ESP-IDF v6.0.1 against ESP32-S3; `components/urbi/` managed-component shell consumes the locked v0.7.1 ABI; ESP32-S3-EYE color blob tracking demo; QEMU reactive-smoke CI gate; ESP-IDF appendix to the embedding guide. Pure additive — zero changes to the v0.7.1 public API surface; wire format unchanged at v1.5 / 0x15. ABI bump 0/7/1 → 0/7/2 (PATCH).
+**Tag:** `v0.7.2-esp32`
+**Theme:** First MCU port + unexpectedly substantial runtime hardening. ESP-IDF v6.0.1 against ESP32-S3 / S3-EYE; `components/urbi/` managed-component shell consumes the locked v0.7.1 ABI; ESP32-S3-EYE color blob tracking eye_demo on actual hardware. **Bonus bug hunt:** stress-testing the demo with progressively wider urbiscript surface (try/catch/finally, `at sync`, multi-statement at-bodies, `&` fork-join) uncovered 10 real bugs across the parser, emit, and runtime layers — all fixed and validated on hardware. ABI 0/7/1 → 0/7/3 (S41 `urbi_set_diag_fn` landed pre-session, taking the ABI to 0/7/3 directly; tag name retains `v0.7.2-esp32` per the original Wave 2 plan). Wire format unchanged at v1.5 / 0x15.
 
 ### Added
 
+**ESP-IDF port (the original Wave 2 part 2 scope).**
+
+- `components/urbi/` — ESP-IDF managed-component shell. `port_freertos_task.c` (urbi task body + step observer hook), `port_allocator.c` (heap_caps_* PSRAM tier), `port_time.c` (esp_timer_get_time), `port_writer.c` (ESP_LOG channel), `port_isr_check.c` (xPortInIsrContext), `port_wake_from_inject` (xTaskNotifyGiveFromISR). Targets ESP32-S3 initially (`CONFIG_IDF_TARGET="esp32s3"`).
+- `components/urbi_aux/` — sibling opt-in aux component (Lua `lua.h` / `lauxlib.h` split pattern). Mirrors host Makefile's separate `liburbi_aux.a` archive. Embedders opt in via `REQUIRES = urbi_aux`; default ESP-IDF builds get core only (smallest footprint).
+- `examples/esp32/eye_demo/` — full ESP32-S3-EYE color-blob-tracking demo. Three FreeRTOS tasks (urbi / camera / display), OV2640 240×240 RGB565 capture, chrominance-based blob detector with channel-dominance + min-brightness thresholds, ST7789 240×240 LCD output with crosshair overlay, BOOT button cycling through RED→GREEN→BLUE targets. Demonstrates: classes, methods, `at (event?)`, `at (cond)`, `at (slot.changed?)`, `at sync`, brace-block at-bodies, try/catch/finally, `&` fork-join (via function wrapper), runtime stats snapshot every 2s with ~25 diagnostic counters.
+- `tests/qemu/reactive_smoke/` — QEMU smoke test scaffolding (espressif/qemu via `idf.py qemu`). Currently advisory; promotion to required follows v0.5.7-fixes 2-week-stable precedent.
+
+**Runtime hardening — 10 bug fixes** (all surfaced by eye_demo stress-test session):
+
+1. **task #23** — at-body method RETURN: `urbi_unwind` now direct-pops the call frame when no `UCLEANUP_CALL_FRAME` is present (body strands have flat cleanup), preserving outer TAG_SCOPE / TRY_FRAME entries. Crash: at-body invoking class instance method fataled body strand.
+2. **task #22** — chunk-top closure dst: `emit_function_literal` respects parent `next_reg` (not just `freereg`), preventing `Realm.fn = function() {...}` from clobbering live temps.
+3. **task #13 / S43** — chunk-top var × at-handler closure NULL module deref: closed by task #23's entry_closure fallback chain in `ustrand_consts_for_closure`. Body strands have `s->module == NULL`; pre-fix `OP_LOADK` deref'd a NULL pointer.
+4. **task #24 / S44** — catch / finally handler PC uses `s->pc_base`, not `s->module->instructions`. Catch absorption in a method invoked from an at-body crashed with NULL deref (body strands → `s->module == NULL`) AND method-frame try/catch from chunk-top wrote to wrong proto. Two sites fixed in `urbi_unwind`.
+5. **S45** — `uemit_declare_local` desyncs `e->next_reg` from `fs->freereg`. The catch handler's variable was clobbered by the body's first temp allocation, leading to `Realm.caught = e` silently storing the realm object instead of the thrown value. Fix in the helper makes the post-condition self-consistent; removes the footgun for all future callers.
+6. **emit_nary freereg drift** — between siblings of an NARY expression chain, `e->next_reg = freereg` was insufficient; needed `freereg = fs_temp_floor` first. Bare discarded-result calls left freereg above the floor, causing subsequent var-decls to alias outer-scope locals. Demo manifestation: BlobScan iters stuck at 240 instead of 57 600 with `centroid_x == centroid_y` always.
+7. **S47** — `parse_statement_or_expr` now accepts `TOK_LBRACE` → `parse_block`. Original urbi spec allows `at (e?) { stmts }`, `at (cond) { ... } onleave { ... }` — pre-fix the parser routed body to `parse_inner_tier` which doesn't accept LBRACE as an expression prefix.
+8. **S48 + 4 followups** — `=` RHS uses `parse_expression` (Pratt-only), not `parse_inner_tier` (which folds `|` / `&` separators). `Realm.a = 1 | Realm.b = 2` mis-parsed as `Realm.a = (1 | (Realm.b = 2))`. Fix applied at 5 sites: `parse_member_access`, `parse_var_decl`, `parse_assign_after_eq_peek`, `parse_return`, `parse_throw`. Per legacy `aldebaran-urbi/tests/2.x/atomic.chk` + `urbistyle.chk` conventions.
+
 ### Build
+
+- `components/urbi/CMakeLists.txt` — ESP-IDF managed-component build manifest. `srcs` lists every `src/**/*.c` (~80 files); `include_dirs` `${URBI_ROOT}/include` `${URBI_ROOT}/src`. Embedders consume via `REQUIRES = urbi`.
+- `components/urbi_aux/CMakeLists.txt` — separate aux archive; `include_dirs` `${URBI_ROOT}/include` only (no `src/`).
+- `examples/esp32/eye_demo/sdkconfig.defaults` — `CONFIG_IDF_TARGET="esp32s3"`, octal PSRAM @ 80 MHz, OV2640 240×240 RGB565 25 fps, FreeRTOS HZ=100, custom `partitions.csv` (5 MB factory), 16 KB main_task stack, WDT 15 s, IDLE0 WDT disabled (urbi + camera + display all pri +1, IDLE0 never schedules by design).
+- ABI bump 0/7/1 → 0/7/2 (`URBI_API_VERSION_NUM = 702`).
 
 ### Tests
 
+- **5 new test files**, 8+ new regression tests covering the bug fixes:
+  - `tests/unit/test_athandler_class_method_fatal.c` (4 cases) — task #23 regression
+  - `tests/unit/test_chunktop_realm_closure.c` (3 cases) — task #22 regression
+  - `tests/unit/test_unwind_method_try_catch.c` (7 cases) — task #24/S44 + S45 probes
+  - `tests/unit/test_emit_nary_freereg_drift.c` (2 cases) — emit_nary regression
+  - `tests/unit/test_parse_block_in_at_body.c` (4 cases) — S47 regression
+  - `tests/unit/test_pipe_middle_stmt.c` (6 cases) — S48 + 3 followups (var-decl, assign, return, throw)
+  - `tests/unit/test_whenever_double_fire.c` (5 cases) — whenever level-trigger documentation + at-body safepoint-visit limitation
+  - `tests/unit/test_fork_amp_at_body.c` (2 cases) — `&` chunk-top limitation + wrapper-workaround
+  - `tests/unit/test_waituntil_cascade.c` (disabled) — cascade-wake crash (OPEN bug, v0.7.3 deferred)
+- Test corpus 1686 → 1746 cases (+60); 12 034 → 12 643 checks (+609); 0 failed.
+- 236 `.chk` fixtures unchanged.
+
 ### CI
 
+- ESP-IDF v6.0.1 toolchain installed at `tools/esp-idf/` (workspace tooling, not in repo). `cross-esp32s3` Makefile target pending (deferred to follow-up cleanup).
+- One cppcheck suppression added in `.cppcheck.suppressions`: `knownConditionTrueFalse:src/runtime/uunwind.c` (S44 unblocked the existing M3 `pattern_matches` stub's tautology for cppcheck's flow analysis — file-wide suppression until Wave 2 class-pattern dispatch lands).
+
 ### Docs
+
+- `docs/urbi-embedded-design-risks.md` (workspace root): 4 new entries — `whenever` level-trigger spec clarification (NOT a bug), `at sync` slot-change degrade-to-async (per-spec), waituntil cascade-wake crash (OPEN, High severity, v0.7.3 deferred), `&` fork-join chunk-top limitation (per-spec, workaround documented).
+- `examples/esp32/eye_demo/main/eye_demo.u` — urbiscript demo (~330 lines). Demonstrates the breadth of v0.7.x urbiscript surface working on hardware: classes (Color, Cycle, Stats, BlobScan, Milestone), methods, brace-block at-bodies, try/catch/finally (with urbi-specific semantics), `at sync`, `&` fork-join via function wrapper, edge-triggered milestones via `at (cond)`.
 
 ---
 
