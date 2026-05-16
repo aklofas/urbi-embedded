@@ -768,6 +768,19 @@ cross-esp32s3-bytecode-only:
 		all
 	@sh tests/scripts/test-freestanding.sh build/cross-esp32s3-bytecode-only/liburbi.a
 
+# T11 / Wave 2: ESP32-S3 (Xtensa LX7) full cross-build (lex/parse/emit
+# included).  Mirrors the cross-arm / cross-riscv shape — no
+# URBI_BYTECODE_ONLY=1 and no inline freestanding gate, since full mode
+# pulls in the compiler front-end which may surface hosted-libc deps for
+# diagnostics.  Uses the unified ESP-IDF v6.0.1+ toolchain
+# (xtensa-esp-elf-{gcc,ar,nm}); target ISA selection via `-mlongcalls`.
+cross-esp32s3-full:
+	$(MAKE) TARGET=cross-esp32s3-full \
+		CC=xtensa-esp-elf-gcc \
+		CFLAGS="-std=c99 -ffreestanding -Os -mlongcalls" \
+		AR=xtensa-esp-elf-ar \
+		all
+
 # T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
 # liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
 # fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
@@ -966,4 +979,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
