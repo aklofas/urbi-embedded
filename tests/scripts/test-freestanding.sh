@@ -31,7 +31,7 @@ case "$ARCHIVE" in
 esac
 
 LIBC_SYMS=$($NM_CMD "$ARCHIVE" 2>/dev/null \
-            | awk '$2 == "U" && $3 ~ /^(printf|fprintf|sprintf|snprintf|malloc|calloc|realloc|free|fopen|fclose|fread|fwrite|strtod|strtol|strtoul|abort|exit)$/ {print $3}' \
+            | awk '$1 == "U" && $2 ~ /^(printf|fprintf|sprintf|snprintf|malloc|calloc|realloc|free|fopen|fclose|fread|fwrite|strtod|strtol|strtoul|abort|exit)$/ {print $2}' \
             | sort -u)
 
 if [ -n "$LIBC_SYMS" ]; then
