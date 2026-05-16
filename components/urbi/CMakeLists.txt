@@ -61,4 +61,9 @@ idf_component_register(
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -std=c99 -Wall -Wextra -Wpedantic -ffreestanding -mlongcalls
+    # ESP-IDF defaults to -Werror; the urbi sources use _Static_assert (a GCC
+    # extension under C99, standard in C11). Keep the diagnostic visible as a
+    # warning but don't fatal-fail the build. The host Makefile uses -Wpedantic
+    # without -Werror and so accepts these silently.
+    -Wno-error=pedantic
 )
