@@ -262,7 +262,7 @@ urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...)
     char buf[256];
     va_list ap;
     va_start(ap, fmt);
-    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    int n = vsnprintf(buf, sizeof buf, fmt != NULL ? fmt : "", ap);  /* NOLINT(clang-analyzer-valist.Uninitialized) — ap initialized by va_start above */
     va_end(ap);
     (void)n;   /* truncation accepted silently */
 

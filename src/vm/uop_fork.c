@@ -246,7 +246,15 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
         return 0;   /* parent continues immediately */
     }
 
-    /* Block parent: thread onto child->joiners_head via wait_next.
+    /* Advance the parent's PC past OP_JOIN_WAIT BEFORE blocking.  After
+     * fork_wake_joiners wakes us, the child is guaranteed DEAD; we must
+     * NOT re-execute OP_JOIN_WAIT on resume because the eager DEAD-strand
+     * reap in urbi_step (ustep.c) frees the child once it transitions to
+     * DEAD — re-dereferencing R[A] then would read freed memory (S42-FU
+     * task #21).  Advancing here ensures the wake path resumes at the
+     * instruction AFTER OP_JOIN_WAIT, never re-reading the stale handle.
+     *
+     * Block parent: thread onto child->joiners_head via wait_next.
      * wait_next is otherwise only used when the parent is on a sleep queue
      * (REASON_SLEEP); here we repurpose it for the join-chain.  This is
      * safe because a strand cannot be simultaneously sleep-blocked AND
@@ -259,6 +267,7 @@ op_join_wait(UStrand *s, UVM *vm, uint32_t instr)
      * join chain while its state was still RUNNING.  Block first so the
      * parent's state transitions to WAITING|JOIN before it becomes
      * reachable via the join chain. */
+    s->pc++;
     sched_strand_block(s, USTRAND_REASON_JOIN, (uint64_t)(uintptr_t)child);
     s->wait_next         = child->joiners_head;
     child->joiners_head  = s;

@@ -180,7 +180,16 @@ spawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
     URBI_ASSERT_NOT_ISR(vm);
     URBI_INTERNAL_ASSERT(vm->in_watcher_eval == 1);
     URBI_INTERNAL_ASSERT(w != NULL);
-    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT || w->mode == UWATCHER_WHENEVER);
+    /* AT (1) / WHENEVER (2) / AT_EVENT (5) all spawn body strands and can
+     * legitimately refire.  AT_SYNC, WAITUNTIL, AT_EVENT_SYNC fire inline
+     * and never reach this path.  The AT_EVENT acceptance closed a debug-
+     * build assert that fired once ef647a7 ("watcher: widen pending-refire
+     * from flag bit to bounded counter") started bumping the refire
+     * counter for AT_EVENT watchers — the assert hadn't been widened to
+     * match the broader refire-eligible mode set. */
+    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT
+                      || w->mode == UWATCHER_WHENEVER
+                      || w->mode == UWATCHER_AT_EVENT);
     URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_ACTIVE) != 0);
     URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) == 0);
     URBI_INTERNAL_ASSERT(w->body != NULL);
@@ -199,7 +208,16 @@ respawn_body_coroutine(struct UVM *vm, struct UWatcher *w)
     URBI_ASSERT_NOT_ISR(vm);
     /* No in_watcher_eval assert — completion path runs outside eval. */
     URBI_INTERNAL_ASSERT(w != NULL);
-    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT || w->mode == UWATCHER_WHENEVER);
+    /* AT (1) / WHENEVER (2) / AT_EVENT (5) all spawn body strands and can
+     * legitimately refire.  AT_SYNC, WAITUNTIL, AT_EVENT_SYNC fire inline
+     * and never reach this path.  The AT_EVENT acceptance closed a debug-
+     * build assert that fired once ef647a7 ("watcher: widen pending-refire
+     * from flag bit to bounded counter") started bumping the refire
+     * counter for AT_EVENT watchers — the assert hadn't been widened to
+     * match the broader refire-eligible mode set. */
+    URBI_INTERNAL_ASSERT(w->mode == UWATCHER_AT
+                      || w->mode == UWATCHER_WHENEVER
+                      || w->mode == UWATCHER_AT_EVENT);
     URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_ACTIVE) != 0);
     URBI_INTERNAL_ASSERT((w->flags & URBI_WATCHER_PENDING_UNREGISTER) == 0);
     URBI_INTERNAL_ASSERT(w->body != NULL);
