@@ -41,6 +41,7 @@ extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
 extern void test_api_version_suite(void);
+extern void test_port_allocator_mock_suite(void);
 extern void test_arena_suite(void);
 extern void test_aux_version_check_suite(void);
 extern void test_parser_suite(void);
@@ -240,6 +241,7 @@ static const struct suite_entry suites[] = {
     {"emit_string",                test_emit_string_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"api_version",                test_api_version_suite},
+    {"port_allocator_mock",        test_port_allocator_mock_suite},
     {"arena",                      test_arena_suite},
     {"aux_version_check",          test_aux_version_check_suite},
     {"parser",                     test_parser_suite},
