@@ -36,51 +36,18 @@
  * Remove `cl` from `s->closure_list` (pointer-to-pointer walk) AND detach
  * `cl->proto` from `s->module->nested[]` so umodule_destroy does not free
  * the proto when the install run ends.  Returns 1 if `cl` was found and
- * removed (cl + proto are now owned by the watcher); returns 0 otherwise
- * (NULL pointer, test sentinel, already unlinked, or detach skipped — see
- * below).
+ * removed (cl + proto are now owned by the watcher); returns 0 otherwise.
  *
- * Called by install_watcher_runtime / install_at_event_runtime to transfer
- * ownership of condition/body/onleave closures from the strand's pre-GC
- * free-list to the watcher.  After a successful unlink:
- *   - urbi_vm_run's closure cleanup loop will not free `cl`
- *   - umodule_destroy will not free `cl->proto` or its sub-buffers
- *   - pool_free must free both proto (+ sub-buffers) and the closure
- *
- * v0.7.3 cascade fix — frame_count gating:
- *
- * The detach+own transfer is only safe when the OP_CLOSURE that produced
- * `cl` will NOT be executed again against the same nested[] slot.  Once
- * detached, nested[k] reads NULL, and any future OP_CLOSURE Bx=k would
- * vm_alloc_closure(NULL) → SEGV.
- *
- * At the chunk-top frame (`s->frame_count == 0`) we know the surrounding
- * code path runs exactly once per vm_run, so detach is safe.  At
- * `s->frame_count > 0` the install is happening inside a callee that may
- * be re-invoked — that re-invocation re-runs the same OP_CLOSURE.  In that
- * case skip the transfer entirely: leave `cl` on the strand's
- * `closure_list` (so the strand's eventual cleanup frees it) and leave the
- * proto on `nested[]` (so module_destroy frees it).  Returning 0 keeps the
- * caller from setting `URBI_WATCHER_OWNS_*` and from claiming proto
- * ownership.
- *
- * Lifetime implication: for the in-function-body WAITUNTIL pattern (the
- * cascade scenario), the waiter strand outlives the watcher — the watcher
- * is unregistered atomically at wake, then the strand resumes, eventually
- * dies, and cleanup frees `cl`.  WHENEVER / AT / AT_SYNC installed from
- * inside a function body has a known limitation: if the calling strand
- * dies before the watcher fires, the watcher's cl-pointers dangle.  That
- * pattern is uncommon at v0.7.3 and is tracked as a v1.x backlog item. */
+ * NB: this helper carries a known structural bug — multi-install of the
+ * same cond proto via function re-invocation causes use-after-free on
+ * shared protos.  Tracked by the v0.7.3 closure-lifetime spec; replaced
+ * in this same release by UProto refcount + UClosure/UUpvalCell GC. */
 static int
 strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
 {
     struct UClosure **pp;
     size_t k;
     if (cl == NULL) return 0;
-
-    /* frame_count > 0: callee — re-invocation may re-run OP_CLOSURE.  Skip
-     * the transfer; the strand's own cleanup will free cl when it dies. */
-    if (s->frame_count > 0) return 0;
 
     pp = &s->closure_list;
     while (*pp != NULL) {
