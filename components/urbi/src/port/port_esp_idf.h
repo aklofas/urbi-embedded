@@ -29,6 +29,11 @@ extern "C" {
  * a parallel wrapper using MALLOC_CAP_INTERNAL. */
 void *port_psram_alloc(void *ptr, size_t nbytes, void *ud);
 
+/* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
+ * (include/urbi/urbi.h) — pass to urbi_set_time_us.  Backed by
+ * esp_timer_get_time(); resolution is 1 µs, wrap is ~292 000 years. */
+uint64_t port_time_us(void);
+
 #ifdef __cplusplus
 }
 #endif
