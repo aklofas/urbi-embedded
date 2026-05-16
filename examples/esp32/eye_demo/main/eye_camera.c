@@ -104,7 +104,12 @@ static const esp_video_init_config_t s_video_config = {
 
 static struct UVM        *cam_vm;
 static urbi_event_id_t    cam_ev_blob;
-static rgb565_target_t    target     = { .r = 31, .g = 0, .b = 0, .tol = 4 };
+/* Default target = wide RED that matches actual red objects under typical
+ * lighting (camera sensor noise + AWB leak ~5-15 units into "should be
+ * zero" channels).  Pure (31,0,0)/tol=4 matched almost nothing on a live
+ * feed; the urbi script's button-press handler updates this to the
+ * Realm.colors entry for the new zone (see eye_demo.u). */
+static rgb565_target_t    target     = { .r = 24, .g = 6, .b = 6, .tol = 12 };
 static portMUX_TYPE       target_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static int                cam_fd = -1;
@@ -162,6 +167,10 @@ static void camera_task_body(void *arg)
 
         uint16_t *frame = (uint16_t *)cam_buffers[buf.index];
         blob_t b = detect_blob(frame, (int)cam_width, (int)cam_height, t);
+        /* Stats counters read by port_stats_task in eye_demo_main.c. */
+        extern volatile uint32_t g_cam_frames;
+        extern volatile uint32_t g_cam_injects;
+        g_cam_frames++;
         if (b.area > 0) {
             urbi_event_payload_t p;
             p.u32[0] = (uint32_t)b.x;
@@ -169,6 +178,7 @@ static void camera_task_body(void *arg)
             p.u32[2] = (uint32_t)b.area;
             p.u32[3] = 0;
             urbi_inject_event(cam_vm, cam_ev_blob, &p, 16);
+            g_cam_injects++;
         }
 
         /* Hand (buf, index) to the display task; display calls

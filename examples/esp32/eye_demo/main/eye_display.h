@@ -49,4 +49,13 @@ void display_post_frame(uint16_t *buf, int w, int h, int qbuf_index);
 int c_draw_crosshair(struct UVM *vm, UValue self,
                      UValue *args, uint8_t nargs, UValue *out);
 
+/* C-side helper that c_draw_crosshair delegates to.  Writes the
+ * volatile (x, y) pair shared with the display task; the next frame
+ * picks them up.  Exposed for any future C-side caller that wants to
+ * push a crosshair coordinate without going through the urbi host-fn
+ * dispatch surface (e.g., a debug overlay from a separate task).
+ * Safe from any task — the volatile pair tolerates the cross-core
+ * non-atomic-as-a-pair race (tearing is one frame, visually invisible). */
+void display_set_crosshair(int x, int y);
+
 #endif /* EYE_DISPLAY_H */

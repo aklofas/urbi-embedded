@@ -28,6 +28,16 @@ CONFIG_SPIRAM_SPEED_80M=y
 # throughout the urbi runtime (sched preset CI gates run at 100 Hz).
 CONFIG_FREERTOS_HZ=100
 
+# 16 KB main_task stack (default 3584 B is too small for the urbi setup
+# chain).  Hosts that call urbi_vm_init + urbi_realm_global + a handful
+# of urbi_event_register / urbi_register from app_main need at least
+# ~12 KB to avoid xtensa register-window spill corrupting adjacent heap
+# memory — specifically ESP-IDF's vector_desc_t linked list, which then
+# panics the next esp_intr_alloc call with a LoadProhibited inside
+# find_desc_for_source.  16 KB is a generous safety margin.  See
+# docs/embedding-guide.md "FreeRTOS stack sizes" for the full diagnosis.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
 # Use the custom partition table at partitions.csv (sibling file).
 # CONFIG_PARTITION_TABLE_FILENAME is derived from
 # CONFIG_PARTITION_TABLE_CUSTOM_FILENAME when PARTITION_TABLE_CUSTOM=y
@@ -49,11 +59,8 @@ CONFIG_CAMERA_OV2640_DVP_DEFAULT_FMT_RGB565_240X240_25FPS=y
 
 # --- Camera runtime gate --------------------------------------------
 #
-# Disabled by default on this preset because the affected silicon (S3
-# chip rev v0.1) + ESP-IDF v6.0.1 combo crashes inside esp_intr_alloc
-# → find_desc_for_source at intr_alloc.c:192 (LoadProhibited) on ANY
-# call site (i2c, SPI display, etc) — not camera-specific.  Documented
-# as known-issue in docs/urbi-embedded-design-risks.md.  Re-enable on
-# hardware that doesn't reproduce the bug:
-#   idf.py menuconfig → Eye Demo Configuration → [*] Enable camera
-CONFIG_EYE_DEMO_ENABLE_CAMERA=n
+# Kept as an opt-out knob for boards without the OV2640 wired up (the
+# demo will then run with the display, button, and reactive at-watcher
+# only — useful as a smoke test on non-EYE S3 boards).  Disable via:
+#   idf.py menuconfig → Eye Demo Configuration → [ ] Enable camera
+CONFIG_EYE_DEMO_ENABLE_CAMERA=y

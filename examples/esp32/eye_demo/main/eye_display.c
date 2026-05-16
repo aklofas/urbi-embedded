@@ -13,7 +13,9 @@
  * without ESP-IDF dependencies. */
 
 #include <stdint.h>
-#include <string.h>      /* memcpy — used by the row copy in display_task_body */
+/* memcpy was previously used here; replaced by the per-pixel __builtin_bswap16
+ * loop in display_task_body that does copy + byte-swap in one pass.  No other
+ * <string.h> users remain in this TU. */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -87,7 +89,17 @@ void eye_display_init(void)
     };
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    /* Panel IO over SPI: 40 MHz pclk, mode 0, queue depth 10. */
+    /* Panel IO over SPI: 40 MHz pclk, mode 0, queue depth 10.
+     *
+     * Note on byte order: unlike the i80 LCD driver, ESP-IDF v6's SPI LCD
+     * driver does NOT expose a swap_color_bytes flag — the SPI io_config
+     * .flags struct in esp_lcd_io_spi.h only has dc_high_on_cmd,
+     * dc_low_on_data, dc_low_on_param, octal_mode, quad_mode, sio_mode,
+     * lsb_first, cs_high_active.  RGB565 byte-swap has to be done in
+     * software before esp_lcd_panel_draw_bitmap (see the per-pixel
+     * __builtin_bswap16 loop in display_task_body, replacing the plain
+     * memcpy that would otherwise feed the ST7789 panel little-endian
+     * bytes when it expects big-endian, scrambling the 5-6-5 bit fields). */
     esp_lcd_panel_io_handle_t io;
     esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num       = LCD_PIN_DC,
@@ -114,6 +126,12 @@ void eye_display_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(lcd));
     ESP_ERROR_CHECK(esp_lcd_panel_init(lcd));
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(lcd, true));
+    /* Horizontal flip is done in software in display_task_body (see the
+     * bswap-and-flip loop below).  Hardware MADCTL MX produced a fixed
+     * grey column on the left edge on the S3-EYE panel — the visible
+     * window shifts but the column-address-set doesn't follow on this
+     * specific ST7789.  Software flip costs the same CPU as plain bswap
+     * (one indexed store per pixel) and avoids the panel-offset quirk. */
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(lcd, true));
 
     /* Frame queue (depth 2) + display task pinned to core 1.  Static
@@ -152,16 +170,37 @@ static void display_task_body(void *arg)
     static uint16_t lcd_fb[240 * 240] __attribute__((aligned(4)));
     eye_frame_t frame;
     while (xQueueReceive(frame_q, &frame, portMAX_DELAY) == pdPASS) {
-        /* Copy then return the V4L2 buffer — incoming is already
-         * 240x240 RGB565 so a single memcpy is sufficient (the legacy
-         * esp32-camera path needed a 320x240 → 240x240 centre-crop). */
-        memcpy(lcd_fb, frame.buf, 240 * 240 * sizeof(uint16_t));
+        /* Copy + byte-swap + flip from the V4L2 buffer (incoming 240x240
+         * RGB565 little-endian) to lcd_fb (big-endian + mirrored).  Byte-
+         * swap is needed because ESP-IDF v6's SPI LCD driver has no
+         * swap_color_bytes flag (unlike the i80 driver); the flip gives
+         * the user a real-mirror preview of themselves.
+         *
+         * The flip axis is framebuffer-Y (row swap) — on this S3-EYE the
+         * panel/camera coordinate systems are rotated 90° relative to the
+         * user's physical orientation, so a framebuffer-Y flip appears
+         * as the user-horizontal (left↔right) mirror they actually want.
+         * Both transforms fold into one indexed-store pass — same CPU
+         * cost as plain bswap. */
+        const uint16_t *src = frame.buf;
+        for (int y = 0; y < 240; ++y) {
+            const uint16_t *row = &src[y * 240];
+            uint16_t *dst_row = &lcd_fb[(239 - y) * 240];
+            for (int x = 0; x < 240; ++x) {
+                dst_row[x] = __builtin_bswap16(row[x]);
+            }
+        }
         (void)eye_camera_qbuf(frame.qbuf_index);
 
         /* Overlay the latest crosshair coordinates (set by c_draw_crosshair
          * on the urbi VM task).  Reads volatile pair non-atomically; the
-         * tearing window is one frame and visually invisible. */
-        draw_crosshair_into(lcd_fb, 240, 240, crosshair_x, crosshair_y);
+         * tearing window is one frame and visually invisible.
+         *
+         * The Y coord is pre-mirrored to match the framebuffer-Y flip in
+         * the bswap loop above — otherwise the crosshair would track the
+         * pre-flip blob position and appear at the mirror-image location
+         * relative to where the fabric actually is on the LCD. */
+        draw_crosshair_into(lcd_fb, 240, 240, crosshair_x, 239 - crosshair_y);
 
         ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(lcd, 0, 0, 240, 240, lcd_fb));
     }
@@ -195,6 +234,14 @@ static void display_task_body(void *arg)
  * (or vice versa) for at most one frame.  Visually invisible at 25 Hz.
  * A mutex on this hot path is rejected — the demo would gain no
  * perceptible image quality and pay for it in jitter. */
+void display_set_crosshair(int x, int y)
+{
+    /* Volatile pair write — atomic per scalar on LX7, tearable as a pair.
+     * See header comment above for why this is acceptable. */
+    crosshair_x = x;
+    crosshair_y = y;
+}
+
 int c_draw_crosshair(struct UVM *vm, UValue self,
                      UValue *args, uint8_t nargs, UValue *out)
 {
@@ -205,10 +252,8 @@ int c_draw_crosshair(struct UVM *vm, UValue self,
         return UEXEC_OK;
     }
 
-    /* Volatile pair write — atomic per scalar on LX7, tearable as a pair.
-     * See header comment above for why this is acceptable. */
-    crosshair_x = urbi_value_as_int(args[0]);
-    crosshair_y = urbi_value_as_int(args[1]);
+    display_set_crosshair(urbi_value_as_int(args[0]),
+                          urbi_value_as_int(args[1]));
 
     if (out) *out = urbi_make_nil();
     return UEXEC_OK;
