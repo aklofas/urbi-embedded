@@ -367,10 +367,23 @@ Realm.scanner = BlobScan.new().init(1);
 
 log("eye_demo (class-based, S42 + OBJ-IC-POLY + scripted stats + urbi-scan) loaded");
 
-// === BLOB SEEN — chained at-handlers (crosshair, count, fire counter) ===
-at (blob_seen?) draw_crosshair(Realm.last_blob_x, Realm.last_blob_y);
-at (blob_seen?) Realm.blob_count = Realm.blob_count + 1;
-at (blob_seen?) Realm.fires_blob = Realm.fires_blob + 1;
+// === BLOB SEEN — single at-handler with brace-block body ================
+// Stress: collapses 3 separate `at (blob_seen?)` handlers into one body
+// using a `{ stmts }` block (canonical urbi form per legacy
+// aldebaran-urbi/tests/2.x/at/*.chk — `at (e?) { ... }` is spec-valid).
+// Tests register allocation across SEP_SEMI-joined statements within an
+// at-event body proto.  Required parser fix S47 (parse_statement_or_expr
+// now accepts LBRACE → parse_block).
+//
+// Previously: 3 separate at-handlers chained — three watcher install
+// opcodes, three body protos.  Now: one watcher, one body proto holding
+// a brace-block AST_BLOCK.  Side-effect: watcher count drops by 2
+// (11 → 9) — visible in Stats `watchers= 9 / 9`.
+at (blob_seen?) {
+    draw_crosshair(Realm.last_blob_x, Realm.last_blob_y);
+    Realm.blob_count = Realm.blob_count + 1;
+    Realm.fires_blob = Realm.fires_blob + 1
+};
 
 // === BUTTON CYCLE — debounced handler + fire counter ====================
 at (button_pressed?) Realm.cycle.press();

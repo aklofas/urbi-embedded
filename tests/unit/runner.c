@@ -216,6 +216,7 @@ extern void test_chunktop_realm_closure_suite(void);
 extern void test_emit_nary_freereg_drift_suite(void);
 extern void test_unwind_method_try_catch_suite(void);
 extern void test_whenever_double_fire_suite(void);
+extern void test_parse_block_in_at_body_suite(void);
 extern void test_register_watcher_callback_suite(void);
 extern void test_watcher_auto_unregister_suite(void);
 extern void test_unregister_watcher_suite(void);
@@ -426,6 +427,7 @@ static const struct suite_entry suites[] = {
     {"emit_nary_freereg_drift",      test_emit_nary_freereg_drift_suite},
     {"unwind_method_try_catch",      test_unwind_method_try_catch_suite},
     {"whenever_double_fire",         test_whenever_double_fire_suite},
+    {"parse_block_in_at_body",       test_parse_block_in_at_body_suite},
     {"register_watcher_callback",    test_register_watcher_callback_suite},
     {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
     {"unregister_watcher",           test_unregister_watcher_suite},

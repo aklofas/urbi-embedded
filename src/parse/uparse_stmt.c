@@ -258,6 +258,17 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_WHENEVER: return parse_whenever(p);
     case TOK_KW_WAITUNTIL: return parse_waituntil(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
+    /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
+     * Original urbi spec supports brace blocks in at-bodies, onleave
+     * handlers, whenever bodies, and any inner-tier position (see
+     * legacy aldebaran-urbi/tests/2.x/at/*.chk for examples like
+     * `at (e?) { ... }`, `at (cond) { ... } onleave { ... }`).
+     * Without this, the parser falls through to parse_inner_tier →
+     * parse_expression which doesn't accept LBRACE as an expression
+     * prefix, producing "expected expression" at the first statement
+     * inside the block.  Surfaced 2026-05-16 by eye_demo's attempt
+     * to use a multi-statement at-body. */
+    case TOK_LBRACE:      return parse_block(p);
     case TOK_IDENT: {
         /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
            mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.
