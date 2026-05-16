@@ -534,6 +534,25 @@ int uemit_declare_local(UEmitter *e, const char *name, int name_len) {
     fs->nactvar++;
     fs->freereg++;
     if (fs->freereg > fs->max_reg_seen) fs->max_reg_seen = fs->freereg;
+
+    /* Keep the emitter's scratch cursor in sync with the local zone's new
+     * top.  Without this, callers that don't manually sync afterward (the
+     * catch-handler emit was the first one found, 2026-05-16, S45) will
+     * have the next `alloc_reg` collide with the local's slot — the local
+     * gets clobbered by the first temp the surrounding expression
+     * allocates.  Pre-fix: catch variable `e` in `try { throw "x" } catch
+     * (e) { Realm.caught = e }` was overwritten with the Realm object
+     * (kind=8 / UVAL_OBJECT on host, kind=5 / UVAL_CLOSURE on ESP32)
+     * before the body could read it.
+     *
+     * The function-param emit path (uemit_stmt.c after the params loop)
+     * does this same sync explicitly; making it part of the
+     * uemit_declare_local contract removes the footgun for all future
+     * callers — they can no longer forget. */
+    if (e->next_reg < fs->freereg) {
+        e->next_reg = fs->freereg;
+        if (e->next_reg > e->max_reg_seen) e->max_reg_seen = e->next_reg;
+    }
     return lv->slot;
 }
 

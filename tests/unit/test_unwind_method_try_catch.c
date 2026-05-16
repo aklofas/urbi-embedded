@@ -191,6 +191,176 @@ UTEST(method_try_catch_from_chunktop)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 4: PROBE — what kind is the value bound to the catch variable?
+ *
+ * Hardware observation 2026-05-16: catch arm in eye_demo logs
+ * `caught: <kind=5>` (UVAL_CLOSURE) when the throw is the literal string
+ * `"even-scan-test"` (should be UVAL_STR = 4).  This test isolates the
+ * shape host-side so we can confirm whether the bug is in the throw →
+ * catch value transport, in the catch-variable register binding, or in
+ * the c_log host-fn observation path.
+ *
+ * Sets a Realm slot to the caught value, then reads it back from C and
+ * asserts kind == UVAL_STR.  If kind is anything else, the value flow is
+ * broken on host too (and the bug is in the runtime, not the demo). */
+UTEST(catch_variable_receives_thrown_string)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught", 6,
+                                               utest_e2e_make_nil()));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "class C {"
+        "  var go = function () {"
+        "    try { throw \"hello\" } catch (e) { Realm.caught = e }"
+        "  }"
+        "};"
+        "Realm.c = C.new();"
+        "Realm.c.go()",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue caught = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught", 6, &caught));
+
+    /* The interesting assertion.  Pre-fix this fails with kind=5
+     * (UVAL_CLOSURE) — the catch variable is bound to a closure, not the
+     * thrown string.  Post-fix, kind == UVAL_STR == 4. */
+    UASSERT_EQ((int)UVAL_STR, (int)caught.kind);
+
+    size_t len = 0U;
+    const char *s = urbi_value_as_str(caught, &len);
+    UASSERT(s != NULL);
+    UASSERT_EQ((size_t)5, len);
+    UASSERT(memcmp(s, "hello", 5) == 0);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Test 5: PROBE — chunk-top try/catch value flow, no method involved.
+ * Isolates whether the wrong-value bug is in the basic throw → catch
+ * transport or only manifests through method frames. */
+UTEST(catch_variable_receives_thrown_string_chunktop)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught", 6,
+                                               utest_e2e_make_nil()));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "try { throw \"hi\" } catch (e) { Realm.caught = e }",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue caught = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught", 6, &caught));
+    UASSERT_EQ((int)UVAL_STR, (int)caught.kind);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Test 6: PROBE — throw INT vs throw STR.  `tests/chk/control_transfer/
+ * throw_caught.chk` passes with `throw 77` (int), so the value transport
+ * works for ints.  This probe confirms whether the bug is STR-specific. */
+UTEST(catch_variable_int_vs_str)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught", 6,
+                                               utest_e2e_make_nil()));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "try { throw 77 } catch (e) { Realm.caught = e }",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue caught = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught", 6, &caught));
+    /* If this assertion PASSES (kind == UVAL_INT), the bug is string-
+     * specific.  If it FAILS too, the bug is in the value-transport path
+     * for any value kind. */
+    UASSERT_EQ((int)UVAL_INT, (int)caught.kind);
+    UASSERT_EQ(77LL, caught.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Test 7: PROBE — is the bug in catch-bind or in Realm-slot SET?
+ * Existing .chk test `throw_caught.chk` does local `var caught = 0; ...
+ * caught = e; caught` and passes.  My probes use `Realm.caught = e` and
+ * fail.  This probe uses a Realm INT slot pre-set to a known value, then
+ * assigns from a normal local int — confirming whether the Realm-slot
+ * SET itself is corrupting the kind. */
+UTEST(realm_slot_assign_from_local_int)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught", 6,
+                                               utest_e2e_make_nil()));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var x = 99; Realm.caught = x",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue caught = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught", 6, &caught));
+    /* Control case: no throw/catch involved.  Just `var x = 99;
+     * Realm.caught = x`.  If this fails, the bug is in the Realm-slot
+     * SET path.  If it passes, the bug is specific to the catch-bind. */
+    UASSERT_EQ((int)UVAL_INT, (int)caught.kind);
+    UASSERT_EQ(99LL, caught.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_unwind_method_try_catch_suite(void)
 {
@@ -200,4 +370,12 @@ test_unwind_method_try_catch_suite(void)
               chunktop_try_catch_absorbs_control);
     utest_run("unwind_method_try_catch: try/catch in method from chunk-top",
               method_try_catch_from_chunktop);
+    utest_run("unwind_method_try_catch: catch variable receives thrown string (PROBE)",
+              catch_variable_receives_thrown_string);
+    utest_run("unwind_method_try_catch: catch variable bind at chunk-top (PROBE)",
+              catch_variable_receives_thrown_string_chunktop);
+    utest_run("unwind_method_try_catch: catch variable INT (PROBE)",
+              catch_variable_int_vs_str);
+    utest_run("unwind_method_try_catch: Realm.x = local control (PROBE)",
+              realm_slot_assign_from_local_int);
 }
