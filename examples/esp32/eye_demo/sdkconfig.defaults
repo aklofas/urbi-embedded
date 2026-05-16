@@ -1,0 +1,36 @@
+# sdkconfig.defaults — ESP32-S3-EYE preset for the eye_demo.
+#
+# ESP-IDF reads this file once on first `idf.py build` to seed
+# build/sdkconfig.  Subsequent menuconfig edits override these values
+# in build/sdkconfig (committed at the top-level via the
+# `idf.py save-defconfig` flow if needed).
+#
+# Targets the ESP32-S3-EYE v2.2: ESP32-S3-WROOM-1 (N8R8 — 8 MB flash,
+# 8 MB octal PSRAM), OV2640 camera on the v2 pinout, ST7789 240x240
+# LCD on SPI2, GPIO 0 BOOT button.  See REVIVAL.md and the v0.7.2-esp32
+# plan T41 for the rationale on each setting.
+
+# Target SoC.
+CONFIG_IDF_TARGET="esp32s3"
+
+# 8 MB flash on the S3-EYE module.  Default is 2 MB which is too small
+# for our partitions.csv (factory partition is 5 MB).
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Octal-PSRAM @ 80 MHz.  N8R8 modules ship with octal PSRAM; the demo
+# allocator (port_psram_alloc) requests MALLOC_CAP_SPIRAM so PSRAM must
+# be enabled and initialised at boot.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# 100 Hz tick.  Matches the FreeRTOS scheduler determinism contract used
+# throughout the urbi runtime (sched preset CI gates run at 100 Hz).
+CONFIG_FREERTOS_HZ=100
+
+# Use the custom partition table at partitions.csv (sibling file).
+# CONFIG_PARTITION_TABLE_FILENAME is derived from
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME when PARTITION_TABLE_CUSTOM=y
+# (see components/partition_table/Kconfig.projbuild for the chain).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

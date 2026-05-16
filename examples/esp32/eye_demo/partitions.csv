@@ -1,0 +1,16 @@
+# partitions.csv — eye_demo factory layout for 8 MB flash.
+#
+# Layout:
+#   0x008000 - 0x008FFF : partition table (4 KB, written by esptool)
+#   0x009000 - 0x00EFFF : nvs            (24 KB)
+#   0x00F000 - 0x00FFFF : phy_init       (4 KB)
+#   0x010000 - 0x50FFFF : factory app    (5 MB — plenty for the demo +
+#                                         baked eye_demo bytecode)
+#
+# No OTA partitions: the demo is single-image factory-only.  When OTA
+# is needed for production, swap to a two-OTA layout and bump flash.
+#
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 0x500000,
