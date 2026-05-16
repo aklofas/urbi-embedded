@@ -61,6 +61,33 @@ jobs:
             echo "No archive produced; skipped"
           fi
 
+  cross-esp32s3:
+    name: cross-compile (ESP32-S3, Xtensa LX7)
+    runs-on: ubuntu-latest
+    # espressif/idf:v6.0.1 ships ESP-IDF + xtensa-esp-elf toolchain
+    # pre-installed at /opt/esp/idf/. Version matches the pin in
+    # components/urbi/idf_component.yml.
+    container: espressif/idf:v6.0.1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Cross-compile (full mode)
+        run: |
+          . /opt/esp/idf/export.sh
+          make cross-esp32s3-full
+      - name: Cross-compile (bytecode-only mode)
+        run: |
+          . /opt/esp/idf/export.sh
+          make cross-esp32s3-bytecode-only
+      - name: Verify freestanding signature golden
+        run: |
+          . /opt/esp/idf/export.sh
+          make test-cross-esp32s3-freestanding-golden
+      - name: Inspect archives
+        run: |
+          . /opt/esp/idf/export.sh
+          xtensa-esp-elf-ar t build/cross-esp32s3-full/liburbi.a
+          xtensa-esp-elf-ar t build/cross-esp32s3-bytecode-only/liburbi.a
+
   lint:
     name: lint
     runs-on: ubuntu-latest
