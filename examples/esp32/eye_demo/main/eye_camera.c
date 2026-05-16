@@ -8,7 +8,13 @@
  * This TU is target-only — the host unit test for detect_blob lives in
  * tests/unit/test_detect_blob.c and includes detect_blob.h directly. */
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/portmacro.h"
+
 #include "esp_camera.h"
+
+#include "urbi/urbi.h"
 
 #include "eye_camera.h"
 #include "detect_blob.h"
@@ -24,3 +30,50 @@ static const camera_config_t cam_config = {
     .fb_count = 2, .grab_mode = CAMERA_GRAB_LATEST,
     .fb_location = CAMERA_FB_IN_PSRAM,
 };
+
+/* === Camera task state ===
+ *
+ * cam_vm / cam_ev_blob are stashed by eye_camera_init and read by the
+ * camera task body.  They are written once and never mutated after the
+ * task starts, so no synchronisation is required.
+ *
+ * target / target_mux protect the active target colour against concurrent
+ * updates from c_set_target_color (called on the urbi VM thread).  A
+ * portMUX is lighter than a FreeRTOS mutex and is the right primitive
+ * for short critical sections that never block.
+ *
+ * display_post_frame is defined in eye_display.c (Phase 4).  The forward
+ * declaration here keeps Phase 3 compile-clean; the link step picks up
+ * the definition once display lands. */
+static struct UVM        *cam_vm;
+static urbi_event_id_t    cam_ev_blob;
+static rgb565_target_t    target     = { .r = 31, .g = 0, .b = 0, .tol = 4 };
+static portMUX_TYPE       target_mux = portMUX_INITIALIZER_UNLOCKED;
+
+extern void display_post_frame(camera_fb_t *fb);
+
+static void camera_task_body(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (!fb) { vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+
+        rgb565_target_t t;
+        portENTER_CRITICAL(&target_mux);
+        t = target;
+        portEXIT_CRITICAL(&target_mux);
+
+        blob_t b = detect_blob((const uint16_t *)fb->buf, fb->width, fb->height, t);
+        if (b.area > 0) {
+            urbi_event_payload_t p;
+            p.u32[0] = (uint32_t)b.x;
+            p.u32[1] = (uint32_t)b.y;
+            p.u32[2] = (uint32_t)b.area;
+            p.u32[3] = 0;
+            urbi_inject_event(cam_vm, cam_ev_blob, &p, 16);
+        }
+
+        display_post_frame(fb);
+    }
+}
