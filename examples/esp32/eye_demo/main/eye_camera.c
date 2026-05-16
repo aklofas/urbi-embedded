@@ -11,6 +11,7 @@
 #include "esp_camera.h"
 
 #include "eye_camera.h"
+#include "detect_blob.h"
 
 /* === Camera config — ESP32-S3-EYE v2.2 pin map (see board schematic) === */
 static const camera_config_t cam_config = {
