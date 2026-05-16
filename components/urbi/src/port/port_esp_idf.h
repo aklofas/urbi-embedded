@@ -34,6 +34,15 @@ void *port_psram_alloc(void *ptr, size_t nbytes, void *ud);
  * esp_timer_get_time(); resolution is 1 µs, wrap is ~292 000 years. */
 uint64_t port_time_us(void);
 
+/* Channel-dispatching writer.  Signature matches urbi_writer_fn
+ * (include/urbi/urbi.h) — pass to urbi_set_writer.  Routes "cerr" through
+ * ESP_LOGE, "clog" through ESP_LOGI, all other channels through printf
+ * (UART/USB-CDC console). */
+void port_writer(void *ud,
+                 const char *channel, size_t channel_len,
+                 const char *msg,     size_t msg_len,
+                 uint64_t ts_us);
+
 #ifdef __cplusplus
 }
 #endif

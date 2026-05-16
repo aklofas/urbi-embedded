@@ -75,3 +75,15 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     # without -Werror and so accepts these silently.
     -Wno-error=pedantic
 )
+
+# Port-glue TUs that include ESP-IDF headers (esp_log.h, esp_timer.h, etc.)
+# need IDF's default language standard (gnu23) because those headers use
+# C11+ _Static_assert and GNU unnamed-union extensions that the urbi core's
+# -std=c99 -Wpedantic rejects with hard parse errors.
+#
+# We override -std=c99 on a per-source basis for the port wrappers; the rest
+# of the urbi component (core C99 sources) keeps the strict mode above.
+set_source_files_properties(
+    ${URBI_SRC_PORT}
+    PROPERTIES COMPILE_OPTIONS "-std=gnu11;-Wno-pedantic"
+)
