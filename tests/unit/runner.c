@@ -91,6 +91,7 @@ extern void test_uobject_suite(void);
 extern void test_uslothandle_suite(void);
 extern void test_ushape_suite(void);
 extern void test_uic_suite(void);
+extern void test_ic_polymorphic_suite(void);
 extern void test_topology_gen_suite(void);
 extern void test_ugc_object_cells_suite(void);
 extern void test_gc_strand_walker_suite(void);
@@ -295,6 +296,7 @@ static const struct suite_entry suites[] = {
     {"uslothandle",                test_uslothandle_suite},
     {"ushape",                     test_ushape_suite},
     {"uic",                        test_uic_suite},
+    {"ic_polymorphic",             test_ic_polymorphic_suite},
     {"topology_gen",               test_topology_gen_suite},
     {"ugc_object_cells",           test_ugc_object_cells_suite},
     {"gc_strand_walker",           test_gc_strand_walker_suite},

@@ -1054,7 +1054,14 @@ dispatch:
                         s->R[dst_reg] = getter_result;
                         NEXT();
                     }
-                    UValue loaded = *ic->slots[k];
+                    /* OBJ-IC-POLY: re-resolve the slot per recv when the IC
+                     * entry caches a local slot — the absolute `slots[k]`
+                     * pointer is recv-specific and would return the first
+                     * cached recv's value for any polymorphic same-shape
+                     * recv that follows. */
+                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
+                                    ? recv->slots[ic->slot_idx[k]]
+                                    : *ic->slots[k];
                     s->R[dst_reg] = loaded;
                     NEXT();
                 }
@@ -1180,16 +1187,15 @@ dispatch:
                         HALT();
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
-                        /* Direct in-place write.  Forward Dijkstra barrier
-                         * fires on the parent UObject (the cell containing
-                         * ic->slots[k]).  Cast UCell* via the pinned
-                         * UObject layout: the slot pointer must be inside
-                         * recv->slots[], so recv (which embeds UCell at
-                         * offset 0) is the parent cell. */
-                        urbi_gc_slot_write(vm, (UCell *)recv,
-                                           (uint32_t)((ic->slots[k] - recv->slots)),
-                                           v);
-                        *ic->slots[k] = v;
+                        /* OBJ-IC-POLY: re-resolve the slot per recv using
+                         * the cached index — the absolute ic->slots[k]
+                         * pointer is recv-specific and writing to it on a
+                         * polymorphic same-shape recv would corrupt the
+                         * first cached recv's slot.  Forward Dijkstra
+                         * barrier fires on the actual recv cell. */
+                        uint32_t s_idx = (uint32_t)ic->slot_idx[k];
+                        urbi_gc_slot_write(vm, (UCell *)recv, s_idx, v);
+                        recv->slots[s_idx] = v;
                         urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
                         slow_path = 0;
                         break;
@@ -1828,7 +1834,11 @@ dispatch:
                         s->R[dst_reg]      = getter_result;
                         NEXT();
                     }
-                    UValue loaded = *ic->slots[k];
+                    /* OBJ-IC-POLY: re-resolve per recv for local slots —
+                     * mirrors the OP_GETSLOT fast path above. */
+                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
+                                    ? recv->slots[ic->slot_idx[k]]
+                                    : *ic->slots[k];
                     s->R[dst_reg + 1U] = self_value;
                     s->R[dst_reg]      = loaded;
                     NEXT();
