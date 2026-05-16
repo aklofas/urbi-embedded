@@ -2,13 +2,15 @@
 #
 # SRCS list grows phase-by-phase:
 #   Phase 3:               eye_camera.c
-#   Phase 4 (this commit): eye_display.c
-#   Phase 5:               eye_button.c, eye_demo_main.c (provides app_main)
+#   Phase 4:               eye_display.c
+#   Phase 5 (this commit): eye_button.c
+#   Phase 5 (T38+):        eye_demo_main.c (provides app_main)
 
 idf_component_register(
     SRCS
         "eye_camera.c"
         "eye_display.c"
+        "eye_button.c"
     INCLUDE_DIRS
         "."
     REQUIRES
