@@ -1,21 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* eye_demo_main — app_main boot sequence.
  *
- * Placeholder TU.  T39/T40 fill this in with:
- *   - destructure_blob (12-byte payload -> 3 UValue ints)
- *   - app_main (urbi_vm_init -> port hooks -> events -> host fns ->
- *     bytecode load -> peripherals -> task spawn)
+ * T39 lands destructure_blob (12-byte ISR payload -> 3 UValue ints).
+ * T40 lands app_main (urbi_vm_init -> port hooks -> events -> host fns ->
+ * bytecode load -> peripherals -> task spawn).
  *
- * Existing as a stub at T38 only so that CMake configure can succeed
- * — the SRCS list references this file, and ESP-IDF errors out at
- * configure time if a listed source doesn't exist.  The link step will
- * still fail until T40 lands app_main, which is the expected
- * pre-Phase-5-completion state.
- *
- * T39 PARTIAL: c_log host fn lives here pre-T40 because the rewritten
- * eye_demo.u (post-T38) references `log(...)` from inside both at(...)
- * handlers.  T40 will register it via urbi_register(vm, realm, "log",
- * c_log) alongside the other host fns. */
+ * Pre-T40 (current commit) the c_log host fn lives here so the rewritten
+ * eye_demo.u (post-T38) can reference `log(...)` from inside both at(...)
+ * handlers.  T40 registers it via urbi_register(vm, realm, "log", c_log)
+ * alongside the other host fns. */
 
 #include <stddef.h>      /* size_t */
 
@@ -57,4 +50,51 @@ int c_log(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
         *out = urbi_make_nil();
     }
     return UEXEC_OK;
+}
+
+/* destructure_blob: ISR-payload -> UValue-args destructure for "blob_seen".
+ *
+ * Matches the canonical urbi_event_payload_destructure_fn typedef at
+ * <urbi/urbi.h>:502-505:
+ *
+ *     typedef int (*urbi_event_payload_destructure_fn)(
+ *         struct UVM *vm,
+ *         const urbi_event_payload_t *payload, size_t payload_len,
+ *         UValue *out_args, int max_args, void *ud);
+ *
+ * The plan spec sketch (plans/2026-05-11-v0.7.2-esp32.md T39) used
+ * `out` / `max` parameter names — same shape, just different identifiers.
+ *
+ * Payload contract: eye_camera.c:75-80 writes the centroid + area as three
+ * uint32_t channels of the 16-byte urbi_event_payload_t.u32[] union:
+ *
+ *     p.u32[0] = blob.x       (0..319)
+ *     p.u32[1] = blob.y       (0..239)
+ *     p.u32[2] = blob.area    (pixel count)
+ *     p.u32[3] = 0            (reserved / pad)
+ *
+ * urbiscript at-binding: `at (blob_seen ?(x, y, area)) { ... }` receives
+ * three int args; the rewritten eye_demo.u uses (x, y, area) shape.
+ *
+ * Returns 3 on success (three UValues written), URBI_ERR_INVALID_ARG (-1)
+ * if max_args < 3 or payload_len < 12 — the at-drain falls back to dropping
+ * the body args for this occurrence per <urbi/urbi.h>:486-493.
+ *
+ * Thread safety: MAIN (called from the safepoint drain on the urbi task,
+ * NOT from ISR context — the ring queues the raw bytes; this fn runs at
+ * the next urbi_step). */
+static int destructure_blob(struct UVM *vm,
+                            const urbi_event_payload_t *payload,
+                            size_t payload_len,
+                            UValue *out_args, int max_args, void *ud)
+{
+    (void)vm;
+    (void)ud;
+    if (max_args < 3 || payload_len < 12 || payload == NULL || out_args == NULL) {
+        return URBI_ERR_INVALID_ARG;
+    }
+    out_args[0] = urbi_make_int((int64_t)payload->u32[0]);
+    out_args[1] = urbi_make_int((int64_t)payload->u32[1]);
+    out_args[2] = urbi_make_int((int64_t)payload->u32[2]);
+    return 3;
 }
