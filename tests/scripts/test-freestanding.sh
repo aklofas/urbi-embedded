@@ -21,8 +21,10 @@ fi
 
 # Which nm to use? Cross-arm needs arm-none-eabi-nm; cross-riscv uses
 # riscv64-unknown-elf-nm (matches the Makefile's riscv64-unknown-elf-gcc
-# CC for rv32imc); otherwise use plain nm.
+# CC for rv32imc); esp32s3 uses the unified ESP-IDF xtensa-esp-elf-nm;
+# otherwise use plain nm.
 case "$ARCHIVE" in
+    *esp32s3*)     NM_CMD=xtensa-esp-elf-nm ;;
     *cross-arm*)   NM_CMD=arm-none-eabi-nm ;;
     *cross-riscv*) NM_CMD=riscv64-unknown-elf-nm ;;
     *)             NM_CMD=nm ;;
