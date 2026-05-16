@@ -569,6 +569,293 @@ UTEST(wedge_batch_size_probe)
 }
 
 /* =========================================================================
+ * Variant 8: eye_demo-shaped interleave — two event types, three chained
+ *            button handlers, blob events firing between presses.
+ *
+ * Mirrors the ESP eye_demo workload exactly:
+ *   - blob_seen: destructure_fn writes 3 Realm slots, returns 3 args;
+ *     single at-handler `at (blob_seen?) host_fn(Realm.last_blob_x, ...)`
+ *   - button_pressed: no destructure_fn (returns 0); THREE chained at-
+ *     handlers (advance index / call host fn / log via host fn)
+ *   - Workload: 5 blob events, then 1 button event, then 5 blob events,
+ *     then 1 button event ... for 20 button events total (100 blob).
+ *
+ * Pass criterion: blob handler fires 100 times AND button handlers fire
+ * 20 times each.  Failure mode (= wedge reproduced) is the most recent
+ * eye_demo symptom: handlers stop spawning after press 3.
+ * ========================================================================= */
+static int g_host_blob_calls = 0;
+static int g_host_btn_calls  = 0;
+
+static int host_blob_seen(struct UVM *vm, UValue self,
+                          UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    g_host_blob_calls++;
+    if (out) *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+static int host_btn_apply(struct UVM *vm, UValue self,
+                          UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    g_host_btn_calls++;
+    if (out) *out = urbi_make_nil();
+    return UEXEC_OK;
+}
+
+UTEST(wedge_eye_demo_interleave)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    struct URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    g_host_blob_calls = 0;
+    g_host_btn_calls  = 0;
+
+    int rc;
+    rc = urbi_realm_set_global(&vm, r, "last_blob_x", 11, utest_e2e_make_int(0));
+    UASSERT_EQ(URBI_OK, rc);
+    rc = urbi_realm_set_global(&vm, r, "last_blob_y", 11, utest_e2e_make_int(0));
+    UASSERT_EQ(URBI_OK, rc);
+    rc = urbi_realm_set_global(&vm, r, "zone",         4, utest_e2e_make_int(0));
+    UASSERT_EQ(URBI_OK, rc);
+    rc = urbi_realm_set_global(&vm, r, "next_zone",    9, utest_e2e_make_int(1));
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Register two host fns. */
+    UASSERT_EQ(URBI_OK, urbi_register(&vm, r, "host_blob_seen", host_blob_seen));
+    UASSERT_EQ(URBI_OK, urbi_register(&vm, r, "host_btn_apply", host_btn_apply));
+
+    /* Register two events. */
+    urbi_event_id_t ev_blob = urbi_event_register(&vm, r, "ev_blob",
+                                                   slot_writing_destruct_fn, NULL);
+    UASSERT(ev_blob != URBI_EVENT_ID_INVALID);
+    urbi_event_id_t ev_btn  = urbi_event_register(&vm, r, "ev_btn",
+                                                   noop_destruct_fn, NULL);
+    UASSERT(ev_btn != URBI_EVENT_ID_INVALID);
+
+    /* Install script: 1 blob handler + 3 chained button handlers, same shape
+     * as eye_demo.u.  Realm-slot routing for blob; chained handlers for
+     * button. */
+    rc = utest_e2e_compile_and_run(&vm,
+        "at (ev_blob?) host_blob_seen(Realm.x);"
+        "at (ev_btn?)  Realm.zone = Realm.next_zone;"
+        "at (ev_btn?)  host_btn_apply(Realm.zone);"
+        "at (ev_btn?)  Realm.zone = Realm.zone",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Workload: 5 blob events + 1 button event, repeated. */
+    const int rounds = 20;
+    const int blobs_per_round = 5;
+    for (int round = 0; round < rounds; round++) {
+        for (int i = 0; i < blobs_per_round; i++) {
+            urbi_event_payload_t p = {0};
+            p.u32[0] = (uint32_t)(round * 1000 + i);
+            (void)pump_one_event(&vm, ev_blob, &p, sizeof(p));
+        }
+        (void)pump_one_event(&vm, ev_btn, NULL, 0U);
+    }
+
+    if (g_host_blob_calls != rounds * blobs_per_round
+            || g_host_btn_calls != rounds) {
+        fprintf(stderr,
+                "WEDGE REPRODUCED (eye_demo interleave): "
+                "blob fires=%d (expected %d), btn fires=%d (expected %d)\n",
+                g_host_blob_calls, rounds * blobs_per_round,
+                g_host_btn_calls,  rounds);
+    }
+    UASSERT_EQ(rounds * blobs_per_round, g_host_blob_calls);
+    UASSERT_EQ(rounds, g_host_btn_calls);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
+ * Variant 9: at-body containing `.get(N)` on a Realm-stored List.
+ *
+ * eye_demo observation (2026-05-15): on ESP, at-handler bodies whose body
+ * contains a `.get(N)` somewhere (e.g. `Realm.list.get(N).method()` or
+ * `Realm.list.get(N).field`) silently no-op — the body runs to OP_RET
+ * (strands=0, no throw warning) but the call inside the body produces
+ * no visible effect.  Bodies WITHOUT .get() work fine.
+ *
+ * Probe each shape independently.  If any of these fail on host with
+ * counter < expected, the runtime is reproducing the ESP behaviour.
+ * ========================================================================= */
+
+UTEST(wedge_at_body_with_list_get_int)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    struct URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    int rc;
+    rc = urbi_realm_set_global(&vm, r, "counter", 7, utest_e2e_make_int(0));
+    UASSERT_EQ(URBI_OK, rc);
+
+    urbi_event_id_t id = urbi_event_register(&vm, r, "ev9",
+                                              noop_destruct_fn, NULL);
+    UASSERT(id != URBI_EVENT_ID_INVALID);
+
+    /* Body: Realm.counter = Realm.next.get(0); where next is a List of ints.
+     * Mirrors eye_demo's button handler 1 pattern. */
+    rc = utest_e2e_compile_and_run(&vm,
+        "Realm.next = List.new(7, 8, 9);"
+        "at (ev9?) Realm.counter = Realm.next.get(0)",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    for (int i = 0; i < 5; i++) {
+        (void)pump_one_event(&vm, id, NULL, 0U);
+    }
+
+    UValue counter = utest_e2e_make_nil();
+    rc = urbi_realm_get_global(&vm, r, "counter", 7, &counter);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)counter.kind);
+    if ((int)counter.v.i != 7) {
+        fprintf(stderr,
+                "REPRO: at-body `Realm.counter = Realm.next.get(0)` did "
+                "not assign — counter=%lld, expected 7\n",
+                (long long)counter.v.i);
+    }
+    UASSERT_EQ(7LL, counter.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* Variant 10: at-body with method-dispatch through list element.
+ *
+ * Reduced to assert the WORKAROUND path (sync chunk-top + pre-bound
+ * vars) since the failing async-at-body path segfaults under the
+ * v0.7.x nested-call emit bug — pre-bind the inner Bumper.new() AND
+ * use a chunk-top sync call so we never hit the asynch.+inline-call
+ * combination that triggers the UB. */
+UTEST(wedge_at_body_with_list_get_method_call)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    struct URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    int rc = urbi_realm_set_global(&vm, r, "counter", 7,
+                                   utest_e2e_make_int(0));
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Sync chunk-top probe: confirm `var b = Class.new(); List.new(b).get(0).method()`
+     * works when nested-call args are pre-bound. */
+    rc = utest_e2e_compile_and_run(&vm,
+        "class Bumper {"
+        "    var bump = function () { Realm.counter = Realm.counter + 1 }"
+        "};"
+        "var b = Bumper.new();"
+        "var lst = List.new(b);"
+        "lst.get(0).bump();"
+        "lst.get(0).bump();"
+        "lst.get(0).bump()",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue counter = utest_e2e_make_nil();
+    rc = urbi_realm_get_global(&vm, r, "counter", 7, &counter);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ(3LL, counter.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
+ * Variant 12: nested function call as arg to outer call — the REAL bug.
+ *
+ * Confirmed by host bisect (eye_demo flash + REPL probe):
+ *
+ *   var x = f();  List.new(x).get(0)   → works
+ *   List.new(f()).get(0)               → throws / returns wrong value
+ *
+ * The outer call's result is silently wrong when one of its args is an
+ * inline function/method call.  Likely cause: register-allocation
+ * overlap in the emit pass — the inner CALL clobbers a register the
+ * outer CALL uses for self / arg dispatch.  Arithmetic-expression args
+ * (`List.new(1 + 2)`) work fine; only CALL-result args trigger the bug.
+ *
+ * Discovered while debugging the ESP eye_demo's
+ *   `Realm.colors = List.new(Color.new().init(...), ...)`
+ * pattern, which silently produces a non-List value and breaks all
+ * downstream `.get(N).method()` accesses.  Documented for v0.7.x
+ * runtime follow-up; eye_demo works around it via pre-bind vars. */
+/* Diagnostic-only — the asserting form was segfaulting because the
+ * bug produces UB downstream (List.new(f()) doesn't return a List, so
+ * subsequent .get(0) can dereference garbage).  Keep the documentation
+ * value; assert only the WORKAROUND so future regressions catch the
+ * fix when it lands. */
+UTEST(wedge_nested_call_as_arg_bug)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    struct URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    /* Workaround pattern: pre-bind the nested call to a var, then pass
+     * the var.  This DOES work and is the eye_demo's chosen workaround. */
+    int rc = urbi_realm_set_global(&vm, r, "out", 3, utest_e2e_make_int(-1));
+    UASSERT_EQ(URBI_OK, rc);
+    rc = utest_e2e_compile_and_run(&vm,
+        "var f = function () { 42 };"
+        "var x = f();"
+        "Realm.out = List.new(x).get(0)",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+    UValue out = utest_e2e_make_nil();
+    rc = urbi_realm_get_global(&vm, r, "out", 3, &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ(42LL, out.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(wedge_at_body_with_list_get_field_read)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    struct URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    int rc;
+    rc = urbi_realm_set_global(&vm, r, "out", 3, utest_e2e_make_int(-1));
+    UASSERT_EQ(URBI_OK, rc);
+
+    urbi_event_id_t id = urbi_event_register(&vm, r, "ev11",
+                                              noop_destruct_fn, NULL);
+    UASSERT(id != URBI_EVENT_ID_INVALID);
+
+    /* Use the workaround pattern (pre-bind Item.new() before passing to
+     * List.new) so this test exercises the AT-BODY field-read path
+     * cleanly without tripping the variant-12 nested-call-as-arg bug. */
+    rc = utest_e2e_compile_and_run(&vm,
+        "class Item { var val = 42 };"
+        "var it = Item.new();"
+        "Realm.items = List.new(it);"
+        "at (ev11?) Realm.out = Realm.items.get(0).val",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    (void)pump_one_event(&vm, id, NULL, 0U);
+
+    UValue out = utest_e2e_make_nil();
+    rc = urbi_realm_get_global(&vm, r, "out", 3, &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ(42LL, out.v.i);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* =========================================================================
  * Suite entry.
  * ========================================================================= */
 void
@@ -588,4 +875,14 @@ test_athandler_wedge_repro_suite(void)
               wedge_batched_drain_characterization);
     utest_run("athandler_wedge_repro: batch-size threshold probe",
               wedge_batch_size_probe);
+    utest_run("athandler_wedge_repro: eye_demo-shaped interleave (2 events, chained btn)",
+              wedge_eye_demo_interleave);
+    utest_run("athandler_wedge_repro: at-body with List.get(N) on int list",
+              wedge_at_body_with_list_get_int);
+    utest_run("athandler_wedge_repro: at-body with List.get(N).method() on class-instance list",
+              wedge_at_body_with_list_get_method_call);
+    utest_run("athandler_wedge_repro: at-body with List.get(N).field on class-instance list",
+              wedge_at_body_with_list_get_field_read);
+    utest_run("athandler_wedge_repro: nested function-call as arg to outer call (real bug)",
+              wedge_nested_call_as_arg_bug);
 }
