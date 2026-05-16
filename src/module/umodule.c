@@ -1132,7 +1132,14 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *   detach, nested[k] reads NULL.  This is the expected steady-state for any
  *   chunk that installed reactive watchers — umodule_destroy must skip NULL
  *   slots without freeing them, since the watcher's pool_free now owns
- *   that proto and will free it on watcher recycle. */
+ *   that proto and will free it on watcher recycle.
+ *
+ *   v0.7.3 — detach only happens at `s->frame_count == 0` (chunk-top
+ *   installs).  Installs inside a callee skip the transfer entirely to
+ *   avoid the cascade-wake use-after-free on shared protos, so callee-side
+ *   nested[] slots stay populated and are freed normally below.  See
+ *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
+ *   rationale. */
 void umodule_destroy(UModule *module) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);

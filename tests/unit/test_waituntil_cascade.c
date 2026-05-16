@@ -134,5 +134,6 @@ test_waituntil_cascade_suite(void)
      *   utest_run("waituntil_cascade: 3 strands wake simultaneously on cond fire",
      *             waituntil_cascade_three_strands_wake);
      */
-    (void)waituntil_cascade_three_strands_wake;
+    utest_run("waituntil_cascade: 3 strands wake simultaneously on cond fire",
+              waituntil_cascade_three_strands_wake);
 }

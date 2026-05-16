@@ -34,25 +34,54 @@
 /* === strand_closure_unlink ===
  *
  * Remove `cl` from `s->closure_list` (pointer-to-pointer walk) AND detach
- * `cl->proto` from `s->module->nested[]` (by nulling that slot) so that
- * umodule_destroy does not free the proto when the install run ends.
- *
- * Returns 1 if `cl` was found and removed (it was heap-allocated by OP_CLOSURE
- * and both the closure and its proto are now owned by the watcher); returns 0
- * otherwise (NULL pointer, test sentinel, or already unlinked).
+ * `cl->proto` from `s->module->nested[]` so umodule_destroy does not free
+ * the proto when the install run ends.  Returns 1 if `cl` was found and
+ * removed (cl + proto are now owned by the watcher); returns 0 otherwise
+ * (NULL pointer, test sentinel, already unlinked, or detach skipped — see
+ * below).
  *
  * Called by install_watcher_runtime / install_at_event_runtime to transfer
  * ownership of condition/body/onleave closures from the strand's pre-GC
  * free-list to the watcher.  After a successful unlink:
  *   - urbi_vm_run's closure cleanup loop will not free `cl`
  *   - umodule_destroy will not free `cl->proto` or its sub-buffers
- *   - pool_free must free both proto (+ sub-buffers) and the closure */
+ *   - pool_free must free both proto (+ sub-buffers) and the closure
+ *
+ * v0.7.3 cascade fix — frame_count gating:
+ *
+ * The detach+own transfer is only safe when the OP_CLOSURE that produced
+ * `cl` will NOT be executed again against the same nested[] slot.  Once
+ * detached, nested[k] reads NULL, and any future OP_CLOSURE Bx=k would
+ * vm_alloc_closure(NULL) → SEGV.
+ *
+ * At the chunk-top frame (`s->frame_count == 0`) we know the surrounding
+ * code path runs exactly once per vm_run, so detach is safe.  At
+ * `s->frame_count > 0` the install is happening inside a callee that may
+ * be re-invoked — that re-invocation re-runs the same OP_CLOSURE.  In that
+ * case skip the transfer entirely: leave `cl` on the strand's
+ * `closure_list` (so the strand's eventual cleanup frees it) and leave the
+ * proto on `nested[]` (so module_destroy frees it).  Returning 0 keeps the
+ * caller from setting `URBI_WATCHER_OWNS_*` and from claiming proto
+ * ownership.
+ *
+ * Lifetime implication: for the in-function-body WAITUNTIL pattern (the
+ * cascade scenario), the waiter strand outlives the watcher — the watcher
+ * is unregistered atomically at wake, then the strand resumes, eventually
+ * dies, and cleanup frees `cl`.  WHENEVER / AT / AT_SYNC installed from
+ * inside a function body has a known limitation: if the calling strand
+ * dies before the watcher fires, the watcher's cl-pointers dangle.  That
+ * pattern is uncommon at v0.7.3 and is tracked as a v1.x backlog item. */
 static int
 strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
 {
     struct UClosure **pp;
     size_t k;
     if (cl == NULL) return 0;
+
+    /* frame_count > 0: callee — re-invocation may re-run OP_CLOSURE.  Skip
+     * the transfer; the strand's own cleanup will free cl when it dies. */
+    if (s->frame_count > 0) return 0;
+
     pp = &s->closure_list;
     while (*pp != NULL) {
         if (*pp == cl) {
@@ -223,11 +252,13 @@ install_watcher_runtime(
     w->body_strand      = NULL;
 
     /* Ownership transfer: unlink cond/body/onleave from s->closure_list so
-     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures that
-     * were heap-allocated by OP_CLOSURE will be found on the list; test
+     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures
+     * that were heap-allocated by OP_CLOSURE will be found on the list; test
      * sentinels ((UClosure *)1 etc.) are not on the list and are not freed.
      * Per-closure ownership bits track which were actually unlinked so
-     * pool_free knows exactly which to free on unregister. */
+     * pool_free knows exactly which to free on unregister.  Proto ownership
+     * stays with the compiling module (v0.7.3 cascade fix; see the
+     * URBI_WATCHER_OWNS_* banner in uwatcher.h). */
     if (strand_closure_unlink(s, cond))    w->flags |= URBI_WATCHER_OWNS_COND;
     if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
     if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;
