@@ -442,15 +442,19 @@ at sync (Realm.idx.changed?) Realm.sync_fires = Realm.sync_fires + 1;
 // always stays 0.
 Realm.wait_done = 0;
 
-// === Tier-2c: `&` fork-join (parallel join) ============================
-// `lhs & rhs` spawns rhs as a child strand, parent runs lhs, joins
-// when child completes, result is void.  Tests the fork+join primitive
-// — different from `,` (fire-and-forget) and `|` (sequential atomic).
+// === Tier-2c: `&` fork-join — wrapped in a function ====================
+// `lhs & rhs` spawns rhs as a child strand, parent runs lhs, joins when
+// child completes.  Runtime constraint: OP_FORK_JOIN requires the
+// urbi_step scheduler driver, so `&` CANNOT run at chunk-top (which
+// goes through urbi_run_chunk's transient strand).  Workaround: wrap
+// the `&` inside a function body called from an at-handler — the
+// at-handler's body runs under urbi_step.
 //
-// Both counters should increment per stats_tick fire.  Side-effect:
-// strands transiently elevated to 2-3 during the fork (visible as
-// strands= field bumping in the next stats line).
+// Both counters should increment per stats_tick fire.
 Realm.fork_lhs = 0;
 Realm.fork_rhs = 0;
-at (stats_tick?) Realm.fork_lhs = Realm.fork_lhs + 1 &
-                 Realm.fork_rhs = Realm.fork_rhs + 1;
+var fork_test = function () {
+    Realm.fork_lhs = Realm.fork_lhs + 1 &
+    Realm.fork_rhs = Realm.fork_rhs + 1
+};
+at (stats_tick?) fork_test();
