@@ -36,24 +36,80 @@
 //     S42/S43).  Workaround used here: wrap the debounce + cycle
 //     logic in a Cycle class method, instantiate on Realm.
 
-// === Color palette ======================================================
+// === Color palette (chrominance-based) ==================================
+//
+// Switched from absolute-RGB-distance to chrominance 2026-05-16: under
+// OV2640 + AWB, GREEN's RGB-distance window matched 5-13% of all pixels
+// across the frame even with tight tolerance (diagnostic data: probe G
+// = 2500-7400 hits vs RED = 0-716, BLUE = 10-758).  Tightening tol
+// either over-matched (tol=12) or zeroed out (tol=8).  RGB-distance is
+// fundamentally sensitive to lighting drift.
+//
+// Chrominance fixes this: a pixel matches when its dominant channel is
+// MATERIALLY BRIGHTER than the other two (by `dominance`) AND bright
+// enough to not be shadow noise (>= `min_bright`).  Robust against
+// AWB shifts because it tests channel SHAPE, not absolute values.
+//
+// See detect_blob_chroma.h for the C-side detector.
+//
+// Color slots:
+//   dominant   — 0 RED / 1 GREEN / 2 BLUE (which channel must be brightest)
+//   dominance  — min margin over the other two channels (5-bit scale, typ 6-12)
+//   min_bright — gate noise (5-bit scale, typ 10-16)
 class Color {
-    var init = function (r, g, b, tol, name) {
-        this.r = r; this.g = g; this.b = b;
-        this.tol = tol;
-        this.name = name;
+    var init = function (dominant, dominance, min_bright, name) {
+        this.dominant   = dominant;
+        this.dominance  = dominance;
+        this.min_bright = min_bright;
+        this.name       = name;
         this
     }
 };
 
+// Per-color dominance tuning (2026-05-16).  Diagnostic data: with
+// dominance=4 / min_bright=8, RED scans matched 1000+ pixels per
+// held object, BLUE matched 200-500, but GREEN matched only 30-150
+// even when the user actively held a green object inside the frame.
+// Root cause: the OV2640 AWB actively compensates green saturation
+// (AWB tries to neutralize the global colour balance, so a strong
+// green object pulls the WHOLE image toward magenta — which then
+// re-suppresses the original green's saturation).  Lower GREEN's
+// dominance to 2 so weakly-chromatic green pixels still register.
+// RED/BLUE keep dominance=4 since they show enough margin without
+// AWB fighting back.
 Realm.colors = List.new(
-    Color.new().init(24,  6,  6, 12, "RED"),
-    Color.new().init( 6, 48,  6, 16, "GREEN"),
-    Color.new().init( 6,  6, 24, 12, "BLUE"));
+    Color.new().init(0, 4, 8, "RED"),
+    Color.new().init(1, 2, 6, "GREEN"),
+    Color.new().init(2, 4, 8, "BLUE"));
 
 Realm.idx        = 0;
 Realm.next_idx   = List.new(1, 2, 0);
 Realm.blob_count = 0;
+
+// Telemetry counters for the level-triggered milestone whenever watcher
+// (added 2026-05-16 to exercise more reactive surface):
+//   Realm.last_milestone keeps the threshold floor — when blob_count grows
+//   above last_milestone + 500 the whenever body fires once, bumps
+//   last_milestone to blob_count, and the cond becomes false again until
+//   blob_count grows another 500.
+Realm.last_milestone = 0;
+Realm.idx_changes    = 0;
+Realm.scan_throws    = 0;
+// Bumped from inside the inner try/finally `finally` arm in BlobScan.scan.
+// Urbi spec contract (per tests/chk/control_transfer/{try_finally,nested_finally}.chk):
+// finally runs ONLY during unwind that PASSES THROUGH the FLAG_HAS_FINALLY
+// TRY_FRAME, NOT on normal completion AND NOT when a sibling catch
+// absorbs the throw first.  Sequence:
+//   - throw fires → walker pops inner TRY_FRAME (FLAG_HAS_FINALLY) →
+//     runs finally body → unwind propagates → outer TRY_FRAME absorbs
+//   - normal completion path: inner OP_TRY_END pops, JMP past finally
+// Demo uses the NESTED pattern (try-finally inside try-catch) to make
+// finally actually fire on the unwind path.  Plain try/catch/finally
+// would never fire finally because the catch absorbs first.  See
+// test_whenever_double_fire.c for both shapes.
+// Contract: scan_finallies == scan_throws (every thrown scan unwinds
+// through inner finally, then outer catch absorbs).
+Realm.scan_finallies = 0;
 
 // === Cycle class — debounced button handler =============================
 //
@@ -83,11 +139,10 @@ class Cycle {
         if (now - this.last_us > this.dbnc_us) {
             this.last_us = now;
             Realm.idx = Realm.next_idx.get(Realm.idx);
-            set_target_color(
-                Realm.colors.get(Realm.idx).r,
-                Realm.colors.get(Realm.idx).g,
-                Realm.colors.get(Realm.idx).b,
-                Realm.colors.get(Realm.idx).tol);
+            set_target_chroma(
+                Realm.colors.get(Realm.idx).dominant,
+                Realm.colors.get(Realm.idx).dominance,
+                Realm.colors.get(Realm.idx).min_bright);
             log("target =>",
                 Realm.colors.get(Realm.idx).name,
                 "total blobs:",
@@ -98,11 +153,251 @@ class Cycle {
 
 Realm.cycle = Cycle.new().init();
 
-log("eye_demo (class-based, S42 + OBJ-IC-POLY) loaded - BOOT cycles RED -> GREEN -> BLUE");
+// === Per-watcher fire counters (chained at-handlers below set these) ====
+//
+// Each at(event?) handler bumps a Realm slot so the Stats snapshot can
+// report which handlers actually fired in the last 2s window.  Detects:
+//   * Handler starvation (event fires but counter doesn't increment).
+//   * Imbalanced fire rates (e.g. blob_seen firing 50× more than expected).
+//   * Spurious fires from latent reactive-runtime bugs.
+Realm.fires_blob   = 0;
+Realm.fires_button = 0;
+Realm.fires_stats  = 0;
+Realm.fires_scan   = 0;
 
-// === BLOB SEEN — two chained at-handlers ================================
+// === Stats class — every-2s snapshot via diagnostic host fns ============
+//
+// Pre-stress-test, eye_demo_main.c::port_stats_task formatted the full
+// stats line directly via ESP_LOGI.  Stress-test refactor: that task
+// now only computes the FPS deltas + injects `stats_tick`.  Each per-
+// data-source host fn returns a snapshot; Stats.snapshot() calls all of
+// them and emits one big log() line.
+//
+// Exercises in production (one fire every 2s × N runs):
+//   * Cross-task event injection (FreeRTOS stats task -> urbi task SPSC ring).
+//   * `at (event?)` body invoking class instance method (task #23 fix).
+//   * Class method calling many host fns sequentially without strand growth.
+//
+// Snapshot fields:
+//   * cam=Nfps inject=Nfps              — camera + blob-injection rate
+//   * strands=N watchers=N/N             — VM scheduler state
+//   * ring=N(max=N) ovf=N                — SPSC event-ring depth + high-water
+//   * heap_int=N(min=N)KB psram=N(min=N)KB — heap free + per-interval low-water
+//   * steps R=N Q=N W=N F=N              — urbi_step result distribution
+//   * fires bl=N btn=N st=N sc=N         — per-watcher fire counts
+//   * evt btn=N st=N sc=N                — per-event injection counts
+//   * probe R=N G=N B=N                  — per-color C-side blob hits (probe)
+//   * center=R/G/B                       — frame-center RGB565 sample
+//   * dqbuf_max=Nus                      — DQBUF wait high-water-mark
+class Stats {
+    var snapshot = function () {
+        Realm.fires_stats = Realm.fires_stats + 1;
+        log("stats:",
+            "cam=",         c_cam_fps(),     "fps inject=", c_inject_fps(), "fps",
+            "strands=",     c_strands(),
+            "watchers=",    c_watchers_in_use(), "/", c_watchers_high_water(),
+            "ring=",        c_ring_max(),
+            "ovf=",         c_ring_ovf(),
+            "heap_int=",    c_heap_int_kb(), "min=", c_heap_int_min_kb(), "KB",
+            "psram=",       c_heap_psram_kb(), "min=", c_heap_psram_min_kb(), "KB",
+            "steps R=",     c_step_running(),
+            "Q=",           c_step_quiescent(),
+            "W=",           c_step_wake_at(),
+            "F=",           c_step_fatal(),
+            "fires bl=",    Realm.fires_blob,
+            "btn=",         Realm.fires_button,
+            "st=",          Realm.fires_stats,
+            "sc=",          Realm.fires_scan,
+            "evt btn=",     c_evt_btn(),
+            "st=",          c_evt_stats(),
+            "sc=",          c_evt_scan(),
+            "probe R=",     c_probe_red(),
+            "G=",           c_probe_green(),
+            "B=",           c_probe_blue(),
+            "center=",      c_center_r(), "/", c_center_g(), "/", c_center_b(),
+            "dqbuf_max=",   c_dqbuf_max_wait_us(), "us",
+            "ms=",          Realm.last_milestone,
+            "idxch=",       Realm.idx_changes,
+            "thr=",         Realm.scan_throws,
+            "fin=",         Realm.scan_finallies)
+    }
+};
+
+Realm.stats = Stats.new();
+
+// === Milestone class — body for the level-triggered whenever watcher ====
+//
+// The whenever watcher (registered at chunk-bottom) fires this every
+// time `Realm.blob_count > Realm.last_milestone + 500` becomes true.
+// Body sets last_milestone = blob_count so the cond goes false again —
+// no infinite-fire loop.  Tests the M5 UWATCHER_WHENEVER level-trigger
+// path under real reactive-runtime load.
+class Milestone {
+    var hit = function () {
+        Realm.last_milestone = Realm.blob_count;
+        log("MILESTONE: blob_count=", Realm.blob_count, "watchers=", c_watchers_in_use())
+    }
+};
+Realm.milestone = Milestone.new();
+
+// === BlobScan class — full HSV-range scan in urbiscript =================
+//
+// Every scan_tick (~0.5 Hz, fired by the camera task after memcpy'ing
+// the latest frame into the snap buffer), this class loops over the
+// 240x240 image at SUBSAMPLE stride and counts pixels matching the
+// current Realm.colors[Realm.idx] target.  The C-side detect_blob keeps
+// running every frame at 25fps — this stress-test scan runs in parallel
+// for pure runtime-load characterisation, not for crosshair feedback.
+//
+// At subsample=4 the inner loop runs 60x60=3,600 iterations per scan;
+// each iteration is 3 host-fn calls (c_get_pixel_r/g/b) + 6 arithmetic
+// ops + branch + accumulators.  Expected total: ~10,800 host-fn calls
+// and ~70,000 bytecode ops per scan tick.  Crank subsample to 1 for
+// the full 240x240 grid (57,600 iterations / 172,800 host-fn calls).
+//
+// Exercises in production (one fire every 2s × N runs):
+//   * Long-running at-body (~0.2s scan time at subsample=4) — pushes
+//     the scheduler's cooperative-yield model under sustained load.
+//   * Tight nested while loops with arithmetic + branches per iteration.
+//   * Per-pixel `this.tr / .tg / .tb` reads — perfect IC fast-path
+//     workout (single bytecode site, single recv shape, thousands of
+//     reads — pre-OBJ-IC-POLY this would have been silently wrong).
+//   * High-rate host-fn dispatch (3 calls per pixel).
+//   * Realm slot writes only at end-of-scan (centroid + count).
+class BlobScan {
+    var init = function (subsample) {
+        this.subsample = subsample;
+        this.scans = 0;
+        this
+    };
+    var scan = function () {
+        // Tell the camera task "I'm scanning — don't queue another
+        // scan_tick".  At subsample=1 this body takes seconds; without
+        // the guard, scan_ticks at the C-side cadence would pile up in
+        // the SPSC event ring.  c_scan_end at the bottom releases.
+        c_scan_begin();
+        var t0 = System.time_us();
+        // Re-target each scan from the current cycle colour.  Lift the
+        // chroma fields into locals so the per-pixel hot path doesn't
+        // pay for `this.X` reads every iteration.
+        var color = Realm.colors.get(Realm.idx);
+        var dom_ch     = color.dominant;
+        var dominance  = color.dominance;
+        var min_bright = color.min_bright;
+        var s = this.subsample;
+
+        // Chrominance check: dominant channel must be >= other_two + dominance
+        // AND dominant >= min_bright.  Green is 6-bit so we normalize by /2
+        // to put all three channels on the same 5-bit scale.
+        var hits = 0; var sum_x = 0; var sum_y = 0;
+        var y = 0;
+        while (y < 240) {
+            var x = 0;
+            while (x < 240) {
+                var r  = c_get_pixel_r(x, y);
+                var g  = c_get_pixel_g(x, y) / 2;   // 6-bit -> 5-bit
+                var bl = c_get_pixel_b(x, y);
+                var dom = 0; var oth1 = 0; var oth2 = 0;
+                if (dom_ch == 0) { dom = r;  oth1 = g;  oth2 = bl };
+                if (dom_ch == 1) { dom = g;  oth1 = r;  oth2 = bl };
+                if (dom_ch == 2) { dom = bl; oth1 = r;  oth2 = g  };
+                if (dom >= min_bright) {
+                    if (dom - oth1 >= dominance) {
+                        if (dom - oth2 >= dominance) {
+                            hits = hits + 1;
+                            sum_x = sum_x + x;
+                            sum_y = sum_y + y
+                        }
+                    }
+                };
+                x = x + s
+            };
+            y = y + s
+        };
+        this.scans = this.scans + 1;
+        var dur_us = System.time_us() - t0;
+        // Tier-1d: NESTED try/finally inside try/catch exercising the
+        // unwind walker.  Urbi `finally` semantic: runs only when unwind
+        // passes through the FLAG_HAS_FINALLY TRY_FRAME.  A plain
+        // `try{}catch{}finally{}` would have catch absorb first, leaving
+        // finally unreachable — that surprised us at 2026-05-16 (fin=0
+        // despite thr>0 in the prior iteration).  The nested form below
+        // is the working pattern from nested_finally.chk.
+        //   - Even-numbered scans deliberately throw "even-scan-test"
+        //   - Zero-hit scans throw "no_match"
+        //   - Odd-numbered scans with hits take the normal path
+        //   - inner finally runs DURING unwind (before outer catch)
+        //   - outer catch absorbs the throw, logs the caught value
+        // c_scan_end runs OUTSIDE both try blocks so the camera gate
+        // releases on every code path.
+        try {
+            try {
+                // (scans / 2) * 2 == scans → even-number check
+                var half = this.scans / 2;
+                if (half * 2 == this.scans) {
+                    Realm.scan_throws = Realm.scan_throws + 1;
+                    throw "even-scan-test"
+                };
+                if (hits == 0) {
+                    Realm.scan_throws = Realm.scan_throws + 1;
+                    throw "no_match"
+                };
+                log("urbi-scan #", this.scans,
+                    color.name, "hits=", hits,
+                    "centroid=", sum_x / hits, "/", sum_y / hits,
+                    "dur_us=", dur_us)
+            } finally {
+                Realm.scan_finallies = Realm.scan_finallies + 1
+            }
+        } catch (e) {
+            log("urbi-scan #", this.scans, color.name, "caught:", e,
+                "dur_us=", dur_us, "throws=", Realm.scan_throws)
+        };
+        c_scan_end()
+    }
+};
+
+// subsample=1 → 240x240 grid → 57,600 pixel iterations per scan.
+// Empirically ~370 ms/scan at subsample=4 (3,600 iter, log evidence
+// 2026-05-16); subsample=1 should be ~16x = ~6 s/scan, which exceeds
+// the 2 s scan_tick cadence — the c_scan_begin/c_scan_end guard in
+// scan() lets the camera task self-throttle to the actual urbiscript
+// throughput.  Lower to 4 / 8 / 16 for less stress.
+Realm.scanner = BlobScan.new().init(1);
+
+log("eye_demo (class-based, S42 + OBJ-IC-POLY + scripted stats + urbi-scan) loaded");
+
+// === BLOB SEEN — chained at-handlers (crosshair, count, fire counter) ===
 at (blob_seen?) draw_crosshair(Realm.last_blob_x, Realm.last_blob_y);
 at (blob_seen?) Realm.blob_count = Realm.blob_count + 1;
+at (blob_seen?) Realm.fires_blob = Realm.fires_blob + 1;
 
-// === BUTTON CYCLE — single debounced handler ============================
+// === BUTTON CYCLE — debounced handler + fire counter ====================
 at (button_pressed?) Realm.cycle.press();
+at (button_pressed?) Realm.fires_button = Realm.fires_button + 1;
+
+// === STATS TICK — every 2s, snapshot vm/heap counters ===================
+// (Stats.snapshot() bumps Realm.fires_stats internally.)
+at (stats_tick?) Realm.stats.snapshot();
+
+// === SCAN TICK — every ~2s, full HSV scan in urbiscript ==================
+at (scan_tick?) Realm.scanner.scan();
+at (scan_tick?) Realm.fires_scan = Realm.fires_scan + 1;
+
+// === Tier-1a: edge-triggered milestone watcher ==========================
+// `at (cond) body` — body fires on rising edge of cond (false→true).
+// Single fire per crossing.  This is the correct idiom for "alert me
+// once per threshold cross" — `whenever` (level-triggered) would fire
+// MULTIPLE times because the body's slot-write doesn't propagate before
+// the next safepoint visit re-evaluates the cond.  See test_whenever_double_fire.c
+// and the design-risks entry "watcher eval-pass requires safepoint visits".
+at (Realm.blob_count > Realm.last_milestone + 500) Realm.milestone.hit();
+
+// === Tier-1b: slot-change watcher on Realm.idx ==========================
+// Fires every time Realm.idx mutates (cycle press, future auto-cycle).
+// Exercises the at(X.changed?) syntax + the slot-change emit + watcher
+// dispatch path — different runtime arm than at(event?).
+at (Realm.idx.changed?) Realm.idx_changes = Realm.idx_changes + 1;
+at (Realm.idx.changed?) log("idx-change #", Realm.idx_changes,
+                             "now=", Realm.idx,
+                             "color=", Realm.colors.get(Realm.idx).name);

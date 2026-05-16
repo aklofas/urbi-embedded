@@ -251,6 +251,119 @@ UTEST(at_handler_body_with_call_drains_dirty)
     urbi_vm_destroy(&vm);
 }
 
+/* === Test 4: try/catch/finally semantic probe ==========================
+ *
+ * Discovered 2026-05-16 on eye_demo: `try { throw } catch (e) {} finally {}`
+ * does NOT run the finally arm when the catch absorbs the throw.  Per
+ * tests/chk/control_transfer/try_finally.chk ("finally runs only during
+ * unwind, not on normal exit") + the emit_try_frame structure
+ * (src/emit/uemit_unwind.c around line 140 — outer FLAG_HAS_FINALLY
+ * wraps inner FLAG_HAS_CATCH; catch absorbs in inner; outer is reached
+ * via normal flow, popping TRY_END without running finally).
+ *
+ * Result: in `try { ... } catch (e) { ... } finally { ... }`, finally
+ * NEVER runs because catch always absorbs (M3 match-all pattern).
+ * This is a footgun for users coming from Java/Python/C# where finally
+ * runs unconditionally.  Documents the current behavior so a future
+ * spec discussion can decide whether to keep or change it. */
+UTEST(try_catch_finally_does_not_run_finally_on_caught_throw)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught_n", 8,
+                                               utest_e2e_make_int(0)));
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "finally_n", 9,
+                                               utest_e2e_make_int(0)));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "try {"
+        "  throw \"x\""
+        "} catch (e) {"
+        "  Realm.caught_n = Realm.caught_n + 1"
+        "} finally {"
+        "  Realm.finally_n = Realm.finally_n + 1"
+        "}",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue cn = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught_n", 8, &cn));
+    UASSERT_EQ((int)UVAL_INT, (int)cn.kind);
+    UASSERT_EQ(1LL, cn.v.i);   /* catch ran exactly once */
+
+    UValue fn = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "finally_n", 9, &fn));
+    UASSERT_EQ((int)UVAL_INT, (int)fn.kind);
+    UASSERT_EQ(0LL, fn.v.i);   /* finally did NOT run — caught throws bypass it */
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === Test 5: nested try/finally + outer try/catch DOES run finally ====
+ *
+ * The working pattern from nested_finally.chk: place finally INSIDE the
+ * try block (separate try-finally), then wrap with outer try-catch.
+ * The inner finally runs during unwind (before outer catch absorbs);
+ * outer catch absorbs the throw. */
+UTEST(nested_try_finally_in_try_catch_runs_finally)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught_n", 8,
+                                               utest_e2e_make_int(0)));
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "finally_n", 9,
+                                               utest_e2e_make_int(0)));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "try {"
+        "  try {"
+        "    throw \"x\""
+        "  } finally {"
+        "    Realm.finally_n = Realm.finally_n + 1"
+        "  }"
+        "} catch (e) {"
+        "  Realm.caught_n = Realm.caught_n + 1"
+        "}",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue fn = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "finally_n", 9, &fn));
+    UASSERT_EQ((int)UVAL_INT, (int)fn.kind);
+    UASSERT_EQ(1LL, fn.v.i);   /* inner finally ran during unwind */
+
+    UValue cn = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught_n", 8, &cn));
+    UASSERT_EQ((int)UVAL_INT, (int)cn.kind);
+    UASSERT_EQ(1LL, cn.v.i);   /* outer catch absorbed the throw */
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_whenever_double_fire_suite(void)
 {
@@ -260,4 +373,8 @@ test_whenever_double_fire_suite(void)
               at_handler_body_without_call_does_not_drain_dirty);
     utest_run("whenever_double_fire: at-body with call DOES drain dirty (workaround)",
               at_handler_body_with_call_drains_dirty);
+    utest_run("whenever_double_fire: try/catch/finally with caught throw — finally does NOT run (urbi semantic)",
+              try_catch_finally_does_not_run_finally_on_caught_throw);
+    utest_run("whenever_double_fire: nested try/finally in try/catch — finally DOES run",
+              nested_try_finally_in_try_catch_runs_finally);
 }
