@@ -555,9 +555,21 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
 
 /* umodule_destroy — release all owned buffers and (if vm is non-NULL)
  * rescue protos with non-zero refcount to vm->stdlib_protos before freeing
- * the rest.  Pass vm = NULL when destroying a module that's not bound to
- * any vm (e.g. failed compile cleanup before urbi_run_chunk).  See the
- * MOD-015 banner above the body. */
+ * the rest.
+ *
+ * vm-NULL contract (caller must guarantee):
+ *   - The module has either never been run, OR
+ *   - Every UClosure that ever pointed at any of this module's nested[]
+ *     protos has been freed BEFORE this call.
+ *
+ * Today (v0.7.3) caller-side enforcement is ad-hoc because UClosure is
+ * still strand/watcher-owned and freed eagerly at pool_free / strand
+ * cleanup — so by the time umodule_destroy runs, surviving closure-refs
+ * are typically zero.  Once UClosure is GC-promoted (T14), the eager-free
+ * assumption breaks: closures live until GC sweep, so passing NULL here
+ * for a previously-run module becomes use-after-free territory.  Live-vm
+ * callsites should always pass the vm pointer; reserve NULL for
+ * failed-compile cleanup where the module was never bound to any vm. */
 void umodule_destroy(UModule *module, struct UVM *vm);
 
 /* Return a static string such as "ULOAD_BAD_MAGIC" for debug. */
