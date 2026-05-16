@@ -44,7 +44,13 @@ static const camera_config_t cam_config = {
  *
  * display_post_frame is defined in eye_display.c (Phase 4).  The forward
  * declaration here keeps Phase 3 compile-clean; the link step picks up
- * the definition once display lands. */
+ * the definition once display lands.
+ *
+ * Frame buffer ownership contract: camera_task_body hands fb to
+ * display_post_frame and does NOT call esp_camera_fb_return(fb) itself.
+ * The display TU TAKES OWNERSHIP: it must call esp_camera_fb_return(fb)
+ * once the blit (or queue handoff) is complete, otherwise the camera
+ * driver's 2-buffer pool starves and esp_camera_fb_get returns NULL. */
 static struct UVM        *cam_vm;
 static urbi_event_id_t    cam_ev_blob;
 static rgb565_target_t    target     = { .r = 31, .g = 0, .b = 0, .tol = 4 };
