@@ -80,6 +80,11 @@ $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
 # from the example tree.
 $(BUILDDIR)/tests/unit/test_detect_blob.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
 
+# tests/unit/test_draw_crosshair.c includes crosshair.h from the same
+# eye_demo main/ directory — same per-TU include-path pattern as
+# test_detect_blob.o just above.
+$(BUILDDIR)/tests/unit/test_draw_crosshair.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
+
 # --- REPL binary --------------------------------------------------------
 #
 # urbi — the REPL binary.  Builds from tools/urbi.c + vendored linenoise
