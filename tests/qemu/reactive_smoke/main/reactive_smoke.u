@@ -1,0 +1,26 @@
+// QEMU reactive smoke — proves event injection -> at-watcher -> host-fn -> printf
+//
+// Goal: exercise the v0.7.1 reactive C-API end-to-end on QEMU.  The C side
+// (reactive_smoke_main.c) registers `ping` (event with destructure) and
+// `signal_pass` (host fn), injects 3 events with seq=1,2,3, and drives
+// urbi_step until quiescent.
+//
+// Drift from spec §6.4: the original sketch used `cout << "got ping seq="
+// << seq;` for an extra UART marker per event.  Two v0.7.1 lex gaps
+// prevent that form:
+//   * `cout << ...` is not tokenized — there's no stream-operator lex
+//     rule.  See the eye_demo rewrite in commit 7fb0c23 for the same
+//     drift; cite is tests/chk/stdlib/containers/list_core.chk:8-10 for
+//     the broader "stdlib API beats sugar in v0.7.1" rule.
+//   * Inline destructure `at (ping ?(seq)) { ... }` parses, but the
+//     canonical idiom matching tests/chk/reactive/at/*.chk is the
+//     callback form `at (ping?) function (seq) { ... }`.
+//
+// We drop the `cout` line — the `signal_pass(seq)` call still produces a
+// per-event UART marker via C-side printf, which is what the
+// expected_markers.txt oracle now greps for.  No urbi-side writer output
+// in this smoke; the writer hook is still installed in case a future
+// extension needs it.
+at (ping?) function (seq) {
+    signal_pass(seq);
+};
