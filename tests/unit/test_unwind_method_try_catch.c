@@ -109,7 +109,7 @@ UTEST(method_try_catch_in_at_body_absorbs)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -144,7 +144,7 @@ UTEST(chunktop_try_catch_absorbs_control)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -187,7 +187,7 @@ UTEST(method_try_catch_from_chunktop)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -246,7 +246,7 @@ UTEST(catch_variable_receives_thrown_string)
     UASSERT(memcmp(s, "hello", 5) == 0);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -280,7 +280,7 @@ UTEST(catch_variable_receives_thrown_string_chunktop)
     UASSERT_EQ((int)UVAL_STR, (int)caught.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -317,7 +317,7 @@ UTEST(catch_variable_int_vs_str)
     UASSERT_EQ(77LL, caught.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -357,7 +357,7 @@ UTEST(realm_slot_assign_from_local_int)
     UASSERT_EQ(99LL, caught.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

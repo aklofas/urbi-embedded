@@ -122,7 +122,7 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
     UASSERT(fired.v.i >= 1);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -188,7 +188,7 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
     UASSERT_EQ(0LL, fired.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -247,7 +247,7 @@ UTEST(at_handler_body_with_call_drains_dirty)
     UASSERT(fired.v.i >= 1);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -307,7 +307,7 @@ UTEST(try_catch_finally_does_not_run_finally_on_caught_throw)
     UASSERT_EQ(0LL, fn.v.i);   /* finally did NOT run — caught throws bypass it */
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -360,7 +360,7 @@ UTEST(nested_try_finally_in_try_catch_runs_finally)
     UASSERT_EQ(1LL, cn.v.i);   /* outer catch absorbed the throw */
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

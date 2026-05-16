@@ -280,7 +280,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
@@ -316,7 +316,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return run_rc;
     }
@@ -325,7 +325,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, vm);
     uarena_destroy(&arena);
     return URBI_OK;
 #else
@@ -473,7 +473,10 @@ urbi_module_free(struct UModule *module)
 {
 #if __STDC_HOSTED__
     if (module == NULL) return;
-    umodule_destroy(module);
+    /* Public API: no vm in scope.  Pass NULL — no proto rescue path.
+     * If a closure has captured a proto from this module, the caller has
+     * a lifetime bug regardless of what umodule_destroy does. */
+    umodule_destroy(module, NULL);
     free(module);
 #else
     (void)module;

@@ -31,7 +31,7 @@ UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
     UASSERT_EQ((UArena *)&arena, e.arena);
     UASSERT_EQ((size_t)0, module.instr_count);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -49,7 +49,7 @@ UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
     UASSERT_EQ((size_t)0, module.instr_count);  /* no RET emitted when no statements */
     UASSERT_EQ((uint8_t)0, module.max_reg);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -70,7 +70,7 @@ UTEST(uemit_finish_is_idempotent_and_statement_after_finish_returns_finished) {
     dummy.u.i = 7;
     UASSERT_EQ(EMIT_FINISHED, uemit_statement(&e, &dummy));
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -122,7 +122,7 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
     UASSERT_EQ((uint8_t)1,     module.max_reg);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -155,7 +155,7 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UASSERT_EQ((int64_t)2,  module.constants[1].v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -192,7 +192,7 @@ UTEST(emit_ast_binary_1_plus_2) {
     UASSERT_EQ((uint8_t)2, module.max_reg);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -220,7 +220,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
         UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
         uarena_destroy(&arena);
-        umodule_destroy(&module);
+        umodule_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
     }
 }
@@ -256,7 +256,7 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
     UASSERT_EQ((uint8_t)3, module.max_reg);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -300,7 +300,7 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
     UASSERT_EQ((uint8_t)1,    module.max_reg);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -328,7 +328,7 @@ UTEST(emit_ast_error_returns_emit_ast_error) {
     err.u.err.message = "parser error";
     UASSERT_EQ(EMIT_AST_ERROR, emit_single_statement(&module, &arena, &vm, &err));
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -348,7 +348,7 @@ UTEST(emit_ast_ident_unresolved_name_returns_error) {
     id.u.ident.len = 5;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &id));
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -375,7 +375,7 @@ UTEST(emit_first_error_latches_and_subsequent_statements_short_circuit) {
 
     UASSERT_EQ(EMIT_AST_ERROR, uemit_finish(&e));
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -396,7 +396,7 @@ UTEST(emit_emit_oom_when_constant_pool_realloc_fails) {
     n.u.i = 1;
     UASSERT_EQ(EMIT_OOM, emit_single_statement(&module, &arena, &vm, &n));
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -418,7 +418,7 @@ UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
     /* Second instruction (RET) is on the same line, delta 0. */
     UASSERT_EQ((int8_t)0, module.line_deltas[1]);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -445,7 +445,7 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
     UASSERT_EQ((int8_t)0,    module.line_deltas[2]);     /* RET shares line with last instr */
     UASSERT_EQ((size_t)1, module.abs_line_count);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -472,7 +472,7 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((uint32_t)1, module.abs_lines[1].pc);
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);        /* sentinel */
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -491,7 +491,7 @@ UTEST(disassemble_empty_module_produces_short_placeholder) {
     UASSERT(n > 0);
     UASSERT(strstr(buf, "(empty)") != NULL || n <= 32);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -519,7 +519,7 @@ UTEST(disassemble_1_plus_2_produces_recognizable_text) {
     /* T73: chunk-top pre-reserves R0; temps start at R1. */
     UASSERT(strstr(buf, "R1")    != NULL);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -538,7 +538,7 @@ UTEST(disassemble_truncates_cleanly_when_buf_is_too_small) {
     UASSERT(written < sizeof buf);
     UASSERT_EQ('\0', buf[sizeof buf - 1]);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -580,7 +580,7 @@ UTEST(disassemble_with_neg_instruction_shows_neg) {
     UASSERT(strstr(buf, "NEG") != NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -615,8 +615,8 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
 
     free(buf);
     uarena_destroy(&arena);
-    umodule_destroy(&module);
-    umodule_destroy(&dst);
+    umodule_destroy(&module, NULL);
+    umodule_destroy(&dst, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -661,7 +661,7 @@ UTEST(disassemble_module_with_all_arithmetic_opcodes) {
     UASSERT(strstr(buf, "RET")  != NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -722,8 +722,8 @@ UTEST(serialize_module_with_float_constant_round_trips) {
     UASSERT(strstr(disbuf, "K0 = ?") != NULL);
 
     free(buf);
-    umodule_destroy(&module);
-    umodule_destroy(&dst);
+    umodule_destroy(&module, NULL);
+    umodule_destroy(&dst, NULL);
 }
 
 UTEST(disassemble_module_with_move_instruction_shows_move) {
@@ -765,7 +765,7 @@ UTEST(disassemble_module_with_move_instruction_shows_move) {
     UASSERT(n > 0);
     UASSERT(strstr(buf, "MOVE") != NULL);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
@@ -793,7 +793,7 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ((uint32_t)1,   module.abs_lines[1].line);
     UASSERT_EQ((int8_t)-128, module.line_deltas[1]);  /* sentinel on second LOADK */
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -821,7 +821,7 @@ UTEST(emit_oom_in_push_abs_line) {
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -848,7 +848,7 @@ UTEST(emit_oom_in_push_line_delta) {
     UASSERT_EQ(EMIT_OOM, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
 }
 
@@ -887,7 +887,7 @@ static UEmitError emit_ctx_run(EmitCtx *c) {
 
 static void emit_ctx_destroy(EmitCtx *c) {
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module);
+    umodule_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 
@@ -1008,7 +1008,7 @@ UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
     UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
     UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_ast_bool_false_emits_loadbool_0_0) {
@@ -1019,7 +1019,7 @@ UTEST(emit_ast_bool_false_emits_loadbool_0_0) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
     UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[0]));  /* 0 = false */
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_ast_nil_emits_loadnil) {
@@ -1031,7 +1031,7 @@ UTEST(emit_ast_nil_emits_loadnil) {
     UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
     /* T73: chunk-top pre-reserves R0; first temp is R1. */
     UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
@@ -1063,7 +1063,7 @@ UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
     UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[5]));
     UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[5]));
     UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[5]));
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_if_then_only) {
@@ -1202,7 +1202,7 @@ UTEST(disassemble_call_format) {
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "CALL R0, 2 args, 1 results") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disassemble_jmp_signed_offset) {
@@ -1219,7 +1219,7 @@ UTEST(disassemble_jmp_signed_offset) {
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
     UASSERT(n > 0);
     UASSERT(strstr(buf, "JMP -8") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disassemble_closure_with_prelude) {
@@ -1273,7 +1273,7 @@ UTEST(emit_row7_throw_round_trip) {
     UASSERT_EQ((uint8_t)5,    uinstr_a(w));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_tag_stop_round_trip) {
@@ -1292,7 +1292,7 @@ UTEST(emit_row7_tag_stop_round_trip) {
     UASSERT_EQ((uint8_t)7, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_try_begin_round_trip) {
@@ -1311,7 +1311,7 @@ UTEST(emit_row7_try_begin_round_trip) {
     UASSERT_EQ((uint8_t)3,          uinstr_a(w));
     UASSERT_EQ((uint16_t)1000,      uinstr_bx(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_try_end_round_trip) {
@@ -1330,7 +1330,7 @@ UTEST(emit_row7_try_end_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_push_tag_round_trip) {
@@ -1352,7 +1352,7 @@ UTEST(emit_row7_push_tag_round_trip) {
     UASSERT_EQ((uint8_t)5,  (uint8_t)((a >> 4) & 0x0FU));   /* flags */
     UASSERT_EQ((uint16_t)300, uinstr_bx(w));                 /* onleave_pc */
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_pop_tag_round_trip) {
@@ -1371,7 +1371,7 @@ UTEST(emit_row7_pop_tag_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_push_frame_guard_round_trip) {
@@ -1390,7 +1390,7 @@ UTEST(emit_row7_push_frame_guard_round_trip) {
     UASSERT_EQ((uint8_t)6, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 UTEST(emit_row7_resume_round_trip) {
@@ -1409,7 +1409,7 @@ UTEST(emit_row7_resume_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 /* T10: OP_LOAD_CATCH_VALUE round-trip. */
@@ -1429,7 +1429,7 @@ UTEST(emit_t10_load_catch_value_round_trip) {
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
     UASSERT_EQ((uint8_t)0, uinstr_c(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 /* T10: AST_THROW emit produces OP_THROW after the value expression. */
@@ -1468,7 +1468,7 @@ UTEST(emit_t10_throw_emits_op_throw) {
      * T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1. */
     UASSERT_EQ((uint8_t)1, uinstr_a(w));
 
-    uarena_destroy(&arena); umodule_destroy(&module); urbi_vm_destroy(&vm);
+    uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
 /* --- M4 T20+T21 — AST_MEMBER_GET → OP_GETSLOT, AST_MEMBER_SET → OP_SETSLOT --- */

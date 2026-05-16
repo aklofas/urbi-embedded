@@ -51,7 +51,7 @@ static UVMError fn_lit_eval(const char *src, UValue *out) {
     if (uemit_finish(&e) == EMIT_OK) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return vm_rc;
@@ -77,7 +77,7 @@ static UEmitError fn_lit_emit_error(const char *src) {
         uarena_reset(&arena);
     }
     UEmitError rc = uemit_finish(&e);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return rc;

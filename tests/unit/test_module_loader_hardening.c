@@ -106,7 +106,7 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T78 (Wave-4): deeply-nested closure verifier sanity (regression) ---
@@ -148,7 +148,7 @@ UTEST(deeply_nested_closure_verifier) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T77 (Wave-4): ic_names cross-validation ---
@@ -191,7 +191,7 @@ UTEST(ic_names_with_invalid_indices_rejected) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T76 (MOD-019): n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
@@ -219,7 +219,7 @@ UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T75 (MOD-018): n_abs capped at <= instr_count --- */
@@ -245,7 +245,7 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T72 (MOD-004): module_grow rejects target * elem_size overflow ---
@@ -274,7 +274,7 @@ UTEST(module_grow_rejects_overflow) {
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     /* T74 caps the count first; T72 fallback is also acceptable. */
     UASSERT(rc == ULOAD_OVERSIZED || rc == ULOAD_OOM);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
@@ -295,7 +295,7 @@ UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_OVERSIZED, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T73 (MOD-007): deserialize NULL buf returns ULOAD_INVALID_ARG --- */
@@ -303,7 +303,7 @@ UTEST(deserialize_null_buf_returns_invalid_arg) {
     UModule m = {0};
     UModuleLoadError rc = umodule_deserialize(&m, NULL, 64, NULL, 0);
     UASSERT_EQ(ULOAD_INVALID_ARG, rc);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T71 (MOD-001 + MOD-002): partial-failure destroy idempotent ---
@@ -326,15 +326,15 @@ UTEST(deserialize_partial_failure_destroy_idempotent) {
         UModule m = {0};
         UModuleLoadError rc = umodule_deserialize(&m, buf, total - i, NULL, 0);
         UASSERT(rc != ULOAD_OK);
-        umodule_destroy(&m);   /* must not double-free */
-        umodule_destroy(&m);   /* idempotent on already-destroyed module */
+        umodule_destroy(&m, NULL);   /* must not double-free */
+        umodule_destroy(&m, NULL);   /* idempotent on already-destroyed module */
     }
 
     /* Successful deserialize -> destroy -> destroy must also be idempotent. */
     UModule m = {0};
     UASSERT_EQ(ULOAD_OK, umodule_deserialize(&m, buf, total, NULL, 0));
-    umodule_destroy(&m);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
+    umodule_destroy(&m, NULL);
 }
 
 void test_module_loader_hardening_suite(void);

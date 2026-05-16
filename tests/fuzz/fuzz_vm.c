@@ -39,6 +39,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
 
     urbi_vm_destroy(&vm);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     return 0;
 }

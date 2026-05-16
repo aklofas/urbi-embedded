@@ -553,9 +553,12 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
-/* Free all owned buffers and zero the struct (preserving nothing).
-   Safe to call on a zero-initialized UModule. */
-void umodule_destroy(UModule *module);
+/* umodule_destroy — release all owned buffers and (if vm is non-NULL)
+ * rescue protos with non-zero refcount to vm->stdlib_protos before freeing
+ * the rest.  Pass vm = NULL when destroying a module that's not bound to
+ * any vm (e.g. failed compile cleanup before urbi_run_chunk).  See the
+ * MOD-015 banner above the body. */
+void umodule_destroy(UModule *module, struct UVM *vm);
 
 /* Return a static string such as "ULOAD_BAD_MAGIC" for debug. */
 const char *umodule_load_error_name(UModuleLoadError code);

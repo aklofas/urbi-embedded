@@ -202,7 +202,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UASSERT(h_before != h_after);
 
     urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 

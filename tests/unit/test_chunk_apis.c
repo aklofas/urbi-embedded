@@ -77,7 +77,7 @@ UTEST(run_chunk_round_trip_with_realm)
     UASSERT_EQ(result.kind, (uint8_t)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)3);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -109,8 +109,8 @@ UTEST(run_chunk_null_realm_uses_global)
     UASSERT(g1 != NULL);
     UASSERT(g1 == g2);
 
-    umodule_destroy(&m1);
-    umodule_destroy(&m2);
+    umodule_destroy(&m1, NULL);
+    umodule_destroy(&m2, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -127,7 +127,7 @@ UTEST(run_chunk_null_out_result_no_crash)
     int rc = urbi_run_chunk(&vm, NULL, &module, NULL);
     UASSERT_EQ(rc, URBI_OK);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -166,7 +166,7 @@ UTEST(run_chunk_honors_supplied_realm)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)result.v.i, (long long)1234);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, r1);
     urbi_vm_destroy(&vm);
 }
@@ -312,7 +312,7 @@ UTEST(run_script_returns_ok_discards_result)
     int rc = urbi_run_script(&vm, NULL, &module);
     UASSERT_EQ(rc, URBI_OK);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -340,7 +340,7 @@ UTEST(load_module_null_args_rejected)
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
                urbi_load_module(&vm, &module, NULL));
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -378,7 +378,7 @@ UTEST(load_module_installs_top_level_var)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
     UASSERT_EQ(42, (int)x.v.i);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

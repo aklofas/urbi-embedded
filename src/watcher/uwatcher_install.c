@@ -60,6 +60,10 @@ strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
             if (s->module != NULL && cl->proto != NULL) {
                 for (k = 0; k < s->module->nested_count; k++) {
                     if (s->module->nested[k] == cl->proto) {
+                        /* Piece A: detaching the slot discharges its
+                         * implicit refcount; the watcher now owns the
+                         * proto via cl->proto. */
+                        umodule_proto_refcount_dec(s->module->nested[k]);
                         s->module->nested[k] = NULL;
                         break;
                     }

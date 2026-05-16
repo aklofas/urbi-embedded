@@ -62,7 +62,7 @@ UTEST(realm_assign_closure_minimal)
     UASSERT_EQ((int)UVAL_CLOSURE, (int)fn.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -94,7 +94,7 @@ UTEST(realm_assign_closure_followed_by_int_assign)
     UASSERT_EQ(0LL, x.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -128,7 +128,7 @@ UTEST(chunktop_var_decl_closure)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

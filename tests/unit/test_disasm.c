@@ -41,7 +41,7 @@ UTEST(disasm_at_install) {
     UASSERT(strstr(buf, "R5") != NULL);
     UASSERT(strstr(buf, "R6") != NULL);
     UASSERT(strstr(buf, "R255") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -57,7 +57,7 @@ UTEST(disasm_at_sync_install) {
     UASSERT(strstr(buf, "R2") != NULL);
     UASSERT(strstr(buf, "R3") != NULL);
     UASSERT(strstr(buf, "R255") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -73,7 +73,7 @@ UTEST(disasm_whenever_install) {
     UASSERT(strstr(buf, "R1") != NULL);
     UASSERT(strstr(buf, "R2") != NULL);
     UASSERT(strstr(buf, "R255") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -93,7 +93,7 @@ UTEST(disasm_waituntil_install) {
         UASSERT(p != NULL);
         if (p != NULL) UASSERT(p[2] != ',');
     }
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -109,7 +109,7 @@ UTEST(disasm_at_event_install) {
     UASSERT(strstr(buf, "R4") != NULL);
     UASSERT(strstr(buf, "R5") != NULL);
     UASSERT(strstr(buf, "R255") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -125,7 +125,7 @@ UTEST(disasm_at_event_sync_install) {
     UASSERT(strstr(buf, "R8") != NULL);
     UASSERT(strstr(buf, "R9") != NULL);
     UASSERT(strstr(buf, "R255") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -142,7 +142,7 @@ UTEST(disasm_getslot_change_event) {
     UASSERT(strstr(buf, "R0") != NULL);
     UASSERT(strstr(buf, "R1") != NULL);
     UASSERT(strstr(buf, "K3") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* -------------------------------------------------------------------------
@@ -158,7 +158,7 @@ UTEST(disasm_load_realm_global) {
     UASSERT(strstr(buf, "LOAD_REALM_GLOBAL") != NULL);
     UASSERT(strstr(buf, "R2") != NULL);
     UASSERT(strstr(buf, "sym(") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* ===================================================================
@@ -176,7 +176,7 @@ UTEST(disasm_loadk) {
     UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LOADK") != NULL);
     UASSERT(strstr(buf, "R0") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disasm_neg) {
@@ -184,7 +184,7 @@ UTEST(disasm_neg) {
     char buf[256];
     UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "NEG R1, R2") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disasm_ret) {
@@ -192,7 +192,7 @@ UTEST(disasm_ret) {
     char buf[256];
     UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "RET") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disasm_jmp) {
@@ -200,7 +200,7 @@ UTEST(disasm_jmp) {
     char buf[256];
     UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "JMP") != NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(disasm_loadnil_loadbool_loadvoid) {
@@ -208,17 +208,17 @@ UTEST(disasm_loadnil_loadbool_loadvoid) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LOADNIL R1") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_LOADBOOL, 2U, 1U, 1U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LOADBOOL R2, true (skip)") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 
     UModule m3 = make_one_instr_module(uinstr_enc_abc(OP_LOADVOID, 3U, 0U, 0U));
     UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LOADVOID R3") != NULL);
-    umodule_destroy(&m3);
+    umodule_destroy(&m3, NULL);
 }
 
 UTEST(disasm_upval_ops) {
@@ -226,17 +226,17 @@ UTEST(disasm_upval_ops) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "GETUPVAL R0, U1") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_SETUPVAL, 2U, 3U, 0U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "SETUPVAL U3, R2") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 
     UModule m3 = make_one_instr_module(uinstr_enc_abc(OP_CLOSE, 4U, 0U, 0U));
     UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "CLOSE R4") != NULL);
-    umodule_destroy(&m3);
+    umodule_destroy(&m3, NULL);
 }
 
 UTEST(disasm_call_test_testset) {
@@ -244,17 +244,17 @@ UTEST(disasm_call_test_testset) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "CALL R1, 2 args, 1 results") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_TEST, 5U, 0U, 1U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "TEST R5, skip-if-truthy") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 
     UModule m3 = make_one_instr_module(uinstr_enc_abc(OP_TESTSET, 0U, 1U, 1U));
     UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "TESTSET R0, R1, 1") != NULL);
-    umodule_destroy(&m3);
+    umodule_destroy(&m3, NULL);
 }
 
 UTEST(disasm_compare_ops) {
@@ -263,28 +263,28 @@ UTEST(disasm_compare_ops) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "EQ ==") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     /* OP_EQ A=false: != form */
     UModule m1n = make_one_instr_module(uinstr_enc_abc(OP_EQ, 0U, 2U, 3U));
     UASSERT(uemit_disassemble(&m1n, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "EQ !=") != NULL);
-    umodule_destroy(&m1n);
+    umodule_destroy(&m1n, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_NEQ, 0U, 4U, 5U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "NEQ R4, R5") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 
     UModule m3 = make_one_instr_module(uinstr_enc_abc(OP_LT, 0U, 1U, 2U));
     UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LT R1, R2") != NULL);
-    umodule_destroy(&m3);
+    umodule_destroy(&m3, NULL);
 
     UModule m4 = make_one_instr_module(uinstr_enc_abc(OP_LE, 0U, 1U, 2U));
     UASSERT(uemit_disassemble(&m4, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "LE") != NULL);
-    umodule_destroy(&m4);
+    umodule_destroy(&m4, NULL);
 }
 
 UTEST(disasm_yield_fork_join) {
@@ -292,22 +292,22 @@ UTEST(disasm_yield_fork_join) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "YIELD") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_FORK_DETACH, 1U, 0U, 0U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "FORK_DETACH") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 
     UModule m3 = make_one_instr_module(uinstr_enc_abc(OP_FORK_JOIN, 1U, 2U, 0U));
     UASSERT(uemit_disassemble(&m3, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "FORK_JOIN") != NULL);
-    umodule_destroy(&m3);
+    umodule_destroy(&m3, NULL);
 
     UModule m4 = make_one_instr_module(uinstr_enc_abc(OP_JOIN_WAIT, 1U, 0U, 0U));
     UASSERT(uemit_disassemble(&m4, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "JOIN_WAIT") != NULL);
-    umodule_destroy(&m4);
+    umodule_destroy(&m4, NULL);
 }
 
 UTEST(disasm_slot_ops) {
@@ -315,12 +315,12 @@ UTEST(disasm_slot_ops) {
     char buf[256];
     UASSERT(uemit_disassemble(&m1, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "GETSLOT") != NULL);
-    umodule_destroy(&m1);
+    umodule_destroy(&m1, NULL);
 
     UModule m2 = make_one_instr_module(uinstr_enc_abc(OP_SETSLOT, 0U, 1U, 2U));
     UASSERT(uemit_disassemble(&m2, buf, sizeof buf) > 0);
     UASSERT(strstr(buf, "SETSLOT") != NULL);
-    umodule_destroy(&m2);
+    umodule_destroy(&m2, NULL);
 }
 
 /* CLOSURE with embedded upvalue prelude: builds a 3-instruction module
@@ -356,7 +356,7 @@ UTEST(disasm_closure_with_upval_prelude) {
 
     /* umodule_destroy will free m.nested[0] via the default allocator
      * (which is realloc-based); calloc/realloc are interchangeable here. */
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 void test_disasm_suite(void) {

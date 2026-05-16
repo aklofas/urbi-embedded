@@ -85,7 +85,7 @@ UTEST(dangling_cl_at_event_from_function_body)
     UASSERT_EQ(1LL, fired.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

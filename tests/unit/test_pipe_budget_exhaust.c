@@ -139,7 +139,7 @@ UTEST(vm_step_budget_exhausts_mid_program)
     }
     UASSERT(reached_quiescent);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -197,7 +197,7 @@ UTEST(per_strand_budget_zero_causes_soft_yield)
     }
     UASSERT(reached);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

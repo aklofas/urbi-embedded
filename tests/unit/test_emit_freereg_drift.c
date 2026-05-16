@@ -100,7 +100,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
     uint8_t a = uinstr_a(module.instructions[idx]);
     UASSERT(a >= 2U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -150,7 +150,7 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
      * post-fix; pre-fix routinely exceeds this. */
     UASSERT(module.max_reg <= 3U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -167,7 +167,7 @@ UTEST(emit_watcher_install_freereg_balanced_whenever) {
     UASSERT_EQ((int)EMIT_OK, (int)rc);
     UASSERT(module.max_reg <= 3U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -199,7 +199,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
      * body-closure compilation high water (= 4). */
     UASSERT(module.max_reg <= 4U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -263,7 +263,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
      * must be >= 2 so the VM allocates >= 3 slots. */
     UASSERT(p->max_reg >= 2U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -334,7 +334,7 @@ UTEST(emit_free_reg_respects_temp_floor) {
     }
     UASSERT(found == 1);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -414,7 +414,7 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
      * at DIFFERENT slots. */
     UASSERT(passthrough_move_dst != arg_closure_dst);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -462,7 +462,7 @@ UTEST(emit_call_too_many_args_returns_error) {
      * Post-fix: EMIT_TOO_MANY_ARGS. */
     UASSERT_EQ((int)EMIT_TOO_MANY_ARGS, (int)rc);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     free(src);
@@ -508,7 +508,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
      * Post-fix: EMIT_TAG_SPILL_OUT_OF_RANGE. */
     UASSERT_EQ((int)EMIT_TAG_SPILL_OUT_OF_RANGE, (int)rc);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -579,7 +579,7 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
     uint8_t a = uinstr_a(p->instructions[idx]);
     UASSERT_EQ(2, (int)a);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -672,7 +672,7 @@ UTEST(emit_bare_return_does_not_clobber_local) {
      * at slot >= 2). */
     UASSERT(bare_nil_slot > keep_slot);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -754,7 +754,7 @@ UTEST(emit_throw_does_not_clobber_local) {
     UASSERT(post_throw_nil_slot >= 0);
     UASSERT(keep_slot != post_throw_nil_slot);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -831,7 +831,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
     }
     UASSERT(jmp_count >= 2);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -921,7 +921,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
     UASSERT(closure_dst >= 0);
     UASSERT_EQ(closure_dst, call_a + 3);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
