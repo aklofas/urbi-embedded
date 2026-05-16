@@ -56,20 +56,19 @@ static const char *TAG = "smoke";
  * espressif/qemu's PSRAM emulation is experimental (spec §6.1); allocating
  * from INTERNAL keeps the smoke independent of that emulation surface.  Real
  * boards with PSRAM should use port_psram_alloc instead. */
-static void *smoke_alloc(void *ud, void *ptr, size_t old_size, size_t new_size)
+static void *smoke_alloc(void *ptr, size_t nbytes, void *ud)
 {
     (void)ud;
-    (void)old_size;
-    if (new_size == 0U) {
+    if (nbytes == 0U) {
         if (ptr != NULL) {
             heap_caps_free(ptr);
         }
         return NULL;
     }
     if (ptr == NULL) {
-        return heap_caps_malloc(new_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        return heap_caps_malloc(nbytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
-    return heap_caps_realloc(ptr, new_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    return heap_caps_realloc(ptr, nbytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 }
 
 /* destructure_ping: 4-byte ISR payload -> single UValue int (seq).
