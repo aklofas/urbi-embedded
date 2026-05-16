@@ -1,0 +1,18 @@
+menu "Eye Demo Configuration"
+
+config EYE_DEMO_ENABLE_CAMERA
+    bool "Enable camera (DVP + OV2640) capture path"
+    default y
+    help
+        Enables esp_video_init() + V4L2 DVP capture in eye_camera_init().
+        When disabled, eye_camera_init() is a runtime no-op: the camera
+        task never starts, no blob events are injected into urbi, and
+        the display blits a static fill (or whatever the last frame was).
+        Button + reactive runtime + urbi VM still run unaffected.
+
+        Disable this on hardware where esp_video / esp32-camera /
+        i2c_new_master_bus crashes inside ESP-IDF's interrupt allocator
+        (see docs/urbi-embedded-design-risks.md "S3 + IDF v6 i2c intr_alloc
+        incompatibility" for the open vendor issue and affected silicon).
+
+endmenu

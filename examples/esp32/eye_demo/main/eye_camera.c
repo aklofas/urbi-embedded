@@ -44,6 +44,7 @@
 
 static const char *TAG = "eye_camera";
 
+#if CONFIG_EYE_DEMO_ENABLE_CAMERA
 /* === esp_video DVP config — ESP32-S3-EYE v2.2 pin map (see board schematic) ===
  *
  * Pin map mirrors the legacy esp32-camera camera_config_t exactly: XCLK
@@ -77,6 +78,7 @@ static const esp_video_init_dvp_config_t s_dvp_config = {
 static const esp_video_init_config_t s_video_config = {
     .dvp = &s_dvp_config,
 };
+#endif /* CONFIG_EYE_DEMO_ENABLE_CAMERA */
 
 /* === Camera + V4L2 state ===
  *
@@ -107,9 +109,11 @@ static portMUX_TYPE       target_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static int                cam_fd = -1;
 static uint8_t           *cam_buffers[BUFFER_COUNT];
+#if CONFIG_EYE_DEMO_ENABLE_CAMERA
 static uint32_t           cam_buffer_sizes[BUFFER_COUNT];
 static uint32_t           cam_width;
 static uint32_t           cam_height;
+#endif
 
 int eye_camera_qbuf(int qbuf_index)
 {
@@ -128,6 +132,7 @@ int eye_camera_qbuf(int qbuf_index)
     return 0;
 }
 
+#if CONFIG_EYE_DEMO_ENABLE_CAMERA
 static void camera_task_body(void *arg)
 {
     (void)arg;
@@ -172,12 +177,28 @@ static void camera_task_body(void *arg)
                            (int)buf.index);
     }
 }
+#endif /* CONFIG_EYE_DEMO_ENABLE_CAMERA */
 
 void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
 {
     cam_vm      = vm;
     cam_ev_blob = ev_blob;
 
+#if !CONFIG_EYE_DEMO_ENABLE_CAMERA
+    /* Camera path disabled via Kconfig.  This board (or this ESP-IDF
+     * release) is on the affected-silicon list documented in
+     * docs/urbi-embedded-design-risks.md row "S3 + IDF v6 i2c intr_alloc
+     * incompatibility": esp_video / esp32-camera / any caller of
+     * i2c_new_master_bus crashes inside esp_intr_alloc_intrstatus →
+     * find_desc_for_source at intr_alloc.c:192 (LoadProhibited).
+     *
+     * Returning early here keeps the rest of the demo (display, button,
+     * reactive at-watcher, urbi VM ticks) fully exercised on hardware
+     * — only the blob-detection event injection is silent. */
+    ESP_LOGW(TAG, "camera disabled (CONFIG_EYE_DEMO_ENABLE_CAMERA=n)");
+    ESP_LOGW(TAG, "see docs/urbi-embedded-design-risks.md for context");
+    return;
+#else
     /* Diagnostic checkpoint — the previous v0.7.2 attempt on real S3-EYE
      * hardware crashed inside esp_camera_init -> SCCB_Init -> i2c_new_master_bus
      * when esp32-camera 2.1.6 was built against ESP-IDF v6.0.1 (LoadProhibited
@@ -269,6 +290,7 @@ void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
     static StaticTask_t cam_tcb;
     xTaskCreateStaticPinnedToCore(camera_task_body, "cam", 4096, NULL,
                                   tskIDLE_PRIORITY + 1, cam_stack, &cam_tcb, 0);
+#endif /* CONFIG_EYE_DEMO_ENABLE_CAMERA */
 }
 
 /* Signature note: the host-fn type at <urbi/urbi.h>:295 is
