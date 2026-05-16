@@ -123,8 +123,6 @@ void display_post_frame(camera_fb_t *fb)
     xQueueSend(frame_q, &fb, portMAX_DELAY);
 }
 
-/* c_draw_crosshair lands in T34. */
-
 static void display_task_body(void *arg)
 {
     (void)arg;
@@ -158,4 +156,51 @@ static void display_task_body(void *arg)
          * esp_camera_fb_get returns NULL on the camera task. */
         esp_camera_fb_return(fb);
     }
+}
+
+/* Signature note: the host-fn type at <urbi/urbi.h>:295 is
+ *
+ *     int (*urbi_native_method_fn)(struct UVM *vm, UValue self,
+ *                                  UValue *args, uint8_t nargs, UValue *out);
+ *
+ * The brainstorm spec sketch in §5.3 used a `UStrand *` / `UValue` return
+ * convention that does not match the real v0.7.1 surface — corrected here
+ * to the canonical urbi_native_method_fn shape (same drift as T28
+ * c_set_target_color; see eye_camera.c:104-115).  Wires straight through:
+ *
+ *     urbi_register(vm, realm, "draw_crosshair", c_draw_crosshair);
+ *
+ * Argument convention (from spec §5.5 / urbiscript):
+ *
+ *     draw_crosshair(x, y)
+ *
+ * where (x, y) are blob centroid coordinates in the original 320x240
+ * camera frame (NOT post-crop).  The -40 offset on the X axis converts
+ * to the 240x240 cropped display coordinate space; the Y axis is
+ * already aligned because the centre-crop only trims the left edge.
+ *
+ * Concurrency: writes go to two `volatile int` slots shared with the
+ * display task on core 1.  Aligned 32-bit writes are atomic on the
+ * Xtensa LX7, so each scalar is safe individually; the pair is not
+ * atomic and the display task can observe an updated x with the old y
+ * (or vice versa) for at most one frame.  Visually invisible at 30 Hz.
+ * A mutex on this hot path is rejected — the demo would gain no
+ * perceptible image quality and pay for it in jitter. */
+int c_draw_crosshair(struct UVM *vm, UValue self,
+                     UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self;
+
+    if (nargs < 2 || args == NULL) {
+        if (out) *out = urbi_make_nil();
+        return UEXEC_OK;
+    }
+
+    /* Volatile pair write — atomic per scalar on LX7, tearable as a pair.
+     * See header comment above for why this is acceptable. */
+    crosshair_x = urbi_value_as_int(args[0]) - 40;  /* 320 → 240 crop offset */
+    crosshair_y = urbi_value_as_int(args[1]);
+
+    if (out) *out = urbi_make_nil();
+    return UEXEC_OK;
 }
