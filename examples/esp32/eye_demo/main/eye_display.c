@@ -12,6 +12,8 @@
  * the host unit test in tests/unit/test_draw_crosshair.c can drive it
  * without ESP-IDF dependencies. */
 
+#include <string.h>      /* memcpy — used by the centre-crop in display_task_body */
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -110,11 +112,48 @@ void eye_display_init(void)
                                   tskIDLE_PRIORITY + 1, d_stack, &d_tcb, 1);
 }
 
-/* display_task_body, display_post_frame, draw_crosshair_into and
- * c_draw_crosshair land in T31-T34 commits. */
+void display_post_frame(camera_fb_t *fb)
+{
+    /* Block until the display task drains a queue slot.  The queue depth
+     * is 2 and the display task runs on core 1 in parallel with the
+     * camera task on core 0, so under steady-state load this rarely
+     * actually blocks; the camera task is willing to wait when it does
+     * (the worst-case backpressure here is one frame at 30 Hz ≈ 33 ms). */
+    xQueueSend(frame_q, &fb, portMAX_DELAY);
+}
+
+/* draw_crosshair_into and c_draw_crosshair land in T32 / T34. */
+
 static void display_task_body(void *arg)
 {
     (void)arg;
-    /* T31 body lands next commit. */
-    for (;;) { vTaskDelay(pdMS_TO_TICKS(1000)); }
+    /* Static-allocated 240x240 RGB565 framebuffer (≈115 KB).  4-byte
+     * aligned so esp_lcd_panel_draw_bitmap's DMA path doesn't have to
+     * realign on every push.  Off the heap — the camera + display tasks
+     * combined fit inside the static partitions called out in the
+     * footprint cap. */
+    static uint16_t lcd_fb[240 * 240] __attribute__((aligned(4)));
+    camera_fb_t *fb;
+    while (xQueueReceive(frame_q, &fb, portMAX_DELAY) == pdPASS) {
+        /* Centre-crop 320x240 → 240x240 (skip 40 px on the left edge of
+         * each scanline).  RGB565 is 2 bytes per pixel; pointer arith on
+         * uint16_t already accounts for the stride. */
+        const uint16_t *src = (const uint16_t *)fb->buf;
+        for (int y = 0; y < 240; y++) {
+            memcpy(&lcd_fb[y * 240], &src[y * 320 + 40], 240 * sizeof(uint16_t));
+        }
+
+        /* Overlay the latest crosshair coordinates (set by c_draw_crosshair
+         * on the urbi VM task).  T32 will provide draw_crosshair_into. */
+        /* draw_crosshair_into(lcd_fb, 240, 240, crosshair_x, crosshair_y); */
+
+        ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(lcd, 0, 0, 240, 240, lcd_fb));
+
+        /* Frame buffer ownership: per the contract documented in
+         * eye_camera.c:49-53, this task OWNS the fb once it is dequeued
+         * and is responsible for returning it to the camera driver's
+         * 2-buffer pool.  Skipping this call starves the pool and
+         * esp_camera_fb_get returns NULL on the camera task. */
+        esp_camera_fb_return(fb);
+    }
 }
