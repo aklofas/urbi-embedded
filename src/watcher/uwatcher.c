@@ -46,10 +46,11 @@ uwatcher_pool_alloc(struct UVM *vm)
     /* gc_byte: UGC_IS_FIXED always set; color from vm->current_white. */
     w->gc_byte         = (uint8_t)(vm->current_white | UGC_IS_FIXED);
     w->mode            = 0;
-    w->exhaust_policy  = URBI_EXHAUST_QUEUE;
-    w->flags           = URBI_WATCHER_ACTIVE;
-    w->read_set_count  = 0;
-    w->pad0            = 0;
+    w->exhaust_policy        = URBI_EXHAUST_QUEUE;
+    w->flags                 = URBI_WATCHER_ACTIVE;
+    w->read_set_count        = 0;
+    w->pending_refire_count  = 0;
+    w->max_refire_queue      = URBI_WATCHER_REFIRE_QUEUE_DEFAULT;
     w->next_active     = NULL;
     w->next_in_tag     = NULL;
     w->owning_tag      = NULL;

@@ -288,6 +288,8 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
         [OP_GETSLOT_CHANGE_EVENT]  = &&label_OP_GETSLOT_CHANGE_EVENT,
         [OP_LOAD_REALM_GLOBAL]     = &&label_OP_LOAD_REALM_GLOBAL,
         [OP_LOAD_RECV]             = &&label_OP_LOAD_RECV,
+        /* v0.7.2 S42 method-call ABI cleanup. */
+        [OP_SELF]                  = &&label_OP_SELF,
     };
 
     DISPATCH();
@@ -659,11 +661,23 @@ dispatch:
         }
 
         CASE(OP_CALL) {
-            /* ABC: R[A](R[A+1]..R[A+B-1]); B-1 = nargs, C unused at T14.
-             * After the call, the result overwrites R[A]. */
+            /* ABC: R[A](args); B = nargs+1 (plain) or nargs+2 (method).
+             *      C low 7 bits = nresults+1 (currently always 2).
+             *      C bit 7 (0x80) = method-call flag (v1.6 S42).
+             * After the call, the result overwrites R[A].
+             *
+             * Plain   (C & 0x80 == 0): args at R[A+1..A+B-1], nargs = B-1,
+             *                          self = nil.
+             * Method  (C & 0x80 != 0): R[A+1] = self (placed by preceding
+             *                          OP_SELF); args at R[A+2..A+B-1],
+             *                          nargs = B-2; self forwarded to the
+             *                          callee verbatim. */
             uint8_t a = uinstr_a(*s->pc);
             uint8_t b = uinstr_b(*s->pc);
-            int nargs = (int)b - 1;
+            uint8_t c = uinstr_c(*s->pc);
+            bool    is_method = (c & 0x80U) != 0U;
+            int     nargs     = is_method ? (int)b - 2 : (int)b - 1;
+            uint8_t arg_off   = is_method ? 2U : 1U;
 
             if (s->R[a].kind != (uint8_t)UVAL_CLOSURE) {
                 vm->last_error = UVM_TYPE_ERROR;
@@ -671,13 +685,13 @@ dispatch:
                 HALT();
             }
             UClosure *callee = (UClosure *)s->R[a].v.p;
+            UValue    self_value = is_method ? s->R[a + 1U] : urbi_make_nil();
 
             /* M6 Phase 3: C-native dispatch.  When native_fn is set, the
              * closure has no bytecode body — invoke the C function instead.
-             * The receiver (`self`) comes from vm->last_recv (set by the
-             * most recent OP_GETSLOT load).  Result lands in R[A]; nargs
-             * supplied to the native via the caller's existing argument
-             * registers R[A+1..A+B-1].
+             * The receiver (`self`) is R[A+1] on method calls (set by the
+             * preceding OP_SELF) or nil on plain calls.  Result lands in
+             * R[A]; nargs supplied via R[A+arg_off..A+B-1].
              *
              * VM-009 closure (defer:M6 → closed at v0.6.1): the audit
              * flagged that native-register paths allocate UClosure cells
@@ -685,41 +699,20 @@ dispatch:
              * inside the callee with no IC table to bind.  This native-
              * dispatch arm short-circuits BEFORE the new bytecode frame is
              * pushed and BEFORE proto_inst is read — the C function runs
-             * inline on the caller's frame.  Bytecode-bodied closures are
-             * exclusively allocated through OP_CLOSURE which DOES bind
-             * proto_inst (line ~488 above).  Hence the audit's stated
-             * failure mode does not manifest at v0.6.1.  The contract
-             * ('native_fn != NULL implies caller-frame inline dispatch;
-             * proto_inst is irrelevant on native closures') is pinned by
-             * test_object_root::native_fn_dispatched_via_op_call. */
+             * inline on the caller's frame. */
             if (callee->native_fn != NULL) {
-                UValue *args_ptr = (nargs > 0) ? &s->R[a + 1] : NULL;
+                UValue *args_ptr = (nargs > 0) ? &s->R[a + arg_off] : NULL;
                 UValue native_out;
-                int rc = callee->native_fn(vm, vm->last_recv, args_ptr,
+                int rc = callee->native_fn(vm, self_value, args_ptr,
                                            (uint8_t)nargs, &native_out);
                 if (rc == UEXEC_OK) {
                     s->R[a] = native_out;
-                    /* M6 Phase 7: a native that called urbi_throw (or one
-                     * of the sibling urbi_return_val / urbi_tag_stop_local
-                     * helpers) deposited pending_unwind on the strand but
-                     * returned UEXEC_OK so this arm wouldn't fatal-halt.
-                     * Route through safepoint so urbi_unwind walks the
-                     * cleanup stack — try/catch handlers bind the
-                     * deposited unwind value as the catch variable.  Used
-                     * by Exception.raise (src/stdlib/runtime_types.c). */
                     if (s->pending_unwind != UEXEC_OK) {
                         s->pc++;
                         goto safepoint;
                     }
                     NEXT();
                 }
-                /* Native returned UEXEC_THROW (the legacy urbi_raise_*
-                 * helpers' return path).  Pre-Phase-7 fixtures depend on
-                 * this surfacing as a fatal "CALL: native method raised"
-                 * TypeError that halts the strand — preserve that path
-                 * for backwards compatibility.  Native code that wants
-                 * a catchable raise must call urbi_throw + return UEXEC_OK
-                 * (the Phase-7 Exception.raise pattern). */
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "CALL: native method raised");
                 HALT();
@@ -736,8 +729,8 @@ dispatch:
                 HALT();
             }
 
-            /* Check stack space: callee's frame starts at R[a+1]. */
-            if ((s->R + a + 1 + callee->proto->max_reg + 1) > (s->stack + UVM_STACK_CAP)) {
+            /* Check stack space: callee's frame starts at R[a+arg_off]. */
+            if ((s->R + a + arg_off + callee->proto->max_reg + 1) > (s->stack + UVM_STACK_CAP)) {
                 vm->last_error = UVM_OOM;
                 vm_format_oom(vm, (size_t)(callee->proto->max_reg + 1) * sizeof(UValue));
                 HALT();
@@ -751,13 +744,14 @@ dispatch:
             new_frame->pc              = s->pc;    /* points AT OP_CALL in caller */
             new_frame->base            = s->R;     /* caller's register base */
             new_frame->result_dest_reg = (int)a;  /* where to write result */
-            /* Gap #3 (v0.6.2 Phase 2): save receiver for OP_LOAD_RECV (`this`
-             * keyword).  vm->last_recv was set by the OP_GETSLOT that loaded
-             * the callee (method-call pattern).  Nil for plain-variable calls. */
-            new_frame->recv            = vm->last_recv;
+            /* Gap #3 (v0.6.2 Phase 2 / v1.6 S42): save receiver for
+             * OP_LOAD_RECV (`this`).  Sourced from R[A+1] when the caller
+             * flagged a method call; nil for plain calls. */
+            new_frame->recv            = self_value;
 
-            /* Switch to callee frame. Args R[a+1..a+nargs] become R[0..nargs-1]. */
-            s->R        = &s->R[a + 1];
+            /* Switch to callee frame. Args R[a+arg_off..a+nargs+arg_off-1]
+             * become R[0..nargs-1]. */
+            s->R        = &s->R[a + arg_off];
             s->pc       = callee->proto->instructions;
             s->pc_base  = s->pc;
             /* FOUND-032: route through the shared helper so OP_CALL and
@@ -1000,18 +994,12 @@ dispatch:
                 }
             }
 
-            /* M6 Phase 3: snapshot the user-visible receiver in case this
-             * GETSLOT is loading a native-method UClosure.  The receiver
-             * is stored into vm->last_recv ONLY when the loaded value
-             * turns out to be a UClosure with native_fn != NULL — see the
-             * post-resolve branches below.  This guards against unrelated
-             * OP_GETSLOT instructions (e.g., reading a global between
-             * binding and call) clobbering the recv that the next OP_CALL
-             * needs.  The snapshot here is local; it's published only on
-             * the native-method branches. */
-            UValue pending_recv = s->R[recv_reg];
-
-            /* Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
+            /* v1.6 S42: vm->last_recv is gone.  OP_GETSLOT no longer
+             * publishes a receiver — method-call sites use OP_SELF to
+             * place the receiver in R[A+1] and OP_CALL reads it from
+             * there.  OP_GETSLOT is now strictly a value load.
+             *
+             * Trace probe (spec #2 §7.3 phase 2+3): when watcher install is
              * tracing reads, record the receiver's GC cell.
              * UNLIKELY: this branch is taken only during install-time cond eval
              * — never on the normal hot path.  Zero overhead when bit is clear. */
@@ -1066,16 +1054,14 @@ dispatch:
                         s->R[dst_reg] = getter_result;
                         NEXT();
                     }
-                    UValue loaded = *ic->slots[k];
-                    /* Publish receiver for any closure load (native or bytecode).
-                     * Native dispatch (native_fn != NULL) needs it immediately
-                     * for the call; bytecode dispatch needs it for OP_LOAD_RECV
-                     * (`this` keyword, Gap #3 v0.6.2 Phase 2) which copies
-                     * last_recv into UCallFrame.recv at OP_CALL time. */
-                    if (loaded.kind == (uint8_t)UVAL_CLOSURE
-                        && loaded.v.p != NULL) {
-                        vm->last_recv = pending_recv;
-                    }
+                    /* OBJ-IC-POLY: re-resolve the slot per recv when the IC
+                     * entry caches a local slot — the absolute `slots[k]`
+                     * pointer is recv-specific and would return the first
+                     * cached recv's value for any polymorphic same-shape
+                     * recv that follows. */
+                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
+                                    ? recv->slots[ic->slot_idx[k]]
+                                    : *ic->slots[k];
                     s->R[dst_reg] = loaded;
                     NEXT();
                 }
@@ -1119,12 +1105,6 @@ dispatch:
                 }
                 s->R[dst_reg] = getter_result;
                 NEXT();
-            }
-            /* Publish receiver for any closure load (native or bytecode)
-             * — mirrors the fast-path arm above. */
-            if (v.kind == (uint8_t)UVAL_CLOSURE
-                && v.v.p != NULL) {
-                vm->last_recv = pending_recv;
             }
             s->R[dst_reg] = v;
             NEXT();
@@ -1207,16 +1187,15 @@ dispatch:
                         HALT();
                     }
                     if (ic->flags[k] & URBI_SLOT_FLAG_LOCAL) {
-                        /* Direct in-place write.  Forward Dijkstra barrier
-                         * fires on the parent UObject (the cell containing
-                         * ic->slots[k]).  Cast UCell* via the pinned
-                         * UObject layout: the slot pointer must be inside
-                         * recv->slots[], so recv (which embeds UCell at
-                         * offset 0) is the parent cell. */
-                        urbi_gc_slot_write(vm, (UCell *)recv,
-                                           (uint32_t)((ic->slots[k] - recv->slots)),
-                                           v);
-                        *ic->slots[k] = v;
+                        /* OBJ-IC-POLY: re-resolve the slot per recv using
+                         * the cached index — the absolute ic->slots[k]
+                         * pointer is recv-specific and writing to it on a
+                         * polymorphic same-shape recv would corrupt the
+                         * first cached recv's slot.  Forward Dijkstra
+                         * barrier fires on the actual recv cell. */
+                        uint32_t s_idx = (uint32_t)ic->slot_idx[k];
+                        urbi_gc_slot_write(vm, (UCell *)recv, s_idx, v);
+                        recv->slots[s_idx] = v;
                         urbi_emit_slot_change_if_subscribed(vm, recv, ic->name, v);
                         slow_path = 0;
                         break;
@@ -1744,10 +1723,11 @@ dispatch:
 
         /* v0.6.2 Phase 2 — OP_LOAD_RECV: loads the receiver saved in the
          * current call frame's .recv field into R[A].  The receiver is
-         * set at OP_CALL dispatch time from vm->last_recv (which is
-         * populated by the OP_GETSLOT that loaded the callee in a
-         * method-call pattern).  Emitted by the compiler for `this`
-         * inside a method body (AST_THIS with fs->parent != NULL). */
+         * set at OP_CALL dispatch time from R[A+1] when OP_CALL's C
+         * carries the method-flag bit (set by the emitter following an
+         * OP_SELF).  Plain (non-method) calls and top-level evaluation
+         * load nil.  Emitted by the compiler for `this` inside a method
+         * body (AST_THIS with fs->parent != NULL). */
         CASE(OP_LOAD_RECV) {
             uint8_t A = uinstr_a(*s->pc);
             /* recv is a UValue (nil when called from top-level or plain
@@ -1755,6 +1735,156 @@ dispatch:
             s->R[A] = s->frame_count > 0
                       ? s->frames[s->frame_count - 1].recv
                       : urbi_make_nil();
+            NEXT();
+        }
+
+        /* v0.7.2 S42 — OP_SELF: load method + receiver into adjacent
+         * registers atomically.
+         *
+         *   ABC: A = dst_reg, B = recv_reg, C = ic_index.
+         *   R[A+1] := R[B]                            (preserves recv kind)
+         *   R[A]   := lookup_slot(R[B], K[ic_index])  (atom-proto routed
+         *                                              identically to OP_GETSLOT)
+         *
+         * Emitted by the compiler as the prelude to a method-flagged OP_CALL
+         * (C & 0x80) so the call site reads its receiver from R[A+1] instead
+         * of the deleted vm->last_recv global.  Eliminates the silent-elision
+         * bug where intervening OP_GETSLOTs in argument evaluation clobbered
+         * the global receiver before the outer OP_CALL.
+         *
+         * Dispatch mirrors OP_GETSLOT (same IC machinery, getter path,
+         * atom-proto routing, watcher-install trace probe).  Differences:
+         *   * Receiver snapshot is unconditionally written to R[A+1] (the
+         *     getter path also writes R[A+1] so `this` is correct inside
+         *     the getter body once implicit-this lands).
+         *   * No vm->last_recv side effect — that field is gone at v1.6. */
+        CASE(OP_SELF) {
+            uint32_t i = *s->pc;
+            uint8_t  dst_reg  = uinstr_a(i);
+            uint8_t  recv_reg = uinstr_b(i);
+            uint8_t  ic_index = uinstr_c(i);
+
+            UProtoInstance *pi = ic_resolve_pi(s);
+            if (pi == NULL || pi->ic_table == NULL) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "SELF: no IC table bound");
+                HALT();
+            }
+            UIC *ic = &pi->ic_table[ic_index];
+
+            /* Snapshot the user-visible receiver BEFORE any lookup work —
+             * dst_reg may alias recv_reg, in which case writing R[A] later
+             * would otherwise destroy the receiver we need to copy to
+             * R[A+1].  Snapshot first; write R[A+1] before R[A]. */
+            UValue self_value = s->R[recv_reg];
+
+            UObject *recv;
+            if (self_value.kind == (uint8_t)UVAL_OBJECT) {
+                recv = (UObject *)self_value.v.p;
+            } else {
+                recv = urbi_atom_proto_for_value(vm, self_value);
+                if (recv == NULL) {
+                    vm->last_error = UVM_OOM;
+                    vm_format_type_error_msg(vm, "SELF: atom proto allocation failed");
+                    HALT();
+                }
+            }
+
+            if (UNLIKELY(vm->in_watcher_install)) {
+                UCell *cell = (UCell *)recv;
+                bool already_present = false;
+                size_t _ti;
+                for (_ti = 0; _ti < (size_t)vm->trace_read_set_count; _ti++) {
+                    if (vm->trace_read_set[_ti] == cell) {
+                        already_present = true;
+                        break;
+                    }
+                }
+                if (!already_present) {
+                    if ((size_t)vm->trace_read_set_count < (size_t)URBI_WATCHER_READSET_MAX) {
+                        vm->trace_read_set[vm->trace_read_set_count++] = cell;
+                    } else {
+                        vm->trace_overflow = 1;
+                    }
+                }
+            }
+
+            /* Fast path. */
+            for (uint8_t k = 0; k < ic->n; k++) {
+                if (ic->recv_shapes[k]  == recv->shape
+                 && ic->topology_gen[k] == vm->topology_gen) {
+                    if (ic->flags[k] & URBI_SLOT_FLAG_OGET) {
+                        UProps *up_g = ic->uprops[k];
+                        if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
+                            || up_g->oget.v.p == NULL) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "SELF: getter is not a closure");
+                            HALT();
+                        }
+                        UValue getter_result; int getter_threw = 0;
+                        int rc_g = urbi_run_closure_on_scratch(
+                            vm, (UClosure *)up_g->oget.v.p,
+                            &getter_result, &getter_threw);
+                        if (rc_g != 0 || getter_threw) {
+                            vm->last_error = UVM_TYPE_ERROR;
+                            vm_format_type_error_msg(vm, "SELF: getter raised");
+                            HALT();
+                        }
+                        s->R[dst_reg + 1U] = self_value;
+                        s->R[dst_reg]      = getter_result;
+                        NEXT();
+                    }
+                    /* OBJ-IC-POLY: re-resolve per recv for local slots —
+                     * mirrors the OP_GETSLOT fast path above. */
+                    UValue loaded = (ic->flags[k] & URBI_SLOT_FLAG_LOCAL)
+                                    ? recv->slots[ic->slot_idx[k]]
+                                    : *ic->slots[k];
+                    s->R[dst_reg + 1U] = self_value;
+                    s->R[dst_reg]      = loaded;
+                    NEXT();
+                }
+            }
+
+            /* Slow path. */
+            UValue v;
+            int rc = urbi_slot_get_slow(vm, recv, ic, &v);
+            if (rc != 0) {
+                vm->last_error = UVM_TYPE_ERROR;
+                {
+                    UDiagWriter _w;
+                    diag_init(&_w, vm->last_errmsg, UVM_ERRMSG_CAP);
+                    diag_write_cstr(&_w, "TypeError: SELF: slot '");
+                    if (ic->name != NULL)
+                        diag_write_cstr(&_w, (const char *)ic->name);
+                    diag_write_cstr(&_w, "' not found");
+                }
+                HALT();
+            }
+            uint8_t fresh_k = (uint8_t)((ic->replace_cursor + URBI_IC_ENTRIES_PER_SITE - 1U)
+                                        % URBI_IC_ENTRIES_PER_SITE);
+            if (ic->n > 0U && (ic->flags[fresh_k] & URBI_SLOT_FLAG_OGET)) {
+                UProps *up_g = ic->uprops[fresh_k];
+                if (up_g == NULL || up_g->oget.kind != (uint8_t)UVAL_CLOSURE
+                    || up_g->oget.v.p == NULL) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "SELF: getter is not a closure");
+                    HALT();
+                }
+                UValue getter_result; int getter_threw = 0;
+                int rc_g = urbi_run_closure_on_scratch(
+                    vm, (UClosure *)up_g->oget.v.p,
+                    &getter_result, &getter_threw);
+                if (rc_g != 0 || getter_threw) {
+                    vm->last_error = UVM_TYPE_ERROR;
+                    vm_format_type_error_msg(vm, "SELF: getter raised");
+                    HALT();
+                }
+                s->R[dst_reg + 1U] = self_value;
+                s->R[dst_reg]      = getter_result;
+                NEXT();
+            }
+            s->R[dst_reg + 1U] = self_value;
+            s->R[dst_reg]      = v;
             NEXT();
         }
 

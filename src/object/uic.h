@@ -37,23 +37,39 @@ typedef struct UIC {
     USymbol  *name;                                       /* slot name (interned) */
     UShape   *recv_shapes[URBI_IC_ENTRIES_PER_SITE];      /* receiver shape key */
     uint64_t  topology_gen[URBI_IC_ENTRIES_PER_SITE];     /* per-VM topology stamp at fill */
-    USlot    *slots[URBI_IC_ENTRIES_PER_SITE];            /* cached slot pointer */
+    USlot    *slots[URBI_IC_ENTRIES_PER_SITE];            /* cached slot pointer
+                                                             (valid only when
+                                                             FLAG_LOCAL is clear;
+                                                             see slot_idx below) */
     UProps   *uprops[URBI_IC_ENTRIES_PER_SITE];           /* cached UProps* (NULL when none) */
+    uint16_t  slot_idx[URBI_IC_ENTRIES_PER_SITE];         /* slot index in recv->slots[];
+                                                             used ONLY when FLAG_LOCAL is
+                                                             set — the cached `slots[k]`
+                                                             pointer above is recv-specific
+                                                             for local slots and would
+                                                             return the wrong instance's
+                                                             value on polymorphic same-
+                                                             shape receivers (OBJ-IC-POLY).
+                                                             Fast path re-resolves via
+                                                             &recv->slots[slot_idx[k]]
+                                                             when the LOCAL bit is set;
+                                                             non-LOCAL slots live on a
+                                                             stable proto so the absolute
+                                                             pointer is still correct. */
     uint8_t   flags[URBI_IC_ENTRIES_PER_SITE];            /* URBI_SLOT_FLAG_* summary */
     uint8_t   n;                                          /* live-entry count, 0..URBI_IC_ENTRIES_PER_SITE */
     uint8_t   replace_cursor;                             /* wrap-around eviction cursor */
 } UIC;
 
 /* Layout pin.  At default 4-entry / 64-bit-pointer build the natural layout
- * is 142 bytes of payload padded to 144 (max alignment 8 from uint64_t /
- * pointer fields).  The plan-task body's worked-example arithmetic came out
- * to 152 instead — that was off by one round-up step; empirical sizeof on
- * gcc / clang x86_64 + aarch64 confirms 144.  Cross-target builds (32-bit
- * pointers) shrink the pointer arrays and skip this assert. */
+ * grew to 152 bytes when OBJ-IC-POLY added uint16_t slot_idx[N] (8 bytes at
+ * N=4, padded to 8-byte alignment).  Empirical sizeof on gcc x86_64 confirms
+ * 152.  Cross-target builds (32-bit pointers) shrink the pointer arrays and
+ * skip this assert. */
 #if URBI_IC_ENTRIES_PER_SITE == 4 \
         && defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UIC) == 144,
-    "UIC must be 144 B at default 4-entry, 64-bit pointers");
+_Static_assert(sizeof(struct UIC) == 152,
+    "UIC must be 152 B at default 4-entry, 64-bit pointers");
 #endif
 
 /* === T25: slow-path helpers ===

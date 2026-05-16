@@ -25,15 +25,18 @@
 [00000000] inf
 
 # Math at v0.6.1 ships constants only; method lookups fail as
-# `slot 'NAME' not found` via the GETSLOT proto-walk diagnostic.
+# `slot 'NAME' not found` via the SELF proto-walk diagnostic (the
+# method-call dispatch opcode introduced at v1.6 S42; pre-v1.6 the
+# message read "GETSLOT:" since method dispatch went through plain
+# OP_GETSLOT + the deleted vm->last_recv side channel).
 Math.sqrt(4)
-[00000001:error] !!! TypeError: GETSLOT: slot 'sqrt' not found
+[00000001:error] !!! TypeError: SELF: slot 'sqrt' not found
 
 Math.log(1)
-[00000002:error] !!! TypeError: GETSLOT: slot 'log' not found
+[00000002:error] !!! TypeError: SELF: slot 'log' not found
 
 Math.sqr(2)
-[00000003:error] !!! TypeError: GETSLOT: slot 'sqr' not found
+[00000003:error] !!! TypeError: SELF: slot 'sqr' not found
 
 # Math.nan exists; Math.nan.isNaN() routes through the Float atom-
 # proto installed at Phase 5.

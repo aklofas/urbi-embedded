@@ -438,7 +438,11 @@ UTEST(watcher_respawn_skips_eval_assert)
  * With body_strand already set (body running) and URBI_EXHAUST_QUEUE policy,
  * do_spawn_body_coroutine must:
  *   - Leave body_strand pointing at the sentinel (no new strand allocated).
- *   - Set URBI_WATCHER_PENDING_REFIRE in flags. */
+ *   - Increment pending_refire_count (bounded by max_refire_queue).
+ *
+ * v0.7.x: pending_refire was widened from a single flag bit to a bounded
+ * uint8_t counter so N events arriving while a body is in flight queue
+ * N refires (up to the cap) rather than collapsing into 1. */
 UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
 {
     UVM vm;
@@ -461,19 +465,67 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
     memset(&sentinel, 0, sizeof(sentinel));
     w->body_strand    = &sentinel;
     w->exhaust_policy = URBI_EXHAUST_QUEUE;
+    /* Counter starts at 0 from pool_alloc. */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 0U);
 
+    /* Three back-to-back fires while body is "running" — counter must
+     * increment to 3 (well under the default cap of 15). */
     vm.in_watcher_eval = 1;
+    do_spawn_body_coroutine(&vm, w, NULL);
+    do_spawn_body_coroutine(&vm, w, NULL);
     do_spawn_body_coroutine(&vm, w, NULL);
     vm.in_watcher_eval = 0;
 
     /* body_strand must be unchanged — sentinel pointer still there. */
     UASSERT(w->body_strand == &sentinel);
-    /* PENDING_REFIRE bit must be set. */
-    UASSERT((w->flags & URBI_WATCHER_PENDING_REFIRE) != 0);
+    /* pending_refire_count must reflect all three queued refires. */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 3U);
 
     /* Reset body_strand so teardown doesn't walk the sentinel as a live strand. */
     w->body_strand = NULL;
 
+    urbi_watcher_unregister_internal(&vm, w);
+    urbi_realm_destroy(&vm, r);
+    urbi_vm_destroy(&vm);
+}
+
+/* 6b. watcher_spawn_saturates_at_max_refire_queue
+ *
+ * pending_refire_count must NOT exceed max_refire_queue, no matter how
+ * many fires arrive while the body is busy.  Excess events are dropped
+ * silently (same end-state as URBI_EXHAUST_DROP for the excess). */
+UTEST(watcher_spawn_saturates_at_max_refire_queue)
+{
+    UVM vm;
+    uint32_t instr[1];
+    UProto   proto;
+    UClosure body_cl;
+
+    urbi_vm_init(&vm, NULL, NULL);
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    make_trivial_closure(&body_cl, &proto, instr);
+    UWatcher *w = make_body_watcher(&vm, r, &body_cl);
+    UASSERT(w != NULL);
+
+    UStrand sentinel;
+    memset(&sentinel, 0, sizeof(sentinel));
+    w->body_strand       = &sentinel;
+    w->exhaust_policy    = URBI_EXHAUST_QUEUE;
+    w->max_refire_queue  = 4;   /* tighten the cap for the test */
+
+    vm.in_watcher_eval = 1;
+    for (int i = 0; i < 20; i++) {
+        do_spawn_body_coroutine(&vm, w, NULL);
+    }
+    vm.in_watcher_eval = 0;
+
+    /* Counter saturates at 4 — the 16 excess fires were silently dropped. */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 4U);
+    UASSERT(w->body_strand == &sentinel);
+
+    w->body_strand = NULL;
     urbi_watcher_unregister_internal(&vm, w);
     urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
@@ -484,7 +536,7 @@ UTEST(watcher_spawn_queues_pending_refire_when_body_alive)
  * With body_strand already set and URBI_EXHAUST_DROP policy,
  * do_spawn_body_coroutine must:
  *   - Leave body_strand pointing at the sentinel.
- *   - NOT set URBI_WATCHER_PENDING_REFIRE (silent drop). */
+ *   - NOT increment pending_refire_count (silent drop). */
 UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
 {
     UVM vm;
@@ -513,8 +565,8 @@ UTEST(watcher_spawn_drops_silently_under_exhaust_drop)
 
     /* body_strand must still point at the sentinel. */
     UASSERT(w->body_strand == &sentinel);
-    /* PENDING_REFIRE must NOT be set (silent drop). */
-    UASSERT((w->flags & URBI_WATCHER_PENDING_REFIRE) == 0);
+    /* pending_refire_count must NOT have incremented (silent drop). */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 0U);
 
     w->body_strand = NULL;
 
@@ -536,6 +588,8 @@ test_watcher_spawn_suite(void)
     utest_run("watcher_spawn_oom_stack_alloc",  watcher_spawn_oom_stack_alloc);
     utest_run("watcher_spawn_queues_pending_refire_when_body_alive",
               watcher_spawn_queues_pending_refire_when_body_alive);
+    utest_run("watcher_spawn_saturates_at_max_refire_queue",
+              watcher_spawn_saturates_at_max_refire_queue);
     utest_run("watcher_spawn_drops_silently_under_exhaust_drop",
               watcher_spawn_drops_silently_under_exhaust_drop);
 #ifdef URBI_DEBUG

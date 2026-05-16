@@ -96,8 +96,9 @@ struct UClosure {
      * closures.  When non-NULL, OP_CALL calls this function instead of
      * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on
      * native closures (GC trace already guards each via NULL checks).
-     * The receiver (`self`) is read from vm->last_recv (set by OP_GETSLOT
-     * each time a slot is loaded) — no bytecode change required. */
+     * The receiver (`self`) is sourced from R[A+1] when OP_CALL's C
+     * carries the method-flag bit (set by a preceding OP_SELF, v1.6 S42);
+     * plain calls pass nil as self. */
     urbi_native_method_fn native_fn;
     uint8_t           nupvals;
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */

@@ -7,12 +7,14 @@
  * native_fn instead of pushing a bytecode frame when this field is set
  * (runtime/uclosure.h).
  *
- * Receiver routing: the OP_CALL native arm reads vm->last_recv (set by
- * OP_GETSLOT each time a slot is loaded) and passes it as `self` to the
- * native function.  This avoids any bytecode/wire-format change at the
- * cost of a single 16-byte UVM field.  Stale-`last_recv` is harmless on
- * non-method calls because the native_fn != NULL branch is the only one
- * that reads it.
+ * Receiver routing: method-call sites are compiled as OP_SELF (loads
+ * method + receiver into adjacent registers) followed by OP_CALL with
+ * the method-flag bit set in C; the OP_CALL native arm reads `self`
+ * from R[A+1] and passes it to the native function.  Plain
+ * (non-method) calls pass nil as self.  (Pre-v1.6 the receiver came
+ * from vm->last_recv, which got silently clobbered by intervening
+ * OP_GETSLOTs in argument evaluation; the OP_SELF+method-flag scheme
+ * eliminates that whole bug class — S42.)
  *
  * Phase 3 baseline error handling: urbi_raise_arity / _type / _oom /
  * _lookup print to stderr (when stderr is available; freestanding builds

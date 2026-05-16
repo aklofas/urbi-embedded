@@ -113,3 +113,12 @@ constParameterPointer:src/stdlib/runtime_types.c
 // expose UValue *args via the urbi_native_method_fn typedef; same rationale
 // as Phase 7 — the function-pointer signature is pinned.
 constParameterPointer:src/stdlib/primitives.c
+
+// audit:S44-followup — src/runtime/uunwind.c pattern_matches() at TRY_FRAME
+// catch absorption is a documented M3 / FOUND-026 stub returning 1.  Wave 2
+// will refine to class-pattern dispatch and the condition will become
+// meaningful.  Cppcheck's flow analysis now detects the tautology — it was
+// unflagged pre-S44 because the surrounding control-flow exposed fewer paths.
+// File-wide suppression keeps the warning out of the gate until the Wave 2
+// refinement lands; revisit then.
+knownConditionTrueFalse:src/runtime/uunwind.c

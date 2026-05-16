@@ -580,13 +580,8 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   the VM; freed via umodule_destroy + alloc_fn at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
-     * last_recv: receiver UValue from the most recent OP_GETSLOT load.
-     *   Read by OP_CALL when invoking a closure with native_fn != NULL —
-     *   that closure's `self` argument comes from here.  No bytecode
-     *   change required: native methods are only stored as slot values and
-     *   are therefore loaded via OP_GETSLOT, which writes here unconditionally.
-     *   Stale on non-method calls (where native_fn is NULL); the OP_CALL
-     *   arm reads this only on the native_fn != NULL branch. */
+     * (last_recv removed at v1.6 S42 — method receivers are now passed
+     *  via R[A+1] under OP_CALL's method flag, not a global side channel.) */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
     /* stdlib_protos: linked list of UProto objects stolen from REPL-session
@@ -651,7 +646,6 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * default at urbi_vm_init time. */
     uint8_t     heap_locked;
     uint8_t     pad_stdlib[6];          /* padding; zeroed */
-    UValue      last_recv;
     /* Operator-overload IC (Gap #4, M6 Wave 3).  Heap-allocated at
      * urbi_vm_init time via vm->alloc_fn; freed at urbi_vm_destroy.
      * NULL until first allocation (urbi_vm_init ensures it is allocated).

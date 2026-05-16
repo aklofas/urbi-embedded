@@ -88,7 +88,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, const UModule *module, UValue *out_result
     return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
 }
 
-#if !defined(URBI_BYTECODE_ONLY)
+#if !defined(URBI_BYTECODE_ONLY) && __STDC_HOSTED__
 /* ---------------------------------------------------------------------------
  * urbi_steal_repl_protos (file-private helper)
  *
@@ -178,7 +178,9 @@ urbi_steal_repl_protos(UVM *vm, UModule *module)
         vm->stdlib_protos = p;
     }
 }
+#endif /* !URBI_BYTECODE_ONLY && __STDC_HOSTED__ */
 
+#if !defined(URBI_BYTECODE_ONLY)
 /* ---------------------------------------------------------------------------
  * urbi_repl_eval
  *
@@ -195,6 +197,7 @@ int
 urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                char *out_buf, size_t out_buf_size)
 {
+#if __STDC_HOSTED__
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Resolve realm. */
@@ -325,6 +328,17 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     umodule_destroy(&module);
     uarena_destroy(&arena);
     return URBI_OK;
+#else
+    /* Freestanding: the REPL is not part of the embedded surface.  Mirrors
+     * urbi_compile_source's freestanding stub in src/urbi.c — embedders
+     * deliver pre-compiled bytecode via urbi_load_module + urbi_run_chunk
+     * instead.  uarena_init (the hosted entry point) isn't declared in
+     * freestanding mode, so this branch returns early without touching
+     * any compiler front-end primitives. */
+    (void)vm; (void)realm; (void)line; (void)line_len;
+    (void)out_buf; (void)out_buf_size;
+    return URBI_ERR_COMPILE;
+#endif /* __STDC_HOSTED__ */
 }
 #endif /* !URBI_BYTECODE_ONLY */
 

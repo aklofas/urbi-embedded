@@ -1,0 +1,89 @@
+# sdkconfig.defaults — ESP32-S3-EYE preset for the eye_demo.
+#
+# ESP-IDF reads this file once on first `idf.py build` to seed
+# build/sdkconfig.  Subsequent menuconfig edits override these values
+# in build/sdkconfig (committed at the top-level via the
+# `idf.py save-defconfig` flow if needed).
+#
+# Targets the ESP32-S3-EYE v2.2: ESP32-S3-WROOM-1 (N8R8 — 8 MB flash,
+# 8 MB octal PSRAM), OV2640 camera on the v2 pinout, ST7789 240x240
+# LCD on SPI2, GPIO 0 BOOT button.  See REVIVAL.md and the v0.7.2-esp32
+# plan T41 for the rationale on each setting.
+
+# Target SoC.
+CONFIG_IDF_TARGET="esp32s3"
+
+# 8 MB flash on the S3-EYE module.  Default is 2 MB which is too small
+# for our partitions.csv (factory partition is 5 MB).
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+
+# Octal-PSRAM @ 80 MHz.  N8R8 modules ship with octal PSRAM; the demo
+# allocator (port_psram_alloc) requests MALLOC_CAP_SPIRAM so PSRAM must
+# be enabled and initialised at boot.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# 100 Hz tick.  Matches the FreeRTOS scheduler determinism contract used
+# throughout the urbi runtime (sched preset CI gates run at 100 Hz).
+CONFIG_FREERTOS_HZ=100
+
+# 16 KB main_task stack (default 3584 B is too small for the urbi setup
+# chain).  Hosts that call urbi_vm_init + urbi_realm_global + a handful
+# of urbi_event_register / urbi_register from app_main need at least
+# ~12 KB to avoid xtensa register-window spill corrupting adjacent heap
+# memory — specifically ESP-IDF's vector_desc_t linked list, which then
+# panics the next esp_intr_alloc call with a LoadProhibited inside
+# find_desc_for_source.  16 KB is a generous safety margin.  See
+# docs/embedding-guide.md "FreeRTOS stack sizes" for the full diagnosis.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Use the custom partition table at partitions.csv (sibling file).
+# CONFIG_PARTITION_TABLE_FILENAME is derived from
+# CONFIG_PARTITION_TABLE_CUSTOM_FILENAME when PARTITION_TABLE_CUSTOM=y
+# (see components/partition_table/Kconfig.projbuild for the chain).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- esp_video DVP video device + OV2640 driver ---------------------
+#
+# Enables the DVP-attached `/dev/video2` node (ESP_VIDEO_DVP_DEVICE_NAME)
+# in esp_video, and pulls in the OV2640 driver from esp_cam_sensor with
+# the 240x240 RGB565(LE) @ 25fps default format.  240x240 is OV2640's
+# native, faster than 320x240 / 640x480, and matches the ST7789 display
+# 1:1 so no crop is needed downstream.
+CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE=y
+CONFIG_CAMERA_OV2640=y
+CONFIG_CAMERA_OV2640_DVP_RGB565_240X240_25FPS=y
+CONFIG_CAMERA_OV2640_DVP_DEFAULT_FMT_RGB565_240X240_25FPS=y
+
+# --- Task watchdog ---------------------------------------------------
+#
+# Stretch the task WDT to 15 s (default 5 s) for the urbiscript BlobScan
+# stress-test handler: at subsample=1, BlobScan.scan() loops 240x240 =
+# 57,600 iterations × ~120 µs each = ~7 s of straight CPU on core 0,
+# during which IDLE0 doesn't get scheduled and the default 5 s WDT
+# trips (non-fatal but noisy in the log).  15 s comfortably covers
+# subsample=1 with margin for VM ticks + camera task interleaving.
+# Tighten back down to 5 s once the stress-test BlobScan is removed
+# or moved off the urbi task.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=15
+
+# Disable IDLE0 from the task WDT.  With urbi (+1), camera (+1), and
+# display (+1) all pinned to core 0 and continuously runnable (urbi
+# RUNNING-loops between events; camera spins on V4L2 DQBUF every 40ms),
+# IDLE0 never gets scheduled — but that's the intended design, not a
+# stuck-task bug.  Without this knob the WDT triggers every 15s with a
+# spurious "IDLE0 starved" warning even though everything is healthy.
+# IDLE1 (core 1) WDT remains active so display-task hangs are still
+# caught.  See 2026-05-16 diagnostic run that produced two backtraces
+# while VM was actively making progress (steps R=882K/950K per 2s).
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+
+# --- Camera runtime gate --------------------------------------------
+#
+# Kept as an opt-out knob for boards without the OV2640 wired up (the
+# demo will then run with the display, button, and reactive at-watcher
+# only — useful as a smoke test on non-EYE S3 boards).  Disable via:
+#   idf.py menuconfig → Eye Demo Configuration → [ ] Enable camera
+CONFIG_EYE_DEMO_ENABLE_CAMERA=y

@@ -113,7 +113,8 @@ register_native_method(struct UVM *vm, struct UObject *proto,
  *
  * Signature: int fn(UVM *vm, UValue self, UValue *args, uint8_t nargs,
  *                   UValue *out).
- *   - `self` is the receiver from vm->last_recv (set by OP_GETSLOT).
+ *   - `self` is the receiver: R[A+1] when OP_CALL carries the method
+ *     flag (set by a preceding OP_SELF), nil otherwise — v1.6 S42.
  *   - `args` / `nargs` are the call-site arguments (no receiver in slot 0).
  *   - `*out` is the return value.
  *   - Returns UEXEC_OK on success, UEXEC_THROW on raise (urbi_raise_*). */

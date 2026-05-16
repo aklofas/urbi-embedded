@@ -73,7 +73,6 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
          * dispatch_loop_until_yield (per T15 Option B contract — the exit_strand:
          * label does not decrement on DEAD).  We decremented it above via
          * sched_dequeue_ready_head before dispatch; no further adjustment needed.
-         * DEAD strands are left for T20's strand-lifecycle cleanup.
          *
          * If the strand BLOCKED (WAITING state) via sched_strand_block from within
          * the dispatch loop (e.g. OP_JOIN_WAIT), sched_strand_block decrements
@@ -94,6 +93,34 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
          * will silently underflow the runnable count. */
         if (USTRAND_IS_WAITING(s)) {
             vm->strand_runnable_count++;
+        }
+
+        /* T20 (v0.7.x): eager DEAD-strand reap.  Heap-allocated strands
+         * (`urbi_strand_create` — used for watcher bodies, fork children, and
+         * any script-spawned strand) sit on `realm->strands_head` until
+         * `urbi_realm_destroy` would otherwise reap them at VM teardown.
+         * Without an eager reap during normal dispatch, DEAD strands
+         * accumulate indefinitely; each carries a register stack of
+         * `UVM_STACK_CAP * sizeof(UValue)` (32 KB at default) so the leak
+         * climbs into the multi-MB range at moderate event rates.  Surfaced
+         * on the ESP-IDF eye_demo as a hard wedge at ~200 body completions:
+         * register-stack alloc failed (`watcher body spawn: out of memory
+         * (stack alloc)` URBI_LOG_WARN), `body_strand` stayed NULL, and the
+         * at-handler dispatch went silent.
+         *
+         * Safe to reap here because: `watcher_body_owner` was cleared by
+         * `urbi_watcher_body_completed` in `exit_strand:` above; joiners
+         * were woken by `fork_wake_joiners`; ready/sleep queues were
+         * already unbound; `vm->cur_strand` was cleared after dispatch
+         * returned.  The FATAL path returned `URBI_STEP_FATAL` above so
+         * we never reap a strand the host still wants to inspect.
+         *
+         * `urbi_strand_destroy` is the canonical full teardown — unlinks
+         * from `realm->strands_head`, unbinds queues, frees cleanup
+         * stack + register stack + the strand struct itself. */
+        if (s->state == USTRAND_STATE_DEAD) {
+            urbi_strand_destroy(s);
+            /* s is freed; do not dereference past this point. */
         }
 
         /* Wake any sleep-queue strands whose wake_us has passed.

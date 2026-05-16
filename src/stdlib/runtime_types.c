@@ -55,7 +55,8 @@ val_obj(UObject *o)
  * slot.  Returns the fresh clone wrapped in a UVAL_OBJECT.
  *
  * Receiver routing: `self` is the Exception proto (or a subclass clone)
- * supplied by the OP_CALL native arm via vm->last_recv.  Cloning the
+ * supplied by the OP_CALL native arm from R[A+1] (method-flagged OP_CALL
+ * preceded by an OP_SELF — v1.6 S42).  Cloning the
  * receiver — not the proto-singleton — lets future scripted subclasses
  * (`class TypeError : Exception { ... }`) flow through `.new` correctly
  * when Phase 10 stdlib overlays land. */

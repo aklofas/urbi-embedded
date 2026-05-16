@@ -88,3 +88,12 @@ compile_commands.json
 node_modules/
 package.json
 package-lock.json
+
+# ESP-IDF managed-component generated files (per-build, not committed)
+tests/qemu/*/build/
+tests/qemu/*/dependencies.lock
+tests/qemu/*/sdkconfig
+examples/esp32/*/build/
+examples/esp32/*/dependencies.lock
+examples/esp32/*/sdkconfig
+examples/esp32/*/managed_components/

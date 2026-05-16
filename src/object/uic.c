@@ -86,6 +86,20 @@ ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
     ic->topology_gen[k] = vm->topology_gen;
     ic->slots[k]        = &holder->slots[idx];
     ic->uprops[k]       = up;
+    /* OBJ-IC-POLY: record idx for the LOCAL-slot fast path so polymorphic
+     * same-shape receivers re-resolve their own slot rather than reading the
+     * first cached recv's slot.  Inherited slots (holder is a stable proto)
+     * keep using the absolute `slots[k]` pointer.  uint16_t supports indices
+     * 0..65535 — far beyond any realistic v1.0 class layout (eye_demo's
+     * Color has 5 slots).  Indices >= 65536 would saturate at 0xFFFF and
+     * the fast path would dereference the wrong slot; flag-clear the LOCAL
+     * bit defensively to force slow-path in that improbable case. */
+    if (idx < 0xFFFFU) {
+        ic->slot_idx[k] = (uint16_t)idx;
+    } else {
+        ic->slot_idx[k] = 0xFFFFU;
+        flags &= (uint8_t)~URBI_SLOT_FLAG_LOCAL;  /* poison: bypass fast path */
+    }
     ic->flags[k]        = flags;
     ic->replace_cursor  = (uint8_t)((k + 1U) % URBI_IC_ENTRIES_PER_SITE);
     /* Grow live-entry count up to the cap.  When k == ic->n the cache is

@@ -178,7 +178,8 @@ UTEST(watcher_completed_respawns_when_pending_refire)
     struct UStrand *s = test_make_dummy_body_strand(&vm, r, &body_cl, w);
     UASSERT(s != NULL);
     w->body_strand = s;
-    w->flags |= URBI_WATCHER_PENDING_REFIRE;
+    /* Pretend three events arrived while body was busy. */
+    w->pending_refire_count = 3;
 
     s->fatal_status = UEXEC_OK;
     urbi_watcher_body_completed(&vm, s);
@@ -187,8 +188,9 @@ UTEST(watcher_completed_respawns_when_pending_refire)
     UASSERT(w->body_strand != NULL);
     /* It must be a different strand from the completed one. */
     UASSERT(w->body_strand != s);
-    /* PENDING_REFIRE must be cleared. */
-    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0U);
+    /* Counter must have decremented by exactly one — completion respawns
+     * once per queued refire, not all queued at once. */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 2U);
     /* Back-pointer on the old strand must be NULL. */
     UASSERT(s->watcher_body_owner == NULL);
 
@@ -220,7 +222,8 @@ UTEST(watcher_completed_suppresses_refire_under_pending_unregister)
     struct UStrand *s = test_make_dummy_body_strand(&vm, r, &body_cl, w);
     UASSERT(s != NULL);
     w->body_strand = s;
-    w->flags |= URBI_WATCHER_PENDING_REFIRE;
+    /* Pretend events arrived while body was busy. */
+    w->pending_refire_count = 5;
     w->flags |= URBI_WATCHER_PENDING_UNREGISTER;
 
     s->fatal_status = UEXEC_OK;
@@ -228,8 +231,9 @@ UTEST(watcher_completed_suppresses_refire_under_pending_unregister)
 
     /* No respawn — body_strand must stay NULL. */
     UASSERT(w->body_strand == NULL);
-    /* PENDING_REFIRE must be cleared. */
-    UASSERT_EQ((unsigned)(w->flags & URBI_WATCHER_PENDING_REFIRE), 0U);
+    /* Counter must be zeroed by the PENDING_UNREGISTER path (drop queued
+     * refires; the watcher is going away). */
+    UASSERT_EQ((unsigned)w->pending_refire_count, 0U);
     /* Back-pointer on old strand must be NULL. */
     UASSERT(s->watcher_body_owner == NULL);
 

@@ -1,0 +1,40 @@
+// QEMU reactive smoke -- proves event injection -> at-watcher -> host-fn -> printf
+//
+// Goal: exercise the v0.7.1 reactive C-API end-to-end on QEMU.  The C side
+// (reactive_smoke_main.c) registers `ping` (event with destructure) and
+// `signal_pass` (host fn), injects 3 events with seq=1,2,3, and drives
+// urbi_step until quiescent.
+//
+// Drift from spec section 6.4 (rev 1 -- payload threading): the original
+// sketch had the body receive `seq` as a parameter:
+//
+//   at (ping?) function (seq) { signal_pass(seq); };
+//
+// That form does not work end-to-end today.  Async event delivery
+// (urbi_inject_event -> SPSC ring drain -> c_event_emit_async ->
+// do_spawn_body_coroutine) does NOT thread the destructured payload into
+// the body strand's R[0].  The body closure has a `__payload` parameter
+// reserved for it (see src/emit/uemit_react.c:258), but the spawn path
+// passes fire_context=NULL and urbi_strand_arm_from_closure leaves R[0]
+// zero-initialised.  This is design-risks row 14 ("pattern matching --
+// v1.x brainstorm + spec") and the c_event_emit_async comment at
+// src/event/uevent_emit.c:101 ("M5 baseline: fire_context NULL; T53 wires
+// payload into body R[0]") -- T53 was never shipped.  All the deferred
+// .chk fixtures using `function (p) { ... }` form (event_fifo_determinism
+// etc.) are blocked on the same gap.
+//
+// Only the sync path (e.syncEmit(p) -> c_event_emit_sync ->
+// run_event_body_on_scratch -> urbi_run_closure_on_scratch_with_payload)
+// actually writes R[0].  But the QEMU smoke routes through the async
+// ring -- that is the whole point of the ISR-payload contract.
+//
+// Smoke-local fix: do not depend on payload threading.  The body just
+// calls `signal_pass();`.  signal_pass maintains its own seq counter on
+// the C side so the per-event `RESULT: PASS seq=N` marker still proves
+// one fire per inject (1/2/3 across the three injects).  The C-side
+// destructure_ping is left in place -- it still runs at drain time and
+// validates the 4-byte ISR payload, even though the destructured seq
+// never reaches script.  When async payload threading lands in v1.x the
+// body can return to `function (seq) { signal_pass(seq); }` and
+// signal_pass can drop the static counter.
+at (ping?) signal_pass();

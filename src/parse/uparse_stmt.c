@@ -46,7 +46,13 @@ UAstNode *parse_var_decl(UParser *p) {
     }
     consume(p);
 
-    UAstNode *init = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
+     * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
+     * `var x = 1 | y = 2` should parse as `(var x = 1) | (y = 2)` per
+     * legacy spec (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk
+     * `var n = 0 | {};` pattern).  Pre-fix, parse_inner_tier absorbed
+     * the `|` into the init expression, producing nested wrong-AST. */
+    UAstNode *init = parse_expression(p, 0);
     if (!init) return NULL;
     if (init->kind == AST_ERROR) return init;
 
@@ -74,7 +80,11 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; consume it. */
     consume(p);
 
-    UAstNode *value = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
+     * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
+     * `x = 1 | y = 2` should parse as `(x = 1) | (y = 2)`.  Without
+     * this fix, parse_inner_tier absorbs the `|` into the assign RHS. */
+    UAstNode *value = parse_expression(p, 0);
     if (!value) return NULL;
     if (value->kind == AST_ERROR) return value;
 
@@ -258,6 +268,17 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_WHENEVER: return parse_whenever(p);
     case TOK_KW_WAITUNTIL: return parse_waituntil(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
+    /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
+     * Original urbi spec supports brace blocks in at-bodies, onleave
+     * handlers, whenever bodies, and any inner-tier position (see
+     * legacy aldebaran-urbi/tests/2.x/at/ .chk files for examples like
+     * `at (e?) { ... }`, `at (cond) { ... } onleave { ... }`).
+     * Without this, the parser falls through to parse_inner_tier →
+     * parse_expression which doesn't accept LBRACE as an expression
+     * prefix, producing "expected expression" at the first statement
+     * inside the block.  Surfaced 2026-05-16 by eye_demo's attempt
+     * to use a multi-statement at-body. */
+    case TOK_LBRACE:      return parse_block(p);
     case TOK_IDENT: {
         /* x = expr — detect by consuming IDENT then peeking for TOK_EQ.
            mytag: { body } — detect by consuming IDENT then peeking for TOK_COLON.
@@ -632,7 +653,12 @@ UAstNode *parse_return(UParser *p) {
                      || nt == TOK_SEMI
                      || nt == TOK_COMMA;
         if (!no_value) {
-            value = parse_inner_tier(p);
+            /* S48-followup (2026-05-16): `return EXPR | rest` should parse
+             * as `(return EXPR) | rest` (return is final per legacy
+             * aldebaran-urbi convention).  Same root cause as the
+             * MEMBER_SET / var-decl / local-assign fixes: parse_inner_tier
+             * absorbs the pipe into the return value. */
+            value = parse_expression(p, 0);
             if (!value) return (UAstNode *)&uparser_oom_sentinel;
             if (value->kind == AST_ERROR) return value;
         }
@@ -649,7 +675,12 @@ UAstNode *parse_return(UParser *p) {
 UAstNode *parse_throw(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_THROW */
 
-    UAstNode *value = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): `throw EXPR | rest` should parse as
+     * `(throw EXPR) | rest` per legacy aldebaran-urbi convention (see
+     * aldebaran-urbi/tests/2.x/urbistyle.chk for `throw Exception.new(...) |`
+     * patterns).  Same root cause as MEMBER_SET / var-decl / local-assign
+     * fixes: parse_inner_tier would absorb the pipe into the throw value. */
+    UAstNode *value = parse_expression(p, 0);
     if (!value) return (UAstNode *)&uparser_oom_sentinel;
     if (value->kind == AST_ERROR) return value;
 

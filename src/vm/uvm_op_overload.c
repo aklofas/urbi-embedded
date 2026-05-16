@@ -151,9 +151,9 @@ vm_arith_method_fallback(UVM *vm,
 
     /* Dispatch: native closure → direct call; bytecode closure → scratch run.
      *
-     * Native path: same as OP_CALL's native-fn arm.  Receiver is lhs
-     * (published to vm->last_recv for symmetry with OP_GETSLOT → OP_CALL).
-     * Args: rhs as args[0].
+     * Native path: same as OP_CALL's native-fn arm.  Receiver is lhs;
+     * passed directly as native_fn's `self` arg (v1.6 S42 — vm->last_recv
+     * is gone).  Args: rhs as args[0].
      *
      * Bytecode path: urbi_run_closure_on_scratch_with_payload writes rhs into
      * R[0] of the scratch strand.  The function's nparams is typically 1 for
@@ -162,7 +162,6 @@ vm_arith_method_fallback(UVM *vm,
     UValue result;
     if (cl->native_fn != NULL) {
         UValue arg = *rhs;
-        vm->last_recv = *lhs;
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
@@ -203,7 +202,6 @@ vm_arith_method_fallback_unary(UVM *vm,
 
     UValue result;
     if (cl->native_fn != NULL) {
-        vm->last_recv = *operand;
         int nrc = cl->native_fn(vm, *operand, NULL, 0, &result);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;
@@ -250,7 +248,6 @@ vm_cmp_method_fallback(UVM *vm,
     UValue result;
     if (cl->native_fn != NULL) {
         UValue arg = *rhs;
-        vm->last_recv = *lhs;
         int nrc = cl->native_fn(vm, *lhs, &arg, 1, &result);
         if (nrc != 0) {
             return VM_OP_OVERLOAD_MISS;

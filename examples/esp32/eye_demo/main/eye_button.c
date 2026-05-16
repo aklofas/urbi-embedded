@@ -1,0 +1,59 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* eye_button — GPIO 0 (BOOT) ISR → urbi event injection.
+ *
+ * The ISR is IRAM-resident (ESP_INTR_FLAG_IRAM) so it stays valid
+ * even when flash cache is suspended for SPI flash writes.
+ * urbi_inject_event is the single-producer ISR-safe primitive (no
+ * locks, no heap) per the v0.7.1 contract; calling it from ISR
+ * context is the canonical use case.  Empty payload (NULL, 0) —
+ * `at (button_pressed?)` urbi-side handlers don't destructure args.
+ *
+ * Debounce: the BOOT button bounces 2-4 times within ~150 ms per
+ * physical press.  Filtering lives in the urbiscript handler (see
+ * eye_demo.u Realm.on_button), not here — it demonstrates a real
+ * reactive-runtime pattern using System.time_us().  The cost is
+ * minor: 2-4 extra body-strand spawns per press, well within the
+ * 25 Hz blob-event budget.  An embedder that wants ISR-level
+ * suppression (e.g. for a much noisier switch or to save event-ring
+ * pressure) can add an esp_timer_get_time() guard here. */
+#include "driver/gpio.h"
+#include "esp_attr.h"
+#include "esp_err.h"
+#include "urbi/urbi.h"
+
+#include "eye_button.h"
+
+static struct UVM       *btn_vm;
+static urbi_event_id_t   btn_ev;
+
+/* Defined in eye_demo_main.c; bumped per inject so the Stats class can
+ * report button-press injection rate without a separate counter setup. */
+extern volatile uint32_t g_evt_btn_count;
+
+static void IRAM_ATTR button_isr(void *arg)
+{
+    (void)arg;
+    g_evt_btn_count++;
+    urbi_inject_event(btn_vm, btn_ev, NULL, 0);
+}
+
+void button_install_isr(struct UVM *vm, urbi_event_id_t ev)
+{
+    btn_vm = vm;
+    btn_ev = ev;
+
+    gpio_config_t io = {
+        .pin_bit_mask = 1ULL << GPIO_NUM_0,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .intr_type    = GPIO_INTR_NEGEDGE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io));
+
+    /* gpio_install_isr_service returns ESP_ERR_INVALID_STATE when
+     * esp_video (camera DVP) has already installed the shared service
+     * — benign; gpio_isr_handler_add below still wires our handler
+     * onto the existing service. */
+    (void)gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    ESP_ERROR_CHECK(gpio_isr_handler_add(GPIO_NUM_0, button_isr, NULL));
+}

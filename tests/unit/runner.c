@@ -41,6 +41,7 @@ extern void test_ast_string_suite(void);
 extern void test_emit_string_suite(void);
 extern void test_string_literal_e2e_suite(void);
 extern void test_api_version_suite(void);
+extern void test_port_allocator_mock_suite(void);
 extern void test_arena_suite(void);
 extern void test_aux_version_check_suite(void);
 extern void test_parser_suite(void);
@@ -90,6 +91,7 @@ extern void test_uobject_suite(void);
 extern void test_uslothandle_suite(void);
 extern void test_ushape_suite(void);
 extern void test_uic_suite(void);
+extern void test_ic_polymorphic_suite(void);
 extern void test_topology_gen_suite(void);
 extern void test_ugc_object_cells_suite(void);
 extern void test_gc_strand_walker_suite(void);
@@ -197,6 +199,7 @@ extern void test_tag_info_suite(void);
 extern void test_set_writer_suite(void);
 extern void test_set_time_us_suite(void);
 extern void test_set_wake_fn_suite(void);
+extern void test_set_diag_fn_suite(void);
 extern void test_register_host_fn_suite(void);
 extern void test_register_dup_name_suite(void);
 extern void test_atomic_batch_suite(void);
@@ -207,6 +210,16 @@ extern void test_event_register_errors_suite(void);
 extern void test_event_unregister_suite(void);
 extern void test_drain_routing_registered_suite(void);
 extern void test_drain_routing_unregistered_suite(void);
+extern void test_athandler_wedge_repro_suite(void);
+extern void test_athandler_class_method_fatal_suite(void);
+extern void test_chunktop_realm_closure_suite(void);
+extern void test_emit_nary_freereg_drift_suite(void);
+extern void test_unwind_method_try_catch_suite(void);
+extern void test_whenever_double_fire_suite(void);
+extern void test_parse_block_in_at_body_suite(void);
+extern void test_pipe_middle_stmt_suite(void);
+extern void test_waituntil_cascade_suite(void);
+extern void test_fork_amp_at_body_suite(void);
 extern void test_register_watcher_callback_suite(void);
 extern void test_watcher_auto_unregister_suite(void);
 extern void test_unregister_watcher_suite(void);
@@ -223,6 +236,8 @@ extern void test_aux_function_table_suite(void);
 extern void test_aux_set_error_suite(void);
 extern void test_aux_load_and_run_suite(void);
 extern void test_aux_dump_value_suite(void);
+extern void test_detect_blob_suite(void);
+extern void test_draw_crosshair_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -240,6 +255,7 @@ static const struct suite_entry suites[] = {
     {"emit_string",                test_emit_string_suite},
     {"string_literal_e2e",         test_string_literal_e2e_suite},
     {"api_version",                test_api_version_suite},
+    {"port_allocator_mock",        test_port_allocator_mock_suite},
     {"arena",                      test_arena_suite},
     {"aux_version_check",          test_aux_version_check_suite},
     {"parser",                     test_parser_suite},
@@ -289,6 +305,7 @@ static const struct suite_entry suites[] = {
     {"uslothandle",                test_uslothandle_suite},
     {"ushape",                     test_ushape_suite},
     {"uic",                        test_uic_suite},
+    {"ic_polymorphic",             test_ic_polymorphic_suite},
     {"topology_gen",               test_topology_gen_suite},
     {"ugc_object_cells",           test_ugc_object_cells_suite},
     {"gc_strand_walker",           test_gc_strand_walker_suite},
@@ -396,6 +413,7 @@ static const struct suite_entry suites[] = {
     {"set_writer",             test_set_writer_suite},
     {"set_time_us",            test_set_time_us_suite},
     {"set_wake_fn",            test_set_wake_fn_suite},
+    {"set_diag_fn",            test_set_diag_fn_suite},
     {"register_host_fn",      test_register_host_fn_suite},
     {"register_dup_name",     test_register_dup_name_suite},
     {"atomic_batch",          test_atomic_batch_suite},
@@ -406,6 +424,16 @@ static const struct suite_entry suites[] = {
     {"event_unregister",             test_event_unregister_suite},
     {"drain_routing_registered",     test_drain_routing_registered_suite},
     {"drain_routing_unregistered",   test_drain_routing_unregistered_suite},
+    {"athandler_wedge_repro",        test_athandler_wedge_repro_suite},
+    {"athandler_class_method_fatal", test_athandler_class_method_fatal_suite},
+    {"chunktop_realm_closure",       test_chunktop_realm_closure_suite},
+    {"emit_nary_freereg_drift",      test_emit_nary_freereg_drift_suite},
+    {"unwind_method_try_catch",      test_unwind_method_try_catch_suite},
+    {"whenever_double_fire",         test_whenever_double_fire_suite},
+    {"parse_block_in_at_body",       test_parse_block_in_at_body_suite},
+    {"pipe_middle_stmt",             test_pipe_middle_stmt_suite},
+    {"waituntil_cascade",            test_waituntil_cascade_suite},
+    {"fork_amp_at_body",             test_fork_amp_at_body_suite},
     {"register_watcher_callback",    test_register_watcher_callback_suite},
     {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
     {"unregister_watcher",           test_unregister_watcher_suite},
@@ -422,6 +450,8 @@ static const struct suite_entry suites[] = {
     {"aux_set_error",                test_aux_set_error_suite},
     {"aux_load_and_run",             test_aux_load_and_run_suite},
     {"aux_dump_value",               test_aux_dump_value_suite},
+    {"detect_blob",                  test_detect_blob_suite},
+    {"draw_crosshair",               test_draw_crosshair_suite},
     /* Add new suites here as test files are added. */
 };
 

@@ -74,6 +74,17 @@ $(BUILDDIR)/tests/unit/%.o: tests/unit/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
+# tests/unit/test_detect_blob.c includes detect_blob.h from the eye_demo
+# example's main/ directory.  Per-target CPPFLAGS append picks up the
+# extra include path for just this TU; all other unit tests stay isolated
+# from the example tree.
+$(BUILDDIR)/tests/unit/test_detect_blob.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
+
+# tests/unit/test_draw_crosshair.c includes crosshair.h from the same
+# eye_demo main/ directory — same per-TU include-path pattern as
+# test_detect_blob.o just above.
+$(BUILDDIR)/tests/unit/test_draw_crosshair.o: CPPFLAGS += -Iexamples/esp32/eye_demo/main
+
 # --- REPL binary --------------------------------------------------------
 #
 # urbi — the REPL binary.  Builds from tools/urbi.c + vendored linenoise
@@ -745,6 +756,68 @@ cross-riscv-bytecode-only:
 		AR=riscv64-unknown-elf-ar \
 		all
 
+# T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
+# Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
+# target ISA selection happens via `-mlongcalls` (the ESP32 Xtensa marker).
+# Footprint -D set mirrors cross-arm-bytecode-only — ESP32-S3 has a
+# comparable RAM envelope to the Cortex-M7 target.  Inline freestanding
+# gate matches the spec §4.7 contract.
+cross-esp32s3-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-esp32s3-bytecode-only \
+		CC=xtensa-esp-elf-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=xtensa-esp-elf-ar \
+		all
+	@sh tests/scripts/test-freestanding.sh build/cross-esp32s3-bytecode-only/liburbi.a
+
+# T11 / Wave 2: ESP32-S3 (Xtensa LX7) full cross-build (lex/parse/emit
+# included).  Mirrors the cross-arm / cross-riscv shape — no
+# URBI_BYTECODE_ONLY=1 and no inline freestanding gate, since full mode
+# pulls in the compiler front-end which may surface hosted-libc deps for
+# diagnostics.  Uses the unified ESP-IDF v6.0.1+ toolchain
+# (xtensa-esp-elf-{gcc,ar,nm}); target ISA selection via `-mlongcalls`.
+cross-esp32s3-full:
+	$(MAKE) TARGET=cross-esp32s3-full \
+		CC=xtensa-esp-elf-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding" \
+		AR=xtensa-esp-elf-ar \
+		all
+
+# T12 / Wave 2: ESP32-S3 bytecode-only freestanding-signature golden gate.
+# Tighter than the hardcoded-libc forbidden list in test-freestanding.sh:
+# pins the FULL set of truly-unresolved (archive-level) symbols against a
+# golden.  Any NEW unresolved symbol — even one not in the hardcoded list —
+# trips the gate, surfacing latent dependency drift (e.g. a newly-introduced
+# libgcc helper, or accidental leakage of time() / strncmp() / etc. behind
+# a missed __STDC_HOSTED__ guard).  To update the golden after verifying
+# intent: delete tests/golden/v0.7.2-esp32-nm-bytecode-only.txt and
+# re-run this target; the FAIL diff doubles as the regeneration command.
+# NOT wired into releasetest — toolchain availability isn't universal;
+# CI invokes this from the cross-compile workflow (see T13).
+.PHONY: test-cross-esp32s3-freestanding-golden
+test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
+	@xtensa-esp-elf-nm build/cross-esp32s3-bytecode-only/liburbi.a 2>/dev/null \
+	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
+	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
+	         END {for (s in undefined) if (!(s in defined)) print s}' \
+	  | sort -u > /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt
+	@diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt \
+	         /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt \
+	  && echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden" \
+	  || { echo "FAIL: cross-esp32s3-bytecode-only freestanding signature drifted from golden." ; \
+	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
+	       echo "        cp /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt tests/golden/v0.7.2-esp32-nm-bytecode-only.txt" ; \
+	       exit 1 ; }
+
 # T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
 # liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
 # fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
@@ -943,4 +1016,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff

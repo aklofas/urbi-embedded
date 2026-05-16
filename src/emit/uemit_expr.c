@@ -70,9 +70,10 @@ uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
     const uint8_t dst = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
     /* OP_LOAD_RECV loads the receiver saved in the call frame at dispatch
-     * time (UCallFrame.recv ← vm->last_recv at OP_CALL).  This is reliable
-     * across subsequent OP_GETSLOT calls within the method body, unlike
-     * reading vm->last_recv directly. */
+     * time (UCallFrame.recv ← R[A+1] of the calling OP_CALL when its C
+     * carries the method flag, v1.6 S42).  Stable across any GETSLOT /
+     * SELF / CALL inside the method body since the value is held in the
+     * frame record, not a global. */
     emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
     return dst;
 }
@@ -655,8 +656,29 @@ uint8_t emit_nary_arm(UEmitter *e, UAstNode *n) {
     uint8_t r = 0U;
     for (int i = 0; i < n->u.nary.count; i++) {
         if (i > 0) {
-            /* Release all temps allocated by the previous child, but
-             * keep locals (tracked by freereg / nactvar). */
+            /* Release all temps allocated by the previous child.
+             *
+             * Bug fix 2026-05-16 (urbiscript-scan stress test, eye_demo
+             * BlobScan.scan): the previous reset was just
+             *     e->next_reg = e->current_fs->freereg;
+             * which kept whatever freereg the previous child left behind.
+             * But emit_call_arm for a discarded-result bare call (e.g.
+             * `c_scan_begin();`) leaves freereg ABOVE the local-zone
+             * floor (one past the call result), so subsequent var-decl
+             * children get a slot at the drifted next_reg.  emit_var_decl_arm
+             * increments nactvar by 1 but assigns lv->slot = drifted-slot;
+             * fs_temp_floor (count-based: nactvar + r_global_slot) then
+             * UNDERESTIMATES the true local-zone top by the drift amount.
+             * On the next emit_while_arm body open, freereg gets reset to
+             * fs_temp_floor → lands BELOW already-declared locals → the
+             * loop body's `var x = 0` aliases the outer `iters` register,
+             * and runtime x/y iterate in lockstep through the diagonal.
+             *
+             * Mirror emit_block_arm's reset pattern: drop freereg back to
+             * fs_temp_floor so the next child sees a clean local-zone
+             * boundary, regardless of what kind of expression the
+             * previous child was. */
+            e->current_fs->freereg = fs_temp_floor(e->current_fs);
             e->next_reg = e->current_fs->freereg;
             emit_instr(e, uinstr_enc_abc(OP_YIELD, 0U, 0U, 0U),
                        e->prev_line);

@@ -1,0 +1,15 @@
+dependencies:
+  idf:
+    version: ">=6.0.1"
+  # esp_video + esp_cam_sensor replace the esp32-camera component as of
+  # IDF v6.0.1.  The esp32-camera 2.1.6 release crashed inside
+  # find_desc_for_source (intr_alloc.c:192) on real ESP32-S3-EYE hardware
+  # during esp_camera_init -> SCCB_Init -> i2c_new_master_bus.  Espressif's
+  # own ESP32-S3-EYE BSP made the same migration in its v6.0.0 release.
+  # esp_video provides the V4L2-shaped capture API (open + ioctl + mmap)
+  # and pulls esp_cam_sensor as a dependency for the OV2640 driver itself.
+  # esp_sccb_intf and esp_cam_sensor_xclk arrive transitively.
+  espressif/esp_video:
+    version: ">=2.1.0"
+  espressif/esp_cam_sensor:
+    version: ">=2.1.0"

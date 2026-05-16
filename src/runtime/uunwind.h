@@ -34,7 +34,15 @@ ustrand_consts_for_closure(const UStrand *s, const UClosure *cl)
     if (cl != NULL && cl->proto != NULL && cl->proto->constants != NULL) {
         return cl->proto->constants;
     }
-    return s->module->constants;
+    /* Chunk-top strands: constants live on s->module.  Body strands (no
+     * UModule — task #23 fix) fall through to entry_closure->proto. */
+    if (s->module != NULL) {
+        return s->module->constants;
+    }
+    if (s->entry_closure != NULL && s->entry_closure->proto != NULL) {
+        return s->entry_closure->proto->constants;
+    }
+    return NULL;
 }
 
 #ifdef __cplusplus

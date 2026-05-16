@@ -145,10 +145,15 @@ static bool fmt_close(char *buf, size_t cap, size_t *off,
 static bool fmt_call(char *buf, size_t cap, size_t *off,
                      size_t *ip, uint32_t ins, const UModule *module) {
     (void)module;
-    return dis_printf(buf, cap, off, "%04zu  CALL R%u, %d args, %d results\n",
-                      *ip, (unsigned)uinstr_a(ins),
-                      (int)uinstr_b(ins) - 1,
-                      (int)uinstr_c(ins) - 1);
+    uint8_t c = uinstr_c(ins);
+    bool is_method = (c & 0x80U) != 0U;
+    int  nresults = (int)(c & 0x7FU) - 1;
+    int  b        = (int)uinstr_b(ins);
+    int  nargs    = is_method ? (b - 2) : (b - 1);
+    return dis_printf(buf, cap, off,
+                      "%04zu  CALL%s R%u, %d args, %d results\n",
+                      *ip, is_method ? " [method]" : "",
+                      (unsigned)uinstr_a(ins), nargs, nresults);
 }
 
 static bool fmt_test(char *buf, size_t cap, size_t *off,
@@ -332,6 +337,19 @@ static bool fmt_load_recv(char *buf, size_t cap, size_t *off,
                       *ip, (unsigned)uinstr_a(ins));
 }
 
+static bool fmt_self(char *buf, size_t cap, size_t *off,
+                     size_t *ip, uint32_t ins,
+                     const UModule *module) {
+    (void)module;
+    return dis_printf(buf, cap, off,
+                      "%04zu  SELF R%u, R%u, ic[%u]   ; R%u := lookup, R%u := R%u\n",
+                      *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins),
+                      (unsigned)uinstr_c(ins),
+                      (unsigned)uinstr_a(ins),
+                      (unsigned)(uinstr_a(ins) + 1U),
+                      (unsigned)uinstr_b(ins));
+}
+
 /* --- opname helper (used by the generic fallback in uemit_disassemble) --- */
 
 static const char *opname(const UOpcode op) {
@@ -384,6 +402,7 @@ static const char *opname(const UOpcode op) {
     case OP_GETSLOT_CHANGE_EVENT: return "GETSLOT_CHANGE_EVENT";
     case OP_LOAD_REALM_GLOBAL:    return "LOAD_REALM_GLOBAL";
     case OP_LOAD_RECV:            return "LOAD_RECV";
+    case OP_SELF:                 return "SELF";
     case OP_MAX:                  break;
     }
     return "OP?";
@@ -444,6 +463,7 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 44 OP_GETSLOT_CHANGE_EVENT  */ fmt_getslot_change_event,
     /* 45 OP_LOAD_REALM_GLOBAL  */ fmt_load_realm_global,
     /* 46 OP_LOAD_RECV          */ fmt_load_recv,
+    /* 47 OP_SELF               */ fmt_self,
 };
 
 size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
