@@ -1,40 +1,42 @@
 // === ESP32-S3-EYE blob tracker — class-based, S42-fix version ===
 //
-// This is the post-S42 ship-ready eye_demo.  Pre-S42, method-call sites
-// like `List.new(Color.new().init(...), ...)` silently elided the outer
-// call (the inner Color.new returned, but the outer List.new dropped its
-// args and returned the last Color instead of a List wrapping them).
-// Workaround was flat parallel lists; with S42 fixed (vm: introduce
-// OP_SELF for method-call dispatch) the natural class-based idiom
-// works.  See REVIVAL.md §14 / docs/urbi-embedded-design-risks.md.
+// Post-S42 + post-OBJ-IC-POLY ship-ready eye_demo.  Two fixes that
+// landed in v0.7.2 are actively exercised here:
+//
+//   * S42 (OP_SELF + method-flagged OP_CALL): inline nested method
+//     calls in argument position work — `List.new(Color.new()
+//     .init(...), Color.new().init(...), ...)` correctly wraps each
+//     fresh Color instance into the list.  Pre-S42 the outer call
+//     silently elided and you got only the last Color.
+//
+//   * OBJ-IC-POLY (IC fast-path slot-pointer per-recv re-resolve):
+//     reading `.r/.g/.b/.tol/.name` from different Color instances
+//     of the same shape returns each instance's own values, not the
+//     first cached recv's slot.  Pre-fix the IC absolute-pointer
+//     cache leaked the first instance's data across all reads.
 //
 // Reactive runtime exercised:
-//   * Two chained at(blob_seen?) handlers (crosshair update + counter)
-//   * Three chained at(button_pressed?) handlers (advance + apply + log)
-//   * Class instances carry the per-colour palette state; method calls
-//     on the list (`.get(i)`) and on the instances (`.r`, `.g`, etc.)
-//     run through the new OP_SELF + method-flagged OP_CALL path.
+//   * Two chained at(blob_seen?) handlers (crosshair + counter).
+//   * One at(button_pressed?) handler that calls a debounced Cycle
+//     method — the C-side ISR fires for every electrical bounce;
+//     the script throttles them to one logical press per 200 ms
+//     window.  Demonstrates the System.time_us() + class-method
+//     pattern for real-world ISR-event handling at the urbiscript
+//     level.  (An embedder that wants ISR-level filtering can add
+//     it in eye_button.c — we chose script-side here to keep the
+//     C scaffolding minimal and showcase the reactive pattern.)
 //
 // v0.7.x lex/emit guardrails still in effect:
 //   * No `[...]` list literal — use List.new(...).
 //   * No `&&`/`||` shortcut — nested `if`.
 //   * No `%` modulo — wrap table via List.new(1, 2, 0).
-//   * Async at-bodies stay single-statement; function-bodied at-handlers
-//     remain on the design-risks list (S43, separate from S42).
-//   * Chained handlers (multiple `at (e?)` on the same event) run in
-//     install order since the v0.7.2 pending-refire counter widening.
+//   * Async at-bodies must be a single statement.
+//   * Chunk-top `Realm.fn = function() {...}` followed by another
+//     Realm SETSLOT corrupts r_global_slot (task #22, separate from
+//     S42/S43).  Workaround used here: wrap the debounce + cycle
+//     logic in a Cycle class method, instantiate on Realm.
 
 // === Color palette ======================================================
-//
-// Color packages RGB target + tolerance + name.  `init` returns `this`
-// so the call chains: Color.new().init(...) yields a fully-populated
-// instance suitable for List.new().
-//
-// Targets pulled off pure-saturated corners because real RGB565 of
-// "red/green/blue" objects shows ~5-15 units of sensor noise + AWB
-// leak on the "should be zero" channels.  Pure (31,0,0)/tol=4 matches
-// almost nothing on a live feed; the wider centres catch most real
-// objects under typical lighting.
 class Color {
     var init = function (r, g, b, tol, name) {
         this.r = r; this.g = g; this.b = b;
@@ -44,55 +46,63 @@ class Color {
     }
 };
 
-// S42 exercise: inline nested calls (List.new(Color.new().init(...), ...))
-// must now wrap each Color instance correctly into a List.
 Realm.colors = List.new(
     Color.new().init(24,  6,  6, 12, "RED"),
     Color.new().init( 6, 48,  6, 16, "GREEN"),
     Color.new().init( 6,  6, 24, 12, "BLUE"));
 
-// Wrap table: index N maps to (N+1) mod 3.  Pure-urbiscript state
-// machine since `%` doesn't exist at v1.0.
-Realm.idx      = 0;
-Realm.next_idx = List.new(1, 2, 0);
-
-// Counter incremented on every blob_seen event.  Read by the button
-// log handler so each press dumps "total blobs: N" — at-a-glance
-// signal that blob detection is still running between presses.
+Realm.idx        = 0;
+Realm.next_idx   = List.new(1, 2, 0);
 Realm.blob_count = 0;
 
-log("eye_demo (class-based, S42-fix) loaded - BOOT cycles RED -> GREEN -> BLUE");
+// === Cycle class — debounced button handler =============================
+//
+// Empirical: the BOOT button's electrical bounce on the S3-EYE fires
+// the IRAM ISR 2-4 times within ~110-150 ms for a single human press.
+// 200 ms is comfortably above the bounce envelope yet still allows
+// intentional fast tapping at ~5 Hz.
+//
+// System.time_us() returns the monotonic microsecond counter from
+// vm->host_time_us (esp_timer_get_time on ESP-IDF).  press() checks
+// the elapsed time since the last accepted fire and either advances
+// the cycle or no-ops.
+//
+// Why a class (vs. `Realm.press = function() {...}`):  chunk-top
+// `Realm.fn = function() {...}` followed by any other Realm SETSLOT
+// corrupts the global-slot register (task #22).  Wrapping the
+// function as a method on a class instance dodges the bug while
+// keeping the same call-site shape.
+class Cycle {
+    var init = function () {
+        this.last_us  = 0;
+        this.dbnc_us  = 200000;        // 200 ms
+        this
+    };
+    var press = function () {
+        var now = System.time_us();
+        if (now - this.last_us > this.dbnc_us) {
+            this.last_us = now;
+            Realm.idx = Realm.next_idx.get(Realm.idx);
+            set_target_color(
+                Realm.colors.get(Realm.idx).r,
+                Realm.colors.get(Realm.idx).g,
+                Realm.colors.get(Realm.idx).b,
+                Realm.colors.get(Realm.idx).tol);
+            log("target =>",
+                Realm.colors.get(Realm.idx).name,
+                "total blobs:",
+                Realm.blob_count)
+        }
+    }
+};
+
+Realm.cycle = Cycle.new().init();
+
+log("eye_demo (class-based, S42 + OBJ-IC-POLY) loaded - BOOT cycles RED -> GREEN -> BLUE");
 
 // === BLOB SEEN — two chained at-handlers ================================
-//
-// destructure_blob (eye_demo_main.c) runs on the urbi task at safepoint
-// drain and writes the centroid into Realm.last_blob_x / _y / _area.
-// These two at-handlers fire in install order on each blob event.
-//
-// Two strand spawns per blob event × 25 Hz camera = 50 strand spawns/sec.
-// Per spawn the body runs ~5-10 bytecode dispatch ops.  Light load.
 at (blob_seen?) draw_crosshair(Realm.last_blob_x, Realm.last_blob_y);
 at (blob_seen?) Realm.blob_count = Realm.blob_count + 1;
 
-// === BUTTON CYCLE — three chained at-handlers ===========================
-//
-// Pure-urbiscript state machine, S42 fix actively exercised:
-//
-//   1. Advance the wrap-table index (modulo 3 via next_idx).
-//   2. Push the new colour through set_target_color — host fn touches
-//      the camera task's critical section under portMUX.  The arg
-//      list reads Realm.colors.get(Realm.idx).r / .g / .b / .tol —
-//      method-call chains that pre-S42 would silently corrupt the
-//      outer set_target_color call when intervening GETSLOTs clobbered
-//      vm->last_recv during arg evaluation.
-//   3. Log the new colour name + total blob count for visibility.
-at (button_pressed?) Realm.idx = Realm.next_idx.get(Realm.idx);
-at (button_pressed?) set_target_color(
-    Realm.colors.get(Realm.idx).r,
-    Realm.colors.get(Realm.idx).g,
-    Realm.colors.get(Realm.idx).b,
-    Realm.colors.get(Realm.idx).tol);
-at (button_pressed?) log("target =>",
-    Realm.colors.get(Realm.idx).name,
-    "total blobs:",
-    Realm.blob_count);
+// === BUTTON CYCLE — single debounced handler ============================
+at (button_pressed?) Realm.cycle.press();

@@ -209,10 +209,16 @@ run_cleanup_with_replace(UStrand *s, uint16_t handler_pc)
     }
     s->cleanup_run_depth++;
 
-    /* Clear unwind state so the cleanup body executes as normal code. */
+    /* Clear unwind state so the cleanup body executes as normal code.
+     * Task #24 / S44 (2026-05-16): use `s->pc_base` rather than
+     * `s->module->instructions`.  The cleanup handler's PC is relative
+     * to whichever proto emitted the try-finally — `s->pc_base` already
+     * tracks that across method calls AND for body strands (where
+     * `s->module` is NULL).  Before this fix, finally bodies in
+     * non-chunk-top contexts dereferenced a stale or NULL pointer. */
     s->pending_unwind = UEXEC_OK;
     s->unwind_value   = nil;
-    s->pc = s->module->instructions + handler_pc;
+    s->pc = s->pc_base + handler_pc;
 
     /* Run the cleanup body until it completes, yields, or raises a new unwind.
      * dispatch_loop_until_yield exits via the safepoint path if pending_unwind
@@ -351,11 +357,18 @@ urbi_unwind(UStrand *s)
             if (s->pending_unwind == UEXEC_THROW &&
                 (e->flags & FLAG_HAS_CATCH) &&
                 pattern_matches(e->catch_pattern, s->unwind_value)) {
-                /* Catch absorption: bind caught value and jump to handler. */
+                /* Catch absorption: bind caught value and jump to handler.
+                 * Task #24 / S44 (2026-05-16): use `s->pc_base` rather
+                 * than `s->module->instructions`.  Handler PC is relative
+                 * to the proto that emitted the try-catch, which `s->pc_base`
+                 * already tracks (set on every OP_CALL, restored by
+                 * `pop_call_frame`).  Before this fix, try-catch in a
+                 * method invoked from an at-body crashed with a NULL
+                 * deref on `s->module` (body strands have module=NULL). */
                 bind_catch_value(s, e->catch_pattern, s->unwind_value);
                 uint16_t handler_pc = e->handler_pc;
                 strand_cleanup_pop(s, UCLEANUP_TRY_FRAME);
-                s->pc = s->module->instructions + handler_pc;
+                s->pc = s->pc_base + handler_pc;
                 s->pending_unwind = UEXEC_OK;
                 s->unwind_value   = nil;
                 return;  /* absorbed */

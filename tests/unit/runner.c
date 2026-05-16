@@ -213,6 +213,8 @@ extern void test_drain_routing_unregistered_suite(void);
 extern void test_athandler_wedge_repro_suite(void);
 extern void test_athandler_class_method_fatal_suite(void);
 extern void test_chunktop_realm_closure_suite(void);
+extern void test_emit_nary_freereg_drift_suite(void);
+extern void test_unwind_method_try_catch_suite(void);
 extern void test_register_watcher_callback_suite(void);
 extern void test_watcher_auto_unregister_suite(void);
 extern void test_unregister_watcher_suite(void);
@@ -420,6 +422,8 @@ static const struct suite_entry suites[] = {
     {"athandler_wedge_repro",        test_athandler_wedge_repro_suite},
     {"athandler_class_method_fatal", test_athandler_class_method_fatal_suite},
     {"chunktop_realm_closure",       test_chunktop_realm_closure_suite},
+    {"emit_nary_freereg_drift",      test_emit_nary_freereg_drift_suite},
+    {"unwind_method_try_catch",      test_unwind_method_try_catch_suite},
     {"register_watcher_callback",    test_register_watcher_callback_suite},
     {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},
     {"unregister_watcher",           test_unregister_watcher_suite},

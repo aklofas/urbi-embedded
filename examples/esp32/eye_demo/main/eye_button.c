@@ -8,34 +8,27 @@
  * context is the canonical use case.  Empty payload (NULL, 0) —
  * `at (button_pressed?)` urbi-side handlers don't destructure args.
  *
- * Debounce: mechanical switches bounce for 5-20 ms per press; the
- * BOOT button on the S3-EYE empirically fires its NEGEDGE ISR 2-4
- * times within ~100-150 ms for a single human press.  Suppress
- * follow-up ISR firings via a timestamp guard — only inject if at
- * least DEBOUNCE_US has passed since the last accepted press.
- * esp_timer_get_time() is ISR-safe and monotonic. */
+ * Debounce: the BOOT button bounces 2-4 times within ~150 ms per
+ * physical press.  Filtering lives in the urbiscript handler (see
+ * eye_demo.u Realm.on_button), not here — it demonstrates a real
+ * reactive-runtime pattern using System.time_us().  The cost is
+ * minor: 2-4 extra body-strand spawns per press, well within the
+ * 25 Hz blob-event budget.  An embedder that wants ISR-level
+ * suppression (e.g. for a much noisier switch or to save event-ring
+ * pressure) can add an esp_timer_get_time() guard here. */
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_err.h"
-#include "esp_timer.h"
 #include "urbi/urbi.h"
 
 #include "eye_button.h"
 
-#define DEBOUNCE_US (200 * 1000)   /* 200 ms — empirically covers the S3-EYE BOOT button bounce envelope */
-
 static struct UVM       *btn_vm;
 static urbi_event_id_t   btn_ev;
-static volatile int64_t  last_fire_us;
 
 static void IRAM_ATTR button_isr(void *arg)
 {
     (void)arg;
-    int64_t now = esp_timer_get_time();
-    if (now - last_fire_us < DEBOUNCE_US) {
-        return;   /* bounce within window — ignore */
-    }
-    last_fire_us = now;
     urbi_inject_event(btn_vm, btn_ev, NULL, 0);
 }
 
