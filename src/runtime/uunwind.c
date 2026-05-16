@@ -354,6 +354,14 @@ urbi_unwind(UStrand *s)
         case UCLEANUP_TRY_FRAME: {
             /* TRY_FRAME: try-catch or try-finally boundary. */
 
+            /* pattern_matches is a documented M3 / FOUND-026 stub that
+             * always returns 1 (match-all).  Wave 2 will refine to
+             * class-pattern dispatch; until then the stub keeps the call
+             * site stable for the spec evolution.  cppcheck flags the
+             * tautology — suppressed file-wide in .cppcheck.suppressions
+             * (knownConditionTrueFalse:src/runtime/uunwind.c).  Returns
+             * to actionable status when pattern_matches gains class
+             * dispatch and the condition can actually evaluate false. */
             if (s->pending_unwind == UEXEC_THROW &&
                 (e->flags & FLAG_HAS_CATCH) &&
                 pattern_matches(e->catch_pattern, s->unwind_value)) {
