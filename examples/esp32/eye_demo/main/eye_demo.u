@@ -220,7 +220,10 @@ class Stats {
             "idxch=",       Realm.idx_changes,
             "thr=",         Realm.scan_throws,
             "fin=",         Realm.scan_finallies,
-            "sync=",        Realm.sync_fires)
+            "sync=",        Realm.sync_fires,
+            "wait=",        Realm.wait_done,
+            "forkL=",       Realm.fork_lhs,
+            "forkR=",       Realm.fork_rhs)
     }
 };
 
@@ -425,3 +428,29 @@ at (Realm.idx.changed?) log("idx-change #", Realm.idx_changes,
 // strand context (no body strand created).
 Realm.sync_fires = 0;
 at sync (Realm.idx.changed?) Realm.sync_fires = Realm.sync_fires + 1;
+
+// === Tier-2b: waituntil — REMOVED (bug filed) ===========================
+// Initial Tier-2b stress attempted to exercise `waituntil (cond)` by
+// spawning one waiter per scan_tick.  When 3+ strands accumulated
+// blocked on the same cond and the cond fires simultaneously, the
+// runtime crashed with InstructionFetchError on hardware (SIGSEGV on
+// host).  Bug filed in design-risks as "waituntil cascade-wake crash".
+// Test file kept at tests/unit/test_waituntil_cascade.c with the
+// repro disabled — re-enable when the bug is fixed (v0.7.3+).
+//
+// Realm.wait_done retained for log-format stability across runs but
+// always stays 0.
+Realm.wait_done = 0;
+
+// === Tier-2c: `&` fork-join (parallel join) ============================
+// `lhs & rhs` spawns rhs as a child strand, parent runs lhs, joins
+// when child completes, result is void.  Tests the fork+join primitive
+// — different from `,` (fire-and-forget) and `|` (sequential atomic).
+//
+// Both counters should increment per stats_tick fire.  Side-effect:
+// strands transiently elevated to 2-3 during the fork (visible as
+// strands= field bumping in the next stats line).
+Realm.fork_lhs = 0;
+Realm.fork_rhs = 0;
+at (stats_tick?) Realm.fork_lhs = Realm.fork_lhs + 1 &
+                 Realm.fork_rhs = Realm.fork_rhs + 1;
