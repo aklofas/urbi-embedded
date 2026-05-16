@@ -216,6 +216,50 @@ UTEST(at_body_reads_class_field_control)
  * can't easily write a non-class-method version of the repro because
  * `Realm.f = function () {...}` at chunk-top hits task #22 first. */
 
+/* === Test 4: task #13 / S43 — chunk-top `var` followed by at-body that
+ * reads the var.  Pre-task-#23-fix this crashed at uunwind.h:37 with a
+ * LoadProhibited on `s->module->constants` (body strand has
+ * `s->module == NULL`; pre-fix `ustrand_consts_for_closure` did an
+ * unconditional NULL deref).  Same root cause as task #23's
+ * pop_call_frame issue, fixed by the same change (entry_closure
+ * fallback chain).  Test confirms that fix covers the S43 shape. */
+UTEST(s43_chunktop_var_then_at_body_reads_var)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    urbi_event_id_t ev = urbi_event_register(&vm, r, "ev", NULL, NULL);
+    UASSERT(ev != URBI_EVENT_ID_INVALID);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "out", 3,
+                                               utest_e2e_make_int(-1)));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var c_red = 42;"
+        "at (ev?) Realm.out = c_red",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    urbi_inject_event(&vm, (uint32_t)ev, NULL, 0U);
+    UStepResult step = drain_to_quiescent(&vm);
+    UASSERT(step != URBI_STEP_FATAL);
+
+    UValue out = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "out", 3, &out));
+    UASSERT_EQ((int)UVAL_INT, (int)out.kind);
+    UASSERT_EQ(42LL, out.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
 /* === Suite entry. ====================================================== */
 void
 test_athandler_class_method_fatal_suite(void)
@@ -226,4 +270,6 @@ test_athandler_class_method_fatal_suite(void)
               at_body_calls_class_method_side_effect);
     utest_run("athandler_class_method_fatal: control — field read works",
               at_body_reads_class_field_control);
+    utest_run("athandler_class_method_fatal: chunk-top var + at-body (S43)",
+              s43_chunktop_var_then_at_body_reads_var);
 }
