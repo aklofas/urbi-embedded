@@ -496,9 +496,20 @@ uint8_t emit_while_arm(UEmitter *e, UAstNode *n) {
 }
 
 /* emit_call_arm — AST_CALL: function call.
- * Emits callee into dst register, then args into consecutive registers.
- * OP_CALL A, B, C: R[A] = callee, args at R[A+1..A+B-1], B = nargs+1.
- * Result written to R[A] by OP_RET. */
+ *
+ * Two paths (v1.6 S42):
+ *   1. Method call (callee is AST_MEMBER_GET, i.e. obj.m(args)):
+ *        eval recv into a temp, emit OP_SELF dst, recv, ic_method (which
+ *        writes the method into R[dst] and the receiver into R[dst+1]),
+ *        emit args into R[dst+2..], then OP_CALL dst, nargs+2, 2|0x80.
+ *        The method-flag bit tells the dispatcher to forward R[dst+1] as
+ *        `self` to the callee.
+ *   2. Plain call (everything else):
+ *        eval callee into dst, emit args into R[dst+1..], then
+ *        OP_CALL dst, nargs+1, 2.  Dispatcher passes nil as self.
+ *
+ * Eliminates the S42 silent-elision bug where intervening OP_GETSLOTs in
+ * argument evaluation clobbered vm->last_recv before the outer OP_CALL. */
 uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
     if (e->current_fs == NULL) {
         e->error = EMIT_UNSUPPORTED_AST;
@@ -506,24 +517,31 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
     }
 
     /* EMIT-014 fix (Wave 5, v0.5.7): the OP_CALL B field is a uint8_t
-     * holding (nargs + 1).  Reject calls with >= 254 args before any
-     * codegen — at 254 args B becomes 255 (the OP_CALL "all-results"
-     * sentinel reserved for tail calls), and at 255+ B wraps to 0
-     * (no args), corrupting the call. */
-    if (n->u.call.arg_count >= 254) {
+     * holding (nargs + 1) for plain calls or (nargs + 2) for method calls.
+     * Reject calls with >= 253 args before any codegen — method calls
+     * need the extra self slot, so 253 args + 2 = 255 (the "all-results"
+     * sentinel reserved for tail calls) is the safe upper bound for both
+     * paths. */
+    if (n->u.call.arg_count >= 253) {
         e->error = EMIT_TOO_MANY_ARGS;
         return 0U;
     }
 
+    UAstNode *callee = n->u.call.callee;
+    bool is_method   = (callee->kind == AST_MEMBER_GET);
+
     /* T16: Look up callee's function signature when the callee is a
      * statically-visible local declared with a function literal.
      * Used below to decide whether to wrap each arg as a lazy thunk.
-     * T72 extension: also check global_var_sigs for chunk-top globals. */
+     * T72 extension: also check global_var_sigs for chunk-top globals.
+     * Method calls (AST_MEMBER_GET) skip this — the callee is dispatched
+     * via OP_SELF and the slot's lazy-param signature is not visible at
+     * the call site (call_sig stays NULL → every arg is eager). */
     UFuncSig *call_sig = NULL;
-    if (n->u.call.callee->kind == AST_IDENT && e->vm != NULL) {
+    if (callee->kind == AST_IDENT && e->vm != NULL) {
         const char *cn = ustr_intern(e->vm,
-                                     n->u.call.callee->u.ident.start,
-                                     (size_t)n->u.call.callee->u.ident.len);
+                                     callee->u.ident.start,
+                                     (size_t)callee->u.ident.len);
         if (cn != NULL) {
             UFuncState *fs = e->current_fs;
             /* Local lookup first. */
@@ -549,14 +567,74 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
         }
     }
 
-    uint8_t callee_reg = e->next_reg;
-    uint8_t callee_r   = emit_expr(e, n->u.call.callee);
-    if (e->error != EMIT_OK) return 0U;
-    /* Move callee into callee_reg if emit_expr put it elsewhere
-     * (shouldn't happen since next_reg == callee_reg on entry, but be safe). */
-    if (callee_r != callee_reg) {
-        emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0U),
+    uint8_t callee_reg;
+    uint8_t arg_base;      /* register offset where the first explicit arg lands */
+
+    if (is_method) {
+        /* Method call path.
+         *
+         * The result of the whole call must land at the entry e->next_reg
+         * (call this reg_before) — emit_var_decl_arm and similar arms
+         * assert init_reg == reg_before.  So callee_reg = reg_before, and
+         * OP_CALL's result overwrites R[callee_reg].
+         *
+         * Layout when we're done:
+         *   R[callee_reg]    = method (then result after OP_CALL)
+         *   R[callee_reg+1]  = self
+         *   R[callee_reg+2…] = explicit args
+         *
+         * To get callee_reg at the bottom, reserve callee+self first,
+         * then evaluate the receiver into a scratch slot at callee_reg+2,
+         * emit OP_SELF (which copies the snapshot into R[callee_reg+1]
+         * and writes the method to R[callee_reg]), and finally drop the
+         * scratch so explicit args overwrite it. */
+        UAstNode *recv_ast = callee->u.member.recv;
+
+        callee_reg = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0U;
+        uint8_t self_reg = alloc_reg(e);
+        if (e->error != EMIT_OK) return 0U;
+        (void)self_reg;  /* implicit — OP_SELF writes callee_reg+1 */
+        if (e->current_fs->freereg < e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+
+        /* Emit the receiver above callee+self.  It can land anywhere
+         * (emit_expr may consume more registers transiently); the slot
+         * we care about is whatever emit_expr returns.  OP_SELF snapshots
+         * R[recv_r] first, so dst can safely alias recv. */
+        uint8_t recv_r = emit_expr(e, recv_ast);
+        if (e->error != EMIT_OK) return 0U;
+
+        USymbol *name = (USymbol *)ustr_intern(e->vm,
+                                               callee->u.member.name_start,
+                                               (size_t)callee->u.member.name_len);
+        if (name == NULL) { e->error = EMIT_OOM; return 0U; }
+        int ic_idx = uemit_assign_ic_index(e, name);
+        if (ic_idx < 0) return 0U;
+
+        emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, recv_r,
+                                     (uint8_t)ic_idx),
                    (uint32_t)n->line);
+
+        /* Free the receiver scratch — OP_SELF already snapshotted self
+         * into callee_reg+1.  Args will overwrite the scratch slot
+         * (and any transient temps the recv expression used above it). */
+        e->next_reg = (uint8_t)(callee_reg + 2U);
+        if (e->current_fs->freereg > e->next_reg)
+            e->current_fs->freereg = e->next_reg;
+
+        arg_base = 2U;
+    } else {
+        /* Plain call path — emit callee into callee_reg, args at +1. */
+        callee_reg = e->next_reg;
+        uint8_t callee_r = emit_expr(e, callee);
+        if (e->error != EMIT_OK) return 0U;
+        if (callee_r != callee_reg) {
+            emit_instr(e, uinstr_enc_abc(OP_MOVE, callee_reg, callee_r, 0U),
+                       (uint32_t)n->line);
+        }
+
+        arg_base = 1U;
     }
 
     /* Sync freereg up to next_reg before the arg loop.  When the callee
@@ -604,7 +682,7 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
             }
             e->lazy_arg_context = saved_ctx;
             if (e->error != EMIT_OK) return 0U;
-            uint8_t expected = callee_reg + 1U + (uint8_t)ai;
+            uint8_t expected = callee_reg + arg_base + (uint8_t)ai;
             if (arg_r != expected) {
                 emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_r, 0U),
                            (uint32_t)n->line);
@@ -612,9 +690,13 @@ uint8_t emit_call_arm(UEmitter *e, UAstNode *n) {
         }
     }
 
-    /* OP_CALL callee_reg, nargs+1, 2 (1 result expected). */
-    uint8_t b = (uint8_t)(n->u.call.arg_count + 1);
-    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, 2U),
+    /* OP_CALL: B = nargs + arg_base (plain → +1 = callee; method → +2 =
+     * callee + self).  C low bits = nresults+1 = 2 (1 result); bit 7
+     * (0x80) set for method calls to instruct dispatch to forward
+     * R[A+1] as self. */
+    uint8_t b = (uint8_t)(n->u.call.arg_count + arg_base);
+    uint8_t c = is_method ? 0x82U : 2U;
+    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, b, c),
                (uint32_t)n->line);
     /* Result is written to R[callee_reg] by the called function's OP_RET. */
     e->next_reg = callee_reg + 1U;

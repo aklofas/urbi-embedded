@@ -349,7 +349,6 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
         int i;
         for (i = 0; i < 6; i++) vm->pad_stdlib[i] = 0U;
     }
-    vm->last_recv = urbi_make_nil();
 
     /* T33 (v0.7.0 Wave 1): watcher-body-completion host callback.
      * NULL default; embedders opt in via urbi_set_watcher_body_done_fn. */

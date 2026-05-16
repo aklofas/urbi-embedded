@@ -789,11 +789,15 @@ UTEST(wedge_at_body_with_list_get_method_call)
  * pattern, which silently produces a non-List value and breaks all
  * downstream `.get(N).method()` accesses.  Documented for v0.7.x
  * runtime follow-up; eye_demo works around it via pre-bind vars. */
-/* Diagnostic-only — the asserting form was segfaulting because the
- * bug produces UB downstream (List.new(f()) doesn't return a List, so
- * subsequent .get(0) can dereference garbage).  Keep the documentation
- * value; assert only the WORKAROUND so future regressions catch the
- * fix when it lands. */
+/* v1.6 S42 fix landed: method-call sites now compile through OP_SELF +
+ * a method-flagged OP_CALL that places the receiver in R[A+1] explicitly,
+ * eliminating the silent-elision bug where intervening OP_GETSLOTs in
+ * argument evaluation clobbered the deleted vm->last_recv global.
+ *
+ * This test now asserts the INLINE form (no workaround needed): the
+ * nested function call as an argument to an outer method call returns
+ * the correct wrapped value.  The pre-bind workaround is preserved as
+ * the second assertion for symmetry. */
 UTEST(wedge_nested_call_as_arg_bug)
 {
     UVM vm;
@@ -801,20 +805,34 @@ UTEST(wedge_nested_call_as_arg_bug)
     struct URealm *r = urbi_realm_global(&vm);
     UASSERT(r != NULL);
 
-    /* Workaround pattern: pre-bind the nested call to a var, then pass
-     * the var.  This DOES work and is the eye_demo's chosen workaround. */
+    /* Inline form — was broken pre-S42, fixed at v1.6.  List.new(f())
+     * must return a List wrapping f()'s result (42), so .get(0) yields 42. */
     int rc = urbi_realm_set_global(&vm, r, "out", 3, utest_e2e_make_int(-1));
     UASSERT_EQ(URBI_OK, rc);
     rc = utest_e2e_compile_and_run(&vm,
         "var f = function () { 42 };"
-        "var x = f();"
-        "Realm.out = List.new(x).get(0)",
+        "Realm.out = List.new(f()).get(0)",
         NULL);
     UASSERT_EQ(URBI_OK, rc);
     UValue out = utest_e2e_make_nil();
     rc = urbi_realm_get_global(&vm, r, "out", 3, &out);
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ(42LL, out.v.i);
+
+    /* Pre-bind workaround — same expectation; kept as a second assertion
+     * so the test catches a future regression that breaks only one form. */
+    rc = urbi_realm_set_global(&vm, r, "out", 3, utest_e2e_make_int(-1));
+    UASSERT_EQ(URBI_OK, rc);
+    rc = utest_e2e_compile_and_run(&vm,
+        "var g = function () { 99 };"
+        "var x = g();"
+        "Realm.out = List.new(x).get(0)",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+    out = utest_e2e_make_nil();
+    rc = urbi_realm_get_global(&vm, r, "out", 3, &out);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ(99LL, out.v.i);
 
     urbi_vm_destroy(&vm);
 }

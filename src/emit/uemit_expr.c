@@ -70,9 +70,10 @@ uint8_t emit_this_arm(UEmitter *e, const UAstNode *n) {
     const uint8_t dst = alloc_reg(e);
     if (e->error != EMIT_OK) return 0U;
     /* OP_LOAD_RECV loads the receiver saved in the call frame at dispatch
-     * time (UCallFrame.recv ← vm->last_recv at OP_CALL).  This is reliable
-     * across subsequent OP_GETSLOT calls within the method body, unlike
-     * reading vm->last_recv directly. */
+     * time (UCallFrame.recv ← R[A+1] of the calling OP_CALL when its C
+     * carries the method flag, v1.6 S42).  Stable across any GETSLOT /
+     * SELF / CALL inside the method body since the value is held in the
+     * frame record, not a global. */
     emit_instr(e, uinstr_enc_abc(OP_LOAD_RECV, dst, 0U, 0U), (uint32_t)n->line);
     return dst;
 }

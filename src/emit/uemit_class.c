@@ -34,11 +34,13 @@
  * register slot (no AST node) — we can't reuse emit_property_decl_arm
  * (which builds an AST_MEMBER_GET on n->u.property_decl.recv).
  *
- * Inline the desugar:
- *   1. Load `setProperty` method from foo_reg via OP_GETSLOT.
- *   2. Load name and "oget"/"oset" string args via AST_STR through emit_expr.
- *   3. Compile the function literal to a closure.
- *   4. OP_CALL with [self=foo_reg, name, prop, closure] -> discard.
+ * Inline the desugar (v1.6 S42 method-call ABI):
+ *   1. OP_SELF callee_reg, foo_reg, ic_setProperty — loads method into
+ *      callee_reg and class object (self) into callee_reg+1.
+ *   2. Emit name / "oget"/"oset" / function-literal args into
+ *      callee_reg+2..callee_reg+4.
+ *   3. OP_CALL with method-flag bit so the native setProperty arm
+ *      receives self via R[A+1].
  *
  * Sibling-site freereg discipline matches emit_class_body_stmt's
  * existing pattern (S-emit-freereg-discipline).  Result is discarded
@@ -53,30 +55,24 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
         e->current_fs->freereg = e->next_reg;
     }
 
-    /* Load setProperty method from foo_reg into a fresh callee register. */
     USymbol *sym_setProp = (USymbol *)ustr_intern(e->vm, "setProperty", 11);
     if (sym_setProp == NULL) { e->error = EMIT_OOM; return; }
     int ic_setProp = uemit_assign_ic_index(e, sym_setProp);
     if (ic_setProp < 0) return;
 
+    /* OP_SELF writes both callee_reg and callee_reg+1.  Reserve both. */
     uint8_t callee_reg = alloc_reg(e);
     if (e->error != EMIT_OK) return;
+    uint8_t self_reg = alloc_reg(e);
+    if (e->error != EMIT_OK) return;
+    (void)self_reg;  /* implicit — OP_SELF writes callee_reg+1 */
     if (e->current_fs->freereg < e->next_reg) {
         e->current_fs->freereg = e->next_reg;
     }
 
-    emit_instr(e, uinstr_enc_abc(OP_GETSLOT, callee_reg, foo_reg,
+    emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
                                  (uint8_t)ic_setProp),
                (uint32_t)stmt->line);
-
-    /* Move foo_reg into callee_reg+1 as the implicit `self` argument.
-     * OP_CALL convention: A is callee, B is (nargs+1) where the +1 is
-     * the implicit self-or-callee shim — but the class-decl-arm pattern
-     * passes args at A+1..A+B-1 with B = nargs+1, so for setProperty
-     * with 3 args the call shape is callee_reg=A, args at A+1..A+3,
-     * B = 4.  The native dispatch reads vm->last_recv set by the
-     * preceding OP_GETSLOT (which used foo_reg as B), so `self` arrives
-     * correctly without an explicit move. */
 
     /* Arg 1: name string. */
     UAstNode name_str = (UAstNode){0};
@@ -90,7 +86,7 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     }
     uint8_t name_reg = emit_expr(e, &name_str);
     if (e->error != EMIT_OK) return;
-    uint8_t expected_name = (uint8_t)(callee_reg + 1U);
+    uint8_t expected_name = (uint8_t)(callee_reg + 2U);
     if (name_reg != expected_name) {
         emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_name, name_reg, 0U),
                    (uint32_t)stmt->line);
@@ -108,7 +104,7 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     }
     uint8_t prop_reg = emit_expr(e, &prop_str);
     if (e->error != EMIT_OK) return;
-    uint8_t expected_prop = (uint8_t)(callee_reg + 2U);
+    uint8_t expected_prop = (uint8_t)(callee_reg + 3U);
     if (prop_reg != expected_prop) {
         emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_prop, prop_reg, 0U),
                    (uint32_t)stmt->line);
@@ -120,14 +116,15 @@ emit_class_body_property_decl(UEmitter *e, UAstNode *stmt, uint8_t foo_reg)
     }
     uint8_t func_reg = emit_expr(e, stmt->u.property_decl.func);
     if (e->error != EMIT_OK) return;
-    uint8_t expected_func = (uint8_t)(callee_reg + 3U);
+    uint8_t expected_func = (uint8_t)(callee_reg + 4U);
     if (func_reg != expected_func) {
         emit_instr(e, uinstr_enc_abc(OP_MOVE, expected_func, func_reg, 0U),
                    (uint32_t)stmt->line);
     }
 
-    /* OP_CALL: B = (nargs + 1) = 4; C = 2 (1 ret, discarded). */
-    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 4U, 2U),
+    /* OP_CALL method-flag: B = nargs(3) + self(1) + callee(1) = 5;
+     * C = 2 (1 ret) | 0x80 (method flag). */
+    emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 5U, 0x82U),
                (uint32_t)stmt->line);
 
     /* Discard the result and any trailing scratch above foo_reg. */
@@ -318,8 +315,13 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
         for (i = n->u.class_decl.proto_count - 1; i >= 0; i--) {
             UAstNode *proto_node = n->u.class_decl.protos[i];
 
+            /* OP_SELF writes both callee_reg and callee_reg+1.  Reserve
+             * both up front so freereg bookkeeping covers the self slot. */
             uint8_t callee_reg = alloc_reg(e);
             if (e->error != EMIT_OK) return 0U;
+            uint8_t self_reg = alloc_reg(e);
+            if (e->error != EMIT_OK) return 0U;
+            (void)self_reg;  /* implicit — OP_SELF writes callee_reg+1 */
             if (e->current_fs->freereg < e->next_reg) {
                 e->current_fs->freereg = e->next_reg;
             }
@@ -329,21 +331,27 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
             int ic_protos = uemit_assign_ic_index(e, sym_protos);
             if (ic_protos < 0) return 0U;
 
-            /* callee_reg = Foo.protos (the method closure). */
-            emit_instr(e, uinstr_enc_abc(OP_GETSLOT, callee_reg, foo_reg,
+            /* OP_SELF callee_reg, foo_reg, ic_protos — loads Foo.protos
+             * into callee_reg and Foo (self) into callee_reg+1. */
+            emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, foo_reg,
                                          (uint8_t)ic_protos),
                        (uint32_t)n->line);
 
-            /* OP_CALL Foo.protos() — 0 args + callee slot = B=1, C=2.
-             * Result lands at callee_reg, replacing the method closure
-             * with the synthetic protos-list UObject. */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 1U, 2U),
+            /* OP_CALL Foo.protos() — method-flagged: B = nargs(0)+self+callee
+             * = 2; C = 2|0x80 (1 ret + method flag).  Result lands at
+             * callee_reg, replacing the method closure with the synthetic
+             * protos-list UObject. */
+            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 2U, 0x82U),
                        (uint32_t)n->line);
 
-            /* callee_reg now holds the protos list; look up insertFront. */
+            /* callee_reg now holds the protos list; look up insertFront
+             * via OP_SELF (recv-reg aliases dst-reg, which OP_SELF handles
+             * by snapshotting R[B] before writing R[A+1] and R[A]).
+             * After dispatch: callee_reg = insertFront method,
+             * callee_reg+1 = protos list (self). */
             int ic_insert = uemit_assign_ic_index(e, sym_insert);
             if (ic_insert < 0) return 0U;
-            emit_instr(e, uinstr_enc_abc(OP_GETSLOT, callee_reg, callee_reg,
+            emit_instr(e, uinstr_enc_abc(OP_SELF, callee_reg, callee_reg,
                                          (uint8_t)ic_insert),
                        (uint32_t)n->line);
 
@@ -353,18 +361,20 @@ emit_class_decl_arm(UEmitter *e, UAstNode *n)
                 e->current_fs->freereg = e->next_reg;
             }
 
-            /* Emit the proto argument; it should land at callee_reg+1. */
+            /* Emit the proto argument; it should land at callee_reg+2
+             * (just past the implicit self in callee_reg+1). */
             uint8_t arg_reg = emit_expr(e, proto_node);
             if (e->error != EMIT_OK) return 0U;
-            uint8_t expected = (uint8_t)(callee_reg + 1U);
+            uint8_t expected = (uint8_t)(callee_reg + 2U);
             if (arg_reg != expected) {
                 emit_instr(e, uinstr_enc_abc(OP_MOVE, expected, arg_reg, 0U),
                            (uint32_t)n->line);
             }
 
-            /* OP_CALL list.insertFront(proto) — B=2 (1 arg + callee),
-             * C=2 (1 ret, discarded). */
-            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 2U, 2U),
+            /* OP_CALL list.insertFront(proto) — method-flagged: B = nargs(1)
+             * + self + callee = 3; C = 2|0x80 (1 ret + method flag).
+             * Result discarded. */
+            emit_instr(e, uinstr_enc_abc(OP_CALL, callee_reg, 3U, 0x82U),
                        (uint32_t)n->line);
 
             /* Result is in callee_reg; we discard it.  Release the

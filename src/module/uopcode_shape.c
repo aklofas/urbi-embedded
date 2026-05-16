@@ -26,7 +26,11 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
      * the prelude. */
     [OP_CLOSURE]  = { UOPF_ABX, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_NESTED_INDEX },
     [OP_CLOSE]    = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_UNUSED, UBXK_UNUSED },
-    [OP_CALL]     = { UOPF_ABC, UOPK_REG,        UOPK_REG,       UOPK_REG,    UBXK_UNUSED },
+    /* OP_CALL: A = callee_reg.  B = nargs+1 (plain) or nargs+2 (method);
+     * upper bound is the operand count, validated at runtime against
+     * max_reg.  C low 7 bits = nresults+1; C bit 7 = method-call flag
+     * (v1.6 S42).  UOPK_UNUSED on C so the verifier accepts the high bit. */
+    [OP_CALL]     = { UOPF_ABC, UOPK_REG,        UOPK_REG,       UOPK_UNUSED, UBXK_UNUSED },
     [OP_JMP]      = { UOPF_ABX, UOPK_UNUSED,     UOPK_UNUSED,    UOPK_UNUSED, UBXK_JUMP_SIGNED },
     [OP_TEST]     = { UOPF_ABC, UOPK_REG,        UOPK_UNUSED,    UOPK_IMM_BOOL, UBXK_UNUSED },
     [OP_TESTSET]  = { UOPF_ABC, UOPK_REG,        UOPK_REG,       UOPK_IMM_BOOL, UBXK_UNUSED },
@@ -76,4 +80,8 @@ const UOpcodeShape urbi_opcode_shapes[OP_MAX] = {
     [OP_LOAD_REALM_GLOBAL]     = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
     /* OP_LOAD_RECV: A=dst_reg, B=C=0 (unused). */
     [OP_LOAD_RECV]             = { UOPF_ABC, UOPK_REG, UOPK_UNUSED, UOPK_UNUSED, UBXK_UNUSED },
+
+    /* v0.7.2 S42 OP_SELF: A=dst_reg (writes both R[A] and R[A+1]), B=recv_reg,
+     * C=ic_site_index (runtime-validated like OP_GETSLOT, UOPK_UNUSED here). */
+    [OP_SELF]                  = { UOPF_ABC, UOPK_REG, UOPK_REG, UOPK_UNUSED, UBXK_UNUSED },
 };

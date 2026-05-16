@@ -13,7 +13,8 @@
  * - vm: the current VM.
  * - self: the receiver (`this`).  For 1.clone(), self.kind == UVAL_INT.
  *         The receiver is supplied by the OP_CALL native dispatch path,
- *         which reads vm->last_recv set by the most recent OP_GETSLOT.
+ *         which reads it from R[A+1] when the call site is method-flagged
+ *         (preceded by OP_SELF, v1.6 S42); plain calls pass nil.
  * - args: caller's argument array, count == nargs.
  * - nargs: number of arguments.
  * - out: where to write the return value.

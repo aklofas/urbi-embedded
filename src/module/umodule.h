@@ -42,6 +42,13 @@ extern "C" {
                 + root ic_name_strs, header reserved bytes 16-23 strictly zero,
                 opcode-shape table verifier, OP_INVOKE retired, M5 reactive
                 opcodes renumbered 39-46 -> 38-45).
+   v1.6 = 0x16 (v0.7.2 S42 — method-call ABI cleanup: new OP_SELF (47) loads
+                method + receiver into adjacent registers; OP_CALL gains a
+                method-flag bit (C & 0x80) so the receiver is read from
+                R[A+1] explicitly instead of the now-deleted vm->last_recv
+                global.  Eliminates the silent-elision bug where intervening
+                OP_GETSLOTs in argument evaluation clobbered last_recv before
+                the outer OP_CALL.  OP_MAX = 48.).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -50,7 +57,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  5U
+#define URBI_BYTECODE_VERSION_MINOR  6U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -143,9 +150,19 @@ typedef enum {
                                      upvalue descriptors immediately
                                      following (Lua-5.5 prelude pattern) */
     OP_CLOSE    = 14,             /* ABC:  close upvalues for R >= R[A]      */
-    OP_CALL     = 15,             /* ABC:  R[A], ..., R[A+C-2] :=
-                                     R[A](R[A+1], ..., R[A+B-1])
-                                     B = nargs+1, C = nresults+1            */
+    OP_CALL     = 15,             /* ABC:  R[A], ..., R[A+(C&0x7F)-2] :=
+                                     R[A](R[A+1], ..., R[A+B-1]).
+                                     B = nargs + 1 (plain) or
+                                         nargs + 2 (method: callee + self + args).
+                                     C low 7 bits = nresults + 1.
+                                     C bit 7 (0x80) = method-call flag.  When
+                                         set, R[A+1] holds the receiver (placed
+                                         by a preceding OP_SELF) and explicit
+                                         args start at R[A+2]; the receiver is
+                                         passed as `self` to native_fn and
+                                         saved into the new bytecode frame's
+                                         .recv field.  When clear, args start
+                                         at R[A+1] and self is nil. */
     OP_JMP      = 16,             /* ABx:  pc += signed(Bx) - 32768          */
     OP_TEST     = 17,             /* ABC:  if (truthy(R[A]) == C) pc++       */
     OP_TESTSET  = 18,             /* ABC:  if (truthy(R[B]) == C) pc++
@@ -223,9 +240,22 @@ typedef enum {
     /* v0.6.2 Phase 2 — `this` keyword (Gap #3) */
     OP_LOAD_RECV               = 46,  /* A: dst_reg; loads the receiver stored
                                          in the current call frame's .recv field
-                                         (set at OP_CALL dispatch from
-                                         vm->last_recv).  Emitted for AST_THIS
-                                         inside a method body. */
+                                         (set at OP_CALL dispatch from R[A+1]
+                                         when OP_CALL's C carries the method
+                                         flag).  Emitted for AST_THIS inside a
+                                         method body. */
+
+    /* v0.7.2 S42 — method-call ABI cleanup (wire v1.6) */
+    OP_SELF                    = 47,  /* ABC: A=dst_reg, B=recv_reg, C=ic_index.
+                                         R[A+1] := R[B]; R[A] := lookup_slot(
+                                         R[B], K[ic_index]).  Atom receivers
+                                         (UVAL_INT/FLOAT/STR/BOOL) routed via
+                                         urbi_atom_proto_for_value identically
+                                         to OP_GETSLOT.  Emitted as the prelude
+                                         to a method-flagged OP_CALL so the VM
+                                         can read self from R[A+1] without
+                                         relying on the deprecated
+                                         vm->last_recv side channel. */
 
     OP_MAX
 } UOpcode;

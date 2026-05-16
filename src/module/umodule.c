@@ -886,13 +886,14 @@ static UModuleLoadError verify_byte_operand(MDecCtx *d, uint8_t op,
  *   the verifier to know absolute PC; we defer to runtime dispatch
  *   which surfaces an out-of-range jump as URBI_ERR_RUNTIME_FATAL. */
 /* Return true if `op` is an IC-bearing opcode (carries an ic_idx in C).
- * Mirror at v0.5.7: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT.
+ * Mirror at v1.6: OP_GETSLOT, OP_SETSLOT, OP_GETSLOT_CHANGE_EVENT, OP_SELF.
  * Mirror discipline: any new IC-bearing opcode added in a future
  * milestone must be added here AND in uemit_assign_ic_index call sites. */
 static bool op_carries_ic_index(uint8_t op) {
     return op == (uint8_t)OP_GETSLOT
         || op == (uint8_t)OP_SETSLOT
-        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT;
+        || op == (uint8_t)OP_GETSLOT_CHANGE_EVENT
+        || op == (uint8_t)OP_SELF;
 }
 
 /* Walk one block of instructions (root chunk OR a nested proto) against
