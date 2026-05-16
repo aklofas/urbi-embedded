@@ -1,46 +1,64 @@
 // Color blob tracker — ESP32-S3-EYE demo
 //
 // Host registers: blob_seen, button_pressed (events)
-//                 draw_crosshair, set_target_color (functions)
+//                 draw_crosshair, set_target_color, log (functions)
+//
+// v0.7.1 lex / emit notes (all deferred to v1.x):
+//   * No `[...]` list literal — use `List.new(...)` + `.get(i)`.
+//     See tests/chk/stdlib/containers/list_core.chk:8-10.
+//   * No `<<` stream operator — string concat uses the v0.6.2 `+`
+//     operator overload + the v0.6.1 `.asString()` accessor.
+//   * No `&&` / `||` shortcut operators — conjunctions are nested
+//     `if`.  See tests/chk/stdlib/atoms/boolean.chk:4-7.
+//   * No `%` modulo operator — manual cycle via `if (x == 3) x = 0;`.
+//   * No `every (Ts) body` periodic-watcher keyword — heartbeat
+//     omitted (would need a host periodic-timer firing a `tick?` event).
+//   * Nested function bodies can READ chunk-top `var` globals but
+//     cannot ASSIGN to them — mutable cross-handler state lives on the
+//     realm (`Realm.x = ...`), matching tests/chk/reactive/at/*.chk.
 
-var zones = [
-    [60,  60,  180, 180],   // center
-    [0,   0,   120, 120],   // top-left
-    [120, 120, 240, 240]    // bottom-right
-];
-var current_zone = 0;
-var hit_count    = 0;
-var last_seen_us = 0;
+Realm.zones = List.new(
+    List.new(60,  60,  180, 180),   // center
+    List.new(0,   0,   120, 120),   // top-left
+    List.new(120, 120, 240, 240)    // bottom-right
+);
+Realm.current_zone = 0;
+Realm.hit_count    = 0;
+Realm.last_seen_us = 0;
 
-var colors = [
-    [31, 0,  0,  4],   // red
-    [0,  63, 0,  8],   // green
-    [0,  0,  31, 4]    // blue
-];
+Realm.colors = List.new(
+    List.new(31, 0,  0,  4),   // red
+    List.new(0,  63, 0,  8),   // green
+    List.new(0,  0,  31, 4)    // blue
+);
 
-at (blob_seen ?(x, y, area)) {
+at (blob_seen?) function (x, y, area) {
     if (area > 50) {
         draw_crosshair(x, y);
-        last_seen_us = System.time_us();
+        Realm.last_seen_us = System.time_us();
 
-        var z = zones[current_zone];
-        if (x >= z[0] && y >= z[1] && x < z[2] && y < z[3]) {
-            hit_count = hit_count + 1;
-            cout << "Hit zone " << current_zone << " count=" << hit_count;
-        }
+        var z = Realm.zones.get(Realm.current_zone);
+        // nested-if conjunction (no `&&` operator in v0.7.1 lex)
+        if (x >= z.get(0)) { if (y >= z.get(1)) {
+        if (x <  z.get(2)) { if (y <  z.get(3)) {
+            Realm.hit_count = Realm.hit_count + 1;
+            log("Hit zone " + Realm.current_zone.asString()
+                + " count=" + Realm.hit_count.asString());
+        } } } }
     }
 };
 
-at (button_pressed) {
-    current_zone = (current_zone + 1) % 3;
-    var c = colors[current_zone];
-    set_target_color(c[0], c[1], c[2], c[3]);
-    cout << "Switched to zone=" << current_zone;
+at (button_pressed?) function () {
+    // mod-3 cycle without `%` operator (not in v0.7.1 lex)
+    Realm.current_zone = Realm.current_zone + 1;
+    if (Realm.current_zone == 3) { Realm.current_zone = 0; };
+    var c = Realm.colors.get(Realm.current_zone);
+    set_target_color(c.get(0), c.get(1), c.get(2), c.get(3));
+    log("Switched to zone=" + Realm.current_zone.asString());
 };
 
-every (5s) {
-    var elapsed_s = (System.time_us() - last_seen_us) / 1000000;
-    if (elapsed_s > 5) {
-        cout << "No blob seen for " << elapsed_s << "s";
-    }
-};
+// every(...) periodic-watcher sugar is not a v0.7.1 keyword (no TOK_KW_EVERY).
+// The 5-second blob-seen-watchdog heartbeat is deferred to v1.x when either
+// `every` lands or a host-side periodic timer fires a `tick_5s?` event the
+// script can `at`-subscribe.  Until then the watchdog is omitted; the
+// blob_seen branch above is the only place Realm.last_seen_us is consulted.
