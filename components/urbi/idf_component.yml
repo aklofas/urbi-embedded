@@ -1,0 +1,9 @@
+version: "0.7.2-esp32"
+description: "Embeddable urbiscript runtime — reactive, parallel-by-default, event-driven scripting for embedded systems."
+url: "https://github.com/aklofas/urbi-embedded"
+license: "BSD-3-Clause"
+targets:
+  - esp32s3
+dependencies:
+  idf:
+    version: ">=6.0.1"
