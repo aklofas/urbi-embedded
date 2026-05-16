@@ -28,6 +28,7 @@
 #include "urbi/urbi.h"
 
 #include "eye_display.h"
+#include "crosshair.h"
 
 /* === ESP32-S3-EYE v2.2 pin map (see board schematic) === */
 #define LCD_HOST       SPI2_HOST
@@ -122,7 +123,7 @@ void display_post_frame(camera_fb_t *fb)
     xQueueSend(frame_q, &fb, portMAX_DELAY);
 }
 
-/* draw_crosshair_into and c_draw_crosshair land in T32 / T34. */
+/* c_draw_crosshair lands in T34. */
 
 static void display_task_body(void *arg)
 {
@@ -144,8 +145,9 @@ static void display_task_body(void *arg)
         }
 
         /* Overlay the latest crosshair coordinates (set by c_draw_crosshair
-         * on the urbi VM task).  T32 will provide draw_crosshair_into. */
-        /* draw_crosshair_into(lcd_fb, 240, 240, crosshair_x, crosshair_y); */
+         * on the urbi VM task).  Reads volatile pair non-atomically; the
+         * tearing window is one frame and visually invisible. */
+        draw_crosshair_into(lcd_fb, 240, 240, crosshair_x, crosshair_y);
 
         ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(lcd, 0, 0, 240, 240, lcd_fb));
 
