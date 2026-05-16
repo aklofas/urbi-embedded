@@ -17,7 +17,8 @@ idf_component_register(
         "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES
         urbi
-        espressif__esp32-camera
+        espressif__esp_video
+        espressif__esp_cam_sensor
         freertos
         esp_timer
         esp_lcd
