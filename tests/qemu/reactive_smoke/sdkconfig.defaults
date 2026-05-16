@@ -28,3 +28,10 @@ CONFIG_FREERTOS_HZ=100
 # Use the custom partition table at partitions.csv (sibling file).
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Main task stack: default is 3584 B.  urbi_step's cooperative dispatch
+# uses several KB of CallFrame stack; running it directly from app_main
+# blows the small main task stack.  Bumping to 16 KB matches eye_demo's
+# dedicated urbi task budget (URBI_STACK_WORDS = 8 KB / sizeof StackType_t)
+# with headroom for IDF stack frames.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
