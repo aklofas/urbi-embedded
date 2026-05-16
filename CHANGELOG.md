@@ -3,7 +3,7 @@
 ## v0.7.2-esp32 — 2026-05-16 (M7 Wave 2 part 2 — ESP-IDF port + runtime hardening)
 
 **Tag:** `v0.7.2-esp32`
-**Theme:** First MCU port + unexpectedly substantial runtime hardening. ESP-IDF v6.0.1 against ESP32-S3 / S3-EYE; `components/urbi/` managed-component shell consumes the locked v0.7.1 ABI; ESP32-S3-EYE color blob tracking eye_demo on actual hardware. **Bonus bug hunt:** stress-testing the demo with progressively wider urbiscript surface (try/catch/finally, `at sync`, multi-statement at-bodies, `&` fork-join) uncovered 10 real bugs across the parser, emit, and runtime layers — all fixed and validated on hardware. ABI 0/7/1 → 0/7/3 (S41 `urbi_set_diag_fn` landed pre-session, taking the ABI to 0/7/3 directly; tag name retains `v0.7.2-esp32` per the original Wave 2 plan). Wire format unchanged at v1.5 / 0x15.
+**Theme:** First MCU port + unexpectedly substantial runtime hardening. ESP-IDF v6.0.1 against ESP32-S3 / S3-EYE; `components/urbi/` managed-component shell consumes the locked v0.7.1 ABI; ESP32-S3-EYE color blob tracking eye_demo on actual hardware. **Bonus bug hunt:** stress-testing the demo with progressively wider urbiscript surface (try/catch/finally, `at sync`, multi-statement at-bodies, `&` fork-join) uncovered 10 real bugs across the parser, emit, and runtime layers — all fixed and validated on hardware. ABI 0/7/1 → 0/7/3 (S41 `urbi_set_diag_fn` landed pre-session, taking the ABI to 0/7/3 directly; tag name retains `v0.7.2-esp32` per the original Wave 2 plan). Wire format v1.5 → **v1.6 / 0x16** (S42 OP_SELF added pre-this-session for method-call dispatch — replaces `vm->last_recv`; no further wire changes during the ship session itself).
 
 ### Added
 
