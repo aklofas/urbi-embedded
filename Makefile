@@ -777,7 +777,7 @@ cross-esp32s3-bytecode-only:
 cross-esp32s3-full:
 	$(MAKE) TARGET=cross-esp32s3-full \
 		CC=xtensa-esp-elf-gcc \
-		CFLAGS="-std=c99 -ffreestanding -Os -mlongcalls" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding" \
 		AR=xtensa-esp-elf-ar \
 		all
 
