@@ -23,6 +23,7 @@
 #include "esp_heap_caps.h"   /* heap_caps_get_free_size — stats task */
 
 #include "urbi/urbi.h"
+#include "urbi/aux.h"     /* urbi_aux_register_function_table — batch stats fns */
 #include "urbi/types.h"
 
 /* Full UVM struct definition needed because app_main static-allocates
@@ -51,8 +52,8 @@ static const char *TAG = "eye_demo";
  * Variadic + multi-type: walks args[0..nargs), formats each by kind
  * (UVAL_STR / UVAL_INT / UVAL_FLOAT / UVAL_BOOL / UVAL_NIL — anything
  * else dumped as "<kind=N>"), space-separates them, single ESP_LOGI
- * line per call.  Truncates at 160 bytes; the urbi side never builds
- * messages longer than that.
+ * line per call.  Truncates at 320 bytes; covers the wide Stats.snapshot
+ * diagnostic line (~22 fields).
  *
  * Argument convention: `log(x)`, `log("name:", value)`, `log(a, b, c)`
  * — anything goes.  nargs == 0 prints an empty line.
@@ -67,7 +68,14 @@ int c_log(struct UVM *vm, UValue self,
 {
     (void)vm; (void)self;
 
-    char buf[160];
+    /* 320-byte buffer — was 160, hit truncation in eye_demo.u Stats.snapshot
+     * once the diagnostic field set grew to ~22 fields per line (2026-05-16).
+     * Bumped again to 512 when the Tier-2 at-sync stress addition pushed the
+     * line past 320 (visible as mid-field truncation on `sync=N`).
+     * Stack-allocated; no runtime cost beyond an extra ~352 B on the urbi
+     * task stack while c_log runs.  Embedders that don't dump such wide
+     * diagnostic lines can shrink back to 160 with no functional change. */
+    char buf[512];
     size_t off = 0U;
     for (uint8_t i = 0U; i < nargs && off + 1U < sizeof buf; i++) {
         if (i > 0U) {
@@ -171,16 +179,225 @@ volatile uint32_t g_cam_injects = 0;
 
 #define STATS_PERIOD_MS  2000
 
-/* Reads from another task — only touch:
- *   - C-side volatile uint32_t counters (camera-task increments)
- *   - VM uint16/uint32 fields used as monitoring gauges
- *     (strand_runnable_count, watcher_pool_in_use, ring->overflow_count)
+/* Latest-tick FPS deltas, computed by port_stats_task and read by the
+ * c_cam_fps / c_inject_fps host fns from the urbi task.  Single producer
+ * (stats task) + single consumer (urbi task); volatile + 32-bit-aligned
+ * load/store on Xtensa is atomic, no further sync needed. */
+static volatile uint32_t g_last_cam_fps    = 0;
+static volatile uint32_t g_last_inject_fps = 0;
+
+/* Heap min tracking: lowest observed free-bytes since last reset.  Reset
+ * on read (each c_heap_X_min_kb call) so successive stats lines show
+ * the per-interval low-water mark, not all-time min. */
+static volatile uint32_t g_heap_int_min_bytes   = UINT32_MAX;
+static volatile uint32_t g_heap_psram_min_bytes = UINT32_MAX;
+
+/* Event-ring high-water mark since last read.  Sampled at end of each
+ * urbi_step inside port_urbi_task_body (after drain). */
+static volatile uint32_t g_ring_max_seen = 0;
+
+/* Step-result distribution: counts of URBI_STEP_RUNNING / QUIESCENT /
+ * WAKE_AT / FATAL since port boot.  urbiscript reads via c_step_X(). */
+static volatile uint32_t g_step_running    = 0;
+static volatile uint32_t g_step_quiescent  = 0;
+static volatile uint32_t g_step_wake_at    = 0;
+static volatile uint32_t g_step_fatal      = 0;
+
+/* Per-event injection counters (camera-task is producer for blob_seen;
+ * button ISR for button_pressed; port_stats_task for stats_tick &
+ * scan_tick).  Symmetric to g_cam_injects for blob_seen — the others
+ * grow per inject site.  Read deltas via c_evt_X().
  *
- * urbi_realm_get_global / urbi_slot_get / any other VM API is NOT
- * safe to call from a non-urbi-task without quiescing the runtime;
- * the v0.7.1 contract is single-threaded.  Indirect signals (the
- * camera/inject FPS, strand/watcher pool occupancy, ring overflow)
- * are sufficient to see whether the urbi pipeline is healthy. */
+ * btn + scan counters are EXTERN (no `static`) so eye_button.c and
+ * eye_camera.c can bump them from the inject sites without owning the
+ * underlying storage.  stats counter is internal — incremented locally
+ * in port_stats_task. */
+volatile uint32_t g_evt_btn_count   = 0;
+static volatile uint32_t g_evt_stats_count = 0;
+volatile uint32_t g_evt_scan_count  = 0;
+
+/* stats_tick event id — fired from port_stats_task every STATS_PERIOD_MS
+ * to drive the urbiscript-side Stats class.  Stashed at registration. */
+static urbi_event_id_t   g_stats_tick_ev = 0;
+
+/* === Host fns: stats accessors ====================================
+ *
+ * Each fn is called from a urbi-task at-handler body, so they run in
+ * MAIN script context — safe to touch vm-> fields directly without
+ * worrying about cross-task ordering (the stats task only writes
+ * g_last_*_fps and the event ring, both single-producer / single-
+ * consumer aligned-32-bit writes). */
+static int c_cam_fps(struct UVM *vm, UValue self,
+                     UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_int((int64_t)g_last_cam_fps);
+    return UEXEC_OK;
+}
+
+static int c_inject_fps(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_int((int64_t)g_last_inject_fps);
+    return UEXEC_OK;
+}
+
+static int c_strands(struct UVM *vm, UValue self,
+                     UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_int((int64_t)vm->strand_runnable_count);
+    return UEXEC_OK;
+}
+
+static int c_watchers_in_use(struct UVM *vm, UValue self,
+                              UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_int((int64_t)vm->watcher_pool_in_use);
+    return UEXEC_OK;
+}
+
+static int c_watchers_high_water(struct UVM *vm, UValue self,
+                                  UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    if (out != NULL) *out = urbi_make_int((int64_t)vm->watcher_pool_high_water);
+    return UEXEC_OK;
+}
+
+static int c_ring_ovf(struct UVM *vm, UValue self,
+                      UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)self; (void)args; (void)nargs;
+    UEventRing *ring = vm->event_ring;
+    if (out != NULL) {
+        *out = urbi_make_int((int64_t)(ring ? ring->overflow_count : 0U));
+    }
+    return UEXEC_OK;
+}
+
+static int c_heap_int_kb(struct UVM *vm, UValue self,
+                         UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    size_t free_bytes = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (out != NULL) *out = urbi_make_int((int64_t)(free_bytes / 1024U));
+    return UEXEC_OK;
+}
+
+static int c_heap_psram_kb(struct UVM *vm, UValue self,
+                           UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    size_t free_bytes = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    if (out != NULL) *out = urbi_make_int((int64_t)(free_bytes / 1024U));
+    return UEXEC_OK;
+}
+
+/* === Diagnostic host fns: step-result distribution, ring max, heap min,
+ * per-event injection counters.  All boilerplate getters; reads of
+ * "since-last-read" stats auto-reset so successive samples show
+ * per-interval deltas, not all-time totals. */
+#define STAT_RESET_ON_READ(name, var)                                        \
+static int name(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) { \
+    (void)vm; (void)self; (void)args; (void)nargs;                           \
+    uint32_t v = (var); (var) = 0;                                           \
+    if (out) *out = urbi_make_int((int64_t)v);                               \
+    return UEXEC_OK;                                                         \
+}
+#define STAT_GETTER(name, var)                                               \
+static int name(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) { \
+    (void)vm; (void)self; (void)args; (void)nargs;                           \
+    if (out) *out = urbi_make_int((int64_t)(var));                           \
+    return UEXEC_OK;                                                         \
+}
+
+STAT_RESET_ON_READ(c_step_running,    g_step_running)
+STAT_RESET_ON_READ(c_step_quiescent,  g_step_quiescent)
+STAT_RESET_ON_READ(c_step_wake_at,    g_step_wake_at)
+STAT_GETTER(       c_step_fatal,      g_step_fatal)
+STAT_RESET_ON_READ(c_ring_max,        g_ring_max_seen)
+STAT_RESET_ON_READ(c_evt_btn,         g_evt_btn_count)
+STAT_RESET_ON_READ(c_evt_stats,       g_evt_stats_count)
+STAT_RESET_ON_READ(c_evt_scan,        g_evt_scan_count)
+
+/* Forward-decl of the static vm (defined later in this TU as the app_main
+ * singleton).  Needed because port_urbi_step_observed below samples
+ * vm.event_ring on every step. */
+static struct UVM vm;
+
+/* Strong override of the port's weak `port_urbi_step_observed` hook —
+ * bumps per-result counters + samples the event-ring high-water mark
+ * each step.  port_freertos_task.c calls us on every urbi_step return. */
+void port_urbi_step_observed(int result_int, uint64_t wake_us)
+{
+    (void)wake_us;
+    switch (result_int) {
+        case URBI_STEP_RUNNING:    g_step_running++;    break;
+        case URBI_STEP_QUIESCENT:  g_step_quiescent++;  break;
+        case URBI_STEP_WAKE_AT:    g_step_wake_at++;    break;
+        case URBI_STEP_FATAL:      g_step_fatal++;      break;
+        default: break;
+    }
+    /* Sample ring high-water mark.  vm is the same singleton; pull it
+     * from the file-scope vm.  Avoid the call if ring is null (pre-init). */
+    /* Race-safe ring depth sample.  Both indices grow monotonically;
+     * write_idx is bumped after inject, read_idx after drain.  If the
+     * camera task injects between our two volatile loads (write_idx then
+     * read_idx), read can lap forward and the unsigned subtract wraps to
+     * 0xFFFFFFXX (saw 4294967041 in the 2026-05-16 log).  Snapshot in
+     * the safer order (read first, then write) and clamp negative-by-
+     * wrap to 0 — high-water sampling is approximate anyway. */
+    UEventRing *ring = vm.event_ring;
+    if (ring != NULL) {
+        uint32_t r_idx = ring->read_idx;
+        uint32_t w_idx = ring->write_idx;
+        int32_t  depth = (int32_t)(w_idx - r_idx);
+        if (depth > 0 && (uint32_t)depth > g_ring_max_seen) {
+            g_ring_max_seen = (uint32_t)depth;
+        }
+    }
+}
+
+/* Heap min: report low-water-mark in KB, then reset to current free so
+ * the next interval re-acquires its own low. */
+static int c_heap_int_min_kb(struct UVM *vm, UValue self,
+                             UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    uint32_t v = g_heap_int_min_bytes;
+    g_heap_int_min_bytes = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (out) *out = urbi_make_int((int64_t)((v == UINT32_MAX ? 0 : v) / 1024U));
+    return UEXEC_OK;
+}
+static int c_heap_psram_min_kb(struct UVM *vm, UValue self,
+                               UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    uint32_t v = g_heap_psram_min_bytes;
+    g_heap_psram_min_bytes = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    if (out) *out = urbi_make_int((int64_t)((v == UINT32_MAX ? 0 : v) / 1024U));
+    return UEXEC_OK;
+}
+
+/* port_stats_task — periodic FPS-delta compute + stats_tick event inject.
+ *
+ * Pre-move (v0.7.2-pre-stress-test): formatted + ESP_LOGI'd the full stats
+ * line directly from this task, reading vm-> fields without sync (documented
+ * as MAIN-only by the v0.7.1 contract).  Stress-test refactor (2026-05-16):
+ * format + log moved to urbiscript via the Stats class.  This task now only:
+ *
+ *   1. Computes cam/inject FPS deltas (rolling N-frame counters).
+ *   2. Stores them in volatile statics (read by c_cam_fps / c_inject_fps
+ *      from the urbi task).
+ *   3. Injects stats_tick (urbi_inject_event is task-safe).
+ *
+ * The urbi-side at(stats_tick?) handler then calls Stats.snapshot() which
+ * reads the 8 host-fn accessors and emits a single log() line.  This
+ * exercises the cross-task event-injection + at-body class-method-invocation
+ * + multi-host-fn-per-handler patterns on real hardware. */
 static void port_stats_task(void *arg)
 {
     struct UVM *vm = (struct UVM *)arg;
@@ -194,27 +411,24 @@ static void port_stats_task(void *arg)
         uint32_t cam = g_cam_frames;
         uint32_t inj = g_cam_injects;
 
-        uint32_t cam_fps    = (cam - prev_cam) * 1000U / STATS_PERIOD_MS;
-        uint32_t inject_fps = (inj - prev_injects) * 1000U / STATS_PERIOD_MS;
-
-        UEventRing *ring = vm->event_ring;
-        size_t free_internal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-        size_t free_psram    = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-
-        ESP_LOGI(TAG,
-            "stats: cam=%ufps inject=%ufps "
-            "strands=%u watchers=%u/%u ring_ovf=%u "
-            "heap_int=%uKB heap_psram=%uKB",
-            (unsigned)cam_fps, (unsigned)inject_fps,
-            (unsigned)vm->strand_runnable_count,
-            (unsigned)vm->watcher_pool_in_use,
-            (unsigned)vm->watcher_pool_high_water,
-            (unsigned)(ring ? ring->overflow_count : 0U),
-            (unsigned)(free_internal / 1024U),
-            (unsigned)(free_psram    / 1024U));
+        g_last_cam_fps    = (cam - prev_cam)     * 1000U / STATS_PERIOD_MS;
+        g_last_inject_fps = (inj - prev_injects) * 1000U / STATS_PERIOD_MS;
 
         prev_cam     = cam;
         prev_injects = inj;
+
+        /* Sample heap low-water marks (read once per stats tick — cheap
+         * enough; if the embedder wants per-frame resolution, move into
+         * camera_task_body).  ~4 us per call on ESP32-S3. */
+        uint32_t hi_now = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        uint32_t hp_now = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        if (hi_now < g_heap_int_min_bytes)   g_heap_int_min_bytes   = hi_now;
+        if (hp_now < g_heap_psram_min_bytes) g_heap_psram_min_bytes = hp_now;
+
+        if (g_stats_tick_ev != 0U) {
+            g_evt_stats_count++;
+            urbi_inject_event(vm, (uint32_t)g_stats_tick_ev, NULL, 0U);
+        }
     }
 }
 
@@ -239,7 +453,7 @@ static void port_stats_task(void *arg)
  * so it co-schedules with the camera task per spec §5.1 and leaves
  * the display task alone on core 1. */
 
-static struct UVM   vm;
+/* (vm forward-decl is up at the top, near port_urbi_step_observed.) */
 static StackType_t  urbi_stack_buf[URBI_STACK_WORDS];
 static StaticTask_t urbi_tcb;
 static TaskHandle_t urbi_task_handle;
@@ -265,16 +479,74 @@ void app_main(void)
     struct URealm *r = urbi_realm_global(&vm);
     ESP_ERROR_CHECK(r != NULL ? ESP_OK : ESP_FAIL);
 
-    urbi_event_id_t ev_blob = urbi_event_register(&vm, r, "blob_seen",
-                                                  destructure_blob, NULL);
-    urbi_event_id_t ev_btn  = urbi_event_register(&vm, r, "button_pressed",
-                                                  NULL, NULL);
-    ESP_ERROR_CHECK(ev_blob != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
-    ESP_ERROR_CHECK(ev_btn  != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
+    urbi_event_id_t ev_blob      = urbi_event_register(&vm, r, "blob_seen",
+                                                       destructure_blob, NULL);
+    urbi_event_id_t ev_btn       = urbi_event_register(&vm, r, "button_pressed",
+                                                       NULL, NULL);
+    urbi_event_id_t ev_scan_tick = urbi_event_register(&vm, r, "scan_tick",
+                                                       NULL, NULL);
+    g_stats_tick_ev              = urbi_event_register(&vm, r, "stats_tick",
+                                                       NULL, NULL);
+    ESP_ERROR_CHECK(ev_blob         != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(ev_btn          != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(ev_scan_tick    != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(g_stats_tick_ev != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
 
-    ESP_ERROR_CHECK(urbi_register(&vm, r, "draw_crosshair",   c_draw_crosshair)   == URBI_OK ? ESP_OK : ESP_FAIL);
-    ESP_ERROR_CHECK(urbi_register(&vm, r, "set_target_color", c_set_target_color) == URBI_OK ? ESP_OK : ESP_FAIL);
-    ESP_ERROR_CHECK(urbi_register(&vm, r, "log",              c_log)              == URBI_OK ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(urbi_register(&vm, r, "draw_crosshair",    c_draw_crosshair)    == URBI_OK ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(urbi_register(&vm, r, "set_target_chroma", c_set_target_chroma) == URBI_OK ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(urbi_register(&vm, r, "log",               c_log)               == URBI_OK ? ESP_OK : ESP_FAIL);
+
+    /* Stats accessor batch — 8 single-getter host fns the urbiscript-side
+     * Stats class polls inside its at(stats_tick?) handler.  Bundled via
+     * urbi_aux_register_function_table; the urbi_aux sibling component
+     * (components/urbi_aux/) makes the convenience layer linkable from
+     * ESP-IDF builds that opt in via REQUIRES urbi_aux. */
+    static const urbi_aux_function_decl_t stats_fns[] = {
+        { "c_cam_fps",             c_cam_fps             },
+        { "c_inject_fps",          c_inject_fps          },
+        { "c_strands",             c_strands             },
+        { "c_watchers_in_use",     c_watchers_in_use     },
+        { "c_watchers_high_water", c_watchers_high_water },
+        { "c_ring_ovf",            c_ring_ovf            },
+        { "c_heap_int_kb",         c_heap_int_kb         },
+        { "c_heap_psram_kb",       c_heap_psram_kb       },
+        /* Snap-buffer pixel reads — exposed for the urbiscript BlobScan
+         * stress-test handler in eye_demo.u.  Live in eye_camera.c
+         * because they reach into the snap buffer the camera task owns. */
+        { "c_get_pixel_r",         c_get_pixel_r         },
+        { "c_get_pixel_g",         c_get_pixel_g         },
+        { "c_get_pixel_b",         c_get_pixel_b         },
+        /* Scan-in-progress guard (option C) — urbiscript wraps its body
+         * in c_scan_begin / c_scan_end so the camera task can adapt the
+         * scan_tick injection rate to actual urbiscript throughput. */
+        { "c_scan_begin",          c_scan_begin          },
+        { "c_scan_end",            c_scan_end            },
+        /* Diagnostic telemetry (2026-05-16) — per-color blob probe,
+         * frame-center RGB, DQBUF wait, step-result distribution, heap
+         * low-water-marks, event-ring high-water, per-event injection
+         * rates.  The Stats class polls these into its at(stats_tick?)
+         * snapshot to drive the diagnostic stats log line. */
+        { "c_probe_red",           c_probe_red           },
+        { "c_probe_green",         c_probe_green         },
+        { "c_probe_blue",          c_probe_blue          },
+        { "c_center_r",            c_center_r            },
+        { "c_center_g",            c_center_g            },
+        { "c_center_b",            c_center_b            },
+        { "c_dqbuf_max_wait_us",   c_dqbuf_max_wait_us   },
+        { "c_step_running",        c_step_running        },
+        { "c_step_quiescent",      c_step_quiescent      },
+        { "c_step_wake_at",        c_step_wake_at        },
+        { "c_step_fatal",          c_step_fatal          },
+        { "c_ring_max",            c_ring_max            },
+        { "c_heap_int_min_kb",     c_heap_int_min_kb     },
+        { "c_heap_psram_min_kb",   c_heap_psram_min_kb   },
+        { "c_evt_btn",             c_evt_btn             },
+        { "c_evt_stats",           c_evt_stats           },
+        { "c_evt_scan",            c_evt_scan            },
+    };
+    ESP_ERROR_CHECK(urbi_aux_register_function_table(
+        &vm, r, stats_fns, sizeof stats_fns / sizeof stats_fns[0])
+        == URBI_OK ? ESP_OK : ESP_FAIL);
 
     /* 5: load baked bytecode.  Panic on failure -> clean coredump
      * rather than a silent boot loop. */
@@ -303,15 +575,29 @@ void app_main(void)
      * main_task; FreeRTOS would otherwise round-robin and the camera
      * task could post a frame before display_init returned). */
     eye_display_init();
-    eye_camera_init(&vm, ev_blob);
+    eye_camera_init(&vm, ev_blob, ev_scan_tick);
     button_install_isr(&vm, ev_btn);
 
-    /* 7: spawn the urbi task pinned to core 0, priority +2 (above the
-     * +1 camera and display tasks so urbi drains events ahead of new
-     * captures). */
+    /* 7: spawn the urbi task pinned to core 0 at priority +1 — SAME as
+     * the camera task (+1) and display task (+1).  Equal priority gives
+     * FreeRTOS round-robin time-slicing via configTICK_RATE_HZ (10 ms
+     * ticks by default), so a long-running urbi body strand (e.g. the
+     * urbiscript BlobScan stress-test loop, ~200 ms of bytecode per
+     * fire) does NOT starve the camera task on core 0.  At higher urbi
+     * priority (the original +2) FreeRTOS never preempted urbi with the
+     * lower-priority camera task, and a 200 ms scan window froze the
+     * LCD for 200 ms every scan tick because no new frames were
+     * captured during the urbi-monopoly window.
+     *
+     * The tradeoff: at-handler dispatch latency goes from microseconds
+     * (urbi-on-top of camera+display) to up-to-one-tick (10 ms worst
+     * case before urbi gets its slice back).  Acceptable for the
+     * scripted demo; embedders running hard-real-time at-handlers can
+     * bump urbi back to +2 and accept the camera-task starvation as
+     * a documented consequence (or shrink URBI_STEP_BUDGET further). */
     urbi_task_handle = xTaskCreateStaticPinnedToCore(
         port_urbi_task_body, "urbi", URBI_STACK_WORDS, &vm,
-        tskIDLE_PRIORITY + 2, urbi_stack_buf, &urbi_tcb, 0);
+        tskIDLE_PRIORITY + 1, urbi_stack_buf, &urbi_tcb, 0);
     ESP_ERROR_CHECK(urbi_task_handle != NULL ? ESP_OK : ESP_FAIL);
 
     /* 8: spawn the live-stats task on core 1 (alongside the display task)

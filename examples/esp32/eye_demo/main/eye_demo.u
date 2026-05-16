@@ -219,7 +219,8 @@ class Stats {
             "ms=",          Realm.last_milestone,
             "idxch=",       Realm.idx_changes,
             "thr=",         Realm.scan_throws,
-            "fin=",         Realm.scan_finallies)
+            "fin=",         Realm.scan_finallies,
+            "sync=",        Realm.sync_fires)
     }
 };
 
@@ -414,3 +415,13 @@ at (Realm.idx.changed?) Realm.idx_changes = Realm.idx_changes + 1;
 at (Realm.idx.changed?) log("idx-change #", Realm.idx_changes,
                              "now=", Realm.idx,
                              "color=", Realm.colors.get(Realm.idx).name);
+
+// === Tier-2a: synchronous at variant (`at sync`) ========================
+// `at sync (cond) body` — body runs INLINE in the strand that mutated
+// cond, NOT spawned as a separate strand.  Different dispatch path:
+// UWATCHER_AT_SYNC uses invoke_body_inline rather than spawn_body_coroutine.
+// Tests the AT_SYNC emit/eval/dispatch chain we haven't exercised at all
+// in eye_demo.  Side-effect: bumps Realm.sync_fires from the at-handler's
+// strand context (no body strand created).
+Realm.sync_fires = 0;
+at sync (Realm.idx.changed?) Realm.sync_fires = Realm.sync_fires + 1;

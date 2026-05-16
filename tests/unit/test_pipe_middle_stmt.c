@@ -219,6 +219,97 @@ UTEST(local_assign_pipe_does_not_absorb_rhs)
     urbi_vm_destroy(&vm);
 }
 
+/* === `return EXPR | rest` parses as `(return EXPR) | rest` (S48-followup) === */
+UTEST(return_pipe_does_not_absorb_rest)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    /* Function body: `return 42 | Realm.unreachable = 1`.  If parse
+     * absorbs the pipe, RHS of return is `42 | Realm.unreachable = 1`
+     * which evaluates the assignment.  If parse doesn't absorb (correct),
+     * `return 42` runs first; the pipe-joined rest never executes
+     * because return already left the frame.
+     *
+     * Realm.unreachable starts at 0; after f() is called, it should
+     * remain 0 (the post-return statement didn't run). */
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "unreachable", 11,
+                                               utest_e2e_make_int(0)));
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "result", 6,
+                                               utest_e2e_make_int(0)));
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var f = function () { return 42 | Realm.unreachable = 99 };"
+        "Realm.result = f()",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue result = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "result", 6, &result));
+    UASSERT_EQ(42LL, result.v.i);
+
+    UValue unreachable = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "unreachable", 11, &unreachable));
+    /* Post-return statement did NOT run — return was final, didn't absorb pipe. */
+    UASSERT_EQ(0LL, unreachable.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === `throw EXPR | rest` parses as `(throw EXPR) | rest` (S48-followup) === */
+UTEST(throw_pipe_does_not_absorb_rest)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "unreachable", 11,
+                                               utest_e2e_make_int(0)));
+    UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "caught", 6,
+                                               utest_e2e_make_int(0)));
+
+    /* `try { throw 7 | Realm.unreachable = 99 } catch (e) { ... }` —
+     * if pipe is absorbed into throw, evaluates `7 | Realm.unreachable=99`
+     * (assigns 99 to unreachable, throws 99).  If not absorbed (correct),
+     * `throw 7` fires immediately; unreachable stays 0.
+     *
+     * We verify by checking caught value is 7 (not 99) AND unreachable
+     * is 0 (not 99). */
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "try {"
+        "  throw 7 | Realm.unreachable = 99"
+        "} catch (e) {"
+        "  Realm.caught = e"
+        "}",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue caught = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "caught", 6, &caught));
+    UASSERT_EQ(7LL, caught.v.i);
+
+    UValue unreachable = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "unreachable", 11, &unreachable));
+    UASSERT_EQ(0LL, unreachable.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_pipe_middle_stmt_suite(void)
 {
@@ -230,4 +321,8 @@ test_pipe_middle_stmt_suite(void)
               var_decl_pipe_does_not_absorb_rhs);
     utest_run("pipe_middle_stmt: local-assign `=` RHS doesn't absorb pipe (S48-followup)",
               local_assign_pipe_does_not_absorb_rhs);
+    utest_run("pipe_middle_stmt: return EXPR doesn't absorb pipe (S48-followup)",
+              return_pipe_does_not_absorb_rest);
+    utest_run("pipe_middle_stmt: throw EXPR doesn't absorb pipe (S48-followup)",
+              throw_pipe_does_not_absorb_rest);
 }

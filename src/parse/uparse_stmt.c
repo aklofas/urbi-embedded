@@ -653,7 +653,12 @@ UAstNode *parse_return(UParser *p) {
                      || nt == TOK_SEMI
                      || nt == TOK_COMMA;
         if (!no_value) {
-            value = parse_inner_tier(p);
+            /* S48-followup (2026-05-16): `return EXPR | rest` should parse
+             * as `(return EXPR) | rest` (return is final per legacy
+             * aldebaran-urbi convention).  Same root cause as the
+             * MEMBER_SET / var-decl / local-assign fixes: parse_inner_tier
+             * absorbs the pipe into the return value. */
+            value = parse_expression(p, 0);
             if (!value) return (UAstNode *)&uparser_oom_sentinel;
             if (value->kind == AST_ERROR) return value;
         }
@@ -670,7 +675,12 @@ UAstNode *parse_return(UParser *p) {
 UAstNode *parse_throw(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_THROW */
 
-    UAstNode *value = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): `throw EXPR | rest` should parse as
+     * `(throw EXPR) | rest` per legacy aldebaran-urbi convention (see
+     * aldebaran-urbi/tests/2.x/urbistyle.chk for `throw Exception.new(...) |`
+     * patterns).  Same root cause as MEMBER_SET / var-decl / local-assign
+     * fixes: parse_inner_tier would absorb the pipe into the throw value. */
+    UAstNode *value = parse_expression(p, 0);
     if (!value) return (UAstNode *)&uparser_oom_sentinel;
     if (value->kind == AST_ERROR) return value;
 
