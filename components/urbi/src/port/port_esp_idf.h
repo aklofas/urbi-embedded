@@ -15,8 +15,26 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* FreeRTOS header pulled in so StackType_t is in scope for the
+ * URBI_STACK_WORDS default below and for embedders that declare static
+ * stack buffers (StackType_t[]) in their app_main. */
+#include "freertos/FreeRTOS.h"
+
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/* URBI_STACK_WORDS: size of the urbi task's stack in StackType_t words.
+ * Default is 8 KB / sizeof(StackType_t).  Embedders override via -D at
+ * build time when they need a different stack budget.
+ *
+ * Exposed here (rather than file-local in port_freertos_task.c) so
+ * app_main can declare a matching `static StackType_t buf[URBI_STACK_WORDS]`
+ * for xTaskCreateStatic.  The matching default lives in port_freertos_task.c;
+ * both #ifndef guards see the same effective value because this header is
+ * included before that TU is compiled. */
+#ifndef URBI_STACK_WORDS
+#  define URBI_STACK_WORDS  (8U * 1024U / sizeof(StackType_t))
 #endif
 
 /* PSRAM-backed allocator hook.  Signature matches UVMAllocFn
