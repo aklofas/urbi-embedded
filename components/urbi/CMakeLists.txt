@@ -68,12 +68,16 @@ idf_component_register(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    -std=c99 -Wall -Wextra -Wpedantic -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_module_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
-    # ESP-IDF defaults to -Werror; the urbi sources use _Static_assert (a GCC
-    # extension under C99, standard in C11). Keep the diagnostic visible as a
-    # warning but don't fatal-fail the build. The host Makefile uses -Wpedantic
-    # without -Werror and so accepts these silently.
-    -Wno-error=pedantic
+    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_module_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
+    # -Wpedantic is intentionally OFF for the urbi component on ESP-IDF.  Three
+    # sources of unfixable noise flood the build log otherwise (hundreds of
+    # lines, drowning serial output during on-device debugging):
+    #   1. _Static_assert (C11, not C99) — used everywhere for layout pins
+    #   2. #include_next — from ESP-IDF's OWN platform_include/{assert,stdio,time}.h
+    #   3. computed goto + address-of-label — deliberate perf opt in src/vm/uvm.c
+    # Host Makefile keeps -Wpedantic on (without -Werror) for new-code review,
+    # but the IDF build path treats it as cosmetic noise.
+    -Wno-pedantic
 )
 
 # Port-glue TUs that include ESP-IDF headers (esp_log.h, esp_timer.h, etc.)

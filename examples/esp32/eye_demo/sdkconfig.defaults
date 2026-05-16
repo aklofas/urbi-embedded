@@ -35,7 +35,7 @@ CONFIG_FREERTOS_HZ=100
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# === esp_video DVP video device + OV2640 driver =====================
+# --- esp_video DVP video device + OV2640 driver ---------------------
 #
 # Enables the DVP-attached `/dev/video2` node (ESP_VIDEO_DVP_DEVICE_NAME)
 # in esp_video, and pulls in the OV2640 driver from esp_cam_sensor with
@@ -47,15 +47,13 @@ CONFIG_CAMERA_OV2640=y
 CONFIG_CAMERA_OV2640_DVP_RGB565_240X240_25FPS=y
 CONFIG_CAMERA_OV2640_DVP_DEFAULT_FMT_RGB565_240X240_25FPS=y
 
-# === Camera runtime gate =============================================
+# --- Camera runtime gate --------------------------------------------
 #
 # Disabled by default on this preset because the affected silicon (S3
 # chip rev v0.1) + ESP-IDF v6.0.1 combo crashes inside esp_intr_alloc
-# → find_desc_for_source at intr_alloc.c:192 (LoadProhibited) the moment
-# i2c_new_master_bus is called — reproduces identically with esp_video,
-# esp32-camera sccb-ng, and esp32-camera legacy sccb paths.  Documented
+# → find_desc_for_source at intr_alloc.c:192 (LoadProhibited) on ANY
+# call site (i2c, SPI display, etc) — not camera-specific.  Documented
 # as known-issue in docs/urbi-embedded-design-risks.md.  Re-enable on
 # hardware that doesn't reproduce the bug:
 #   idf.py menuconfig → Eye Demo Configuration → [*] Enable camera
-# Display, button, reactive at-watcher, and urbi VM all run regardless.
 CONFIG_EYE_DEMO_ENABLE_CAMERA=n

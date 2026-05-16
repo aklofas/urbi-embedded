@@ -108,8 +108,8 @@ static rgb565_target_t    target     = { .r = 31, .g = 0, .b = 0, .tol = 4 };
 static portMUX_TYPE       target_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static int                cam_fd = -1;
-static uint8_t           *cam_buffers[BUFFER_COUNT];
 #if CONFIG_EYE_DEMO_ENABLE_CAMERA
+static uint8_t           *cam_buffers[BUFFER_COUNT];
 static uint32_t           cam_buffer_sizes[BUFFER_COUNT];
 static uint32_t           cam_width;
 static uint32_t           cam_height;
