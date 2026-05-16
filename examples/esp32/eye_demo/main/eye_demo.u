@@ -29,6 +29,23 @@ Realm.idx      = 0;
 Realm.next_idx = List.new(1, 2, 0);
 Realm.blob_count = 0;
 
+// PROBE: log the colors list state IMMEDIATELY after construction so
+// we can see whether List.new(Color.new()...) produced 3 distinct
+// instances or 3 aliased references on this build.  Each line shows
+// the .name of the slot at that index — should print RED, GREEN, BLUE.
+log("PROBE colors.get(0).name =", Realm.colors.get(0).name);
+log("PROBE colors.get(1).name =", Realm.colors.get(1).name);
+log("PROBE colors.get(2).name =", Realm.colors.get(2).name);
+
+// Also probe via a pre-bound var to isolate "list lookup at chunk-top"
+// from "list lookup inside body strand".
+Realm.tmp0 = Realm.colors.get(0);
+Realm.tmp1 = Realm.colors.get(1);
+Realm.tmp2 = Realm.colors.get(2);
+log("PROBE tmp0.name =", Realm.tmp0.name);
+log("PROBE tmp1.name =", Realm.tmp1.name);
+log("PROBE tmp2.name =", Realm.tmp2.name);
+
 log("eye_demo (DIAG) loaded - idx=", Realm.idx);
 
 // === BLOB SEEN — unchanged ============================================
