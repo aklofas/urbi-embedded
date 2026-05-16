@@ -654,7 +654,7 @@ void urbi_atomic_end(struct UVM *vm);
  *
  * Callback is invoked from urbi_watcher_body_completed after internal
  * cleanup (back-pointers cleared) and before any re-spawn triggered by
- * URBI_WATCHER_PENDING_REFIRE.  For script-side watchers the handle is
+ * the pending_refire_count queue.  For script-side watchers the handle is
  * always 0 (URBI_WATCHER_HANDLE_INVALID); for host-side watchers (Gap J)
  * it matches the handle returned by urbi_register_watcher.
  * completion_status mirrors the strand's fatal_status (UEXEC_OK / THROW /

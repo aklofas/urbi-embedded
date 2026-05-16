@@ -21,7 +21,7 @@
  *   function when w->body != NULL).
  *
  * respawn_body_coroutine: completion-path entry (spec #1 §5.2).
- *   Called when a body strand reaches DEAD and PENDING_REFIRE is set.
+ *   Called when a body strand reaches DEAD and pending_refire_count > 0.
  *   Shares do_spawn_body_coroutine but omits the in_watcher_eval assert
  *   (completion path runs outside eval, after strand-DEAD notification).
  *   Static in production builds; tests reach it via extern declaration. */
@@ -65,10 +65,25 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
     URBI_ASSERT_NOT_ISR(vm);
 
     /* Step 1 (spec #1 §5.3 step 1): exhaust-policy gate.
-     * If a body strand is already running, cap depth at 1. */
+     * If a body strand is already running, queue a pending refire (bounded
+     * by w->max_refire_queue) or drop, depending on exhaust_policy.
+     *
+     * The counter is incremented up to the cap; firings beyond the cap are
+     * silently dropped — same end-state as URBI_EXHAUST_DROP for the
+     * excess events.  At body completion, urbi_watcher_body_completed
+     * decrements the counter and respawns once; this drains the queue at
+     * the pace of body execution.  Counter started life as a single
+     * URBI_WATCHER_PENDING_REFIRE flag bit and was widened in v0.7.x to
+     * a uint8_t to fix the "delta-2-per-drain" cap that surfaced when
+     * uevent_ring_drain delivered a burst of N events in a single pass. */
     if (w->body_strand != NULL) {
         if (w->exhaust_policy == URBI_EXHAUST_QUEUE) {
-            w->flags |= URBI_WATCHER_PENDING_REFIRE;
+            if (w->pending_refire_count < w->max_refire_queue) {
+                w->pending_refire_count++;
+            }
+            /* else: silent saturation; next refire happens on drain via
+             * the queued bodies that DO get to run.  An overflow counter
+             * could go here in the future for embedder-visible diagnostics. */
         }
         /* URBI_EXHAUST_DROP: silent drop — fall through to return. */
         return;
@@ -233,11 +248,11 @@ urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s)
     }
 
     if ((w->flags & URBI_WATCHER_PENDING_UNREGISTER) != 0) {
-        w->flags &= (uint8_t)~URBI_WATCHER_PENDING_REFIRE;
+        w->pending_refire_count = 0;
         return;
     }
-    if ((w->flags & URBI_WATCHER_PENDING_REFIRE) != 0) {
-        w->flags &= (uint8_t)~URBI_WATCHER_PENDING_REFIRE;
+    if (w->pending_refire_count > 0) {
+        w->pending_refire_count--;
         respawn_body_coroutine(vm, w);
     }
 }

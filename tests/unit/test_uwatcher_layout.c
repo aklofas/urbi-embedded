@@ -3,7 +3,10 @@
  *
  * Checks:
  *   - realm and body_strand fields are present and pointer-sized.
- *   - URBI_WATCHER_PENDING_REFIRE == 0x08U.
+ *   - pending_refire_count / max_refire_queue uint8_t fields are present
+ *     and addressable (formerly a single URBI_WATCHER_PENDING_REFIRE flag
+ *     bit; widened in v0.7.x to a bounded counter to fix the per-drain
+ *     event-loss cap — see docs/superpowers/specs/.../m5-reactive.md §3.2).
  *   - sizeof(UWatcher) >= 216 at the default preset (READSET_MAX=16). */
 
 #include "utest.h"
@@ -15,10 +18,11 @@ static void uwatcher_spec1_fields(void)
     /* Compile-time field presence checks: assignment must compile. */
     w.realm       = NULL;
     w.body_strand = NULL;
-    /* Flag assignment must compile. */
-    w.flags |= URBI_WATCHER_PENDING_REFIRE;
-    /* Flag value per spec #1 §3.2. */
-    UASSERT_EQ((unsigned)URBI_WATCHER_PENDING_REFIRE, 0x08U);
+    /* Refire-queue field assignments must compile. */
+    w.pending_refire_count = 0U;
+    w.max_refire_queue     = URBI_WATCHER_REFIRE_QUEUE_DEFAULT;
+    /* Default cap value per uwatcher.h URBI_WATCHER_REFIRE_QUEUE_DEFAULT comment. */
+    UASSERT_EQ((unsigned)URBI_WATCHER_REFIRE_QUEUE_DEFAULT, 15U);
     /* spec #1 §4.1: two pointer fields added → sizeof grows by 16 B.
      * Pre-#1 default layout was 200 B + 8 B padding = 208 B; post-#1 ≥ 216 B. */
 #if URBI_WATCHER_READSET_MAX >= 16
@@ -27,13 +31,19 @@ static void uwatcher_spec1_fields(void)
     (void)w;
 }
 
-static void uwatcher_pending_refire_does_not_collide(void)
+static void uwatcher_refire_counter_fields(void)
 {
-    /* PENDING_REFIRE must not overlap with any existing flag bit. */
-    unsigned existing = URBI_WATCHER_ACTIVE
-                      | URBI_WATCHER_PENDING_UNREGISTER
-                      | URBI_WATCHER_FIRED_DURING_EVAL;
-    UASSERT((existing & URBI_WATCHER_PENDING_REFIRE) == 0U);
+    /* pending_refire_count must be uint8_t (0..255).  max_refire_queue
+     * caps it; verify counter cannot exceed cap by simulating the spawn-
+     * gate increment (without invoking the runtime). */
+    UWatcher w = {0};
+    w.max_refire_queue = 4;
+    for (int i = 0; i < 10; i++) {
+        if (w.pending_refire_count < w.max_refire_queue) {
+            w.pending_refire_count++;
+        }
+    }
+    UASSERT_EQ((unsigned)w.pending_refire_count, 4U);
 }
 
 static void uwatcher_spec2_fields(void)
@@ -78,8 +88,8 @@ test_uwatcher_layout_suite(void)
     printf("test_uwatcher_layout\n");
     utest_run("uwatcher_spec1_fields",
               uwatcher_spec1_fields);
-    utest_run("uwatcher_pending_refire_does_not_collide",
-              uwatcher_pending_refire_does_not_collide);
+    utest_run("uwatcher_refire_counter_fields",
+              uwatcher_refire_counter_fields);
     utest_run("uwatcher_spec2_fields",
               uwatcher_spec2_fields);
     utest_run("uwatcher_spec3_fields",

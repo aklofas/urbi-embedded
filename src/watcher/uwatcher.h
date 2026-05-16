@@ -52,7 +52,9 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 #define URBI_WATCHER_ACTIVE                    0x01U  /* installed and live */
 #define URBI_WATCHER_PENDING_UNREGISTER        0x02U  /* stop requested; drain before free */
 #define URBI_WATCHER_FIRED_DURING_EVAL         0x04U  /* condition fired while eval in progress */
-#define URBI_WATCHER_PENDING_REFIRE            0x08U  /* fire arrived while body running; re-spawn at completion (spec #1 §3.2) */
+/* 0x08U — reserved (formerly URBI_WATCHER_PENDING_REFIRE; replaced by the
+ * pending_refire_count + max_refire_queue uint8_t fields below — see the
+ * URBI_WATCHER_REFIRE_QUEUE_DEFAULT discussion).  Available for reuse. */
 #define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10U  /* body fired at least once since last onleave check (spec #2 §5.1) */
 /* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime
  * when strand_closure_unlink confirms the heap closure was on strand.closure_list
@@ -69,13 +71,39 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
 #define URBI_EXHAUST_QUEUE  0   /* queue firings (default) */
 #define URBI_EXHAUST_DROP   1   /* drop if body is still running */
 
+/* URBI_WATCHER_REFIRE_QUEUE_DEFAULT: per-watcher max pending refires under
+ * URBI_EXHAUST_QUEUE policy.  Each event arriving while a body is in flight
+ * increments pending_refire_count up to this cap; firings beyond the cap
+ * are silently dropped (same end-state as URBI_EXHAUST_DROP for the excess
+ * events).  At body completion, if the counter is positive, ONE respawn
+ * happens and the counter is decremented; this drains the queue at the
+ * pace of body execution.
+ *
+ * Default 15 matches URBI_EVENT_RING_DEPTH-1: a full SPSC ring's worth of
+ * pending events can be drained in one urbi_step pass without any loss
+ * under typical eye_demo-shaped loads (5-25 Hz emit, ~100µs bodies).
+ *
+ * Tuning guidance:
+ *   - Fast bodies, bursty events (camera frames, sensor reads): keep 15.
+ *   - Slow bodies (>10 ms), bursty events: lower (e.g. 3) to bound latency.
+ *   - Bodies you genuinely want to throttle: use URBI_EXHAUST_DROP instead.
+ *
+ * Compile-time override only at present.  A per-watcher runtime API is
+ * tracked as a backlog item (urbi_watcher_set_max_refire_queue). */
+#ifndef URBI_WATCHER_REFIRE_QUEUE_DEFAULT
+#  define URBI_WATCHER_REFIRE_QUEUE_DEFAULT  15
+#endif
+
 /* === UWatcher struct (spec §5.1) ===
  *
  * Exact layout per pre-M3 tag-lifecycle-and-watcher-dirty-set-design.md §5.1.
  *
  * Size at default build (URBI_WATCHER_READSET_MAX=16):
  *   Header fields  : 8 B  (type_tag + gc_byte + mode + exhaust_policy +
- *                          flags + read_set_count + pad0)
+ *                          flags + read_set_count + pending_refire_count +
+ *                          max_refire_queue) — the trailing two bytes
+ *                          formerly held pad0 alignment padding; layout
+ *                          pin unchanged at 240 B.
  *   next_active    : 8 B
  *   next_in_tag    : 8 B
  *   owning_tag     : 8 B
@@ -106,7 +134,8 @@ typedef struct UWatcher {
     uint8_t   exhaust_policy;              /* 1 B  URBI_EXHAUST_QUEUE / _DROP (M5 dispatch) */
     uint8_t   flags;                       /* 1 B  URBI_WATCHER_ACTIVE / _PENDING_UNREGISTER / _FIRED_DURING_EVAL */
     uint8_t   read_set_count;              /* 1 B  number of valid entries in cells[] */
-    uint16_t  pad0;                        /* 2 B  align to 8 */
+    uint8_t   pending_refire_count;        /* 1 B  events queued while body in flight (0..max_refire_queue); see URBI_WATCHER_REFIRE_QUEUE_DEFAULT */
+    uint8_t   max_refire_queue;            /* 1 B  cap for pending_refire_count; init to URBI_WATCHER_REFIRE_QUEUE_DEFAULT */
 
     /* === Linked-list threading === */
     /* next_active doubles as the threading link for two mutually exclusive
@@ -242,7 +271,7 @@ void   do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w,
 void   spawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
 
 /* respawn_body_coroutine: completion-path entry (spec #1 §5.2).
- * Called when body strand reaches DEAD and PENDING_REFIRE is set.
+ * Called when body strand reaches DEAD and pending_refire_count > 0.
  * No in_watcher_eval assert (runs outside eval at strand-DEAD notification).
  * Not in the public include/urbi/ API; declared here for internal callers
  * and test code (reachable via this header or an explicit extern declaration). */
@@ -255,8 +284,8 @@ void   respawn_body_coroutine(struct UVM *vm, struct UWatcher *w);
  *   - Recovers w from s->watcher_body_owner (DEBUG-asserts non-NULL).
  *   - Logs URBI_LOG_WARN on UEXEC_THROW; silent for TAG_STOP/CANCEL/OK.
  *   - Clears both s->watcher_body_owner and w->body_strand atomically.
- *   - If PENDING_UNREGISTER: clears PENDING_REFIRE and returns (no respawn).
- *   - Else if PENDING_REFIRE: clears flag and calls respawn_body_coroutine. */
+ *   - If PENDING_UNREGISTER: zeroes pending_refire_count and returns (no respawn).
+ *   - Else if pending_refire_count > 0: decrements counter and calls respawn_body_coroutine. */
 void urbi_watcher_body_completed(struct UVM *vm, struct UStrand *s);
 
 /* === GC root provider (uwatcher_gc.c) === */
