@@ -77,3 +77,20 @@ static void camera_task_body(void *arg)
         display_post_frame(fb);
     }
 }
+
+void eye_camera_init(struct UVM *vm, urbi_event_id_t ev_blob)
+{
+    cam_vm      = vm;
+    cam_ev_blob = ev_blob;
+
+    ESP_ERROR_CHECK(esp_camera_init(&cam_config));
+
+    /* Static-allocated stack + TCB keep the camera task off the heap;
+     * 4 KB is enough for the inline detect_blob loop (no recursion,
+     * small frame).  Pinned to core 0 so it co-schedules cooperatively
+     * with the urbi VM task per spec §5.1. */
+    static StackType_t  cam_stack[4096 / sizeof(StackType_t)];
+    static StaticTask_t cam_tcb;
+    xTaskCreateStaticPinnedToCore(camera_task_body, "cam", 4096, NULL,
+                                  tskIDLE_PRIORITY + 1, cam_stack, &cam_tcb, 0);
+}
