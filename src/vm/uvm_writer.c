@@ -107,6 +107,24 @@ urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud)
     }
 }
 
+/* urbi_set_diag_fn: install the runtime diagnostic channel callback.
+ *
+ * Distinct from urbi_set_writer (script-side I/O sink); this wires the
+ * host_log_fn the runtime invokes for body throws, spawn OOM, watchdog
+ * warnings, etc.  See the typedef + design rationale at
+ * include/urbi/urbi.h "Runtime diagnostic channel".
+ *
+ * Default is NULL — runtime diagnostics are silently dropped unless
+ * the embedder installs a callback.  Pass NULL to uninstall.
+ *
+ * NULL vm is a no-op. */
+void
+urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn)
+{
+    if (!vm) return;
+    vm->host_log_fn = fn;
+}
+
 /* urbi_vm_write: emit msg to channel through the installed writer.
  * If no writer has been installed, uses the default_writer.
  * ts_us is fetched from vm->host_time_us() when available.

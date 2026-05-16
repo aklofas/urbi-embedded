@@ -568,6 +568,43 @@ typedef void (*urbi_writer_fn)(void *ud,
 
 void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
 
+/* === Runtime diagnostic channel (v0.7.3 / S41) ===
+ *
+ * urbi_diag_fn: callback invoked by the runtime itself for internal
+ *   diagnostic events — body throw, watcher-spawn OOM, ambient-attach
+ *   overflow, callback watchdog warnings, etc.  Distinct from
+ *   urbi_writer_fn above (the script-side I/O sink for `print` /
+ *   `Stream.write` and any embedder-registered `log` host fn): this
+ *   channel is the runtime reporting ON ITSELF.  Naming carries the
+ *   `diag` prefix specifically to avoid confusion with the script-side
+ *   `log` host fns embedders typically register via urbi_register.
+ *
+ *   vm    — the originating VM.
+ *   level — URBI_LOG_DEBUG / INFO / WARN / ERROR (see ULogLevel below;
+ *           levels are shared with any future script-side log channel
+ *           since the levels are universal, only the SINK differs).
+ *   fmt   — printf-style format string.  Today's callers pass fixed
+ *           strings only, but the variadic surface reserves room for
+ *           future formatted reports; embedders should be ready to
+ *           vsnprintf this in their shim.
+ *
+ * Default is NULL — runtime diagnostics are silently dropped unless
+ * the embedder installs a callback.  Pass NULL to urbi_set_diag_fn to
+ * uninstall.  An aux helper `urbi_aux_diag_to_stderr` is available in
+ * <urbi/aux.h> for hosted builds with no platform log system.
+ *
+ * Thread safety: MAIN.  The runtime never invokes this from ISR context
+ * — ring-deposited events surface via the drain on the main thread,
+ * where this callback fires.
+ *
+ * Naming: the `_fn` suffix matches the v0.7.1 setter pattern for
+ * verb-/concept-callbacks (urbi_set_wake_fn, urbi_set_isr_check_fn).
+ * Lua precedent: lua_setwarnf (Lua 5.4).  SQLite precedent:
+ * sqlite3_config(SQLITE_CONFIG_LOG, ...). */
+typedef void (*urbi_diag_fn)(struct UVM *vm, int level, const char *fmt, ...);
+
+void urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn);
+
 /* urbi_vm_write: write `msg[0..msg_len)` to `channel[0..channel_len)` on `vm`.
  *
  * Routes through the installed urbi_writer_fn (or the default writer if none
@@ -733,7 +770,11 @@ int urbi_unregister_watcher(struct UVM *vm, urbi_watcher_handle_t handle);
 
 /* === T19: ISR-safety assertions + URBI_DEBUG callback watchdog ===
  *
- * URBI_LOG_* — log level constants for host_log_fn callback.
+ * URBI_LOG_* — log level constants for the urbi_diag_fn callback
+ *   (installed via urbi_set_diag_fn).  Named LOG_* because levels are
+ *   universal — same values would apply to any future script-side log
+ *   channel — even though today they're only consumed by the runtime
+ *   diagnostic channel.
  * URBI_WATCHDOG_* — watchdog mode: warn or assert on slow callbacks.
  * UHostFn — typedef for host-callable C functions invoked by OP_CALL.
  * urbi_panic — fatal runtime error; aborts on hosted builds.

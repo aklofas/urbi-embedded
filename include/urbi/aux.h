@@ -170,6 +170,27 @@ int urbi_aux_load_and_run(struct UVM *vm,
 int urbi_aux_dump_value(struct UVM *vm, UValue v,
                          char *out_buf, size_t buf_size);
 
+/* === urbi_aux_diag_to_stderr ===========================================
+ *
+ * Default-shaped urbi_diag_fn callback for hosted builds.  Embedders who
+ * don't have a platform log system can pass this directly to
+ * urbi_set_diag_fn:
+ *
+ *     urbi_set_diag_fn(vm, urbi_aux_diag_to_stderr);
+ *
+ * Formats the message with a "[urbi level=N] " prefix and a trailing
+ * newline, then writes to stderr via fputs.  No allocation, no
+ * dependencies beyond <stdio.h>.  Truncates at 256 bytes — long
+ * runtime messages are rare and not the place for unbounded buffers.
+ *
+ * Freestanding builds: not available (uses stderr).  Embedders without
+ * a libc should wire urbi_set_diag_fn to a platform-specific shim
+ * (e.g., port_diag_to_esp on ESP-IDF).
+ *
+ * Signature matches urbi_diag_fn — see <urbi/urbi.h> for the
+ * level convention (URBI_LOG_DEBUG/INFO/WARN/ERROR). */
+void urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...);
+
 #ifdef __cplusplus
 }
 #endif

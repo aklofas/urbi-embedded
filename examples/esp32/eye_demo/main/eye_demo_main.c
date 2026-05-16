@@ -11,6 +11,7 @@
  */
 
 #include <stddef.h>      /* size_t */
+#include <stdint.h>      /* uint32_t */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,7 @@
  * the type.  Per docs/embedding-guide.md §"Allocating the VM" the
  * canonical pattern is `#include "vm/uvm.h"` from src/. */
 #include "vm/uvm.h"
+#include "event/uevent_ring.h"   /* TEMP diag: UEventRing.overflow_count access */
 
 #include "port_esp_idf.h"
 
@@ -106,20 +108,61 @@ int c_log(struct UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
  * Thread safety: MAIN (called from the safepoint drain on the urbi task,
  * NOT from ISR context — the ring queues the raw bytes; this fn runs at
  * the next urbi_step). */
+/* TEMP diag counters — defined here (file-scope) and used by the camera
+ * task (eye_camera.c) + the stats task (port_urbi_stats_task below).
+ * Strip before ship. */
+volatile uint32_t g_cam_frames        = 0;
+volatile uint32_t g_cam_injects       = 0;
+volatile uint32_t g_destruct_blob_n   = 0;
+
 static int destructure_blob(struct UVM *vm,
                             const urbi_event_payload_t *payload,
                             size_t payload_len,
                             UValue *out_args, int max_args, void *ud)
 {
-    (void)vm;
     (void)ud;
+    g_destruct_blob_n++;
     if (max_args < 3 || payload_len < 12 || payload == NULL || out_args == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    out_args[0] = urbi_make_int((int64_t)payload->u32[0]);
-    out_args[1] = urbi_make_int((int64_t)payload->u32[1]);
-    out_args[2] = urbi_make_int((int64_t)payload->u32[2]);
+    UValue v_x    = urbi_make_int((int64_t)payload->u32[0]);
+    UValue v_y    = urbi_make_int((int64_t)payload->u32[1]);
+    UValue v_area = urbi_make_int((int64_t)payload->u32[2]);
+
+    out_args[0] = v_x;
+    out_args[1] = v_y;
+    out_args[2] = v_area;
+
+    /* Side-effect: ALSO write the destructured values to Realm globals so
+     * script-side at-handlers can read them.  Required because v0.7.1's
+     * async event delivery does not thread the destructured payload into
+     * the body strand's R[0] (design-risks row 14) — the eye_demo at-body
+     * uses `Realm.last_blob_x` / `_y` to access the values from the safe
+     * Realm-slot path instead.  Slot writes are safe here: destructure_blob
+     * runs on the urbi task at safepoint drain, not in ISR context. */
+    struct URealm *r = urbi_realm_global(vm);
+    if (r != NULL) {
+        urbi_realm_set_global(vm, r, "last_blob_x",    11U, v_x);
+        urbi_realm_set_global(vm, r, "last_blob_y",    11U, v_y);
+        urbi_realm_set_global(vm, r, "last_blob_area", 14U, v_area);
+    }
     return 3;
+}
+
+/* TEMP diag: destructure_button — logs every time the safepoint drain
+ * processes a button_pressed event.  Returns 0 args (button payload is
+ * empty; at-handler bodies take no args).  Strip before ship. */
+static int destructure_button(struct UVM *vm,
+                              const urbi_event_payload_t *payload,
+                              size_t payload_len,
+                              UValue *out_args, int max_args, void *ud)
+{
+    (void)vm; (void)payload; (void)payload_len;
+    (void)out_args; (void)max_args; (void)ud;
+    static uint32_t s_drain_count = 0;
+    ESP_LOGI(TAG, ">>> safepoint drain: button_pressed (drain=%u)",
+             (unsigned)++s_drain_count);
+    return 0;
 }
 
 /* === app_main: canonical 7-step boot order =====================
@@ -170,6 +213,12 @@ void app_main(void)
     int rc = urbi_vm_init(&vm, port_psram_alloc, NULL);
     ESP_ERROR_CHECK(rc == URBI_OK ? ESP_OK : ESP_FAIL);
 
+    /* Route runtime diagnostic messages (URBI_LOG_WARN body throws, spawn
+     * OOM, watchdog warnings, etc.) through the ESP_LOG facility under
+     * the "urbi-runtime" tag.  Distinct from urbi_set_writer below, which
+     * wires the script-side I/O sink. */
+    urbi_set_diag_fn(&vm, port_diag_to_esp);
+
     /* Step 3: install port hooks (writer / time / wake).  The wake_fn
      * binding takes the address of urbi_task_handle so the wake callback
      * can dispatch xTaskNotifyGiveFromISR to the urbi task once spawned
@@ -188,8 +237,18 @@ void app_main(void)
 
     urbi_event_id_t ev_blob = urbi_event_register(&vm, r, "blob_seen",
                                                   destructure_blob, NULL);
+    /* TEMP diag: register destructure_button so we can see whether the
+     * urbi safepoint drain ever processes button-pressed events at all
+     * (vs being dropped at the ring level).  Compare with the existing
+     * ">>> ISR: BOOT button fired" log from button_isr to bisect:
+     *   - ISR log AND destructure log → event reaches the drain; if no
+     *     subsequent log("RED"/"GREEN"/"BLUE") appears, the at-handler
+     *     chain itself is the bug
+     *   - ISR log but NO destructure log → event is being dropped
+     *     between urbi_inject_event and the safepoint drain
+     * Strip before ship. */
     urbi_event_id_t ev_btn  = urbi_event_register(&vm, r, "button_pressed",
-                                                  NULL, NULL);
+                                                  destructure_button, NULL);
     ESP_ERROR_CHECK(ev_blob != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
     ESP_ERROR_CHECK(ev_btn  != URBI_EVENT_ID_INVALID ? ESP_OK : ESP_FAIL);
 
@@ -211,11 +270,20 @@ void app_main(void)
     ESP_ERROR_CHECK(urbi_load_module(&vm, m, "eye_demo") == URBI_OK ? ESP_OK : ESP_FAIL);
 
     /* Step 6: peripherals.  Each init spawns its own pinned FreeRTOS task
-     * (camera on core 0, display on core 1) and stashes the (vm, ev) pair
+     * (display on core 1, camera on core 0) and stashes the (vm, ev) pair
      * for ISR-time use.  Must run after event registration so the ev_*
-     * ids are valid. */
-    eye_camera_init(&vm, ev_blob);
+     * ids are valid.
+     *
+     * Order matters: eye_display_init() MUST run before eye_camera_init()
+     * because the camera task is pinned to core 0 at the same priority as
+     * main_task; once spawned, FreeRTOS round-robins them, and the camera
+     * task's first DQBUF + display_post_frame happens before main_task
+     * gets back to eye_display_init().  Display's frame_q would still be
+     * NULL at that point, and xQueueSend(NULL) asserts in FreeRTOS.
+     * Initialize the consumer side (display + frame_q) first; once camera
+     * starts producing, the consumer is ready. */
     eye_display_init();
+    eye_camera_init(&vm, ev_blob);
     button_install_isr(&vm, ev_btn);
 
     /* Step 7: spawn the urbi task pinned to core 0 (co-scheduling with
@@ -227,4 +295,24 @@ void app_main(void)
     ESP_ERROR_CHECK(urbi_task_handle != NULL ? ESP_OK : ESP_FAIL);
 
     ESP_LOGI(TAG, "boot complete: urbi task spawned (handle=%p)", (void *)urbi_task_handle);
+
+    /* TEMP diag: periodic stats dump every 3 s.  Lets us see whether
+     * camera/destructure/at-handler are still firing after a wedge.
+     * Strip before ship. */
+    extern volatile uint32_t g_crosshair_call_count;  /* eye_display.c */
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        UEventRing *ring = vm.event_ring;
+        ESP_LOGI(TAG, "STATS: cam_frames=%u cam_injects=%u "
+                       "destruct_blob=%u crosshair=%u ring_overflow=%u "
+                       "strand_runnable=%u watcher_in_use=%u/%u",
+                 (unsigned)g_cam_frames,
+                 (unsigned)g_cam_injects,
+                 (unsigned)g_destruct_blob_n,
+                 (unsigned)g_crosshair_call_count,
+                 (unsigned)(ring ? ring->overflow_count : 0U),
+                 (unsigned)vm.strand_runnable_count,
+                 (unsigned)vm.watcher_pool_in_use,
+                 (unsigned)vm.watcher_pool_high_water);
+    }
 }

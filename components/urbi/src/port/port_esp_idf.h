@@ -24,6 +24,12 @@
 extern "C" {
 #endif
 
+/* Forward declaration so the runtime-diag callback signature compiles
+ * without dragging the full urbi public API into every TU that uses
+ * port glue.  Embedders that actually call urbi_set_diag_fn will
+ * #include <urbi/urbi.h> for the setter itself anyway. */
+struct UVM;
+
 /* URBI_STACK_WORDS: size of the urbi task's stack in StackType_t words.
  * Default is 8 KB / sizeof(StackType_t).  Embedders override via -D at
  * build time when they need a different stack budget.
@@ -82,6 +88,17 @@ void port_urbi_task_body(void *arg);
  * xPortInIsrContext + vTaskNotifyGiveFromISR + portYIELD_FROM_ISR).
  * Install via urbi_set_wake_fn(vm, port_wake_from_inject, &urbi_task_handle). */
 void port_wake_from_inject(void *ud);
+
+/* Runtime diagnostic channel routed to ESP_LOG.  Signature matches
+ * urbi_diag_fn (include/urbi/urbi.h) — pass directly to urbi_set_diag_fn.
+ * Maps URBI_LOG_DEBUG/INFO/WARN/ERROR to ESP_LOGI/I/W/E with the
+ * "urbi-runtime" tag.  vsnprintf into a 192-byte stack buffer; truncates
+ * silently past that.
+ *
+ * Without this (or some equivalent), the runtime's URBI_LOG_WARN messages
+ * — watcher body throws, spawn OOM, watchdog warnings — drop on the floor
+ * because the host_log_fn default is NULL with no script-side sink. */
+void port_diag_to_esp(struct UVM *vm, int level, const char *fmt, ...);
 
 #ifdef __cplusplus
 }

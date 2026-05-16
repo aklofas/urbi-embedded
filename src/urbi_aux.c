@@ -239,3 +239,32 @@ urbi_aux_dump_value(struct UVM *vm, UValue v,
         return snprintf(out_buf, buf_size, "?");
     }
 }
+
+/* === urbi_aux_diag_to_stderr ============================================
+ *
+ * Hosted-build default for urbi_set_diag_fn — vsnprintf the runtime
+ * message into a fixed buffer, prepend a level tag, write to stderr.
+ *
+ * Truncates silently at 256 bytes; the runtime's existing diag call
+ * sites all use fixed short strings, so this is plenty.  Long
+ * formatted reports are a future-design concern, not today's. */
+void
+urbi_aux_diag_to_stderr(struct UVM *vm, int level, const char *fmt, ...)
+{
+    (void)vm;
+    static const char *const tag_for_level[] = {
+        "debug", "info", "warn", "error",
+    };
+    const char *tag = (level >= 0 && level <= 3)
+                    ? tag_for_level[level]
+                    : "?";
+
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    (void)n;   /* truncation accepted silently */
+
+    fprintf(stderr, "[urbi %s] %s\n", tag, buf);
+}

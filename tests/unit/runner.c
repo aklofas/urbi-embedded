@@ -198,6 +198,7 @@ extern void test_tag_info_suite(void);
 extern void test_set_writer_suite(void);
 extern void test_set_time_us_suite(void);
 extern void test_set_wake_fn_suite(void);
+extern void test_set_diag_fn_suite(void);
 extern void test_register_host_fn_suite(void);
 extern void test_register_dup_name_suite(void);
 extern void test_atomic_batch_suite(void);
@@ -401,6 +402,7 @@ static const struct suite_entry suites[] = {
     {"set_writer",             test_set_writer_suite},
     {"set_time_us",            test_set_time_us_suite},
     {"set_wake_fn",            test_set_wake_fn_suite},
+    {"set_diag_fn",            test_set_diag_fn_suite},
     {"register_host_fn",      test_register_host_fn_suite},
     {"register_dup_name",     test_register_dup_name_suite},
     {"atomic_batch",          test_atomic_batch_suite},
