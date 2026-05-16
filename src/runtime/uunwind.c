@@ -127,7 +127,28 @@ pop_call_frame(UStrand *s)
     /* Restore caller's register window, instruction pointer, and constant pool. */
     s->R       = done->base;
     s->pc      = done->pc + 1;   /* advance past the OP_CALL instruction */
-    s->pc_base = s->module->instructions;
+    /* Restore the caller's pc_base.  Three cases mirror the cur_consts /
+     * origin_nested fallback chain used by ustrand_consts_for_closure +
+     * OP_CLOSURE:
+     *   - frame_count > 0  : returning into an outer call frame; use that
+     *                        closure's proto instructions
+     *   - module != NULL   : returning to chunk-top of a chunk-top strand
+     *   - entry_closure    : returning to root of a non-chunk strand
+     *                        (e.g. watcher body strand — s->module is NULL
+     *                        for body strands; task #23, 2026-05-16).
+     *
+     * Each branch NULL-guards the chain so test mocks that leave closure /
+     * module / entry_closure unset (e.g. test_unwind's hand-built strands
+     * setting frames[i].closure = NULL) fall through to the next source. */
+    if (s->frame_count > 0
+        && s->frames[s->frame_count - 1].closure != NULL
+        && s->frames[s->frame_count - 1].closure->proto != NULL) {
+        s->pc_base = s->frames[s->frame_count - 1].closure->proto->instructions;
+    } else if (s->module != NULL) {
+        s->pc_base = s->module->instructions;
+    } else if (s->entry_closure != NULL && s->entry_closure->proto != NULL) {
+        s->pc_base = s->entry_closure->proto->instructions;
+    }
     /* FOUND-032: route through the shared helper so the OP_CALL rule and the
      * pop-frame rule cannot drift. */
     {
@@ -238,17 +259,32 @@ urbi_unwind(UStrand *s)
     if (s->pending_unwind == UEXEC_OK)
         return;
 
-    /* Backward-compat direct-pop path (mirrors T8 bridging stub):
-     * When there is no CALL_FRAME cleanup entry (cleanup_depth == 0) but
-     * we have a RETURN pending and are inside a call (frame_count > 0),
-     * pop the frame directly without walking the cleanup stack.
-     * T11 (OP_PUSH_FRAME_GUARD) will push CALL_FRAME entries; until then,
-     * this path ensures all M2/M3 function-return tests keep passing.
+    /* RETURN absorption (T11 / T8 bridging stub).
      *
-     * Note: if cleanup_depth > 0, the walker loop handles everything including
-     * CALL_FRAME entries (T11 forward). */
-    if (s->cleanup_depth == 0) {
-        if (s->pending_unwind == UEXEC_RETURN && s->frame_count > 0) {
+     * Two paths:
+     *   (a) T11-forward: a CALL_FRAME cleanup entry exists on the stack.
+     *       Let the walker run — it absorbs RETURN at the first CALL_FRAME
+     *       and runs the register-zeroing pass (Inv-5, row 7 §7.1).
+     *   (b) T11 deferred (today's production reality — no CALL_FRAME entries
+     *       are pushed by bytecode): use the backward-compat direct-pop
+     *       path REGARDLESS of cleanup_depth.  Earlier code gated direct-pop
+     *       on cleanup_depth == 0, so any RETURN through an at-body (which
+     *       carries a TAG_SCOPE entry) entered the walker, popped the
+     *       TAG_SCOPE without absorbing, and fell through to fatal: —
+     *       converting a legitimate return into a fatal_status (task #23,
+     *       surfaced 2026-05-16 when an at-body invoked a scripted method).
+     *
+     * RETURN crosses exactly one call-frame boundary; intervening tag /
+     * try scopes belong to the CALLER and must stay intact. */
+    if (s->pending_unwind == UEXEC_RETURN && s->frame_count > 0) {
+        int has_call_frame = 0;
+        for (uint16_t i = 0; i < s->cleanup_depth; i++) {
+            if (s->cleanup_base[i].kind == (uint8_t)UCLEANUP_CALL_FRAME) {
+                has_call_frame = 1;
+                break;
+            }
+        }
+        if (!has_call_frame) {
             UValue retval = s->unwind_value;
             int result_reg = s->frames[s->frame_count - 1].result_dest_reg;
             pop_call_frame(s);
@@ -257,6 +293,10 @@ urbi_unwind(UStrand *s)
             s->unwind_value   = nil;
             return;
         }
+        /* else fall through to walker — T11-forward absorbs at CALL_FRAME. */
+    }
+
+    if (s->cleanup_depth == 0) {
         /* Any other unwind with empty cleanup stack → fatal escalation. */
         goto fatal;
     }
