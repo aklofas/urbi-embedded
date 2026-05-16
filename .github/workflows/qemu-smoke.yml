@@ -1,0 +1,30 @@
+name: qemu-smoke
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  reactive-smoke:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.0.1
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build smoke
+        working-directory: tests/qemu/reactive_smoke
+        run: |
+          . /opt/esp/idf/export.sh
+          idf.py --preview set-target esp32s3
+          idf.py build
+      - name: Run smoke
+        working-directory: tests/qemu/reactive_smoke
+        run: |
+          . /opt/esp/idf/export.sh
+          ./run_smoke.sh
+      - name: Upload UART log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-uart-log
+          path: /tmp/urbi_qemu_uart.log
