@@ -781,6 +781,32 @@ cross-esp32s3-full:
 		AR=xtensa-esp-elf-ar \
 		all
 
+# T12 / Wave 2: ESP32-S3 bytecode-only freestanding-signature golden gate.
+# Tighter than the hardcoded-libc forbidden list in test-freestanding.sh:
+# pins the FULL set of truly-unresolved (archive-level) symbols against a
+# golden.  Any NEW unresolved symbol — even one not in the hardcoded list —
+# trips the gate, surfacing latent dependency drift (e.g. a newly-introduced
+# libgcc helper, or accidental leakage of time() / strncmp() / etc. behind
+# a missed __STDC_HOSTED__ guard).  To update the golden after verifying
+# intent: delete tests/golden/v0.7.2-esp32-nm-bytecode-only.txt and
+# re-run this target; the FAIL diff doubles as the regeneration command.
+# NOT wired into releasetest — toolchain availability isn't universal;
+# CI invokes this from the cross-compile workflow (see T13).
+.PHONY: test-cross-esp32s3-freestanding-golden
+test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
+	@xtensa-esp-elf-nm build/cross-esp32s3-bytecode-only/liburbi.a 2>/dev/null \
+	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
+	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
+	         END {for (s in undefined) if (!(s in defined)) print s}' \
+	  | sort -u > /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt
+	@diff -u tests/golden/v0.7.2-esp32-nm-bytecode-only.txt \
+	         /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt \
+	  && echo "PASS: cross-esp32s3-bytecode-only freestanding signature matches golden" \
+	  || { echo "FAIL: cross-esp32s3-bytecode-only freestanding signature drifted from golden." ; \
+	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
+	       echo "        cp /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt tests/golden/v0.7.2-esp32-nm-bytecode-only.txt" ; \
+	       exit 1 ; }
+
 # T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
 # liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
 # fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
@@ -979,4 +1005,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
