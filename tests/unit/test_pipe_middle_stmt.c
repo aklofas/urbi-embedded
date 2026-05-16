@@ -147,6 +147,78 @@ UTEST(pipe_three_slot_writes_in_at_body)
     urbi_vm_destroy(&vm);
 }
 
+/* === var-decl `=` RHS doesn't absorb pipe (S48-followup). =============
+ * Legacy spec: `var x = 1 | y = 2` parses as `(var x = 1) | (y = 2)`.
+ * See legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk for the
+ * `var n = 0 | {};` pattern. */
+UTEST(var_decl_pipe_does_not_absorb_rhs)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var x = 1 | var y = 2 | var z = 3",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue x = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "x", 1, &x));
+    UASSERT_EQ(1LL, x.v.i);
+
+    UValue y = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "y", 1, &y));
+    UASSERT_EQ(2LL, y.v.i);
+
+    UValue z = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "z", 1, &z));
+    UASSERT_EQ(3LL, z.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
+/* === local-var `=` RHS doesn't absorb pipe (S48-followup). =========== */
+UTEST(local_assign_pipe_does_not_absorb_rhs)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "var a = 0; var b = 0; var c = 0;"
+        "a = 10 | b = 20 | c = 30",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    UValue a = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "a", 1, &a));
+    UASSERT_EQ(10LL, a.v.i);
+
+    UValue b = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "b", 1, &b));
+    UASSERT_EQ(20LL, b.v.i);
+
+    UValue c = utest_e2e_make_nil();
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "c", 1, &c));
+    UASSERT_EQ(30LL, c.v.i);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module);
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_pipe_middle_stmt_suite(void)
 {
@@ -154,4 +226,8 @@ test_pipe_middle_stmt_suite(void)
               pipe_three_slot_writes_chunktop_passes);
     utest_run("pipe_middle_stmt: 3 at-body pipe writes all happen",
               pipe_three_slot_writes_in_at_body);
+    utest_run("pipe_middle_stmt: var-decl `=` RHS doesn't absorb pipe (S48-followup)",
+              var_decl_pipe_does_not_absorb_rhs);
+    utest_run("pipe_middle_stmt: local-assign `=` RHS doesn't absorb pipe (S48-followup)",
+              local_assign_pipe_does_not_absorb_rhs);
 }

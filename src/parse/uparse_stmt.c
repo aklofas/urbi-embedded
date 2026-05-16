@@ -46,7 +46,13 @@ UAstNode *parse_var_decl(UParser *p) {
     }
     consume(p);
 
-    UAstNode *init = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
+     * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
+     * `var x = 1 | y = 2` should parse as `(var x = 1) | (y = 2)` per
+     * legacy spec (see legacy/repos/aldebaran-urbi/tests/2.x/atomic.chk
+     * `var n = 0 | {};` pattern).  Pre-fix, parse_inner_tier absorbed
+     * the `|` into the init expression, producing nested wrong-AST. */
+    UAstNode *init = parse_expression(p, 0);
     if (!init) return NULL;
     if (init->kind == AST_ERROR) return init;
 
@@ -74,7 +80,11 @@ UAstNode *parse_assign_after_eq_peek(UParser *p, UToken name) {
     /* TOK_EQ already peeked/confirmed by caller; consume it. */
     consume(p);
 
-    UAstNode *value = parse_inner_tier(p);
+    /* S48-followup (2026-05-16): parse RHS as a Pratt expression, NOT
+     * parse_inner_tier — same root cause as the S48 fix to MEMBER_SET.
+     * `x = 1 | y = 2` should parse as `(x = 1) | (y = 2)`.  Without
+     * this fix, parse_inner_tier absorbs the `|` into the assign RHS. */
+    UAstNode *value = parse_expression(p, 0);
     if (!value) return NULL;
     if (value->kind == AST_ERROR) return value;
 
@@ -261,7 +271,7 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
      * Original urbi spec supports brace blocks in at-bodies, onleave
      * handlers, whenever bodies, and any inner-tier position (see
-     * legacy aldebaran-urbi/tests/2.x/at/*.chk for examples like
+     * legacy aldebaran-urbi/tests/2.x/at/ .chk files for examples like
      * `at (e?) { ... }`, `at (cond) { ... } onleave { ... }`).
      * Without this, the parser falls through to parse_inner_tier →
      * parse_expression which doesn't accept LBRACE as an expression
