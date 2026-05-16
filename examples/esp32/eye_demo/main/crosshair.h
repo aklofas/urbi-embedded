@@ -23,7 +23,7 @@
 static inline void draw_crosshair_into(uint16_t *fb, int w, int h,
                                        int cx, int cy)
 {
-    if (cx < 0 || cy < 0) return;
+    if (cx < 0 || cy < 0 || cx >= w || cy >= h) return;
     uint16_t color = 0xFFFF;  /* white */
     for (int dx = -8; dx <= 8; dx++)
         if (cx + dx >= 0 && cx + dx < w) fb[cy * w + cx + dx] = color;
