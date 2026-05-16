@@ -1,0 +1,14 @@
+# v0.7.2-esp32 ESP32-S3 footprint golden
+#
+# Captured by T58 at v0.7.2 ship.  Numbers are TEXT-section bytes from
+# `xtensa-esp-elf-size -t build/cross-esp32s3-*/liburbi.a`.
+#
+# Cap policy (spec §4.7): measurement at v0.7.2 ship + ~15% headroom.
+
+cross-esp32s3-full           119375  # text bytes — cap 160000 (33% headroom)
+cross-esp32s3-bytecode-only   81959  # text bytes — cap 110000 (34% headroom)
+
+# eye_demo full app (urbi + esp_camera + esp_lcd + IDF runtime):
+#   build/eye_demo.bin = 407648 bytes (5MB factory partition, 92% free)
+# reactive_smoke (urbi + IDF runtime, no peripherals):
+#   build/reactive_smoke.bin = 290192 bytes (1MB factory partition, 71% free)
