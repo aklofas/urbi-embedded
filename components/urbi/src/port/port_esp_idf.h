@@ -43,6 +43,12 @@ void port_writer(void *ud,
                  const char *msg,     size_t msg_len,
                  uint64_t ts_us);
 
+/* ISR-context predicate.  Signature matches the predicate type accepted by
+ * urbi_set_isr_check_fn(vm, fn) — `bool (*)(void)` — pass directly.
+ * Backed by xPortInIsrContext(); returns true when called from an ESP-IDF
+ * ISR (including nested ISR dispatch). */
+bool port_in_isr(void);
+
 #ifdef __cplusplus
 }
 #endif
