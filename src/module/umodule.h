@@ -44,6 +44,15 @@ extern "C" {
                 global.  Eliminates the silent-elision bug where intervening
                 OP_GETSLOTs in argument evaluation clobbered last_recv before
                 the outer OP_CALL.  OP_MAX = 48.).
+   v1.7 = 0x17 (v0.8.1-uproto-root Phase 3 — UModule body shrinks to header
+                + source_name + recursive root_proto block.  Per-field
+                duplication of chunk-top fields removed from the UModule
+                wire section; root_proto is now serialized as a standard
+                UProto block (max_reg, nupvals, nparams, constants,
+                instructions, synclines, ic_names, nested_count, nested[]).
+                Non-root UProtos write nested_count = 0 (flat-on-root
+                emitter per spec §4.2).  v1.6 rejected as
+                ULOAD_UNSUPPORTED_VERSION.).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -52,7 +61,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  6U
+#define URBI_BYTECODE_VERSION_MINOR  7U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
@@ -553,11 +562,10 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
  *     failure.  `umodule_destroy(module)` is safe in EITHER case and
  *     is the correct cleanup path even after a failed deserialize.
  *
- * Coverage at v1.5:
- *   - Header (24 bytes), metadata (max_reg, source_name), constants
- *     (UVAL_INT + UVAL_FLOAT only — see decode_constants comments),
- *     instructions (LE uint32 stream), syncline tables, nested[] proto
- *     section + per-proto + root-chunk ic_name_strs.
+ * Coverage at v1.7:
+ *   - Header (24 bytes), source_name, root_proto block (recursive UProto:
+ *     max_reg, nupvals, nparams, constants, instructions, synclines,
+ *     ic_name_strs, nested_count, nested[]).
  *   - Verifier walks every instruction against the opcode-shape table
  *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
  *     range-checked per UBxKind, last instruction must be OP_RET.

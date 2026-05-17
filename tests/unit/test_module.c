@@ -101,16 +101,22 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    /* Minimal body: 6 zero-count varints (metadata + sections). */
+    /* v1.7 body: source_name + root_proto block.
+     * Alignment: instr_count varint lands at offset 30 (24+1+3+2=30);
+     * 30 % 4 = 2, pad 2 bytes → offset 32 before n_deltas. */
     size_t offset = 24;
-    buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
     buf[offset++] = 0;  /* varint n_constants = 0 */
     buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad byte 1 (offset 30 -> 31) */
+    buf[offset++] = 0;  /* align pad byte 2 (offset 31 -> 32) */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
-    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
@@ -293,24 +299,58 @@ UTEST(deserialize_rejects_v1_4_module) {
     umodule_destroy(&c, NULL);
 }
 
+UTEST(deserialize_rejects_v1_6_module) {
+    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.7 loader.
+     * v1.7 changed the UModule body layout (header + source_name + recursive
+     * root_proto block; per-field duplication removed).  Loading v1.6
+     * silently would parse the body as the wrong structure. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.7 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg (v1.6 metadata) */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x16") != NULL || strstr(errmsg, "1.6") != NULL);
+    umodule_destroy(&c, NULL);
+}
+
 UTEST(deserialize_accepts_current_version_module) {
     /* A minimal well-formed module at the current bytecode version
-     * (URBI_BYTECODE_VERSION_BYTE) must be accepted.  This is the
+     * (URBI_BYTECODE_VERSION_BYTE = 0x17) must be accepted.  This is the
      * positive-control twin of the deserialize_rejects_v1_X tests. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     buf[4] = URBI_BYTECODE_VERSION_BYTE;
+    /* v1.7 body: source_name + root_proto block (same as the accepts_good_header
+     * test above; repeated here for clarity as a version-specific positive ctrl). */
     size_t offset = 24;
-    buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
     buf[offset++] = 0;  /* varint n_constants = 0 */
     buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* align pad */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
-    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -454,18 +494,23 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=5, source_name="repl" */
-    buf[off++] = 5;
+    /* v1.7: source_name first, then root_proto block */
     off = put_varint(buf, off, 4);   /* source_name_len = 4 */
     memcpy(buf + off, "repl", 4); off += 4;
+    /* root_proto block: max_reg=5, nupvals=0, nparams=0 */
+    buf[off++] = 5;
+    buf[off++] = 0;  /* nupvals */
+    buf[off++] = 0;  /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
+    /* alignment pad: off=34 after n_instr varint, 34%4=2, pad 2 bytes */
+    while ((off & 3U) != 0U) buf[off++] = 0U;
     /* synclines: 0 deltas, 0 abs_lines */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -485,9 +530,11 @@ UTEST(deserialize_loads_integer_constant_pool) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=0, no source_name */
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 0;  /* max_reg */
+    buf[off++] = 0;  /* nupvals */
+    buf[off++] = 0;  /* nparams */
     /* constants: 2 entries — UVAL_INT 1, UVAL_INT -42 */
     off = put_varint(buf, off, 2);
     buf[off++] = (uint8_t)UVAL_INT;
@@ -496,10 +543,12 @@ UTEST(deserialize_loads_integer_constant_pool) {
     off = put_varint_zz(buf, off, -42);
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
+    /* alignment pad after n_instr varint */
+    while ((off & 3U) != 0U) buf[off++] = 0U;
     /* synclines: 0, 0 */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -521,8 +570,10 @@ UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                         /* max_reg */
-    off = put_varint(buf, off, 0);          /* source_name_len */
+    buf[off++] = 0;                         /* nupvals */
+    buf[off++] = 0;                         /* nparams */
     off = put_varint(buf, off, 1);          /* 1 constant */
     buf[off++] = 99;                        /* invalid kind */
     off = put_varint_zz(buf, off, 0);       /* payload (ignored, rejected first) */
@@ -539,12 +590,14 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=1, no source name */
-    buf[off++] = 1;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 1;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
-    /* instructions: 1.  varint 1 = 1 byte.  off before = 27; 27 mod 4 = 3, pad 1 byte. */
+    /* instructions: 1.  varint 1 = 1 byte.  off before = 30; 30 mod 4 = 2, pad 2 bytes. */
     off = put_varint(buf, off, 1);
     while ((off & 3U) != 0U) buf[off++] = 0;
     /* OP_RET R0: op=7, A=0, B=0, C=0 */
@@ -575,21 +628,27 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
 
 UTEST(deserialize_rejects_non_zero_alignment_padding) {
     /* To force a padding byte, we need off to be non-4-aligned after the
-       n_instructions varint.  Use source_name_len=1 ("x") to shift layout:
-       24 (hdr) + 1 (max_reg) + 1 (src_len varint 1) + 1 ("x") +
-       1 (n_constants=0) + 1 (n_instructions=1) = off=29; 29 mod 4 = 1,
-       so 3 pad bytes are needed. */
+       n_instructions varint.  v1.7 layout:
+       24 (hdr) + 1 (src_len=0) + 1 (max_reg) + 1 (nupvals) + 1 (nparams) +
+       1 (n_constants=0) + 1 (n_instructions=1) = off=30; 30 mod 4 = 2,
+       so 2 pad bytes are needed.
+       Use source_name_len=1 ("x") to get a different alignment:
+       24 + 1 (src_len=1) + 1 ("x") + 1 (max_reg) + 1 (nupvals) + 1 (nparams)
+       + 1 (n_constants=0) + 1 (n_instructions=1) = off=31; 31 mod 4 = 3,
+       so 1 pad byte needed — corrupt it. */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;                         /* max_reg */
     off = put_varint(buf, off, 1);          /* source_name_len = 1 */
     buf[off++] = 'x';                       /* source_name = "x" */
+    buf[off++] = 0;                         /* max_reg */
+    buf[off++] = 0;                         /* nupvals */
+    buf[off++] = 0;                         /* nparams */
     off = put_varint(buf, off, 0);          /* n_constants */
     off = put_varint(buf, off, 1);          /* n_instructions=1 */
-    /* off is now 29 (29 mod 4 == 1); 3 pad bytes needed — corrupt them */
+    /* off is now 31 (31 mod 4 == 3); 1 pad byte needed — corrupt it */
     while ((off & 3U) != 0U) buf[off++] = 0xFF;
     /* instruction body (alignment check fires before reading this) */
     buf[off + 0] = (uint8_t)OP_RET;
@@ -614,9 +673,11 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata */
-    buf[off++] = 1;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 1;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
     /* instructions: 3 */
@@ -641,7 +702,7 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 10);         /* abs_line[0].line = 10 */
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -665,9 +726,11 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
+    off = put_varint(buf, off, 0);  /* n_constants = 0 */
     off = put_varint(buf, off, 1);          /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
     {
@@ -693,7 +756,7 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
 }
 
 /* --- build_module_bytes: constructs a well-formed module byte blob ---
-   Header + metadata + constants (UVAL_INT) + aligned instructions + synclines.
+   v1.7: header + source_name + root_proto block.
    Returns total bytes written.  buf must be at least 256 bytes. */
 static size_t build_module_bytes(uint8_t *buf,
                                 uint8_t max_reg,
@@ -701,8 +764,11 @@ static size_t build_module_bytes(uint8_t *buf,
                                 const uint32_t *instrs, size_t n_instr) {
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 */
+    /* root_proto block */
     buf[off++] = max_reg;
-    off = put_varint(buf, off, 0);              /* empty source_name */
+    buf[off++] = 0;                             /* nupvals = 0 */
+    buf[off++] = 0;                             /* nparams = 0 */
     off = put_varint(buf, off, (uint64_t)n_const);
     size_t ci;
     for (ci = 0; ci < n_const; ci++) {
@@ -723,7 +789,7 @@ static size_t build_module_bytes(uint8_t *buf,
     size_t di;
     for (di = 0; di < n_instr; di++) buf[off++] = 0;
     off = put_varint(buf, off, 0);
-    /* v1.5: root-chunk ic_names (count=0) + nested[] (count=0). */
+    /* v1.7: ic_names (count=0) + nested_count (v1.7, always 0 here). */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     return off;
@@ -1211,11 +1277,14 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
 /* --- Serializer tests (Task 14) --- */
 
 UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
-    /* Empty module (no statements): 24-byte header + 8 body bytes.
-       Body = max_reg(1) + src_len varint 0(1) + n_const varint 0(1)
-            + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
-            + n_abs varint 0(1) + ic_count varint 0(1) + nested_count
-            varint 0(1) = 8 bytes.  Total = 32. */
+    /* v1.7 empty module (no statements): 24-byte header + 12 body bytes.
+       Body = src_len varint 0(1) + root_proto block(11).
+       Root_proto block = max_reg(1) + nupvals(1) + nparams(1)
+            + n_const varint 0(1) + n_instr varint 0(1)
+            + 2 align pad bytes (offset 30 % 4 = 2)
+            + n_deltas varint 0(1) + n_abs varint 0(1)
+            + ic_count varint 0(1) + nested_count varint 0(1) = 11 bytes.
+       Total = 24 + 1 + 11 = 36. */
     UModule module = {0};
     UArena arena;
     UEmitter e;
@@ -1225,14 +1294,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 
     /* Size query (buf == NULL) */
     ptrdiff_t n = umodule_serialize(&module, NULL, 0);
-    UASSERT_EQ((ptrdiff_t)32, n);
+    UASSERT_EQ((ptrdiff_t)36, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
     ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
-    UASSERT_EQ((ptrdiff_t)32, written);
+    UASSERT_EQ((ptrdiff_t)36, written);
 
     /* Header field checks */
     UASSERT_EQ((uint8_t)'U', buf[0]);
@@ -1351,8 +1420,10 @@ UTEST(deserialize_oom_on_constants_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 2);              /* 2 constants -> triggers grow */
     buf[off++] = (uint8_t)UVAL_INT;
     off = put_varint_zz(buf, off, 1);
@@ -1381,8 +1452,10 @@ UTEST(deserialize_oom_on_instructions_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant — triggers first grow */
     buf[off++] = (uint8_t)UVAL_INT;
     off = put_varint_zz(buf, off, 5);
@@ -1421,8 +1494,10 @@ UTEST(deserialize_loads_float_constant) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant: UVAL_FLOAT */
     buf[off++] = (uint8_t)UVAL_FLOAT;
     /* Write a float value (3.14) as raw bytes matching URBI_FLOAT_TYPE. */
@@ -1462,8 +1537,10 @@ UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant */
     buf[off++] = (uint8_t)UVAL_NIL;            /* kind 0 — no INT or FLOAT, hits else */
     off = put_varint(buf, off, 0);              /* padding */
@@ -1483,8 +1560,10 @@ UTEST(deserialize_truncated_at_line_deltas) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                             /* max_reg */
-    off = put_varint(buf, off, 0);              /* no source_name */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1514,8 +1593,10 @@ UTEST(deserialize_oom_on_abs_lines_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1552,8 +1633,10 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1578,7 +1661,8 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
 
 UTEST(deserialize_truncated_at_metadata_max_reg) {
     /* Buffer exactly 24 bytes (valid header but no body) — triggers the
-       "truncated at metadata" guard at the max_reg read. */
+       truncation guard while reading the source_name_len varint (v1.7:
+       max_reg is now in the root_proto block, not the metadata section). */
     uint8_t buf[24];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1588,7 +1672,8 @@ UTEST(deserialize_truncated_at_metadata_max_reg) {
     errmsg[0] = '\0';
     UModuleLoadError rc = umodule_deserialize(&c, buf, sizeof buf, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_TRUNCATED, rc);
-    UASSERT(strstr(errmsg, "truncated") != NULL || strstr(errmsg, "metadata") != NULL);
+    UASSERT(strstr(errmsg, "source_name") != NULL || strstr(errmsg, "varint") != NULL
+            || strstr(errmsg, "truncated") != NULL);
     umodule_destroy(&c, NULL);
 }
 
@@ -1691,8 +1776,10 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 1;                             /* max_reg=1 */
-    off = put_varint(buf, off, 0);
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     /* 2 instructions */
     off = put_varint(buf, off, 2);
@@ -1737,8 +1824,10 @@ UTEST(deserialize_accepts_first_abs_line_pc_zero) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 1;                             /* max_reg=1 */
-    off = put_varint(buf, off, 0);
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     /* 2 instructions */
     off = put_varint(buf, off, 2);
@@ -1825,8 +1914,10 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
      * the shape table flags B as UOPK_IMM_BOOL and the verifier accepts. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;  /* 4-byte align */
@@ -1835,8 +1926,8 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;  /* two zero deltas */
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1851,8 +1942,10 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
      * shape's UOPK_IMM_REG_NIBBLE only checks the low nibble. */
     uint8_t buf[80] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1862,8 +1955,8 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1876,18 +1969,20 @@ UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
      * immediate.  Post-T4 verifier rejects via UOPK_IMM_BOOL. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/2, /*C=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1901,18 +1996,20 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
      * register-A overflow per UOPK_REG. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abc(buf, &off, OP_GETUPVAL, /*A=*/99, /*B=*/0, /*C=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1926,8 +2023,10 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
      * (T4 follow-up) C is UOPK_UNUSED and the sentinel verifies clean. */
     uint8_t buf[80] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 2;          /* max_reg = 2 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1936,8 +2035,8 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     buf[off++] = 2;          /* n_deltas */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1952,8 +2051,10 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
      * this silently; runtime would index past nested[] and read garbage. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1962,8 +2063,8 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1979,18 +2080,20 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
      * dispatch, not at load. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abx(buf, &off, OP_JMP, /*A=*/0, /*Bx=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -2006,8 +2109,10 @@ static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
                                      uint32_t test_instr) {
     UASSERT(bufcap >= 80U);
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = max_reg;
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -2019,8 +2124,8 @@ static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     return off;
 }
 
@@ -2142,6 +2247,8 @@ void test_module_suite(void) {
               deserialize_rejects_v1_3_module);
     utest_run("deserialize rejects v1.4 module (v0.5.6 wave-4 break)",
               deserialize_rejects_v1_4_module);
+    utest_run("deserialize rejects v1.6 module (v0.8.1 root_proto layout break)",
+              deserialize_rejects_v1_6_module);
     utest_run("deserialize accepts current-version module",
               deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",

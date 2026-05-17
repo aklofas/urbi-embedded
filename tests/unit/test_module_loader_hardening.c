@@ -44,12 +44,15 @@ static size_t hard_put_varint(uint8_t *buf, size_t offset, uint64_t v) {
 }
 
 /* Build a minimal valid module: one OP_RET, n_const=0, no nested protos.
- * Returns the total byte length. */
+ * Returns the total byte length.
+ * v1.7 format: source_name_len | max_reg | nupvals | nparams | ... */
 static size_t hard_build_minimal_module(uint8_t *buf) {
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);   /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                       /* max_reg */
-    off = hard_put_varint(buf, off, 0);   /* source_name_len */
+    buf[off++] = 0;                       /* nupvals */
+    buf[off++] = 0;                       /* nparams */
     off = hard_put_varint(buf, off, 0);   /* n_const */
     off = hard_put_varint(buf, off, 1);   /* n_instr = 1 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -83,8 +86,10 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     uint8_t buf[512];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* root max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* root nupvals */
+    buf[off++] = 0;                          /* root nparams */
     off = hard_put_varint(buf, off, 0);      /* root n_const */
     off = hard_put_varint(buf, off, 1);      /* root n_instr */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -122,8 +127,10 @@ UTEST(deeply_nested_closure_verifier) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     off = hard_put_varint(buf, off, 2);      /* n_instr = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -168,8 +175,10 @@ UTEST(ic_names_with_invalid_indices_rejected) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     off = hard_put_varint(buf, off, 1);      /* n_instr */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -212,8 +221,10 @@ UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
     /* n_const = 65537 (= UINT16_MAX + 2): exceeds cap, must reject. */
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 65537U); /* n_const > cap */
 
     UModule m = {0};
@@ -228,8 +239,10 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     off = hard_put_varint(buf, off, 1);      /* n_instr = 1 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -265,8 +278,10 @@ UTEST(module_grow_rejects_overflow) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
 
@@ -286,8 +301,10 @@ UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     uint8_t buf[256];
     hard_build_good_header(buf);
     size_t off = 24;
+    off = hard_put_varint(buf, off, 0);      /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                          /* max_reg */
-    off = hard_put_varint(buf, off, 0);      /* source_name_len */
+    buf[off++] = 0;                          /* nupvals */
+    buf[off++] = 0;                          /* nparams */
     off = hard_put_varint(buf, off, 0);      /* n_const */
     /* n_instr = UINT64_MAX-1; far above URBI_MAX_INSTRS_PER_PROTO. */
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);

@@ -24,16 +24,16 @@ static void version_contains_milestone_suffix(void) {
     UASSERT(strchr(v, '-') != NULL);
 }
 
-static void urbi_bytecode_version_byte_is_v1_6(void) {
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x16U);
+static void urbi_bytecode_version_byte_is_v1_7(void) {
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_BYTE, 0x17U);
     UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MAJOR, 1U);
-    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 6U);
+    UASSERT_EQ((unsigned)URBI_BYTECODE_VERSION_MINOR, 7U);
 }
 
 void test_version_suite(void) {
     utest_run("version_is_nonempty", version_is_nonempty);
     utest_run("version_starts_with_zero", version_starts_with_zero);
     utest_run("version_contains_milestone_suffix", version_contains_milestone_suffix);
-    utest_run("urbi_bytecode_version_byte_is_v1_6",
-              urbi_bytecode_version_byte_is_v1_6);
+    utest_run("urbi_bytecode_version_byte_is_v1_7",
+              urbi_bytecode_version_byte_is_v1_7);
 }

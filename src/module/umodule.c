@@ -283,13 +283,11 @@ static UModuleLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "bad magic (expected \"URBI\")");
         return ULOAD_BAD_MAGIC;
     }
-    /* version byte: 0x15 = v1.5 (16*major + minor); all prior versions are
-       hard-rejected.  v1.4 → v1.5 is the v0.5.6 Wave 4 break (wire-format
-       completion at T10-T15: nested protos + per-proto + root ic_name_strs,
-       header reserved bytes 16-23 strictly enforced as zero, opcode-shape
-       table replaces the M1 verifier, OP_INVOKE retired and M5 reactive
-       opcodes renumbered 39-46 -> 38-45).  Loading older modules silently
-       would produce unknown opcodes or misread GC state. */
+    /* version byte: 0x17 = v1.7 (16*major + minor); all prior versions are
+       hard-rejected.  v1.6 → v1.7 is the v0.8.1-uproto-root Phase 3 break
+       (UModule body shrinks to header + source_name + recursive root_proto
+       block; per-field duplication of chunk-top fields removed).  Loading
+       older modules silently would parse the body as the wrong structure. */
     if (d->buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(d->errmsg, d->errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
@@ -348,14 +346,9 @@ static UModuleLoadError decode_header(MDecCtx *d) {
     return ULOAD_OK;
 }
 
+/* v1.7: metadata section is source_name only.  max_reg moved into root_proto
+ * block (read by decode_proto alongside nupvals/nparams). */
 static UModuleLoadError decode_metadata(MDecCtx *d) {
-    if (d->off + 1U > d->size) {
-        set_errmsg(d->errmsg, d->errcap, "truncated at metadata");
-        return ULOAD_TRUNCATED;
-    }
-    /* Task 11: max_reg lives on root_proto (not UModule). */
-    d->rp->max_reg = d->buf[d->off++];
-
     uint64_t src_len = 0;
     size_t consumed = 0;
     UModuleLoadError rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
@@ -499,15 +492,6 @@ static UModuleLoadError decode_constants_into(MDecCtx *d,
     return ULOAD_OK;
 }
 
-static UModuleLoadError decode_constants(MDecCtx *d) {
-    /* Task 11: write directly into root_proto. */
-    return decode_constants_into(d, &d->rp->constants,
-                                 &d->rp->const_count,
-                                 &d->rp->const_cap,
-                                 module_allocator(d->module),
-                                 d->module->alloc_ud);
-}
-
 /* Decode the instructions section into (target_buf, target_count, target_cap). */
 static UModuleLoadError decode_instructions_into(MDecCtx *d,
                                                  uint32_t **target_buf,
@@ -570,15 +554,6 @@ static UModuleLoadError decode_instructions_into(MDecCtx *d,
         (*target_count)++;
     }
     return ULOAD_OK;
-}
-
-static UModuleLoadError decode_instructions(MDecCtx *d) {
-    /* Task 11: write directly into root_proto. */
-    return decode_instructions_into(d, &d->rp->instructions,
-                                    &d->rp->instr_count,
-                                    &d->rp->instr_cap,
-                                    module_allocator(d->module),
-                                    d->module->alloc_ud);
 }
 
 /* Decode the syncline (line_deltas + abs_lines) section into the target
@@ -684,17 +659,6 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
     return ULOAD_OK;
 }
 
-static UModuleLoadError decode_line_table(MDecCtx *d) {
-    /* Task 11: write directly into root_proto. */
-    return decode_line_table_into(d, &d->rp->line_deltas,
-                                  &d->rp->abs_lines,
-                                  d->rp->instr_count,
-                                  &d->rp->abs_line_count,
-                                  &d->rp->abs_line_cap,
-                                  module_allocator(d->module),
-                                  d->module->alloc_ud);
-}
-
 /* Decode an IC name table: count + N length-prefixed UTF-8 strings.
  * Stores into *out_count + *out_strs (caller-owned).
  * Used for both the root chunk (writes to module->...) and per-proto. */
@@ -759,9 +723,54 @@ static UModuleLoadError decode_ic_names_into(MDecCtx *d,
     return ULOAD_OK;
 }
 
+/* Forward declaration: decode_proto is recursive (v1.7 nested[] children). */
+static UModuleLoadError decode_proto(MDecCtx *d, UProto *p);
+
+/* Decode the nested[] section of a UProto: varint n_nested + N proto records.
+ * v1.7: called from decode_proto for both root and nested protos. */
+static UModuleLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
+    uint64_t n_nested = 0;
+    size_t consumed = 0;
+    UModuleLoadError rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
+                                                  &n_nested, &consumed);
+    if (rc != ULOAD_OK) {
+        set_errmsg(d->errmsg, d->errcap, "bad varint at n_nested");
+        return rc;
+    }
+    d->off += consumed;
+    if (n_nested > 1024U) {
+        set_errmsg(d->errmsg, d->errcap, "n_nested=%llu exceeds cap (1024)",
+                   (unsigned long long)n_nested);
+        return ULOAD_CORRUPT;
+    }
+    for (uint64_t i = 0; i < n_nested; i++) {
+        /* Allocate child proto under parent's module ownership. */
+        UModuleAllocFn alloc = module_allocator(d->module);
+        if (alloc == NULL) return ULOAD_OOM;
+        /* Grow parent->nested[] array. */
+        if (parent->nested_count >= parent->nested_cap) {
+            size_t new_cap = parent->nested_cap == 0 ? 4 : parent->nested_cap * 2;
+            void *fresh = alloc((void *)parent->nested, new_cap * sizeof(UProto *),
+                                d->module->alloc_ud);
+            if (fresh == NULL) return ULOAD_OOM;
+            parent->nested     = (UProto **)fresh;
+            parent->nested_cap = new_cap;
+        }
+        UProto *child = (UProto *)alloc(NULL, sizeof(UProto), d->module->alloc_ud);
+        if (child == NULL) return ULOAD_OOM;
+        urbi_zero(child, sizeof(*child));
+        child->alloc_fn = d->module->alloc_fn;
+        child->alloc_ud = d->module->alloc_ud;
+        parent->nested[parent->nested_count++] = child;
+        rc = decode_proto(d, child);
+        if (rc != ULOAD_OK) return rc;
+    }
+    return ULOAD_OK;
+}
+
 /* Decode a single UProto from the stream into a pre-allocated proto.
- * The proto's alloc_fn/alloc_ud have already been set by
- * umodule_alloc_nested_proto inheriting from the owning module. */
+ * v1.7: recursive — reads nested_count + nested[] children at end.
+ * The proto's alloc_fn/alloc_ud must be set by the caller. */
 static UModuleLoadError decode_proto(MDecCtx *d, UProto *p) {
     UModuleAllocFn alloc = p->alloc_fn;
     if (alloc == NULL) {
@@ -806,32 +815,11 @@ static UModuleLoadError decode_proto(MDecCtx *d, UProto *p) {
                                 alloc, alloc_ud);
     if (rc != ULOAD_OK) return rc;
     rc = decode_ic_names_into(d, &p->ic_count, &p->ic_name_strs, alloc, alloc_ud);
-    return rc;
-}
+    if (rc != ULOAD_OK) return rc;
 
-/* Decode the nested[] section: varint n_nested + N proto records. */
-static UModuleLoadError decode_nested_protos(MDecCtx *d) {
-    uint64_t n_nested = 0;
-    size_t consumed = 0;
-    UModuleLoadError rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
-                                                  &n_nested, &consumed);
-    if (rc != ULOAD_OK) {
-        set_errmsg(d->errmsg, d->errcap, "bad varint at n_nested");
-        return rc;
-    }
-    d->off += consumed;
-    if (n_nested > 1024U) {
-        set_errmsg(d->errmsg, d->errcap, "n_nested=%llu exceeds cap (1024)",
-                   (unsigned long long)n_nested);
-        return ULOAD_CORRUPT;
-    }
-    for (uint64_t i = 0; i < n_nested; i++) {
-        UProto *p = umodule_alloc_nested_proto(d->module);
-        if (p == NULL) return ULOAD_OOM;
-        rc = decode_proto(d, p);
-        if (rc != ULOAD_OK) return rc;
-    }
-    return ULOAD_OK;
+    /* v1.7: nested_count + recursive nested[] children. */
+    rc = decode_nested_protos_into(d, p);
+    return rc;
 }
 
 /* Final byte check: stream must end exactly at the last decoded section. */
@@ -1151,19 +1139,16 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     d.errcap = errcap;
 
     UModuleLoadError rc;
-    if ((rc = decode_header(&d))       != ULOAD_OK) return rc;
-    if ((rc = decode_metadata(&d))     != ULOAD_OK) return rc;
-    if ((rc = decode_constants(&d))    != ULOAD_OK) return rc;
-    if ((rc = decode_instructions(&d)) != ULOAD_OK) return rc;
-    if ((rc = decode_line_table(&d))   != ULOAD_OK) return rc;
-    if ((rc = decode_ic_names_into(&d, &rp->ic_count, &rp->ic_name_strs,
-                                   module_allocator(module), module->alloc_ud))
-        != ULOAD_OK) return rc;
-    if ((rc = decode_nested_protos(&d)) != ULOAD_OK) return rc;
-    if ((rc = decode_trailer(&d))       != ULOAD_OK) return rc;
-    if ((rc = decode_verify(&d))        != ULOAD_OK) return rc;
+    if ((rc = decode_header(&d))   != ULOAD_OK) return rc;
+    /* v1.7: body = source_name + root_proto block. */
+    if ((rc = decode_metadata(&d)) != ULOAD_OK) return rc;
+    if ((rc = decode_proto(&d, rp)) != ULOAD_OK) return rc;
+    if ((rc = decode_trailer(&d))  != ULOAD_OK) return rc;
+    if ((rc = decode_verify(&d))   != ULOAD_OK) return rc;
 
-    /* Back-pointer walk: set every nested proto's root field. */
+    /* Back-pointer walk: set every nested proto's root field.
+     * v1.7 flat-on-root emitter: only root_proto.nested[] is populated;
+     * nested protos have nested_count == 0.  The walk covers one level. */
     {
         size_t k;
         for (k = 0U; k < rp->nested_count; k++) {
