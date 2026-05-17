@@ -235,6 +235,13 @@ dispatch_loop_until_yield(UStrand *s, uint64_t step_budget_in)
     vm->step_budget_remaining = step_budget_in;
 
 #if UVM_USE_COMPUTED_GOTO
+    /* Suppress -Wpedantic for the computed-goto dispatch: both `&&label`
+       (label-address) and `goto *expr` (indirect goto) are GCC extensions.
+       Scope limited to this function so other pedantic violations in uvm.c
+       still surface. The switch-fallback build (URBI_VM_FORCE_SWITCH or
+       non-GCC compilers) skips this entirely. */
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wpedantic"
     /* Dispatch table keyed by opcode.  All opcodes populated; loader
        validates opcode is in [0, OP_MAX) before urbi_vm_run is called. */
     static const void *const dispatch_table[OP_MAX] = {
@@ -1966,6 +1973,9 @@ exit_strand:
      *     keeping the decrement co-located with the dequeue logic.
      *   - sched_strand_block handles RUNNING → WAITING decrements inline.
      * No decrement here; see T16 for the scheduler-driven DEAD-path decrement. */
+#if UVM_USE_COMPUTED_GOTO
+#  pragma GCC diagnostic pop
+#endif
     return steps_consumed;
 }
 
