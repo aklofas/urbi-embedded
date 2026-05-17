@@ -522,9 +522,9 @@ umodule_proto_refcount_dec(UProto *p)
  * binding.  vm is used only for the host-log saturation warning and may be
  * NULL in test contexts.
  *
- * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow at 0
- * is a no-op guard (catches missing-bump bugs).  Same policy as UProto.refcount
- * shipped in v0.7.3. */
+ * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow asserts
+ * loudly (catches missing-bump bugs); saturation no-ops (preserves leak-forever).
+ * Same policy as UProto.refcount shipped in v0.7.3. */
 void umodule_refcount_inc(UModule *m, struct UVM *vm);
 void umodule_refcount_dec(UModule *m, struct UVM *vm);
 

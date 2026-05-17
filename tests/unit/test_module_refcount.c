@@ -50,6 +50,15 @@ UTEST(refcount_inc_saturates_at_uint16_max)
     /* No crash, no wrap.  Saturation policy matches v0.7.3 UProto. */
 }
 
+UTEST(refcount_dec_at_saturation_no_change)
+{
+    UModule m = {0};
+    m.refcount = UINT16_MAX;
+    umodule_refcount_dec(&m, NULL);
+    UASSERT_EQ((unsigned)UINT16_MAX, (unsigned)m.refcount);
+    /* No decrement.  Saturation policy: once frozen, stay frozen. */
+}
+
 void test_module_refcount_suite(void) {
     utest_run("module_refcount: fields zero-initialized",
               refcount_fields_zero_initialized);
@@ -57,4 +66,6 @@ void test_module_refcount_suite(void) {
               refcount_inc_dec_basic);
     utest_run("module_refcount: inc saturates at UINT16_MAX",
               refcount_inc_saturates_at_uint16_max);
+    utest_run("module_refcount: dec at saturation no change",
+              refcount_dec_at_saturation_no_change);
 }

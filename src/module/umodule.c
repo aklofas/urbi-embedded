@@ -1161,12 +1161,18 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
          * race the deferred-destroy path.  Assert loudly so debug builds
          * surface the caller; early return is the safety fallback when
          * assertions compile to nothing in production. */
-        URBI_INTERNAL_ASSERT(false && "umodule_refcount_dec underflow");
+        URBI_INTERNAL_ASSERT(0 && "umodule_refcount_dec underflow");
+        return;
+    }
+    if (m->refcount == UINT16_MAX) {
+        /* Saturation guard — once frozen at UINT16_MAX, stay frozen
+         * (preserves the "leak forever" contract from umodule_refcount_inc).
+         * Mirrors umodule_proto_refcount_dec. */
         return;
     }
     m->refcount = (uint16_t)(m->refcount - 1U);
-    /* Deferred-destroy fires when refcount hits zero AND destroy_requested is
-     * true.  Task 3 wires this. */
+    /* Deferred-destroy fires when refcount hits zero AND destroy_requested
+     * is true.  Task 3 wires this. */
 }
 
 /* MOD-015 — nested[k] may be NULL by design:
