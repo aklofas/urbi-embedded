@@ -446,6 +446,22 @@ typedef struct UModule {
      * loader/emitter use them to grow + free struct-internal buffers. */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;
+
+    /* === Runtime-only fields (not serialized) ============= */
+
+    /* v0.8.0: refcount per strand binding (`s->module = this`).
+     * Bumped at urbi_strand_create_for_module + child->module copy in
+     * op_fork; decremented at strand_destroy.  Saturation at UINT16_MAX
+     * logs via host_log_fn (URBI_LOG_WARN) and stops incrementing
+     * (same policy as UProto.refcount shipped in v0.7.3).
+     *
+     * Not serialized: wire-format emitter/deserializer skip this field.
+     * Initialized to zero by urbi_load_module + uemit_finish. */
+    uint16_t refcount;
+
+    /* Deferred-destroy flag: set by umodule_destroy(m, vm) when refcount > 0.
+     * Module is freed once the last refcount drop sees this true. */
+    bool destroy_requested;
 } UModule;
 
 /* --- errors --- */
@@ -500,6 +516,17 @@ umodule_proto_refcount_dec(UProto *p)
     }
     p->refcount = (uint16_t)(p->refcount - 1U);
 }
+
+/* v0.8.0: UModule refcount helpers.  Bumped at every strand binding
+ * (s->module = m); decremented at every strand_destroy that releases the
+ * binding.  vm is used only for the host-log saturation warning and may be
+ * NULL in test contexts.
+ *
+ * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow asserts
+ * loudly (catches missing-bump bugs); saturation no-ops (preserves leak-forever).
+ * Same policy as UProto.refcount shipped in v0.7.3. */
+void umodule_refcount_inc(UModule *m, struct UVM *vm);
+void umodule_refcount_dec(UModule *m, struct UVM *vm);
 
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.

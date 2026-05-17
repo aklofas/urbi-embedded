@@ -55,6 +55,11 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 }
 #endif  /* __STDC_HOSTED__ */
 
+/* Forward declaration — umodule_destroy_internal is defined below, after
+ * umodule_destroy_proto_buffers.  The public umodule_destroy shim (v0.8.0
+ * deferred-destroy) calls into this. */
+static void umodule_destroy_internal(UModule *module, struct UVM *vm);
+
 /* Resolve the effective allocator for a module. */
 static UModuleAllocFn module_allocator(const UModule *c) {
 #if __STDC_HOSTED__
@@ -1131,8 +1136,55 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *   4. ONLY THEN zero the struct.  After step 4 the struct is fully wiped:
  *      source_name, alloc_fn, alloc_ud are all reset; the caller must
  *      re-init before reuse.
- *
- * MOD-015 — nested[k] may be NULL by design:
+ */
+
+/* --- UModule refcount helpers (v0.8.0) ---------------------------------- */
+
+void
+umodule_refcount_inc(UModule *m, struct UVM *vm)
+{
+    if (m == NULL) return;
+    if (m->refcount == UINT16_MAX) {
+        /* Saturated: log once, no further bumps.  Module leaks; same
+         * policy as UProto.refcount shipped in v0.7.3. */
+        if (vm != NULL && vm->host_log_fn != NULL) {
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "umodule_refcount_inc: UINT16_MAX saturation; refcount frozen");
+        }
+        return;
+    }
+    m->refcount = (uint16_t)(m->refcount + 1U);
+}
+
+void
+umodule_refcount_dec(UModule *m, struct UVM *vm)
+{
+    if (m == NULL) return;
+    if (m->refcount == 0U) {
+        /* Underflow guard — catches missing-bump bugs that would otherwise
+         * race the deferred-destroy path.  Assert loudly so debug builds
+         * surface the caller; early return is the safety fallback when
+         * assertions compile to nothing in production. */
+        URBI_INTERNAL_ASSERT(0 && "umodule_refcount_dec underflow");
+        return;
+    }
+    if (m->refcount == UINT16_MAX) {
+        /* Saturation guard — once frozen at UINT16_MAX, stay frozen
+         * (preserves the "leak forever" contract from umodule_refcount_inc).
+         * Mirrors umodule_proto_refcount_dec. */
+        return;
+    }
+    m->refcount = (uint16_t)(m->refcount - 1U);
+    /* v0.8.0 Task 3: deferred-destroy trigger.  If host called
+     * umodule_destroy while refcount was nonzero, destroy_requested
+     * was set; now that refcount == 0, perform the actual free.
+     * umodule_destroy_internal is file-static in this TU. */
+    if (m->refcount == 0U && m->destroy_requested) {
+        umodule_destroy_internal(m, vm);
+    }
+}
+
+/* MOD-015 — nested[k] may be NULL by design:
  *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
  *   from module->nested[] when its UClosure is captured by a watcher
  *   (transferring ownership from the module to the watcher pool).  After
@@ -1147,7 +1199,24 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *   nested[] slots stay populated and are freed normally below.  See
  *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
  *   rationale. */
-void umodule_destroy(UModule *module, struct UVM *vm) {
+
+/* v0.8.0: refcount-aware destroy.  If refcount > 0, sets destroy_requested
+ * and returns — actual free fires when the last umodule_refcount_dec drops
+ * refcount to zero with destroy_requested set.  Host's existing pattern
+ * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills
+ * all strands first → all bindings drop → refcount == 0 → immediate free. */
+void
+umodule_destroy(UModule *module, struct UVM *vm)
+{
+    if (module == NULL) return;
+    if (module->refcount > 0U) {
+        module->destroy_requested = true;
+        return;
+    }
+    umodule_destroy_internal(module, vm);
+}
+
+static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {

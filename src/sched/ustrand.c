@@ -14,6 +14,7 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 #include "module/umodule.h"
+#include "object/umodule_instance.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -45,15 +46,26 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  *
  * The normal production path runs this via the row 7 walker during unwind;
  * this ensures correctness when strands are torn down without executing bytecode
- * (e.g., test teardown, OOM recovery, urbi_strand_panic). */
+ * (e.g., test teardown, OOM recovery, urbi_strand_panic).
+ *
+ * CHSTR-051: scan the FULL allocated range [0..cleanup_cap) rather than just
+ * [0..cleanup_depth).  strand_cleanup_pop decrements cleanup_depth but does
+ * NOT unlink the entry from owning_tag->member_strands_head; entries below
+ * the current depth may therefore still be linked.  This arises in the fatal
+ * unwind path for "try { throw 1 } finally { throw 2 }": the realm-tag
+ * TAG_SCOPE at cleanup_base[0] is popped during unwind (depth → 0) but its
+ * member_strands_head link is never cleared, so utag_destroy's invariant
+ * assertion fires.  Scanning the full cap is safe: never-pushed slots are
+ * zero-initialised (kind == 0, not UCLEANUP_TAG_SCOPE == 2) and are skipped;
+ * already-unlinked popped entries harmlessly produce a no-op list walk. */
 static void
 strand_unlink_from_tags(UStrand *s)
 {
     uint16_t i;
 
-    if (s->cleanup_base == NULL || s->cleanup_depth == 0) return;
+    if (s->cleanup_base == NULL || s->cleanup_cap == 0) return;
 
-    for (i = 0; i < s->cleanup_depth; i++) {
+    for (i = 0; i < s->cleanup_cap; i++) {
         UCleanupEntry *e = &s->cleanup_base[i];
         UTag *tag;
         UCleanupEntry **cur;
@@ -81,39 +93,82 @@ strand_unlink_from_tags(UStrand *s)
  * closed_cells, and open_upvals.  Centralises the near-identical free loops
  * that previously appeared in ustrand_destroy.
  *
- * closure_list: skips any closure that equals vm->last_return_closure (the
- * caller-owned return value kept alive between urbi_vm_run calls).
+ * closure_list / closed_cells lifetime policy (v0.8.0):
  *
- * urbi_vm_run pre-frees these chains itself (before calling ustrand_destroy) to
- * avoid the skip-logic for last_return_closure; by the time ustrand_destroy
- * is called from that path the three pointers are NULL and these loops are
- * no-ops. */
+ *   Transient strands (is_transient_strand == 1, i.e. urbi_vm_run):
+ *     urbi_vm_run pre-migrates closure_list → vm->stdlib_closures and
+ *     closed_cells → vm->stdlib_upvalues before calling ustrand_destroy.
+ *     By the time this function is reached, both chains are NULL — the
+ *     loops below are no-ops.
+ *
+ *   Persistent strands (is_transient_strand == 0, i.e. urbi_strand_create
+ *   paths — loader strands, watcher body strands, fork children):
+ *     Closures and heapified upvals created during the strand's run may have
+ *     been installed as realm-globals (var f = function...) or captured by
+ *     persistent watchers.  Freeing them here would dangle those references.
+ *     Instead, migrate them to vm->stdlib_closures / vm->stdlib_upvalues so
+ *     they are freed at urbi_vm_destroy.  This is the same lifetime extension
+ *     the old transient path applied; v1.x GC UClosure promotion replaces
+ *     this migrate-to-stdlib pattern with proper sweep-time reclamation.
+ *
+ *   Open upvalue cells are always freed eagerly (they were not heapified, so
+ *   no live reference can exist to their stack-relative storage).
+ *
+ * closure_list: skips any closure that equals vm->last_return_closure (the
+ * caller-owned return value kept alive between urbi_vm_run calls). */
 static void
 release_strand_resource_chain(UVM *vm, UStrand *s)
 {
     UClosure  *cl;
     UUpvalCell *cell;
 
-    /* Closure list (pre-GC closure bookkeeping). */
+    /* Closure list (pre-GC closure bookkeeping).
+     * Non-transient strands: migrate to vm->stdlib_closures to prevent UAF on
+     * realm-global UVAL_CLOSURE references that outlive this strand. */
     cl = s->closure_list;
     s->closure_list = NULL;
-    while (cl != NULL) {
-        UClosure *next = cl->next_alloc;
-        if (cl != vm->last_return_closure)
-            vm->alloc_fn(cl, 0, vm->alloc_ud);
-        cl = next;
+    if (s->is_transient_strand) {
+        /* Transient: lists were pre-migrated by urbi_vm_run; this is a no-op.
+         * Keep the skip-logic for last_return_closure as a safety net. */
+        while (cl != NULL) {
+            UClosure *next = cl->next_alloc;
+            if (cl != vm->last_return_closure)
+                vm->alloc_fn(cl, 0, vm->alloc_ud);
+            cl = next;
+        }
+    } else {
+        /* Persistent: splice entire closure_list onto vm->stdlib_closures.
+         * Find the tail of cl's chain so we can prepend in O(n). */
+        if (cl != NULL) {
+            UClosure *tail = cl;
+            while (tail->next_alloc != NULL) tail = tail->next_alloc;
+            tail->next_alloc = vm->stdlib_closures;
+            vm->stdlib_closures = cl;
+        }
     }
 
-    /* Heapified upvalue cells. */
+    /* Heapified upvalue cells.
+     * Same policy: migrate persistent-strand upvals to vm->stdlib_upvalues. */
     cell = s->closed_cells;
     s->closed_cells = NULL;
-    while (cell != NULL) {
-        UUpvalCell *next = cell->next;
-        vm->alloc_fn(cell, 0, vm->alloc_ud);
-        cell = next;
+    if (s->is_transient_strand) {
+        while (cell != NULL) {
+            UUpvalCell *next = cell->next;
+            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell = next;
+        }
+    } else {
+        if (cell != NULL) {
+            UUpvalCell *tail = cell;
+            while (tail->next != NULL) tail = tail->next;
+            tail->next = vm->stdlib_upvalues;
+            vm->stdlib_upvalues = cell;
+        }
     }
 
-    /* Open upvalue cells (not closed before strand death). */
+    /* Open upvalue cells (not closed before strand death): always free.
+     * Open cells store a pointer into the strand's register stack, which is
+     * being freed; no live reference to the open cell can exist elsewhere. */
     cell = s->open_upvals;
     s->open_upvals = NULL;
     while (cell != NULL) {
@@ -125,6 +180,15 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* v0.8.0: drop module refcount for the strand binding.  Pairs with
+     * the bump in uvm_run.c (transient path) and uop_fork.c (child spawn).
+     * Setting s->module = NULL after is defensive — prevents double-dec
+     * on pool recycle paths. */
+    if (s->module != NULL) {
+        umodule_refcount_dec((UModule *)s->module, vm);
+        s->module = NULL;
+    }
+
     /* CHSTR-031: cross-strand stop counter management moved to scheduler.
      * sched_strand_account_destroy handles the host_call_pending_count
      * bookkeeping for strands that had a cross-strand stop deposited. */
@@ -388,6 +452,85 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
         /* Head-insert this entry into the tag's member_strands_head list. */
         chain[i]->member_strands_head = e;
     }
+}
+
+/* === v0.8.0: urbi_strand_create_for_module ===
+ *
+ * Allocates a non-transient strand bound to a module's root chunk.
+ * Mirrors the setup in uvm_run.c::urbi_vm_run, minus the transient flag
+ * and stack-local allocation:
+ *   - urbi_strand_create handles: pool alloc, ustrand_init (cleanup stack),
+ *     realm link (next_in_realm + strands_head insert), ambient-tag attach,
+ *     sched_strand_init.  Leaves strand DORMANT.
+ *   - This function adds: module bind + refcount, register-stack arm,
+ *     execution-state wiring, UModuleInstance creation.
+ *   - urbi_strand_start transitions DORMANT → READY.
+ *
+ * OOM recovery: any allocation failure after urbi_strand_create succeeds
+ * tears down the strand via urbi_strand_destroy (which unlinks from realm,
+ * drops refcount if already bumped, and frees all resources). */
+UStrand *
+urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
+                              struct UModule *module)
+{
+    if (!vm || !module) return NULL;
+    if (module->instr_count == 0) return NULL;
+
+    if (realm == NULL) {
+        realm = urbi_realm_global(vm);
+        if (realm == NULL) return NULL;
+    }
+
+    /* Pool-allocate a non-transient strand (is_transient_strand stays 0).
+     * entry_closure = NULL: chunk-top has no closure; root instructions come
+     * from module->instructions directly.  urbi_strand_create handles:
+     * ustrand_init (cleanup stack alloc), realm link, ambient-tag attach,
+     * sched_strand_init.  Leaves strand DORMANT. */
+    UStrand *s = urbi_strand_create(realm, NULL);
+    if (!s) return NULL;
+
+    /* Bind module and bump refcount before any teardown path so
+     * urbi_strand_destroy (which calls ustrand_destroy) correctly
+     * decrements the count on error. */
+    s->module = module;
+    umodule_refcount_inc(module, vm);
+
+    /* Allocate and zero the per-strand register stack.
+     * On failure: urbi_strand_destroy drops the refcount and frees the strand. */
+    if (urbi_strand_arm_init(s) != 0) {
+        urbi_strand_destroy(s);
+        return NULL;
+    }
+
+    /* Wire frame-0 execution state from the module's root chunk.
+     * Mirrors uvm_run.c lines 102-129 (without the transient-specific fields
+     * is_transient_strand and out_slot, which callers set if needed). */
+    s->R          = s->stack;
+    s->pc         = module->instructions;
+    s->pc_base    = module->instructions;
+    s->cur_consts = module->constants;
+    s->frame_count  = 0;
+    s->open_upvals  = NULL;
+    s->closure_list = NULL;
+    s->closed_cells = NULL;
+    s->out_slot     = NULL;  /* caller may set before first urbi_step */
+
+    /* Create a UModuleInstance for IC wiring (per-(vm, module) cache tier).
+     * urbi_module_instance_create always allocates fresh — safe here because
+     * this is a new strand owning its own IC entry (matches uvm_run.c §T72
+     * rationale; urbi_get_or_create_module_instance is unsuitable for
+     * strands that may share a module across interleaved runs). */
+    s->module_instance = urbi_module_instance_create(vm, module);
+    if (!s->module_instance) {
+        urbi_strand_destroy(s);
+        return NULL;
+    }
+
+    /* Transition DORMANT → READY so the host's urbi_step loop picks it up.
+     * urbi_strand_start calls sched_strand_make_runnable internally. */
+    urbi_strand_start(s);
+
+    return s;
 }
 
 /* === CHSTR-044: register-stack lifecycle triplet ===

@@ -415,7 +415,14 @@ typedef enum {
     /* URBI_ERR_HEAP_LOCKED: returned by operations that require a live heap
      * (allocation or registry mutation) when urbi_lock_heap has been called.
      * Covers urbi_event_unregister and future Gap-B unregister paths. */
-    URBI_ERR_HEAP_LOCKED                = -19
+    URBI_ERR_HEAP_LOCKED                = -19,
+    /* v0.8.0: urbi_run_chunk's internal driver loop exhausted its outer
+     * cap (URBI_LOADER_OUTER_CAP * URBI_LOADER_INNER_BUDGET ≈ 10M
+     * instructions) without the loader strand reaching a parked or dead
+     * state.  Almost certainly an infinite loop at chunk-top with no
+     * yield points.  Host may call urbi_step manually to continue the
+     * strand, or destroy the realm/vm to abort it. */
+    URBI_ERR_LOADER_BUDGET              = -20
 } UErrCode;
 
 /* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn

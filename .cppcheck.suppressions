@@ -69,16 +69,12 @@ knownConditionTrueFalse:src/runtime/uunwind.c:313
 // Subsequent refactoring moved the callback to direct-call registration;
 // cppcheck no longer detects the pattern.  Suppression retired.
 
-// audit:CPPCHK-013 (Phase 19, updated Phase 6) — parse_err_line /
-// parse_err_col are written in the parse-error breakout and read inside
-// the `__STDC_HOSTED__` guarded snprintf.  Under freestanding builds the
-// read-side is preprocessed out, leaving the write apparently dead —
-// cppcheck doesn't track the configuration-conditional read.  The values
-// are correctness-needed under hosted builds (REPL diagnostics) and dead
-// under freestanding builds.  Line numbers updated when Phase 6 added
-// (void) sentinel initializations earlier in the function.
-unreadVariable:src/module/uchunk.c:239
-unreadVariable:src/module/uchunk.c:240
+// audit:CPPCHK-013 (Phase 19, updated Phase 6, retired v0.8.0) — parse_err_line /
+// parse_err_col suppressions retired: v0.8.0 Task 8 refactored urbi_run_chunk to
+// use persistent loader strands, moving the parse-error path.  Under current
+// cppcheck version, the pattern (write in freestanding, read in __STDC_HOSTED__)
+// no longer triggers unreadVariable warnings; modern cppcheck tracks
+// configuration-conditional paths more precisely.  Suppressions removed.
 
 // audit:CPPCHK-Phase5 — src/stdlib/atoms.c's DEF_INT_BINOP macro
 // expands to native-method callbacks whose signature is pinned by the

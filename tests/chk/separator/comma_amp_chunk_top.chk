@@ -1,0 +1,13 @@
+# Milestone: M3 / v0.8.0
+# Covers: ',' and '&' at chunk-top work with the v0.8.0 persistent loader
+# strand (urbi_strand_create_for_module path).  Prior to v0.8.0 the REPL
+# used a transient strand with no entry_closure and these opcodes produced
+# a runtime TypeError; that guard has been superseded by the persistent
+# strand path.  The unit tests in test_fork.c and test_loader_strand_persistence.c
+# exercise fork semantics in more depth.
+
+1 , 2
+[00000000] 2
+
+1 & 2
+[00000001] <?>
