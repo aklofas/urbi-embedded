@@ -473,6 +473,13 @@ urbi_module_free(struct UModule *module)
 {
 #if __STDC_HOSTED__
     if (module == NULL) return;
+    /* v0.8.0: all callers are synchronous (urbi_run_chunk + fail-path teardown);
+     * the transient strand's refcount decrement has already fired before we get
+     * here.  Assert that no live strand binding remains — a nonzero refcount here
+     * means the caller freed the module while strands still hold it (UAF). */
+    URBI_INTERNAL_ASSERT(module->refcount == 0 &&
+        "urbi_module_free called with live strand bindings — call umodule_destroy"
+        " + let strands drop refs first");
     /* Public API: no vm in scope.  Pass NULL — no proto rescue path.
      * If a closure has captured a proto from this module, the caller has
      * a lifetime bug regardless of what umodule_destroy does. */

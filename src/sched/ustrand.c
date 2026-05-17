@@ -125,6 +125,15 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
+    /* v0.8.0: drop module refcount for the strand binding.  Pairs with
+     * the bump in uvm_run.c (transient path) and uop_fork.c (child spawn).
+     * Setting s->module = NULL after is defensive — prevents double-dec
+     * on pool recycle paths. */
+    if (s->module != NULL) {
+        umodule_refcount_dec((UModule *)s->module, vm);
+        s->module = NULL;
+    }
+
     /* CHSTR-031: cross-strand stop counter management moved to scheduler.
      * sched_strand_account_destroy handles the host_call_pending_count
      * bookkeeping for strands that had a cross-strand stop deposited. */

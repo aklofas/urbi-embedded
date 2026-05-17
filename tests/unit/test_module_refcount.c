@@ -9,10 +9,12 @@
  * reference). */
 
 #include "utest.h"
+#include "utest_e2e_helpers.h"
 
 #include "urbi/urbi.h"
 #include "module/umodule.h"
 #include "vm/uvm.h"
+#include "value/uarena.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -114,6 +116,37 @@ UTEST(umodule_destroy_immediate_when_refcount_zero)
     urbi_vm_destroy(&vm);
 }
 
+/* End-to-end: compile a minimal chunk, drive it via urbi_run_chunk
+ * (current transient path — Task 8 will swap this to the persistent
+ * path), verify the binding bump+decrement cycle leaves refcount at zero.
+ *
+ * This test would have passed before Task 4 (no bumps happened, no
+ * decrements happened, refcount stayed at 0 throughout — vacuous PASS).
+ * After Task 4 wiring, it actually exercises bump+decrement balance:
+ * if any bump site is missing its paired decrement (or vice versa),
+ * refcount will be nonzero at module-destroy time. */
+UTEST(refcount_bump_decrement_via_strand_binding)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    UArena  arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+
+    /* Compile + run a trivial chunk via urbi_run_chunk — the public path. */
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+        "42", NULL);
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* After the strand dies, refcount must be 0 (bind+unbind balanced). */
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 void test_module_refcount_suite(void) {
     utest_run("module_refcount: fields zero-initialized",
               refcount_fields_zero_initialized);
@@ -127,4 +160,6 @@ void test_module_refcount_suite(void) {
               umodule_destroy_defers_when_refcount_nonzero);
     utest_run("module_refcount: umodule_destroy immediate when refcount zero",
               umodule_destroy_immediate_when_refcount_zero);
+    utest_run("module_refcount: bump/decrement via strand binding",
+              refcount_bump_decrement_via_strand_binding);
 }

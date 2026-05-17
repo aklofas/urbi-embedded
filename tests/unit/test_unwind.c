@@ -69,6 +69,7 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     s->pc_base    = s_dummy_module.instructions;
     s->cur_consts = NULL;
     s->module     = &s_dummy_module;
+    umodule_refcount_inc(&s_dummy_module, vm);  /* v0.8.0: pair with ustrand_destroy dec */
     s->frame_count   = 0;
     s->open_upvals   = NULL;
     s->closure_list  = NULL;

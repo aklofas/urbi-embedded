@@ -92,6 +92,7 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
     s->pc_base    = module->instructions;
     s->cur_consts = module->constants;
     s->module     = module;
+    umodule_refcount_inc(module, vm);  /* v0.8.0: pair with ustrand_destroy dec */
     s->frame_count = 0;
     s->open_upvals = NULL;
     s->closure_list = NULL;

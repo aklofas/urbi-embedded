@@ -117,6 +117,9 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     }
 
     child->module = s->module;   /* diagnostics + nested-proto lookup */
+    /* v0.8.0: child strand inherits parent's module binding — refcount++.
+     * Const-cast mirrors uvm_run.c; Task 9 reverts the const annotation. */
+    umodule_refcount_inc((UModule *)child->module, s->vm);
     /* CHSTR-014 (T102): inherit the parent's UModuleInstance pointer so that
      * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
      * frame_count == 0 (which reads s->module_instance->proto_instances
