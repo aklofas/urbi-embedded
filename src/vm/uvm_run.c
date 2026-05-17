@@ -104,6 +104,7 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     strand.pc_base    = module->instructions;
     strand.cur_consts = module->constants;
     strand.module     = module;
+    strand.root_proto = module->root_proto;  /* v0.8.1 Phase 1: fast-path alias */
     /* v0.8.0: bump module refcount for the strand binding.  Decrement
      * fires in ustrand_destroy at the end of this function (single matched
      * pair for the transient path).  The const-cast is necessary because

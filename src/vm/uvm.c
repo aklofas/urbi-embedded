@@ -535,12 +535,12 @@ dispatch:
                     nested_arr = cur_cl->origin_nested;
                     nested_cnt = (size_t)cur_cl->origin_nested_count;
                 } else {
-                    nested_arr = s->module ? s->module->nested : NULL;
-                    nested_cnt = s->module ? s->module->nested_count : 0U;
+                    nested_arr = s->root_proto ? s->root_proto->nested : NULL;
+                    nested_cnt = s->root_proto ? s->root_proto->nested_count : 0U;
                 }
             } else {
-                nested_arr = s->module ? s->module->nested : NULL;
-                nested_cnt = s->module ? s->module->nested_count : 0U;
+                nested_arr = s->root_proto ? s->root_proto->nested : NULL;
+                nested_cnt = s->root_proto ? s->root_proto->nested_count : 0U;
             }
             if (nested_arr == NULL || (size_t)bx >= nested_cnt) {
                 vm->last_error = UVM_TYPE_ERROR;

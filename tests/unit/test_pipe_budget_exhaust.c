@@ -86,6 +86,7 @@ budget_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
     s->pc_base    = module->instructions;
     s->cur_consts = module->constants;
     s->module     = module;
+    s->root_proto = module->root_proto;  /* v0.8.1 Phase 1: fast-path alias */
     umodule_refcount_inc(module, vm);  /* v0.8.0: pair with ustrand_destroy dec */
     s->module_instance = urbi_module_instance_create(vm, module);
     s->frame_count = 0;
