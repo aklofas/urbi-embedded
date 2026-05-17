@@ -22,6 +22,12 @@
  *   3. v0.8.0-loader-strand — UModule.refcount + destroy_requested fields;
  *      urbi_run_chunk const-revert; URBI_ERR_LOADER_BUDGET addition
  *      (0/7/4 → 0/7/5).
+ *   4. v0.8.1-uproto-root — UProto gains nested[]/root/next_alloc/refcount
+ *      fields (layout shift); UModule loses nested[]/nested_count/nested_cap
+ *      + stdlib_protos + stdlib_nested_arrays + stdlib_closures reorder;
+ *      vm->rescued_protos replaces vm->stdlib_protos as sole deferred-
+ *      destroy mechanism; wire format v1.6 → v1.7 (flat-on-root emitter).
+ *      Minor-field bump (0/7/5 → 0/8/0) reflects structural significance.
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -36,8 +42,8 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  7
-#define URBI_API_VERSION_PATCH  5
+#define URBI_API_VERSION_MINOR  8
+#define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
                                 +  URBI_API_VERSION_PATCH)
