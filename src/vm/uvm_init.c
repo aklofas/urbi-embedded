@@ -498,10 +498,26 @@ void urbi_vm_destroy(UVM *vm) {
         }
         vm->stdlib_upvalues = NULL;
 
-        /* Phase 5 (Gap #1): free stolen REPL UProto objects.  These protos
-         * were detached from their originating REPL-session UModules by
-         * urbi_steal_repl_protos in urbi_repl_eval (uchunk.c) before the
-         * module was destroyed, keeping their instruction buffers alive for
+        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
+         * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
+         * UModuleInstance referencing this module has already been
+         * reaped — no dangling ic_names back-reference can survive.
+         *
+         * v0.7.3 Piece A: ordered BEFORE the stdlib_protos sweep below.
+         * The umodule_destroy rescue path may transfer protos with non-zero
+         * refcount onto vm->stdlib_protos; those need to be picked up by the
+         * sweep that follows. */
+        if (vm->stdlib_module != NULL) {
+            umodule_destroy(vm->stdlib_module, vm);
+            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
+            vm->stdlib_module = NULL;
+        }
+
+        /* Phase 5 (Gap #1): free stolen REPL UProto objects + v0.7.3 Piece A:
+         * rescued protos from the umodule_destroy(stdlib_module) above.  Original
+         * stolen-REPL-proto path: detached from their originating REPL-session
+         * UModules by urbi_steal_repl_protos in urbi_repl_eval (uchunk.c) before
+         * the module was destroyed, keeping their instruction buffers alive for
          * closures on vm->stdlib_closures.  The stdlib_closures sweep above
          * has already freed the UClosure structs that referenced these protos;
          * it is now safe to free the protos and their owned buffers. */
@@ -541,16 +557,6 @@ void urbi_vm_destroy(UVM *vm) {
                 na = next;
             }
             vm->stdlib_nested_arrays = NULL;
-        }
-
-        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
-         * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
-         * UModuleInstance referencing this module has already been
-         * reaped — no dangling ic_names back-reference can survive. */
-        if (vm->stdlib_module != NULL) {
-            umodule_destroy(vm->stdlib_module);
-            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
-            vm->stdlib_module = NULL;
         }
 
         /* M6 Phase 6: free container backing buffers (List/Dict/Tuple

@@ -34,25 +34,21 @@
 /* === strand_closure_unlink ===
  *
  * Remove `cl` from `s->closure_list` (pointer-to-pointer walk) AND detach
- * `cl->proto` from `s->module->nested[]` (by nulling that slot) so that
- * umodule_destroy does not free the proto when the install run ends.
+ * `cl->proto` from `s->module->nested[]` so umodule_destroy does not free
+ * the proto when the install run ends.  Returns 1 if `cl` was found and
+ * removed (cl + proto are now owned by the watcher); returns 0 otherwise.
  *
- * Returns 1 if `cl` was found and removed (it was heap-allocated by OP_CLOSURE
- * and both the closure and its proto are now owned by the watcher); returns 0
- * otherwise (NULL pointer, test sentinel, or already unlinked).
- *
- * Called by install_watcher_runtime / install_at_event_runtime to transfer
- * ownership of condition/body/onleave closures from the strand's pre-GC
- * free-list to the watcher.  After a successful unlink:
- *   - urbi_vm_run's closure cleanup loop will not free `cl`
- *   - umodule_destroy will not free `cl->proto` or its sub-buffers
- *   - pool_free must free both proto (+ sub-buffers) and the closure */
+ * NB: this helper carries a known structural bug — multi-install of the
+ * same cond proto via function re-invocation causes use-after-free on
+ * shared protos.  Tracked by the v0.7.3 closure-lifetime spec; replaced
+ * in this same release by UProto refcount + UClosure/UUpvalCell GC. */
 static int
 strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
 {
     struct UClosure **pp;
     size_t k;
     if (cl == NULL) return 0;
+
     pp = &s->closure_list;
     while (*pp != NULL) {
         if (*pp == cl) {
@@ -64,6 +60,10 @@ strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
             if (s->module != NULL && cl->proto != NULL) {
                 for (k = 0; k < s->module->nested_count; k++) {
                     if (s->module->nested[k] == cl->proto) {
+                        /* Piece A: detaching the slot discharges its
+                         * implicit refcount; the watcher now owns the
+                         * proto via cl->proto. */
+                        umodule_proto_refcount_dec(s->module->nested[k]);
                         s->module->nested[k] = NULL;
                         break;
                     }
@@ -223,11 +223,13 @@ install_watcher_runtime(
     w->body_strand      = NULL;
 
     /* Ownership transfer: unlink cond/body/onleave from s->closure_list so
-     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures that
-     * were heap-allocated by OP_CLOSURE will be found on the list; test
+     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures
+     * that were heap-allocated by OP_CLOSURE will be found on the list; test
      * sentinels ((UClosure *)1 etc.) are not on the list and are not freed.
      * Per-closure ownership bits track which were actually unlinked so
-     * pool_free knows exactly which to free on unregister. */
+     * pool_free knows exactly which to free on unregister.  Proto ownership
+     * stays with the compiling module (v0.7.3 cascade fix; see the
+     * URBI_WATCHER_OWNS_* banner in uwatcher.h). */
     if (strand_closure_unlink(s, cond))    w->flags |= URBI_WATCHER_OWNS_COND;
     if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
     if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;

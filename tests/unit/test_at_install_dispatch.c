@@ -80,7 +80,7 @@ pipeline_ctx_destroy(PipeCtx *ctx)
     while (ctx->vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&ctx->vm,
                                          ctx->vm.active_watchers_head);
-    umodule_destroy(&ctx->module);
+    umodule_destroy(&ctx->module, NULL);
     uarena_destroy(&ctx->arena);
     urbi_vm_destroy(&ctx->vm);
 }

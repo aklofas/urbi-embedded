@@ -32,7 +32,7 @@ UTEST(umodule_origin_vm_initially_null) {
     UModule m = {0};
     UASSERT(m.origin_vm == NULL);
     /* deserialize zeros it; serialize never includes it */
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- Helpers for T18 cases --- */
@@ -80,7 +80,7 @@ static UVMError eval_on_vm(UVM *vm, const char *src, UValue *out) {
         vm_rc = urbi_vm_run(vm, NULL, &module, out);
     }
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     return vm_rc;
 }
@@ -190,8 +190,8 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
     /* Deserialized module's origin_vm must be NULL. */
     UASSERT(loaded.origin_vm == NULL);
 
-    umodule_destroy(&module);
-    umodule_destroy(&loaded);
+    umodule_destroy(&module, NULL);
+    umodule_destroy(&loaded, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm_a);
 }

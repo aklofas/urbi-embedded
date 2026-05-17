@@ -146,7 +146,7 @@ UTEST(fork_detach_basic_no_crash)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)2);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -171,7 +171,7 @@ UTEST(fork_join_wait_basic)
     /* spec §7.2: `&` result is void */
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -203,7 +203,7 @@ UTEST(fork_child_inherits_ambient_tags)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)7);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -229,7 +229,7 @@ UTEST(fork_detach_three_way)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)3);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -251,7 +251,7 @@ UTEST(fork_detach_quiescent_count_zero)
     UASSERT_EQ(rc, 1);
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -323,7 +323,7 @@ UTEST(fork_join_arithmetic_children)
     UASSERT_EQ(rc, 1);
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -364,7 +364,7 @@ UTEST(fork_join_wait_parent_blocked_before_link_to_chain)
     UASSERT_EQ(rc, 1);                          /* reached quiescent */
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);  /* `&` result is void */
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

@@ -43,6 +43,9 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
     cl->cell.type_tag = UTYPE_CLOSURE;
     cl->cell.gc_byte  = vm->current_white;
     cl->proto      = proto;
+    /* Piece A — bump proto refcount so module_destroy can rescue this
+     * proto if the closure outlives its compiling module. */
+    umodule_proto_refcount_inc(proto);
     cl->nupvals    = nup;
     cl->next_alloc = *list_head;
     *list_head     = cl;

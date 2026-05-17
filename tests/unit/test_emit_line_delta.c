@@ -57,7 +57,7 @@ emit_empty_source_no_line_delta_underflow(void)
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -93,7 +93,7 @@ emit_single_instr_one_line_delta(void)
     UASSERT(module.line_deltas != NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

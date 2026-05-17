@@ -149,7 +149,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -159,7 +159,7 @@ urbi_compile_source(struct UVM *vm,
             snprintf(err_buf, err_cap, "%s: emit error: %s",
                      name, uemit_error_name(e.error));
         }
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -171,7 +171,7 @@ urbi_compile_source(struct UVM *vm,
             snprintf(err_buf, err_cap, "%s: serialize size-query failed",
                      name);
         }
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -180,7 +180,7 @@ urbi_compile_source(struct UVM *vm,
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: out of memory", name);
         }
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_OOM;
     }
@@ -191,14 +191,14 @@ urbi_compile_source(struct UVM *vm,
                      name, (long)wrote, (long)need);
         }
         free(buf);
-        umodule_destroy(&module);
+        umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
 
     *out_buf = buf;
     *out_len = (size_t)need;
-    umodule_destroy(&module);
+    umodule_destroy(&module, vm);
     uarena_destroy(&arena);
     return URBI_OK;
 #else

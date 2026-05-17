@@ -58,7 +58,7 @@ UTEST(emit_string_loadk_with_uval_str_constant) {
     UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -94,7 +94,7 @@ UTEST(emit_string_dedups_repeated_literal) {
     UASSERT_EQ((uint8_t)UVAL_STR, module.constants[0].kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

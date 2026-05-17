@@ -25,7 +25,7 @@ static void setup(UEmitter *e, UModule *m, UArena *a, UVM *v) {
 }
 static void teardown(UModule *m, UArena *a, UVM *v) {
     uarena_destroy(a);
-    umodule_destroy(m);
+    umodule_destroy(m, NULL);
     urbi_vm_destroy(v);
 }
 

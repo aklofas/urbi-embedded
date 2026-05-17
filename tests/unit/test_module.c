@@ -21,7 +21,7 @@ UTEST(module_error_name_ok) {
 
 UTEST(destroy_empty_module_is_noop) {
     UModule c = {0};
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
     UASSERT_EQ((void *)NULL, (void *)c.instructions);
     UASSERT_EQ((void *)NULL, (void *)c.constants);
     UASSERT_EQ((size_t)0, c.instr_count);
@@ -56,7 +56,7 @@ UTEST(destroy_module_with_buffers_frees_them) {
     c.abs_line_cap = 2;
     c.abs_line_count = 1;
 
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 
     UASSERT_EQ((void *)NULL, (void *)c.instructions);
     UASSERT_EQ((void *)NULL, (void *)c.constants);
@@ -106,7 +106,7 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_buffer_shorter_than_header) {
@@ -115,7 +115,7 @@ UTEST(deserialize_rejects_buffer_shorter_than_header) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     UModule c = {0};
     UASSERT_EQ(ULOAD_TRUNCATED, umodule_deserialize(&c, buf, sizeof buf, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_bad_magic) {
@@ -124,7 +124,7 @@ UTEST(deserialize_rejects_bad_magic) {
     hdr[0] = 'X';  /* corrupt first magic byte */
     UModule c = {0};
     UASSERT_EQ(ULOAD_BAD_MAGIC, umodule_deserialize(&c, hdr, sizeof hdr, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_corrupted_canary_simulated_ftp_ascii) {
@@ -137,7 +137,7 @@ UTEST(deserialize_rejects_corrupted_canary_simulated_ftp_ascii) {
     UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_BAD_MAGIC, rc);
     UASSERT(strstr(errmsg, "canary") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_unsupported_version) {
@@ -146,7 +146,7 @@ UTEST(deserialize_rejects_unsupported_version) {
     hdr[4] = 0x20;  /* would be v2.0 */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, hdr, sizeof hdr, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_0_module) {
@@ -168,7 +168,7 @@ UTEST(deserialize_rejects_v1_0_module) {
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
     UModule c = {0};
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_1_module) {
@@ -196,7 +196,7 @@ UTEST(deserialize_rejects_v1_1_module) {
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
     /* errmsg should name the rejected version so users know what they have */
     UASSERT(strstr(errmsg, "0x11") != NULL || strstr(errmsg, "1.1") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_2_module) {
@@ -224,7 +224,7 @@ UTEST(deserialize_rejects_v1_2_module) {
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
     /* errmsg should name the rejected version so users know what they have */
     UASSERT(strstr(errmsg, "0x12") != NULL || strstr(errmsg, "1.2") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_3_module) {
@@ -252,7 +252,7 @@ UTEST(deserialize_rejects_v1_3_module) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
     UASSERT(strstr(errmsg, "0x13") != NULL || strstr(errmsg, "1.3") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_4_module) {
@@ -281,7 +281,7 @@ UTEST(deserialize_rejects_v1_4_module) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
     UASSERT(strstr(errmsg, "0x14") != NULL || strstr(errmsg, "1.4") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_accepts_current_version_module) {
@@ -307,7 +307,7 @@ UTEST(deserialize_accepts_current_version_module) {
     errmsg[0] = '\0';
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
@@ -319,7 +319,7 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
     UASSERT(p != NULL);
     UASSERT_EQ((unsigned)p->ic_count, 0U);
     UASSERT_EQ((void *)p->ic_names, (void *)NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 UTEST(uproto_destroy_frees_ic_names) {
@@ -335,7 +335,7 @@ UTEST(uproto_destroy_frees_ic_names) {
     p->ic_names[0] = NULL;
     p->ic_names[1] = NULL;
     /* umodule_destroy frees nested protos via umodule_destroy_proto_buffers. */
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
     /* If we reach here without leaking under ASan, ic_names was freed. */
 }
 
@@ -349,7 +349,7 @@ UTEST(deserialize_rejects_wrong_int_width) {
     UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "int_width") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_float_type) {
@@ -362,7 +362,7 @@ UTEST(deserialize_rejects_wrong_float_type) {
     UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "float_type") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_instr_width) {
@@ -375,7 +375,7 @@ UTEST(deserialize_rejects_wrong_instr_width) {
     UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "instr_width") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_endianness) {
@@ -388,7 +388,7 @@ UTEST(deserialize_rejects_wrong_endianness) {
     UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "endianness") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_nonzero_reserved_byte) {
@@ -410,7 +410,7 @@ UTEST(deserialize_rejects_nonzero_reserved_byte) {
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     /* errmsg should mention 'reserved' */
     UASSERT(strstr(errmsg, "reserved") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* --- Varint write helpers for building test blobs --- */
@@ -461,7 +461,7 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     UASSERT_EQ((uint8_t)5, c.max_reg);
     UASSERT(c.source_name != NULL);
     UASSERT_EQ(0, strcmp(c.source_name, "repl"));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_loads_integer_constant_pool) {
@@ -497,7 +497,7 @@ UTEST(deserialize_loads_integer_constant_pool) {
     UASSERT_EQ((int64_t)1,   c.constants[0].v.i);
     UASSERT_EQ((uint8_t)UVAL_INT, c.constants[1].kind);
     UASSERT_EQ((int64_t)-42, c.constants[1].v.i);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
@@ -513,7 +513,7 @@ UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
     off = put_varint_zz(buf, off, 0);       /* payload (ignored, rejected first) */
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT_TAG, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* --- Instruction-stream + syncline tests (Task 5 deferred + Task 6) --- */
@@ -555,7 +555,7 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((size_t)1, c.instr_count);
     UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c.instructions[0]));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_non_zero_alignment_padding) {
@@ -590,7 +590,7 @@ UTEST(deserialize_rejects_non_zero_alignment_padding) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "align") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
@@ -641,7 +641,7 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     UASSERT_EQ((size_t)1, c.abs_line_count);
     UASSERT_EQ((uint32_t)0,  c.abs_lines[0].pc);
     UASSERT_EQ((uint32_t)10, c.abs_lines[0].line);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
@@ -674,7 +674,7 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "n_deltas") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* --- build_module_bytes: constructs a well-formed module byte blob ---
@@ -724,7 +724,7 @@ UTEST(verifier_accepts_minimal_ret_only_module) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_opcode_ge_op_max) {
@@ -739,7 +739,7 @@ UTEST(verifier_rejects_opcode_ge_op_max) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "opcode") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_register_gt_max_reg) {
@@ -755,7 +755,7 @@ UTEST(verifier_rejects_register_gt_max_reg) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
@@ -771,7 +771,7 @@ UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "LOADK") != NULL || strstr(errmsg, "Bx") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_last_instruction_not_ret) {
@@ -785,7 +785,7 @@ UTEST(verifier_rejects_last_instruction_not_ret) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "RET") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
@@ -802,7 +802,7 @@ UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);                   /* MUST accept */
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_accepts_ret_with_arbitrary_b_and_c) {
@@ -818,7 +818,7 @@ UTEST(verifier_accepts_ret_with_arbitrary_b_and_c) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_accepts_hand_crafted_op_move_module) {
@@ -835,7 +835,7 @@ UTEST(verifier_accepts_hand_crafted_op_move_module) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c.instructions[1]));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* --- Round-trip integration tests (Task 15) --- */
@@ -898,8 +898,8 @@ static void roundtrip_ast(UAstNode *ast, const char *source_name) {
 
     free(buf);
     uarena_destroy(&arena);
-    umodule_destroy(&src);
-    umodule_destroy(&dst);
+    umodule_destroy(&src, NULL);
+    umodule_destroy(&dst, NULL);
 }
 
 UTEST(roundtrip_ast_int_literal) {
@@ -991,8 +991,8 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     UASSERT(b.nested[1]->instr_count > (size_t)0);
 
     free(buf);
-    umodule_destroy(&a);
-    umodule_destroy(&b);
+    umodule_destroy(&a, NULL);
+    umodule_destroy(&b, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -1088,8 +1088,8 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UASSERT_EQ((void *)before, (void *)b.ic_names);
 
     free(buf);
-    umodule_destroy(&a);
-    umodule_destroy(&b);
+    umodule_destroy(&a, NULL);
+    umodule_destroy(&b, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm_a);
     urbi_vm_destroy(&vm_b);
@@ -1184,8 +1184,8 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
 #endif
 
     free(buf);
-    umodule_destroy(&a);
-    umodule_destroy(&b);
+    umodule_destroy(&a, NULL);
+    umodule_destroy(&b, NULL);
 }
 
 /* --- Serializer tests (Task 14) --- */
@@ -1237,10 +1237,10 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c2, buf, (size_t)written, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c2);
+    umodule_destroy(&c2, NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 UTEST(serialize_cap_0_returns_required_size_without_writing) {
@@ -1255,7 +1255,7 @@ UTEST(serialize_cap_0_returns_required_size_without_writing) {
     UASSERT((ptrdiff_t)0 < needed);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
@@ -1271,7 +1271,7 @@ UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     UASSERT_EQ(-(ptrdiff_t)ULOAD_TRUNCATED, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 /* Custom allocator that fails after `fails_after` successful calls.
@@ -1290,7 +1290,7 @@ static void *module_limit_alloc(void *ptr, size_t nbytes, void *ud) {
 
 UTEST(destroy_null_module_is_noop) {
     /* umodule_destroy(NULL) must not crash — guards the null branch. */
-    umodule_destroy(NULL);
+    umodule_destroy(NULL, NULL);
     UASSERT(true);
 }
 
@@ -1350,7 +1350,7 @@ UTEST(deserialize_oom_on_constants_allocation) {
     c.alloc_ud = &la;
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_oom_on_instructions_allocation) {
@@ -1391,7 +1391,7 @@ UTEST(deserialize_oom_on_instructions_allocation) {
     c.alloc_ud = &la;
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_loads_float_constant) {
@@ -1430,7 +1430,7 @@ UTEST(deserialize_loads_float_constant) {
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((size_t)1, c.const_count);
     UASSERT_EQ((uint8_t)UVAL_FLOAT, c.constants[0].kind);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
@@ -1452,7 +1452,7 @@ UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
     UModule c = {0};
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_CORRUPT_TAG, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_truncated_at_line_deltas) {
@@ -1483,7 +1483,7 @@ UTEST(deserialize_truncated_at_line_deltas) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_TRUNCATED, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_oom_on_abs_lines_allocation) {
@@ -1522,7 +1522,7 @@ UTEST(deserialize_oom_on_abs_lines_allocation) {
     c.alloc_ud = &la;
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
     UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
@@ -1553,7 +1553,7 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "out of range") != NULL || strstr(errmsg, "pc") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_truncated_at_metadata_max_reg) {
@@ -1569,7 +1569,7 @@ UTEST(deserialize_truncated_at_metadata_max_reg) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, sizeof buf, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_TRUNCATED, rc);
     UASSERT(strstr(errmsg, "truncated") != NULL || strstr(errmsg, "metadata") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_module_grow_reuses_existing_cap) {
@@ -1609,7 +1609,7 @@ UTEST(deserialize_module_grow_reuses_existing_cap) {
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ((size_t)2, c.const_count);
 
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_trailing_bytes) {
@@ -1626,7 +1626,7 @@ UTEST(deserialize_rejects_trailing_bytes) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total + 1, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "trailing") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_register_b_gt_max_reg) {
@@ -1643,7 +1643,7 @@ UTEST(verifier_rejects_register_b_gt_max_reg) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "B=") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verifier_rejects_register_c_gt_max_reg) {
@@ -1660,7 +1660,7 @@ UTEST(verifier_rejects_register_c_gt_max_reg) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "C=") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_non_monotonic_abs_lines) {
@@ -1703,7 +1703,7 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "monotonic") != NULL);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* MOD-014: simplification regression — the abs_lines monotonic check must
@@ -1753,14 +1753,14 @@ UTEST(deserialize_accepts_first_abs_line_pc_zero) {
     UASSERT_EQ((size_t)2, c.abs_line_count);
     UASSERT_EQ((uint32_t)0, c.abs_lines[0].pc);
     UASSERT_EQ((uint32_t)1, c.abs_lines[1].pc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
     UModule m = {0};
     UASSERT_EQ(0U, (unsigned)m.ic_count);
     UASSERT(m.ic_names == NULL);
-    umodule_destroy(&m);
+    umodule_destroy(&m, NULL);
 }
 
 /* --- T4 verifier resync regression tests (MOD-009) --- */
@@ -1820,7 +1820,7 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
@@ -1847,7 +1847,7 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
@@ -1871,7 +1871,7 @@ UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_op_getupval_a_above_max_reg) {
@@ -1896,7 +1896,7 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
@@ -1921,7 +1921,7 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_op_closure_bx_above_nested_count) {
@@ -1947,7 +1947,7 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
@@ -1974,7 +1974,7 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 /* Helper: build a serialized 2-instruction module with the given test
@@ -2014,7 +2014,7 @@ UTEST(verify_rejects_arith_c_above_max_reg) {
                                         ENC_ABC(OP_ADD, 0, 0, 99));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_neg_b_above_max_reg) {
@@ -2023,7 +2023,7 @@ UTEST(verify_rejects_neg_b_above_max_reg) {
                                         ENC_ABC(OP_NEG, 0, 99, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_test_a_above_max_reg) {
@@ -2032,7 +2032,7 @@ UTEST(verify_rejects_test_a_above_max_reg) {
                                         ENC_ABC(OP_TEST, 99, 0, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_eq_b_above_max_reg) {
@@ -2042,7 +2042,7 @@ UTEST(verify_rejects_eq_b_above_max_reg) {
                                         ENC_ABC(OP_EQ, 0, 99, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_setupval_a_above_max_reg) {
@@ -2051,7 +2051,7 @@ UTEST(verify_rejects_setupval_a_above_max_reg) {
                                         ENC_ABC(OP_SETUPVAL, 99, 0, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
@@ -2061,7 +2061,7 @@ UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
                                         ENC_ABC(OP_PUSH_FRAME_GUARD, 0, 2, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
@@ -2071,7 +2071,7 @@ UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
                                         ENC_ABX(OP_TRY_BEGIN, 0, 99));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
@@ -2081,7 +2081,7 @@ UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
                                         ENC_ABX(OP_PUSH_TAG, 0x01, 0));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
@@ -2091,7 +2091,7 @@ UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
                                         ENC_ABX(OP_PUSH_TAG, 0x00, 99));
     UModule c = {0};
     UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c);
+    umodule_destroy(&c, NULL);
 }
 
 void test_module_suite(void);

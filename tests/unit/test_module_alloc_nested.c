@@ -88,7 +88,7 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     UASSERT_EQ((long long)module.nested_count, 1LL);
     UASSERT_EQ((void *)module.nested[0], (void *)p2);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 /* Case 2: nested[] grow OOM (1st NEW alloc fails) leaves module untouched. */
@@ -113,7 +113,7 @@ nested_proto_oom_at_grow_keeps_module_pristine(void)
     UASSERT_EQ((long long)module.nested_cap, 0LL);
     UASSERT_EQ((long long)module.nested_count, 0LL);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 /* Case 3: serialize / iterate paths do not read beyond nested_count.
@@ -141,7 +141,7 @@ nested_over_cap_iteration_stops_at_count(void)
     /* Slots beyond nested_count are not initialised; we do NOT read them. */
     (void)cap_after_first;
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
 }
 
 void test_module_alloc_nested_suite(void)

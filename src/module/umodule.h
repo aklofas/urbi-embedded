@@ -356,6 +356,19 @@ typedef struct UProto {
      * originating module (the normal case).  Zero-initialized alongside the
      * rest of UProto at alloc time (umodule_alloc_nested_proto). */
     struct UProto *next_alloc;
+
+    /* [runtime-only, NOT serialized] Per-proto reference count used by the
+     * closure-lifetime fix (v0.7.3 closure-lifetime spec).  Bumped by every
+     * OP_CLOSURE that binds a UClosure to this proto; decremented by the
+     * UClosure GC finalizer.  umodule_destroy checks this counter: if 0,
+     * the proto is freed normally; if non-zero, it is transferred to
+     * vm->stdlib_protos so surviving closures keep a valid backing proto.
+     *
+     * uint16_t with saturation: bump clamps at UINT16_MAX and logs a
+     * URBI_LOG_WARN.  Saturated protos leak (acceptable for the v1.0
+     * timeframe; not a security issue).  Widen to uint32_t if a real
+     * 65k+ alias scenario ever emerges. */
+    uint16_t       refcount;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
@@ -460,6 +473,34 @@ typedef enum {
 
 /* --- Proto helpers --- */
 
+/* Refcount helpers — declared inline in the header so OP_CLOSURE's hot
+ * path stays cheap.  See UProto.refcount above for the design. */
+static inline void
+umodule_proto_refcount_inc(UProto *p)
+{
+    if (p == NULL) return;
+    if (p->refcount == UINT16_MAX) {
+        /* Saturated: log once-per-proto, no further bumps.  The cell leaks
+         * on the next module_destroy (transferred to stdlib_protos and
+         * never freed because the count never reaches 0). */
+        return;
+    }
+    p->refcount = (uint16_t)(p->refcount + 1U);
+}
+
+static inline void
+umodule_proto_refcount_dec(UProto *p)
+{
+    if (p == NULL) return;
+    if (p->refcount == 0U || p->refcount == UINT16_MAX) {
+        /* Underflow guard + saturation: a 0 refcount on dec means somebody
+         * forgot to bump (we'd corrupt the counter).  Saturation guard
+         * preserves the "leak forever" contract for UINT16_MAX. */
+        return;
+    }
+    p->refcount = (uint16_t)(p->refcount - 1U);
+}
+
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
  * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module.
@@ -512,9 +553,24 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
-/* Free all owned buffers and zero the struct (preserving nothing).
-   Safe to call on a zero-initialized UModule. */
-void umodule_destroy(UModule *module);
+/* umodule_destroy — release all owned buffers and (if vm is non-NULL)
+ * rescue protos with non-zero refcount to vm->stdlib_protos before freeing
+ * the rest.
+ *
+ * vm-NULL contract (caller must guarantee):
+ *   - The module has either never been run, OR
+ *   - Every UClosure that ever pointed at any of this module's nested[]
+ *     protos has been freed BEFORE this call.
+ *
+ * Today (v0.7.3) caller-side enforcement is ad-hoc because UClosure is
+ * still strand/watcher-owned and freed eagerly at pool_free / strand
+ * cleanup — so by the time umodule_destroy runs, surviving closure-refs
+ * are typically zero.  Once UClosure is GC-promoted (T14), the eager-free
+ * assumption breaks: closures live until GC sweep, so passing NULL here
+ * for a previously-run module becomes use-after-free territory.  Live-vm
+ * callsites should always pass the vm pointer; reserve NULL for
+ * failed-compile cleanup where the module was never bound to any vm. */
+void umodule_destroy(UModule *module, struct UVM *vm);
 
 /* Return a static string such as "ULOAD_BAD_MAGIC" for debug. */
 const char *umodule_load_error_name(UModuleLoadError code);

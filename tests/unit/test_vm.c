@@ -38,7 +38,7 @@ static UVMError vm_pipeline_eval(const char *src, UValue *out) {
     if (uemit_finish(&e) == EMIT_OK) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return vm_rc;
@@ -1104,7 +1104,7 @@ UTEST(vm_uclosure_carries_proto_inst_field) {
      * index).  The proto pointer must match the closure's own proto. */
     UASSERT(cl->proto_inst != NULL);
     UASSERT(cl->proto_inst->proto == cl->proto);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -1142,7 +1142,7 @@ UTEST(vm_op_closure_binds_proto_inst) {
     UASSERT(cl != NULL);
     UASSERT(cl->proto_inst != NULL);
     UASSERT(cl->proto_inst->proto == cl->proto);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -1188,7 +1188,7 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
      * to the slow-path miss). */
     UASSERT(strstr(vm.last_errmsg, "slot 'x' not found") != NULL);
     UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -1221,7 +1221,7 @@ UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
     UASSERT_EQ((int)UVM_TYPE_ERROR, (int)rc);
     UASSERT(strstr(vm.last_errmsg, "receiver is not an Object") != NULL);
     UASSERT(strstr(vm.last_errmsg, "no IC table bound") == NULL);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

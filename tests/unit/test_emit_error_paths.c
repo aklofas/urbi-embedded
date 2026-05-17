@@ -102,7 +102,7 @@ ectx_destroy(ECtx *c)
     /* Disable failure injection during teardown so destruction can free. */
     c->spy.fail_at = -1;
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module);
+    umodule_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 

@@ -5,6 +5,7 @@
 #include "runtime/umacros.h"
 #include "value/uvarint.h"
 #include "uopcode_shape.h"
+#include "vm/uvm.h"               /* struct UVM access for umodule_destroy rescue path */
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
@@ -226,6 +227,12 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
     urbi_zero(proto, sizeof(*proto));
     proto->alloc_fn = module->alloc_fn;
     proto->alloc_ud = module->alloc_ud;
+
+    /* Piece A: nested[] slot itself counts as one reference.  Discharged
+     * when the slot is nulled (strand_closure_unlink) or when the module
+     * is destroyed (umodule_destroy's walk decrements before free/rescue).
+     * Closures bump separately at vm_alloc_closure. */
+    proto->refcount = 1U;
 
     module->nested[module->nested_count++] = proto;
     return proto;
@@ -1132,8 +1139,15 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *   detach, nested[k] reads NULL.  This is the expected steady-state for any
  *   chunk that installed reactive watchers — umodule_destroy must skip NULL
  *   slots without freeing them, since the watcher's pool_free now owns
- *   that proto and will free it on watcher recycle. */
-void umodule_destroy(UModule *module) {
+ *   that proto and will free it on watcher recycle.
+ *
+ *   v0.7.3 — detach only happens at `s->frame_count == 0` (chunk-top
+ *   installs).  Installs inside a callee skip the transfer entirely to
+ *   avoid the cascade-wake use-after-free on shared protos, so callee-side
+ *   nested[] slots stay populated and are freed normally below.  See
+ *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
+ *   rationale. */
+void umodule_destroy(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
@@ -1143,10 +1157,21 @@ void umodule_destroy(UModule *module) {
             size_t i;
             for (i = 0; i < module->nested_count; i++) {
                 UProto *p = module->nested[i];
-                if (p != NULL) {
-                    umodule_destroy_proto_buffers(p, alloc, module->alloc_ud);
-                    alloc(p, 0, module->alloc_ud);
+                if (p == NULL) continue;
+                /* Piece A: discharge the nested[] slot's implicit ref.
+                 * After this, p->refcount reflects only surviving closures
+                 * (via watcher->cl or vm->stdlib_closures). */
+                umodule_proto_refcount_dec(p);
+                if (vm != NULL && p->refcount > 0U) {
+                    /* Surviving closure still references this proto;
+                     * transfer to vm->stdlib_protos.  The closure's
+                     * eventual pool_free will dec refcount to 0 and free. */
+                    p->next_alloc     = vm->stdlib_protos;
+                    vm->stdlib_protos = p;
+                    continue;
                 }
+                umodule_destroy_proto_buffers(p, alloc, module->alloc_ud);
+                alloc(p, 0, module->alloc_ud);
             }
             /* TIDY-005: UProto ** → void * decay needs explicit cast. */
             alloc((void *)module->nested, 0, module->alloc_ud);

@@ -95,7 +95,7 @@ UTEST(scratch_runner_returns_integer_value)
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
     UASSERT_EQ(42, (int)out.v.i);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -156,7 +156,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
      * does not see the cond's stale error state. */
     UASSERT_EQ((int)UVM_OK, (int)vm.last_error);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -225,7 +225,7 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
     UASSERT_EQ(0, threw);
     UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -271,7 +271,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
     UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
     UASSERT_EQ(1, (int)out.v.i);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -317,7 +317,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
     UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
     UASSERT_EQ(0, (int)out.v.i);
 
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

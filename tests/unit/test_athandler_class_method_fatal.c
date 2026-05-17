@@ -107,7 +107,7 @@ UTEST(at_body_calls_class_method_minimal)
      * exercising the bug; post-fix the !fatal branch runs cleanly. */
     if (!fatal) {
         uarena_destroy(&arena);
-        umodule_destroy(&module);
+        umodule_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
     }
 }
@@ -156,7 +156,7 @@ UTEST(at_body_calls_class_method_side_effect)
         UASSERT_EQ(1LL, n.v.i);
 
         uarena_destroy(&arena);
-        umodule_destroy(&module);
+        umodule_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
     }
 }
@@ -201,7 +201,7 @@ UTEST(at_body_reads_class_field_control)
     UASSERT_EQ(42LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -256,7 +256,7 @@ UTEST(s43_chunktop_var_then_at_body_reads_var)
     UASSERT_EQ(42LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

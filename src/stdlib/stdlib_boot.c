@@ -114,12 +114,12 @@ urbi_stdlib_boot(UVM *vm)
         UModuleLoadError lerr = umodule_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
         if (lerr != ULOAD_OK) {
-            umodule_destroy(m);
+            umodule_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
         if (urbi_get_or_create_module_instance(vm, m) == NULL) {
-            umodule_destroy(m);
+            umodule_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_OOM;
         }

@@ -58,7 +58,7 @@ static UEmitError gv_ctx_run(GVCtx *c)
 static void gv_ctx_destroy(GVCtx *c)
 {
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module);
+    umodule_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 

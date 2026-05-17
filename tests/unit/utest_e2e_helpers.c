@@ -81,7 +81,7 @@ utest_e2e_compile_and_run(UVM *vm, const char *src, UValue *out_result)
                                                    src, out_result);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module);
+    umodule_destroy(&module, vm);
     return rc;
 }
 
