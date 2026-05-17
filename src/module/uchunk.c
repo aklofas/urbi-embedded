@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Chunk-execution C API wrappers.
  *
- * urbi_run_chunk is a synchronous wrapper around urbi_vm_run: it allocates
- * a transient strand, drives it to completion, and returns when the module
- * OP_RETs.  The step-driven cooperative scheduler (urbi_step + per-realm
- * strands) lives alongside this entry point — embedders that need
- * incremental dispatch use urbi_step directly; urbi_run_chunk is the
- * convenience "block until done" path.
+ * v0.8.0: urbi_run_chunk allocates a persistent loader strand via
+ * urbi_strand_create_for_module and drives it via uchunk_loader_drive's
+ * park-or-die state machine.  The strand persists in realm->strands_head;
+ * the host's main urbi_step loop advances it after urbi_run_chunk returns.
+ * This replaces the v0.7.x transient-strand path and enables chunk-top `&`
+ * and `,` fork semantics per the legacy urbiscript spec.
  *
  * Freestanding discipline: no <stdlib.h>, <string.h>, or <assert.h>.
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
@@ -87,6 +87,13 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
     *out_slot_target = nil_storage;
     loader->out_slot = out_slot_target;
 
+    /* Reset vm->last_error so that clean-death detection can distinguish
+     * a type-error halt (UVM_TYPE_ERROR) from a pure unhandled throw
+     * (last_error stays UVM_OK).  Mirrors the reset at urbi_vm_run entry
+     * (uvm_run.c:29); without this reset a stale UVM_TYPE_ERROR from a
+     * prior REPL session would be misread as belonging to this run. */
+    vm->last_error = UVM_OK;
+
     /* Snapshot the realm pointer BEFORE any urbi_step calls.
      *
      * Safety invariant (T20 eager-reap): urbi_step eagerly calls
@@ -116,12 +123,31 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
 
         /* Path 1: fatal death.  Fatal strands are not reaped by urbi_step;
          * loader is still valid.  vm->fatal_strand points at our strand,
-         * distinguishable from an unrelated strand's fatal by address. */
+         * distinguishable from an unrelated strand's fatal by address.
+         *
+         * v0.8.0 lifetime contract: urbi_run_chunk may use a stack-allocated
+         * UModule (urbi_repl_eval pattern).  The fatal loader strand holds a
+         * module refcount that must be discharged BEFORE the caller frees the
+         * module (which happens when urbi_repl_eval returns and the stack
+         * frame unwinds).  Discharge early here:
+         *   1. Drop the module refcount and null s->module so the later
+         *      realm-teardown path (urealm_teardown_all → urbi_strand_destroy
+         *      → ustrand_destroy) does not double-decrement.
+         *   2. Clear vm->fatal_strand so the urbi_step fast-path does not
+         *      see a stale pointer on the next host urbi_step call.
+         *
+         * The strand itself stays in realm->strands_head; urealm_teardown_all
+         * owns the final urbi_strand_destroy. */
         if (step_rc == URBI_STEP_FATAL && vm->fatal_strand == loader) {
             if (out_result) {
                 urbi_zero(out_result, sizeof(*out_result));
                 out_result->kind = UVAL_NIL;
             }
+            if (loader->module != NULL) {
+                umodule_refcount_dec((UModule *)loader->module, vm);
+                loader->module = NULL;
+            }
+            vm->fatal_strand = NULL;
             return URBI_ERR_STRAND_FATAL;
         }
 
@@ -130,9 +156,21 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
          * Handles the chunk-top-fork case: even when other strands still
          * bind the module (refcount > 0), the loader itself may have died
          * and been freed; the former mod->refcount == 0 check missed this.
-         * out_result was already written by OP_RET via out_slot before reap. */
+         * out_result was already written by OP_RET via out_slot before reap.
+         *
+         * Check vm->last_error to surface halt_error-path type errors.
+         * halt_error sets vm->last_error = UVM_TYPE_ERROR (or UVM_OOM) and
+         * marks the strand DEAD directly (fatal_status == UEXEC_OK), so
+         * urbi_step eagerly reaps it without going through the FATAL path.
+         * Without this check, TypeErrors would silently return URBI_OK and
+         * show nil instead of the expected "!!! TypeError:" message. */
         if (!strand_still_alive(loader_realm, loader)) {
-            return URBI_OK;
+            switch (vm->last_error) {
+            case UVM_OK:          return URBI_OK;
+            case UVM_OOM:         return URBI_ERR_OOM;
+            case UVM_TYPE_ERROR:  return URBI_ERR_STRAND_FATAL;
+            }
+            return URBI_ERR_STRAND_FATAL;  /* unknown UVMError */
         }
 
         /* Path 3: check for parked states (strand still alive — safe to read).
@@ -160,52 +198,52 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
  * *out_result (or discarding it if out_result is NULL).  realm == NULL
  * auto-creates/uses the VM's global Realm.
  *
- * Delegates to urbi_vm_run, which allocates a transient strand wired to the
- * resolved realm and drives it synchronously to OP_RET.  Embedders that need
- * incremental, budget-bounded dispatch use urbi_strand_create + urbi_step
- * (the per-realm strand C API) instead.
+ * v0.8.0: persistent loader strand path.  Allocates a real scheduler-managed
+ * strand via urbi_strand_create_for_module; the driver runs urbi_step
+ * iterations until the strand parks (sleep / join-wait / event-wait) or
+ * dies (OP_RET / fatal).
+ *
+ * On parked: the strand persists in realm->strands_head; the host's main
+ * urbi_step loop continues advancing it after this returns.
+ * On dead: scheduler reaped the strand; out_slot was written to *out_result
+ * via out_slot wiring inside uchunk_loader_drive.
+ *
+ * module parameter is non-const: urbi_strand_create_for_module bumps
+ * module->refcount (a mutating operation).
  * --------------------------------------------------------------------------- */
 int
-urbi_run_chunk(UVM *vm, URealm *realm, const UModule *module, UValue *out_result)
+urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    /* Resolve realm: NULL → global (auto-create). */
     if (!realm) {
         realm = urbi_realm_global(vm);
         if (!realm) return URBI_ERR_OOM;
     }
 
-    /* CHSTR-008 + CHSTR-027 (T100): the M4-follow-up precreate of UModuleInstance
-     * was redundant.  urbi_vm_run unconditionally calls urbi_module_instance_create
-     * (uvm_run.c:114) which builds a fresh instance and prepends it to
-     * vm->module_instances_head; the precreate's instance was never read on
-     * this path (the strand's module_instance is wired from the fresh-create
-     * result, not from the cache lookup).  Keeping the precreate left a
-     * dead instance head-inserted into the GC-managed list with no useful
-     * effect; the GC reaps it on the next sweep but the work is wasted.
-     * Removed.  vm->strand_runnable_count and module_instance_count for
-     * .chk fixtures unchanged after the removal. */
+    /* Empty module (instr_count == 0): nothing to dispatch.  Mirrors the
+     * urbi_vm_run fast-path (uvm_run.c:44-47) so callers that compile an
+     * empty REPL line still get URBI_OK + nil result.  Without this guard,
+     * urbi_strand_create_for_module would return NULL (per its precondition)
+     * and be misreported as OOM. */
+    if (!module || module->instr_count == 0) {
+        if (out_result) {
+            urbi_zero(out_result, sizeof(*out_result));
+            out_result->kind = UVAL_NIL;
+        }
+        return URBI_OK;
+    }
 
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    /* API-004 (Wave 5): thread the caller-supplied Realm through to
-     * urbi_vm_run — pre-Wave-5 the realm argument was silently dropped
-     * via `(void)realm;` and urbi_vm_run always wired the transient to
-     * the global Realm.  After Wave 5, urbi_vm_run accepts a realm
-     * directly (NULL → global, preserving the prior implicit behavior). */
-    UVMError rc = urbi_vm_run(vm, realm, module, out);
-
-    /* Map UVMError to UErrCode.  UVM_TYPE_ERROR collapses to STRAND_FATAL
-     * at v0.5.5 because the public surface has no dedicated type-error
-     * code; M6 stdlib expansion may add one (API-032 review). */
-    switch (rc) {
-    case UVM_OK:         return URBI_OK;
-    case UVM_OOM:        return URBI_ERR_OOM;
-    case UVM_TYPE_ERROR: return URBI_ERR_STRAND_FATAL;
+    UStrand *loader = urbi_strand_create_for_module(vm, realm, module);
+    if (!loader) {
+        vm->last_error = UVM_OOM;
+        return URBI_ERR_OOM;
     }
-    return URBI_ERR_STRAND_FATAL;  /* unreachable; new UVMError values must add cases */
+
+    return uchunk_loader_drive(vm, loader, out);
 }
 
 #if !defined(URBI_BYTECODE_ONLY) && __STDC_HOSTED__
@@ -432,7 +470,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     urbi_steal_repl_protos(vm, &module);
 
     if (run_rc != URBI_OK) {
-        /* Copy vm->last_errmsg into out_buf; it was populated by urbi_vm_run. */
+        /* REPL recovery for pure scriptlevel fatals (unhandled throw with no
+         * system error): vm->last_error == UVM_OK means the strand died from
+         * an unhandled urbiscript `throw` that exhausted the cleanup stack,
+         * not from a VM type-error or OOM.  Matching legacy transient-strand
+         * behaviour: urbi_vm_run returned UVM_OK (ignoring the strand's
+         * UEXEC_THROW fatal_status), so the REPL showed nil.  Preserve that
+         * REPL recovery contract — show nil, return URBI_OK.
+         *
+         * System fatals (TypeError, OOM) have vm->last_error != UVM_OK
+         * (set via HALT() in uvm.c) and reach the error-display path below. */
+        if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
+            if (out_buf && out_buf_size > 0)
+                uvalue_format(&result, out_buf, out_buf_size);
+            umodule_destroy(&module, vm);
+            uarena_destroy(&arena);
+            return URBI_OK;
+        }
+        /* Copy vm->last_errmsg into out_buf; it was populated by the driver. */
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
@@ -441,7 +496,8 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         return run_rc;
     }
 
-    /* Format the result value into out_buf. */
+    /* Format the result value into out_buf (nil for fatal, OP_RET value
+     * for clean death). */
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
@@ -470,7 +526,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
  * driving urbi_step() afterwards if the script registered watchers/coroutines.
  * --------------------------------------------------------------------------- */
 int
-urbi_run_script(UVM *vm, URealm *realm, const UModule *module)
+urbi_run_script(UVM *vm, URealm *realm, UModule *module)
 {
     URBI_ASSERT_NOT_ISR(vm);
     return urbi_run_chunk(vm, realm, module, NULL);
