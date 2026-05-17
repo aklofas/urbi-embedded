@@ -191,18 +191,22 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * does not have).  Walk + intern lazily on first instance-create.
      * Helper is idempotent — second call with ic_names already populated
      * is a no-op.
-     * v0.8.1 Phase 1: intern writes through root_ic_names ptr (root_proto or
-     * module, depending on whether root_proto is available). */
-    if (!intern_ic_names_from_strs(vm, root_ic_count,
-                                   (rp != NULL) ? &rp->ic_names : &m->ic_names,
+     * v0.8.1 Phase 1 alias invariant: write through UModule (lifetime owner
+     * — umodule_destroy frees m->ic_names), then re-sync rp->ic_names so
+     * reads via root_proto continue to work.  Task 11 unifies ownership
+     * when UModule duplicate fields are deleted. */
+    if (!intern_ic_names_from_strs(vm, root_ic_count, &m->ic_names,
                                    root_ic_strs,
                                    root_alloc_fn, root_alloc_ud)) {
         /* OOM during string-to-symbol intern.  Both GC cells are reachable
          * only via this return path; sweep reclaims them. */
         return NULL;
     }
-    /* Re-read after possible intern (pointer may have changed). */
-    root_ic_names = (rp != NULL) ? rp->ic_names : m->ic_names;
+    /* Re-sync alias after intern so rp->ic_names reads return the freshly
+     * interned array.  Task 5 redirected the write to rp but desynchronised
+     * the two slots; this restores the Phase 1 alias invariant. */
+    if (rp != NULL) rp->ic_names = m->ic_names;
+    root_ic_names = m->ic_names;
     init_ic_slice(&arr->entries[0], NULL,
                   root_ic_count, root_ic_names, &ic_cursor);
 

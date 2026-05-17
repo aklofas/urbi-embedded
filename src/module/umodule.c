@@ -1123,10 +1123,18 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
 
     /* Phase 1 v0.8.1-uproto-root: allocate root_proto and alias its fields
      * to the module's chunk-top fields (same physical storage; Task 11 will
-     * invert ownership once all readers migrate). */
+     * invert ownership once all readers migrate).
+     * If a previous root_proto exists (re-deserialize into same module struct),
+     * free the old struct — its fields are aliases to module buffers that were
+     * either freed or reused above; the struct itself is the only owned
+     * allocation. */
     {
         UModuleAllocFn alloc = module_allocator(module);
         if (alloc == NULL) return ULOAD_OOM;
+        if (module->root_proto != NULL) {
+            alloc(module->root_proto, 0, module->alloc_ud);
+            module->root_proto = NULL;
+        }
         UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
         if (rp == NULL) return ULOAD_OOM;
         urbi_zero(rp, sizeof(UProto));
