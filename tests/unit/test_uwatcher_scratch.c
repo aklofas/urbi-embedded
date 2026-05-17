@@ -74,12 +74,12 @@ UTEST(scratch_runner_returns_integer_value)
      * The module's instruction/constant arrays stay owned by the module. */
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.instructions;
-    proto.instr_count  = module.instr_count;
-    proto.constants    = module.constants;
-    proto.const_count  = module.const_count;
-    proto.ic_count     = module.ic_count;
-    proto.ic_names     = module.ic_names;
+    proto.instructions = module.root_proto->instructions;
+    proto.instr_count  = module.root_proto->instr_count;
+    proto.constants    = module.root_proto->constants;
+    proto.const_count  = module.root_proto->const_count;
+    proto.ic_count     = module.root_proto->ic_count;
+    proto.ic_names     = module.root_proto->ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -132,12 +132,12 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.instructions;
-    proto.instr_count  = module.instr_count;
-    proto.constants    = module.constants;
-    proto.const_count  = module.const_count;
-    proto.ic_count     = module.ic_count;
-    proto.ic_names     = module.ic_names;
+    proto.instructions = module.root_proto->instructions;
+    proto.instr_count  = module.root_proto->instr_count;
+    proto.constants    = module.root_proto->constants;
+    proto.const_count  = module.root_proto->const_count;
+    proto.ic_count     = module.root_proto->ic_count;
+    proto.ic_names     = module.root_proto->ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -205,12 +205,12 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.instructions;
-    proto.instr_count  = module.instr_count;
-    proto.constants    = module.constants;
-    proto.const_count  = module.const_count;
-    proto.ic_count     = module.ic_count;
-    proto.ic_names     = module.ic_names;
+    proto.instructions = module.root_proto->instructions;
+    proto.instr_count  = module.root_proto->instr_count;
+    proto.constants    = module.root_proto->constants;
+    proto.const_count  = module.root_proto->const_count;
+    proto.ic_count     = module.root_proto->ic_count;
+    proto.ic_names     = module.root_proto->ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -250,12 +250,12 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.instructions;
-    proto.instr_count  = module.instr_count;
-    proto.constants    = module.constants;
-    proto.const_count  = module.const_count;
-    proto.ic_count     = module.ic_count;
-    proto.ic_names     = module.ic_names;
+    proto.instructions = module.root_proto->instructions;
+    proto.instr_count  = module.root_proto->instr_count;
+    proto.constants    = module.root_proto->constants;
+    proto.const_count  = module.root_proto->const_count;
+    proto.ic_count     = module.root_proto->ic_count;
+    proto.ic_names     = module.root_proto->ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -296,12 +296,12 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.instructions;
-    proto.instr_count  = module.instr_count;
-    proto.constants    = module.constants;
-    proto.const_count  = module.const_count;
-    proto.ic_count     = module.ic_count;
-    proto.ic_names     = module.ic_names;
+    proto.instructions = module.root_proto->instructions;
+    proto.instr_count  = module.root_proto->instr_count;
+    proto.constants    = module.root_proto->constants;
+    proto.const_count  = module.root_proto->const_count;
+    proto.ic_count     = module.root_proto->ic_count;
+    proto.ic_names     = module.root_proto->ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));

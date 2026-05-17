@@ -18,13 +18,16 @@
 #define UTEST(name) static void name(void)
 
 /* Build a minimal one-instruction module; instructions array is heap-
-   allocated so umodule_destroy() can free it. */
+   allocated on root_proto so umodule_destroy() can free it.
+   Task 11: all chunk-top data lives on root_proto. */
 static UModule make_one_instr_module(uint32_t instr) {
     UModule m = {0};
-    m.instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    m.instr_cap   = 1;
-    m.instr_count = 1;
-    m.instructions[0] = instr;
+    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
+    rp->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    rp->instr_cap   = 1;
+    rp->instr_count = 1;
+    rp->instructions[0] = instr;
+    m.root_proto = rp;
     return m;
 }
 
@@ -334,19 +337,22 @@ UTEST(disasm_slot_ops) {
  * is just realloc — std-malloc-compatible). */
 UTEST(disasm_closure_with_upval_prelude) {
     UModule m = {0};
-    m.instructions = (uint32_t *)malloc(3 * sizeof(uint32_t));
-    m.instr_cap   = 3;
-    m.instr_count = 3;
-    m.instructions[0] = uinstr_enc_abx(OP_CLOSURE, 1U, 0U);
+    /* Task 11: all chunk-top data lives on root_proto. */
+    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
+    rp->instructions = (uint32_t *)malloc(3 * sizeof(uint32_t));
+    rp->instr_cap   = 3;
+    rp->instr_count = 3;
+    rp->instructions[0] = uinstr_enc_abx(OP_CLOSURE, 1U, 0U);
     /* prelude entries: B=in_stack flag, C=parent_idx */
-    m.instructions[1] = uinstr_enc_abc(0, 0U, 1U, 4U);  /* in_stack=1 idx=4 */
-    m.instructions[2] = uinstr_enc_abc(0, 0U, 0U, 7U);  /* in_stack=0 idx=7 */
+    rp->instructions[1] = uinstr_enc_abc(0, 0U, 1U, 4U);  /* in_stack=1 idx=4 */
+    rp->instructions[2] = uinstr_enc_abc(0, 0U, 0U, 7U);  /* in_stack=0 idx=7 */
     /* Stub child UProto at nested[0] with 2 upvals. */
     UProto *child = (UProto *)calloc(1, sizeof(UProto));
     child->nupvals = 2;
-    m.nested = (UProto **)malloc(sizeof(UProto *));
-    m.nested[0] = child;
-    m.nested_count = 1;
+    rp->nested = (UProto **)malloc(sizeof(UProto *));
+    rp->nested[0] = child;
+    rp->nested_count = 1;
+    m.root_proto = rp;
 
     char buf[512];
     UASSERT(uemit_disassemble(&m, buf, sizeof buf) > 0);

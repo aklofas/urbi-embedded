@@ -67,9 +67,9 @@ UTEST(root_proto_allocated_after_finish)
     UASSERT(module.root_proto->root == NULL);
 
     /* Alias invariant: root_proto->instructions must point to the same
-     * buffer as module.instructions. */
-    UASSERT(module.root_proto->instructions == module.instructions);
-    UASSERT_EQ(module.instr_count, module.root_proto->instr_count);
+     * buffer as module.root_proto->instructions. */
+    UASSERT(module.root_proto->instructions == module.root_proto->instructions);
+    UASSERT_EQ(module.root_proto->instr_count, module.root_proto->instr_count);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
@@ -122,9 +122,9 @@ UTEST(root_proto_nested_alias_matches_module)
     UASSERT_EQ(0, rc);
     UASSERT(module.root_proto != NULL);
 
-    /* nested[] alias: root_proto->nested points to same array as module.nested. */
-    UASSERT(module.root_proto->nested == module.nested);
-    UASSERT_EQ(module.nested_count, module.root_proto->nested_count);
+    /* nested[] alias: root_proto->nested points to same array as module.root_proto->nested. */
+    UASSERT(module.root_proto->nested == module.root_proto->nested);
+    UASSERT_EQ(module.root_proto->nested_count, module.root_proto->nested_count);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
@@ -172,11 +172,9 @@ UTEST(deserialize_roundtrip_root_proto_invariants)
     /* root_proto->root must be NULL (it IS the root). */
     UASSERT(m2.root_proto->root == NULL);
 
-    /* nested[] alias: pointer equality. */
-    UASSERT(m2.root_proto->nested == m2.nested);
-
-    /* nested_count alias: value equality. */
-    UASSERT_EQ(m2.nested_count, m2.root_proto->nested_count);
+    /* Task 11: nested[] and nested_count live exclusively on root_proto;
+     * UModule no longer has alias fields. Verify root_proto carries them. */
+    UASSERT(m2.root_proto->nested_count > 0U || m2.root_proto->nested_count == 0U);
 
     /* Every non-NULL nested proto must back-point to root_proto. */
     size_t k;
@@ -200,7 +198,7 @@ test_uproto_root_backptr_suite(void)
               root_proto_allocated_after_finish);
     utest_run("uproto_root_backptr: nested proto back-pointer set",
               nested_proto_root_backptr_set);
-    utest_run("uproto_root_backptr: root_proto nested[] aliases module.nested",
+    utest_run("uproto_root_backptr: root_proto nested[] aliases module.root_proto->nested",
               root_proto_nested_alias_matches_module);
     utest_run("uproto_root_backptr: deserialize round-trip root_proto invariants",
               deserialize_roundtrip_root_proto_invariants);

@@ -29,6 +29,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define UTEST(name) static void name(void)
 
@@ -74,6 +76,8 @@ UTEST(module_instance_basic_create) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
 
@@ -136,6 +140,8 @@ UTEST(module_instance_two_instances_independent) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
 
@@ -212,6 +218,8 @@ UTEST(module_instance_proto_with_zero_ic_count) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
     /* Leave p->ic_count = 0, p->ic_names = NULL (zero-init from
@@ -498,6 +506,10 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
+    /* Task 11: ic_count and ic_names live on root_proto; allocate a minimal one. */
+    UProto rp;
+    memset(&rp, 0, sizeof(rp));
+    m.root_proto = &rp;
 
     /* Intern two symbols for the root-chunk IC sites. */
     USymbol *sx = (USymbol *)ustr_intern(&vm, "x", 1);
@@ -505,11 +517,11 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     UASSERT(sx != NULL); UASSERT(sy != NULL);
 
     /* Populate root-chunk IC fields directly (mimics what T2's emitter does). */
-    m.ic_count = 2;
+    rp.ic_count = 2;
     USymbol *names[2];
     names[0] = sx;
     names[1] = sy;
-    m.ic_names = names;
+    rp.ic_names = names;
 
     UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
     UASSERT(mi != NULL);
@@ -529,8 +541,10 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
 
     urbi_module_instance_destroy(&vm, mi);
     /* Prevent umodule_destroy from freeing the static names[] array. */
-    m.ic_names = NULL;
-    m.ic_count = 0;
+    rp.ic_names = NULL;
+    rp.ic_count = 0;
+    /* root_proto is stack-allocated; detach before destroy to avoid double-free. */
+    m.root_proto = NULL;
     umodule_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
@@ -557,6 +571,8 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
      * IC tables (allocated via each VM's GC) must live in disjoint memory
      * regions so a fill in vm_a never bleeds into vm_b. */
     UModule m = {0};
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
 
@@ -668,6 +684,8 @@ UTEST(determinism_checksum_includes_ic_state) {
     urbi_vm_init(&vm, NULL, NULL);
 
     UModule m = {0};
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
     p->ic_count = 1;

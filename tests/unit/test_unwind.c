@@ -34,7 +34,10 @@
    run_cleanup_with_replace is not exercised in a test. */
 static uint32_t s_dummy_instr[4];
 
-/* A real UModule pointing at dummy_instr so s->module->instructions is valid.
+/* Task 11: root_proto carries chunk-top data; module is a thin 5-field shell. */
+static UProto   s_dummy_rp;
+
+/* A real UModule pointing at dummy_rp so s->module->root_proto is valid.
    Shared across tests; filled in by setup_module(). */
 static UModule s_dummy_module;
 
@@ -47,8 +50,11 @@ setup_module(void)
     s_dummy_instr[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
     s_dummy_instr[3] = uinstr_enc_abc(OP_RET, 0, 0, 0);
 
+    memset(&s_dummy_rp, 0, sizeof(s_dummy_rp));
+    s_dummy_rp.instructions = s_dummy_instr;
+
     memset(&s_dummy_module, 0, sizeof(s_dummy_module));
-    s_dummy_module.instructions = s_dummy_instr;
+    s_dummy_module.root_proto = &s_dummy_rp;
 }
 
 /* Zero-init a UStrand for testing.  Wires vm, module, stack and cleanup-stack.
@@ -65,11 +71,12 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     s->state      = USTRAND_STATE_RUNNING;
     s->stack      = reg_stack;
     s->R          = reg_stack;
-    s->pc         = s_dummy_module.instructions;
-    s->pc_base    = s_dummy_module.instructions;
-    s->cur_consts = NULL;
     s->module     = &s_dummy_module;
-    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    s->root_proto = s_dummy_module.root_proto;  /* Task 11: chunk-top on root_proto */
+    s->pc         = s->root_proto->instructions;
+    s->pc_base    = s->root_proto->instructions;
+    s->cur_consts = NULL;
+    umodule_proto_refcount_inc(s->root_proto);
     s->frame_count   = 0;
     s->open_upvals   = NULL;
     s->closure_list  = NULL;
@@ -81,6 +88,18 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     strand_cleanup_stack_init(s, vm, (uint16_t)URBI_CLEANUP_MAX);
 
     return reg_stack;
+}
+
+/* Tear down a strand that was set up with strand_setup_minimal.
+ * Nulls root_proto first so ustrand_destroy does not attempt to free
+ * the static s_dummy_rp (which is not heap-allocated).  The refcount
+ * bumped by strand_setup_minimal is intentionally left non-zero on the
+ * static UProto; setup_module() resets it to zero at suite start. */
+static void
+strand_teardown_minimal(UStrand *s, UVM *vm)
+{
+    s->root_proto = NULL;
+    ustrand_destroy(s, vm);
 }
 
 /* ===== Test cases ===== */
@@ -146,7 +165,7 @@ UTEST(unwind_return_at_call_frame_absorbs)
     /* frame_count decremented. */
     UASSERT_EQ((int)s.frame_count, 0);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -187,11 +206,11 @@ UTEST(unwind_throw_caught_at_try_frame)
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
     /* pc should point at handler_pc (instr[1]). */
-    UASSERT(s.pc == s_dummy_module.instructions + 1);
+    UASSERT(s.pc == s_dummy_module.root_proto->instructions + 1);
     /* Cleanup stack empty. */
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -221,7 +240,7 @@ UTEST(unwind_throw_uncaught_marks_fatal)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
     UASSERT_EQ((int)s.fatal_value.v.i, 7);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -285,7 +304,7 @@ UTEST(unwind_frame_teardown_zeros_registers)
         UASSERT_EQ((int)s.stack[i].v.i,  0);
     }
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -338,7 +357,7 @@ UTEST(unwind_noop_on_ok_state)
     UASSERT_EQ((int)s.state, (int)old_state);
     UASSERT_EQ((int)s.cleanup_depth, old_depth);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -383,7 +402,7 @@ UTEST(unwind_return_direct_pop_no_cleanup_entry)
     UASSERT_EQ((int)s.stack[3].v.i, 77);
     UASSERT_EQ((int)s.stack[3].kind, (int)UVAL_INT);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -469,7 +488,7 @@ UTEST(unwind_innermost_first_ordering)
     /* TRY_FRAME and outer CALL_FRAME are still on the cleanup stack (depth=2). */
     UASSERT_EQ((unsigned)s.cleanup_depth, 2U);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -520,7 +539,7 @@ UTEST(unwind_cleanup_max_overflow_marks_fatal)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -565,7 +584,7 @@ UTEST(unwind_suppressed_head_invariant)
     /* suppressed_head must remain NULL throughout — no chain built at M3. */
     UASSERT(s.suppressed_head == NULL);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -617,7 +636,7 @@ UTEST(unwind_cancel_propagates_through_call_frame)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_CANCEL);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -664,7 +683,7 @@ UTEST(unwind_throw_propagates_past_try_with_only_finally)
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_DEAD);
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -715,11 +734,11 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     /* Inner TRY_FRAME absorbs: pc at instr[1], pending_unwind=OK. */
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
-    UASSERT(s.pc == s_dummy_module.instructions + 1);
+    UASSERT(s.pc == s_dummy_module.root_proto->instructions + 1);
     /* Inner frame popped; outer frame remains (depth=1). */
     UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -761,7 +780,7 @@ UTEST(unwind_throw_propagates_through_tag_scope)
     UASSERT_EQ((int)s.fatal_status, (int)UEXEC_THROW);
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -815,7 +834,7 @@ UTEST(unwind_cleanup_run_depth_overflow_marks_fatal)
     UASSERT_EQ((int)s.fatal_value.kind, (int)UVAL_INT);
     UASSERT_EQ((long)s.fatal_value.v.i, (long)URBI_ERR_CLEANUP_OVERFLOW);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -841,7 +860,7 @@ UTEST(unwind_cleanup_run_depth_decrements_after_normal_return)
     urbi_unwind(&s);
     UASSERT_EQ((unsigned)s.cleanup_run_depth, 0U);
 
-    ustrand_destroy(&s, &vm);
+    strand_teardown_minimal(&s, &vm);
     urbi_vm_destroy(&vm);
 }
 

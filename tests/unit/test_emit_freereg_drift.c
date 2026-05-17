@@ -91,13 +91,13 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     /* Find the outer LOADK 2 instruction in the chunk-top instructions. */
-    int idx = find_loadk_int(module.instructions, module.instr_count,
-                             module.constants, 2);
+    int idx = find_loadk_int(module.root_proto->instructions, module.root_proto->instr_count,
+                             module.root_proto->constants, 2);
     UASSERT(idx >= 0);
 
     /* Pre-fix: A=1 (clobbers the inner closure at r1).
      * Post-fix: A>=2 (above freereg). */
-    uint8_t a = uinstr_a(module.instructions[idx]);
+    uint8_t a = uinstr_a(module.root_proto->instructions[idx]);
     UASSERT(a >= 2U);
 
     umodule_destroy(&module, NULL);
@@ -128,7 +128,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
  * free_reg() decrements only next_reg.  At chunk-top, statements are
  * NOT wrapped in an AST_BLOCK that resets freereg between siblings, so
  * uemit_statement's sync (next_reg = freereg) carries the leaked value
- * forward.  module.max_reg ends up inflated by the closure depth.
+ * forward.  module.root_proto->max_reg ends up inflated by the closure depth.
  *
  * Inside a function-body block, the leak is masked by emit_block_arm's
  * `freereg = fs_temp_floor(...)` reset between statements — so these
@@ -145,10 +145,10 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
         "var c = function() { 99 };");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* Pre-fix: module.max_reg leaks 2 slots (one per emit_function_literal
+    /* Pre-fix: module.root_proto->max_reg leaks 2 slots (one per emit_function_literal
      * call: cond, body).  Post-fix: leak gone.  Use 6 as a strict ceiling
      * post-fix; pre-fix routinely exceeds this. */
-    UASSERT(module.max_reg <= 3U);
+    UASSERT(module.root_proto->max_reg <= 3U);
 
     umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -165,7 +165,7 @@ UTEST(emit_watcher_install_freereg_balanced_whenever) {
         "whenever (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
         "var c = function() { 99 };");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
-    UASSERT(module.max_reg <= 3U);
+    UASSERT(module.root_proto->max_reg <= 3U);
 
     umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -197,7 +197,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
     /* Pre-fix: each at-event leaks 1-2 slots; two installs push max_reg
      * past the post-fix ceiling.  Post-fix: max_reg stays at the inner
      * body-closure compilation high water (= 4). */
-    UASSERT(module.max_reg <= 4U);
+    UASSERT(module.root_proto->max_reg <= 4U);
 
     umodule_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -246,8 +246,8 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
      * nparams==0 (f and the inner closure); pick the one whose
      * instructions contain OP_ADD. */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         for (size_t j = 0; j < q->instr_count; j++) {
             if (uinstr_op(q->instructions[j]) == OP_ADD) {
@@ -303,8 +303,8 @@ UTEST(emit_free_reg_respects_temp_floor) {
 
     /* Locate f's nested proto (the only one with nparams=0 and an OP_ADD). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         for (size_t j = 0; j < q->instr_count; j++) {
             if (uinstr_op(q->instructions[j]) == OP_ADD) {
@@ -368,8 +368,8 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
 
     /* Locate caller's nested proto (1 param, contains OP_CALL). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         if (q->nparams != 1U) continue;
         for (size_t j = 0; j < q->instr_count; j++) {
@@ -552,8 +552,8 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
 
     /* Locate f's nested proto. */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_ret = false;
@@ -627,8 +627,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
     /* Locate f's nested proto (the one with OP_LOADK 42 + OP_LOADNIL +
      * OP_RET; helper has only OP_LOADK 0 + OP_RET). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_42 = false;
@@ -711,8 +711,8 @@ UTEST(emit_throw_does_not_clobber_local) {
 
     /* Locate f's nested proto (the one with OP_THROW + OP_LOADK 42). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_42 = false;
@@ -793,8 +793,8 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     UProto *p = NULL;
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UProto *q = module.nested[i];
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UProto *q = module.root_proto->nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_test = false;
@@ -881,10 +881,10 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
      * sequences land first). */
     int call_idx = -1;
     int call_a   = -1;
-    for (size_t j = 0; j < module.instr_count; j++) {
-        if (uinstr_op(module.instructions[j]) == OP_CALL) {
+    for (size_t j = 0; j < module.root_proto->instr_count; j++) {
+        if (uinstr_op(module.root_proto->instructions[j]) == OP_CALL) {
             call_idx = (int)j;
-            call_a   = (int)uinstr_a(module.instructions[j]);
+            call_a   = (int)uinstr_a(module.root_proto->instructions[j]);
         }
     }
     UASSERT(call_idx >= 0);
@@ -896,7 +896,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
     int writers[3] = { 0, 0, 0 };  /* count of writers for arg0/1/2 */
     int closure_dst = -1;
     for (int j = 0; j < call_idx; j++) {
-        uint32_t ins = module.instructions[j];
+        uint32_t ins = module.root_proto->instructions[j];
         UOpcode op   = uinstr_op(ins);
         uint8_t a    = uinstr_a(ins);
         bool is_writer = (op == OP_LOADK || op == OP_CLOSURE ||

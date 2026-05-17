@@ -1,14 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* test_module_refcount — direct unit tests for the v0.8.0 UModule refcount
- * mechanism.  Mirrors the v0.7.3 UProto refcount pattern (Piece A of the
- * closure-lifetime spec).
- *
- * v0.8.1 Phase 2 (Variant B fusion): strand-bind refcount has moved from
- * module->refcount to module->root_proto->refcount.  module->refcount is
- * retained in the struct (always 0 after the redirect) until Task 11 removes
- * it.  Deferred-destroy now reads root_proto->refcount.
- *
- * Tests that probed the old module->refcount field directly are updated here. */
+/* test_module_refcount — direct unit tests for the UModule / UProto refcount
+ * mechanism.  After Task 11 (v0.8.1-uproto-root), UModule.refcount and
+ * UModule.destroy_requested are deleted; refcount lives on root_proto only.
+ * umodule_refcount_inc/dec (UModule-level) are deleted; callers use
+ * umodule_proto_refcount_inc/dec on root_proto directly. */
 
 #include "utest.h"
 #include "utest_e2e_helpers.h"
@@ -24,58 +19,39 @@
 
 #define UTEST(name) static void name(void)
 
-/* Task 1: struct fields exist and zero-init correctly. */
-UTEST(refcount_fields_zero_initialized)
+/* Task 11: UModule is now a thin 5-field shell.
+ * Verify that a zero-initialized UModule has root_proto == NULL
+ * and that root_proto carries the refcount. */
+UTEST(refcount_lives_on_root_proto)
 {
     UModule m = {0};
-    UASSERT_EQ((unsigned)0, (unsigned)m.refcount);
-    UASSERT_EQ(false, m.destroy_requested);
+    UASSERT(m.root_proto == NULL);
+    /* Allocate a synthetic root_proto and verify its refcount. */
+    UProto rp = {0};
+    m.root_proto = &rp;
+    UASSERT_EQ((unsigned)0, (unsigned)rp.refcount);
+    umodule_proto_refcount_inc(&rp);
+    UASSERT_EQ((unsigned)1, (unsigned)rp.refcount);
+    umodule_proto_refcount_dec(&rp);
+    UASSERT_EQ((unsigned)0, (unsigned)rp.refcount);
 }
 
-/* Task 2: inc/dec helpers mutate refcount correctly.
- * v0.8.1 Phase 2: module->refcount is retained but no longer bumped by
- * strand binds.  umodule_refcount_inc/dec still work on the field directly;
- * new callers use umodule_proto_refcount_inc/dec on root_proto instead. */
-UTEST(refcount_inc_dec_basic)
+/* uproto_root_of: returns proto itself when proto->root is NULL (root case),
+ * and returns proto->root when set (nested case). */
+UTEST(uproto_root_of_routing)
 {
-    UModule m = {0};
-    umodule_refcount_inc(&m, NULL);
-    UASSERT_EQ((unsigned)1, (unsigned)m.refcount);
-    umodule_refcount_inc(&m, NULL);
-    UASSERT_EQ((unsigned)2, (unsigned)m.refcount);
-    umodule_refcount_dec(&m, NULL);
-    UASSERT_EQ((unsigned)1, (unsigned)m.refcount);
-    umodule_refcount_dec(&m, NULL);
-    UASSERT_EQ((unsigned)0, (unsigned)m.refcount);
-    /* Verify field is still writable (not removed yet). */
-    UASSERT_EQ((unsigned)0, (unsigned)m.refcount);
+    UProto root = {0};
+    UProto nested = {0};
+    nested.root = &root;
+
+    UASSERT(uproto_root_of(&root)   == &root);
+    UASSERT(uproto_root_of(&nested) == &root);
+    UASSERT(uproto_root_of(NULL)    == NULL);
 }
 
-UTEST(refcount_inc_saturates_at_uint16_max)
-{
-    UModule m = {0};
-    m.refcount = UINT16_MAX;
-    umodule_refcount_inc(&m, NULL);
-    UASSERT_EQ((unsigned)UINT16_MAX, (unsigned)m.refcount);
-    /* No crash, no wrap.  Saturation policy matches v0.7.3 UProto. */
-}
-
-UTEST(refcount_dec_at_saturation_no_change)
-{
-    UModule m = {0};
-    m.refcount = UINT16_MAX;
-    umodule_refcount_dec(&m, NULL);
-    UASSERT_EQ((unsigned)UINT16_MAX, (unsigned)m.refcount);
-    /* No decrement.  Saturation policy: once frozen, stay frozen. */
-}
-
-/* Probe the rescue path (Phase 2 Task 9 of v0.8.1-uproto-root): if
- * root_proto->refcount > 0 when umodule_destroy is called with a non-NULL
- * vm, the root_proto is rescued to vm->rescued_protos (not deferred via
- * destroy_requested).  vm_destroy then frees the rescued root_proto.
- *
- * The previous deferred-destroy path (destroy_requested = true, return early)
- * is now only used when vm == NULL.  When vm != NULL, rescue always runs. */
+/* Probe the rescue path: if root_proto->refcount > 0 when umodule_destroy is
+ * called with a non-NULL vm, the root_proto is rescued to vm->rescued_protos.
+ * vm_destroy then frees the rescued root_proto. */
 UTEST(umodule_destroy_rescues_when_refcount_nonzero)
 {
     UVM vm;
@@ -108,11 +84,8 @@ UTEST(umodule_destroy_rescues_when_refcount_nonzero)
     UASSERT(vm.rescued_protos == rp);
     /* module->root_proto detached. */
     UASSERT(m->root_proto == NULL);
-    /* destroy_requested must NOT be set (rescue, not defer). */
-    UASSERT_EQ(false, m->destroy_requested);
 
-    /* Release the heap UModule struct (module shell was freed by
-     * umodule_destroy_internal; caller owns the allocation itself). */
+    /* Release the heap UModule struct (zeroed by umodule_destroy_internal). */
     vm.alloc_fn(m, 0, vm.alloc_ud);
 
     /* urbi_vm_destroy must free rescued_protos (rp) cleanly — no leaks. */
@@ -138,11 +111,7 @@ UTEST(umodule_destroy_immediate_when_refcount_zero)
 }
 
 /* End-to-end: compile a minimal chunk, drive it via urbi_run_chunk,
- * verify the binding bump+decrement cycle leaves root_proto->refcount at zero.
- *
- * v0.8.1 Phase 2: strand-bind refcount moved to root_proto.  After the
- * strand dies, root_proto->refcount must be 0 (bump+unbind balanced).
- * module.refcount is always 0 (nothing bumps it); checking it is vacuous. */
+ * verify the binding bump+decrement cycle leaves root_proto->refcount at zero. */
 UTEST(refcount_bump_decrement_via_strand_binding)
 {
     UVM vm;
@@ -157,12 +126,11 @@ UTEST(refcount_bump_decrement_via_strand_binding)
         "42", NULL);
     UASSERT_EQ(URBI_OK, rc);
 
-    /* After the strand dies, root_proto->refcount must be 0
-     * (strand-bind bump + ustrand_destroy dec are balanced). */
+    /* After the strand dies, root_proto->refcount is 0.  The module shell
+     * is still valid (host owns it; auto-destroy was removed from the
+     * strand-refcount-dec path).  refcount==0 is directly readable. */
     UASSERT(module.root_proto != NULL);
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
-    /* module.refcount is always 0 after Phase 2 redirect. */
-    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
@@ -170,14 +138,10 @@ UTEST(refcount_bump_decrement_via_strand_binding)
 }
 
 void test_module_refcount_suite(void) {
-    utest_run("module_refcount: fields zero-initialized",
-              refcount_fields_zero_initialized);
-    utest_run("module_refcount: inc/dec basic",
-              refcount_inc_dec_basic);
-    utest_run("module_refcount: inc saturates at UINT16_MAX",
-              refcount_inc_saturates_at_uint16_max);
-    utest_run("module_refcount: dec at saturation no change",
-              refcount_dec_at_saturation_no_change);
+    utest_run("module_refcount: refcount lives on root_proto",
+              refcount_lives_on_root_proto);
+    utest_run("module_refcount: uproto_root_of routing",
+              uproto_root_of_routing);
     utest_run("module_refcount: umodule_destroy rescues when refcount nonzero",
               umodule_destroy_rescues_when_refcount_nonzero);
     utest_run("module_refcount: umodule_destroy immediate when refcount zero",

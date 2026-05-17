@@ -166,6 +166,18 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
      * "non-NULL proto" — assert rather than silently no-op. */
     URBI_INTERNAL_ASSERT(proto != NULL);
     if (alloc == NULL) return;
+    /* Task 11: root_proto owns nested[] — free sub-protos first.
+     * Nested protos have nested_count == 0 so this walk is a no-op for them. */
+    if (proto->nested != NULL) {
+        size_t i;
+        for (i = 0; i < proto->nested_count; i++) {
+            UProto *p = proto->nested[i];
+            if (p == NULL) continue;  /* MOD-015: watcher-detached slot */
+            umodule_destroy_proto_buffers(p, alloc, alloc_ud);
+            alloc(p, 0, alloc_ud);
+        }
+        alloc((void *)proto->nested, 0, alloc_ud);
+    }
     if (proto->instructions != NULL) alloc(proto->instructions, 0, alloc_ud);
     free_owned_str_constants(proto->constants, proto->const_count, alloc, alloc_ud);
     if (proto->constants    != NULL) alloc(proto->constants,    0, alloc_ud);
@@ -186,29 +198,32 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
         }
         alloc((void *)proto->ic_name_strs, 0, alloc_ud);
     }
-    /* Zero the proto struct but do not free proto itself (owned by nested[]). */
+    /* Zero the proto struct but do not free proto itself (owned by parent). */
     urbi_zero(proto, sizeof(*proto));
 }
 
 UProto *umodule_alloc_nested_proto(UModule *module) {
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc == NULL) return NULL;
+    /* Task 11: nested[] lives on root_proto (allocated at uemit_init). */
+    UProto *root = module->root_proto;
+    if (root == NULL) return NULL;
 
-    /* Grow nested[] array if needed. */
-    if (module->nested_count >= module->nested_cap) {
-        size_t new_cap = module->nested_cap == 0 ? 4 : module->nested_cap * 2;
+    /* Grow root_proto->nested[] array if needed. */
+    if (root->nested_count >= root->nested_cap) {
+        size_t new_cap = root->nested_cap == 0 ? 4 : root->nested_cap * 2;
         /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
-        void *fresh = alloc((void *)module->nested, new_cap * sizeof(UProto *),
+        void *fresh = alloc((void *)root->nested, new_cap * sizeof(UProto *),
                             module->alloc_ud);
         if (fresh == NULL) return NULL;
-        module->nested     = (UProto **)fresh;
-        module->nested_cap = new_cap;
+        root->nested     = (UProto **)fresh;
+        root->nested_cap = new_cap;
     }
 
     /* Allocate the UProto struct itself.
      *
      * MOD-003: if this allocation fails AFTER the nested[] grow above
-     * succeeded, we leave `module->nested` pointing at the grown (larger)
+     * succeeded, we leave `root->nested` pointing at the grown (larger)
      * buffer with `nested_cap` bumped but `nested_count` unchanged.  This
      * is "grow-without-commit" — the array is correctly sized for an
      * unused trailing slot range [nested_count..nested_cap), every
@@ -239,7 +254,7 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
      * uproto_root_of() at vm_alloc_closure; that is the only accounting needed. */
     proto->refcount = 0U;
 
-    module->nested[module->nested_count++] = proto;
+    root->nested[root->nested_count++] = proto;
     return proto;
 }
 
@@ -247,6 +262,7 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
 
 typedef struct {
     UModule        *module;
+    UProto         *rp;      /* root_proto: allocated before decode; receives chunk-top fields */
     const uint8_t  *buf;
     size_t          size;
     size_t          off;
@@ -337,7 +353,8 @@ static UModuleLoadError decode_metadata(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "truncated at metadata");
         return ULOAD_TRUNCATED;
     }
-    d->module->max_reg = d->buf[d->off++];
+    /* Task 11: max_reg lives on root_proto (not UModule). */
+    d->rp->max_reg = d->buf[d->off++];
 
     uint64_t src_len = 0;
     size_t consumed = 0;
@@ -483,9 +500,10 @@ static UModuleLoadError decode_constants_into(MDecCtx *d,
 }
 
 static UModuleLoadError decode_constants(MDecCtx *d) {
-    return decode_constants_into(d, &d->module->constants,
-                                 &d->module->const_count,
-                                 &d->module->const_cap,
+    /* Task 11: write directly into root_proto. */
+    return decode_constants_into(d, &d->rp->constants,
+                                 &d->rp->const_count,
+                                 &d->rp->const_cap,
                                  module_allocator(d->module),
                                  d->module->alloc_ud);
 }
@@ -555,9 +573,10 @@ static UModuleLoadError decode_instructions_into(MDecCtx *d,
 }
 
 static UModuleLoadError decode_instructions(MDecCtx *d) {
-    return decode_instructions_into(d, &d->module->instructions,
-                                    &d->module->instr_count,
-                                    &d->module->instr_cap,
+    /* Task 11: write directly into root_proto. */
+    return decode_instructions_into(d, &d->rp->instructions,
+                                    &d->rp->instr_count,
+                                    &d->rp->instr_cap,
                                     module_allocator(d->module),
                                     d->module->alloc_ud);
 }
@@ -666,11 +685,12 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
 }
 
 static UModuleLoadError decode_line_table(MDecCtx *d) {
-    return decode_line_table_into(d, &d->module->line_deltas,
-                                  &d->module->abs_lines,
-                                  d->module->instr_count,
-                                  &d->module->abs_line_count,
-                                  &d->module->abs_line_cap,
+    /* Task 11: write directly into root_proto. */
+    return decode_line_table_into(d, &d->rp->line_deltas,
+                                  &d->rp->abs_lines,
+                                  d->rp->instr_count,
+                                  &d->rp->abs_line_count,
+                                  &d->rp->abs_line_cap,
                                   module_allocator(d->module),
                                   d->module->alloc_ud);
 }
@@ -1049,14 +1069,16 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
 }
 
 static UModuleLoadError decode_verify(MDecCtx *d) {
+    /* Task 11: root chunk fields now live on root_proto. */
+    UProto *rp = d->rp;
     /* Verify the root chunk. */
     UModuleLoadError rc = verify_walk_block(d,
-                                            d->module->max_reg,
-                                            d->module->const_count,
-                                            d->module->instr_count,
-                                            d->module->nested_count,
-                                            d->module->ic_count,
-                                            d->module->instructions);
+                                            rp->max_reg,
+                                            rp->const_count,
+                                            rp->instr_count,
+                                            rp->nested_count,
+                                            rp->ic_count,
+                                            rp->instructions);
     if (rc != ULOAD_OK) return rc;
 
     /* Verify each nested proto's instruction stream against its own
@@ -1067,14 +1089,14 @@ static UModuleLoadError decode_verify(MDecCtx *d) {
        is therefore the root-level nested_count.  v1.x deeply-nested
        closures may need a per-proto nested_count if/when the emitter
        starts allocating child arrays. */
-    for (size_t pi = 0; pi < d->module->nested_count; pi++) {
-        const UProto *p = d->module->nested[pi];
+    for (size_t pi = 0; pi < rp->nested_count; pi++) {
+        const UProto *p = rp->nested[pi];
         if (p == NULL) continue;  /* watcher-detached slot or stub */
         rc = verify_walk_block(d,
                                p->max_reg,
                                p->const_count,
                                p->instr_count,
-                               d->module->nested_count,
+                               rp->nested_count,
                                p->ic_count,
                                p->instructions);
         if (rc != ULOAD_OK) return rc;
@@ -1100,8 +1122,28 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     /* Zero origin_vm for deserialized modules. */
     module->origin_vm = NULL;
 
+    /* Task 11: allocate root_proto before decoding so decode functions
+     * write chunk-top fields directly into root_proto (no alias-copy).
+     * If re-deserializing into the same module struct, free the old
+     * root_proto (and its buffers) first via umodule_destroy_proto_buffers. */
+    UModuleAllocFn root_alloc = module_allocator(module);
+    if (root_alloc == NULL) return ULOAD_OOM;
+    if (module->root_proto != NULL) {
+        umodule_destroy_proto_buffers(module->root_proto, root_alloc, module->alloc_ud);
+        root_alloc(module->root_proto, 0, module->alloc_ud);
+        module->root_proto = NULL;
+    }
+    UProto *rp = (UProto *)root_alloc(NULL, sizeof(UProto), module->alloc_ud);
+    if (rp == NULL) return ULOAD_OOM;
+    urbi_zero(rp, sizeof(UProto));
+    rp->root     = NULL;  /* root's own back-pointer is NULL */
+    rp->alloc_fn = module->alloc_fn;
+    rp->alloc_ud = module->alloc_ud;
+    module->root_proto = rp;
+
     MDecCtx d;
     d.module = module;
+    d.rp     = rp;
     d.buf    = buf;
     d.size   = size;
     d.off    = 0;
@@ -1114,61 +1156,21 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     if ((rc = decode_constants(&d))    != ULOAD_OK) return rc;
     if ((rc = decode_instructions(&d)) != ULOAD_OK) return rc;
     if ((rc = decode_line_table(&d))   != ULOAD_OK) return rc;
-    if ((rc = decode_ic_names_into(&d, &module->ic_count, &module->ic_name_strs,
+    if ((rc = decode_ic_names_into(&d, &rp->ic_count, &rp->ic_name_strs,
                                    module_allocator(module), module->alloc_ud))
         != ULOAD_OK) return rc;
     if ((rc = decode_nested_protos(&d)) != ULOAD_OK) return rc;
     if ((rc = decode_trailer(&d))       != ULOAD_OK) return rc;
     if ((rc = decode_verify(&d))        != ULOAD_OK) return rc;
 
-    /* Phase 1 v0.8.1-uproto-root: allocate root_proto and alias its fields
-     * to the module's chunk-top fields (same physical storage; Task 11 will
-     * invert ownership once all readers migrate).
-     * If a previous root_proto exists (re-deserialize into same module struct),
-     * free the old struct — its fields are aliases to module buffers that were
-     * either freed or reused above; the struct itself is the only owned
-     * allocation. */
+    /* Back-pointer walk: set every nested proto's root field. */
     {
-        UModuleAllocFn alloc = module_allocator(module);
-        if (alloc == NULL) return ULOAD_OOM;
-        if (module->root_proto != NULL) {
-            alloc(module->root_proto, 0, module->alloc_ud);
-            module->root_proto = NULL;
-        }
-        UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
-        if (rp == NULL) return ULOAD_OOM;
-        urbi_zero(rp, sizeof(UProto));
-        rp->root     = NULL;  /* root's own back-pointer is NULL */
-        rp->alloc_fn = module->alloc_fn;
-        rp->alloc_ud = module->alloc_ud;
-        /* Alias chunk-top buffers — pointer copy, not deep copy. */
-        rp->instructions   = module->instructions;
-        rp->instr_count    = module->instr_count;
-        rp->instr_cap      = module->instr_cap;
-        rp->constants      = module->constants;
-        rp->const_count    = module->const_count;
-        rp->const_cap      = module->const_cap;
-        rp->line_deltas    = module->line_deltas;
-        rp->abs_lines      = module->abs_lines;
-        rp->abs_line_count = module->abs_line_count;
-        rp->abs_line_cap   = module->abs_line_cap;
-        rp->max_reg        = module->max_reg;
-        rp->nupvals        = module->nupvals;
-        rp->nparams        = module->nparams;
-        rp->ic_count       = module->ic_count;
-        rp->ic_names       = module->ic_names;
-        rp->ic_name_strs   = module->ic_name_strs;
-        rp->nested         = module->nested;
-        rp->nested_count   = module->nested_count;
-        rp->nested_cap     = module->nested_cap;
-        /* Back-pointer walk: set every nested proto's root field. */
         size_t k;
-        for (k = 0U; k < module->nested_count; k++) {
-            if (module->nested[k] != NULL) {
-                module->nested[k]->root = rp;
+        for (k = 0U; k < rp->nested_count; k++) {
+            if (rp->nested[k] != NULL) {
+                rp->nested[k]->root = rp;
             }
         }
-        module->root_proto = rp;
     }
 
     return ULOAD_OK;
@@ -1189,68 +1191,49 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *      re-init before reuse.
  */
 
-/* --- UModule refcount helpers (v0.8.0) ---------------------------------- */
-
-void
-umodule_refcount_inc(UModule *m, struct UVM *vm)
-{
-    if (m == NULL) return;
-    if (m->refcount == UINT16_MAX) {
-        /* Saturated: log once, no further bumps.  Module leaks; same
-         * policy as UProto.refcount shipped in v0.7.3. */
-        if (vm != NULL && vm->host_log_fn != NULL) {
-            vm->host_log_fn(vm, URBI_LOG_WARN,
-                "umodule_refcount_inc: UINT16_MAX saturation; refcount frozen");
-        }
-        return;
-    }
-    m->refcount = (uint16_t)(m->refcount + 1U);
-}
-
-void
-umodule_refcount_dec(UModule *m, struct UVM *vm)
-{
-    if (m == NULL) return;
-    if (m->refcount == 0U) {
-        /* Underflow guard — catches missing-bump bugs that would otherwise
-         * race the deferred-destroy path.  Assert loudly so debug builds
-         * surface the caller; early return is the safety fallback when
-         * assertions compile to nothing in production. */
-        URBI_INTERNAL_ASSERT(0 && "umodule_refcount_dec underflow");
-        return;
-    }
-    if (m->refcount == UINT16_MAX) {
-        /* Saturation guard — once frozen at UINT16_MAX, stay frozen
-         * (preserves the "leak forever" contract from umodule_refcount_inc).
-         * Mirrors umodule_proto_refcount_dec. */
-        return;
-    }
-    m->refcount = (uint16_t)(m->refcount - 1U);
-    /* v0.8.0 Task 3: deferred-destroy trigger.  If host called
-     * umodule_destroy while refcount was nonzero, destroy_requested
-     * was set; now that refcount == 0, perform the actual free.
-     * umodule_destroy_internal is file-static in this TU. */
-    if (m->refcount == 0U && m->destroy_requested) {
-        umodule_destroy_internal(m, vm);
-    }
-}
+/* --- Module strand-bind release (v0.8.1 Phase 2) ----------------------- */
 
 /* v0.8.1 Phase 2: strand-bind release with deferred-destroy trigger.
  * Called by ustrand_destroy and the fatal-loader early-discharge path
  * (uchunk.c) when we hold the still-valid module pointer.
- * Decrements root_proto->refcount; if it reaches 0 and destroy_requested
- * is set, fires umodule_destroy_internal immediately. */
+ * Decrements root_proto->refcount; if it reaches 0 and the self-link
+ * sentinel is set (umodule_destroy was called with vm=NULL), fires
+ * umodule_destroy_internal immediately.
+ *
+ * Task 11: UModule.destroy_requested deleted.  The vm=NULL deferred path
+ * sets root_proto->next_alloc = root_proto (self-link sentinel) instead.
+ * When refcount hits 0 here, the sentinel signals deferred destroy. */
 void
 umodule_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
 {
     if (root_proto == NULL) return;
     umodule_proto_refcount_dec(root_proto);
-    /* Deferred-destroy trigger: if host called umodule_destroy while strands
-     * were alive, destroy_requested was set.  Now that the last strand-bind
-     * ref is gone, perform the actual internal free. */
-    if (m != NULL && m->destroy_requested && root_proto->refcount == 0U) {
-        umodule_destroy_internal(m, vm);
+    /* Deferred-destroy trigger: self-link sentinel means the module shell
+     * was already freed (vm=NULL destroy path) but root_proto was left with
+     * a non-zero refcount.  Now that the last strand-bind ref is gone and
+     * the sentinel is set, perform the actual internal free.  m may be NULL
+     * if the module shell has already been freed via that path. */
+    if (root_proto->refcount == 0U && root_proto->next_alloc == root_proto) {
+        /* Deferred-destroy triggered: the host already called umodule_destroy
+         * with vm=NULL (self-link sentinel path) while a strand was alive.
+         * Now that the last strand-bind ref is gone, perform the actual free.
+         * Clear sentinel first so umodule_destroy_proto_buffers can walk
+         * nested[] cleanly (next_alloc is not walked, but zeroing is safe). */
+        root_proto->next_alloc = NULL;
+        umodule_destroy_proto_buffers(root_proto, root_proto->alloc_fn, root_proto->alloc_ud);
+        if (root_proto->alloc_fn != NULL) {
+            root_proto->alloc_fn(root_proto, 0, root_proto->alloc_ud);
+        }
+        (void)m;
+        (void)vm;
     }
+    /* When refcount hits 0 and no self-link sentinel: the module shell is still
+     * owned by the host.  Do not auto-destroy — the host is responsible for
+     * calling umodule_destroy explicitly.  If the host never calls it, the
+     * module buffers are freed at vm_destroy via vm->rescued_protos or simply
+     * left for the host to manage (stack/static storage).  The refcount reaching
+     * zero is only a signal that no strands are currently bound; it does not
+     * transfer ownership. */
 }
 
 /* MOD-015 — nested[k] may be NULL by design:
@@ -1299,43 +1282,31 @@ umodule_destroy(UModule *module, struct UVM *vm)
             /* Thread rp onto vm->rescued_protos (reuses UProto.next_alloc). */
             rp->next_alloc    = vm->rescued_protos;
             vm->rescued_protos = rp;
-            /* Detach root_proto reference from the module shell. */
+            /* Detach root_proto reference from the module shell.
+             * Task 11: all chunk-top data lives on root_proto — no duplicate
+             * module fields to NULL out. */
             module->root_proto = NULL;
-            /* Detach nested[] ownership — rescued root_proto carries it. */
-            module->nested       = NULL;
-            module->nested_count = 0;
-            module->nested_cap   = 0;
-            /* Detach chunk-top buffer ownership so umodule_destroy_internal
-             * cannot double-free them (rp holds these via alias pointers). */
-            module->instructions = NULL;
-            module->instr_count  = 0;
-            module->instr_cap    = 0;
-            module->constants    = NULL;
-            module->const_count  = 0;
-            module->const_cap    = 0;
-            module->line_deltas  = NULL;
-            module->abs_lines    = NULL;
-            module->abs_line_count = 0;
-            module->abs_line_cap   = 0;
-            module->ic_names     = NULL;
-            module->ic_name_strs = NULL;
-            module->ic_count     = 0;
-            /* source_name stays on the module shell (not aliased to rp). */
+            /* source_name stays on the module shell (not owned by rp). */
         } else {
             /* No vm available — cannot rescue root_proto onto vm->rescued_protos
-             * immediately.  Set destroy_requested for the strand-based deferred
-             * path (umodule_strand_refcount_dec).  Also mark root_proto with a
-             * self-link sentinel (next_alloc == root_proto itself) so that
-             * urbi_vm_destroy's stdlib_closures sweep can detect that this
-             * root_proto needs cleanup when its refcount hits 0.  The sweep
-             * will promote it to vm->rescued_protos at that point.
+             * immediately.  Set self-link sentinel (next_alloc == root_proto)
+             * on root_proto so that umodule_strand_refcount_dec can detect
+             * the deferred-destroy when refcount hits 0.
              *
-             * Self-link sentinel is unambiguous: while root_proto is alive
-             * inside a UModule, next_alloc is NULL; on rescued_protos or
-             * stdlib_protos, next_alloc points to the next list entry, never
-             * to itself. */
-            module->destroy_requested = true;
+             * Task 11: UModule.destroy_requested deleted.  The sentinel is
+             * the sole signal.  Self-link is unambiguous: while root_proto is
+             * alive inside a UModule, next_alloc is NULL; on rescued_protos,
+             * next_alloc points to the next list entry, never to itself. */
             module->root_proto->next_alloc = module->root_proto;
+            /* Free the module shell (source_name + struct) — root_proto
+             * survives with the self-link sentinel. */
+            {
+                UModuleAllocFn alloc = module_allocator(module);
+                if (alloc != NULL) {
+                    module_buf_free(alloc, module->alloc_ud, module->source_name);
+                }
+            }
+            urbi_zero(module, sizeof(*module));
             return;
         }
     }
@@ -1344,61 +1315,21 @@ umodule_destroy(UModule *module, struct UVM *vm)
 
 static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
+    (void)vm;  /* Task 11: per-nested stdlib_protos rescue path deleted */
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
-        /* Free nested proto buffers and the proto structs themselves.
-         * NULL entries (watcher-detached, see MOD-015) are skipped. */
-        if (module->nested != NULL) {
-            size_t i;
-            for (i = 0; i < module->nested_count; i++) {
-                UProto *p = module->nested[i];
-                if (p == NULL) continue;
-                /* Pre-v0.8.1: discharged the nested[] slot's implicit ref
-                 * ("Piece A" of the v0.7.3 closure-lifetime spec).  Under
-                 * Option (a) (spec §3.5) there is no slot-implicit ref —
-                 * umodule_alloc_nested_proto inits refcount to 0 — so this
-                 * dec is a no-op (refcount=0, underflow guard absorbs it).
-                 * Task 11 will delete this per-nested walk entirely once the
-                 * whole-root_proto rescue path is self-sufficient. */
-                umodule_proto_refcount_dec(p);
-                if (vm != NULL && p->refcount > 0U) {
-                    /* Surviving closure still references this proto;
-                     * transfer to vm->stdlib_protos.  The closure's
-                     * eventual pool_free will dec refcount to 0 and free. */
-                    p->next_alloc     = vm->stdlib_protos;
-                    vm->stdlib_protos = p;
-                    continue;
-                }
-                umodule_destroy_proto_buffers(p, alloc, module->alloc_ud);
-                alloc(p, 0, module->alloc_ud);
-            }
-            /* TIDY-005: UProto ** → void * decay needs explicit cast. */
-            alloc((void *)module->nested, 0, module->alloc_ud);
-        }
-        /* MOD-032: 6 buffer frees collapsed via module_buf_free helper. */
-        module_buf_free(alloc, module->alloc_ud, module->instructions);
-        free_owned_str_constants(module->constants, module->const_count,
-                                 alloc, module->alloc_ud);
-        module_buf_free(alloc, module->alloc_ud, module->constants);
-        module_buf_free(alloc, module->alloc_ud, module->line_deltas);
-        module_buf_free(alloc, module->alloc_ud, module->abs_lines);
-        module_buf_free(alloc, module->alloc_ud, module->source_name);
-        /* TIDY-005: USymbol ** / char ** → void * decay needs explicit cast. */
-        module_buf_free(alloc, module->alloc_ud, (void *)module->ic_names);
-        if (module->ic_name_strs != NULL) {
-            /* Each entry is a NUL-terminated string allocated separately. */
-            for (uint16_t k = 0; k < module->ic_count; k++) {
-                module_buf_free(alloc, module->alloc_ud,
-                                module->ic_name_strs[k]);
-            }
-            (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
-        }
-        /* Phase 1 v0.8.1-uproto-root: free the root_proto struct itself.
-         * Its fields alias the module's buffers (freed above); do NOT free
-         * rp's buffer fields again — only the UProto allocation itself. */
+        /* Task 11: all chunk-top data (nested[], buffers, ic_names) lives on
+         * root_proto.  umodule_destroy_proto_buffers frees everything owned
+         * by root_proto; then free the root_proto struct itself.
+         * The per-nested rescue walk (vm->stdlib_protos) is deleted — under
+         * Variant B Option (a) nested refcounts are always 0 at this point;
+         * whole-root_proto rescue via vm->rescued_protos handles surviving
+         * closures (see umodule_destroy). */
         if (module->root_proto != NULL) {
+            umodule_destroy_proto_buffers(module->root_proto, alloc, module->alloc_ud);
             alloc(module->root_proto, 0, module->alloc_ud);
         }
+        module_buf_free(alloc, module->alloc_ud, module->source_name);
     }
     /* Zero the entire struct AFTER all frees complete.  No field is read
      * after this point. */

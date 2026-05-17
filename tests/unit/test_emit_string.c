@@ -46,16 +46,16 @@ UTEST(emit_string_loadk_with_uval_str_constant) {
     emit_str_through_pipeline(&vm, &module, &arena, "hello", 5);
 
     /* Constant pool: one UVAL_STR slot pointing at the interned bytes. */
-    UASSERT_EQ((size_t)1, module.const_count);
-    UASSERT_EQ((uint8_t)UVAL_STR, module.constants[0].kind);
-    const char *interned = (const char *)module.constants[0].v.p;
+    UASSERT_EQ((size_t)1, module.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_STR, module.root_proto->constants[0].kind);
+    const char *interned = (const char *)module.root_proto->constants[0].v.p;
     UASSERT(interned != NULL);
     UASSERT(memcmp(interned, "hello", 5) == 0);
     UASSERT_EQ('\0', interned[5]);   /* intern table NUL-terminates */
 
     /* First emitted instruction is OP_LOADK. */
-    UASSERT(module.instr_count >= 1);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
+    UASSERT(module.root_proto->instr_count >= 1);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -90,8 +90,8 @@ UTEST(emit_string_dedups_repeated_literal) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Single pool slot. */
-    UASSERT_EQ((size_t)1, module.const_count);
-    UASSERT_EQ((uint8_t)UVAL_STR, module.constants[0].kind);
+    UASSERT_EQ((size_t)1, module.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_STR, module.root_proto->constants[0].kind);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);

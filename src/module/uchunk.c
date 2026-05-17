@@ -151,10 +151,8 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
                 umodule_strand_refcount_dec((UModule *)loader->module,
                                            loader->root_proto, vm);
                 loader->root_proto = NULL;
-                loader->module     = NULL;
-            } else if (loader->module != NULL) {
-                loader->module = NULL;
             }
+            loader->module = NULL;
             vm->fatal_strand = NULL;
             return URBI_ERR_STRAND_FATAL;
         }
@@ -234,7 +232,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
      * empty REPL line still get URBI_OK + nil result.  Without this guard,
      * urbi_strand_create_for_module would return NULL (per its precondition)
      * and be misreported as OOM. */
-    if (!module || module->instr_count == 0) {
+    if (!module || module->root_proto == NULL || module->root_proto->instr_count == 0) {
         if (out_result) {
             urbi_zero(out_result, sizeof(*out_result));
             out_result->kind = UVAL_NIL;
@@ -546,6 +544,10 @@ urbi_module_from_bytes(const uint8_t *buf, size_t len,
     size_t ecap = errmsg ? errcap : sizeof(local_err);
     UModuleLoadError lerr = umodule_deserialize(m, buf, len, ebuf, ecap);
     if (lerr != ULOAD_OK) {
+        /* Task 11: root_proto may have been partially allocated by
+         * umodule_deserialize before the error.  umodule_destroy frees
+         * root_proto and its buffers; then free the UModule shell. */
+        umodule_destroy(m, NULL);
         free(m);
         return NULL;
     }

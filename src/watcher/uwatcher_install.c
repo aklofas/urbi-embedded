@@ -46,7 +46,6 @@ static int
 strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
 {
     struct UClosure **pp;
-    size_t k;
     if (cl == NULL) return 0;
 
     pp = &s->closure_list;

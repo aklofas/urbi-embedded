@@ -64,7 +64,7 @@ static inline UModuleAllocFn emit_alloc_for(const UModule *c) {
  * Promoted to non-static so that extracted TUs (uemit_unwind.c, etc.)
  * can emit instructions without pulling uemit.c's internal statics. */
 void   emit_instr(UEmitter *e, uint32_t ins, uint32_t line);
-void   emit_patch_instr(UEmitter *e, int pc, uint32_t new_instr);
+void   emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr);
 size_t emit_instr_count(const UEmitter *e);
 uint8_t fs_temp_floor(const UFuncState *fs);
 

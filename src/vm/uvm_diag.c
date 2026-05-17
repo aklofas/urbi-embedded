@@ -145,13 +145,13 @@ void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
 uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
-    /* v0.8.1 Phase 1: line table fields read via root_proto (aliased).
-     * Fall back to module->X for hand-crafted modules without root_proto. */
+    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
     const UProto *rp = module->root_proto;
-    const int8_t       *line_deltas  = (rp != NULL) ? rp->line_deltas  : module->line_deltas;
-    const UAbsLine     *abs_lines    = (rp != NULL) ? rp->abs_lines    : module->abs_lines;
-    size_t              abs_line_cnt = (rp != NULL) ? rp->abs_line_count: module->abs_line_count;
-    size_t              instr_cnt    = (rp != NULL) ? rp->instr_count   : module->instr_count;
+    if (rp == NULL) return 0;
+    const int8_t       *line_deltas  = rp->line_deltas;
+    const UAbsLine     *abs_lines    = rp->abs_lines;
+    size_t              abs_line_cnt = rp->abs_line_count;
+    size_t              instr_cnt    = rp->instr_count;
     if (line_deltas == NULL) return 0;
     if (pc >= instr_cnt) return 0;
     uint32_t line = 0;

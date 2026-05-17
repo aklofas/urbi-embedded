@@ -142,9 +142,9 @@ UTEST(op_fork_child_bumps_root_proto)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 3: module->refcount is always 0 after the redirect —
- * nothing bumps it anymore.  This verifies the old counter is dead. */
-UTEST(module_refcount_stays_zero_after_redirect)
+/* Case 3: Task 11 — UModule.refcount deleted; refcount lives on root_proto only.
+ * Verify strand-bind refcount is correctly tracked on root_proto. */
+UTEST(module_refcount_lives_on_root_proto)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -155,15 +155,17 @@ UTEST(module_refcount_stays_zero_after_redirect)
     UModule module = {0};
     uarena_init(&arena, 4096);
     UASSERT(fused_compile_chunk(&vm, &arena, &module, "1"));
+    UASSERT(module.root_proto != NULL);
 
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
 
-    /* module->refcount should be 0: strand-bind refcount moved to root_proto. */
-    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
+    /* Strand bind increments root_proto->refcount to 1. */
+    UASSERT_EQ((unsigned)1, (unsigned)module.root_proto->refcount);
 
     urbi_strand_destroy(s);
-    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
+    /* After strand destroy, refcount drops back to 0. */
+    UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
@@ -317,9 +319,9 @@ UTEST(vm_null_destroy_with_live_closure)
     /* Self-link sentinel: root_proto stays attached to the module shell
      * (module->root_proto is not NULLed on the vm=NULL path) and
      * next_alloc == root_proto signals pending rescue. */
+    /* Self-link sentinel is the sole deferred-destroy signal (Task 11:
+     * destroy_requested field deleted; only next_alloc == self matters). */
     UASSERT_EQ((void *)saved_root->next_alloc, (void *)saved_root);
-    /* destroy_requested flag set so the strand-dec path can also trigger. */
-    UASSERT(m->destroy_requested);
 
     vm.alloc_fn(m, 0, vm.alloc_ud);
     uarena_destroy(&arena);
@@ -338,8 +340,8 @@ test_module_refcount_fused_suite(void)
               strand_bind_bumps_root_proto);
     utest_run("module_refcount_fused: op_fork child bumps root_proto",
               op_fork_child_bumps_root_proto);
-    utest_run("module_refcount_fused: module->refcount stays 0 after redirect",
-              module_refcount_stays_zero_after_redirect);
+    utest_run("module_refcount_fused: refcount lives on root_proto only",
+              module_refcount_lives_on_root_proto);
     utest_run("module_refcount_fused: closure alloc bumps root via back-ptr",
               closure_alloc_bumps_root_via_backptr);
     utest_run("module_refcount_fused: escaping closure rescues whole root_proto",

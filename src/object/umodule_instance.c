@@ -119,8 +119,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     if (vm == NULL || m == NULL) {
         return NULL;
     }
-    /* v0.8.1 Phase 1: read hot fields via root_proto alias when available;
-     * fall back to module fields for hand-crafted test modules without root_proto. */
+    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
     UProto *rp = m->root_proto;
 
     /* Cell 1: UModuleInstance.  Cast cell pointer to struct (UCell is the
@@ -136,14 +135,14 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
 
-    /* Convenience aliases: use root_proto when available; else module fields. */
-    uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : m->ic_count;
-    USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : m->ic_names;
-    char     **root_ic_strs     = (rp != NULL) ? rp->ic_name_strs : m->ic_name_strs;
+    /* All chunk-top fields from root_proto. */
+    uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : 0U;
+    USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : NULL;
+    char     **root_ic_strs     = (rp != NULL) ? rp->ic_name_strs : NULL;
     UModuleAllocFn root_alloc_fn = (rp != NULL) ? rp->alloc_fn    : m->alloc_fn;
     void          *root_alloc_ud = (rp != NULL) ? rp->alloc_ud    : m->alloc_ud;
-    size_t         root_nested_count = (rp != NULL) ? rp->nested_count : m->nested_count;
-    UProto       **root_nested       = (rp != NULL) ? rp->nested       : m->nested;
+    size_t         root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
+    UProto       **root_nested       = (rp != NULL) ? rp->nested       : NULL;
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for root chunk + every nested proto's ic_count.
@@ -191,22 +190,15 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * does not have).  Walk + intern lazily on first instance-create.
      * Helper is idempotent — second call with ic_names already populated
      * is a no-op.
-     * v0.8.1 Phase 1 alias invariant: write through UModule (lifetime owner
-     * — umodule_destroy frees m->ic_names), then re-sync rp->ic_names so
-     * reads via root_proto continue to work.  Task 11 unifies ownership
-     * when UModule duplicate fields are deleted. */
-    if (!intern_ic_names_from_strs(vm, root_ic_count, &m->ic_names,
-                                   root_ic_strs,
-                                   root_alloc_fn, root_alloc_ud)) {
+     * Task 11: ownership lives on root_proto; write directly to rp->ic_names. */
+    if (rp != NULL && !intern_ic_names_from_strs(vm, root_ic_count, &rp->ic_names,
+                                                  root_ic_strs,
+                                                  root_alloc_fn, root_alloc_ud)) {
         /* OOM during string-to-symbol intern.  Both GC cells are reachable
          * only via this return path; sweep reclaims them. */
         return NULL;
     }
-    /* Re-sync alias after intern so rp->ic_names reads return the freshly
-     * interned array.  Task 5 redirected the write to rp but desynchronised
-     * the two slots; this restores the Phase 1 alias invariant. */
-    if (rp != NULL) rp->ic_names = m->ic_names;
-    root_ic_names = m->ic_names;
+    if (rp != NULL) root_ic_names = rp->ic_names;
     init_ic_slice(&arr->entries[0], NULL,
                   root_ic_count, root_ic_names, &ic_cursor);
 

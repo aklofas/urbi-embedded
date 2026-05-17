@@ -1,26 +1,21 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode UModule — the front-end / back-end interface.  Freestanding.
  *
- * --- Inline-cache (IC) mirror layout ---
- * The pair (ic_count + ic_names) appears in three places, each owned by a
- * different layer.  All three are kept in sync because populating the per-VM
- * runtime IC tables (UProtoInstance) needs the names from the proto, and the
- * proto needs to be encoded into the bytecode wire format that the loader
- * decodes back into UProto / UModule:
+ * --- Inline-cache (IC) layout post-Task-11 (v0.8.1-uproto-root) ---
+ * The pair (ic_count + ic_names) appears in two places, each owned by a
+ * different layer.  UModule no longer holds a copy — the root chunk is now
+ * modeled as root_proto, a full UProto:
  *
- *   1. UProto.ic_count      / UProto.ic_names      — per nested function
- *      (this header).  Populated by uemit at compile time, persisted in
- *      bytecode v1.3+, freed by umodule_destroy_proto_buffers.
- *   2. UModule.ic_count     / UModule.ic_names     — for the root chunk
- *      (this header).  Mirrors UProto's layout because the root chunk is
- *      not modeled as a UProto on disk; freed in umodule_destroy.
- *   3. UProtoInstance.ic_count + UIC entries[]     — runtime IC table per
- *      (vm, proto) pair (object/umoduleinstance.h).  Sized from #1 / #2 at
+ *   1. UProto.ic_count / UProto.ic_names — per-proto (both root and nested).
+ *      Populated by uemit at compile time, persisted in bytecode v1.3+,
+ *      freed by umodule_destroy_proto_buffers.
+ *   2. UProtoInstance.ic_count + UIC entries[] — runtime IC table per
+ *      (vm, proto) pair (object/umoduleinstance.h).  Sized from #1 at
  *      module-instance creation; UIC.name is copied from ic_names.
  *
- * Mirror discipline: any change to UProto/UModule's IC field naming or
- * layout must be applied to all three sites and to the wire-format
- * encoder/decoder in uemit.c / umodule.c. */
+ * Mirror discipline: any change to UProto IC field naming or layout must
+ * be applied to all readers and to the wire-format encoder/decoder in
+ * uemit.c / umodule.c. */
 
 #ifndef UMODULE_H
 #define UMODULE_H
@@ -352,8 +347,7 @@ typedef struct UProto {
     /* NEW (Phase 1 v0.8.1-uproto-root): recursive child protos.
      * For v0.8.1 tag: populated only on the root_proto (flat-on-root emitter
      * per spec §4.2).  Non-root UProtos: nested_count = 0, nested = NULL.
-     * The field aliases UModule.nested[] on the root_proto (same physical
-     * storage); Task 11 will invert ownership once all readers migrate.
+     * For root_proto, this holds the module's nested functions.
      * Truly-recursive emitter where Bx scopes per-enclosing-proto is
      * deferred per spec §11.3. */
     struct UProto **nested;
@@ -364,7 +358,7 @@ typedef struct UProto {
      * semantics (spec §3.7 lifetime ordering invariant):
      *
      * (a) List link — when this proto is the root_proto of a rescued module,
-     *     next_alloc threads it onto vm->rescued_protos or vm->stdlib_protos.
+     *     next_alloc threads it onto vm->rescued_protos.
      *     NULL while the proto is still owned by its originating UModule.
      *
      * (b) Self-link sentinel — set by umodule_destroy(m, NULL) (the vm=NULL
@@ -386,17 +380,15 @@ typedef struct UProto {
      * umodule_deserialize post-pass. */
     struct UProto *root;
 
-    /* [runtime-only, NOT serialized] Per-proto reference count used by the
-     * closure-lifetime fix (v0.7.3 closure-lifetime spec).  Bumped by every
-     * OP_CLOSURE that binds a UClosure to this proto; decremented by the
-     * UClosure GC finalizer.  umodule_destroy checks this counter: if 0,
-     * the proto is freed normally; if non-zero, it is transferred to
-     * vm->stdlib_protos so surviving closures keep a valid backing proto.
+    /* [runtime-only, NOT serialized] Per-root-proto reference count for the
+     * module-grain closure lifetime fix (v0.7.3 + v0.8.1).  Bumped at every
+     * strand bind (uproto_root_of(proto)->refcount); decremented when the
+     * strand or closure is released.  umodule_destroy checks this counter:
+     * if 0, the root_proto is freed normally; if non-zero, it is rescued onto
+     * vm->rescued_protos so surviving closures keep a valid backing proto.
      *
-     * uint16_t with saturation: bump clamps at UINT16_MAX and logs a
-     * URBI_LOG_WARN.  Saturated protos leak (acceptable for the v1.0
-     * timeframe; not a security issue).  Widen to uint32_t if a real
-     * 65k+ alias scenario ever emerges. */
+     * uint16_t with saturation at UINT16_MAX (logs URBI_LOG_WARN; proto leaks
+     * — acceptable for the v1.0 timeframe). */
     uint16_t       refcount;
 } UProto;
 
@@ -417,66 +409,26 @@ typedef struct UClosure UClosure;
  * runtime fields; they are the caller's responsibility to initialize. */
 
 typedef struct UModule {
-    /* === Serialized fields (bytecode wire format v1.5) ============= */
+    /* Task 11 (v0.8.1-uproto-root): UModule is now a thin loader shell.
+     * All chunk-top data (instructions, constants, nested[], IC tables,
+     * line-info, max_reg, nupvals, nparams) lives on root_proto.
+     * UModule retains only: root_proto, source_name, origin_vm, alloc_fn,
+     * alloc_ud.  refcount + destroy_requested deleted; root_proto->refcount
+     * is the canonical module-grain reference counter. */
 
-    uint32_t  *instructions;
-    size_t     instr_count;
-    size_t     instr_cap;
-
-    UValue    *constants;
-    size_t     const_count;
-    size_t     const_cap;
-
-    /* Lua-5.5-style delta encoding; one byte per instruction (size == instr_count).
-     * INT8_MIN (-128) is a sentinel: the source line at this pc is in abs_lines,
-     * not recoverable by summing deltas from the previous checkpoint. */
-    int8_t    *line_deltas;
-
-    UAbsLine   *abs_lines;
-    size_t     abs_line_count;
-    size_t     abs_line_cap;
-
-    uint8_t    max_reg;           /* VM allocates (max_reg + 1) register slots */
-    uint8_t    nupvals;           /* upvalue count for root chunk (always 0) */
-    uint8_t    nparams;           /* param count for root chunk (always 0) */
-    char       *source_name;      /* owned (allocator-allocated, null-terminated); NULL if absent */
-
-    /* Nested function protos: function definitions compiled inside this module.
-     * Indexed by the Bx field of OP_CLOSURE instructions. */
-    UProto    **nested;
-    size_t      nested_count;
-    size_t      nested_cap;
-
-    /* === M4 v1.3 root-chunk IC fields === Mirror UProto.ic_count / ic_names
-     * for the root chunk's GETSLOT/SETSLOT sites.  Populated by the emitter
-     * via uemit_close_function on the top-level funcstate; consumed by
-     * urbi_module_instance_create to populate proto_instances->entries[0].
-     * Capped at 256 (encoding spec §3.4 — uint8 ic_index field). */
-    uint16_t       ic_count;
-    USymbol      **ic_names;     /* parallel array; len == ic_count; allocator-owned */
-    /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
-     * Populated by the emitter (mirroring ic_names) and by the deserializer
-     * (in lieu of ic_names, which stays NULL until module-instance create
-     * interns the strings).  Owned by the module's allocator; each entry and
-     * the array itself are freed in umodule_destroy. */
-    char         **ic_name_strs;
-
-    /* === Runtime / transient fields (NOT serialized) =============== */
-
-    /* NEW (Phase 1 v0.8.1-uproto-root): root proto for this module.
-     * Allocated by uemit_finish / umodule_deserialize after all serialized
-     * fields are populated.  Its buffers (instructions, constants, ic_names,
-     * nested[], etc.) alias the corresponding UModule fields — same physical
-     * storage, transitional double-view.  Task 11 deletes the UModule
-     * duplicates once all readers migrate to root_proto.
-     * Freed by umodule_destroy_internal inline (after module buffers are freed) — no separate helper.
-     * NULL until uemit_finish / umodule_deserialize completes. */
+    /* root_proto: the root UProto for this module.
+     * Allocated by uemit_init (at compile time) or umodule_deserialize (at
+     * load time).  Owns instructions, constants, nested[], IC tables, etc.
+     * Freed by umodule_destroy_internal via umodule_destroy_proto_buffers.
+     * NULL only if uemit_init / umodule_deserialize failed (OOM). */
     struct UProto *root_proto;
 
-    /* origin_vm [runtime-only]: per pre-m2-multi-vm-audit-design.md.
-     * Set by uemit_init at compile time; remains NULL on freshly-deserialized
-     * modules.  Used only for optional debug-assert paths; cross-VM module
-     * use is UB but not dynamically checked.  Never persisted. */
+    /* source_name: allocator-owned NUL-terminated string; NULL if absent.
+     * Stays on the module shell (not owned by root_proto). */
+    char       *source_name;
+
+    /* origin_vm [runtime-only]: set by uemit_init at compile time; NULL on
+     * freshly-deserialized modules.  Never persisted. */
     struct UVM *origin_vm;
 
     /* alloc_fn / alloc_ud [runtime-only]: pluggable allocator hook for owned
@@ -485,22 +437,6 @@ typedef struct UModule {
      * loader/emitter use them to grow + free struct-internal buffers. */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;
-
-    /* === Runtime-only fields (not serialized) ============= */
-
-    /* v0.8.0: refcount per strand binding (`s->module = this`).
-     * Bumped at urbi_strand_create_for_module + child->module copy in
-     * op_fork; decremented at strand_destroy.  Saturation at UINT16_MAX
-     * logs via host_log_fn (URBI_LOG_WARN) and stops incrementing
-     * (same policy as UProto.refcount shipped in v0.7.3).
-     *
-     * Not serialized: wire-format emitter/deserializer skip this field.
-     * Initialized to zero by urbi_load_module + uemit_finish. */
-    uint16_t refcount;
-
-    /* Deferred-destroy flag: set by umodule_destroy(m, vm) when refcount > 0.
-     * Module is freed once the last refcount drop sees this true. */
-    bool destroy_requested;
 } UModule;
 
 /* --- errors --- */
@@ -571,37 +507,21 @@ umodule_proto_refcount_dec(UProto *p)
     p->refcount = (uint16_t)(p->refcount - 1U);
 }
 
-/* v0.8.0: UModule refcount helpers.  Bumped at every strand binding
- * (s->module = m); decremented at every strand_destroy that releases the
- * binding.  vm is used only for the host-log saturation warning and may be
- * NULL in test contexts.
- *
- * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow asserts
- * loudly (catches missing-bump bugs); saturation no-ops (preserves leak-forever).
- * Same policy as UProto.refcount shipped in v0.7.3.
- *
- * v0.8.1 Phase 2: umodule_refcount_inc / umodule_refcount_dec are retained for
- * the existing test_module_refcount.c unit tests (which probe the old field
- * directly) and will be deleted in Task 11. New callers must use
- * umodule_proto_refcount_inc/dec (above) on module->root_proto. */
-void umodule_refcount_inc(UModule *m, struct UVM *vm);
-void umodule_refcount_dec(UModule *m, struct UVM *vm);
-
 /* v0.8.1 Phase 2: strand-bind release helper.
  * Decrements root_proto->refcount and, when it reaches 0 with
- * module->destroy_requested set, fires umodule_destroy_internal.
+ * module->destroy_requested previously-set, fires umodule_destroy_internal.
  * Callers must pass the still-valid module pointer; pass NULL for either
  * to no-op safely.  vm may be NULL in test contexts. */
 void umodule_strand_refcount_dec(UModule *m, UProto *root_proto,
                                  struct UVM *vm);
 
-/* Allocate a new UProto as module->nested[nested_count++].
+/* Allocate a new UProto as root_proto->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
  * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module.
  *
  * Watcher-detach interaction: condition/body/onleave protos for installed
  * at/whenever/waituntil watchers are created here, then later detached from
- * module->nested[] by strand_closure_unlink (src/watcher/uwatcher_install.c).
+ * root_proto->nested[] by strand_closure_unlink.
  * After detach, the corresponding nested[k] slot becomes NULL and ownership
  * transfers to the watcher (freed via pool_free on watcher recycle).
  * umodule_destroy is robust to NULL slots in nested[].  See also MOD-015. */
@@ -647,22 +567,16 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
-/* umodule_destroy — release all owned buffers and (if vm is non-NULL)
- * rescue protos with non-zero refcount to vm->stdlib_protos before freeing
- * the rest.
+/* umodule_destroy — release all owned buffers.  If vm is non-NULL and
+ * root_proto->refcount > 0, the root_proto is rescued onto vm->rescued_protos
+ * (surviving closures still reference it); the module shell is freed.
  *
  * vm-NULL contract (caller must guarantee):
  *   - The module has either never been run, OR
- *   - Every UClosure that ever pointed at any of this module's nested[]
- *     protos has been freed BEFORE this call.
+ *   - Every UClosure that pointed at any proto in this module has been freed
+ *     BEFORE this call.
  *
- * Today (v0.7.3) caller-side enforcement is ad-hoc because UClosure is
- * still strand/watcher-owned and freed eagerly at pool_free / strand
- * cleanup — so by the time umodule_destroy runs, surviving closure-refs
- * are typically zero.  Once UClosure is GC-promoted (T14), the eager-free
- * assumption breaks: closures live until GC sweep, so passing NULL here
- * for a previously-run module becomes use-after-free territory.  Live-vm
- * callsites should always pass the vm pointer; reserve NULL for
+ * Live-vm callsites should always pass the vm pointer; reserve NULL for
  * failed-compile cleanup where the module was never bound to any vm. */
 void umodule_destroy(UModule *module, struct UVM *vm);
 

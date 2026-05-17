@@ -41,8 +41,8 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
     *out = nil;
 
-    /* Empty module: no instructions to dispatch; return Nil. */
-    if (module->instr_count == 0) {
+    /* Empty module (or failed emit): no instructions to dispatch; return Nil. */
+    if (module->root_proto == NULL || module->root_proto->instr_count == 0) {
         return UVM_OK;
     }
 
@@ -103,17 +103,10 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     strand.module     = module;
     strand.root_proto = module->root_proto;
     strand.R          = strand.stack;
-    /* Use root_proto for hot-path fields (aliased); fall back to module->X
-     * for hand-crafted test modules that do not go through the emitter. */
-    if (strand.root_proto != NULL) {
-        strand.pc         = strand.root_proto->instructions;
-        strand.pc_base    = strand.root_proto->instructions;
-        strand.cur_consts = strand.root_proto->constants;
-    } else {
-        strand.pc         = module->instructions;
-        strand.pc_base    = module->instructions;
-        strand.cur_consts = module->constants;
-    }
+    /* Task 11: all chunk-top data lives on root_proto. */
+    strand.pc         = strand.root_proto->instructions;
+    strand.pc_base    = strand.root_proto->instructions;
+    strand.cur_consts = strand.root_proto->constants;
     /* v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto,
      * not module->refcount.  Decrement fires in ustrand_destroy at the end of
      * this function (single matched pair for the transient path).  strand.root_proto

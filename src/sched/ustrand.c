@@ -190,10 +190,8 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
     if (s->root_proto != NULL) {
         umodule_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);
         s->root_proto = NULL;
-        s->module     = NULL;
-    } else if (s->module != NULL) {
-        s->module = NULL;
     }
+    s->module = NULL;
 
     /* CHSTR-031: cross-strand stop counter management moved to scheduler.
      * sched_strand_account_destroy handles the host_call_pending_count
@@ -480,7 +478,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
                               struct UModule *module)
 {
     if (!vm || !module) return NULL;
-    if (module->instr_count == 0) return NULL;
+    if (module->root_proto == NULL || module->root_proto->instr_count == 0) return NULL;
 
     if (realm == NULL) {
         realm = urbi_realm_global(vm);
@@ -515,19 +513,11 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     /* Wire frame-0 execution state from the module's root chunk.
      * Mirrors uvm_run.c lines 102-129 (without the transient-specific fields
      * is_transient_strand and out_slot, which callers set if needed).
-     * v0.8.1 Phase 1: hot fields via root_proto (aliased); s->root_proto
-     * was set above so we use it directly. */
+     * Task 11: all chunk-top data lives on root_proto; s->root_proto was set above. */
     s->R          = s->stack;
-    /* s->root_proto is already set; fall back to module->X if NULL. */
-    if (s->root_proto != NULL) {
-        s->pc         = s->root_proto->instructions;
-        s->pc_base    = s->root_proto->instructions;
-        s->cur_consts = s->root_proto->constants;
-    } else {
-        s->pc         = module->instructions;
-        s->pc_base    = module->instructions;
-        s->cur_consts = module->constants;
-    }
+    s->pc         = s->root_proto->instructions;
+    s->pc_base    = s->root_proto->instructions;
+    s->cur_consts = s->root_proto->constants;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->closure_list = NULL;
