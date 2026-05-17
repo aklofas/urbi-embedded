@@ -459,7 +459,7 @@ typedef struct UModule {
      * nested[], etc.) alias the corresponding UModule fields — same physical
      * storage, transitional double-view.  Task 11 deletes the UModule
      * duplicates once all readers migrate to root_proto.
-     * Freed by umodule_destroy_internal via root_proto_free helper.
+     * Freed by umodule_destroy_internal inline (after module buffers are freed) — no separate helper.
      * NULL until uemit_finish / umodule_deserialize completes. */
     struct UProto *root_proto;
 

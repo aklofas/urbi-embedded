@@ -131,6 +131,68 @@ UTEST(root_proto_nested_alias_matches_module)
     urbi_vm_destroy(&vm);
 }
 
+UTEST(deserialize_roundtrip_root_proto_invariants)
+{
+    /* Round-trip a compiled module through serialize → deserialize and verify
+     * that umodule_deserialize correctly populates root_proto and its aliases.
+     * Exercises the deserialize aliasing block independently of uemit_finish. */
+    struct UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    UArena  arena;
+    UModule m1 = {0};
+    uarena_init(&arena, 4096);
+
+    /* Compile a chunk with a nested proto so nested[] aliasing is exercised. */
+    int rc = compile_only(&vm, &arena, &m1, "var f = function () { 1 };");
+    UASSERT_EQ(0, rc);
+    UASSERT(m1.root_proto != NULL);
+
+    /* Serialize to a stack buffer (measure first, then write). */
+    ptrdiff_t need = umodule_serialize(&m1, NULL, 0);
+    UASSERT((ptrdiff_t)0 < need);
+
+    uint8_t buf[8192];
+    UASSERT((size_t)need <= sizeof(buf));
+    ptrdiff_t wrote = umodule_serialize(&m1, buf, sizeof(buf));
+    UASSERT_EQ(need, wrote);
+
+    /* Deserialize into a fresh module backed by a fresh vm. */
+    struct UVM vm2;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm2, NULL, NULL));
+    UModule m2 = {0};
+    char errmsg[128];
+    UModuleLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
+                                                   errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_OK, load_rc);
+
+    /* root_proto must be non-NULL. */
+    UASSERT(m2.root_proto != NULL);
+
+    /* root_proto->root must be NULL (it IS the root). */
+    UASSERT(m2.root_proto->root == NULL);
+
+    /* nested[] alias: pointer equality. */
+    UASSERT(m2.root_proto->nested == m2.nested);
+
+    /* nested_count alias: value equality. */
+    UASSERT_EQ(m2.nested_count, m2.root_proto->nested_count);
+
+    /* Every non-NULL nested proto must back-point to root_proto. */
+    size_t k;
+    for (k = 0; k < m2.root_proto->nested_count; k++) {
+        UProto *p = m2.root_proto->nested[k];
+        if (p == NULL) continue;
+        UASSERT_EQ(m2.root_proto, p->root);
+    }
+
+    uarena_destroy(&arena);
+    umodule_destroy(&m1, &vm);
+    urbi_vm_destroy(&vm);
+    umodule_destroy(&m2, &vm2);
+    urbi_vm_destroy(&vm2);
+}
+
 void
 test_uproto_root_backptr_suite(void)
 {
@@ -140,4 +202,6 @@ test_uproto_root_backptr_suite(void)
               nested_proto_root_backptr_set);
     utest_run("uproto_root_backptr: root_proto nested[] aliases module.nested",
               root_proto_nested_alias_matches_module);
+    utest_run("uproto_root_backptr: deserialize round-trip root_proto invariants",
+              deserialize_roundtrip_root_proto_invariants);
 }
