@@ -197,7 +197,7 @@ typedef struct UWatcher {
  * deliberately.  Guarded on pointer width to avoid a hard failure on
  * 32-bit cross targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UWatcher) == 240,
+URBI_STATIC_ASSERT(sizeof(UWatcher) == 240,
                "UWatcher size pin on 64-bit (URBI_WATCHER_READSET_MAX=16)");
 #endif
 

@@ -134,9 +134,9 @@ struct UShape {
  * pointer width; runtime offset checks in tests/unit/test_ushape.c are
  * host-only and supply the second signal there. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UShape) == 56,
+URBI_STATIC_ASSERT(sizeof(struct UShape) == 56,
                "UShape header must be 56 bytes per pre-M4 USlot/UProps spec §4.1");
-_Static_assert(sizeof(struct UProps) == 48,
+URBI_STATIC_ASSERT(sizeof(struct UProps) == 48,
                "UProps must be 48 bytes per pre-M4 USlot/UProps spec §4.2");
 #endif
 

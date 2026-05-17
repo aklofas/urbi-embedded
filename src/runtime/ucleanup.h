@@ -5,6 +5,7 @@
 #define UCLEANUP_H
 
 #include <stdint.h>
+#include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,7 +65,7 @@ typedef struct UCleanupEntry {
  * 32-bit targets fall through (8 B fixed + 4 × 4 B pointers = 24 B); the
  * pointer-width guard mirrors the UObject / UIC pattern in src/object/. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UCleanupEntry) == 40,
+URBI_STATIC_ASSERT(sizeof(UCleanupEntry) == 40,
                "UCleanupEntry must be 40 bytes on 64-bit per row 7 §4.2 + row 11 §3.3");
 #endif
 

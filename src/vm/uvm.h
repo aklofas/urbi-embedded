@@ -245,7 +245,7 @@ typedef struct {
  *  - The M2/M3/M4/M5 sections cluster fields by lifecycle (M2 intern table,
  *    M4 prototype/atom singletons, M5 reactive runtime) so reviewing each
  *    milestone's contribution stays local to one block.
- *  - Six _Static_assert layout pins (in src/vm/uvm.c, guarded on
+ *  - Six URBI_STATIC_ASSERT layout pins (in src/vm/uvm.c, guarded on
  *    __SIZEOF_POINTER__ == 8) cement specific field offsets for cross-arch
  *    parity verification.
  * Reordering by clang-analyzer-optin.performance.Padding's optimal-pack

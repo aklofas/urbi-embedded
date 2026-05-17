@@ -34,9 +34,9 @@
  * USlot collapses to exactly one UValue (16 B) per the pre-M4 USlot/UProps
  * spec §3.  Inlined into UObject as `USlot slots[shape->count]`. */
 typedef UValue USlot;
-_Static_assert(sizeof(USlot) == sizeof(UValue),
+URBI_STATIC_ASSERT(sizeof(USlot) == sizeof(UValue),
                "USlot must equal UValue width");
-_Static_assert(sizeof(USlot) == 16,
+URBI_STATIC_ASSERT(sizeof(USlot) == 16,
                "USlot must be 16 bytes per pre-M4 USlot/UProps spec §3");
 
 /* === USlotArray ===
@@ -150,7 +150,7 @@ struct UObject {
  * Gate the assert on pointer width; runtime offset checks in
  * tests/unit/test_uobject.c are host-only and supply the second signal there. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UObject) == 56,
+URBI_STATIC_ASSERT(sizeof(struct UObject) == 56,
                "UObject header must be 56 bytes per M5 spec #4 §3.1");
 #endif
 

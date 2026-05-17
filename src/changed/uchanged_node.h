@@ -14,7 +14,7 @@
  *   Total  : 32 B
  *
  * On 32-bit cross targets (Cortex-M7, rv32imc) pointer fields shrink to 4 B
- * and the total is 16 B.  The _Static_assert in this header gates the exact
+ * and the total is 16 B.  The URBI_STATIC_ASSERT in this header gates the exact
  * 32-byte check to __SIZEOF_POINTER__ == 8 builds.
  *
  * type_tag = UTYPE_CHANGED_NODE; gc_byte = 0 at alloc (set by urbi_gc_alloc).
@@ -62,7 +62,7 @@ typedef struct UChangedNode {
  * On 32-bit cross targets the total is 16 B (4B header + 4B + 4B + 4B).
  * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UChangedNode) == 32,
+URBI_STATIC_ASSERT(sizeof(UChangedNode) == 32,
                "UChangedNode must be 32 bytes on 64-bit (spec #4 §3.1)");
 #endif
 

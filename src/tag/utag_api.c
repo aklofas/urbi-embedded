@@ -30,9 +30,9 @@
 
 /* Drift-detection: if the UTAG_FLAG_* bit positions change, the mapping
  * in urbi_tag_info (flags → urbi_tag_state_t) must be updated. */
-_Static_assert(UTAG_FLAG_FROZEN  == 0x01U,
+URBI_STATIC_ASSERT(UTAG_FLAG_FROZEN  == 0x01U,
                "urbi_tag_state_t assumes UTAG_FLAG_FROZEN == 0x01");
-_Static_assert(UTAG_FLAG_STOPPED == 0x02U,
+URBI_STATIC_ASSERT(UTAG_FLAG_STOPPED == 0x02U,
                "urbi_tag_state_t assumes UTAG_FLAG_STOPPED == 0x02");
 
 /* === urbi_tag_create ===

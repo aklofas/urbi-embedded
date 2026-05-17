@@ -95,7 +95,7 @@ typedef enum {
     TOK_ERROR,        /* malformed input */
 
     TOK__LAST          /* sentinel; not a real token type — used to size
-                          TOKEN_NAMES[] and detect drift via _Static_assert */
+                          TOKEN_NAMES[] and detect drift via URBI_STATIC_ASSERT */
 } UTokenType;
 
 /* Error codes carried in UToken.u.err.code when UToken.type == TOK_ERROR. */
@@ -121,7 +121,7 @@ typedef enum {
     LEX_FLOAT_EXPONENT_NO_DIGITS,    /* 1.5e+ or 1e — exponent marker with no digits */
     LEX_FLOAT_OVERFLOW,              /* float literal exceeds representable range (±inf) */
     LEX__LAST          /* sentinel; not a real error code — used to size
-                          ERR_MSG[] and detect drift via _Static_assert */
+                          ERR_MSG[] and detect drift via URBI_STATIC_ASSERT */
 } ULexError;
 
 /*

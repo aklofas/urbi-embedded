@@ -33,6 +33,19 @@
 extern "C" {
 #endif
 
+/* === URBI_STATIC_ASSERT — C11 _Static_assert wrapper ===
+ *
+ * The codebase targets -std=c99, but uses C11's _Static_assert pervasively
+ * to pin layout invariants. GCC accepts _Static_assert in C99 mode but
+ * emits "ISO C99 does not support _Static_assert" under -Wpedantic. The
+ * __extension__ prefix tells GCC the use is deliberate, suppressing the
+ * warning without disabling -Wpedantic for the file. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define URBI_STATIC_ASSERT(cond, msg) __extension__ _Static_assert((cond), msg)
+#else
+#  define URBI_STATIC_ASSERT(cond, msg) _Static_assert((cond), msg)
+#endif
+
 /* === Float-type configuration ===
  *
  * URBI_FLOAT_TYPE selects the size of the float arm in UValue's union:
@@ -118,12 +131,12 @@ typedef enum {
     URBI_VALUE_PTR     = 11   /* public-only: host opaque pointer, no UVAL_* mirror */
 } urbi_value_kind_t;
 
-_Static_assert((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
-_Static_assert((int)URBI_VALUE_FLOAT   == (int)UVAL_FLOAT,   "urbi_value_kind_t/UVAL_* drift: FLOAT");
-_Static_assert((int)URBI_VALUE_STR     == (int)UVAL_STR,     "urbi_value_kind_t/UVAL_* drift: STR");
-_Static_assert((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kind_t/UVAL_* drift: OBJECT");
-_Static_assert((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
-_Static_assert((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
+URBI_STATIC_ASSERT((int)URBI_VALUE_INT     == (int)UVAL_INT,     "urbi_value_kind_t/UVAL_* drift: INT");
+URBI_STATIC_ASSERT((int)URBI_VALUE_FLOAT   == (int)UVAL_FLOAT,   "urbi_value_kind_t/UVAL_* drift: FLOAT");
+URBI_STATIC_ASSERT((int)URBI_VALUE_STR     == (int)UVAL_STR,     "urbi_value_kind_t/UVAL_* drift: STR");
+URBI_STATIC_ASSERT((int)URBI_VALUE_OBJECT  == (int)UVAL_OBJECT,  "urbi_value_kind_t/UVAL_* drift: OBJECT");
+URBI_STATIC_ASSERT((int)URBI_VALUE_EVENT   == (int)UVAL_EVENT,   "urbi_value_kind_t/UVAL_* drift: EVENT");
+URBI_STATIC_ASSERT((int)URBI_VALUE_CLOSURE == (int)UVAL_CLOSURE, "urbi_value_kind_t/UVAL_* drift: CLOSURE");
 
 /* === Gap N: urbi_make_* value constructors (inline) ===
  *
@@ -314,11 +327,11 @@ static inline struct UClosure *urbi_value_as_closure(UValue v)
 #endif
 
 #if URBI_API_PIN_LAYOUT
-_Static_assert(sizeof(UValue) == 16,
+URBI_STATIC_ASSERT(sizeof(UValue) == 16,
                "UValue must be exactly 16 bytes (ABI pin)");
-_Static_assert(offsetof(UValue, v) == 8,
+URBI_STATIC_ASSERT(offsetof(UValue, v) == 8,
                "UValue.v must be at offset 8 (ABI pin)");
-_Static_assert(offsetof(UValue, kind) == 0,
+URBI_STATIC_ASSERT(offsetof(UValue, kind) == 0,
                "UValue.kind must be at offset 0 (ABI pin)");
 #endif
 
@@ -339,7 +352,7 @@ typedef uint16_t urbi_event_id_t;
  * (e.g. IMU readings as float[4], GPIO state as uint32_t) cast their data
  * to this union before injecting.
  *
- * Size and alignment are compile-time-pinned via _Static_assert below so
+ * Size and alignment are compile-time-pinned via URBI_STATIC_ASSERT below so
  * any future change to URBI_EVENT_PAYLOAD_MAX or URBI_EVENT_PAYLOAD_ALIGN
  * is caught at compile time rather than silently breaking ISR-side code.
  *
@@ -361,9 +374,9 @@ typedef union {
     void    *ptr  [URBI_EVENT_PAYLOAD_MAX / sizeof(void *)];
 } __attribute__((aligned(URBI_EVENT_PAYLOAD_ALIGN))) urbi_event_payload_t;
 
-_Static_assert(sizeof(urbi_event_payload_t)  == URBI_EVENT_PAYLOAD_MAX,
+URBI_STATIC_ASSERT(sizeof(urbi_event_payload_t)  == URBI_EVENT_PAYLOAD_MAX,
                "ISR payload size pinned at 16 bytes");
-_Static_assert(__alignof__(urbi_event_payload_t) == URBI_EVENT_PAYLOAD_ALIGN,
+URBI_STATIC_ASSERT(__alignof__(urbi_event_payload_t) == URBI_EVENT_PAYLOAD_ALIGN,
                "ISR payload alignment pinned at 8 bytes");
 
 /* === UErrCode: public error codes ===

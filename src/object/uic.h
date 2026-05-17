@@ -28,7 +28,7 @@
 #define URBI_IC_ENTRIES_PER_SITE 4
 #endif
 
-_Static_assert(URBI_IC_ENTRIES_PER_SITE == 1
+URBI_STATIC_ASSERT(URBI_IC_ENTRIES_PER_SITE == 1
             || URBI_IC_ENTRIES_PER_SITE == 2
             || URBI_IC_ENTRIES_PER_SITE == 4,
     "URBI_IC_ENTRIES_PER_SITE must be 1, 2, or 4");
@@ -68,7 +68,7 @@ typedef struct UIC {
  * skip this assert. */
 #if URBI_IC_ENTRIES_PER_SITE == 4 \
         && defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UIC) == 152,
+URBI_STATIC_ASSERT(sizeof(struct UIC) == 152,
     "UIC must be 152 B at default 4-entry, 64-bit pointers");
 #endif
 

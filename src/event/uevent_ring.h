@@ -45,9 +45,9 @@ typedef char uevent_ring_depth_must_be_power_of_two[
  * future override that breaks invariants (e.g. depth=4 starves the budget
  * loop, depth=4096 blows arm cap) fails at compile rather than at runtime.
  * The pre-existing power-of-2 typedef trick above stays. */
-_Static_assert(URBI_EVENT_RING_DEPTH >= 8,
+URBI_STATIC_ASSERT(URBI_EVENT_RING_DEPTH >= 8,
                "URBI_EVENT_RING_DEPTH must be at least 8 (sanity floor)");
-_Static_assert(URBI_EVENT_RING_DEPTH <= 1024,
+URBI_STATIC_ASSERT(URBI_EVENT_RING_DEPTH <= 1024,
                "URBI_EVENT_RING_DEPTH must be at most 1024 (sanity ceiling)");
 
 typedef struct UEventRingEntry {

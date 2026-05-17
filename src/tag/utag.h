@@ -35,7 +35,7 @@ struct UEvent;
  * Pure scope-nesting topology: member lists, no parent/child tree.
  * The "hierarchy" emerges from scope nesting via the cleanup-stack.
  *
- * Layout (64-bit host): pinned at exactly 64 B by _Static_assert below.
+ * Layout (64-bit host): pinned at exactly 64 B by URBI_STATIC_ASSERT below.
  *   Cell header  : type_tag(1) + gc_byte(1) + pad0(2) = 4 B
  *   Flags + pad  : flags(1) + pad1[3] = 4 B
  *   Pointers     : member_strands_head(8) + member_watchers_head(8) = 16 B
@@ -119,7 +119,7 @@ typedef struct UTag {
  * failure on 32-bit cross targets (mirrors UEvent / UObject pattern).
  * Update this assert whenever UTag fields change. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UTag) == 64,
+URBI_STATIC_ASSERT(sizeof(UTag) == 64,
                "UTag size pin on 64-bit (v0.7.1 parent-pointer layout)");
 #endif
 

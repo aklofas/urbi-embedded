@@ -4,6 +4,7 @@
 #include "lex/ulex.h"
 #include "lex/ulex_internal.h"
 #include "runtime/umacros.h"
+#include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 
 #include <limits.h>
 #include <stddef.h>
@@ -53,7 +54,7 @@ static const char * const TOKEN_NAMES[] = {
 };
 /* LEX-014: positional alignment with UTokenType — guard against silent
    drift when a new token is added to one but not the other. */
-_Static_assert(sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0]) == TOK__LAST,
+URBI_STATIC_ASSERT(sizeof(TOKEN_NAMES) / sizeof(TOKEN_NAMES[0]) == TOK__LAST,
                "TOKEN_NAMES[] must have one entry per UTokenType");
 
 static const char * const ERR_MSG[] = {
@@ -79,7 +80,7 @@ static const char * const ERR_MSG[] = {
     "float literal exceeds representable range"
 };
 /* LEX-015: same drift guard for ERR_MSG[] vs ULexError. */
-_Static_assert(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
+URBI_STATIC_ASSERT(sizeof(ERR_MSG) / sizeof(ERR_MSG[0]) == LEX__LAST,
                "ERR_MSG[] must have one entry per ULexError");
 
 static UToken make_tok_base(const UTokenType type, const int line, const int col) {
@@ -94,7 +95,7 @@ static UToken make_error(const ULexError code, const int line, const int col, co
     UToken t = make_tok_base(TOK_ERROR, line, col);
     t.len = len;
     t.u.err.code = code;
-    /* Defensive bounds check (LEX-015); _Static_assert above pins the table
+    /* Defensive bounds check (LEX-015); URBI_STATIC_ASSERT above pins the table
        size to LEX__LAST, but a future caller could still pass an
        out-of-range int.  Return a static fallback string rather than read
        OOB. */

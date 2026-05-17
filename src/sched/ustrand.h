@@ -276,7 +276,7 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(struct UStrand) == 3904,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3904,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change");
 #endif
 

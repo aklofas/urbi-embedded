@@ -7,6 +7,7 @@
 #include "lex/ulex.h"
 #include "parse/uast.h"
 #include "value/uarena.h"
+#include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 #include <stdint.h>
 
 /* Local string helper — compare an (unterminated) lexeme against a literal.
@@ -87,9 +88,9 @@ static const char * const kErrorNames[] = {
  * UParseError enumerators.  PARSE_SLOT_CHANGED_EMIT_V1 is the last
  * enumerator (added in M5 spec #4); update both forms together when
  * adding a new code.  Closes PARSE-017. */
-_Static_assert(N_PARSE_ERROR_CODES == (int)PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED + 1,
+URBI_STATIC_ASSERT(N_PARSE_ERROR_CODES == (int)PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED + 1,
                "kErrorNames length must match UParseError enum count");
-_Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
+URBI_STATIC_ASSERT((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
                == (int)PARSE_TOPLEVEL_GETSET_NOT_SUPPORTED + 1,
                "kErrorMessages length must match UParseError enum count");
 
@@ -97,7 +98,7 @@ _Static_assert((int)(sizeof kErrorMessages / sizeof kErrorMessages[0])
  * `e!` desugar in uparse_react.c does not duplicate the literal.
  * Closes PARSE-016. --- */
 const char kEmitMethodName[] = "emit";
-_Static_assert(sizeof kEmitMethodName - 1U == kEmitMethodNameLen,
+URBI_STATIC_ASSERT(sizeof kEmitMethodName - 1U == kEmitMethodNameLen,
                "kEmitMethodNameLen must equal strlen(kEmitMethodName)");
 
 /* --- OOM sentinel.  Returned whenever the arena is in OOM state. --- */

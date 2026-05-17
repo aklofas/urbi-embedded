@@ -15,7 +15,7 @@
  *   at_watchers_head : 8 B
  *   waiters_head     : 8 B
  *   name             : 16 B  (UValue — UVAL_NIL at alloc; populated at M6)
- *   Total            : 40 B  (pinned by _Static_assert below — EVENT-021)
+ *   Total            : 40 B  (pinned by URBI_STATIC_ASSERT below — EVENT-021)
  *
  * type_tag = UTYPE_EVENT; gc_byte = vm->current_white at alloc (set by
  * urbi_gc_alloc — color bit, NOT zero).  All pointer fields NULL at alloc;
@@ -69,7 +69,7 @@ typedef struct UEvent {
  * already absorbed by pad0[5]).
  * Guarded on pointer width to avoid a hard failure on 32-bit cross targets. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(UEvent) == 40,
+URBI_STATIC_ASSERT(sizeof(UEvent) == 40,
                "UEvent must be 40 bytes on 64-bit");
 #endif
 

@@ -54,7 +54,7 @@ typedef struct USlotHandle {
     USymbol   *name;
 } USlotHandle;
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-_Static_assert(sizeof(USlotHandle) == 40,
+URBI_STATIC_ASSERT(sizeof(USlotHandle) == 40,
                "USlotHandle layout per pre-M4 USlot/UProps spec §7");
 #endif
 
