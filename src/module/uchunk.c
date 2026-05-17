@@ -49,6 +49,22 @@
 #define URBI_LOADER_INNER_BUDGET   1000U
 #define URBI_LOADER_OUTER_CAP      10000U
 
+/* UAF guard: confirm loader is still in realm->strands_head before reading
+ * any of its fields.  T20 eager-reap may have freed the strand even when
+ * mod->refcount > 0 (other strands — e.g. chunk-top fork children — still
+ * bind the same module).  Realm-walk is UAF-safe: the list is rooted on
+ * the realm (not on the strand), so we never touch freed memory.
+ * O(n) in live strands; typical chunk-top workloads have <10 strands. */
+static bool
+strand_still_alive(const URealm *realm, const UStrand *loader)
+{
+    if (!realm || !loader) return false;
+    for (const UStrand *s = realm->strands_head; s != NULL; s = s->next_in_realm) {
+        if (s == loader) return true;
+    }
+    return false;
+}
+
 int
 uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
 {
@@ -71,7 +87,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
     *out_slot_target = nil_storage;
     loader->out_slot = out_slot_target;
 
-    /* Snapshot the module pointer BEFORE any urbi_step calls.
+    /* Snapshot the realm pointer BEFORE any urbi_step calls.
      *
      * Safety invariant (T20 eager-reap): urbi_step eagerly calls
      * urbi_strand_destroy on clean-dead strands, which frees the strand
@@ -84,16 +100,16 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
      *   1. Fatal death  — urbi_step returns URBI_STEP_FATAL and
      *      vm->fatal_strand == loader.  Strand not freed; still readable.
      *   2. Clean death  — strand was reaped; `loader` is invalid.  Detected
-     *      via module->refcount: the strand held refcount +1; destroy drops
-     *      it.  If refcount reaches 0, the strand died.  Assumes the
-     *      driver's caller does not hold an independent module ref (which
-     *      it doesn't — the caller passes the module to the strand and does
-     *      not call umodule_refcount_inc separately).
+     *      via realm-walk (strand_still_alive): the strand list is rooted on
+     *      the realm (not on the freed strand), so the walk never touches
+     *      freed memory.  Subsumes the former mod->refcount == 0 heuristic,
+     *      which only worked when loader was the LAST strand binding the
+     *      module (broke under chunk-top fork: children also hold a ref).
      *   3. Parked       — strand still alive; reading loader->state is safe.
      *
-     * We snapshot loader->module now (before it's freed) so we can poll
-     * refcount safely across iterations. */
-    UModule *mod = (UModule *)loader->module;
+     * We snapshot loader->realm now (before it's freed) so we can call
+     * strand_still_alive safely across iterations. */
+    URealm *loader_realm = loader->realm;
 
     for (uint32_t i = 0; i < URBI_LOADER_OUTER_CAP; i++) {
         UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
@@ -109,12 +125,13 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
             return URBI_ERR_STRAND_FATAL;
         }
 
-        /* Path 2: clean death detected via module refcount drop.
-         * The strand held refcount +1; destroy decrements it.
-         * After reap, loader is freed — do NOT dereference it. */
-        if (mod != NULL && mod->refcount == 0) {
-            /* out_result was already written by OP_RET via out_slot before
-             * the reap.  Return success. */
+        /* Path 2: clean death — loader was reaped.  Detected by realm-walk
+         * (UAF-safe; the strand list is on the realm, not on the strand).
+         * Handles the chunk-top-fork case: even when other strands still
+         * bind the module (refcount > 0), the loader itself may have died
+         * and been freed; the former mod->refcount == 0 check missed this.
+         * out_result was already written by OP_RET via out_slot before reap. */
+        if (!strand_still_alive(loader_realm, loader)) {
             return URBI_OK;
         }
 
