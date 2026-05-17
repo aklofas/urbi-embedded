@@ -349,6 +349,17 @@ typedef struct UProto {
     UModuleAllocFn alloc_fn;
     void          *alloc_ud;
 
+    /* NEW (Phase 1 v0.8.1-uproto-root): recursive child protos.
+     * For v0.8.1 tag: populated only on the root_proto (flat-on-root emitter
+     * per spec §4.2).  Non-root UProtos: nested_count = 0, nested = NULL.
+     * The field aliases UModule.nested[] on the root_proto (same physical
+     * storage); Task 11 will invert ownership once all readers migrate.
+     * Truly-recursive emitter where Bx scopes per-enclosing-proto is
+     * deferred per spec §11.3. */
+    struct UProto **nested;
+    size_t          nested_count;
+    size_t          nested_cap;
+
     /* [runtime-only, NOT serialized] Intrusive list link used when this proto
      * is "stolen" from its owning UModule by urbi_steal_repl_protos before
      * umodule_destroy.  Stolen protos are threaded onto vm->stdlib_protos and
@@ -356,6 +367,14 @@ typedef struct UProto {
      * originating module (the normal case).  Zero-initialized alongside the
      * rest of UProto at alloc time (umodule_alloc_nested_proto). */
     struct UProto *next_alloc;
+
+    /* [runtime-only, NOT serialized] Back-pointer to the root UProto of the
+     * owning module.  NULL on the root proto itself; set to module->root_proto
+     * on every nested proto at allocation time.  Used by Phase 2 refcount
+     * bumpers to find the canonical refcount via (proto->root ?: proto).
+     * Zero-initialized at alloc time; populated by uemit_finish and
+     * umodule_deserialize post-pass. */
+    struct UProto *root;
 
     /* [runtime-only, NOT serialized] Per-proto reference count used by the
      * closure-lifetime fix (v0.7.3 closure-lifetime spec).  Bumped by every
@@ -433,6 +452,16 @@ typedef struct UModule {
     char         **ic_name_strs;
 
     /* === Runtime / transient fields (NOT serialized) =============== */
+
+    /* NEW (Phase 1 v0.8.1-uproto-root): root proto for this module.
+     * Allocated by uemit_finish / umodule_deserialize after all serialized
+     * fields are populated.  Its buffers (instructions, constants, ic_names,
+     * nested[], etc.) alias the corresponding UModule fields — same physical
+     * storage, transitional double-view.  Task 11 deletes the UModule
+     * duplicates once all readers migrate to root_proto.
+     * Freed by umodule_destroy_internal via root_proto_free helper.
+     * NULL until uemit_finish / umodule_deserialize completes. */
+    struct UProto *root_proto;
 
     /* origin_vm [runtime-only]: per pre-m2-multi-vm-audit-design.md.
      * Set by uemit_init at compile time; remains NULL on freshly-deserialized

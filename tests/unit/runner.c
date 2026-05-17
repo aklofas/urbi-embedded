@@ -243,6 +243,7 @@ extern void test_detect_blob_suite(void);
 extern void test_draw_crosshair_suite(void);
 extern void test_loader_strand_persistence_suite(void);
 extern void test_test_helper_uaf_repro_suite(void);
+extern void test_uproto_root_backptr_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -462,6 +463,7 @@ static const struct suite_entry suites[] = {
     {"draw_crosshair",               test_draw_crosshair_suite},
     {"loader_strand_persistence",    test_loader_strand_persistence_suite},
     {"test_helper_uaf_repro",        test_test_helper_uaf_repro_suite},
+    {"uproto_root_backptr",          test_uproto_root_backptr_suite},
     /* Add new suites here as test files are added. */
 };
 

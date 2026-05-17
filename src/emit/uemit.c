@@ -634,6 +634,60 @@ UEmitError uemit_finish(UEmitter *e) {
     }
     e->finished = true;
     e->module->max_reg = e->max_reg_seen;
+
+    /* Phase 1 v0.8.1-uproto-root: allocate root_proto and alias its fields
+     * to the module's chunk-top fields (same physical storage; Task 11 will
+     * invert ownership once all readers migrate).  Only populate on
+     * success — if there was an emit error the module is partially built
+     * and the caller will not use it. */
+    if (e->error == EMIT_OK) {
+        UModule *m = e->module;
+        UModuleAllocFn alloc = emit_alloc_for(m);
+        if (alloc == NULL) {
+            e->error = EMIT_OOM;
+        } else {
+            UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), m->alloc_ud);
+            if (rp == NULL) {
+                e->error = EMIT_OOM;
+            } else {
+                urbi_zero(rp, sizeof(UProto));
+                /* root's own back-pointer is NULL — it IS the root. */
+                rp->root      = NULL;
+                rp->alloc_fn  = m->alloc_fn;
+                rp->alloc_ud  = m->alloc_ud;
+                /* Alias chunk-top buffers — pointer copy, not deep copy. */
+                rp->instructions   = m->instructions;
+                rp->instr_count    = m->instr_count;
+                rp->instr_cap      = m->instr_cap;
+                rp->constants      = m->constants;
+                rp->const_count    = m->const_count;
+                rp->const_cap      = m->const_cap;
+                rp->line_deltas    = m->line_deltas;
+                rp->abs_lines      = m->abs_lines;
+                rp->abs_line_count = m->abs_line_count;
+                rp->abs_line_cap   = m->abs_line_cap;
+                rp->max_reg        = m->max_reg;
+                rp->nupvals        = m->nupvals;
+                rp->nparams        = m->nparams;
+                rp->ic_count       = m->ic_count;
+                rp->ic_names       = m->ic_names;
+                rp->ic_name_strs   = m->ic_name_strs;
+                /* Alias nested[] — same storage; Task 11 inverts ownership. */
+                rp->nested         = m->nested;
+                rp->nested_count   = m->nested_count;
+                rp->nested_cap     = m->nested_cap;
+                /* Back-pointer walk: set every nested proto's root field. */
+                size_t k;
+                for (k = 0U; k < m->nested_count; k++) {
+                    if (m->nested[k] != NULL) {
+                        m->nested[k]->root = rp;
+                    }
+                }
+                m->root_proto = rp;
+            }
+        }
+    }
+
     return e->error;
 }
 

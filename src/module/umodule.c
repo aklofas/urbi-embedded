@@ -1120,6 +1120,49 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     if ((rc = decode_nested_protos(&d)) != ULOAD_OK) return rc;
     if ((rc = decode_trailer(&d))       != ULOAD_OK) return rc;
     if ((rc = decode_verify(&d))        != ULOAD_OK) return rc;
+
+    /* Phase 1 v0.8.1-uproto-root: allocate root_proto and alias its fields
+     * to the module's chunk-top fields (same physical storage; Task 11 will
+     * invert ownership once all readers migrate). */
+    {
+        UModuleAllocFn alloc = module_allocator(module);
+        if (alloc == NULL) return ULOAD_OOM;
+        UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
+        if (rp == NULL) return ULOAD_OOM;
+        urbi_zero(rp, sizeof(UProto));
+        rp->root     = NULL;  /* root's own back-pointer is NULL */
+        rp->alloc_fn = module->alloc_fn;
+        rp->alloc_ud = module->alloc_ud;
+        /* Alias chunk-top buffers — pointer copy, not deep copy. */
+        rp->instructions   = module->instructions;
+        rp->instr_count    = module->instr_count;
+        rp->instr_cap      = module->instr_cap;
+        rp->constants      = module->constants;
+        rp->const_count    = module->const_count;
+        rp->const_cap      = module->const_cap;
+        rp->line_deltas    = module->line_deltas;
+        rp->abs_lines      = module->abs_lines;
+        rp->abs_line_count = module->abs_line_count;
+        rp->abs_line_cap   = module->abs_line_cap;
+        rp->max_reg        = module->max_reg;
+        rp->nupvals        = module->nupvals;
+        rp->nparams        = module->nparams;
+        rp->ic_count       = module->ic_count;
+        rp->ic_names       = module->ic_names;
+        rp->ic_name_strs   = module->ic_name_strs;
+        rp->nested         = module->nested;
+        rp->nested_count   = module->nested_count;
+        rp->nested_cap     = module->nested_cap;
+        /* Back-pointer walk: set every nested proto's root field. */
+        size_t k;
+        for (k = 0U; k < module->nested_count; k++) {
+            if (module->nested[k] != NULL) {
+                module->nested[k]->root = rp;
+            }
+        }
+        module->root_proto = rp;
+    }
+
     return ULOAD_OK;
 }
 
@@ -1262,6 +1305,12 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
                                 module->ic_name_strs[k]);
             }
             (void)alloc((void *)module->ic_name_strs, 0, module->alloc_ud);
+        }
+        /* Phase 1 v0.8.1-uproto-root: free the root_proto struct itself.
+         * Its fields alias the module's buffers (freed above); do NOT free
+         * rp's buffer fields again — only the UProto allocation itself. */
+        if (module->root_proto != NULL) {
+            alloc(module->root_proto, 0, module->alloc_ud);
         }
     }
     /* Zero the entire struct AFTER all frees complete.  No field is read
