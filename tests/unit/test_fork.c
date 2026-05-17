@@ -93,7 +93,7 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
     s->cur_consts = module->constants;
     s->module     = module;
     s->root_proto = module->root_proto;  /* v0.8.1 Phase 1: fast-path alias */
-    umodule_refcount_inc(module, vm);  /* v0.8.0: pair with ustrand_destroy dec */
+    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     s->frame_count = 0;
     s->open_upvals = NULL;
     s->closure_list = NULL;

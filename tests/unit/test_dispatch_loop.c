@@ -489,7 +489,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
     strand_setup_cleanup(&s, &vm);
     s.module = &fake_mod;  /* required by urbi_unwind catch-absorption */
-    umodule_refcount_inc(&fake_mod, &vm);  /* v0.8.0: pair with ustrand_destroy dec */
+    umodule_proto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Give sufficient budget so the safepoint after THROW doesn't soft-yield
        before the catch handler can run; OP_THROW → safepoint → urbi_unwind
        → catch absorbed → dispatch continues from handler. */
@@ -706,7 +706,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     strand_setup(&s, &vm, caller_instrs, no_consts, reg_stack);
     strand_setup_cleanup(&s, &vm);
     s.module = &fake_caller_mod;
-    umodule_refcount_inc(&fake_caller_mod, &vm);  /* v0.8.0: pair with ustrand_destroy dec */
+    umodule_proto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Need non-zero budget so safepoints at CALL and non-top RET don't soft-yield. */
     s.instruction_budget_remaining = 100U;
 
