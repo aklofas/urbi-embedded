@@ -116,7 +116,8 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
         return NULL;
     }
 
-    child->module = s->module;   /* diagnostics + nested-proto lookup */
+    child->module     = s->module;      /* diagnostics + nested-proto lookup */
+    child->root_proto = s->root_proto;  /* v0.8.1 Phase 1: inherit fast-path alias */
     /* v0.8.0: child strand inherits parent's module binding — refcount++.
      * Const-cast mirrors uvm_run.c; Task 9 reverts the const annotation. */
     umodule_refcount_inc((UModule *)child->module, s->vm);

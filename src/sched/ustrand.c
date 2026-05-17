@@ -491,8 +491,10 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
 
     /* Bind module and bump refcount before any teardown path so
      * urbi_strand_destroy (which calls ustrand_destroy) correctly
-     * decrements the count on error. */
-    s->module = module;
+     * decrements the count on error.
+     * v0.8.1 Phase 1: also set root_proto fast-path alias. */
+    s->module     = module;
+    s->root_proto = module->root_proto;
     umodule_refcount_inc(module, vm);
 
     /* Allocate and zero the per-strand register stack.
