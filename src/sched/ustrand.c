@@ -46,15 +46,26 @@ ustrand_init(UStrand *s, struct UVM *vm) {
  *
  * The normal production path runs this via the row 7 walker during unwind;
  * this ensures correctness when strands are torn down without executing bytecode
- * (e.g., test teardown, OOM recovery, urbi_strand_panic). */
+ * (e.g., test teardown, OOM recovery, urbi_strand_panic).
+ *
+ * CHSTR-051: scan the FULL allocated range [0..cleanup_cap) rather than just
+ * [0..cleanup_depth).  strand_cleanup_pop decrements cleanup_depth but does
+ * NOT unlink the entry from owning_tag->member_strands_head; entries below
+ * the current depth may therefore still be linked.  This arises in the fatal
+ * unwind path for "try { throw 1 } finally { throw 2 }": the realm-tag
+ * TAG_SCOPE at cleanup_base[0] is popped during unwind (depth → 0) but its
+ * member_strands_head link is never cleared, so utag_destroy's invariant
+ * assertion fires.  Scanning the full cap is safe: never-pushed slots are
+ * zero-initialised (kind == 0, not UCLEANUP_TAG_SCOPE == 2) and are skipped;
+ * already-unlinked popped entries harmlessly produce a no-op list walk. */
 static void
 strand_unlink_from_tags(UStrand *s)
 {
     uint16_t i;
 
-    if (s->cleanup_base == NULL || s->cleanup_depth == 0) return;
+    if (s->cleanup_base == NULL || s->cleanup_cap == 0) return;
 
-    for (i = 0; i < s->cleanup_depth; i++) {
+    for (i = 0; i < s->cleanup_cap; i++) {
         UCleanupEntry *e = &s->cleanup_base[i];
         UTag *tag;
         UCleanupEntry **cur;
@@ -82,39 +93,82 @@ strand_unlink_from_tags(UStrand *s)
  * closed_cells, and open_upvals.  Centralises the near-identical free loops
  * that previously appeared in ustrand_destroy.
  *
- * closure_list: skips any closure that equals vm->last_return_closure (the
- * caller-owned return value kept alive between urbi_vm_run calls).
+ * closure_list / closed_cells lifetime policy (v0.8.0):
  *
- * urbi_vm_run pre-frees these chains itself (before calling ustrand_destroy) to
- * avoid the skip-logic for last_return_closure; by the time ustrand_destroy
- * is called from that path the three pointers are NULL and these loops are
- * no-ops. */
+ *   Transient strands (is_transient_strand == 1, i.e. urbi_vm_run):
+ *     urbi_vm_run pre-migrates closure_list → vm->stdlib_closures and
+ *     closed_cells → vm->stdlib_upvalues before calling ustrand_destroy.
+ *     By the time this function is reached, both chains are NULL — the
+ *     loops below are no-ops.
+ *
+ *   Persistent strands (is_transient_strand == 0, i.e. urbi_strand_create
+ *   paths — loader strands, watcher body strands, fork children):
+ *     Closures and heapified upvals created during the strand's run may have
+ *     been installed as realm-globals (var f = function...) or captured by
+ *     persistent watchers.  Freeing them here would dangle those references.
+ *     Instead, migrate them to vm->stdlib_closures / vm->stdlib_upvalues so
+ *     they are freed at urbi_vm_destroy.  This is the same lifetime extension
+ *     the old transient path applied; v1.x GC UClosure promotion replaces
+ *     this migrate-to-stdlib pattern with proper sweep-time reclamation.
+ *
+ *   Open upvalue cells are always freed eagerly (they were not heapified, so
+ *   no live reference can exist to their stack-relative storage).
+ *
+ * closure_list: skips any closure that equals vm->last_return_closure (the
+ * caller-owned return value kept alive between urbi_vm_run calls). */
 static void
 release_strand_resource_chain(UVM *vm, UStrand *s)
 {
     UClosure  *cl;
     UUpvalCell *cell;
 
-    /* Closure list (pre-GC closure bookkeeping). */
+    /* Closure list (pre-GC closure bookkeeping).
+     * Non-transient strands: migrate to vm->stdlib_closures to prevent UAF on
+     * realm-global UVAL_CLOSURE references that outlive this strand. */
     cl = s->closure_list;
     s->closure_list = NULL;
-    while (cl != NULL) {
-        UClosure *next = cl->next_alloc;
-        if (cl != vm->last_return_closure)
-            vm->alloc_fn(cl, 0, vm->alloc_ud);
-        cl = next;
+    if (s->is_transient_strand) {
+        /* Transient: lists were pre-migrated by urbi_vm_run; this is a no-op.
+         * Keep the skip-logic for last_return_closure as a safety net. */
+        while (cl != NULL) {
+            UClosure *next = cl->next_alloc;
+            if (cl != vm->last_return_closure)
+                vm->alloc_fn(cl, 0, vm->alloc_ud);
+            cl = next;
+        }
+    } else {
+        /* Persistent: splice entire closure_list onto vm->stdlib_closures.
+         * Find the tail of cl's chain so we can prepend in O(n). */
+        if (cl != NULL) {
+            UClosure *tail = cl;
+            while (tail->next_alloc != NULL) tail = tail->next_alloc;
+            tail->next_alloc = vm->stdlib_closures;
+            vm->stdlib_closures = cl;
+        }
     }
 
-    /* Heapified upvalue cells. */
+    /* Heapified upvalue cells.
+     * Same policy: migrate persistent-strand upvals to vm->stdlib_upvalues. */
     cell = s->closed_cells;
     s->closed_cells = NULL;
-    while (cell != NULL) {
-        UUpvalCell *next = cell->next;
-        vm->alloc_fn(cell, 0, vm->alloc_ud);
-        cell = next;
+    if (s->is_transient_strand) {
+        while (cell != NULL) {
+            UUpvalCell *next = cell->next;
+            vm->alloc_fn(cell, 0, vm->alloc_ud);
+            cell = next;
+        }
+    } else {
+        if (cell != NULL) {
+            UUpvalCell *tail = cell;
+            while (tail->next != NULL) tail = tail->next;
+            tail->next = vm->stdlib_upvalues;
+            vm->stdlib_upvalues = cell;
+        }
     }
 
-    /* Open upvalue cells (not closed before strand death). */
+    /* Open upvalue cells (not closed before strand death): always free.
+     * Open cells store a pointer into the strand's register stack, which is
+     * being freed; no live reference to the open cell can exist elsewhere. */
     cell = s->open_upvals;
     s->open_upvals = NULL;
     while (cell != NULL) {
