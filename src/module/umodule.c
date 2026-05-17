@@ -1158,7 +1158,10 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
     if (m == NULL) return;
     if (m->refcount == 0U) {
         /* Underflow guard — catches missing-bump bugs that would otherwise
-         * race the deferred-destroy path. */
+         * race the deferred-destroy path.  Assert loudly so debug builds
+         * surface the caller; early return is the safety fallback when
+         * assertions compile to nothing in production. */
+        URBI_INTERNAL_ASSERT(false && "umodule_refcount_dec underflow");
         return;
     }
     m->refcount = (uint16_t)(m->refcount - 1U);
