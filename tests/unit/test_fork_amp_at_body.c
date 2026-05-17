@@ -89,9 +89,11 @@ UTEST(amp_inside_function_called_from_at_handler)
     urbi_vm_destroy(&vm);
 }
 
-/* Test 2: confirm `&` at chunk-top FAILS with the documented error.
- * Documents the runtime constraint: OP_FORK_JOIN requires urbi_step. */
-UTEST(amp_at_chunktop_fails_per_spec)
+/* Test 2: confirm `&` at chunk-top WORKS with the v0.8.0 persistent strand.
+ * Prior to v0.8.0, urbi_run_chunk used a transient strand where OP_FORK_JOIN
+ * was rejected at runtime (URBI_ERR_STRAND_FATAL).  With the persistent
+ * loader strand path, OP_FORK_JOIN runs correctly at chunk-top. */
+UTEST(amp_at_chunktop_works_v0_8_0)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -102,17 +104,25 @@ UTEST(amp_at_chunktop_fails_per_spec)
     UModule module = {0};
     uarena_init(&arena, 4096);
 
-    /* Chunk-top runs via urbi_run_chunk (transient strand context).
-     * OP_FORK_JOIN can't run there per its docstring. */
+    /* v0.8.0: persistent loader strand enables OP_FORK_JOIN at chunk-top.
+     * Both sides execute and both realm slots are set. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "var a = 0; var b = 0;"
         "Realm.a = 1 & Realm.b = 2",
         NULL);
-    /* Expected: URBI_ERR_STRAND_FATAL = -2 with documented errmsg. */
-    UASSERT_EQ(-2, rc);
+    UASSERT_EQ(URBI_OK, rc);
+
+    /* Drive to quiescent so fork children complete. */
+    drain_to_quiescent(&vm);
+
+    UValue a = {0}, b = {0};
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "a", 1, &a));
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, r, "b", 1, &b));
+    UASSERT_EQ((int64_t)1, a.v.i);
+    UASSERT_EQ((int64_t)2, b.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -121,6 +131,6 @@ test_fork_amp_at_body_suite(void)
 {
     utest_run("fork_amp_at_body: `&` inside function from at-handler works",
               amp_inside_function_called_from_at_handler);
-    utest_run("fork_amp_at_body: `&` at chunk-top fails (per spec — needs urbi_step)",
-              amp_at_chunktop_fails_per_spec);
+    utest_run("fork_amp_at_body: `&` at chunk-top works (v0.8.0 persistent strand)",
+              amp_at_chunktop_works_v0_8_0);
 }
