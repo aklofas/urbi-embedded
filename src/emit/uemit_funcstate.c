@@ -236,31 +236,33 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     return true;
 }
 
-/* Grow and prepend one instruction into the root UModule.
- * Same shift/patch/line logic as proto_grow_for_prologue but targets
- * module->instructions / line_deltas / abs_lines. */
+/* Grow and prepend one instruction into the root chunk (root_proto).
+ * Task 11: all chunk-top data lives on root_proto; targets
+ * rp->instructions / line_deltas / abs_lines instead of module fields. */
 static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
-    UModule *m = e->module;
+    UModule *m  = e->module;
+    UProto  *rp = m->root_proto;
+    if (rp == NULL) { e->error = EMIT_OOM; return false; }
 
     /* Instructions. */
-    if (!emit_grow(m, (void **)&m->instructions, &m->instr_cap,
-                   m->instr_count + 1U, sizeof(uint32_t))) {
+    if (!emit_grow(m, (void **)&rp->instructions, &rp->instr_cap,
+                   rp->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
-    if (m->instr_count > 0U) {
-        emit_memmove_right(m->instructions + 1, m->instructions,
-                           m->instr_count * sizeof(uint32_t));
+    if (rp->instr_count > 0U) {
+        emit_memmove_right(rp->instructions + 1, rp->instructions,
+                           rp->instr_count * sizeof(uint32_t));
     }
-    m->instructions[0] = instr;
-    m->instr_count++;
+    rp->instructions[0] = instr;
+    rp->instr_count++;
 
     /* Patch absolute-PC instructions shifted right by 1. */
-    for (size_t pi = 1U; pi < m->instr_count; pi++) {
-        UOpcode op = uinstr_op(m->instructions[pi]);
+    for (size_t pi = 1U; pi < rp->instr_count; pi++) {
+        UOpcode op = uinstr_op(rp->instructions[pi]);
         if (op == OP_TRY_BEGIN || op == OP_PUSH_TAG) {
-            uint8_t  a  = uinstr_a(m->instructions[pi]);
-            uint16_t bx = uinstr_bx(m->instructions[pi]);
-            m->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1U));
+            uint8_t  a  = uinstr_a(rp->instructions[pi]);
+            uint16_t bx = uinstr_bx(rp->instructions[pi]);
+            rp->instructions[pi] = uinstr_enc_abx(op, a, (uint16_t)(bx + 1U));
         }
     }
 
@@ -268,37 +270,37 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     {
         UModuleAllocFn alloc = emit_alloc_for(m);
         if (alloc == NULL) { e->error = EMIT_OOM; return false; }
-        int8_t *fresh = (int8_t *)alloc(m->line_deltas,
-                                        m->instr_count * sizeof(int8_t),
+        int8_t *fresh = (int8_t *)alloc(rp->line_deltas,
+                                        rp->instr_count * sizeof(int8_t),
                                         m->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return false; }
-        m->line_deltas = fresh;
+        rp->line_deltas = fresh;
     }
-    if (m->instr_count > 1U) {
-        emit_memmove_right(m->line_deltas + 1, m->line_deltas,
-                           (m->instr_count - 1U) * sizeof(int8_t));
+    if (rp->instr_count > 1U) {
+        emit_memmove_right(rp->line_deltas + 1, rp->line_deltas,
+                           (rp->instr_count - 1U) * sizeof(int8_t));
     }
-    m->line_deltas[0] = (int8_t)-128;
+    rp->line_deltas[0] = (int8_t)-128;
 
     /* Bump existing abs_lines pc values. */
-    for (size_t ai = 0; ai < m->abs_line_count; ai++) {
-        m->abs_lines[ai].pc++;
+    for (size_t ai = 0; ai < rp->abs_line_count; ai++) {
+        rp->abs_lines[ai].pc++;
     }
     uint32_t line0 = 0U;
-    if (m->abs_line_count > 0U && m->abs_lines[0].pc == 1U) {
-        line0 = m->abs_lines[0].line;
+    if (rp->abs_line_count > 0U && rp->abs_lines[0].pc == 1U) {
+        line0 = rp->abs_lines[0].line;
     }
-    if (!emit_grow(m, (void **)&m->abs_lines, &m->abs_line_cap,
-                   m->abs_line_count + 1U, sizeof(UAbsLine))) {
+    if (!emit_grow(m, (void **)&rp->abs_lines, &rp->abs_line_cap,
+                   rp->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
-    if (m->abs_line_count > 0U) {
-        emit_memmove_right(m->abs_lines + 1, m->abs_lines,
-                           m->abs_line_count * sizeof(UAbsLine));
+    if (rp->abs_line_count > 0U) {
+        emit_memmove_right(rp->abs_lines + 1, rp->abs_lines,
+                           rp->abs_line_count * sizeof(UAbsLine));
     }
-    m->abs_lines[0].pc   = 0U;
-    m->abs_lines[0].line = line0;
-    m->abs_line_count++;
+    rp->abs_lines[0].pc   = 0U;
+    rp->abs_lines[0].line = line0;
+    rp->abs_line_count++;
 
     return true;
 }
@@ -428,13 +430,13 @@ UFuncState *uemit_close_function(UEmitter *e) {
             p->ic_name_strs = NULL;
         }
     }
-    /* M4 follow-up: top-level funcstate (no target_proto) — copy IC names
-     * into UModule.ic_count / ic_names so urbi_module_instance_create can
-     * populate proto_instances->entries[0].  Mirrors the UProto path above. */
+    /* Task 11: top-level funcstate (no target_proto) — copy IC names
+     * into root_proto->ic_count / ic_names (root_proto is allocated at
+     * uemit_init; always non-NULL here).  Mirrors the UProto path above. */
     if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
-        UModule *mod = e->module;
+        UProto *rp = e->module->root_proto;
         UModuleAllocFn malloc_fn = emit_alloc_for(e->module);
-        if (malloc_fn == NULL) {
+        if (malloc_fn == NULL || rp == NULL) {
             e->error = EMIT_OOM;
         } else {
             USymbol **dst = (USymbol **)malloc_fn(NULL,
@@ -445,22 +447,21 @@ UFuncState *uemit_close_function(UEmitter *e) {
                 for (uint16_t i = 0; i < fs->ic_next; i++) {
                     dst[i] = fs->ic_names[i];
                 }
-                mod->ic_count = fs->ic_next;
-                mod->ic_names = dst;
+                rp->ic_count = fs->ic_next;
+                rp->ic_names = dst;
             }
         }
-        /* T11: parallel char** companion array for the root chunk.  Same
-         * shape as the nested-proto branch above. */
-        if (mod->ic_names != NULL) {
+        /* T11: parallel char** companion array for the root chunk. */
+        if (rp != NULL && rp->ic_names != NULL) {
             char **dst_strs = (char **)malloc_fn(NULL,
-                (size_t)mod->ic_count * sizeof(char *), e->module->alloc_ud);
+                (size_t)rp->ic_count * sizeof(char *), e->module->alloc_ud);
             if (dst_strs == NULL) {
                 e->error = EMIT_OOM;
             } else {
-                for (uint16_t i = 0; i < mod->ic_count; i++) {
+                for (uint16_t i = 0; i < rp->ic_count; i++) {
                     dst_strs[i] = NULL;
                 }
-                for (uint16_t i = 0; i < mod->ic_count; i++) {
+                for (uint16_t i = 0; i < rp->ic_count; i++) {
                     const char *name = (const char *)fs->ic_names[i];
                     size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
                     char *dup = (char *)malloc_fn(NULL, nlen + 1U,
@@ -473,7 +474,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
                     dup[nlen] = '\0';
                     dst_strs[i] = dup;
                 }
-                mod->ic_name_strs = dst_strs;
+                rp->ic_name_strs = dst_strs;
             }
         }
     }

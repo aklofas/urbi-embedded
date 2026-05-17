@@ -80,8 +80,8 @@ UTEST(emit_bare_ident_emits_getslot) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     bool found_getslot = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_GETSLOT) {
             found_getslot = true;
             break;
         }
@@ -274,8 +274,8 @@ UTEST(emit_global_pure_local_chunk_no_prologue) {
 
     /* Scan: must NOT contain OP_LOAD_REALM_GLOBAL. */
     bool found_load_global = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_LOAD_REALM_GLOBAL) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_LOAD_REALM_GLOBAL) {
             found_load_global = true;
             break;
         }

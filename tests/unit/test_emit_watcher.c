@@ -67,8 +67,10 @@ static void watcher_cleanup(UModule *mod, UArena *arena, UVM *vm) {
 /* Return true if any instruction in module (root chunk) has opcode == op. */
 static bool bytecode_contains_op(const UModule *m, UOpcode op) {
     size_t i;
-    for (i = 0; i < m->instr_count; i++) {
-        if (uinstr_op(m->instructions[i]) == op) return true;
+    const UProto *rp = m->root_proto;
+    if (rp == NULL) return false;
+    for (i = 0; i < rp->instr_count; i++) {
+        if (uinstr_op(rp->instructions[i]) == op) return true;
     }
     return false;
 }

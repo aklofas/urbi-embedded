@@ -20,24 +20,38 @@ UTEST(module_error_name_ok) {
 }
 
 UTEST(destroy_empty_module_is_noop) {
+    /* Task 11: UModule is a thin 5-field shell; all chunk data is on root_proto.
+     * A zero-initialised module (root_proto == NULL) must destroy safely. */
     UModule c = {0};
     umodule_destroy(&c, NULL);
-    UASSERT_EQ((void *)NULL, (void *)c.instructions);
-    UASSERT_EQ((void *)NULL, (void *)c.constants);
-    UASSERT_EQ((size_t)0, c.instr_count);
-    UASSERT_EQ((size_t)0, c.const_count);
+    UASSERT_EQ((void *)NULL, (void *)c.root_proto);
+    UASSERT_EQ((void *)NULL, (void *)c.source_name);
 }
 
 UTEST(destroy_module_with_buffers_frees_them) {
+    /* Task 11: All chunk-top buffers live on root_proto.
+     * Simulate allocation via stdlib calloc; umodule_destroy frees root_proto
+     * buffers via umodule_destroy_proto_buffers then the proto itself via alloc_fn.
+     * alloc_fn == NULL means the proto struct was NOT heap-allocated separately
+     * (caller-owned stack object), so we skip the root_proto free and only verify
+     * the sub-buffers are cleared.
+     *
+     * To exercise the full free path, allocate root_proto on the heap with
+     * alloc_fn == NULL (signals stdlib ownership).  umodule_destroy_proto_buffers
+     * uses proto->alloc_fn; with NULL it uses stdlib free. */
     UModule c = {0};
+    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(rp != NULL);
+    c.root_proto = rp;
+
     /* Simulate allocation by directly using stdlib and letting destroy free.
        This is the same path umodule_deserialize / umodule_serialize use via
        the alloc_fn hook — when alloc_fn is NULL, destroy uses stdlib free. */
-    c.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
-    c.instr_cap = 4;
-    c.instr_count = 2;
-    c.instructions[0] = 0x11223344;
-    c.instructions[1] = 0x55667788;
+    rp->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
+    rp->instr_cap = 4;
+    rp->instr_count = 2;
+    rp->instructions[0] = 0x11223344;
+    rp->instructions[1] = 0x55667788;
 
     /* calloc, not malloc: umodule_destroy walks `const_count` slots through
      * free_owned_str_constants, which inspects each UValue's kind + _pad[0]
@@ -46,25 +60,20 @@ UTEST(destroy_module_with_buffers_frees_them) {
      * the kind/_pad reads even when no slot is actually a marked string;
      * calloc gives a valgrind-clean baseline that matches the deserializer
      * (which zero-fills before decoding). */
-    c.constants = (UValue *)calloc(2, sizeof(UValue));
-    c.const_cap = 2;
-    c.const_count = 1;
+    rp->constants = (UValue *)calloc(2, sizeof(UValue));
+    rp->const_cap = 2;
+    rp->const_count = 1;
 
-    c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    rp->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
 
-    c.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 2);
-    c.abs_line_cap = 2;
-    c.abs_line_count = 1;
+    rp->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 2);
+    rp->abs_line_cap = 2;
+    rp->abs_line_count = 1;
 
     umodule_destroy(&c, NULL);
 
-    UASSERT_EQ((void *)NULL, (void *)c.instructions);
-    UASSERT_EQ((void *)NULL, (void *)c.constants);
-    UASSERT_EQ((void *)NULL, (void *)c.line_deltas);
-    UASSERT_EQ((void *)NULL, (void *)c.abs_lines);
-    UASSERT_EQ((size_t)0, c.instr_count);
-    UASSERT_EQ((size_t)0, c.const_count);
-    UASSERT_EQ((size_t)0, c.abs_line_count);
+    /* After destroy, root_proto is detached (either freed or cleared). */
+    UASSERT_EQ((void *)NULL, (void *)c.root_proto);
 }
 
 /* --- Header parse tests --- */
@@ -92,16 +101,22 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    /* Minimal body: 6 zero-count varints (metadata + sections). */
+    /* v1.7 body: source_name + root_proto block.
+     * Alignment: instr_count varint lands at offset 30 (24+1+3+2=30);
+     * 30 % 4 = 2, pad 2 bytes → offset 32 before n_deltas. */
     size_t offset = 24;
-    buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
     buf[offset++] = 0;  /* varint n_constants = 0 */
     buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad byte 1 (offset 30 -> 31) */
+    buf[offset++] = 0;  /* align pad byte 2 (offset 31 -> 32) */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
-    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
@@ -284,24 +299,58 @@ UTEST(deserialize_rejects_v1_4_module) {
     umodule_destroy(&c, NULL);
 }
 
+UTEST(deserialize_rejects_v1_6_module) {
+    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.7 loader.
+     * v1.7 changed the UModule body layout (header + source_name + recursive
+     * root_proto block; per-field duplication removed).  Loading v1.6
+     * silently would parse the body as the wrong structure. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.7 loader) */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* max_reg (v1.6 metadata) */
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 */
+    UModule c = {0};
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
+    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x16") != NULL || strstr(errmsg, "1.6") != NULL);
+    umodule_destroy(&c, NULL);
+}
+
 UTEST(deserialize_accepts_current_version_module) {
     /* A minimal well-formed module at the current bytecode version
-     * (URBI_BYTECODE_VERSION_BYTE) must be accepted.  This is the
+     * (URBI_BYTECODE_VERSION_BYTE = 0x17) must be accepted.  This is the
      * positive-control twin of the deserialize_rejects_v1_X tests. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     buf[4] = URBI_BYTECODE_VERSION_BYTE;
+    /* v1.7 body: source_name + root_proto block (same as the accepts_good_header
+     * test above; repeated here for clarity as a version-specific positive ctrl). */
     size_t offset = 24;
-    buf[offset++] = 0;  /* max_reg */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
     buf[offset++] = 0;  /* varint n_constants = 0 */
     buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* align pad */
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
-    buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[128];
     errmsg[0] = '\0';
@@ -315,6 +364,9 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
        (encoding spec §5.1).  Subsequent M4 tasks rely on this so freshly
        allocated protos start with no IC sites. */
     UModule m = {0};
+    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
     UASSERT_EQ((unsigned)p->ic_count, 0U);
@@ -326,6 +378,9 @@ UTEST(uproto_destroy_frees_ic_names) {
     /* M4 v1.3: umodule_destroy_proto_buffers must free the ic_names array.
        Allocate via stdlib so destroy (alloc_fn == NULL → stdlib_alloc) frees it. */
     UModule m = {0};
+    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&m);
     UASSERT(p != NULL);
     /* Pretend the emitter populated ic_count + ic_names with two opaque slots. */
@@ -439,18 +494,23 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=5, source_name="repl" */
-    buf[off++] = 5;
+    /* v1.7: source_name first, then root_proto block */
     off = put_varint(buf, off, 4);   /* source_name_len = 4 */
     memcpy(buf + off, "repl", 4); off += 4;
+    /* root_proto block: max_reg=5, nupvals=0, nparams=0 */
+    buf[off++] = 5;
+    buf[off++] = 0;  /* nupvals */
+    buf[off++] = 0;  /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
+    /* alignment pad: off=34 after n_instr varint, 34%4=2, pad 2 bytes */
+    while ((off & 3U) != 0U) buf[off++] = 0U;
     /* synclines: 0 deltas, 0 abs_lines */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -458,7 +518,7 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((uint8_t)5, c.max_reg);
+    UASSERT_EQ((uint8_t)5, c.root_proto->max_reg);
     UASSERT(c.source_name != NULL);
     UASSERT_EQ(0, strcmp(c.source_name, "repl"));
     umodule_destroy(&c, NULL);
@@ -470,9 +530,11 @@ UTEST(deserialize_loads_integer_constant_pool) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=0, no source_name */
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 0;  /* max_reg */
+    buf[off++] = 0;  /* nupvals */
+    buf[off++] = 0;  /* nparams */
     /* constants: 2 entries — UVAL_INT 1, UVAL_INT -42 */
     off = put_varint(buf, off, 2);
     buf[off++] = (uint8_t)UVAL_INT;
@@ -481,10 +543,12 @@ UTEST(deserialize_loads_integer_constant_pool) {
     off = put_varint_zz(buf, off, -42);
     /* instructions: 0 */
     off = put_varint(buf, off, 0);
+    /* alignment pad after n_instr varint */
+    while ((off & 3U) != 0U) buf[off++] = 0U;
     /* synclines: 0, 0 */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -492,11 +556,11 @@ UTEST(deserialize_loads_integer_constant_pool) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.const_count);
-    UASSERT_EQ((uint8_t)UVAL_INT, c.constants[0].kind);
-    UASSERT_EQ((int64_t)1,   c.constants[0].v.i);
-    UASSERT_EQ((uint8_t)UVAL_INT, c.constants[1].kind);
-    UASSERT_EQ((int64_t)-42, c.constants[1].v.i);
+    UASSERT_EQ((size_t)2, c.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, c.root_proto->constants[0].kind);
+    UASSERT_EQ((int64_t)1,   c.root_proto->constants[0].v.i);
+    UASSERT_EQ((uint8_t)UVAL_INT, c.root_proto->constants[1].kind);
+    UASSERT_EQ((int64_t)-42, c.root_proto->constants[1].v.i);
     umodule_destroy(&c, NULL);
 }
 
@@ -506,8 +570,10 @@ UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                         /* max_reg */
-    off = put_varint(buf, off, 0);          /* source_name_len */
+    buf[off++] = 0;                         /* nupvals */
+    buf[off++] = 0;                         /* nparams */
     off = put_varint(buf, off, 1);          /* 1 constant */
     buf[off++] = 99;                        /* invalid kind */
     off = put_varint_zz(buf, off, 0);       /* payload (ignored, rejected first) */
@@ -524,12 +590,14 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata: max_reg=1, no source name */
-    buf[off++] = 1;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 1;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
-    /* instructions: 1.  varint 1 = 1 byte.  off before = 27; 27 mod 4 = 3, pad 1 byte. */
+    /* instructions: 1.  varint 1 = 1 byte.  off before = 30; 30 mod 4 = 2, pad 2 bytes. */
     off = put_varint(buf, off, 1);
     while ((off & 3U) != 0U) buf[off++] = 0;
     /* OP_RET R0: op=7, A=0, B=0, C=0 */
@@ -553,28 +621,34 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, c.instr_count);
-    UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c.instructions[0]));
+    UASSERT_EQ((size_t)1, c.root_proto->instr_count);
+    UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c.root_proto->instructions[0]));
     umodule_destroy(&c, NULL);
 }
 
 UTEST(deserialize_rejects_non_zero_alignment_padding) {
     /* To force a padding byte, we need off to be non-4-aligned after the
-       n_instructions varint.  Use source_name_len=1 ("x") to shift layout:
-       24 (hdr) + 1 (max_reg) + 1 (src_len varint 1) + 1 ("x") +
-       1 (n_constants=0) + 1 (n_instructions=1) = off=29; 29 mod 4 = 1,
-       so 3 pad bytes are needed. */
+       n_instructions varint.  v1.7 layout:
+       24 (hdr) + 1 (src_len=0) + 1 (max_reg) + 1 (nupvals) + 1 (nparams) +
+       1 (n_constants=0) + 1 (n_instructions=1) = off=30; 30 mod 4 = 2,
+       so 2 pad bytes are needed.
+       Use source_name_len=1 ("x") to get a different alignment:
+       24 + 1 (src_len=1) + 1 ("x") + 1 (max_reg) + 1 (nupvals) + 1 (nparams)
+       + 1 (n_constants=0) + 1 (n_instructions=1) = off=31; 31 mod 4 = 3,
+       so 1 pad byte needed — corrupt it. */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;                         /* max_reg */
     off = put_varint(buf, off, 1);          /* source_name_len = 1 */
     buf[off++] = 'x';                       /* source_name = "x" */
+    buf[off++] = 0;                         /* max_reg */
+    buf[off++] = 0;                         /* nupvals */
+    buf[off++] = 0;                         /* nparams */
     off = put_varint(buf, off, 0);          /* n_constants */
     off = put_varint(buf, off, 1);          /* n_instructions=1 */
-    /* off is now 29 (29 mod 4 == 1); 3 pad bytes needed — corrupt them */
+    /* off is now 31 (31 mod 4 == 3); 1 pad byte needed — corrupt it */
     while ((off & 3U) != 0U) buf[off++] = 0xFF;
     /* instruction body (alignment check fires before reading this) */
     buf[off + 0] = (uint8_t)OP_RET;
@@ -599,9 +673,11 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    /* metadata */
-    buf[off++] = 1;
-    off = put_varint(buf, off, 0);
+    /* v1.7: source_name_len=0, then root_proto block */
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 */
+    buf[off++] = 1;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
     /* constants: 0 */
     off = put_varint(buf, off, 0);
     /* instructions: 3 */
@@ -626,7 +702,7 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 1);
     off = put_varint(buf, off, 0);          /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 10);         /* abs_line[0].line = 10 */
-    /* v1.5: ic_names + nested[] (both empty) */
+    /* ic_names + nested_count (v1.7) */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
@@ -634,13 +710,13 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)3, c.instr_count);
-    UASSERT_EQ((int8_t)-128, c.line_deltas[0]);
-    UASSERT_EQ((int8_t)2,    c.line_deltas[1]);
-    UASSERT_EQ((int8_t)-1,   c.line_deltas[2]);
-    UASSERT_EQ((size_t)1, c.abs_line_count);
-    UASSERT_EQ((uint32_t)0,  c.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)10, c.abs_lines[0].line);
+    UASSERT_EQ((size_t)3, c.root_proto->instr_count);
+    UASSERT_EQ((int8_t)-128, c.root_proto->line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    c.root_proto->line_deltas[1]);
+    UASSERT_EQ((int8_t)-1,   c.root_proto->line_deltas[2]);
+    UASSERT_EQ((size_t)1, c.root_proto->abs_line_count);
+    UASSERT_EQ((uint32_t)0,  c.root_proto->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, c.root_proto->abs_lines[0].line);
     umodule_destroy(&c, NULL);
 }
 
@@ -650,9 +726,11 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);  /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                 /* max_reg */
+    buf[off++] = 0;                 /* nupvals */
+    buf[off++] = 0;                 /* nparams */
+    off = put_varint(buf, off, 0);  /* n_constants = 0 */
     off = put_varint(buf, off, 1);          /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
     {
@@ -678,7 +756,7 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
 }
 
 /* --- build_module_bytes: constructs a well-formed module byte blob ---
-   Header + metadata + constants (UVAL_INT) + aligned instructions + synclines.
+   v1.7: header + source_name + root_proto block.
    Returns total bytes written.  buf must be at least 256 bytes. */
 static size_t build_module_bytes(uint8_t *buf,
                                 uint8_t max_reg,
@@ -686,8 +764,11 @@ static size_t build_module_bytes(uint8_t *buf,
                                 const uint32_t *instrs, size_t n_instr) {
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 */
+    /* root_proto block */
     buf[off++] = max_reg;
-    off = put_varint(buf, off, 0);              /* empty source_name */
+    buf[off++] = 0;                             /* nupvals = 0 */
+    buf[off++] = 0;                             /* nparams = 0 */
     off = put_varint(buf, off, (uint64_t)n_const);
     size_t ci;
     for (ci = 0; ci < n_const; ci++) {
@@ -708,7 +789,7 @@ static size_t build_module_bytes(uint8_t *buf,
     size_t di;
     for (di = 0; di < n_instr; di++) buf[off++] = 0;
     off = put_varint(buf, off, 0);
-    /* v1.5: root-chunk ic_names (count=0) + nested[] (count=0). */
+    /* v1.7: ic_names (count=0) + nested_count (v1.7, always 0 here). */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
     return off;
@@ -834,7 +915,7 @@ UTEST(verifier_accepts_hand_crafted_op_move_module) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c.instructions[1]));
+    UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c.root_proto->instructions[1]));
     umodule_destroy(&c, NULL);
 }
 
@@ -843,22 +924,22 @@ UTEST(verifier_accepts_hand_crafted_op_move_module) {
 /* Returns true if two modules are semantically equivalent. */
 static bool modules_equivalent(const UModule *a, const UModule *b) {
     size_t i;
-    if (a->instr_count     != b->instr_count)     return false;
-    if (a->const_count     != b->const_count)     return false;
-    if (a->abs_line_count  != b->abs_line_count)  return false;
-    if (a->max_reg         != b->max_reg)         return false;
-    for (i = 0; i < a->instr_count; i++) {
-        if (a->instructions[i] != b->instructions[i]) return false;
-        if (a->line_deltas[i]  != b->line_deltas[i])  return false;
+    if (a->root_proto->instr_count     != b->root_proto->instr_count)     return false;
+    if (a->root_proto->const_count     != b->root_proto->const_count)     return false;
+    if (a->root_proto->abs_line_count  != b->root_proto->abs_line_count)  return false;
+    if (a->root_proto->max_reg         != b->root_proto->max_reg)         return false;
+    for (i = 0; i < a->root_proto->instr_count; i++) {
+        if (a->root_proto->instructions[i] != b->root_proto->instructions[i]) return false;
+        if (a->root_proto->line_deltas[i]  != b->root_proto->line_deltas[i])  return false;
     }
-    for (i = 0; i < a->const_count; i++) {
-        if (a->constants[i].kind != b->constants[i].kind) return false;
-        if (a->constants[i].kind == UVAL_INT
-         && a->constants[i].v.i  != b->constants[i].v.i)  return false;
+    for (i = 0; i < a->root_proto->const_count; i++) {
+        if (a->root_proto->constants[i].kind != b->root_proto->constants[i].kind) return false;
+        if (a->root_proto->constants[i].kind == UVAL_INT
+         && a->root_proto->constants[i].v.i  != b->root_proto->constants[i].v.i)  return false;
     }
-    for (i = 0; i < a->abs_line_count; i++) {
-        if (a->abs_lines[i].pc   != b->abs_lines[i].pc)   return false;
-        if (a->abs_lines[i].line != b->abs_lines[i].line) return false;
+    for (i = 0; i < a->root_proto->abs_line_count; i++) {
+        if (a->root_proto->abs_lines[i].pc   != b->root_proto->abs_lines[i].pc)   return false;
+        if (a->root_proto->abs_lines[i].line != b->root_proto->abs_lines[i].line) return false;
     }
     /* source_name: both NULL, or strcmp == 0 */
     if ((a->source_name == NULL) != (b->source_name == NULL)) return false;
@@ -965,7 +1046,7 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
         UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
     }
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
-    UASSERT(a.nested_count >= (size_t)2);
+    UASSERT(a.root_proto->nested_count >= (size_t)2);
 
     /* Two-pass serialize: query size, then write.  The contract is
      * that the wrote count equals the queried size (C1 violates this). */
@@ -984,11 +1065,11 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
                                               errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ(a.nested_count, b.nested_count);
-    UASSERT(b.nested[0] != NULL);
-    UASSERT(b.nested[1] != NULL);
-    UASSERT(b.nested[0]->instr_count > (size_t)0);
-    UASSERT(b.nested[1]->instr_count > (size_t)0);
+    UASSERT_EQ(a.root_proto->nested_count, b.root_proto->nested_count);
+    UASSERT(b.root_proto->nested[0] != NULL);
+    UASSERT(b.root_proto->nested[1] != NULL);
+    UASSERT(b.root_proto->nested[0]->instr_count > (size_t)0);
+    UASSERT(b.root_proto->nested[1]->instr_count > (size_t)0);
 
     free(buf);
     umodule_destroy(&a, NULL);
@@ -1035,9 +1116,9 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Sanity: emitter populated the root-chunk ic_count + ic_name_strs. */
-    UASSERT(a.ic_count >= (uint16_t)1U);
-    UASSERT(a.ic_name_strs != NULL);
-    UASSERT(a.ic_name_strs[0] != NULL);
+    UASSERT(a.root_proto->ic_count >= (uint16_t)1U);
+    UASSERT(a.root_proto->ic_name_strs != NULL);
+    UASSERT(a.root_proto->ic_name_strs[0] != NULL);
 
     /* Round-trip. */
     ptrdiff_t need = umodule_serialize(&a, NULL, 0);
@@ -1053,14 +1134,14 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
                                               errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((unsigned)a.ic_count, (unsigned)b.ic_count);
-    UASSERT(b.ic_name_strs != NULL);
-    UASSERT_EQ(0, strcmp(a.ic_name_strs[0], b.ic_name_strs[0]));
+    UASSERT_EQ((unsigned)a.root_proto->ic_count, (unsigned)b.root_proto->ic_count);
+    UASSERT(b.root_proto->ic_name_strs != NULL);
+    UASSERT_EQ(0, strcmp(a.root_proto->ic_name_strs[0], b.root_proto->ic_name_strs[0]));
 
     /* Pre-condition for the T14 lazy-intern path: the deserialized
      * module has no ic_names yet.  Loader cannot intern (no VM in
      * scope at decode time). */
-    UASSERT_EQ((void *)NULL, (void *)b.ic_names);
+    UASSERT_EQ((void *)NULL, (void *)b.root_proto->ic_names);
 
     /* Drive the lazy-intern.  Use a fresh VM to confirm the helper
      * interns into the receiving VM, not the originating one. */
@@ -1070,22 +1151,23 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi != NULL);
 
-    /* Post-condition: ic_names is now populated; each entry equals the
-     * canonical interned pointer for the matching ic_name_strs entry. */
-    UASSERT(b.ic_names != NULL);
-    for (uint16_t k = 0; k < b.ic_count; k++) {
-        const char *name = b.ic_name_strs[k];
+    /* Post-condition: ic_names is now populated on root_proto (v0.8.1 Phase 1:
+     * intern writes via &rp->ic_names rather than &module->ic_names); each
+     * entry equals the canonical interned pointer for the matching entry. */
+    UASSERT(b.root_proto->ic_names != NULL);
+    for (uint16_t k = 0; k < b.root_proto->ic_count; k++) {
+        const char *name = b.root_proto->ic_name_strs[k];
         size_t nlen = strlen(name);
         const char *canon = ustr_intern(&vm_b, name, nlen);
-        UASSERT_EQ((const void *)canon, (const void *)b.ic_names[k]);
+        UASSERT_EQ((const void *)canon, (const void *)b.root_proto->ic_names[k]);
     }
 
     /* Idempotency: a second call must not re-allocate.  The helper's
      * fast path returns immediately when ic_names is already populated. */
-    USymbol **before = b.ic_names;
+    USymbol **before = b.root_proto->ic_names;
     UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi2 != NULL);
-    UASSERT_EQ((void *)before, (void *)b.ic_names);
+    UASSERT_EQ((void *)before, (void *)b.root_proto->ic_names);
 
     free(buf);
     umodule_destroy(&a, NULL);
@@ -1104,6 +1186,10 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
  * UVAL_FLOAT, round-trip, and assert the FLOAT survives. */
 UTEST(roundtrip_preserves_nested_proto_float_constant) {
     UModule a = {0};
+    /* Task 11: root_proto must exist before umodule_alloc_nested_proto
+     * (nested[] lives on root_proto).  Allocate with stdlib_alloc (hosted). */
+    a.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(a.root_proto != NULL);
     UProto *p = umodule_alloc_nested_proto(&a);
     UASSERT(p != NULL);
 
@@ -1143,21 +1229,21 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     p->max_reg = 0;
 
     /* Likewise, the root chunk needs at least one OP_RET. */
-    a.instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    UASSERT(a.instructions != NULL);
-    a.instr_cap = 1;
-    a.instr_count = 1;
-    a.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    a.line_deltas = (int8_t *)malloc(sizeof(int8_t));
-    UASSERT(a.line_deltas != NULL);
-    a.line_deltas[0] = (int8_t)-128;
-    a.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
-    UASSERT(a.abs_lines != NULL);
-    a.abs_line_cap   = 1;
-    a.abs_line_count = 1;
-    a.abs_lines[0].pc   = 0;
-    a.abs_lines[0].line = 1;
-    a.max_reg = 0;
+    a.root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(a.root_proto->instructions != NULL);
+    a.root_proto->instr_cap = 1;
+    a.root_proto->instr_count = 1;
+    a.root_proto->instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    a.root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(a.root_proto->line_deltas != NULL);
+    a.root_proto->line_deltas[0] = (int8_t)-128;
+    a.root_proto->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(a.root_proto->abs_lines != NULL);
+    a.root_proto->abs_line_cap   = 1;
+    a.root_proto->abs_line_count = 1;
+    a.root_proto->abs_lines[0].pc   = 0;
+    a.root_proto->abs_lines[0].line = 1;
+    a.root_proto->max_reg = 0;
 
     /* Round-trip. */
     ptrdiff_t need = umodule_serialize(&a, NULL, 0);
@@ -1173,14 +1259,14 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
                                               errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ(a.nested_count, b.nested_count);
-    UASSERT(b.nested[0] != NULL);
-    UASSERT_EQ(p->const_count, b.nested[0]->const_count);
-    UASSERT_EQ((uint8_t)UVAL_FLOAT, b.nested[0]->constants[0].kind);
+    UASSERT_EQ(a.root_proto->nested_count, b.root_proto->nested_count);
+    UASSERT(b.root_proto->nested[0] != NULL);
+    UASSERT_EQ(p->const_count, b.root_proto->nested[0]->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, b.root_proto->nested[0]->constants[0].kind);
 #if URBI_FLOAT_TYPE == 8
-    UASSERT(b.nested[0]->constants[0].v.f == 2.718281828);
+    UASSERT(b.root_proto->nested[0]->constants[0].v.f == 2.718281828);
 #else
-    UASSERT(b.nested[0]->constants[0].v.f == 2.718f);
+    UASSERT(b.root_proto->nested[0]->constants[0].v.f == 2.718f);
 #endif
 
     free(buf);
@@ -1191,11 +1277,14 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
 /* --- Serializer tests (Task 14) --- */
 
 UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
-    /* Empty module (no statements): 24-byte header + 8 body bytes.
-       Body = max_reg(1) + src_len varint 0(1) + n_const varint 0(1)
-            + n_instr varint 0(1) + 0 alignment pad + n_deltas varint 0(1)
-            + n_abs varint 0(1) + ic_count varint 0(1) + nested_count
-            varint 0(1) = 8 bytes.  Total = 32. */
+    /* v1.7 empty module (no statements): 24-byte header + 12 body bytes.
+       Body = src_len varint 0(1) + root_proto block(11).
+       Root_proto block = max_reg(1) + nupvals(1) + nparams(1)
+            + n_const varint 0(1) + n_instr varint 0(1)
+            + 2 align pad bytes (offset 30 % 4 = 2)
+            + n_deltas varint 0(1) + n_abs varint 0(1)
+            + ic_count varint 0(1) + nested_count varint 0(1) = 11 bytes.
+       Total = 24 + 1 + 11 = 36. */
     UModule module = {0};
     UArena arena;
     UEmitter e;
@@ -1205,14 +1294,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
 
     /* Size query (buf == NULL) */
     ptrdiff_t n = umodule_serialize(&module, NULL, 0);
-    UASSERT_EQ((ptrdiff_t)32, n);
+    UASSERT_EQ((ptrdiff_t)36, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
     ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
-    UASSERT_EQ((ptrdiff_t)32, written);
+    UASSERT_EQ((ptrdiff_t)36, written);
 
     /* Header field checks */
     UASSERT_EQ((uint8_t)'U', buf[0]);
@@ -1331,8 +1420,10 @@ UTEST(deserialize_oom_on_constants_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 2);              /* 2 constants -> triggers grow */
     buf[off++] = (uint8_t)UVAL_INT;
     off = put_varint_zz(buf, off, 1);
@@ -1361,8 +1452,10 @@ UTEST(deserialize_oom_on_instructions_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant — triggers first grow */
     buf[off++] = (uint8_t)UVAL_INT;
     off = put_varint_zz(buf, off, 5);
@@ -1401,8 +1494,10 @@ UTEST(deserialize_loads_float_constant) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);              /* no source_name */
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant: UVAL_FLOAT */
     buf[off++] = (uint8_t)UVAL_FLOAT;
     /* Write a float value (3.14) as raw bytes matching URBI_FLOAT_TYPE. */
@@ -1428,8 +1523,8 @@ UTEST(deserialize_loads_float_constant) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, c.const_count);
-    UASSERT_EQ((uint8_t)UVAL_FLOAT, c.constants[0].kind);
+    UASSERT_EQ((size_t)1, c.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, c.root_proto->constants[0].kind);
     umodule_destroy(&c, NULL);
 }
 
@@ -1442,8 +1537,10 @@ UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 1);              /* 1 constant */
     buf[off++] = (uint8_t)UVAL_NIL;            /* kind 0 — no INT or FLOAT, hits else */
     off = put_varint(buf, off, 0);              /* padding */
@@ -1463,8 +1560,10 @@ UTEST(deserialize_truncated_at_line_deltas) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;                             /* max_reg */
-    off = put_varint(buf, off, 0);              /* no source_name */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1494,8 +1593,10 @@ UTEST(deserialize_oom_on_abs_lines_allocation) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1532,8 +1633,10 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
-    buf[off++] = 0;
-    off = put_varint(buf, off, 0);
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;                             /* max_reg */
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 1);              /* 1 instruction */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1558,7 +1661,8 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
 
 UTEST(deserialize_truncated_at_metadata_max_reg) {
     /* Buffer exactly 24 bytes (valid header but no body) — triggers the
-       "truncated at metadata" guard at the max_reg read. */
+       truncation guard while reading the source_name_len varint (v1.7:
+       max_reg is now in the root_proto block, not the metadata section). */
     uint8_t buf[24];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1568,7 +1672,8 @@ UTEST(deserialize_truncated_at_metadata_max_reg) {
     errmsg[0] = '\0';
     UModuleLoadError rc = umodule_deserialize(&c, buf, sizeof buf, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_TRUNCATED, rc);
-    UASSERT(strstr(errmsg, "truncated") != NULL || strstr(errmsg, "metadata") != NULL);
+    UASSERT(strstr(errmsg, "source_name") != NULL || strstr(errmsg, "varint") != NULL
+            || strstr(errmsg, "truncated") != NULL);
     umodule_destroy(&c, NULL);
 }
 
@@ -1589,25 +1694,25 @@ UTEST(deserialize_module_grow_reuses_existing_cap) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.const_count);
+    UASSERT_EQ((size_t)2, c.root_proto->const_count);
     /* c now has const_cap >= 8 (first grow starts at 8). */
 
     /* Reset counts but keep the buffers allocated. */
-    c.const_count = 0;
-    c.instr_count = 0;
-    c.abs_line_count = 0;
-    if (c.line_deltas != NULL) {
+    c.root_proto->const_count = 0;
+    c.root_proto->instr_count = 0;
+    c.root_proto->abs_line_count = 0;
+    if (c.root_proto->line_deltas != NULL) {
         UModuleAllocFn alloc = c.alloc_fn != NULL ? c.alloc_fn
                             : (UModuleAllocFn)NULL; /* stdlib handled by destroy later */
         (void)alloc; /* just keep the pointer, don't free now */
-        free(c.line_deltas); c.line_deltas = NULL;
+        free(c.root_proto->line_deltas); c.root_proto->line_deltas = NULL;
     }
 
     /* Second deserialize into the same module — module_grow for constants will
        see const_cap >= 2, triggering the "already large enough" branch. */
     rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.const_count);
+    UASSERT_EQ((size_t)2, c.root_proto->const_count);
 
     umodule_destroy(&c, NULL);
 }
@@ -1671,8 +1776,10 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 1;                             /* max_reg=1 */
-    off = put_varint(buf, off, 0);
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     /* 2 instructions */
     off = put_varint(buf, off, 2);
@@ -1717,8 +1824,10 @@ UTEST(deserialize_accepts_first_abs_line_pc_zero) {
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
     size_t off = 24;
+    off = put_varint(buf, off, 0);              /* source_name_len = 0 (v1.7) */
     buf[off++] = 1;                             /* max_reg=1 */
-    off = put_varint(buf, off, 0);
+    buf[off++] = 0;                             /* nupvals */
+    buf[off++] = 0;                             /* nparams */
     off = put_varint(buf, off, 0);              /* 0 constants */
     /* 2 instructions */
     off = put_varint(buf, off, 2);
@@ -1750,16 +1859,17 @@ UTEST(deserialize_accepts_first_abs_line_pc_zero) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.abs_line_count);
-    UASSERT_EQ((uint32_t)0, c.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)1, c.abs_lines[1].pc);
+    UASSERT_EQ((size_t)2, c.root_proto->abs_line_count);
+    UASSERT_EQ((uint32_t)0, c.root_proto->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, c.root_proto->abs_lines[1].pc);
     umodule_destroy(&c, NULL);
 }
 
 UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
+    /* Task 11: ic_count and ic_names live on root_proto.
+     * A zero-init module has root_proto == NULL; ic fields are implicitly zero. */
     UModule m = {0};
-    UASSERT_EQ(0U, (unsigned)m.ic_count);
-    UASSERT(m.ic_names == NULL);
+    UASSERT(m.root_proto == NULL);
     umodule_destroy(&m, NULL);
 }
 
@@ -1804,8 +1914,10 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
      * the shape table flags B as UOPK_IMM_BOOL and the verifier accepts. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;  /* 4-byte align */
@@ -1814,8 +1926,8 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;  /* two zero deltas */
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1830,8 +1942,10 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
      * shape's UOPK_IMM_REG_NIBBLE only checks the low nibble. */
     uint8_t buf[80] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1841,8 +1955,8 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1855,18 +1969,20 @@ UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
      * immediate.  Post-T4 verifier rejects via UOPK_IMM_BOOL. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abc(buf, &off, OP_LOADBOOL, /*A=*/0, /*B=*/2, /*C=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1880,18 +1996,20 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
      * register-A overflow per UOPK_REG. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abc(buf, &off, OP_GETUPVAL, /*A=*/99, /*B=*/0, /*C=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1905,8 +2023,10 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
      * (T4 follow-up) C is UOPK_UNUSED and the sentinel verifies clean. */
     uint8_t buf[80] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 2;          /* max_reg = 2 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1915,8 +2035,8 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     buf[off++] = 2;          /* n_deltas */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1931,8 +2051,10 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
      * this silently; runtime would index past nested[] and read garbage. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = 0;          /* max_reg = 0 */
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1941,8 +2063,8 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1958,18 +2080,20 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
      * dispatch, not at load. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 0;
-    buf[off++] = 2;
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
+    buf[off++] = 0;          /* max_reg = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
+    buf[off++] = 0;          /* n_constants = 0 */
+    buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
     write_instr_abx(buf, &off, OP_JMP, /*A=*/0, /*Bx=*/0);
     write_instr_abc(buf, &off, OP_RET, 0, 0, 0);
     buf[off++] = 2;
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     UModule c = {0};
     char errmsg[256];
     UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
@@ -1985,8 +2109,10 @@ static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
                                      uint32_t test_instr) {
     UASSERT(bufcap >= 80U);
     size_t off = write_good_header_to(buf);
+    buf[off++] = 0;          /* source_name_len = 0 (v1.7) */
     buf[off++] = max_reg;
-    buf[off++] = 0;          /* source_name_len = 0 */
+    buf[off++] = 0;          /* nupvals = 0 */
+    buf[off++] = 0;          /* nparams = 0 */
     buf[off++] = 0;          /* n_constants = 0 */
     buf[off++] = 2;          /* n_instructions = 2 */
     while ((off & 3U) != 0U) buf[off++] = 0;
@@ -1998,8 +2124,8 @@ static size_t build_two_instr_module(uint8_t *buf, size_t bufcap,
     buf[off++] = 2;          /* n_deltas = 2 */
     buf[off++] = 0; buf[off++] = 0;
     buf[off++] = 0;          /* n_abs_lines = 0 */
-    buf[off++] = 0;          /* ic_count = 0 (v1.5) */
-    buf[off++] = 0;          /* nested_count = 0 (v1.5) */
+    buf[off++] = 0;          /* ic_count = 0 */
+    buf[off++] = 0;          /* nested_count = 0 (v1.7) */
     return off;
 }
 
@@ -2121,6 +2247,8 @@ void test_module_suite(void) {
               deserialize_rejects_v1_3_module);
     utest_run("deserialize rejects v1.4 module (v0.5.6 wave-4 break)",
               deserialize_rejects_v1_4_module);
+    utest_run("deserialize rejects v1.6 module (v0.8.1 root_proto layout break)",
+              deserialize_rejects_v1_6_module);
     utest_run("deserialize accepts current-version module",
               deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",

@@ -16,13 +16,13 @@
 
 /* Resolve which proto to write instructions/constants/synclines into.
  * When the current FuncState has a non-NULL target_proto, we are inside a
- * nested function body — write to the child proto.  Otherwise write to the
- * module root (the classic M1 path). */
+ * nested function body — write to the child proto.  Otherwise return
+ * module->root_proto (the root chunk, allocated at uemit_init). */
 static UProto *current_proto(const UEmitter *e) {
     if (e->current_fs != NULL && e->current_fs->target_proto != NULL) {
         return (UProto *)e->current_fs->target_proto;
     }
-    return NULL;  /* NULL means: write to module root (legacy path) */
+    return e->module->root_proto;  /* root chunk: always non-NULL after uemit_init */
 }
 
 #if __STDC_HOSTED__
@@ -132,21 +132,12 @@ uint8_t fs_temp_floor(const UFuncState *fs) {
    Routes to the nested UProto constant pool when in a nested function.
    Defined here next to add_const_int because the two share the proto-or-
    module routing dispatch and the same pool-grow primitive. */
+/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t add_const_str(UEmitter *e, const char *interned) {
     UProto *p = current_proto(e);
-    UValue **pool;
-    size_t  *count;
-    size_t  *cap;
-
-    if (p != NULL) {
-        pool  = &p->constants;
-        count = &p->const_count;
-        cap   = &p->const_cap;
-    } else {
-        pool  = &e->module->constants;
-        count = &e->module->const_count;
-        cap   = &e->module->const_cap;
-    }
+    UValue **pool  = &p->constants;
+    size_t  *count = &p->const_count;
+    size_t  *cap   = &p->const_cap;
 
     size_t i;
     for (i = 0; i < *count; i++) {
@@ -180,21 +171,12 @@ uint16_t add_const_str(UEmitter *e, const char *interned) {
    pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c (T12) can call it cross-TU. */
+/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t add_const_int(UEmitter *e, const int64_t v) {
     UProto *p = current_proto(e);
-    UValue **pool;
-    size_t  *count;
-    size_t  *cap;
-
-    if (p != NULL) {
-        pool  = &p->constants;
-        count = &p->const_count;
-        cap   = &p->const_cap;
-    } else {
-        pool  = &e->module->constants;
-        count = &e->module->const_count;
-        cap   = &e->module->const_cap;
-    }
+    UValue **pool  = &p->constants;
+    size_t  *count = &p->const_count;
+    size_t  *cap   = &p->const_cap;
 
     size_t i;
     for (i = 0; i < *count; i++) {
@@ -228,21 +210,12 @@ uint16_t add_const_int(UEmitter *e, const int64_t v) {
    and returns 0 on pool-full (> UINT16_MAX entries) or OOM.
    Routes to the nested UProto constant pool when in a nested function.
    Promoted from static so uemit_expr.c can call it cross-TU. */
+/* Task 11: current_proto() always returns non-NULL — no dual-path dispatch. */
 uint16_t add_const_float(UEmitter *e, const double v) {
     UProto *p = current_proto(e);
-    UValue **pool;
-    size_t  *count;
-    size_t  *cap;
-
-    if (p != NULL) {
-        pool  = &p->constants;
-        count = &p->const_count;
-        cap   = &p->const_cap;
-    } else {
-        pool  = &e->module->constants;
-        count = &e->module->const_count;
-        cap   = &e->module->const_cap;
-    }
+    UValue **pool  = &p->constants;
+    size_t  *count = &p->const_count;
+    size_t  *cap   = &p->const_cap;
 
     size_t i;
     for (i = 0; i < *count; i++) {
@@ -269,29 +242,19 @@ uint16_t add_const_float(UEmitter *e, const double v) {
     }
 }
 
-/* Append one absolute-line checkpoint to abs_lines.  Uses emit_grow or
-   proto_grow depending on whether we are in a nested function body. */
+/* Append one absolute-line checkpoint to abs_lines.
+ * Task 11: current_proto() always returns non-NULL (root_proto or nested proto),
+ * so the dual-path is collapsed to a single proto_grow call. */
 static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t line) {
     UProto *p = current_proto(e);
-    if (p != NULL) {
-        if (!proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
-                        p->abs_line_count + 1U, sizeof(UAbsLine))) {
-            e->error = EMIT_OOM;
-            return;
-        }
-        p->abs_lines[p->abs_line_count].pc   = pc;
-        p->abs_lines[p->abs_line_count].line = line;
-        p->abs_line_count++;
-        return;
-    }
-    if (!emit_grow(e->module, (void **)&e->module->abs_lines, &e->module->abs_line_cap,
-                   e->module->abs_line_count + 1U, sizeof(UAbsLine))) {
+    if (!proto_grow(e->module, p, (void **)&p->abs_lines, &p->abs_line_cap,
+                    p->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM;
         return;
     }
-    e->module->abs_lines[e->module->abs_line_count].pc   = pc;
-    e->module->abs_lines[e->module->abs_line_count].line = line;
-    e->module->abs_line_count++;
+    p->abs_lines[p->abs_line_count].pc   = pc;
+    p->abs_lines[p->abs_line_count].line = line;
+    p->abs_line_count++;
 }
 
 /* Append one delta byte to line_deltas.  line_deltas has no cap field —
@@ -305,54 +268,31 @@ static void emit_push_abs_line(UEmitter *e, const uint32_t pc, const uint32_t li
    implementation-defined and `[instr_count - 1U]` underflows on the
    unsigned subscript, so failing closed is safer than relying on the
    precondition holding at every future call site. */
+/* Task 11: current_proto() always returns non-NULL; single-path via proto. */
 static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
-    if (p != NULL) {
-        /* Nested proto path. */
-        URBI_INTERNAL_ASSERT(p->instr_count > 0U);
-        if (p->instr_count == 0U) return;
-        UModuleAllocFn alloc = p->alloc_fn;
-        if (alloc == NULL) {
-#if __STDC_HOSTED__
-            alloc = emit_stdlib_alloc;
-#else
-            e->error = EMIT_OOM; return;
-#endif
-        }
-        void *fresh = alloc(p->line_deltas,
-                            p->instr_count * sizeof(int8_t),
-                            p->alloc_ud);
-        if (fresh == NULL) { e->error = EMIT_OOM; return; }
-        p->line_deltas = (int8_t *)fresh;
-        p->line_deltas[p->instr_count - 1U] = delta;
-        return;
-    }
-    URBI_INTERNAL_ASSERT(e->module->instr_count > 0U);
-    if (e->module->instr_count == 0U) return;
+    URBI_INTERNAL_ASSERT(p->instr_count > 0U);
+    if (p->instr_count == 0U) return;
     UModuleAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
-    void *fresh = alloc(e->module->line_deltas,
-                        e->module->instr_count * sizeof(int8_t),
-                        e->module->alloc_ud);
+    void *fresh = alloc(p->line_deltas,
+                        p->instr_count * sizeof(int8_t),
+                        p->alloc_ud);
     if (fresh == NULL) { e->error = EMIT_OOM; return; }
-    e->module->line_deltas = (int8_t *)fresh;
-    e->module->line_deltas[e->module->instr_count - 1U] = delta;
+    p->line_deltas = (int8_t *)fresh;
+    p->line_deltas[p->instr_count - 1U] = delta;
 }
 
 /* Append one encoded instruction with Lua-5.5-style delta syncline encoding.
    No-op when e->error is already set.
-   Routes to the nested UProto when current_proto(e) is non-NULL. */
+   Task 11: current_proto() always returns non-NULL; single-path via proto. */
 void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
-    uint32_t pc;
-    int8_t delta;
-    bool needs_abs;
-
     if (e->error != EMIT_OK) return;
     if (line > (uint32_t)INT32_MAX) { e->error = EMIT_LINE_OVERFLOW; return; }
 
     UProto *p = current_proto(e);
-    if (p != NULL) {
-        /* Nested proto path: write instruction into the child proto. */
+    {
+        /* Write instruction into the current proto (root or nested). */
         if (!proto_grow(e->module, p, (void **)&p->instructions,
                         &p->instr_cap, p->instr_count + 1U, sizeof(uint32_t))) {
             e->error = EMIT_OOM;
@@ -360,9 +300,9 @@ void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
         }
         p->instructions[p->instr_count++] = ins;
 
-        pc = (uint32_t)(p->instr_count - 1U);
-        delta = 0;
-        needs_abs = false;
+        uint32_t pc = (uint32_t)(p->instr_count - 1U);
+        int8_t   delta = 0;
+        bool     needs_abs = false;
         if (e->prev_line == 0U) {
             needs_abs = true;
         } else {
@@ -381,59 +321,19 @@ void emit_instr(UEmitter *e, const uint32_t ins, const uint32_t line) {
         emit_push_line_delta(e, delta);
         if (e->error != EMIT_OK) return;
         e->prev_line = line;
-        return;
     }
-
-    /* Root module path (existing behavior). */
-    if (!emit_grow(e->module, (void **)&e->module->instructions,
-                   &e->module->instr_cap,
-                   e->module->instr_count + 1U, sizeof(uint32_t))) {
-        e->error = EMIT_OOM;
-        return;
-    }
-    e->module->instructions[e->module->instr_count++] = ins;
-
-    /* Delta encoding.  INT8_MIN (-128) is the sentinel; valid range [-127,+127]. */
-    pc = (uint32_t)(e->module->instr_count - 1U);
-    delta = 0;
-    needs_abs = false;
-    if (e->prev_line == 0U) {
-        /* First instruction ever: bootstrap abs checkpoint regardless of line value. */
-        needs_abs = true;
-    } else {
-        const int64_t d = (int64_t)line - (int64_t)e->prev_line;
-        if (d <= (int64_t)INT8_MIN || d > (int64_t)INT8_MAX) {
-            needs_abs = true;
-        } else {
-            delta = (int8_t)d;
-        }
-    }
-    if (needs_abs) {
-        delta = (int8_t)-128;
-        emit_push_abs_line(e, pc, line);
-        if (e->error != EMIT_OK) return;
-    }
-    emit_push_line_delta(e, delta);
-    if (e->error != EMIT_OK) return;
-    e->prev_line = line;
 }
 
 /* Patch instruction at index `pc` in the current proto (root or nested).
- * Used by JMP back-patching in if/while/function emit. */
-void emit_patch_instr(UEmitter *e, int pc, uint32_t new_instr) {
-    UProto *p = current_proto(e);
-    if (p != NULL) {
-        p->instructions[pc] = new_instr;
-    } else {
-        e->module->instructions[pc] = new_instr;
-    }
+ * Task 11: current_proto() always returns non-NULL. */
+void emit_patch_instr(const UEmitter *e, int pc, uint32_t new_instr) {
+    current_proto(e)->instructions[pc] = new_instr;
 }
 
-/* Return the current instruction count in the active proto. */
+/* Return the current instruction count in the active proto.
+ * Task 11: current_proto() always returns non-NULL. */
 size_t emit_instr_count(const UEmitter *e) {
-    UProto *p = current_proto(e);
-    if (p != NULL) return p->instr_count;
-    return e->module->instr_count;
+    return current_proto(e)->instr_count;
 }
 
 /* Map UAstBinaryOp to the corresponding arithmetic opcode.
@@ -590,6 +490,26 @@ void uemit_init(UEmitter *e, UModule *module, UArena *arena,
         module->origin_vm = vm;
     }
     emit_copy_source_name(e, source_name);
+    /* Task 11 v0.8.1-uproto-root: allocate root_proto at init time so
+     * current_proto() can return it immediately, and the emitter writes
+     * directly into root_proto buffers (no alias-copy at finish). */
+    {
+        UModuleAllocFn alloc = emit_alloc_for(module);
+        if (alloc != NULL) {
+            UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
+            if (rp != NULL) {
+                urbi_zero(rp, sizeof(UProto));
+                rp->root     = NULL;  /* root's own back-pointer is NULL */
+                rp->alloc_fn = module->alloc_fn;
+                rp->alloc_ud = module->alloc_ud;
+                module->root_proto = rp;
+            } else {
+                e->error = EMIT_OOM;
+            }
+        } else {
+            e->error = EMIT_OOM;
+        }
+    }
 }
 
 UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
@@ -633,7 +553,20 @@ UEmitError uemit_finish(UEmitter *e) {
         uemit_close_function(e);
     }
     e->finished = true;
-    e->module->max_reg = e->max_reg_seen;
+    /* Task 11: root_proto was allocated at uemit_init and the emitter wrote
+     * directly into it.  Just stamp max_reg and set the nested back-pointers. */
+    if (e->module->root_proto != NULL) {
+        UProto *rp = e->module->root_proto;
+        rp->max_reg = e->max_reg_seen;
+        /* Back-pointer walk: set every nested proto's root field. */
+        size_t k;
+        for (k = 0U; k < rp->nested_count; k++) {
+            if (rp->nested[k] != NULL) {
+                rp->nested[k]->root = rp;
+            }
+        }
+    }
+
     return e->error;
 }
 

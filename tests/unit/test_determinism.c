@@ -32,8 +32,9 @@ UTEST(determinism_checksum_smoke)
 #include "module/umodule.h"      /* UValue, UValKind */
 #include "object/uic.h"
 #include "object/umodule_instance.h"
+#include "value/uintern.h"       /* ustr_intern */
 
-#include <stdlib.h>  /* malloc */
+#include <stdlib.h>  /* calloc / malloc / free */
 
 UTEST(determinism_checksum_returns_nonzero_on_empty_vm)
 {
@@ -163,7 +164,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     /* T4 regression: entries[0] (root chunk) uses proto==NULL, so the old
      * ic_count derivation `(pi->proto != NULL) ? pi->proto->ic_count : 0`
      * always returned 0 — silently skipping root-chunk IC state from the
-     * checksum.  The fix reads ic_count from mi->module->ic_count when i==0.
+     * checksum.  The fix reads ic_count from mi->module->root_proto->ic_count.
      *
      * Build a module with ic_count == 1 at the root level (no nested protos).
      * Create a UModuleInstance, verify the checksum changes after mutating
@@ -175,11 +176,20 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     USymbol *xsym = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(xsym != NULL);
 
-    /* Populate the module-level IC side table (root chunk). */
-    m.ic_count = 1;
-    m.ic_names = (USymbol **)malloc(1 * sizeof(USymbol *));
-    UASSERT(m.ic_names != NULL);
-    m.ic_names[0] = xsym;
+    /* Allocate root_proto for the hand-constructed module fabric.
+     * Task 11 of v0.8.1-uproto-root moved all chunk-top data (ic_count,
+     * ic_names, nested[]) from UModule onto UModule.root_proto.
+     * umodule_destroy with alloc_fn==NULL falls back to stdlib_alloc,
+     * which will call umodule_destroy_proto_buffers (frees ic_names[])
+     * then free(root_proto). */
+    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(m.root_proto != NULL);
+
+    /* Populate the root-chunk IC side table (root chunk). */
+    m.root_proto->ic_count = 1;
+    m.root_proto->ic_names = (USymbol **)malloc(1 * sizeof(USymbol *));
+    UASSERT(m.root_proto->ic_names != NULL);
+    m.root_proto->ic_names[0] = xsym;
 
     UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
     UASSERT(mi != NULL);
@@ -202,6 +212,9 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UASSERT(h_before != h_after);
 
     urbi_module_instance_destroy(&vm, mi);
+    /* umodule_destroy: alloc_fn==NULL → stdlib_alloc fallback.
+     * umodule_destroy_proto_buffers frees m.root_proto->ic_names[],
+     * then free(root_proto) is called by umodule_destroy_internal. */
     umodule_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }

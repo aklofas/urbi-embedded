@@ -218,11 +218,11 @@ UTEST(block_close_with_captured_emits_op_close) {
     fs->blocks[0].has_captured = true;
 
     /* Capture instr_count before block close. */
-    size_t pre_count = m.instr_count;
+    size_t pre_count = m.root_proto->instr_count;
     uemit_close_block(&e);
-    UASSERT_EQ(pre_count + 1, m.instr_count);
+    UASSERT_EQ(pre_count + 1, m.root_proto->instr_count);
 
-    uint32_t last = m.instructions[m.instr_count - 1];
+    uint32_t last = m.root_proto->instructions[m.root_proto->instr_count - 1];
     UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_function(&e);
@@ -367,11 +367,11 @@ UTEST(loop_back_emit_close_when_captured) {
     fs->actvars[0].is_captured = true;               /* cppcheck-suppress nullPointerRedundantCheck */
     fs->blocks[0].has_captured = true;
 
-    size_t pre = m.instr_count;
+    size_t pre = m.root_proto->instr_count;
     uemit_emit_loop_back_close(&e);
-    UASSERT_EQ(pre + 1, m.instr_count);
+    UASSERT_EQ(pre + 1, m.root_proto->instr_count);
 
-    uint32_t last = m.instructions[m.instr_count - 1];
+    uint32_t last = m.root_proto->instructions[m.root_proto->instr_count - 1];
     UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_block(&e);
@@ -386,9 +386,9 @@ UTEST(loop_back_emit_close_no_op_when_not_captured) {
     uemit_open_block(&e, /*is_loop=*/true);
     /* has_captured stays false */
 
-    size_t pre = m.instr_count;
+    size_t pre = m.root_proto->instr_count;
     uemit_emit_loop_back_close(&e);
-    UASSERT_EQ(pre, m.instr_count);   /* no instruction emitted */
+    UASSERT_EQ(pre, m.root_proto->instr_count);   /* no instruction emitted */
 
     uemit_close_block(&e);
     uemit_close_function(&e);

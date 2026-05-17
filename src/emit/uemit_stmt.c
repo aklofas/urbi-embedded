@@ -160,7 +160,7 @@ uint8_t emit_function_literal(UEmitter *e,
      * cleanly). */
     UProto *child_proto = umodule_alloc_nested_proto(e->module);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
-    int proto_idx = (int)(e->module->nested_count - 1);
+    int proto_idx = (int)(e->module->root_proto->nested_count - 1);
 
     /* 2. Open a nested FuncState targeting child_proto. */
     UFuncState *child_fs = uemit_open_function(e, parent_fs);

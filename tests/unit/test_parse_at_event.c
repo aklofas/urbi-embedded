@@ -73,8 +73,10 @@ static void at_event_cleanup(UModule *mod, UArena *arena, UVM *vm) {
 /* Return true if any instruction in the module root has opcode == op. */
 static bool bytecode_has_op(const UModule *m, UOpcode op) {
     size_t i;
-    for (i = 0; i < m->instr_count; i++) {
-        if (uinstr_op(m->instructions[i]) == op) return true;
+    const UProto *rp = m->root_proto;
+    if (rp == NULL) return false;
+    for (i = 0; i < rp->instr_count; i++) {
+        if (uinstr_op(rp->instructions[i]) == op) return true;
     }
     return false;
 }
@@ -227,8 +229,8 @@ UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
      * A (event_reg) and B (body_reg) operands are different. */
     bool found = false;
     size_t i;
-    for (i = 0; i < module.instr_count; i++) {
-        uint32_t inst = module.instructions[i];
+    for (i = 0; i < module.root_proto->instr_count; i++) {
+        uint32_t inst = module.root_proto->instructions[i];
         if (uinstr_op(inst) == OP_AT_EVENT_SYNC_INSTALL) {
             uint8_t a = uinstr_a(inst);
             uint8_t b = uinstr_b(inst);
@@ -257,8 +259,8 @@ UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
 
     bool found = false;
     size_t i;
-    for (i = 0; i < module.instr_count; i++) {
-        uint32_t inst = module.instructions[i];
+    for (i = 0; i < module.root_proto->instr_count; i++) {
+        uint32_t inst = module.root_proto->instructions[i];
         if (uinstr_op(inst) == OP_AT_EVENT_INSTALL) {
             uint8_t a = uinstr_a(inst);
             uint8_t b = uinstr_b(inst);

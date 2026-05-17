@@ -523,7 +523,9 @@ dispatch:
              * module is the new session's (empty) module, not the closure's
              * originating module.  origin_nested was captured at OP_CLOSURE
              * creation time from the then-current s->module->nested and remains
-             * valid because urbi_steal_repl_protos keeps the array alive. */
+             * valid because root_proto is kept alive via Variant B rescue
+             * (vm->rescued_protos) when umodule_destroy fires with a live
+             * closure still referencing it (spec §3.7 lifetime ordering). */
             uint8_t  a  = uinstr_a(*s->pc);
             uint16_t bx = uinstr_bx(*s->pc);
             /* Resolve the nested[] array to use for this OP_CLOSURE. */
@@ -535,12 +537,12 @@ dispatch:
                     nested_arr = cur_cl->origin_nested;
                     nested_cnt = (size_t)cur_cl->origin_nested_count;
                 } else {
-                    nested_arr = s->module ? s->module->nested : NULL;
-                    nested_cnt = s->module ? s->module->nested_count : 0U;
+                    nested_arr = s->root_proto ? s->root_proto->nested : NULL;
+                    nested_cnt = s->root_proto ? s->root_proto->nested_count : 0U;
                 }
             } else {
-                nested_arr = s->module ? s->module->nested : NULL;
-                nested_cnt = s->module ? s->module->nested_count : 0U;
+                nested_arr = s->root_proto ? s->root_proto->nested : NULL;
+                nested_cnt = s->root_proto ? s->root_proto->nested_count : 0U;
             }
             if (nested_arr == NULL || (size_t)bx >= nested_cnt) {
                 vm->last_error = UVM_TYPE_ERROR;

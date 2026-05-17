@@ -59,6 +59,11 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     ProtoOOMSpy spy = {0, -1};
     module.alloc_fn = proto_oom_alloc;
     module.alloc_ud = &spy;
+    /* Task 11: root_proto carries chunk-top data; alloc it outside the spy
+     * so the spy's new_call count is unaffected.  umodule_destroy frees it
+     * via the spy's free-path (n==0 → free(ptr)). */
+    module.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(module.root_proto != NULL);
 
     /* Force the grow path to run first (fresh module: nested_cap == 0). */
     /* Configure: allow the nested[] grow (1 NEW alloc), fail the UProto
@@ -72,21 +77,21 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     UASSERT(p == NULL);
 
     /* nested_count must NOT have been bumped. */
-    UASSERT_EQ((long long)module.nested_count, 0LL);
+    UASSERT_EQ((long long)module.root_proto->nested_count, 0LL);
 
     /* The grow IS allowed to have happened: nested_cap >= 4 (or 0 if grow
      * also failed; on this configuration the grow succeeded). */
-    UASSERT(module.nested_cap == 4U);
+    UASSERT(module.root_proto->nested_cap == 4U);
     /* nested[] buffer exists and points at allocated memory. */
-    UASSERT(module.nested != NULL);
+    UASSERT(module.root_proto->nested != NULL);
 
     /* Now turn off OOM injection and retry — must succeed.  The retry path
      * skips the grow (cap == 4 already) and tries the UProto alloc. */
     spy.fail_at_new_call = -1;
     UProto *p2 = umodule_alloc_nested_proto(&module);
     UASSERT(p2 != NULL);
-    UASSERT_EQ((long long)module.nested_count, 1LL);
-    UASSERT_EQ((void *)module.nested[0], (void *)p2);
+    UASSERT_EQ((long long)module.root_proto->nested_count, 1LL);
+    UASSERT_EQ((void *)module.root_proto->nested[0], (void *)p2);
 
     umodule_destroy(&module, NULL);
 }
@@ -99,6 +104,9 @@ nested_proto_oom_at_grow_keeps_module_pristine(void)
     ProtoOOMSpy spy = {0, -1};
     module.alloc_fn = proto_oom_alloc;
     module.alloc_ud = &spy;
+    /* Task 11: see Case 1 comment. */
+    module.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(module.root_proto != NULL);
 
     /* Fail the 1st NEW alloc (the nested[] grow). */
     spy.new_calls = 0;
@@ -109,9 +117,9 @@ nested_proto_oom_at_grow_keeps_module_pristine(void)
 
     /* Module fields stay at the zero-init values: no nested[] buffer
      * was attached and the cap stays at 0. */
-    UASSERT(module.nested == NULL);
-    UASSERT_EQ((long long)module.nested_cap, 0LL);
-    UASSERT_EQ((long long)module.nested_count, 0LL);
+    UASSERT(module.root_proto->nested == NULL);
+    UASSERT_EQ((long long)module.root_proto->nested_cap, 0LL);
+    UASSERT_EQ((long long)module.root_proto->nested_count, 0LL);
 
     umodule_destroy(&module, NULL);
 }
@@ -126,17 +134,20 @@ nested_over_cap_iteration_stops_at_count(void)
     ProtoOOMSpy spy = {0, -1};
     module.alloc_fn = proto_oom_alloc;
     module.alloc_ud = &spy;
+    /* Task 11: see Case 1 comment. */
+    module.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(module.root_proto != NULL);
 
     /* First call: succeed both grow + UProto. */
     UProto *p1 = umodule_alloc_nested_proto(&module);
     UASSERT(p1 != NULL);
-    UASSERT_EQ((long long)module.nested_count, 1LL);
-    size_t cap_after_first = module.nested_cap;
+    UASSERT_EQ((long long)module.root_proto->nested_count, 1LL);
+    size_t cap_after_first = module.root_proto->nested_cap;
     UASSERT(cap_after_first >= 1U);
 
     /* Walk [0..nested_count) — the only slot is index 0 with our proto. */
-    for (size_t i = 0; i < module.nested_count; i++) {
-        UASSERT(module.nested[i] != NULL);
+    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
+        UASSERT(module.root_proto->nested[i] != NULL);
     }
     /* Slots beyond nested_count are not initialised; we do NOT read them. */
     (void)cap_after_first;

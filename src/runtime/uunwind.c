@@ -144,8 +144,8 @@ pop_call_frame(UStrand *s)
         && s->frames[s->frame_count - 1].closure != NULL
         && s->frames[s->frame_count - 1].closure->proto != NULL) {
         s->pc_base = s->frames[s->frame_count - 1].closure->proto->instructions;
-    } else if (s->module != NULL) {
-        s->pc_base = s->module->instructions;
+    } else if (s->root_proto != NULL) {
+        s->pc_base = s->root_proto->instructions;
     } else if (s->entry_closure != NULL && s->entry_closure->proto != NULL) {
         s->pc_base = s->entry_closure->proto->instructions;
     }

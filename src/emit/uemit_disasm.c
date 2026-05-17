@@ -73,12 +73,15 @@ static bool fmt_closure(char *buf, size_t cap, size_t *off,
     bool ok = dis_printf(buf, cap, off, "%04zu  CLOSURE R%u, P%u\n",
                          *ip, (unsigned)uinstr_a(ins), (unsigned)bx);
     if (!ok) return false;
-    if (bx < module->nested_count && module->nested[bx] != NULL) {
-        const UProto *child = module->nested[bx];
+    if (module->root_proto != NULL
+        && bx < module->root_proto->nested_count
+        && module->root_proto->nested[bx] != NULL) {
+        const UProto *child = module->root_proto->nested[bx];
+        const UProto *rp    = module->root_proto;
         uint8_t u;
         for (u = 0; u < child->nupvals &&
-             (*ip + 1U + (size_t)u) < module->instr_count; u++) {
-            uint32_t pi = module->instructions[*ip + 1U + u];
+             (*ip + 1U + (size_t)u) < rp->instr_count; u++) {
+            uint32_t pi = rp->instructions[*ip + 1U + u];
             ok = dis_printf(buf, cap, off,
                 "    upval[%u]: %s parent_idx=%u\n",
                 (unsigned)u,
@@ -472,12 +475,14 @@ size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
     off = 0;
-    if (module->instr_count == 0) {
+    /* Task 11: all chunk-top data lives on root_proto. */
+    const UProto *rp = (module != NULL) ? module->root_proto : NULL;
+    if (rp == NULL || rp->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");
         return off;
     }
-    for (i = 0; i < module->instr_count; i++) {
-        const uint32_t ins = module->instructions[i];
+    for (i = 0; i < rp->instr_count; i++) {
+        const uint32_t ins = rp->instructions[i];
         const UOpcode  op  = uinstr_op(ins);
         bool ok;
         if ((unsigned)op < (unsigned)OP_MAX && op_disasm[op] != NULL) {
@@ -490,11 +495,11 @@ size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
         if (!ok) return off;
     }
     if (!dis_printf(buf, cap, &off, "; constants:\n")) return off;
-    for (i = 0; i < module->const_count; i++) {
+    for (i = 0; i < rp->const_count; i++) {
         bool ok;
-        if (module->constants[i].kind == (uint8_t)UVAL_INT) {
+        if (rp->constants[i].kind == (uint8_t)UVAL_INT) {
             ok = dis_printf(buf, cap, &off, ";   K%zu = INT %" PRId64 "\n",
-                            i, module->constants[i].v.i);
+                            i, rp->constants[i].v.i);
         } else {
             ok = dis_printf(buf, cap, &off, ";   K%zu = ?\n", i);
         }

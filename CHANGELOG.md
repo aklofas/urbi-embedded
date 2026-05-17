@@ -1,5 +1,130 @@
 # Changelog
 
+## v0.8.1-uproto-root — 2026-05-17 (UModule thin-shell refactor + module-grain lifetime)
+
+**Tag:** `v0.8.1-uproto-root`
+**Theme:** Structural consolidation of the module/proto ownership model.
+UModule shrinks to a thin 5-field loader shell; all chunk-top data moves
+into a new `UProto *root_proto` field.  The two parallel refcount systems
+(v0.7.3 per-proto + v0.8.0 per-module) fuse into a single counter on
+`root_proto`.  Closes the v0.8.0 forward-path item and unblocks M8 REPL's
+realm-owned `loaded_protos[]` registry.
+
+### Changed
+
+- **Wire format v1.6 → v1.7** (`URBI_BYTECODE_VERSION_BYTE = 0x17`).
+  Root-chunk fields now serialize inside a recursive `UProto` block rather
+  than as flat UModule members.  v1.6 bytecode is rejected with
+  `ULOAD_UNSUPPORTED_VERSION` per the existing exact-match policy.
+  No in-band migration; embedders re-bake from source.
+- **ABI version 0/7/5 → 0/8/0** (`URBI_API_VERSION_NUM = 800`).  Both
+  UModule and UProto layout shift; the per-nested rescue path is deleted.
+  MINOR-field bump (vs the PATCH-field bumps through 0.7.x) reflects the
+  structural significance.  Zero public-API surface changes for embedders
+  — all changed types are opaque.
+- **Module-grain lifetime (Variant B).** Any closure escaping into realm
+  globals now pins the entire owning module structure (shell + all nested
+  protos) until VM-destroy.  Previous behavior rescued individual UProtos.
+  Trade-off: simpler GC, bounded memory overhead, no per-nested accounting.
+  Long-running REPL sessions that load and escape many small chunks will
+  accumulate `root_proto` structures; explicit unload via the forthcoming
+  M8 `urbi_unload` API is the escape valve.
+- **UModule shrunk to a 5-field thin loader shell** (`root_proto`,
+  `source_name`, `origin_vm`, `alloc_fn`, `alloc_ud`).  All chunk-top
+  fields — instructions, constants, line_deltas, abs_lines, IC metadata,
+  nested[], max_reg, nupvals, nparams — migrated to `UProto`.  Host size
+  ~200 B → ~40 B; arm ~100 B → ~20 B.
+- **`urbi_run_chunk` refcount target** redirected from `UModule.refcount`
+  (deleted) to `module->root_proto->refcount`.  Behavior is unchanged for
+  embedders; the internal mechanism fuses the two v0.7.3/v0.8.0 counters.
+- **`UStrand`** gains a `root_proto` fast-path field alongside `module`.
+  Hot-path dispatch (`s->root_proto->instructions`, etc.) uses the new
+  field; cold-path error reporting continues via `s->module->source_name`.
+
+### Removed (internal)
+
+- **`urbi_steal_repl_protos`** (file-private to `src/module/uchunk.c`,
+  ~90 LOC).  Incoherent under module-grain Variant B; deleted.
+- **`vm->stdlib_protos`** — per-nested rescue list.  Replaced by simpler
+  `vm->rescued_protos` (whole-`root_proto` list).
+- **`UModule.refcount` + `UModule.destroy_requested`** — fused with
+  `root_proto->refcount`.
+- **UModule duplicate chunk-top fields** — instructions, constants,
+  line_deltas, abs_lines, max_reg, nupvals, nparams, ic_count, ic_names,
+  ic_name_strs, nested[], nested_count, nested_cap all deleted from UModule.
+- **Slot-implicit refcount** — `umodule_alloc_nested_proto` now inits
+  `refcount = 0` (was 1 in v0.7.3).  The slot's reachability is implicit
+  in `root_proto`'s lifetime under module-grain Variant B.
+- **Per-nested rescue walk** in `umodule_destroy_internal`.  Replaced by
+  whole-`root_proto` rescue per the new `umodule_destroy` semantics.
+
+### Added (internal)
+
+- **`UProto.nested[]`** — recursive children array.  Root proto populates;
+  non-root has `nested_count = 0` under the current flat-on-root emitter.
+  Serialized in the v1.7 wire format.
+- **`UProto.root`** — back-pointer to the owning module's root proto.
+  `NULL` on the root proto itself; set to `module->root_proto` on every
+  nested.  Runtime-only; not serialized.
+- **`vm->rescued_protos`** — whole-`root_proto` rescue list replacing
+  `vm->stdlib_protos`.  `umodule_destroy` transfers a non-zero-refcount
+  `root_proto` here; `urbi_vm_destroy` sweeps this list last.
+- **`uproto_root_of(proto)`** — NULL-safe inline that chases the `root`
+  back-pointer; returns `proto` if `proto->root == NULL` (i.e. proto is
+  the root).  Used by all refcount bump/dec sites.
+- **`umodule_strand_refcount_dec(module, root_proto, vm)`** — bridge
+  helper for strand-destroy decrement; routes through `root_proto.refcount`
+  and triggers deferred destroy when the count reaches zero.
+- **`UModule.root_proto`** (`UProto *`) — the only mandatory runtime field
+  added to UModule; everything else was removed.
+- **`urbi_aux_load_and_run` / `urbi_compile_source`** paths updated to
+  allocate `root_proto` directly (no alias-copy of fields).
+
+### Fixed
+
+- **Test-helper `utest_e2e_compile_and_run` UAF** on still-live nested
+  protos (v0.7.2-shipped OPEN, design-risks entry "v0.7.x — test-helper
+  UAFs").  Phase 0 confirmed a clean ASan pass: the v0.7.3 UProto refcount
+  + v0.8.0 UModule refcount mechanisms together closed the UAF before this
+  refactor began.  Permanent regression net at
+  `tests/unit/test_test_helper_uaf_repro.c`.  Design-risks entry deleted.
+- **IC-names leak** after non-strand `module->X` hot-path migration
+  (Task 5 follow-up; was 928 bytes/stdlib_boot per valgrind).
+- **Test-helper refcount target drift** — 5 test files that manually
+  incremented `module->refcount` in strand-bind helpers migrated to
+  `root_proto->refcount` (Task 7 follow-up).
+- **`umodule_deserialize` failure-path leak** of `root_proto` (168 bytes;
+  fixed during Task 11 thin-shell cleanup).
+- **`urbi_module_from_bytes` parse-failure leak** of `root_proto`
+  (fixed during Task 11).
+- **Cppcheck strict-gate findings** — multiple `duplicateConditionalAssign`,
+  `variableScope`, and `constParameterPointer` diagnostics fixed during
+  Task 11; strict gate hard-passes.
+
+### What was deferred (not in this release)
+
+- **Truly-recursive emitter** (Bx scopes per-enclosing-proto) — Bx still
+  indexes the flat root-level array; non-root UProto's `nested_count` is
+  always 0.  Deferred to the Approach C long-term endgame (§11 of the spec).
+- **Approach C (no UModule at all)** — every chunk becomes a bare UProto
+  with header fields.  Tracked in design-risks; post-M8 work.
+- **Realm-owned `loaded_protos[]` registry** — multi-chunk REPL eval and
+  disconnect-cleanup at realm level.  M8 REPL milestone.
+- **`urbi_unload(realm, module)`** — explicit module eviction for
+  long-running REPL sessions accumulating escaped-closure modules.  M8.
+- **`vm->stdlib_closures` sweep ordering invariant** — documented in
+  `docs/internals/module-system.md` §6; the ordering is already correct
+  as shipped; no code deferral, only future documentation of why.
+- **UClosure / UUpvalCell GC promotion** (Phase 2-3 of the v0.7.3
+  closure-lifetime spec) — deferred from that spec; still pending.
+
+### Spec / plan
+
+- Spec: `docs/superpowers/specs/2026-05-17-v0.8.1-uproto-root-design.md`
+- Plan: `docs/superpowers/plans/2026-05-17-v0.8.1-uproto-root.md`
+
+---
+
 ## v0.8.0-loader-strand — UNRELEASED (persistent loader strand, restore legacy parallel-by-syntax)
 
 **Tag:** `v0.8.0-loader-strand`

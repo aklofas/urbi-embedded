@@ -99,6 +99,7 @@ struct UEvent;           /* reactive runtime */
 struct UVM;              /* uvm.h — forward-decl to avoid circular include */
 struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
 struct UModule;          /* umodule.h — forward-decl for strand execution context */
+struct UProto;           /* module/umodule.h — forward-decl for root_proto fast-path (v0.8.1) */
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
 struct UModuleInstance;  /* object/umodule_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
@@ -247,6 +248,11 @@ struct UStrand {
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
     const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
+    struct UProto          *root_proto;     /* fast-path chunk bytecode access (v0.8.1 Phase 1).
+                                             * Aliases module->root_proto at strand creation.
+                                             * Phase 1: cohabits with s->module; readers still use
+                                             * s->module->X.  Task 4 migrates ~27 hot-path sites to
+                                             * s->root_proto->X.  NULL if module is NULL. */
     /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
      * Bound by urbi_vm_run / urbi_run_chunk via
      * urbi_get_or_create_module_instance.  May be NULL if not yet wired
@@ -276,8 +282,9 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3904,
-               "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change");
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
+               "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
+               /* v0.8.1 Phase 1: +8 B from UProto *root_proto field (3904 → 3912) */);
 #endif
 
 /* === Lifecycle functions ===

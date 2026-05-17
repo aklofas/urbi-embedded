@@ -151,23 +151,11 @@ typedef struct UOpOverloadIC {
  * stack footprint in tests that allocate `UVM vm;` on the C stack.  The IC
  * is heap-allocated at urbi_vm_init time and freed at urbi_vm_destroy. */
 
-/* --- Phase 5 (Gap #1): stolen nested-array bookkeeping ---
- *
- * When urbi_steal_repl_protos rescues a closure from a REPL-session
- * UModule that is about to be destroyed, it steals the entire nested[]
- * array by setting module->nested = NULL (so umodule_destroy skips it)
- * and threading the array pointer onto vm->stdlib_nested_arrays via this
- * node type.  The stolen array remains valid for the lifetime of any
- * surviving UClosure whose origin_nested points at it.
- *
- * urbi_vm_destroy walks the list and frees each array via the stored
- * alloc_fn/alloc_ud before the proto structs in stdlib_protos are freed. */
-typedef struct UNestedArrayNode {
-    struct UProto         **arr;       /* stolen nested[] array pointer     */
-    UVMAllocFn              alloc_fn;  /* allocator used to free arr        */
-    void                   *alloc_ud;  /* user data for alloc_fn            */
-    struct UNestedArrayNode *next;     /* linked-list link                  */
-} UNestedArrayNode;
+/* UNestedArrayNode: deleted at Task 11 (v0.8.1-uproto-root).
+ * urbi_steal_repl_protos (which populated vm->stdlib_nested_arrays) was
+ * deleted at Task 8a; vm->stdlib_protos and vm->stdlib_nested_arrays are
+ * deleted at Task 11.  The whole-root_proto rescue path (vm->rescued_protos)
+ * is the sole deferred-destroy mechanism from v0.8.1 onward. */
 
 /* --- Gap P (v0.7.1): per-VM error ring buffer storage ---
  *
@@ -584,19 +572,23 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *  via R[A+1] under OP_CALL's method flag, not a global side channel.) */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
-    /* stdlib_protos: linked list of UProto objects stolen from REPL-session
-     * UModules by urbi_steal_repl_protos before umodule_destroy.  Stolen
-     * protos are owned by the VM and freed at urbi_vm_destroy.  Threaded via
-     * UProto.next_alloc (runtime-only field; not serialized).  NULL until the
-     * first REPL session produces a realm-global closure (the common case for
-     * embedded one-shot runs with no REPL). */
-    struct UProto      *stdlib_protos;
-    /* stdlib_nested_arrays: list of UNestedArrayNode records tracking nested[]
-     * arrays stolen from REPL-session UModules.  Each node stores the array
-     * pointer + allocator; freed in urbi_vm_destroy after the UProto structs
-     * in stdlib_protos are freed (order doesn't matter since the nodes hold
-     * the array memory, not the proto structs). */
-    UNestedArrayNode   *stdlib_nested_arrays;
+    /* stdlib_protos and stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root).
+     * The whole-root_proto rescue path (vm->rescued_protos) is the sole mechanism. */
+    /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
+     * objects rescued from umodule_destroy when root_proto->refcount > 0 at
+     * destroy time (Phase 2 Task 9 of v0.8.1-uproto-root).
+     *
+     * When a module is destroyed while a strand still holds a reference to its
+     * root_proto, umodule_destroy detaches the root_proto (with all nested[]
+     * and chunk-top buffer ownership) and threads it onto this list.  The
+     * module shell (source_name and the UModule struct itself) is freed normally.
+     *
+     * At urbi_vm_destroy, each rescued root_proto is freed via
+     * umodule_destroy_proto_buffers (walks nested[], frees all owned buffers),
+     * then the root_proto struct itself is freed via its stored allocator.
+     * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
+     * the sole deferred-destroy mechanism. */
+    struct UProto      *rescued_protos;
     struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each

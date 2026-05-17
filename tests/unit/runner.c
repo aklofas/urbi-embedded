@@ -242,6 +242,12 @@ extern void test_aux_dump_value_suite(void);
 extern void test_detect_blob_suite(void);
 extern void test_draw_crosshair_suite(void);
 extern void test_loader_strand_persistence_suite(void);
+extern void test_test_helper_uaf_repro_suite(void);
+extern void test_uproto_root_backptr_suite(void);
+extern void test_strand_root_proto_bind_suite(void);
+extern void test_module_refcount_fused_suite(void);
+extern void test_rescued_protos_suite(void);
+extern void test_module_grain_lifetime_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -460,6 +466,12 @@ static const struct suite_entry suites[] = {
     {"detect_blob",                  test_detect_blob_suite},
     {"draw_crosshair",               test_draw_crosshair_suite},
     {"loader_strand_persistence",    test_loader_strand_persistence_suite},
+    {"test_helper_uaf_repro",        test_test_helper_uaf_repro_suite},
+    {"uproto_root_backptr",          test_uproto_root_backptr_suite},
+    {"strand_root_proto_bind",       test_strand_root_proto_bind_suite},
+    {"module_refcount_fused",        test_module_refcount_fused_suite},
+    {"rescued_protos",               test_rescued_protos_suite},
+    {"module_grain_lifetime",        test_module_grain_lifetime_suite},
     /* Add new suites here as test files are added. */
 };
 

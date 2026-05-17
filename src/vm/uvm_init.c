@@ -327,8 +327,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     /* M6 Phase 3: stdlib state. */
     vm->stdlib_closures        = NULL;
     vm->stdlib_upvalues        = NULL;
-    vm->stdlib_protos          = NULL;   /* Phase 5 (Gap #1): stolen REPL protos; freed at destroy */
-    vm->stdlib_nested_arrays   = NULL;   /* Phase 5 (Gap #1): stolen nested[] arrays; freed at destroy */
+    /* stdlib_protos + stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root). */
+    vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
     vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
     vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
@@ -476,11 +476,37 @@ void urbi_vm_destroy(UVM *vm) {
     /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
      * registered by urbi_native_closure_create AND user closures migrated
      * from strand closure_lists at run exit, see uvm_run.c).  All threaded
-     * via next_alloc on a single vm->stdlib_closures list. */
+     * via next_alloc on a single vm->stdlib_closures list.
+     *
+     * v0.8.1 Variant B Phase 2 ORDERING INVARIANT (spec §3.7):
+     * This sweep MUST run BEFORE the vm->rescued_protos sweep below.
+     * Each closure decs its proto via uproto_root_of() — that dereferences
+     * cl->proto->root (back-pointer into a root_proto).  The root_proto must
+     * still be alive at that point.  Rescued root_protos stay alive until the
+     * rescued_protos sweep frees them.  Reordering causes UAF. */
     if (vm->alloc_fn != NULL) {
         UClosure *cl = vm->stdlib_closures;
         while (cl != NULL) {
             UClosure *next = cl->next_alloc;
+            /* v0.8.1: dec root_proto.refcount before freeing the closure.
+             * The root_proto is still alive (either held by a live UModule
+             * or on the rescued_protos list).  Safe per the ordering invariant
+             * documented above. */
+            if (cl->proto != NULL) {
+                UProto *rp = uproto_root_of(cl->proto);
+                umodule_proto_refcount_dec(rp);
+                /* Self-link sentinel: if umodule_destroy was called with vm=NULL
+                 * while refcount was > 0, root_proto->next_alloc was set to
+                 * root_proto itself (unambiguous sentinel; see umodule.c).
+                 * When the last closure ref drops refcount to 0, promote the
+                 * root_proto to rescued_protos so the sweep below frees it.
+                 * This avoids a struct addition while ensuring vm=NULL destroy
+                 * paths are clean under ASan. */
+                if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
+                    rp->next_alloc     = vm->rescued_protos;
+                    vm->rescued_protos = rp;
+                }
+            }
             vm->alloc_fn(cl, 0, vm->alloc_ud);
             cl = next;
         }
@@ -503,60 +529,50 @@ void urbi_vm_destroy(UVM *vm) {
          * UModuleInstance referencing this module has already been
          * reaped — no dangling ic_names back-reference can survive.
          *
-         * v0.7.3 Piece A: ordered BEFORE the stdlib_protos sweep below.
-         * The umodule_destroy rescue path may transfer protos with non-zero
-         * refcount onto vm->stdlib_protos; those need to be picked up by the
-         * sweep that follows. */
+         * Ordering: BEFORE rescued_protos sweep below.  umodule_destroy may
+         * rescue a non-zero-refcount root_proto onto vm->rescued_protos; that
+         * rescued proto is freed by the sweep that follows. */
         if (vm->stdlib_module != NULL) {
             umodule_destroy(vm->stdlib_module, vm);
             vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
             vm->stdlib_module = NULL;
         }
 
-        /* Phase 5 (Gap #1): free stolen REPL UProto objects + v0.7.3 Piece A:
-         * rescued protos from the umodule_destroy(stdlib_module) above.  Original
-         * stolen-REPL-proto path: detached from their originating REPL-session
-         * UModules by urbi_steal_repl_protos in urbi_repl_eval (uchunk.c) before
-         * the module was destroyed, keeping their instruction buffers alive for
-         * closures on vm->stdlib_closures.  The stdlib_closures sweep above
-         * has already freed the UClosure structs that referenced these protos;
-         * it is now safe to free the protos and their owned buffers. */
-        {
-            struct UProto *sp = vm->stdlib_protos;
-            while (sp != NULL) {
-                struct UProto *next = sp->next_alloc;
-                /* Capture allocator pair before umodule_destroy_proto_buffers
-                 * zeroes the struct (the zero wipes alloc_fn/alloc_ud too). */
-                UModuleAllocFn proto_alloc = sp->alloc_fn;
-                void          *proto_ud    = sp->alloc_ud;
-                if (proto_alloc == NULL) {
-                    /* proto was allocated with the hosted stdlib_alloc fallback;
-                     * use the VM's own realloc wrapper which calls free(p). */
-                    proto_alloc = vm->alloc_fn;
-                    proto_ud    = vm->alloc_ud;
-                }
-                umodule_destroy_proto_buffers(sp, proto_alloc, proto_ud);
-                proto_alloc(sp, 0, proto_ud);
-                sp = next;
-            }
-            vm->stdlib_protos = NULL;
-        }
+        /* Task 11 (v0.8.1-uproto-root): stdlib_protos and stdlib_nested_arrays
+         * deleted.  The rescued_protos sweep below handles all deferred protos. */
 
-        /* Phase 5 (Gap #1): free nested[] arrays stolen from REPL-session
-         * UModules.  The UProto structs in stdlib_protos were freed above;
-         * now free the UProto** array pointers tracked in this list.  Each
-         * node itself was allocated via the VM's alloc_fn. */
+        /* Phase 2 Task 9 (v0.8.1-uproto-root): free rescued whole root_protos.
+         * Each entry is a root_proto that was detached from its UModule by
+         * umodule_destroy when root_proto->refcount > 0 (strand still alive).
+         * The root_proto carries ownership of nested[] and all chunk-top buffers
+         * (module shell was freed normally with those fields NULLed).
+         *
+         * Ordering: run AFTER stdlib_module destroy (above) since that may
+         * rescue protos here.  Must run BEFORE the VM allocator is torn down.
+         *
+         * Walk each rescued root_proto:
+         *   1. Capture next_alloc, alloc_fn/alloc_ud before any zero operation.
+         *   2. Free all buffers (including nested[] sub-protos) via
+         *      umodule_destroy_proto_buffers — zeroes *rp.
+         *   3. Free the root_proto struct itself. */
         {
-            UNestedArrayNode *na = vm->stdlib_nested_arrays;
-            while (na != NULL) {
-                UNestedArrayNode *next = na->next;
-                /* Free the nested[] array. */
-                na->alloc_fn((void *)na->arr, 0, na->alloc_ud);
-                /* Free the node itself (allocated with vm->alloc_fn). */
-                vm->alloc_fn(na, 0, vm->alloc_ud);
-                na = next;
+            struct UProto *rp = vm->rescued_protos;
+            while (rp != NULL) {
+                /* Step 1: capture before any zero operation. */
+                struct UProto  *next     = rp->next_alloc;
+                UModuleAllocFn  rp_alloc = rp->alloc_fn;
+                void           *rp_ud    = rp->alloc_ud;
+                if (rp_alloc == NULL) {
+                    rp_alloc = vm->alloc_fn;
+                    rp_ud    = vm->alloc_ud;
+                }
+                /* Step 2: free all buffers (nested[] freed recursively inside). */
+                umodule_destroy_proto_buffers(rp, rp_alloc, rp_ud);
+                /* Step 3: free the root_proto struct. */
+                rp_alloc(rp, 0, rp_ud);
+                rp = next;
             }
-            vm->stdlib_nested_arrays = NULL;
+            vm->rescued_protos = NULL;
         }
 
         /* M6 Phase 6: free container backing buffers (List/Dict/Tuple

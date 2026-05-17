@@ -119,6 +119,8 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     if (vm == NULL || m == NULL) {
         return NULL;
     }
+    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
+    UProto *rp = m->root_proto;
 
     /* Cell 1: UModuleInstance.  Cast cell pointer to struct (UCell is the
      * first member; addresses coincide).  Caller is responsible for OOM. */
@@ -133,21 +135,30 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
 
+    /* All chunk-top fields from root_proto. */
+    uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : 0U;
+    USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : NULL;
+    char     **root_ic_strs     = (rp != NULL) ? rp->ic_name_strs : NULL;
+    UModuleAllocFn root_alloc_fn = (rp != NULL) ? rp->alloc_fn    : m->alloc_fn;
+    void          *root_alloc_ud = (rp != NULL) ? rp->alloc_ud    : m->alloc_ud;
+    size_t         root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
+    UProto       **root_nested       = (rp != NULL) ? rp->nested       : NULL;
+
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for root chunk + every nested proto's ic_count.
      * entries[0] is the root chunk; entries[1..n-1] mirror module->nested[].
      *
      * Bulk size = sizeof(UProtoInstanceArr)              (header + cell + pad)
      *           + n * sizeof(UProtoInstance)              (entries[] payload)
-     *           + m->ic_count * sizeof(UIC)              (root-chunk IC region)
+     *           + root_ic_count * sizeof(UIC)            (root-chunk IC region)
      *           + sum(nested[i]->ic_count) * sizeof(UIC)  (nested IC region) */
-    uint16_t n = (uint16_t)(1U + m->nested_count);
+    uint16_t n = (uint16_t)(1U + root_nested_count);
 
     size_t entries_bytes = (size_t)n * sizeof(UProtoInstance);
 
-    size_t ic_bytes = (size_t)m->ic_count * sizeof(UIC);  /* root-chunk ICs */
-    for (size_t i = 0U; i < m->nested_count; i++) {
-        UProto *p = m->nested[i];
+    size_t ic_bytes = (size_t)root_ic_count * sizeof(UIC);  /* root-chunk ICs */
+    for (size_t i = 0U; i < root_nested_count; i++) {
+        UProto *p = root_nested[i];
         if (p == NULL) continue;
         ic_bytes += (size_t)p->ic_count * sizeof(UIC);
     }
@@ -170,7 +181,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * TIDY-006: single (char *) cast avoids casting-through-void. */
     UIC *ic_cursor = (UIC *)((char *)arr->entries + entries_bytes);
 
-    /* entries[0]: root chunk.  ic_table populated from UModule's ic_count /
+    /* entries[0]: root chunk.  ic_table populated from root chunk's ic_count /
      * ic_names side table (M4 follow-up — root chunk now carries IC sites
      * for top-level GETSLOT/SETSLOT).  proto = NULL for the root chunk.
      *
@@ -178,22 +189,25 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * have ic_names == NULL (intern needs a VM in scope, which the loader
      * does not have).  Walk + intern lazily on first instance-create.
      * Helper is idempotent — second call with ic_names already populated
-     * is a no-op. */
-    if (!intern_ic_names_from_strs(vm, m->ic_count, &m->ic_names,
-                                   m->ic_name_strs,
-                                   m->alloc_fn, m->alloc_ud)) {
+     * is a no-op.
+     * Task 11: ownership lives on root_proto; write directly to rp->ic_names. */
+    if (rp != NULL && !intern_ic_names_from_strs(vm, root_ic_count, &rp->ic_names,
+                                                  root_ic_strs,
+                                                  root_alloc_fn, root_alloc_ud)) {
         /* OOM during string-to-symbol intern.  Both GC cells are reachable
          * only via this return path; sweep reclaims them. */
         return NULL;
     }
+    if (rp != NULL) root_ic_names = rp->ic_names;
     init_ic_slice(&arr->entries[0], NULL,
-                  m->ic_count, m->ic_names, &ic_cursor);
+                  root_ic_count, root_ic_names, &ic_cursor);
 
     /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
      * slice of the trailing IC region; unfilled sites have topology_gen == 0
-     * (the sentinel per pre-M4 topology-generation spec §3.1). */
-    for (size_t i = 0U; i < m->nested_count; i++) {
-        UProto *p = m->nested[i];
+     * (the sentinel per pre-M4 topology-generation spec §3.1).
+     * v0.8.1 Phase 1: walk via root_nested (root_proto or module alias). */
+    for (size_t i = 0U; i < root_nested_count; i++) {
+        UProto *p = root_nested[i];
         if (p != NULL &&
             !intern_ic_names_from_strs(vm, p->ic_count, &p->ic_names,
                                        p->ic_name_strs,

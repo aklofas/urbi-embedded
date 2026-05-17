@@ -46,14 +46,14 @@ emit_empty_source_no_line_delta_underflow(void)
     UEmitError rc = uemit_finish(&e);
 
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT_EQ((size_t)0, module.instr_count);
+    UASSERT_EQ((size_t)0, module.root_proto->instr_count);
     /* line_deltas is sized exactly to instr_count; on empty, it stays NULL or
      * unallocated with zero length.  Either way, no out-of-bounds write
      * occurred during emit. */
-    if (module.line_deltas != NULL) {
+    if (module.root_proto->line_deltas != NULL) {
         /* If the allocator returned a valid 0-length block, that's allowed
          * but the count must agree. */
-        UASSERT_EQ((size_t)0, module.instr_count);
+        UASSERT_EQ((size_t)0, module.root_proto->instr_count);
     }
 
     uarena_destroy(&arena);
@@ -89,8 +89,8 @@ emit_single_instr_one_line_delta(void)
     /* instr_count must be > 0 (LOADI + RET, etc.) and line_deltas must be
      * non-NULL with exactly instr_count entries.  The one-to-one invariant
      * is what the early-return guard preserves. */
-    UASSERT(module.instr_count > 0);
-    UASSERT(module.line_deltas != NULL);
+    UASSERT(module.root_proto->instr_count > 0);
+    UASSERT(module.root_proto->line_deltas != NULL);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);

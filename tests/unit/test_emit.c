@@ -29,7 +29,7 @@ UTEST(uemit_init_zeros_emitter_and_does_not_touch_module) {
     UASSERT_EQ(EMIT_OK, e.error);
     UASSERT_EQ((UModule *)&module, e.module);
     UASSERT_EQ((UArena *)&arena, e.arena);
-    UASSERT_EQ((size_t)0, module.instr_count);
+    UASSERT_EQ((size_t)0, module.root_proto->instr_count);
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -46,8 +46,8 @@ UTEST(uemit_finish_on_empty_module_emits_nothing_and_returns_ok) {
     UEmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT(e.finished == true);
-    UASSERT_EQ((size_t)0, module.instr_count);  /* no RET emitted when no statements */
-    UASSERT_EQ((uint8_t)0, module.max_reg);
+    UASSERT_EQ((size_t)0, module.root_proto->instr_count);  /* no RET emitted when no statements */
+    UASSERT_EQ((uint8_t)0, module.root_proto->max_reg);
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -108,18 +108,18 @@ UTEST(emit_ast_int_single_literal_loadk_then_ret) {
 
     /* Two instructions: LOADK R1 K0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
-    UASSERT_EQ((size_t)2, module.instr_count);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
-    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
-    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
+    UASSERT_EQ((size_t)2, module.root_proto->instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.root_proto->instructions[0]));
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.root_proto->instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.root_proto->instructions[1]));
 
     /* Constant pool: one UVAL_INT entry, value 42 */
-    UASSERT_EQ((size_t)1,      module.const_count);
-    UASSERT_EQ((uint8_t)UVAL_INT, module.constants[0].kind);
-    UASSERT_EQ((int64_t)42,    module.constants[0].v.i);
-    UASSERT_EQ((uint8_t)1,     module.max_reg);
+    UASSERT_EQ((size_t)1,      module.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, module.root_proto->constants[0].kind);
+    UASSERT_EQ((int64_t)42,    module.root_proto->constants[0].v.i);
+    UASSERT_EQ((uint8_t)1,     module.root_proto->max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -150,9 +150,9 @@ UTEST(emit_ast_int_dedups_repeated_literal_in_constant_pool) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Pool must have exactly 2 entries: 1 (deduped) and 2. */
-    UASSERT_EQ((size_t)2,   module.const_count);
-    UASSERT_EQ((int64_t)1,  module.constants[0].v.i);
-    UASSERT_EQ((int64_t)2,  module.constants[1].v.i);
+    UASSERT_EQ((size_t)2,   module.root_proto->const_count);
+    UASSERT_EQ((int64_t)1,  module.root_proto->constants[0].v.i);
+    UASSERT_EQ((int64_t)2,  module.root_proto->constants[1].v.i);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -178,18 +178,18 @@ UTEST(emit_ast_binary_1_plus_2) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
     /* LOADK R1 K0 ; LOADK R2 K1 ; ADD R1 R1 R2 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
-    UASSERT_EQ((size_t)4, module.instr_count);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)2, uinstr_a(module.instructions[1]));
-    UASSERT_EQ((int)OP_ADD, (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[2]));
-    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[2]));
-    UASSERT_EQ((uint8_t)2, uinstr_c(module.instructions[2]));
-    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[3]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[3]));
-    UASSERT_EQ((uint8_t)2, module.max_reg);
+    UASSERT_EQ((size_t)4, module.root_proto->instr_count);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.root_proto->instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[1]));
+    UASSERT_EQ((uint8_t)2, uinstr_a(module.root_proto->instructions[1]));
+    UASSERT_EQ((int)OP_ADD, (int)uinstr_op(module.root_proto->instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.root_proto->instructions[2]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.root_proto->instructions[2]));
+    UASSERT_EQ((uint8_t)2, uinstr_c(module.root_proto->instructions[2]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.root_proto->instructions[3]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.root_proto->instructions[3]));
+    UASSERT_EQ((uint8_t)2, module.root_proto->max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -218,7 +218,7 @@ UTEST(emit_ast_binary_sub_mul_div_map_to_correct_opcodes) {
         bin.u.binary.rhs = &rhs;
         bin.line = 1;
         UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &bin));
-        UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.instructions[2]));
+        UASSERT_EQ(cases[i].expected_op, (int)uinstr_op(module.root_proto->instructions[2]));
         uarena_destroy(&arena);
         umodule_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
@@ -253,7 +253,7 @@ UTEST(emit_nested_binary_1_plus_2_plus_3_plus_4_stays_at_max_reg_2) {
        tree (ab)+(cd) the peak is R3: emitting `d` requires R1(ab-lhs),
        R2(cd-lhs), R3(d) live at once before the inner free_reg.
        (T73: chunk-top pre-reserves R0, so temps start at R1.) */
-    UASSERT_EQ((uint8_t)3, module.max_reg);
+    UASSERT_EQ((uint8_t)3, module.root_proto->max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -283,21 +283,21 @@ UTEST(emit_ast_unary_neg_5_loadk_then_neg_then_ret) {
 
     /* LOADK R1 K0 ; NEG R1 R1 0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1) */
-    UASSERT_EQ((size_t)3, module.instr_count);
+    UASSERT_EQ((size_t)3, module.root_proto->instr_count);
 
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[0]));
-    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint16_t)0,   uinstr_bx(module.root_proto->instructions[0]));
 
-    UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(module.instructions[1]));
-    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[1]));
-    UASSERT_EQ((uint8_t)1,    uinstr_b(module.instructions[1]));
-    UASSERT_EQ((uint8_t)0,    uinstr_c(module.instructions[1]));
+    UASSERT_EQ((int)OP_NEG,   (int)uinstr_op(module.root_proto->instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.root_proto->instructions[1]));
+    UASSERT_EQ((uint8_t)1,    uinstr_b(module.root_proto->instructions[1]));
+    UASSERT_EQ((uint8_t)0,    uinstr_c(module.root_proto->instructions[1]));
 
-    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)1,    uinstr_a(module.instructions[2]));
+    UASSERT_EQ((int)OP_RET,   (int)uinstr_op(module.root_proto->instructions[2]));
+    UASSERT_EQ((uint8_t)1,    uinstr_a(module.root_proto->instructions[2]));
 
-    UASSERT_EQ((uint8_t)1,    module.max_reg);
+    UASSERT_EQ((uint8_t)1,    module.root_proto->max_reg);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
@@ -409,14 +409,14 @@ UTEST(emit_syncline_first_instruction_triggers_abs_line_checkpoint) {
     UAstNode n = {0};
     n.kind = AST_INT; n.u.i = 1; n.line = 10;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
-    UASSERT_EQ((size_t)2, module.instr_count);  /* LOADK ; RET */
+    UASSERT_EQ((size_t)2, module.root_proto->instr_count);  /* LOADK ; RET */
     /* First instruction has INT8_MIN sentinel delta (triggers abs_line lookup). */
-    UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
-    UASSERT_EQ((size_t)1, module.abs_line_count);
-    UASSERT_EQ((uint32_t)0,  module.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)10, module.abs_lines[0].line);
+    UASSERT_EQ((int8_t)-128, module.root_proto->line_deltas[0]);
+    UASSERT_EQ((size_t)1, module.root_proto->abs_line_count);
+    UASSERT_EQ((uint32_t)0,  module.root_proto->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, module.root_proto->abs_lines[0].line);
     /* Second instruction (RET) is on the same line, delta 0. */
-    UASSERT_EQ((int8_t)0, module.line_deltas[1]);
+    UASSERT_EQ((int8_t)0, module.root_proto->line_deltas[1]);
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -439,11 +439,11 @@ UTEST(emit_syncline_small_delta_between_statements_uses_delta_byte) {
 
     /* Two LOADKs and a RET.  First LOADK at line 1 — abs checkpoint.
        Second LOADK at line 3 — delta = +2 stored inline. */
-    UASSERT_EQ((size_t)3, module.instr_count);
-    UASSERT_EQ((int8_t)-128, module.line_deltas[0]);
-    UASSERT_EQ((int8_t)2,    module.line_deltas[1]);
-    UASSERT_EQ((int8_t)0,    module.line_deltas[2]);     /* RET shares line with last instr */
-    UASSERT_EQ((size_t)1, module.abs_line_count);
+    UASSERT_EQ((size_t)3, module.root_proto->instr_count);
+    UASSERT_EQ((int8_t)-128, module.root_proto->line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    module.root_proto->line_deltas[1]);
+    UASSERT_EQ((int8_t)0,    module.root_proto->line_deltas[2]);     /* RET shares line with last instr */
+    UASSERT_EQ((size_t)1, module.root_proto->abs_line_count);
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -464,13 +464,13 @@ UTEST(emit_syncline_overflow_triggers_new_abs_line_checkpoint) {
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, &b));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
-    UASSERT_EQ((size_t)2, module.abs_line_count);
-    UASSERT_EQ((uint32_t)1,   module.abs_lines[0].line);
-    UASSERT_EQ((uint32_t)500, module.abs_lines[1].line);
+    UASSERT_EQ((size_t)2, module.root_proto->abs_line_count);
+    UASSERT_EQ((uint32_t)1,   module.root_proto->abs_lines[0].line);
+    UASSERT_EQ((uint32_t)500, module.root_proto->abs_lines[1].line);
     /* pc=0 first abs_line; pc=1 second abs_line (second LOADK). */
-    UASSERT_EQ((uint32_t)0, module.abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)1, module.abs_lines[1].pc);
-    UASSERT_EQ((int8_t)-128, module.line_deltas[1]);        /* sentinel */
+    UASSERT_EQ((uint32_t)0, module.root_proto->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, module.root_proto->abs_lines[1].pc);
+    UASSERT_EQ((int8_t)-128, module.root_proto->line_deltas[1]);        /* sentinel */
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -610,8 +610,8 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, dst.const_count);
-    UASSERT_EQ((int64_t)1000, dst.constants[0].v.i);
+    UASSERT_EQ((size_t)1, dst.root_proto->const_count);
+    UASSERT_EQ((int64_t)1000, dst.root_proto->constants[0].v.i);
 
     free(buf);
     uarena_destroy(&arena);
@@ -669,36 +669,39 @@ UTEST(serialize_module_with_float_constant_round_trips) {
     /* Manually build a module with a UVAL_FLOAT constant and serialize/deserialize
        it to exercise the UVAL_FLOAT branches in module_wire_size and umodule_serialize. */
     UModule module = {0};
+    /* Task 11: allocate root_proto before accessing its fields. */
+    module.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(module.root_proto != NULL);
 
     /* Manually insert a UVAL_FLOAT constant (bypassing the emitter, which only
        produces INT constants at M1). */
-    module.constants = (UValue *)malloc(sizeof(UValue));
-    module.const_cap = 1;
-    module.const_count = 1;
-    module.constants[0].kind = (uint8_t)UVAL_FLOAT;
+    module.root_proto->constants = (UValue *)malloc(sizeof(UValue));
+    module.root_proto->const_cap = 1;
+    module.root_proto->const_count = 1;
+    module.root_proto->constants[0].kind = (uint8_t)UVAL_FLOAT;
     {
         int p;
-        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
+        for (p = 0; p < 7; p++) module.root_proto->constants[0]._pad[p] = 0;
     }
 #if URBI_FLOAT_TYPE == 8
-    module.constants[0].v.f = 2.718281828;
+    module.root_proto->constants[0].v.f = 2.718281828;
 #else
-    module.constants[0].v.f = 2.718f;
+    module.root_proto->constants[0].v.f = 2.718f;
 #endif
 
     /* Add a RET instruction and synclines so the module is valid. */
-    module.instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    module.instr_cap = 1;
-    module.instr_count = 1;
-    module.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    module.line_deltas = (int8_t *)malloc(sizeof(int8_t));
-    module.line_deltas[0] = (int8_t)-128;
-    module.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
-    module.abs_line_cap = 1;
-    module.abs_line_count = 1;
-    module.abs_lines[0].pc = 0;
-    module.abs_lines[0].line = 1;
-    module.max_reg = 0;
+    module.root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    module.root_proto->instr_cap = 1;
+    module.root_proto->instr_count = 1;
+    module.root_proto->instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    module.root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    module.root_proto->line_deltas[0] = (int8_t)-128;
+    module.root_proto->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    module.root_proto->abs_line_cap = 1;
+    module.root_proto->abs_line_count = 1;
+    module.root_proto->abs_lines[0].pc = 0;
+    module.root_proto->abs_lines[0].line = 1;
+    module.root_proto->max_reg = 0;
 
     ptrdiff_t need = umodule_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
@@ -711,8 +714,8 @@ UTEST(serialize_module_with_float_constant_round_trips) {
     char errmsg[128];
     UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
     UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, dst.const_count);
-    UASSERT_EQ((uint8_t)UVAL_FLOAT, dst.constants[0].kind);
+    UASSERT_EQ((size_t)1, dst.root_proto->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, dst.root_proto->constants[0].kind);
 
     /* Disassemble the float module — exercises the ";   K%zu = ?" fallback
        in the constant-pool dump (FLOAT is not UVAL_INT). */
@@ -730,6 +733,8 @@ UTEST(disassemble_module_with_move_instruction_shows_move) {
     /* OP_MOVE falls through to the default: case in uemit_disassemble,
        calling opname(OP_MOVE) — covers that branch in opname(). */
     UModule module = {0};
+    module.root_proto = (UProto *)calloc(1, sizeof(UProto));
+    UASSERT(module.root_proto != NULL);
     const int64_t consts[] = { 42 };
     const uint32_t instrs[] = {
         uinstr_enc_abx(OP_LOADK, 0, 0),         /* R0 = 42 */
@@ -737,28 +742,28 @@ UTEST(disassemble_module_with_move_instruction_shows_move) {
         uinstr_enc_abc(OP_RET, 1, 0, 0)
     };
     /* Build a module directly. */
-    module.constants  = (UValue *)malloc(sizeof(UValue));
-    module.const_cap  = 1; module.const_count = 1;
-    module.constants[0].kind = (uint8_t)UVAL_INT;
+    module.root_proto->constants  = (UValue *)malloc(sizeof(UValue));
+    module.root_proto->const_cap  = 1; module.root_proto->const_count = 1;
+    module.root_proto->constants[0].kind = (uint8_t)UVAL_INT;
     {
         int p;
-        for (p = 0; p < 7; p++) module.constants[0]._pad[p] = 0;
+        for (p = 0; p < 7; p++) module.root_proto->constants[0]._pad[p] = 0;
     }
-    module.constants[0].v.i = consts[0];
-    module.instructions = (uint32_t *)malloc(sizeof(instrs));
-    module.instr_cap = 3; module.instr_count = 3;
+    module.root_proto->constants[0].v.i = consts[0];
+    module.root_proto->instructions = (uint32_t *)malloc(sizeof(instrs));
+    module.root_proto->instr_cap = 3; module.root_proto->instr_count = 3;
     {
         int j;
-        for (j = 0; j < 3; j++) module.instructions[j] = instrs[j];
+        for (j = 0; j < 3; j++) module.root_proto->instructions[j] = instrs[j];
     }
-    module.line_deltas = (int8_t *)malloc(3);
-    module.line_deltas[0] = (int8_t)-128;
-    module.line_deltas[1] = 0;
-    module.line_deltas[2] = 0;
-    module.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
-    module.abs_line_cap = 1; module.abs_line_count = 1;
-    module.abs_lines[0].pc = 0; module.abs_lines[0].line = 1;
-    module.max_reg = 1;
+    module.root_proto->line_deltas = (int8_t *)malloc(3);
+    module.root_proto->line_deltas[0] = (int8_t)-128;
+    module.root_proto->line_deltas[1] = 0;
+    module.root_proto->line_deltas[2] = 0;
+    module.root_proto->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    module.root_proto->abs_line_cap = 1; module.root_proto->abs_line_count = 1;
+    module.root_proto->abs_lines[0].pc = 0; module.root_proto->abs_lines[0].line = 1;
+    module.root_proto->max_reg = 1;
 
     char buf[512];
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
@@ -788,10 +793,10 @@ UTEST(emit_syncline_negative_overflow_triggers_new_abs_line_checkpoint) {
 
     /* Both statements trigger abs_line checkpoints: first due to "first instruction",
        second due to delta overflow (|delta| > 127). */
-    UASSERT_EQ((size_t)2, module.abs_line_count);
-    UASSERT_EQ((uint32_t)500, module.abs_lines[0].line);
-    UASSERT_EQ((uint32_t)1,   module.abs_lines[1].line);
-    UASSERT_EQ((int8_t)-128, module.line_deltas[1]);  /* sentinel on second LOADK */
+    UASSERT_EQ((size_t)2, module.root_proto->abs_line_count);
+    UASSERT_EQ((uint32_t)500, module.root_proto->abs_lines[0].line);
+    UASSERT_EQ((uint32_t)1,   module.root_proto->abs_lines[1].line);
+    UASSERT_EQ((int8_t)-128, module.root_proto->line_deltas[1]);  /* sentinel on second LOADK */
     uarena_destroy(&arena);
     umodule_destroy(&module, NULL);
 urbi_vm_destroy(&vm);
@@ -902,8 +907,8 @@ UTEST(emit_var_decl_basic_no_op_move) {
     UASSERT_EQ(EMIT_OK, rc);
     /* Chunk-top path must emit SETSLOT (write to global object). */
     bool found_setslot = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT) {
             found_setslot = true;
             break;
         }
@@ -922,8 +927,8 @@ UTEST(emit_var_then_use_resolves_local) {
     UASSERT_EQ(EMIT_OK, rc);
     /* Chunk-top global read must emit GETSLOT (not MOVE from slot 0). */
     bool found_getslot = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_GETSLOT) {
             found_getslot = true;
             break;
         }
@@ -975,8 +980,8 @@ UTEST(emit_assign_to_existing_local) {
     UASSERT_EQ(EMIT_OK, rc);
     /* Both var-decl and assign emit OP_SETSLOT at chunk-top. */
     int setslot_count = 0;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT)
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT)
             setslot_count++;
     }
     UASSERT(setslot_count >= 2);
@@ -1002,12 +1007,12 @@ UTEST(emit_ast_bool_true_emits_loadbool_1_0) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
     /* Instructions: LOADBOOL R1 1 0 ; RET R1
      * (T73: chunk-top pre-reserves R0 for r_global_slot) */
-    UASSERT_EQ((size_t)2, module.instr_count);
-    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
-    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[0]));
-    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.instructions[1]));
+    UASSERT_EQ((size_t)2, module.root_proto->instr_count);
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_c(module.root_proto->instructions[0]));
+    UASSERT_EQ((int)OP_RET, (int)uinstr_op(module.root_proto->instructions[1]));
     uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
@@ -1017,8 +1022,8 @@ UTEST(emit_ast_bool_false_emits_loadbool_0_0) {
     UAstNode n = {0};
     n.kind = AST_BOOL; n.u.b = false; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
-    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[0]));  /* 0 = false */
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(module.root_proto->instructions[0]));  /* 0 = false */
     uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
@@ -1028,9 +1033,9 @@ UTEST(emit_ast_nil_emits_loadnil) {
     UAstNode n = {0};
     n.kind = AST_NIL; n.line = 1;
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
-    UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.instructions[0]));
+    UASSERT_EQ((int)OP_LOADNIL, (int)uinstr_op(module.root_proto->instructions[0]));
     /* T73: chunk-top pre-reserves R0; first temp is R1. */
-    UASSERT_EQ((uint8_t)1, uinstr_a(module.instructions[0]));
+    UASSERT_EQ((uint8_t)1, uinstr_a(module.root_proto->instructions[0]));
     uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
@@ -1046,23 +1051,23 @@ UTEST(emit_ast_compare_eq_emits_4_instruction_pattern) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &cmp));
     /* 4-instruction pattern + RET = 5 instructions total */
     /* LOADK, LOADK, EQ, JMP, LOADBOOL(true+skip), LOADBOOL(false), RET */
-    UASSERT(module.instr_count >= 7);
+    UASSERT(module.root_proto->instr_count >= 7);
     /* First two are LOADK for lhs and rhs. */
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[1]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[1]));
     /* Third is OP_EQ with a_bit=0 for CMP_EQ (skip on equal → produce true). */
-    UASSERT_EQ((int)OP_EQ, (int)uinstr_op(module.instructions[2]));
-    UASSERT_EQ((uint8_t)0, uinstr_a(module.instructions[2]));
+    UASSERT_EQ((int)OP_EQ, (int)uinstr_op(module.root_proto->instructions[2]));
+    UASSERT_EQ((uint8_t)0, uinstr_a(module.root_proto->instructions[2]));
     /* Fourth is OP_JMP. */
-    UASSERT_EQ((int)OP_JMP, (int)uinstr_op(module.instructions[3]));
+    UASSERT_EQ((int)OP_JMP, (int)uinstr_op(module.root_proto->instructions[3]));
     /* Fifth: LOADBOOL rb, 1, 1 (skip next on true). */
-    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[4]));
-    UASSERT_EQ((uint8_t)1, uinstr_b(module.instructions[4]));
-    UASSERT_EQ((uint8_t)1, uinstr_c(module.instructions[4]));
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.root_proto->instructions[4]));
+    UASSERT_EQ((uint8_t)1, uinstr_b(module.root_proto->instructions[4]));
+    UASSERT_EQ((uint8_t)1, uinstr_c(module.root_proto->instructions[4]));
     /* Sixth: LOADBOOL rb, 0, 0 (false arm). */
-    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.instructions[5]));
-    UASSERT_EQ((uint8_t)0, uinstr_b(module.instructions[5]));
-    UASSERT_EQ((uint8_t)0, uinstr_c(module.instructions[5]));
+    UASSERT_EQ((int)OP_LOADBOOL, (int)uinstr_op(module.root_proto->instructions[5]));
+    UASSERT_EQ((uint8_t)0, uinstr_b(module.root_proto->instructions[5]));
+    UASSERT_EQ((uint8_t)0, uinstr_c(module.root_proto->instructions[5]));
     uarena_destroy(&arena); umodule_destroy(&module, NULL); urbi_vm_destroy(&vm);
 }
 
@@ -1082,18 +1087,18 @@ UTEST(emit_if_then_only) {
     UASSERT_EQ(EMIT_OK, rc);
     /* Must have TEST instruction. */
     bool found_test = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_TEST) {
             found_test = true;
             /* C=1 means skip when truthy. */
-            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.root_proto->instructions[i]));
         }
     }
     UASSERT(found_test);
     /* Must have LOADNIL for the no-else nil path. */
     bool found_nil = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_LOADNIL) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_LOADNIL) {
             found_nil = true;
         }
     }
@@ -1117,21 +1122,21 @@ UTEST(emit_if_then_else) {
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
     bool found_test = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_TEST) {
             found_test = true;
-            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.root_proto->instructions[i]));
         }
     }
     UASSERT(found_test);
     /* No LOADNIL: else provides the alternative value. */
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        UASSERT((int)uinstr_op(c.module.instructions[i]) != (int)OP_LOADNIL);
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        UASSERT((int)uinstr_op(c.module.root_proto->instructions[i]) != (int)OP_LOADNIL);
     }
     /* Two JMP instructions: one for the cond branch, one to skip else. */
     int jmp_count = 0;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_JMP) jmp_count++;
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_JMP) jmp_count++;
     }
     UASSERT_EQ(2, jmp_count);
     emit_ctx_destroy(&c);
@@ -1153,16 +1158,16 @@ UTEST(emit_while_basic) {
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
     bool found_test = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_TEST) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_TEST) {
             found_test = true;
-            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.instructions[i]));
+            UASSERT_EQ((uint8_t)1, uinstr_c(c.module.root_proto->instructions[i]));
         }
     }
     UASSERT(found_test);
     int jmp_count = 0;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_JMP) jmp_count++;
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_JMP) jmp_count++;
     }
     /* Two JMPs: one exit-branch, one back-edge. */
     UASSERT_EQ(2, jmp_count);
@@ -1178,9 +1183,9 @@ UTEST(emit_while_with_assign) {
     UASSERT_EQ(EMIT_OK, rc);
     /* Must have at least one JMP with a negative offset (the back-edge). */
     bool found_back_edge = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_JMP) {
-            int offset = (int)uinstr_bx(c.module.instructions[i]) - 32768;
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_JMP) {
+            int offset = (int)uinstr_bx(c.module.root_proto->instructions[i]) - 32768;
             if (offset < 0) { found_back_edge = true; break; }
         }
     }
@@ -1193,10 +1198,13 @@ UTEST(disassemble_call_format) {
      * B=3 → 2 args (B-1); C=2 → 1 result (C-1).
      * Assert disassembly contains "CALL R0, 2 args, 1 results". */
     UModule m = {0};
-    m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
-    m.instr_cap   = 1;
-    m.instr_count = 1;
-    m.instructions[0] = uinstr_enc_abc(OP_CALL, 0U, 3U, 2U);
+    /* Task 11: all chunk-top data lives on root_proto. */
+    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
+    rp->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    rp->instr_cap   = 1;
+    rp->instr_count = 1;
+    rp->instructions[0] = uinstr_enc_abc(OP_CALL, 0U, 3U, 2U);
+    m.root_proto = rp;
 
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
@@ -1210,10 +1218,13 @@ UTEST(disassemble_jmp_signed_offset) {
      * Signed offset = 32760 - 32768 = -8.
      * Assert disassembly contains "JMP -8". */
     UModule m = {0};
-    m.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
-    m.instr_cap   = 1;
-    m.instr_count = 1;
-    m.instructions[0] = uinstr_enc_abx(OP_JMP, 0U, (uint16_t)32760U);
+    /* Task 11: all chunk-top data lives on root_proto. */
+    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
+    rp->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    rp->instr_cap   = 1;
+    rp->instr_count = 1;
+    rp->instructions[0] = uinstr_enc_abx(OP_JMP, 0U, (uint16_t)32760U);
+    m.root_proto = rp;
 
     char buf[256];
     size_t n = uemit_disassemble(&m, buf, sizeof buf);
@@ -1237,11 +1248,11 @@ UTEST(disassemble_closure_with_prelude) {
     emit_ctx_init(&c, "function() { var x = 1; var y = 2; function() { x + y } }");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT(c.module.nested_count >= 2U);
+    UASSERT(c.module.root_proto->nested_count >= 2U);
     /* The outer proto (nested[0]) captures nothing from the chunk top. */
-    UASSERT(c.module.nested[0]->nupvals == 0U);
+    UASSERT(c.module.root_proto->nested[0]->nupvals == 0U);
     /* The inner proto (nested[1]) captures x and y as 2 upvalues. */
-    UASSERT(c.module.nested[1]->nupvals == 2U);
+    UASSERT(c.module.root_proto->nested[1]->nupvals == 2U);
 
     /* Root module disassembly must show at least one instruction and
      * a CLOSURE P0 entry for the outer function proto. */
@@ -1255,7 +1266,7 @@ UTEST(disassemble_closure_with_prelude) {
 /* =========================================================================
  * M3 row 7 opcode encoder round-trip tests.
  * Each test encodes one instruction via the public helper, then decodes the
- * word from module.instructions[0] and verifies all fields.
+ * word from module.root_proto->instructions[0] and verifies all fields.
  * ========================================================================= */
 
 UTEST(emit_row7_throw_round_trip) {
@@ -1267,8 +1278,8 @@ UTEST(emit_row7_throw_round_trip) {
     uemit_throw(&e, /*reg_value=*/5, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)5,    uinstr_a(w));
     UASSERT_EQ((uint16_t)0,   uinstr_bx(w));
@@ -1285,8 +1296,8 @@ UTEST(emit_row7_tag_stop_round_trip) {
     uemit_tag_stop(&e, /*reg_tag=*/3, /*reg_value=*/7, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_TAG_STOP, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)3, uinstr_a(w));
     UASSERT_EQ((uint8_t)7, uinstr_b(w));
@@ -1305,8 +1316,8 @@ UTEST(emit_row7_try_begin_round_trip) {
     uemit_try_begin(&e, /*flags=*/3, /*handler_pc=*/1000, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_TRY_BEGIN,   (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)3,          uinstr_a(w));
     UASSERT_EQ((uint16_t)1000,      uinstr_bx(w));
@@ -1323,8 +1334,8 @@ UTEST(emit_row7_try_end_round_trip) {
     uemit_try_end(&e, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_TRY_END, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)0, uinstr_a(w));
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
@@ -1343,8 +1354,8 @@ UTEST(emit_row7_push_tag_round_trip) {
     uemit_push_tag(&e, /*reg_tag=*/2, /*flags=*/5, /*onleave_pc=*/300, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_PUSH_TAG, (int)uinstr_op(w));
     /* A = (flags<<4)|(reg_tag&0xF) = (5<<4)|2 = 0x52 = 82 */
     uint8_t a = uinstr_a(w);
@@ -1364,8 +1375,8 @@ UTEST(emit_row7_pop_tag_round_trip) {
     uemit_pop_tag(&e, /*reg_tag=*/4, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_POP_TAG, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)4, uinstr_a(w));
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
@@ -1383,8 +1394,8 @@ UTEST(emit_row7_push_frame_guard_round_trip) {
     uemit_push_frame_guard(&e, /*register_base=*/8, /*register_count=*/6, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_PUSH_FRAME_GUARD, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)8, uinstr_a(w));
     UASSERT_EQ((uint8_t)6, uinstr_b(w));
@@ -1402,8 +1413,8 @@ UTEST(emit_row7_resume_round_trip) {
     uemit_resume(&e, /*reg_state=*/9, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_RESUME, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)9, uinstr_a(w));
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
@@ -1422,8 +1433,8 @@ UTEST(emit_t10_load_catch_value_round_trip) {
     uemit_load_catch_value(&e, /*reg=*/5, /*line=*/1);
 
     UASSERT_EQ(EMIT_OK, e.error);
-    UASSERT_EQ((size_t)1, module.instr_count);
-    uint32_t w = module.instructions[0];
+    UASSERT_EQ((size_t)1, module.root_proto->instr_count);
+    uint32_t w = module.root_proto->instructions[0];
     UASSERT_EQ((int)OP_LOAD_CATCH_VALUE, (int)uinstr_op(w));
     UASSERT_EQ((uint8_t)5, uinstr_a(w));
     UASSERT_EQ((uint8_t)0, uinstr_b(w));
@@ -1453,16 +1464,16 @@ UTEST(emit_t10_throw_emits_op_throw) {
     /* Expect at least: LOADK R0 K0 ; THROW R0 ; LOADNIL R1
      * Scan backwards for OP_THROW (throw is followed by LOADNIL for the
      * statement result register, so it is not the final instruction). */
-    UASSERT(module.instr_count >= 2);
+    UASSERT(module.root_proto->instr_count >= 2);
     int throw_idx = -1;
-    for (int i = (int)module.instr_count - 1; i >= 0; i--) {
-        if ((int)uinstr_op(module.instructions[i]) == (int)OP_THROW) {
+    for (int i = (int)module.root_proto->instr_count - 1; i >= 0; i--) {
+        if ((int)uinstr_op(module.root_proto->instructions[i]) == (int)OP_THROW) {
             throw_idx = i;
             break;
         }
     }
     UASSERT(throw_idx >= 0);
-    uint32_t w = module.instructions[(size_t)throw_idx];
+    uint32_t w = module.root_proto->instructions[(size_t)throw_idx];
     UASSERT_EQ((int)OP_THROW, (int)uinstr_op(w));
     /* A = destination register of the value expression (R1 at chunk-top).
      * T73: chunk-top pre-reserves R0 for r_global_slot; first temp starts at R1. */
@@ -1492,8 +1503,8 @@ UTEST(emit_member_get_emits_op_getslot_with_ic_index_zero) {
 
     /* Verify at least one OP_GETSLOT is emitted. */
     bool found_getslot = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_GETSLOT) {
             found_getslot = true;
             break;
         }
@@ -1536,8 +1547,8 @@ UTEST(emit_member_set_emits_op_setslot_with_ic_index_zero) {
 
     /* At least one OP_SETSLOT must be emitted. */
     bool found_setslot = false;
-    for (size_t i = 0; i < c.module.instr_count; i++) {
-        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
+    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
+        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT) {
             found_setslot = true;
             break;
         }
@@ -1574,13 +1585,13 @@ UTEST(emit_top_level_member_get_populates_module_ic_count) {
     emit_ctx_init(&c, "var o = nil; o.x");
     UASSERT_EQ(EMIT_OK, emit_ctx_run(&c));
 
-    UASSERT(c.module.ic_count >= 1U);
-    UASSERT(c.module.ic_names != NULL);
+    UASSERT(c.module.root_proto->ic_count >= 1U);
+    UASSERT(c.module.root_proto->ic_names != NULL);
     /* "x" must be present somewhere in the IC name table. */
     const char *xn = ustr_intern(&c.vm, "x", 1);
     bool found_x = false;
-    for (uint16_t i = 0; i < c.module.ic_count; i++) {
-        if (c.module.ic_names[i] == (USymbol *)xn) {
+    for (uint16_t i = 0; i < c.module.root_proto->ic_count; i++) {
+        if (c.module.root_proto->ic_names[i] == (USymbol *)xn) {
             found_x = true;
             break;
         }

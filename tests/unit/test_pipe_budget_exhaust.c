@@ -82,11 +82,12 @@ budget_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
         for (i = 0; i < stack_bytes; i++) p[i] = 0;
     }
     s->R          = s->stack;
-    s->pc         = module->instructions;
-    s->pc_base    = module->instructions;
-    s->cur_consts = module->constants;
     s->module     = module;
-    umodule_refcount_inc(module, vm);  /* v0.8.0: pair with ustrand_destroy dec */
+    s->root_proto = module->root_proto;  /* Task 11: all chunk-top data on root_proto */
+    s->pc         = s->root_proto->instructions;
+    s->pc_base    = s->root_proto->instructions;
+    s->cur_consts = s->root_proto->constants;
+    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     s->module_instance = urbi_module_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;
