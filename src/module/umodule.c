@@ -233,11 +233,11 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
     proto->alloc_fn = module->alloc_fn;
     proto->alloc_ud = module->alloc_ud;
 
-    /* Piece A: nested[] slot itself counts as one reference.  Discharged
-     * when the slot is nulled (strand_closure_unlink) or when the module
-     * is destroyed (umodule_destroy's walk decrements before free/rescue).
-     * Closures bump separately at vm_alloc_closure. */
-    proto->refcount = 1U;
+    /* v0.8.1 Variant B Option (a) per spec §3.5: slot-implicit refcount dropped.
+     * The nested[] slot's reachability is structural (root_proto owns nested[]);
+     * no independent refcount needed.  Closures bump root_proto.refcount via
+     * uproto_root_of() at vm_alloc_closure; that is the only accounting needed. */
+    proto->refcount = 0U;
 
     module->nested[module->nested_count++] = proto;
     return proto;
@@ -1322,9 +1322,20 @@ umodule_destroy(UModule *module, struct UVM *vm)
             module->ic_count     = 0;
             /* source_name stays on the module shell (not aliased to rp). */
         } else {
-            /* No vm available — fall back to deferred-destroy flag so the
-             * module is not leaked silently. */
+            /* No vm available — cannot rescue root_proto onto vm->rescued_protos
+             * immediately.  Set destroy_requested for the strand-based deferred
+             * path (umodule_strand_refcount_dec).  Also mark root_proto with a
+             * self-link sentinel (next_alloc == root_proto itself) so that
+             * urbi_vm_destroy's stdlib_closures sweep can detect that this
+             * root_proto needs cleanup when its refcount hits 0.  The sweep
+             * will promote it to vm->rescued_protos at that point.
+             *
+             * Self-link sentinel is unambiguous: while root_proto is alive
+             * inside a UModule, next_alloc is NULL; on rescued_protos or
+             * stdlib_protos, next_alloc points to the next list entry, never
+             * to itself. */
             module->destroy_requested = true;
+            module->root_proto->next_alloc = module->root_proto;
             return;
         }
     }

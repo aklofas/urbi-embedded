@@ -54,21 +54,13 @@ strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
         if (*pp == cl) {
             *pp = cl->next_alloc;
             cl->next_alloc = NULL;
-            /* Detach proto from module->nested[] so umodule_destroy skips it.
-             * cl->proto == module->nested[k] for some k; null it out.
-             * Graceful if not found (e.g. proto is the root chunk, not nested). */
-            if (s->root_proto != NULL && cl->proto != NULL) {
-                for (k = 0; k < s->root_proto->nested_count; k++) {
-                    if (s->root_proto->nested[k] == cl->proto) {
-                        /* Piece A: detaching the slot discharges its
-                         * implicit refcount; the watcher now owns the
-                         * proto via cl->proto. */
-                        umodule_proto_refcount_dec(s->root_proto->nested[k]);
-                        s->root_proto->nested[k] = NULL;
-                        break;
-                    }
-                }
-            }
+            /* v0.8.1 Variant B Option (a) per spec §3.5: no slot-implicit
+             * refcount to discharge; no ownership transfer for the proto struct.
+             * Under Variant B the nested proto's lifetime is the module's —
+             * it stays in root_proto->nested[k] until module/rescue destroy.
+             * Multiple watcher firings create closures from the same nested proto;
+             * NULLing the slot would orphan the proto for subsequent firings.
+             * The slot NULL-out is intentionally OMITTED here. */
             return 1;   /* found and removed */
         }
         pp = &(*pp)->next_alloc;

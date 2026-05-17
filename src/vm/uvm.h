@@ -153,12 +153,14 @@ typedef struct UOpOverloadIC {
 
 /* --- Phase 5 (Gap #1): stolen nested-array bookkeeping ---
  *
- * When urbi_steal_repl_protos rescues a closure from a REPL-session
- * UModule that is about to be destroyed, it steals the entire nested[]
- * array by setting module->nested = NULL (so umodule_destroy skips it)
- * and threading the array pointer onto vm->stdlib_nested_arrays via this
- * node type.  The stolen array remains valid for the lifetime of any
- * surviving UClosure whose origin_nested points at it.
+ * Historical (pre-v0.8.1): urbi_steal_repl_protos rescued closures from
+ * REPL-session UModules by stealing the nested[] array pointer and threading
+ * it onto vm->stdlib_nested_arrays via this node type.
+ *
+ * v0.8.1 Variant B replaces the per-nested steal with a whole-root_proto
+ * rescue path (see umodule.c umodule_destroy / vm->rescued_protos).
+ * urbi_steal_repl_protos is deleted; the UNestedArrayNode list is kept for
+ * any pre-v0.8.1 payloads that may be on the list at vm_destroy time.
  *
  * urbi_vm_destroy walks the list and frees each array via the stored
  * alloc_fn/alloc_ud before the proto structs in stdlib_protos are freed. */
@@ -584,12 +586,12 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *  via R[A+1] under OP_CALL's method flag, not a global side channel.) */
     UClosure   *stdlib_closures;
     UUpvalCell *stdlib_upvalues;
-    /* stdlib_protos: linked list of UProto objects stolen from REPL-session
-     * UModules by urbi_steal_repl_protos before umodule_destroy.  Stolen
-     * protos are owned by the VM and freed at urbi_vm_destroy.  Threaded via
-     * UProto.next_alloc (runtime-only field; not serialized).  NULL until the
-     * first REPL session produces a realm-global closure (the common case for
-     * embedded one-shot runs with no REPL). */
+    /* stdlib_protos: linked list of UProto objects rescued from REPL-session
+     * UModules.  Under the pre-v0.8.1 path (urbi_steal_repl_protos, now deleted)
+     * protos were stolen per-nested; under v0.8.1 Variant B, whole root_protos
+     * are rescued to vm->rescued_protos instead.  stdlib_protos is retained for
+     * any legacy payloads.  Threaded via UProto.next_alloc (runtime-only, not
+     * serialized).  NULL until a REPL session produces a realm-global closure. */
     struct UProto      *stdlib_protos;
     /* stdlib_nested_arrays: list of UNestedArrayNode records tracking nested[]
      * arrays stolen from REPL-session UModules.  Each node stores the array

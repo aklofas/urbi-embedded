@@ -518,6 +518,21 @@ typedef enum {
 
 /* --- Proto helpers --- */
 
+/* uproto_root_of: returns the canonical-refcount target for proto.
+ * For root protos: returns proto itself (proto->root == NULL).
+ * For nested protos: returns the owning module's root_proto via back-pointer.
+ * NULL-safe (returns NULL if proto is NULL).
+ *
+ * v0.8.1 Variant B Phase 2: all closure-related refcount inc/dec sites
+ * route through this helper to ensure bumps land on root_proto.refcount
+ * (the single canonical counter for the whole module grain). */
+static inline UProto *
+uproto_root_of(UProto *proto)
+{
+    if (!proto) return NULL;
+    return proto->root ? proto->root : proto;
+}
+
 /* Refcount helpers — declared inline in the header so OP_CLOSURE's hot
  * path stays cheap.  See UProto.refcount above for the design. */
 static inline void

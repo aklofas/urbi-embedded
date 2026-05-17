@@ -69,10 +69,11 @@ struct UClosure {
      * s->module->nested (which points at the TOP-LEVEL session module, not
      * the callee's originating module).
      *
-     * Lifetime: urbi_steal_repl_protos transfers ownership of the nested[]
-     * array from the session UModule to vm->stdlib_nested_arrays before
-     * umodule_destroy runs, so the array remains valid for the closure's
-     * entire lifetime.  urbi_vm_destroy frees all stolen arrays.
+     * Lifetime: v0.8.1 Variant B rescues the whole root_proto (which carries
+     * the nested[] array) to vm->rescued_protos when umodule_destroy is called
+     * while root_proto->refcount > 0 (surviving closures).  The array remains
+     * valid until vm_destroy frees all rescued root_protos.  The old
+     * urbi_steal_repl_protos (per-nested steal) is deleted at v0.8.1.
      *
      * NULL for native-fn closures and closures whose module has no nested
      * protos (nupvals == 0 closures that don't create inner functions).

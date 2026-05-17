@@ -43,9 +43,11 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
     cl->cell.type_tag = UTYPE_CLOSURE;
     cl->cell.gc_byte  = vm->current_white;
     cl->proto      = proto;
-    /* Piece A — bump proto refcount so module_destroy can rescue this
-     * proto if the closure outlives its compiling module. */
-    umodule_proto_refcount_inc(proto);
+    /* v0.8.1 Variant B Phase 2: bump root_proto.refcount via uproto_root_of()
+     * so the single canonical counter accumulates all closure binds.
+     * For a nested proto this lands on proto->root (the module's root_proto);
+     * for a root proto (native stdlib closures) it lands on proto itself. */
+    umodule_proto_refcount_inc(uproto_root_of(proto));
     cl->nupvals    = nup;
     cl->next_alloc = *list_head;
     *list_head     = cl;

@@ -477,11 +477,37 @@ void urbi_vm_destroy(UVM *vm) {
     /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
      * registered by urbi_native_closure_create AND user closures migrated
      * from strand closure_lists at run exit, see uvm_run.c).  All threaded
-     * via next_alloc on a single vm->stdlib_closures list. */
+     * via next_alloc on a single vm->stdlib_closures list.
+     *
+     * v0.8.1 Variant B Phase 2 ORDERING INVARIANT (spec §3.7):
+     * This sweep MUST run BEFORE the vm->rescued_protos sweep below.
+     * Each closure decs its proto via uproto_root_of() — that dereferences
+     * cl->proto->root (back-pointer into a root_proto).  The root_proto must
+     * still be alive at that point.  Rescued root_protos stay alive until the
+     * rescued_protos sweep frees them.  Reordering causes UAF. */
     if (vm->alloc_fn != NULL) {
         UClosure *cl = vm->stdlib_closures;
         while (cl != NULL) {
             UClosure *next = cl->next_alloc;
+            /* v0.8.1: dec root_proto.refcount before freeing the closure.
+             * The root_proto is still alive (either held by a live UModule
+             * or on the rescued_protos list).  Safe per the ordering invariant
+             * documented above. */
+            if (cl->proto != NULL) {
+                UProto *rp = uproto_root_of(cl->proto);
+                umodule_proto_refcount_dec(rp);
+                /* Self-link sentinel: if umodule_destroy was called with vm=NULL
+                 * while refcount was > 0, root_proto->next_alloc was set to
+                 * root_proto itself (unambiguous sentinel; see umodule.c).
+                 * When the last closure ref drops refcount to 0, promote the
+                 * root_proto to rescued_protos so the sweep below frees it.
+                 * This avoids a struct addition while ensuring vm=NULL destroy
+                 * paths are clean under ASan. */
+                if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
+                    rp->next_alloc     = vm->rescued_protos;
+                    vm->rescued_protos = rp;
+                }
+            }
             vm->alloc_fn(cl, 0, vm->alloc_ud);
             cl = next;
         }
@@ -514,12 +540,12 @@ void urbi_vm_destroy(UVM *vm) {
             vm->stdlib_module = NULL;
         }
 
-        /* Phase 5 (Gap #1): free stolen REPL UProto objects + v0.7.3 Piece A:
-         * rescued protos from the umodule_destroy(stdlib_module) above.  Original
-         * stolen-REPL-proto path: detached from their originating REPL-session
-         * UModules by urbi_steal_repl_protos in urbi_repl_eval (uchunk.c) before
-         * the module was destroyed, keeping their instruction buffers alive for
-         * closures on vm->stdlib_closures.  The stdlib_closures sweep above
+        /* Phase 5 (Gap #1): free UProto objects on vm->stdlib_protos.
+         * v0.8.1: urbi_steal_repl_protos (which populated this list) is deleted;
+         * the Variant B whole-root_proto rescue path (vm->rescued_protos) handles
+         * the REPL case instead.  stdlib_protos is swept for any legacy payloads.
+         * Also frees rescued protos from the umodule_destroy(stdlib_module) above
+         * that had surviving per-nested refs (pre-v0.8.1 path).  The stdlib_closures sweep above
          * has already freed the UClosure structs that referenced these protos;
          * it is now safe to free the protos and their owned buffers. */
         {

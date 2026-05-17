@@ -110,17 +110,37 @@ pool_free(struct UVM *vm, UWatcher *w)
      * shared nested[] entry inside a multi-invocation callee) from
      * dereferencing a freed proto.  Installs at frame_count > 0 return 0
      * and leave both cl and proto with their original owners. */
+    /* Helper macro: dec root_proto.refcount and, if refcount hits 0 with
+     * the self-link sentinel set (umodule_destroy called with vm=NULL while
+     * refcount was > 0), promote root_proto to vm->rescued_protos so the
+     * vm_destroy rescued_protos sweep can free it.
+     *
+     * The self-link sentinel (rp->next_alloc == rp) is set in umodule.c
+     * umodule_destroy's vm=NULL branch when root_proto->refcount > 0.
+     * It is unambiguous: while root_proto is alive inside a UModule its
+     * next_alloc is NULL; on rescued_protos or stdlib_protos it points to
+     * the next list entry, never to itself. */
+#define UPROTO_DEC_AND_MAYBE_RESCUE(cl_field) \
+    do { \
+        UProto *_rp = uproto_root_of((cl_field)->proto); \
+        umodule_proto_refcount_dec(_rp); \
+        if (_rp != NULL && _rp->refcount == 0U && _rp->next_alloc == _rp) { \
+            _rp->next_alloc     = vm->rescued_protos; \
+            vm->rescued_protos  = _rp; \
+        } \
+    } while (0)
+
     if ((w->flags & URBI_WATCHER_OWNS_COND) && w->condition != NULL) {
         if (w->condition->proto != NULL) {
-            /* Piece A: drop our ref; free only when no other closure (or
-             * stdlib_protos entry) still references the proto AND it has
-             * been orphaned from any module's nested[]. */
-            umodule_proto_refcount_dec(w->condition->proto);
-            if (w->condition->proto->refcount == 0U) {
-                umodule_destroy_proto_buffers(w->condition->proto,
-                                              vm->alloc_fn, vm->alloc_ud);
-                vm->alloc_fn(w->condition->proto, 0, vm->alloc_ud);
-            }
+            /* v0.8.1 Variant B Phase 2: dec root_proto.refcount via uproto_root_of.
+             * The nested proto struct itself is NOT freed here.  Under Variant B,
+             * the nested proto's lifetime is the module's — it stays in
+             * root_proto->nested[] until module/rescue destroy walks and frees it.
+             * Multiple watcher firings share the same nested proto; freeing it here
+             * would cause UAF on the next firing's OP_CLOSURE read.
+             * If root_proto was destroyed with vm=NULL (self-link sentinel), promote
+             * to rescued_protos so vm_destroy can free it. */
+            UPROTO_DEC_AND_MAYBE_RESCUE(w->condition);
         }
         vm->alloc_fn(w->condition, 0, vm->alloc_ud);
         w->condition = NULL;
@@ -128,15 +148,8 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
         if (w->body->proto != NULL) {
-            /* Piece A: drop our ref; free only when no other closure (or
-             * stdlib_protos entry) still references the proto AND it has
-             * been orphaned from any module's nested[]. */
-            umodule_proto_refcount_dec(w->body->proto);
-            if (w->body->proto->refcount == 0U) {
-                umodule_destroy_proto_buffers(w->body->proto,
-                                              vm->alloc_fn, vm->alloc_ud);
-                vm->alloc_fn(w->body->proto, 0, vm->alloc_ud);
-            }
+            /* v0.8.1 Variant B Phase 2: same as OWNS_COND above. */
+            UPROTO_DEC_AND_MAYBE_RESCUE(w->body);
         }
         vm->alloc_fn(w->body, 0, vm->alloc_ud);
         w->body = NULL;
@@ -144,20 +157,14 @@ pool_free(struct UVM *vm, UWatcher *w)
     }
     if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
         if (w->onleave->proto != NULL) {
-            /* Piece A: drop our ref; free only when no other closure (or
-             * stdlib_protos entry) still references the proto AND it has
-             * been orphaned from any module's nested[]. */
-            umodule_proto_refcount_dec(w->onleave->proto);
-            if (w->onleave->proto->refcount == 0U) {
-                umodule_destroy_proto_buffers(w->onleave->proto,
-                                              vm->alloc_fn, vm->alloc_ud);
-                vm->alloc_fn(w->onleave->proto, 0, vm->alloc_ud);
-            }
+            /* v0.8.1 Variant B Phase 2: same as OWNS_COND above. */
+            UPROTO_DEC_AND_MAYBE_RESCUE(w->onleave);
         }
         vm->alloc_fn(w->onleave, 0, vm->alloc_ud);
         w->onleave = NULL;
         w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_ONLEAVE);
     }
+#undef UPROTO_DEC_AND_MAYBE_RESCUE
 
     /* Clear URBI_WATCHER_ACTIVE so a slab walk (uwatcher_pool_destroy,
      * WATCH-002 v0.5.7) can distinguish allocated-but-orphaned slots from
