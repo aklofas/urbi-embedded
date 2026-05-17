@@ -1,17 +1,28 @@
-# Milestone: M3
-# Covers: detached runners (','  separator) reading and writing shared environment;
-#         fire-and-forget strand sees outer variable at fork time and after write.
-# defer-to: M5 (chk runner needs urbi_step driver path for ',' separator)
+# Milestone: M3 (activated v0.8.0 — persistent loader strand)
+# Covers: detached runner sharing environment via ','; child reads and
+#         writes the outer var.
 #
-# Reason:
-#   ',' (OP_FORK_DETACH) requires the realm-managed scheduler path; not available
-#   in the urbi_vm_run REPL (realm == NULL).  See tests/chk/separator/comma_amp_unsupported.chk.
-#   Cross-strand shared-environment semantics (§7.1 shared-frame) are additionally
-#   deferred to M5 design-risks-7 resolution.
-#
-# Original urbiscript (activate at M5 with urbi_step chk driver):
-# # { var x = 0; { x.print() }, x.print() };
-# # [00000001] 0
-# # [00000002] 0
-# # { var x = 0; { x = 42 }, sleep(100ms); x.print() };
-# # [00000003] 42
+# v1.0 adaptation: sleep() is not registered at this milestone (deferred T43);
+# timing-dependent output ordering from the legacy fixture is replaced by
+# cross-step observation.  The detached arm runs between REPL steps, so its
+# writes are visible on the next input line.  Realm-qualified slot access is
+# used because block-in-fork ({...},) does not parse (parse_expression does
+# not accept LBRACE as a prefix).
+
+# Read test: detached arm reads x=0 and records it (detached_saw = x+100=100);
+# main arm also reads x=0.  After the step detached_saw is 100.
+var x = 0; var detached_saw = 0
+(Realm.detached_saw = Realm.x + 100) , Realm.x
+Realm.detached_saw
+[00000000] 0
+[00000001] 0
+[00000002] 100
+
+# Write test: detached arm writes x2=42; main arm reads x2=0 (not yet written);
+# after main yields the detached arm runs and x2 becomes 42.
+var x2 = 0
+(Realm.x2 = 42) , Realm.x2
+Realm.x2
+[00000003] 0
+[00000004] 0
+[00000005] 42

@@ -1,18 +1,22 @@
-# Milestone: M3
+# Milestone: M3 (activated v0.8.0 — persistent loader strand)
 # Covers: ',' separator fire-and-forget; detached strand runs concurrently
-#         with main strand; timing interleaving via sleep.
-# defer-to: M5 (chk runner needs urbi_step driver path for ',' separator)
+#         with main strand.
 #
-# Reason:
-#   ',' (OP_FORK_DETACH) fires a detached strand.  The chk runner uses the
-#   urbi_vm_run REPL path (realm == NULL); OP_FORK_DETACH produces "TypeError:
-#   requires urbi_step driver" in that context (see comma_amp_unsupported.chk).
-#   Timing-based ordering (sleep interleave) additionally requires the step
-#   driver to advance time and schedule strands.
+# Trailing comma (42,) is the no-crash regression from the legacy fixture
+# (originally "this used to segfault").  Live concurrency test demonstrates
+# fire-and-forget: the detached arm writes x=1 AFTER the main arm reads x=0,
+# so the main result is x+10=10; the write becomes visible on the next step.
 #
-# Original urbiscript (activate at M5 with urbi_step chk driver):
-# # 42,
-# # {sleep(200ms); echo("bar")}, sleep(100ms); echo("foo");
-# # [00000001] *** foo
-# # [00000002] *** bar
-# # sleep(200ms);
+# sleep() / echo() are not registered at this milestone (deferred T43); the
+# timing-ordering test from the legacy fixture is replaced by cross-step
+# observation.
+
+42,
+[00000000] 42
+
+var x = 0
+(Realm.x = 1) , (Realm.x + 10)
+Realm.x
+[00000001] 0
+[00000002] 10
+[00000003] 1
