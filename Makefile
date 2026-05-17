@@ -66,6 +66,12 @@ $(LIBURBI_AUX): $(AUX_OBJS)
 
 aux: $(LIBURBI_AUX)
 
+# Core archive without aux. Aux is hosted-only (uses <stdio.h>, etc.);
+# cross-compile freestanding targets build `core` instead of `all` because
+# bare-metal toolchains (e.g. Ubuntu's gcc-riscv64-unknown-elf) may not
+# ship the libc headers aux depends on.
+core: $(LIB)
+
 $(BUILDDIR)/src/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
@@ -708,7 +714,7 @@ cross-arm:
 		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
-		all
+		core
 
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
@@ -717,7 +723,7 @@ cross-riscv:
 		        -DURBI_FLOAT_TYPE=4 \
 		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
-		all
+		core
 
 # T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
 # Used by `make test-freestanding` (T18) to verify the freestanding subset
@@ -743,7 +749,7 @@ cross-arm-bytecode-only:
 		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=arm-none-eabi-ar \
-		all
+		core
 
 cross-riscv-bytecode-only:
 	$(MAKE) URBI_BYTECODE_ONLY=1 \
@@ -754,7 +760,7 @@ cross-riscv-bytecode-only:
 		        -DURBI_FLOAT_TYPE=4 \
 		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
-		all
+		core
 
 # T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
 # Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
@@ -776,7 +782,7 @@ cross-esp32s3-bytecode-only:
 		        -DURBI_EVENT_RING_DEPTH=32 \
 		        -DURBI_FLOAT_TYPE=4" \
 		AR=xtensa-esp-elf-ar \
-		all
+		core
 	@sh tests/scripts/test-freestanding.sh build/cross-esp32s3-bytecode-only/liburbi.a
 
 # T11 / Wave 2: ESP32-S3 (Xtensa LX7) full cross-build (lex/parse/emit
@@ -790,7 +796,7 @@ cross-esp32s3-full:
 		CC=xtensa-esp-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mlongcalls -ffreestanding" \
 		AR=xtensa-esp-elf-ar \
-		all
+		core
 
 # T12 / Wave 2: ESP32-S3 bytecode-only freestanding-signature golden gate.
 # Tighter than the hardcoded-libc forbidden list in test-freestanding.sh:
@@ -1016,4 +1022,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
