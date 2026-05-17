@@ -221,6 +221,7 @@ extern void test_pipe_middle_stmt_suite(void);
 extern void test_waituntil_cascade_suite(void);
 extern void test_dangling_cl_function_body_install_suite(void);
 extern void test_proto_refcount_suite(void);
+extern void test_module_refcount_suite(void);
 extern void test_fork_amp_at_body_suite(void);
 extern void test_register_watcher_callback_suite(void);
 extern void test_watcher_auto_unregister_suite(void);
@@ -437,6 +438,7 @@ static const struct suite_entry suites[] = {
     {"waituntil_cascade",            test_waituntil_cascade_suite},
     {"dangling_cl_function_body_install", test_dangling_cl_function_body_install_suite},
     {"proto_refcount",               test_proto_refcount_suite},
+    {"module_refcount",              test_module_refcount_suite},
     {"fork_amp_at_body",             test_fork_amp_at_body_suite},
     {"register_watcher_callback",    test_register_watcher_callback_suite},
     {"watcher_auto_unregister",      test_watcher_auto_unregister_suite},

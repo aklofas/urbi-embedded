@@ -446,6 +446,22 @@ typedef struct UModule {
      * loader/emitter use them to grow + free struct-internal buffers. */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;
+
+    /* === Runtime-only fields (not serialized) ============= */
+
+    /* v0.8.0: refcount per strand binding (`s->module = this`).
+     * Bumped at urbi_strand_create_for_module + child->module copy in
+     * op_fork; decremented at strand_destroy.  Saturation at UINT16_MAX
+     * logs via host_log_fn (URBI_LOG_WARN) and stops incrementing
+     * (same policy as UProto.refcount shipped in v0.7.3).
+     *
+     * Not serialized: wire-format emitter/deserializer skip this field.
+     * Initialized to zero by urbi_load_module + uemit_finish. */
+    uint16_t refcount;
+
+    /* Deferred-destroy flag: set by umodule_destroy(m, vm) when refcount > 0.
+     * Module is freed once the last refcount drop sees this true. */
+    bool destroy_requested;
 } UModule;
 
 /* --- errors --- */
