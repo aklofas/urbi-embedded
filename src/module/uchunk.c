@@ -443,14 +443,15 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
-    /* Run via urbi_run_chunk (which delegates to urbi_vm_run at M3). */
+    /* Run the module's root chunk via the persistent loader strand path. */
     UValue result = {0};
     int run_rc = urbi_run_chunk(vm, realm, &module, &result);
 
     /* API-009: drain any body strands spawned by watcher eval during this run.
-     * urbi_vm_run (inside urbi_run_chunk) only drives its own transient strand;
-     * spawned body strands accumulate in vm->ready_head and need urbi_step
-     * to execute.  Cap at URBI_REPL_DRAIN_BUDGET iterations to prevent
+     * urbi_run_chunk now returns when the loader strand parks (persists
+     * in realm) or completes.  Body strands spawned by watcher eval still
+     * accumulate in the ready queue and need draining.
+     * Cap at URBI_REPL_DRAIN_BUDGET iterations to prevent
      * infinite spin with persistent watchers. */
 #ifndef URBI_REPL_DRAIN_BUDGET
 #  define URBI_REPL_DRAIN_BUDGET 1000

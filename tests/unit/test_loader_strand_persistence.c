@@ -186,6 +186,10 @@ UTEST(run_chunk_chunktop_comma_works)
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, realm, "a", 1, &a));
     UASSERT_EQ((int64_t)99, a.v.i);
 
+    UValue b = {0};
+    UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, realm, "b", 1, &b));
+    UASSERT_EQ((int64_t)100, b.v.i);
+
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
