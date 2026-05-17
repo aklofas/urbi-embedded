@@ -69,54 +69,53 @@ UTEST(refcount_dec_at_saturation_no_change)
     /* No decrement.  Saturation policy: once frozen, stay frozen. */
 }
 
-/* Probe the deferred-destroy path: if root_proto->refcount > 0 when
- * umodule_destroy is called, the struct must survive (the host destroys
- * their ref but strands still reference the module via root_proto).
- * Free fires when the last strand-bind ref drops via umodule_strand_refcount_dec.
+/* Probe the rescue path (Phase 2 Task 9 of v0.8.1-uproto-root): if
+ * root_proto->refcount > 0 when umodule_destroy is called with a non-NULL
+ * vm, the root_proto is rescued to vm->rescued_protos (not deferred via
+ * destroy_requested).  vm_destroy then frees the rescued root_proto.
  *
- * v0.8.1 Phase 2: deferred-destroy check reads root_proto->refcount (not
- * module->refcount).  We simulate a strand binding by bumping root_proto
- * directly via umodule_proto_refcount_inc. */
-UTEST(umodule_destroy_defers_when_refcount_nonzero)
+ * The previous deferred-destroy path (destroy_requested = true, return early)
+ * is now only used when vm == NULL.  When vm != NULL, rescue always runs. */
+UTEST(umodule_destroy_rescues_when_refcount_nonzero)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
-    /* Allocate a minimal UModule + a synthetic root_proto on the heap so
-     * we can probe them post-destroy.  Stack-allocated would not let us
-     * observe the deferred state; we need the deferred path to keep the
-     * heap allocation alive until the final dec. */
+    /* Allocate a minimal UModule + a synthetic root_proto on the heap. */
     UModule *m = (UModule *)vm.alloc_fn(NULL, sizeof(UModule), vm.alloc_ud);
     UASSERT(m != NULL);
     memset(m, 0, sizeof(UModule));
 
     /* Allocate a synthetic root_proto and attach it to the module.
-     * umodule_destroy_internal frees m->root_proto via module_allocator
-     * (stdlib_alloc on hosted builds) — so rp is NOT freed separately. */
+     * Set alloc_fn so the rescue-then-vm_destroy path can free it. */
     UProto *rp = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
     UASSERT(rp != NULL);
     memset(rp, 0, sizeof(UProto));
+    rp->alloc_fn = vm.alloc_fn;
+    rp->alloc_ud = vm.alloc_ud;
     m->root_proto = rp;
 
-    /* Simulate a strand binding: bump root_proto->refcount. */
+    /* Simulate a strand binding: bump root_proto->refcount to 1. */
     umodule_proto_refcount_inc(rp);
     UASSERT_EQ((unsigned)1, (unsigned)rp->refcount);
 
-    umodule_destroy(m, &vm);          /* host releases ref */
-    /* root_proto->refcount > 0 — m must survive.  destroy_requested set. */
-    UASSERT_EQ(true, m->destroy_requested);
-    UASSERT_EQ((unsigned)1, (unsigned)rp->refcount);
+    /* vm->rescued_protos starts NULL. */
+    UASSERT(vm.rescued_protos == NULL);
 
-    /* Simulate strand death: umodule_strand_refcount_dec fires deferred destroy.
-     * umodule_destroy_internal will free rp (module->root_proto) via
-     * stdlib_alloc; do NOT touch rp after this call. */
-    umodule_strand_refcount_dec(m, rp, &vm);
-    /* refcount dropped to 0; destroy_requested was true → deferred free
-     * fired via umodule_destroy_internal.  UModule struct allocation itself
-     * is still valid heap memory (umodule_destroy_internal zeroes the struct
-     * fields but does not free the struct — lifetime is caller-owned). */
-    vm.alloc_fn(m, 0, vm.alloc_ud);   /* release the heap UModule struct */
+    umodule_destroy(m, &vm);  /* host releases ref — vm != NULL → rescue path */
 
+    /* Task 9 rescue path: root_proto must now be on vm->rescued_protos. */
+    UASSERT(vm.rescued_protos == rp);
+    /* module->root_proto detached. */
+    UASSERT(m->root_proto == NULL);
+    /* destroy_requested must NOT be set (rescue, not defer). */
+    UASSERT_EQ(false, m->destroy_requested);
+
+    /* Release the heap UModule struct (module shell was freed by
+     * umodule_destroy_internal; caller owns the allocation itself). */
+    vm.alloc_fn(m, 0, vm.alloc_ud);
+
+    /* urbi_vm_destroy must free rescued_protos (rp) cleanly — no leaks. */
     urbi_vm_destroy(&vm);
 }
 
@@ -179,8 +178,8 @@ void test_module_refcount_suite(void) {
               refcount_inc_saturates_at_uint16_max);
     utest_run("module_refcount: dec at saturation no change",
               refcount_dec_at_saturation_no_change);
-    utest_run("module_refcount: umodule_destroy defers when refcount nonzero",
-              umodule_destroy_defers_when_refcount_nonzero);
+    utest_run("module_refcount: umodule_destroy rescues when refcount nonzero",
+              umodule_destroy_rescues_when_refcount_nonzero);
     utest_run("module_refcount: umodule_destroy immediate when refcount zero",
               umodule_destroy_immediate_when_refcount_zero);
     utest_run("module_refcount: bump/decrement via strand binding",

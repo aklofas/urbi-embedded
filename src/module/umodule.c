@@ -1281,10 +1281,52 @@ void
 umodule_destroy(UModule *module, struct UVM *vm)
 {
     if (module == NULL) return;
-    /* Deferred if any strand still binds this module's root_proto. */
+    /* Variant B coexistence path (Phase 2 Task 9 of v0.8.1-uproto-root):
+     * when root_proto->refcount > 0 (a strand is still alive), rescue the
+     * whole root_proto to vm->rescued_protos.  The root_proto carries ownership
+     * of nested[] and all chunk-top buffers; the module shell fields are
+     * NULLed so umodule_destroy_internal does not double-free them.
+     *
+     * The per-nested rescue path in umodule_destroy_internal (vm->stdlib_protos)
+     * still runs for the remaining (NULLed) nested[] and buffers — it is a
+     * no-op since all the pointers are now NULL.  Coexistence is safe because
+     * the two lists are independent; Task 10 removes the per-nested path once
+     * Task 8 (closure-refcount redirect) makes whole-root_proto rescue
+     * self-sufficient. */
     if (module->root_proto != NULL && module->root_proto->refcount > 0U) {
-        module->destroy_requested = true;
-        return;
+        if (vm != NULL) {
+            UProto *rp = module->root_proto;
+            /* Thread rp onto vm->rescued_protos (reuses UProto.next_alloc). */
+            rp->next_alloc    = vm->rescued_protos;
+            vm->rescued_protos = rp;
+            /* Detach root_proto reference from the module shell. */
+            module->root_proto = NULL;
+            /* Detach nested[] ownership — rescued root_proto carries it. */
+            module->nested       = NULL;
+            module->nested_count = 0;
+            module->nested_cap   = 0;
+            /* Detach chunk-top buffer ownership so umodule_destroy_internal
+             * cannot double-free them (rp holds these via alias pointers). */
+            module->instructions = NULL;
+            module->instr_count  = 0;
+            module->instr_cap    = 0;
+            module->constants    = NULL;
+            module->const_count  = 0;
+            module->const_cap    = 0;
+            module->line_deltas  = NULL;
+            module->abs_lines    = NULL;
+            module->abs_line_count = 0;
+            module->abs_line_cap   = 0;
+            module->ic_names     = NULL;
+            module->ic_name_strs = NULL;
+            module->ic_count     = 0;
+            /* source_name stays on the module shell (not aliased to rp). */
+        } else {
+            /* No vm available — fall back to deferred-destroy flag so the
+             * module is not leaked silently. */
+            module->destroy_requested = true;
+            return;
+        }
     }
     umodule_destroy_internal(module, vm);
 }

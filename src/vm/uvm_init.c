@@ -329,6 +329,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->stdlib_upvalues        = NULL;
     vm->stdlib_protos          = NULL;   /* Phase 5 (Gap #1): stolen REPL protos; freed at destroy */
     vm->stdlib_nested_arrays   = NULL;   /* Phase 5 (Gap #1): stolen nested[] arrays; freed at destroy */
+    vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
     vm->stdlib_containers      = NULL;   /* M6 Phase 6: backing-buffer head; populated by container .new() bodies */
     vm->container_pair_proto    = NULL;  /* M6 Phase 6 — populated by urbi_stdlib_register_containers */
@@ -557,6 +558,63 @@ void urbi_vm_destroy(UVM *vm) {
                 na = next;
             }
             vm->stdlib_nested_arrays = NULL;
+        }
+
+        /* Phase 2 Task 9 (v0.8.1-uproto-root): free rescued whole root_protos.
+         * Each entry is a root_proto that was detached from its UModule by
+         * umodule_destroy when root_proto->refcount > 0 (strand still alive).
+         * The root_proto carries ownership of nested[] and all chunk-top buffers
+         * (module shell was freed normally with those fields NULLed).
+         *
+         * Ordering: run AFTER stdlib_protos (per-nested rescue) since both
+         * lists are independent.  Must run BEFORE the VM allocator is torn down.
+         *
+         * Walk each rescued root_proto:
+         *   1. Capture next_alloc, alloc_fn, alloc_ud, nested+count before any
+         *      call that might zero the struct.
+         *   2. Free each non-NULL nested proto (buffers + struct).
+         *   3. Free the nested[] array.
+         *   4. Free the root_proto's own buffers (instructions, constants, etc.)
+         *      via umodule_destroy_proto_buffers — this zeroes *rp.
+         *   5. Free the root_proto struct itself using the captured allocator. */
+        {
+            struct UProto *rp = vm->rescued_protos;
+            while (rp != NULL) {
+                /* Step 1: capture before any zero operation. */
+                struct UProto   *next      = rp->next_alloc;
+                UModuleAllocFn   rp_alloc  = rp->alloc_fn;
+                void            *rp_ud     = rp->alloc_ud;
+                struct UProto  **nested    = rp->nested;
+                size_t           n_count   = rp->nested_count;
+                if (rp_alloc == NULL) {
+                    rp_alloc = vm->alloc_fn;
+                    rp_ud    = vm->alloc_ud;
+                }
+                /* Step 2: free each non-NULL nested proto. */
+                if (nested != NULL) {
+                    size_t k;
+                    for (k = 0; k < n_count; k++) {
+                        struct UProto *np = nested[k];
+                        if (np == NULL) continue;
+                        UModuleAllocFn np_alloc = np->alloc_fn;
+                        void          *np_ud    = np->alloc_ud;
+                        if (np_alloc == NULL) {
+                            np_alloc = rp_alloc;
+                            np_ud    = rp_ud;
+                        }
+                        umodule_destroy_proto_buffers(np, np_alloc, np_ud);
+                        np_alloc(np, 0, np_ud);
+                    }
+                    /* Step 3: free the nested[] array. */
+                    rp_alloc((void *)nested, 0, rp_ud);
+                }
+                /* Step 4: free root_proto's own buffers (zeros *rp). */
+                umodule_destroy_proto_buffers(rp, rp_alloc, rp_ud);
+                /* Step 5: free the root_proto struct. */
+                rp_alloc(rp, 0, rp_ud);
+                rp = next;
+            }
+            vm->rescued_protos = NULL;
         }
 
         /* M6 Phase 6: free container backing buffers (List/Dict/Tuple

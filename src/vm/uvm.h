@@ -597,6 +597,22 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * in stdlib_protos are freed (order doesn't matter since the nodes hold
      * the array memory, not the proto structs). */
     UNestedArrayNode   *stdlib_nested_arrays;
+    /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
+     * objects rescued from umodule_destroy when root_proto->refcount > 0 at
+     * destroy time (Phase 2 Task 9 of v0.8.1-uproto-root).
+     *
+     * When a module is destroyed while a strand still holds a reference to its
+     * root_proto, umodule_destroy detaches the root_proto (with all nested[]
+     * and chunk-top buffer ownership) and threads it onto this list.  The
+     * module shell (source_name and the UModule struct itself) is freed normally.
+     *
+     * At urbi_vm_destroy, each rescued root_proto is freed: nested[] entries
+     * are individually destroyed via umodule_destroy_proto_buffers, the
+     * nested[] array is freed, the root_proto's own buffers are freed via
+     * umodule_destroy_proto_buffers, and finally the root_proto struct itself
+     * is freed.  Coexists with stdlib_protos (per-nested rescue from v0.7.3)
+     * until Task 10 removes the per-nested path. */
+    struct UProto      *rescued_protos;
     struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
