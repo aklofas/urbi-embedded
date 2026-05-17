@@ -1131,8 +1131,42 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  *   4. ONLY THEN zero the struct.  After step 4 the struct is fully wiped:
  *      source_name, alloc_fn, alloc_ud are all reset; the caller must
  *      re-init before reuse.
- *
- * MOD-015 — nested[k] may be NULL by design:
+ */
+
+/* --- UModule refcount helpers (v0.8.0) ---------------------------------- */
+
+void
+umodule_refcount_inc(UModule *m, struct UVM *vm)
+{
+    if (m == NULL) return;
+    if (m->refcount == UINT16_MAX) {
+        /* Saturated: log once, no further bumps.  Module leaks; same
+         * policy as UProto.refcount shipped in v0.7.3. */
+        if (vm != NULL && vm->host_log_fn != NULL) {
+            vm->host_log_fn(vm, URBI_LOG_WARN,
+                "umodule_refcount_inc: UINT16_MAX saturation; refcount frozen");
+        }
+        return;
+    }
+    m->refcount = (uint16_t)(m->refcount + 1U);
+}
+
+void
+umodule_refcount_dec(UModule *m, struct UVM *vm)
+{
+    (void)vm;
+    if (m == NULL) return;
+    if (m->refcount == 0U) {
+        /* Underflow guard — catches missing-bump bugs that would otherwise
+         * race the deferred-destroy path. */
+        return;
+    }
+    m->refcount = (uint16_t)(m->refcount - 1U);
+    /* Deferred-destroy fires when refcount hits zero AND destroy_requested is
+     * true.  Task 3 wires this. */
+}
+
+/* MOD-015 — nested[k] may be NULL by design:
  *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
  *   from module->nested[] when its UClosure is captured by a watcher
  *   (transferring ownership from the module to the watcher pool).  After

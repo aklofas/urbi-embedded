@@ -517,6 +517,17 @@ umodule_proto_refcount_dec(UProto *p)
     p->refcount = (uint16_t)(p->refcount - 1U);
 }
 
+/* v0.8.0: UModule refcount helpers.  Bumped at every strand binding
+ * (s->module = m); decremented at every strand_destroy that releases the
+ * binding.  vm is used only for the host-log saturation warning and may be
+ * NULL in test contexts.
+ *
+ * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow at 0
+ * is a no-op guard (catches missing-bump bugs).  Same policy as UProto.refcount
+ * shipped in v0.7.3. */
+void umodule_refcount_inc(UModule *m, struct UVM *vm);
+void umodule_refcount_dec(UModule *m, struct UVM *vm);
+
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
  * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module.
