@@ -69,6 +69,7 @@ UTEST(strand_create_for_module_returns_non_transient)
 
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
+    UASSERT_EQ((unsigned)USTRAND_STATE_READY, (unsigned)USTRAND_GET_STATE(s));
     UASSERT_EQ(0U, (unsigned)s->is_transient_strand);  /* NOT transient */
     UASSERT(s->module == &module);
     UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
