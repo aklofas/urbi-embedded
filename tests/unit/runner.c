@@ -247,6 +247,7 @@ extern void test_uproto_root_backptr_suite(void);
 extern void test_strand_root_proto_bind_suite(void);
 extern void test_module_refcount_fused_suite(void);
 extern void test_rescued_protos_suite(void);
+extern void test_module_grain_lifetime_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -470,6 +471,7 @@ static const struct suite_entry suites[] = {
     {"strand_root_proto_bind",       test_strand_root_proto_bind_suite},
     {"module_refcount_fused",        test_module_refcount_fused_suite},
     {"rescued_protos",               test_rescued_protos_suite},
+    {"module_grain_lifetime",        test_module_grain_lifetime_suite},
     /* Add new suites here as test files are added. */
 };
 
