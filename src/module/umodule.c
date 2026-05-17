@@ -55,6 +55,11 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 }
 #endif  /* __STDC_HOSTED__ */
 
+/* Forward declaration — umodule_destroy_internal is defined below, after
+ * umodule_destroy_proto_buffers.  The public umodule_destroy shim (v0.8.0
+ * deferred-destroy) calls into this. */
+static void umodule_destroy_internal(UModule *m, struct UVM *vm);
+
 /* Resolve the effective allocator for a module. */
 static UModuleAllocFn module_allocator(const UModule *c) {
 #if __STDC_HOSTED__
@@ -1154,7 +1159,6 @@ umodule_refcount_inc(UModule *m, struct UVM *vm)
 void
 umodule_refcount_dec(UModule *m, struct UVM *vm)
 {
-    (void)vm;
     if (m == NULL) return;
     if (m->refcount == 0U) {
         /* Underflow guard — catches missing-bump bugs that would otherwise
@@ -1171,8 +1175,13 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
         return;
     }
     m->refcount = (uint16_t)(m->refcount - 1U);
-    /* Deferred-destroy fires when refcount hits zero AND destroy_requested
-     * is true.  Task 3 wires this. */
+    /* v0.8.0 Task 3: deferred-destroy trigger.  If host called
+     * umodule_destroy while refcount was nonzero, destroy_requested
+     * was set; now that refcount == 0, perform the actual free.
+     * umodule_destroy_internal is file-static in this TU. */
+    if (m->refcount == 0U && m->destroy_requested) {
+        umodule_destroy_internal(m, vm);
+    }
 }
 
 /* MOD-015 — nested[k] may be NULL by design:
@@ -1190,7 +1199,24 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
  *   nested[] slots stay populated and are freed normally below.  See
  *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
  *   rationale. */
-void umodule_destroy(UModule *module, struct UVM *vm) {
+
+/* v0.8.0: refcount-aware destroy.  If refcount > 0, sets destroy_requested
+ * and returns — actual free fires when the last umodule_refcount_dec drops
+ * refcount to zero with destroy_requested set.  Host's existing pattern
+ * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills
+ * all strands first → all bindings drop → refcount == 0 → immediate free. */
+void
+umodule_destroy(UModule *m, struct UVM *vm)
+{
+    if (m == NULL) return;
+    if (m->refcount > 0U) {
+        m->destroy_requested = true;
+        return;
+    }
+    umodule_destroy_internal(m, vm);
+}
+
+static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
