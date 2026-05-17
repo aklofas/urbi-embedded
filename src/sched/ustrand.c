@@ -14,6 +14,7 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 #include "module/umodule.h"
+#include "object/umodule_instance.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -397,6 +398,85 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
         /* Head-insert this entry into the tag's member_strands_head list. */
         chain[i]->member_strands_head = e;
     }
+}
+
+/* === v0.8.0: urbi_strand_create_for_module ===
+ *
+ * Allocates a non-transient strand bound to a module's root chunk.
+ * Mirrors the setup in uvm_run.c::urbi_vm_run, minus the transient flag
+ * and stack-local allocation:
+ *   - urbi_strand_create handles: pool alloc, ustrand_init (cleanup stack),
+ *     realm link (next_in_realm + strands_head insert), ambient-tag attach,
+ *     sched_strand_init.  Leaves strand DORMANT.
+ *   - This function adds: module bind + refcount, register-stack arm,
+ *     execution-state wiring, UModuleInstance creation.
+ *   - urbi_strand_start transitions DORMANT → READY.
+ *
+ * OOM recovery: any allocation failure after urbi_strand_create succeeds
+ * tears down the strand via urbi_strand_destroy (which unlinks from realm,
+ * drops refcount if already bumped, and frees all resources). */
+UStrand *
+urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
+                              struct UModule *module)
+{
+    if (!vm || !module) return NULL;
+    if (module->instr_count == 0) return NULL;
+
+    if (realm == NULL) {
+        realm = urbi_realm_global(vm);
+        if (realm == NULL) return NULL;
+    }
+
+    /* Pool-allocate a non-transient strand (is_transient_strand stays 0).
+     * entry_closure = NULL: chunk-top has no closure; root instructions come
+     * from module->instructions directly.  urbi_strand_create handles:
+     * ustrand_init (cleanup stack alloc), realm link, ambient-tag attach,
+     * sched_strand_init.  Leaves strand DORMANT. */
+    UStrand *s = urbi_strand_create(realm, NULL);
+    if (!s) return NULL;
+
+    /* Bind module and bump refcount before any teardown path so
+     * urbi_strand_destroy (which calls ustrand_destroy) correctly
+     * decrements the count on error. */
+    s->module = module;
+    umodule_refcount_inc(module, vm);
+
+    /* Allocate and zero the per-strand register stack.
+     * On failure: urbi_strand_destroy drops the refcount and frees the strand. */
+    if (urbi_strand_arm_init(s) != 0) {
+        urbi_strand_destroy(s);
+        return NULL;
+    }
+
+    /* Wire frame-0 execution state from the module's root chunk.
+     * Mirrors uvm_run.c lines 102-129 (without the transient-specific fields
+     * is_transient_strand and out_slot, which callers set if needed). */
+    s->R          = s->stack;
+    s->pc         = module->instructions;
+    s->pc_base    = module->instructions;
+    s->cur_consts = module->constants;
+    s->frame_count  = 0;
+    s->open_upvals  = NULL;
+    s->closure_list = NULL;
+    s->closed_cells = NULL;
+    s->out_slot     = NULL;  /* caller may set before first urbi_step */
+
+    /* Create a UModuleInstance for IC wiring (per-(vm, module) cache tier).
+     * urbi_module_instance_create always allocates fresh — safe here because
+     * this is a new strand owning its own IC entry (matches uvm_run.c §T72
+     * rationale; urbi_get_or_create_module_instance is unsuitable for
+     * strands that may share a module across interleaved runs). */
+    s->module_instance = urbi_module_instance_create(vm, module);
+    if (!s->module_instance) {
+        urbi_strand_destroy(s);
+        return NULL;
+    }
+
+    /* Transition DORMANT → READY so the host's urbi_step loop picks it up.
+     * urbi_strand_start calls sched_strand_make_runnable internally. */
+    urbi_strand_start(s);
+
+    return s;
 }
 
 /* === CHSTR-044: register-stack lifecycle triplet ===

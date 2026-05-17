@@ -390,6 +390,34 @@ int urbi_strand_arm_init(struct UStrand *s);
  * would dereference NULL via s->module_instance->proto_instances. */
 int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
 
+/* === v0.8.0: urbi_strand_create_for_module ===
+ *
+ * Allocates a non-transient scheduler-managed strand bound to module's root
+ * chunk.  Bumps module.refcount.  Arms register stack (via urbi_strand_arm_init)
+ * and wires instruction pointers, constant pool, module pointer, and
+ * UModuleInstance.  Transitions DORMANT → READY via urbi_strand_start so the
+ * host's main urbi_step loop picks it up.
+ *
+ * Distinct from urbi_strand_create(realm, closure): chunk-top has no closure
+ * — root instructions live in module->instructions directly per the v0.8.0
+ * architecture spec §5.1.  The pre-M8 UModule thin-shell + root UProto
+ * extraction refactor collapses this asymmetry; today the helper wraps the
+ * asymmetric setup.
+ *
+ * Strand lifecycle: persists in realm->strands_head until it reaches DEAD
+ * naturally (OP_RET / fatal); the host's urbi_step loop drives it.
+ * urbi_strand_destroy unbinds the module (drops refcount) and frees backing
+ * storage.
+ *
+ * Returns the READY strand on success, NULL on OOM (any allocation failure
+ * during setup tears down the partially-armed strand before returning NULL).
+ *
+ * Preconditions: module->instr_count > 0; realm non-NULL (pass
+ * urbi_realm_global(vm) if in doubt); vm non-NULL. */
+struct UStrand *urbi_strand_create_for_module(struct UVM *vm,
+                                              struct URealm *realm,
+                                              struct UModule *module);
+
 #ifdef __cplusplus
 }
 #endif
