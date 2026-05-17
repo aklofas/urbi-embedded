@@ -506,11 +506,20 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
 
     /* Wire frame-0 execution state from the module's root chunk.
      * Mirrors uvm_run.c lines 102-129 (without the transient-specific fields
-     * is_transient_strand and out_slot, which callers set if needed). */
+     * is_transient_strand and out_slot, which callers set if needed).
+     * v0.8.1 Phase 1: hot fields via root_proto (aliased); s->root_proto
+     * was set above so we use it directly. */
     s->R          = s->stack;
-    s->pc         = module->instructions;
-    s->pc_base    = module->instructions;
-    s->cur_consts = module->constants;
+    /* s->root_proto is already set; fall back to module->X if NULL. */
+    if (s->root_proto != NULL) {
+        s->pc         = s->root_proto->instructions;
+        s->pc_base    = s->root_proto->instructions;
+        s->cur_consts = s->root_proto->constants;
+    } else {
+        s->pc         = module->instructions;
+        s->pc_base    = module->instructions;
+        s->cur_consts = module->constants;
+    }
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->closure_list = NULL;

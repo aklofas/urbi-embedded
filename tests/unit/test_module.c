@@ -1070,22 +1070,23 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi != NULL);
 
-    /* Post-condition: ic_names is now populated; each entry equals the
-     * canonical interned pointer for the matching ic_name_strs entry. */
-    UASSERT(b.ic_names != NULL);
+    /* Post-condition: ic_names is now populated on root_proto (v0.8.1 Phase 1:
+     * intern writes via &rp->ic_names rather than &module->ic_names); each
+     * entry equals the canonical interned pointer for the matching entry. */
+    UASSERT(b.root_proto->ic_names != NULL);
     for (uint16_t k = 0; k < b.ic_count; k++) {
         const char *name = b.ic_name_strs[k];
         size_t nlen = strlen(name);
         const char *canon = ustr_intern(&vm_b, name, nlen);
-        UASSERT_EQ((const void *)canon, (const void *)b.ic_names[k]);
+        UASSERT_EQ((const void *)canon, (const void *)b.root_proto->ic_names[k]);
     }
 
     /* Idempotency: a second call must not re-allocate.  The helper's
      * fast path returns immediately when ic_names is already populated. */
-    USymbol **before = b.ic_names;
+    USymbol **before = b.root_proto->ic_names;
     UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi2 != NULL);
-    UASSERT_EQ((void *)before, (void *)b.ic_names);
+    UASSERT_EQ((void *)before, (void *)b.root_proto->ic_names);
 
     free(buf);
     umodule_destroy(&a, NULL);

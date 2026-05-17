@@ -145,21 +145,28 @@ void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
 uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
-    if (module->line_deltas == NULL) return 0;
-    if (pc >= module->instr_count) return 0;
+    /* v0.8.1 Phase 1: line table fields read via root_proto (aliased).
+     * Fall back to module->X for hand-crafted modules without root_proto. */
+    const UProto *rp = module->root_proto;
+    const int8_t       *line_deltas  = (rp != NULL) ? rp->line_deltas  : module->line_deltas;
+    const UAbsLine     *abs_lines    = (rp != NULL) ? rp->abs_lines    : module->abs_lines;
+    size_t              abs_line_cnt = (rp != NULL) ? rp->abs_line_count: module->abs_line_count;
+    size_t              instr_cnt    = (rp != NULL) ? rp->instr_count   : module->instr_count;
+    if (line_deltas == NULL) return 0;
+    if (pc >= instr_cnt) return 0;
     uint32_t line = 0;
     size_t abs_idx = 0;
     for (size_t i = 0; i <= pc; i++) {
-        int8_t d = module->line_deltas[i];
+        int8_t d = line_deltas[i];
         if (d == INT8_MIN) {
             /* Consult abs_lines; find the entry whose pc matches i. */
-            while (abs_idx < module->abs_line_count &&
-                   module->abs_lines[abs_idx].pc < i) {
+            while (abs_idx < abs_line_cnt &&
+                   abs_lines[abs_idx].pc < i) {
                 abs_idx++;
             }
-            if (abs_idx < module->abs_line_count &&
-                module->abs_lines[abs_idx].pc == i) {
-                line = module->abs_lines[abs_idx].line;
+            if (abs_idx < abs_line_cnt &&
+                abs_lines[abs_idx].pc == i) {
+                line = abs_lines[abs_idx].line;
                 abs_idx++;
             }
         } else {

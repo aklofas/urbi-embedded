@@ -98,13 +98,22 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         }
     }
 
-    /* Wire frame-0 from module. */
-    strand.R          = strand.stack;
-    strand.pc         = module->instructions;
-    strand.pc_base    = module->instructions;
-    strand.cur_consts = module->constants;
+    /* Wire frame-0 from module.  Set root_proto first so subsequent reads
+     * use it; v0.8.1 Phase 1 migrates hot fields via the alias. */
     strand.module     = module;
-    strand.root_proto = module->root_proto;  /* v0.8.1 Phase 1: fast-path alias */
+    strand.root_proto = module->root_proto;
+    strand.R          = strand.stack;
+    /* Use root_proto for hot-path fields (aliased); fall back to module->X
+     * for hand-crafted test modules that do not go through the emitter. */
+    if (strand.root_proto != NULL) {
+        strand.pc         = strand.root_proto->instructions;
+        strand.pc_base    = strand.root_proto->instructions;
+        strand.cur_consts = strand.root_proto->constants;
+    } else {
+        strand.pc         = module->instructions;
+        strand.pc_base    = module->instructions;
+        strand.cur_consts = module->constants;
+    }
     /* v0.8.0: bump module refcount for the strand binding.  Decrement
      * fires in ustrand_destroy at the end of this function (single matched
      * pair for the transient path).  The const-cast is necessary because

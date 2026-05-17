@@ -395,8 +395,11 @@ urbi_get_determinism_checksum(struct UVM *vm)
                 if (pi->proto != NULL) {
                     ic_count = pi->proto->ic_count;
                 } else if (i == 0U) {
-                    /* Root chunk — read ic_count from UModule. */
-                    ic_count = mi->module->ic_count;
+                    /* Root chunk — read ic_count via root_proto when available.
+                     * v0.8.1 Phase 1: fallback to module->ic_count if needed. */
+                    ic_count = (mi->module->root_proto != NULL)
+                               ? mi->module->root_proto->ic_count
+                               : mi->module->ic_count;
                 } else {
                     ic_count = 0U;  /* entries[i>0] always have a proto */
                 }
