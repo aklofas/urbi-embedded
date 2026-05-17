@@ -1353,9 +1353,13 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
             for (i = 0; i < module->nested_count; i++) {
                 UProto *p = module->nested[i];
                 if (p == NULL) continue;
-                /* Piece A: discharge the nested[] slot's implicit ref.
-                 * After this, p->refcount reflects only surviving closures
-                 * (via watcher->cl or vm->stdlib_closures). */
+                /* Pre-v0.8.1: discharged the nested[] slot's implicit ref
+                 * ("Piece A" of the v0.7.3 closure-lifetime spec).  Under
+                 * Option (a) (spec §3.5) there is no slot-implicit ref —
+                 * umodule_alloc_nested_proto inits refcount to 0 — so this
+                 * dec is a no-op (refcount=0, underflow guard absorbs it).
+                 * Task 11 will delete this per-nested walk entirely once the
+                 * whole-root_proto rescue path is self-sufficient. */
                 umodule_proto_refcount_dec(p);
                 if (vm != NULL && p->refcount > 0U) {
                     /* Surviving closure still references this proto;

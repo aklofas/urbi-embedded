@@ -279,6 +279,57 @@ UTEST(escaping_closure_rescues_whole_root_proto)
     urbi_vm_destroy(&vm);
 }
 
+/* Case 6: umodule_destroy with vm=NULL when a closure is still live.
+ *
+ * Verifies the self-link sentinel mechanism: umodule_destroy(m, NULL) must
+ * not crash, must mark root_proto with next_alloc == root_proto (sentinel),
+ * and the subsequent urbi_vm_destroy must sweep cleanly (no leak per ASan). */
+UTEST(vm_null_destroy_with_live_closure)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    /* Allocate module on the heap so we control its lifetime. */
+    UModule *m = (UModule *)vm.alloc_fn(NULL, sizeof(UModule), vm.alloc_ud);
+    UASSERT(m != NULL);
+    memset(m, 0, sizeof(*m));
+    UArena arena;
+    uarena_init(&arena, 4096);
+
+    /* Closure escapes to Realm.f — migrated to vm->stdlib_closures at strand
+     * exit.  root_proto.refcount > 0 after draining. */
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, m,
+        "var f = function () { 1 }; Realm.f = f",
+        NULL);
+    UASSERT_EQ(URBI_OK, rc);
+    utest_e2e_run_to_no_runnable(&vm);
+
+    struct UProto *saved_root = m->root_proto;
+    UASSERT(saved_root != NULL);
+    /* Closure still alive on vm->stdlib_closures; root_proto.refcount > 0. */
+    UASSERT(saved_root->refcount > 0U);
+
+    /* Call destroy WITH NULL vm (defensive contract path).
+     * Must not crash; must set the self-link sentinel. */
+    umodule_destroy(m, NULL);
+    /* Self-link sentinel: root_proto stays attached to the module shell
+     * (module->root_proto is not NULLed on the vm=NULL path) and
+     * next_alloc == root_proto signals pending rescue. */
+    UASSERT_EQ((void *)saved_root->next_alloc, (void *)saved_root);
+    /* destroy_requested flag set so the strand-dec path can also trigger. */
+    UASSERT(m->destroy_requested);
+
+    vm.alloc_fn(m, 0, vm.alloc_ud);
+    uarena_destroy(&arena);
+
+    /* vm_destroy: stdlib_closures sweep dec's via uproto_root_of (§3.7
+     * ordering); detects self-link sentinel on root_proto, promotes to
+     * rescued_protos, then rescued_protos sweep frees it.  No leak per ASan. */
+    urbi_vm_destroy(&vm);
+}
+
 void
 test_module_refcount_fused_suite(void)
 {
@@ -293,4 +344,6 @@ test_module_refcount_fused_suite(void)
               closure_alloc_bumps_root_via_backptr);
     utest_run("module_refcount_fused: escaping closure rescues whole root_proto",
               escaping_closure_rescues_whole_root_proto);
+    utest_run("module_refcount_fused: vm=NULL destroy sets self-link sentinel",
+              vm_null_destroy_with_live_closure);
 }

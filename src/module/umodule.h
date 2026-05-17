@@ -360,12 +360,22 @@ typedef struct UProto {
     size_t          nested_count;
     size_t          nested_cap;
 
-    /* [runtime-only, NOT serialized] Intrusive list link used when this proto
-     * is "stolen" from its owning UModule by urbi_steal_repl_protos before
-     * umodule_destroy.  Stolen protos are threaded onto vm->stdlib_protos and
-     * freed at urbi_vm_destroy.  NULL when the proto is still owned by its
-     * originating module (the normal case).  Zero-initialized alongside the
-     * rest of UProto at alloc time (umodule_alloc_nested_proto). */
+    /* [runtime-only, NOT serialized] Intrusive list link with dual Variant B
+     * semantics (spec §3.7 lifetime ordering invariant):
+     *
+     * (a) List link — when this proto is the root_proto of a rescued module,
+     *     next_alloc threads it onto vm->rescued_protos or vm->stdlib_protos.
+     *     NULL while the proto is still owned by its originating UModule.
+     *
+     * (b) Self-link sentinel — set by umodule_destroy(m, NULL) (the vm=NULL
+     *     defensive path) when root_proto->refcount > 0 but no vm is available
+     *     to rescue immediately.  next_alloc == root_proto itself signals
+     *     "destroy pending — promote to vm->rescued_protos when refcount hits 0
+     *     during vm_destroy's stdlib_closures sweep".  Unambiguous because an
+     *     in-module or in-list proto never points to itself.
+     *
+     * Zero-initialized alongside the rest of UProto at alloc time
+     * (umodule_alloc_nested_proto). */
     struct UProto *next_alloc;
 
     /* [runtime-only, NOT serialized] Back-pointer to the root UProto of the
