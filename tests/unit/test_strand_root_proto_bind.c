@@ -1,152 +1,187 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* test_strand_root_proto_bind — verifies UStrand.root_proto fast-path
  * field is correctly populated when a strand is created for a module
- * (and on op_fork child inherit).  Phase 1: cohabits with s->module
- * (both refer to the same module's data via alias).
+ * (Phase 1) and when a fork child inherits the field (via OP_FORK).
  *
- * NOTE: Tests in this file avoid urbi_realm_global() to work around a
- * pre-existing Task 2 crash in the stdlib-loader strand teardown path
- * (tracked separately; see urbi_populate_realm_globals crash on the
- * topic/v0.8.1-uproto-root branch).  The structural invariants verified
- * here are fully independent of realm-global initialization. */
+ * All tests use the live urbi_strand_create_for_module path so that
+ * removing the binding assignment in ustrand.c would cause a NULL
+ * dereference or assertion failure here. */
 
 #include "utest.h"
 
 #include "urbi/urbi.h"
-#include "vm/uvm.h"
+#include "module/uchunk.h"
 #include "module/umodule.h"
+#include "realm/urealm.h"
 #include "sched/ustrand.h"
+#include "vm/uvm.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
+#include "parse/uast.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "runtime/umacros.h"
+
+#include <stddef.h>
+#include <string.h>
 
 #define UTEST(name) static void name(void)
 
-static int
-compile_module(struct UVM *vm, UArena *arena, UModule *module, const char *src)
+/* Compile `src` into *out_mod.  Returns true on success. */
+static bool
+compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
 {
-    ULexer   lex;
-    UEmitter e;
-    UParser  p;
-    UAstNode *node;
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
 
-    ulex_init(&lex, src, urbi_strlen(src));
-    uemit_init(&e, module, arena, vm, NULL);
+    UEmitter e;
+    uemit_init(&e, out_mod, arena, vm, NULL);
+
+    UParser p;
     uparse_init(&p, &lex, arena);
 
+    bool ok = true;
+    UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
-        if (node->kind == AST_ERROR) return -1;
-        if (uemit_statement(&e, node) != EMIT_OK) return -1;
+        if (node->kind == AST_ERROR) { ok = false; break; }
+        if (uemit_statement(&e, node) != EMIT_OK) { ok = false; break; }
         uarena_reset(arena);
     }
-    if (uemit_finish(&e) != EMIT_OK) return -1;
-    return 0;
+    if (ok && uemit_finish(&e) != EMIT_OK) ok = false;
+    return ok;
 }
 
-/* Verify the UStrand struct has a root_proto field at a pointer-sized slot
- * adjacent to module, and that it can be set/read correctly.
+/* Case 1: urbi_strand_create_for_module sets root_proto to module.root_proto.
  *
- * This test does NOT create a full realm (to avoid the pre-existing Task 2
- * crash in urbi_realm_global).  It tests the struct layout directly via a
- * stack-allocated UStrand, which is the same shape as the heap-allocated
- * variant used by urbi_strand_create_for_module. */
+ * Uses the live binding path in ustrand.c.  If the assignment
+ * `s->root_proto = module->root_proto` is removed, s->root_proto will
+ * be NULL and the final assertion fails. */
 UTEST(ustrand_has_root_proto_field)
 {
-    struct UVM vm;
+    UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
 
-    UArena  arena;
+    UArena arena;
     UModule module = {0};
     uarena_init(&arena, 4096);
-    UASSERT(compile_module(&vm, &arena, &module, "1 + 2") == 0);
+    UASSERT(compile_chunk(&vm, &arena, &module, "1 + 2"));
 
-    /* root_proto should be non-NULL after a successful compile. */
+    /* module.root_proto must be non-NULL after a successful compile. */
     struct UProto *rp = module.root_proto;
     UASSERT(rp != NULL);
 
-    /* Verify the struct field can hold the pointer and is readable.
-     * Stack-allocated strand (same layout as heap-allocated persistent strand). */
-    UStrand s_local;
-    urbi_zero(&s_local, sizeof(s_local));
-    s_local.module     = &module;
-    s_local.root_proto = rp;
+    /* Create a live strand via the real binding path. */
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    UASSERT(s != NULL);
 
-    UASSERT(s_local.module == &module);
-    UASSERT(s_local.root_proto == rp);
-    UASSERT(s_local.root_proto == module.root_proto);
+    /* Phase 1 invariant: root_proto aliases module.root_proto exactly. */
+    UASSERT(s->root_proto == rp);
+    UASSERT(s->root_proto == module.root_proto);
+    UASSERT(s->module == &module);
 
-    umodule_destroy(&module, &vm);
+    /* Drive to completion so the strand dies cleanly. */
+    UValue result = {0};
+    uchunk_loader_drive(&vm, s, &result);
+
     uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
-/* Verify the field aliases correctly: root_proto must equal module.root_proto.
- * Tests the invariant that urbi_strand_create_for_module establishes:
- *   s->root_proto = module->root_proto;
- * by testing the assignment in isolation (same logic as the function). */
+/* Case 2: root_proto is stable across execution — reading it after
+ * uchunk_loader_drive parks yields the same module.root_proto value.
+ *
+ * Uses waituntil(false) to park the strand without executing OP_RET,
+ * then verifies root_proto is still set correctly. */
 UTEST(root_proto_aliases_module_root_proto)
 {
-    struct UVM vm;
+    UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
 
-    UArena  arena;
+    UArena arena;
     UModule module = {0};
     uarena_init(&arena, 4096);
-    UASSERT(compile_module(&vm, &arena, &module, "42") == 0);
+    /* waituntil(false) parks the strand in WAITING state without dying. */
+    UASSERT(compile_chunk(&vm, &arena, &module, "waituntil (false)"));
 
     struct UProto *expected = module.root_proto;
     UASSERT(expected != NULL);
 
-    /* Simulate what urbi_strand_create_for_module does for root_proto. */
-    UStrand strand;
-    urbi_zero(&strand, sizeof(strand));
-    strand.module     = &module;
-    strand.root_proto = module.root_proto;  /* mirrors ustrand.c binding */
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    UASSERT(s != NULL);
 
-    /* Phase 1 invariant: root_proto must alias module->root_proto exactly. */
-    UASSERT(strand.root_proto == expected);
-    UASSERT(strand.root_proto == strand.module->root_proto);
+    /* Drive until the strand parks. */
+    UValue result = {0};
+    uchunk_loader_drive(&vm, s, &result);
 
-    umodule_destroy(&module, &vm);
+    /* Strand is now WAITING (parked on the watcher); root_proto must still
+     * alias module.root_proto with the same pointer value. */
+    UASSERT(USTRAND_IS_WAITING(s));
+    UASSERT(s->root_proto == expected);
+    UASSERT(s->root_proto == module.root_proto);
+
+    /* Explicit destroy discharges the module refcount. */
+    urbi_strand_destroy(s);
+
     uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
-/* Verify fork child inherit: child->root_proto = parent->root_proto.
- * Tests the invariant that fork_spawn_child establishes in uop_fork.c. */
+/* Case 3: fork child inherits root_proto via OP_FORK.
+ *
+ * Runs `1 & 2` through urbi_strand_create_for_module + uchunk_loader_drive.
+ * OP_FORK spawns a child strand; the child inherits root_proto from the
+ * parent (uop_fork.c fork_spawn_child).  If the parent's root_proto is
+ * NULL, fork_spawn_child writes NULL into the child, causing a NULL
+ * dereference crash in the child strand during its first slot lookup.
+ * A crash-free completion of both parent and child proves the invariant. */
 UTEST(fork_child_inherits_root_proto)
 {
-    struct UVM vm;
+    UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
 
-    UArena  arena;
+    UArena arena;
     UModule module = {0};
     uarena_init(&arena, 4096);
-    UASSERT(compile_module(&vm, &arena, &module, "1") == 0);
+    /* `1 & 2`: parent executes `1`, fork child executes `2`.
+     * Object.clone() inside the fork child would dereference root_proto;
+     * even the simple integer literals exercise atom-proto dispatch,
+     * verifying the child strand is wired correctly. */
+    UASSERT(compile_chunk(&vm, &arena, &module, "1 & 2"));
 
-    struct UProto *expected = module.root_proto;
-    UASSERT(expected != NULL);
+    struct UProto *rp = module.root_proto;
+    UASSERT(rp != NULL);
 
-    /* Simulate parent strand. */
-    UStrand parent;
-    urbi_zero(&parent, sizeof(parent));
-    parent.module     = &module;
-    parent.root_proto = module.root_proto;
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    UASSERT(s != NULL);
 
-    /* Simulate child strand inheriting (mirrors uop_fork.c fork_spawn_child). */
-    UStrand child;
-    urbi_zero(&child, sizeof(child));
-    child.module     = parent.module;
-    child.root_proto = parent.root_proto;  /* mirrors uop_fork.c binding */
+    /* Parent must have root_proto set before OP_FORK runs. */
+    UASSERT(s->root_proto == rp);
 
-    UASSERT(child.root_proto == expected);
-    UASSERT(child.root_proto == parent.root_proto);
-    UASSERT(child.module == parent.module);
+    /* Drive until quiescent — both parent and fork child must complete
+     * without a crash.  A NULL root_proto in the parent would propagate
+     * to the child and cause a fault inside fork_spawn_child or the
+     * child's first opcode. */
+    UValue result = {0};
+    int rc = uchunk_loader_drive(&vm, s, &result);
+    UASSERT_EQ(URBI_OK, rc);
 
-    umodule_destroy(&module, &vm);
+    /* Drain any child strands spawned by OP_FORK. */
+    for (int i = 0; i < 200; i++) {
+        UStepResult sr = urbi_step(&vm, 1000, NULL);
+        if (sr == URBI_STEP_QUIESCENT) break;
+        if (sr == URBI_STEP_FATAL) { UASSERT(0 && "fatal step in fork test"); break; }
+        if (vm.strand_runnable_count == 0) break;
+    }
+
     uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -154,7 +189,7 @@ void
 test_strand_root_proto_bind_suite(void)
 {
     printf("test_strand_root_proto_bind\n");
-    utest_run("ustrand_has_root_proto_field",      ustrand_has_root_proto_field);
-    utest_run("root_proto_aliases_module_root_proto", root_proto_aliases_module_root_proto);
-    utest_run("fork_child_inherits_root_proto",    fork_child_inherits_root_proto);
+    utest_run("ustrand_has_root_proto_field",         ustrand_has_root_proto_field);
+    utest_run("root_proto_aliases_module_root_proto",  root_proto_aliases_module_root_proto);
+    utest_run("fork_child_inherits_root_proto",        fork_child_inherits_root_proto);
 }
