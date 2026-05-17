@@ -116,7 +116,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
      *
      * We snapshot loader->realm now (before it's freed) so we can call
      * strand_still_alive safely across iterations. */
-    URealm *loader_realm = loader->realm;
+    const URealm *loader_realm = loader->realm;
 
     for (uint32_t i = 0; i < URBI_LOADER_OUTER_CAP; i++) {
         UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
