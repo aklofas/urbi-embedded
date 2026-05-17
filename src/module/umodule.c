@@ -1235,6 +1235,24 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
     }
 }
 
+/* v0.8.1 Phase 2: strand-bind release with deferred-destroy trigger.
+ * Called by ustrand_destroy and the fatal-loader early-discharge path
+ * (uchunk.c) when we hold the still-valid module pointer.
+ * Decrements root_proto->refcount; if it reaches 0 and destroy_requested
+ * is set, fires umodule_destroy_internal immediately. */
+void
+umodule_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
+{
+    if (root_proto == NULL) return;
+    umodule_proto_refcount_dec(root_proto);
+    /* Deferred-destroy trigger: if host called umodule_destroy while strands
+     * were alive, destroy_requested was set.  Now that the last strand-bind
+     * ref is gone, perform the actual internal free. */
+    if (m != NULL && m->destroy_requested && root_proto->refcount == 0U) {
+        umodule_destroy_internal(m, vm);
+    }
+}
+
 /* MOD-015 — nested[k] may be NULL by design:
  *   strand_closure_unlink (src/watcher/uwatcher_install.c) detaches a UProto
  *   from module->nested[] when its UClosure is captured by a watcher
@@ -1251,16 +1269,20 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
  *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
  *   rationale. */
 
-/* v0.8.0: refcount-aware destroy.  If refcount > 0, sets destroy_requested
- * and returns — actual free fires when the last umodule_refcount_dec drops
- * refcount to zero with destroy_requested set.  Host's existing pattern
- * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills
- * all strands first → all bindings drop → refcount == 0 → immediate free. */
+/* v0.8.1 Phase 2 (Variant B fusion): deferred-destroy check reads root_proto->refcount.
+ * Strand-bind refs now land on root_proto (not module->refcount), so the "are
+ * any strands still alive?" test must check root_proto.  Host's existing pattern
+ * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills all strands
+ * first → root_proto->refcount drops to 0 → immediate free.
+ *
+ * module->refcount is always 0 after Phase 2 redirect (nothing bumps it);
+ * it is retained in the struct until Task 11 deletes it. */
 void
 umodule_destroy(UModule *module, struct UVM *vm)
 {
     if (module == NULL) return;
-    if (module->refcount > 0U) {
+    /* Deferred if any strand still binds this module's root_proto. */
+    if (module->root_proto != NULL && module->root_proto->refcount > 0U) {
         module->destroy_requested = true;
         return;
     }

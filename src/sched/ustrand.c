@@ -180,12 +180,18 @@ release_strand_resource_chain(UVM *vm, UStrand *s)
 
 void
 ustrand_destroy(UStrand *s, struct UVM *vm) {
-    /* v0.8.0: drop module refcount for the strand binding.  Pairs with
-     * the bump in uvm_run.c (transient path) and uop_fork.c (child spawn).
-     * Setting s->module = NULL after is defensive — prevents double-dec
-     * on pool recycle paths. */
-    if (s->module != NULL) {
-        umodule_refcount_dec((UModule *)s->module, vm);
+    /* v0.8.1 Phase 2 (Variant B fusion): drop strand-bind ref on root_proto.
+     * Pairs with the bump in urbi_strand_create_for_module (below), uvm_run.c
+     * (transient path), and uop_fork.c (child spawn).
+     * Use s->root_proto (fast-path alias set at bind time); pass module so
+     * umodule_strand_refcount_dec can fire the deferred-destroy if this was
+     * the last binding and the host already called umodule_destroy.
+     * Null both fields after — prevents double-dec on pool recycle paths. */
+    if (s->root_proto != NULL) {
+        umodule_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);
+        s->root_proto = NULL;
+        s->module     = NULL;
+    } else if (s->module != NULL) {
         s->module = NULL;
     }
 
@@ -489,13 +495,15 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     UStrand *s = urbi_strand_create(realm, NULL);
     if (!s) return NULL;
 
-    /* Bind module and bump refcount before any teardown path so
-     * urbi_strand_destroy (which calls ustrand_destroy) correctly
-     * decrements the count on error.
-     * v0.8.1 Phase 1: also set root_proto fast-path alias. */
+    /* Bind module and bump root_proto refcount before any teardown path so
+     * urbi_strand_destroy (which calls ustrand_destroy) correctly decrements
+     * the count on error.
+     * v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto,
+     * not module->refcount.  ustrand_destroy reads s->root_proto directly so
+     * there is no module dereference at dec time. */
     s->module     = module;
     s->root_proto = module->root_proto;
-    umodule_refcount_inc(module, vm);
+    umodule_proto_refcount_inc(s->root_proto);
 
     /* Allocate and zero the per-strand register stack.
      * On failure: urbi_strand_destroy drops the refcount and frees the strand. */

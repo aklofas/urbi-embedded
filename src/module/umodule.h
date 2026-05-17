@@ -553,9 +553,22 @@ umodule_proto_refcount_dec(UProto *p)
  *
  * Saturation: UINT16_MAX logs once and stops incrementing.  Underflow asserts
  * loudly (catches missing-bump bugs); saturation no-ops (preserves leak-forever).
- * Same policy as UProto.refcount shipped in v0.7.3. */
+ * Same policy as UProto.refcount shipped in v0.7.3.
+ *
+ * v0.8.1 Phase 2: umodule_refcount_inc / umodule_refcount_dec are retained for
+ * the existing test_module_refcount.c unit tests (which probe the old field
+ * directly) and will be deleted in Task 11. New callers must use
+ * umodule_proto_refcount_inc/dec (above) on module->root_proto. */
 void umodule_refcount_inc(UModule *m, struct UVM *vm);
 void umodule_refcount_dec(UModule *m, struct UVM *vm);
+
+/* v0.8.1 Phase 2: strand-bind release helper.
+ * Decrements root_proto->refcount and, when it reaches 0 with
+ * module->destroy_requested set, fires umodule_destroy_internal.
+ * Callers must pass the still-valid module pointer; pass NULL for either
+ * to no-op safely.  vm may be NULL in test contexts. */
+void umodule_strand_refcount_dec(UModule *m, UProto *root_proto,
+                                 struct UVM *vm);
 
 /* Allocate a new UProto as module->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.

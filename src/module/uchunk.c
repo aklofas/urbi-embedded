@@ -143,8 +143,16 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
                 urbi_zero(out_result, sizeof(*out_result));
                 out_result->kind = UVAL_NIL;
             }
-            if (loader->module != NULL) {
-                umodule_refcount_dec((UModule *)loader->module, vm);
+            /* v0.8.1 Phase 2: strand-bind ref is on root_proto.
+             * Discharge early here via the deferred-destroy-aware helper;
+             * null both fields so ustrand_destroy (via urealm_teardown_all)
+             * does not double-dec. */
+            if (loader->root_proto != NULL) {
+                umodule_strand_refcount_dec((UModule *)loader->module,
+                                           loader->root_proto, vm);
+                loader->root_proto = NULL;
+                loader->module     = NULL;
+            } else if (loader->module != NULL) {
                 loader->module = NULL;
             }
             vm->fatal_strand = NULL;
@@ -650,11 +658,11 @@ urbi_module_free(struct UModule *module)
 {
 #if __STDC_HOSTED__
     if (module == NULL) return;
-    /* v0.8.0: all callers are synchronous (urbi_run_chunk + fail-path teardown);
-     * the transient strand's refcount decrement has already fired before we get
-     * here.  Assert that no live strand binding remains — a nonzero refcount here
-     * means the caller freed the module while strands still hold it (UAF). */
-    URBI_INTERNAL_ASSERT(module->refcount == 0 &&
+    /* v0.8.1 Phase 2: strand-bind refcount is on root_proto.  Assert no live
+     * strand binding remains — a nonzero root_proto->refcount means the caller
+     * freed the module while strands still hold it (UAF). */
+    URBI_INTERNAL_ASSERT((module->root_proto == NULL ||
+                          module->root_proto->refcount == 0) &&
         "urbi_module_free called with live strand bindings — call umodule_destroy"
         " + let strands drop refs first");
     /* Public API: no vm in scope.  Pass NULL — no proto rescue path.

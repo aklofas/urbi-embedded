@@ -118,8 +118,9 @@ UTEST(loader_drive_parks_on_sleep)
     UASSERT_EQ((int)UVAL_NIL, (int)result.kind);
     /* Strand state is parked (WAITING upper nibble), not DEAD and not RUNNING. */
     UASSERT(USTRAND_IS_WAITING(s));
-    /* Module refcount still > 0 — strand persists. */
-    UASSERT((unsigned)module.refcount > 0);
+    /* root_proto->refcount > 0 — strand-bind still live. */
+    UASSERT(module.root_proto != NULL);
+    UASSERT((unsigned)module.root_proto->refcount > 0);
 
     /* Cleanup: explicitly destroy the strand so the realm shutdown
      * isn't holding live work.  This discharges the module refcount. */
@@ -252,8 +253,9 @@ UTEST(run_chunk_parks_on_waituntil)
     UASSERT_EQ(URBI_OK, urbi_realm_get_global(&vm, realm, "x", 1, &x));
     UASSERT_EQ((int64_t)42, x.v.i);
 
-    /* Module refcount > 0 (loader strand parked, still bound). */
-    UASSERT((unsigned)module.refcount > 0);
+    /* root_proto->refcount > 0 (loader strand parked, still bound). */
+    UASSERT(module.root_proto != NULL);
+    UASSERT((unsigned)module.root_proto->refcount > 0);
 
     /* Note: we cannot let urbi_vm_destroy run with a parked strand AND
      * a heap-allocated module, because the parked strand keeps the
@@ -286,10 +288,12 @@ UTEST(strand_create_for_module_returns_non_transient)
     UASSERT_EQ((unsigned)USTRAND_STATE_READY, (unsigned)USTRAND_GET_STATE(s));
     UASSERT_EQ(0U, (unsigned)s->is_transient_strand);  /* NOT transient */
     UASSERT(s->module == &module);
-    UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
+    /* v0.8.1 Phase 2: strand-bind refcount is on root_proto, not module. */
+    UASSERT(module.root_proto != NULL);
+    UASSERT_EQ((unsigned)1, (unsigned)module.root_proto->refcount);
 
-    urbi_strand_destroy(s);  /* tears down + drops refcount */
-    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
+    urbi_strand_destroy(s);  /* tears down + drops root_proto refcount */
+    UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     uarena_destroy(&arena);
     umodule_destroy(&module, &vm);
