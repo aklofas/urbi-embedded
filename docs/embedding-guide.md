@@ -129,7 +129,54 @@ void urbi_task(struct UVM *vm)
 
 ---
 
-## 2. Allocator Strategy
+## 2. Loading and Running
+
+`urbi_run_chunk(vm, realm, module, &out)` compiles/loads bytecode into the
+realm and runs it under a persistent scheduler-managed strand.  Unlike
+pre-v0.8.0, the strand persists past the call return — if the chunk-top
+hits a sleep, join-wait, or event-wait, `urbi_run_chunk` returns and the
+host's main `urbi_step` loop continues driving the strand.
+
+### Typical pattern
+
+```c
+urbi_vm_init(&vm, NULL, NULL);
+URealm *realm = urbi_realm_create(&vm);
+
+UModule module;
+urbi_load_module(buf, len, &module);   /* or urbi_compile_source */
+urbi_run_chunk(&vm, realm, &module, NULL);  /* returns when chunk-top
+                                              * parks or completes */
+
+while (running) {
+    UStepResult r = urbi_step(&vm, 1000, NULL);
+    if (r == URBI_STEP_QUIESCENT) break;
+    /* ... or sleep waiting for events ... */
+}
+
+urbi_vm_destroy(&vm);              /* kills all strands, drops module refs */
+umodule_destroy(&module, &vm);     /* safe: refcount == 0 post-vm_destroy */
+```
+
+### Chunk-top parallel semantics
+
+Chunk-top `&` (fork-join) and `,` (fork-detach) work — the persistent loader
+strand has scheduler context.  Functions called from chunk-top that contain
+fork inherit the loader strand's scheduler context.  This matches the legacy
+urbiscript 2.0 spec; pre-v0.8.0 raised `URBI_ERR_STRAND_FATAL` for these.
+
+Background work spawned at chunk-top (forked detach, at-handlers, every,
+whenever) survives past `urbi_run_chunk`'s return; the host's `urbi_step`
+loop drains it.
+
+### See also
+
+- `docs/internals/loader-strand.md` — full mechanics.
+- REVIVAL.md §14 S-loader-strand — language-level commitment.
+
+---
+
+## 3. Allocator Strategy
 
 The VM uses a single allocator callback — `UVMAllocFn` — for every heap allocation (GC cells, intern table, scheduler queues, IC tables). The callback follows `realloc` semantics:
 
@@ -184,7 +231,7 @@ Do not call `urbi_lock_heap` in v1.0 use-cases unless you specifically need the 
 
 ---
 
-## 3. Event Flow
+## 4. Event Flow
 
 Events are the primary mechanism for moving data from C drivers (or ISR handlers) into the urbiscript reactive layer. The flow has three stages: register the event, inject from C (possibly from ISR), and consume in urbiscript via `at`.
 
@@ -342,7 +389,7 @@ at (mag?(mx, my, mz))   { fuse_sensors(ax, ay, az, gx, gy, gz, mx, my, mz) };
 
 ---
 
-## 4. Host Function Registration
+## 5. Host Function Registration
 
 `urbi_register` installs a C function as a script-visible global constant. The binding is const — re-registering the same name returns `URBI_ERR_CONST_SLOT_WRITE`.
 
@@ -457,7 +504,7 @@ Any host function may be called from a script `at` body that fires on the main t
 
 ---
 
-## 5. Tag Management
+## 6. Tag Management
 
 Tags are the cancellation primitive in urbiscript. A tag groups one or more strands; stopping the tag signals all of them to unwind cooperatively.
 
@@ -530,7 +577,7 @@ void expose_tag(struct UVM *vm, struct URealm *realm)
 
 ---
 
-## 6. Reference Management
+## 7. Reference Management
 
 GC-managed objects (closures, events, tags, objects) can be collected once no GC root keeps them alive. A `urbi_ref` pins a UValue as a GC root for the lifetime of the handle.
 
@@ -584,7 +631,7 @@ Use a ref whenever you need to hold a GC-managed object in C between API calls o
 
 ---
 
-## 7. Lifecycle Contracts
+## 8. Lifecycle Contracts
 
 This section documents exactly when script-side watchers and host-side watchers are unbound. Understanding these contracts prevents use-after-free on the C side and ensures cleanup callbacks fire in the expected order.
 
@@ -646,7 +693,7 @@ The `const char*` fields in `urbi_error_info_t` point into VM-owned storage and 
 
 ---
 
-## 8. Common Patterns
+## 9. Common Patterns
 
 ### Peripheral driver shape
 
@@ -752,7 +799,7 @@ void setup_watchdog(struct UVM *vm, struct URealm *realm,
 
 ---
 
-## 9. Anti-Patterns
+## 10. Anti-Patterns
 
 ### Heavy compute in an `at` body
 
@@ -790,7 +837,7 @@ Each `UStrand` is bound to the VM and realm that created it. Passing a strand po
 
 ---
 
-## 10. Threading Model
+## 11. Threading Model
 
 urbi-embedded's threading model follows a clear progression from today's single-VM design toward future multi-VM and reactive-messaging architectures. The commitment below is stable: design decisions today do not foreclose the v1.x or v2.0+ paths.
 

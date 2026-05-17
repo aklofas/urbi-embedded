@@ -1,5 +1,95 @@
 # Changelog
 
+## v0.8.0-loader-strand — UNRELEASED (persistent loader strand, restore legacy parallel-by-syntax)
+
+**Tag:** `v0.8.0-loader-strand`
+**Theme:** Architectural change to `urbi_run_chunk`'s execution model.
+Restores legacy urbiscript spec semantics: chunk-top `&` and `,` (and
+call-chains-from-chunk-top fork) work end-to-end.  The legacy
+aldebaran-urbi conformance corpus at `tests/2.x/separator/` is finally
+runnable.
+
+### Changed
+
+- **`urbi_run_chunk`** allocates a real scheduler-managed strand via
+  `urbi_strand_create_for_module` instead of a stack-local transient.
+  Drives internally via `urbi_step` until the loader strand parks
+  (sleep / join-wait / event-wait) or dies (OP_RET / fatal).  Strand
+  persists in `realm->strands_head` past return; host's main `urbi_step`
+  loop advances it.
+- **`umodule_destroy(m, vm)`** becomes refcount-aware: deferred destroy
+  when `m->refcount > 0` (typical for chunks loaded but not yet drained);
+  immediate destroy when `refcount == 0` (typical for the
+  host-after-vm_destroy pattern, which still works unchanged).
+- **`urbi_run_chunk` parameter** `const UModule *module` reverts to
+  `UModule *module` (refcount mutation).  Reverts one element of the
+  v0.5.8-cleanup const sweep.
+- **ABI version 0/7/4 → 0/7/5** (URBI_API_VERSION_NUM 704 → 705).
+  UModule struct grows two runtime-only fields (uint16_t refcount +
+  bool destroy_requested); sizeof shifts.  Third use of the pre-v1.0
+  escape clause.
+- **`strand_unlink_from_tags`** scans `[0..cleanup_cap)` instead of
+  `[0..cleanup_depth)`.  Fixes CHSTR-051: popped TAG_SCOPE entries
+  remained linked in `tag->member_strands_head` because
+  `strand_cleanup_pop` decrements `cleanup_depth` without unlinking.
+  Latent bug exposed by persistent-strand path; fix is contained.
+- **`release_strand_resource_chain`** migrates persistent-strand
+  closures/upvals to `vm->stdlib_closures`/`vm->stdlib_upvalues` instead
+  of freeing eagerly (UAF prevention for realm-global closures).
+
+### Added
+
+- **`UModule.refcount`** + **`UModule.destroy_requested`** fields
+  (runtime-only, not serialized).  Bumped at strand bind, decremented
+  at strand death.
+- **`umodule_refcount_inc/dec`** helpers in `<src/module/umodule.h>`.
+  Saturation at UINT16_MAX (log + freeze) + underflow assert; same
+  policy as v0.7.3 UProto.refcount.
+- **`urbi_strand_create_for_module`** loader-strand helper in
+  `<src/sched/ustrand.h>`.
+- **`uchunk_loader_drive`** internal driver loop with park-or-die
+  state machine in `<src/module/uchunk.h>`.  Uses realm-walk to
+  detect loader death (UAF-safe; the strand list is on the realm,
+  not on the strand).
+- **`URBI_ERR_LOADER_BUDGET`** (-20).  Returned by `urbi_run_chunk`
+  when the internal driver's outer iteration cap is exhausted
+  (chunk-top runnable but unable to reach a parked/dead state).
+- **`tests/unit/test_loader_strand_persistence.c`** — 7 cases covering
+  helper allocation, driver park/die, chunk-top `&`/`,`, chain-call
+  fork, parks-on-waituntil.
+- **`tests/unit/test_module_refcount.c`** — 6 cases covering refcount
+  semantics, deferred destroy, host-destroy paths, saturation.
+- **Activated legacy chk fixtures** at `tests/chk/separator/`:
+  `and-environment.chk`, `comma.chk`, `comma-environment.chk`.  Direct
+  ports of the aldebaran-urbi 2.x assertions (adapted for current
+  stdlib limitations).
+
+### Fixed
+
+- **Chunk-top `&` and `,` fatal** (v0.7.x design-risks entry "`&`
+  fork-join requires urbi_step driver").  Entry deleted; constraint
+  structurally resolved.  Forward-pointer added to M8 section for the
+  canonical UModule-layout refactor that completes the trajectory.
+- **CHSTR-051** — `strand_unlink_from_tags` left popped TAG_SCOPE
+  entries linked in `tag->member_strands_head` during fatal unwind.
+  Caused UAF in `throw_in_finally.chk` under the persistent-strand
+  path.
+
+### What was deferred (not in this release)
+
+- **UModule layout refactor** — root proto becomes a `UProto *root_proto`
+  field; instructions/constants/IC metadata move into root_proto;
+  UModule shrinks to thin loader shell.  Pre-M8 prerequisite work;
+  tracked in the v0.8.0-loader-strand spec §11 "Forward path."
+- **Realm-owned `loaded_protos[]` registry.**  Multi-chunk, REPL eval,
+  disconnect-cleanup at the realm level per REVIVAL §11.  M8 REPL
+  milestone.
+- **`vm->last_loader_strand` introspection seam.**  Forward-compat for
+  multi-chunk callers to interrogate loader state.  Reserved for the
+  next step; no caller demand today.
+
+---
+
 ## v0.7.3-bugfixes — 2026-05-16 (cascade-wake structural fix via UProto refcount)
 
 **Tag:** `v0.7.3-bugfixes`
