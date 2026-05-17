@@ -58,7 +58,7 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 /* Forward declaration — umodule_destroy_internal is defined below, after
  * umodule_destroy_proto_buffers.  The public umodule_destroy shim (v0.8.0
  * deferred-destroy) calls into this. */
-static void umodule_destroy_internal(UModule *m, struct UVM *vm);
+static void umodule_destroy_internal(UModule *module, struct UVM *vm);
 
 /* Resolve the effective allocator for a module. */
 static UModuleAllocFn module_allocator(const UModule *c) {
@@ -1206,14 +1206,14 @@ umodule_refcount_dec(UModule *m, struct UVM *vm)
  * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills
  * all strands first → all bindings drop → refcount == 0 → immediate free. */
 void
-umodule_destroy(UModule *m, struct UVM *vm)
+umodule_destroy(UModule *module, struct UVM *vm)
 {
-    if (m == NULL) return;
-    if (m->refcount > 0U) {
-        m->destroy_requested = true;
+    if (module == NULL) return;
+    if (module->refcount > 0U) {
+        module->destroy_requested = true;
         return;
     }
-    umodule_destroy_internal(m, vm);
+    umodule_destroy_internal(module, vm);
 }
 
 static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
