@@ -11,6 +11,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Pre-bake host tool (urbi-compile-stdlib)
+        # The reactive_smoke ESP-IDF project's CMakeLists.txt depends on
+        # tools/urbi-compile-stdlib (host binary) to bake reactive_smoke.u
+        # into a C header at build time. CMake doesn't know how to build
+        # the host tool itself — the worktree-root Makefile owns that
+        # recipe — so pre-build it before invoking idf.py.
+        run: make tools/urbi-compile-stdlib
       - name: Build smoke
         working-directory: tests/qemu/reactive_smoke
         run: |
