@@ -35,27 +35,32 @@
 #define UTEST(name) static void name(void)
 
 /* Compile `src` into *out_mod.  Returns true on success.
- * Does NOT run the chunk — caller inspects module fields directly. */
+ * Does NOT run the chunk — caller inspects module fields directly.
+ * Owns its own arena so callers need not manage one. */
 static bool
-rp_compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
+rp_compile_chunk(UVM *vm, UModule *out_mod, const char *src)
 {
+    UArena arena;
+    uarena_init(&arena, 4096);
+
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
     UEmitter e;
-    uemit_init(&e, out_mod, arena, vm, NULL);
+    uemit_init(&e, out_mod, &arena, vm, NULL);
 
     UParser p;
-    uparse_init(&p, &lex, arena);
+    uparse_init(&p, &lex, &arena);
 
     bool ok = true;
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) { ok = false; break; }
         if (uemit_statement(&e, node) != EMIT_OK) { ok = false; break; }
-        uarena_reset(arena);
+        uarena_reset(&arena);
     }
     if (ok && uemit_finish(&e) != EMIT_OK) ok = false;
+    uarena_destroy(&arena);
     return ok;
 }
 
@@ -72,13 +77,11 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    UArena arena;
     UModule module = {0};
-    uarena_init(&arena, 4096);
 
     /* Compile a chunk with a nested proto so the rescue path exercises
      * nested[] ownership transfer. */
-    UASSERT(rp_compile_chunk(&vm, &arena, &module, "var f = function () { 1 };"));
+    UASSERT(rp_compile_chunk(&vm, &module, "var f = function () { 1 };"));
     UASSERT(module.root_proto != NULL);
 
     /* Bind a strand — this bumps root_proto->refcount to 1. */
@@ -101,7 +104,6 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
     urbi_strand_destroy(s);
 
     /* vm_destroy must free rescued_protos cleanly (no leaks, no double-free). */
-    uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
 
@@ -112,12 +114,10 @@ UTEST(no_rescue_when_refcount_zero)
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
-    UArena arena;
     UModule module = {0};
-    uarena_init(&arena, 4096);
 
     /* Compile but do NOT create a strand → refcount stays at 0. */
-    UASSERT(rp_compile_chunk(&vm, &arena, &module, "1 + 2;"));
+    UASSERT(rp_compile_chunk(&vm, &module, "1 + 2;"));
     UASSERT(module.root_proto != NULL);
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
@@ -127,7 +127,6 @@ UTEST(no_rescue_when_refcount_zero)
     /* Nothing should have been rescued. */
     UASSERT(vm.rescued_protos == NULL);
 
-    uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
 
@@ -140,12 +139,9 @@ UTEST(two_modules_one_rescued_one_normal)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    UArena arena;
-    uarena_init(&arena, 4096);
-
     /* Module A — will be rescued (strand alive at destroy time). */
     UModule ma = {0};
-    UASSERT(rp_compile_chunk(&vm, &arena, &ma, "var g = function () { 2 };"));
+    UASSERT(rp_compile_chunk(&vm, &ma, "var g = function () { 2 };"));
     UASSERT(ma.root_proto != NULL);
     UStrand *sa = urbi_strand_create_for_module(&vm, realm, &ma);
     UASSERT(sa != NULL);
@@ -153,7 +149,7 @@ UTEST(two_modules_one_rescued_one_normal)
 
     /* Module B — will NOT be rescued (no strand). */
     UModule mb = {0};
-    UASSERT(rp_compile_chunk(&vm, &arena, &mb, "3 + 4;"));
+    UASSERT(rp_compile_chunk(&vm, &mb, "3 + 4;"));
     UASSERT(mb.root_proto != NULL);
     UASSERT_EQ((unsigned)0, (unsigned)mb.root_proto->refcount);
 
@@ -169,7 +165,6 @@ UTEST(two_modules_one_rescued_one_normal)
     /* Clean up the strand. */
     urbi_strand_destroy(sa);
 
-    uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
 
