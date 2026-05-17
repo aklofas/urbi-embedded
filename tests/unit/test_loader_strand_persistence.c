@@ -12,6 +12,7 @@
 #include "utest.h"
 
 #include "urbi/urbi.h"
+#include "module/uchunk.h"
 #include "module/umodule.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
@@ -53,6 +54,81 @@ compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
     return ok;
 }
 
+/* Task 7: drive a freshly-created loader strand to completion. */
+UTEST(loader_drive_completes_trivial_chunk)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+    UASSERT(realm != NULL);
+
+    UArena arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+    UASSERT(compile_chunk(&vm, &arena, &module, "42"));
+
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    UASSERT(s != NULL);
+
+    UValue result = {0};
+    int rc = uchunk_loader_drive(&vm, s, &result);
+    UASSERT_EQ(URBI_OK, rc);
+    UASSERT_EQ((int)UVAL_INT, (int)result.kind);
+    UASSERT_EQ((int64_t)42, result.v.i);
+
+    /* Strand died; refcount discharged via ustrand_destroy. */
+    /* Note: depending on whether the scheduler's quiescence sweep
+     * has run, the strand may still exist as a DEAD pool entry.
+     * The refcount discharge happens at strand_destroy time. */
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
+/* Task 7: loader strand parks on a waituntil whose cond starts false.
+ *
+ * waituntil (false) installs a watcher that is never satisfied; the strand
+ * parks with USTRAND_WAIT_WATCHER (USTRAND_WAITING | USTRAND_REASON_WATCHER).
+ * The driver must return URBI_OK with out_result = nil and leave the strand
+ * alive in realm->strands_head.  sleep() is not available as a registered
+ * builtin at this milestone; waituntil(false) is the canonical park primitive. */
+UTEST(loader_drive_parks_on_sleep)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+    URealm *realm = urbi_realm_global(&vm);
+
+    UArena arena;
+    UModule module = {0};
+    uarena_init(&arena, 4096);
+    /* waituntil (false) parks with USTRAND_WAIT_WATCHER; cond starts false
+     * so the watcher installs and the strand remains WAITING. */
+    UASSERT(compile_chunk(&vm, &arena, &module,
+        "waituntil (false)"));
+
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    UASSERT(s != NULL);
+
+    UValue result = {0};
+    int rc = uchunk_loader_drive(&vm, s, &result);
+    UASSERT_EQ(URBI_OK, rc);
+    /* Strand parked on watcher; result = nil. */
+    UASSERT_EQ((int)UVAL_NIL, (int)result.kind);
+    /* Strand state is parked (WAITING upper nibble), not DEAD and not RUNNING. */
+    UASSERT(USTRAND_IS_WAITING(s));
+    /* Module refcount still > 0 — strand persists. */
+    UASSERT((unsigned)module.refcount > 0);
+
+    /* Cleanup: explicitly destroy the strand so the realm shutdown
+     * isn't holding live work.  This discharges the module refcount. */
+    urbi_strand_destroy(s);
+
+    uarena_destroy(&arena);
+    umodule_destroy(&module, &vm);
+    urbi_vm_destroy(&vm);
+}
+
 /* Task 6: the helper creates a non-transient strand bound to the module,
  * bumps refcount, returns DORMANT→READY (via urbi_strand_start). */
 UTEST(strand_create_for_module_returns_non_transient)
@@ -84,6 +160,10 @@ UTEST(strand_create_for_module_returns_non_transient)
 
 void test_loader_strand_persistence_suite(void)
 {
+    utest_run("loader_strand: drive completes trivial chunk",
+              loader_drive_completes_trivial_chunk);
+    utest_run("loader_strand: drive parks on waituntil(false)",
+              loader_drive_parks_on_sleep);
     utest_run("loader_strand: create_for_module returns non-transient",
               strand_create_for_module_returns_non_transient);
 }

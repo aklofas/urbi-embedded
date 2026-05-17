@@ -12,6 +12,7 @@
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
 
 #include "urbi/urbi.h"
+#include "module/uchunk.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "module/umodule.h"
@@ -19,7 +20,9 @@
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for vm->stdlib_closures walk */
+#include "sched/ustrand.h"     /* UStrand, USTRAND_IS_WAITING, USTRAND_GET_STATE, USTRAND_DEAD */
 #include <stddef.h>    /* size_t */
+#include <stdint.h>    /* uint32_t */
 
 #if !defined(URBI_BYTECODE_ONLY)
 #  include "value/uarena.h"
@@ -32,6 +35,106 @@
 #  endif
 #endif
 
+
+/* ---------------------------------------------------------------------------
+ * uchunk_loader_drive
+ *
+ * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
+ * iterations.  Inner: per-step instruction budget passed to urbi_step.
+ * Outer: how many urbi_step iterations to attempt before giving up
+ * (returning URBI_ERR_LOADER_BUDGET).  At 1000 × 10000 = 10M instructions,
+ * far beyond any reasonable chunk-top workload; an infinite-loop chunk
+ * would hit this cap.  Tunable later if a workload demands it.
+ * --------------------------------------------------------------------------- */
+#define URBI_LOADER_INNER_BUDGET   1000U
+#define URBI_LOADER_OUTER_CAP      10000U
+
+int
+uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
+{
+    if (!vm || !loader) {
+        if (out_result) {
+            urbi_zero(out_result, sizeof(*out_result));
+            out_result->kind = UVAL_NIL;
+        }
+        return URBI_ERR_INVALID_ARG;
+    }
+
+    /* Wire out_result as the strand's out_slot so OP_RET writes the return
+     * value directly.  A local nil is used when the caller passes NULL. */
+    UValue nil_storage;
+    urbi_zero(&nil_storage, sizeof(nil_storage));
+    nil_storage.kind = UVAL_NIL;
+
+    UValue *out_slot_target = out_result ? out_result : &nil_storage;
+    /* Initialise to nil; OP_RET will overwrite on clean death. */
+    *out_slot_target = nil_storage;
+    loader->out_slot = out_slot_target;
+
+    /* Snapshot the module pointer BEFORE any urbi_step calls.
+     *
+     * Safety invariant (T20 eager-reap): urbi_step eagerly calls
+     * urbi_strand_destroy on clean-dead strands, which frees the strand
+     * struct.  Reading `loader->state` after urbi_step returns is a UAF
+     * if the strand died cleanly.  Fatal strands are NOT reaped (ustep.c
+     * returns URBI_STEP_FATAL and sets vm->fatal_strand before the reap
+     * arm); those are safe to read.
+     *
+     * Detection strategy:
+     *   1. Fatal death  — urbi_step returns URBI_STEP_FATAL and
+     *      vm->fatal_strand == loader.  Strand not freed; still readable.
+     *   2. Clean death  — strand was reaped; `loader` is invalid.  Detected
+     *      via module->refcount: the strand held refcount +1; destroy drops
+     *      it.  If refcount reaches 0, the strand died.  Assumes the
+     *      driver's caller does not hold an independent module ref (which
+     *      it doesn't — the caller passes the module to the strand and does
+     *      not call umodule_refcount_inc separately).
+     *   3. Parked       — strand still alive; reading loader->state is safe.
+     *
+     * We snapshot loader->module now (before it's freed) so we can poll
+     * refcount safely across iterations. */
+    UModule *mod = (UModule *)loader->module;
+
+    for (uint32_t i = 0; i < URBI_LOADER_OUTER_CAP; i++) {
+        UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
+
+        /* Path 1: fatal death.  Fatal strands are not reaped by urbi_step;
+         * loader is still valid.  vm->fatal_strand points at our strand,
+         * distinguishable from an unrelated strand's fatal by address. */
+        if (step_rc == URBI_STEP_FATAL && vm->fatal_strand == loader) {
+            if (out_result) {
+                urbi_zero(out_result, sizeof(*out_result));
+                out_result->kind = UVAL_NIL;
+            }
+            return URBI_ERR_STRAND_FATAL;
+        }
+
+        /* Path 2: clean death detected via module refcount drop.
+         * The strand held refcount +1; destroy decrements it.
+         * After reap, loader is freed — do NOT dereference it. */
+        if (mod != NULL && mod->refcount == 0) {
+            /* out_result was already written by OP_RET via out_slot before
+             * the reap.  Return success. */
+            return URBI_OK;
+        }
+
+        /* Path 3: check for parked states (strand still alive — safe to read).
+         * USTRAND_IS_WAITING checks that the upper nibble equals
+         * USTRAND_WAITING (0x30), covering all WAITING sub-states:
+         * WAITING_SLEEP, WAIT_WATCHER, WAIT_EVENT, WAITING_JOIN, WAITING_HOST. */
+        if (USTRAND_IS_WAITING(loader)) {
+            /* Parked.  Strand persists in realm; caller continues with
+             * their own urbi_step loop.  out_result stays nil. */
+            return URBI_OK;
+        }
+
+        /* Otherwise READY or RUNNING — keep driving. */
+    }
+
+    /* Outer cap exhausted: chunk-top still runnable after 10M instructions
+     * of forward progress with no yield.  Almost certainly an infinite loop. */
+    return URBI_ERR_LOADER_BUDGET;
+}
 
 /* ---------------------------------------------------------------------------
  * urbi_run_chunk
