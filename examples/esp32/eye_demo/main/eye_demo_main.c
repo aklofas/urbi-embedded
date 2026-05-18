@@ -499,8 +499,8 @@ void app_main(void)
     /* Stats accessor batch — 8 single-getter host fns the urbiscript-side
      * Stats class polls inside its at(stats_tick?) handler.  Bundled via
      * urbi_aux_register_function_table; the urbi_aux sibling component
-     * (components/urbi_aux/) makes the convenience layer linkable from
-     * ESP-IDF builds that opt in via REQUIRES urbi_aux. */
+     * (components/esp32-idf-aux/) makes the convenience layer linkable from
+     * ESP-IDF builds that opt in via REQUIRES esp32-idf-aux. */
     static const urbi_aux_function_decl_t stats_fns[] = {
         { "c_cam_fps",             c_cam_fps             },
         { "c_inject_fps",          c_inject_fps          },

@@ -1,6 +1,6 @@
 # ESP32-S3-EYE color blob tracking demo.
 #
-# Builds against the urbi managed-component at ../../../components/urbi and
+# Builds against the urbi managed-component at ../../../components/esp32-idf and
 # pulls espressif/esp32-camera from the ESP Component Registry via
 # main/idf_component.yml.
 

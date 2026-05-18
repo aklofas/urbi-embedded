@@ -25,6 +25,7 @@ fi
 # otherwise use plain nm.
 case "$ARCHIVE" in
     *esp32s3*)     NM_CMD=xtensa-esp-elf-nm ;;
+    *stm32f4*)     NM_CMD=arm-none-eabi-nm ;;
     *cross-arm*)   NM_CMD=arm-none-eabi-nm ;;
     *cross-riscv*) NM_CMD=riscv64-unknown-elf-nm ;;
     *)             NM_CMD=nm ;;

@@ -1,0 +1,7 @@
+## NOT an ESP-IDF component — this is a structural placeholder.
+## The STM32 port is consumed via direct Makefile include, not via
+## ESP-IDF's component manager. See README.md for build instructions.
+name: stm32f4-hal-baremetal
+version: 0.8.2
+description: STM32F4 bare-metal port for urbi (Cortex-M4F, STMicroelectronics Cube HAL/BSP)
+url: https://github.com/aklofas/urbi-embedded

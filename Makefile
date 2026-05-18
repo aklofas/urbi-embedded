@@ -35,7 +35,7 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(wildcard src/stdlib/*.c)
+       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c))
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
@@ -43,7 +43,33 @@ TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
 
-OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+# Stdlib bytecode flavor selection.  The tracked
+# src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64
+# (URBI_FLOAT_TYPE=8).  Cross targets built with a different URBI_FLOAT_TYPE
+# need a per-target rebake — otherwise urbi_stdlib_boot fails silently
+# inside urbi_vm_init (ULOAD_FLAVOR_MISMATCH on byte 13) and urbi_realm_create
+# returns NULL because no stdlib protos got installed.
+#
+# Default (URBI_STDLIB_FLAVOR unset, e.g. host build): use the tracked .gen.c.
+# Cross builds opt in by setting URBI_STDLIB_FLAVOR=N (matches URBI_FLOAT_TYPE
+# numeric value).  The recursive cross-arm / cross-riscv / cross-stm32f4
+# targets pass URBI_STDLIB_FLAVOR=4 automatically.
+#
+# Bytecode-only targets never rebake — they only verify the freestanding
+# symbol contract, the bake tool isn't built under URBI_BYTECODE_ONLY=1, and
+# the f64 .gen.c is harmless data in that build.
+ifeq ($(URBI_BYTECODE_ONLY),1)
+  override URBI_STDLIB_FLAVOR :=
+endif
+
+ifeq ($(URBI_STDLIB_FLAVOR),)
+  STDLIB_BYTECODE_GEN_C := src/stdlib/urbi_stdlib_bytecode.gen.c
+else
+  STDLIB_BYTECODE_GEN_C := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.c
+endif
+STDLIB_BYTECODE_GEN_O := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.o
+
+OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC)) $(STDLIB_BYTECODE_GEN_O)
 AUX_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(AUX_SRCS))
 TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
 LIB := $(BUILDDIR)/liburbi.a
@@ -206,6 +232,27 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
 
+# Per-flavor bake tool variants — produce bytecode for a target with a
+# different URBI_FLOAT_TYPE than the host (the default tool above is f64).
+# Cross-compile targets that use f32 (-DURBI_FLOAT_TYPE=4) must bake their
+# bytecode using `tools/urbi-compile-stdlib-f4`, otherwise the runtime will
+# reject the module with ULOAD_FLAVOR_MISMATCH on byte 13.
+#
+# Pattern target: `tools/urbi-compile-stdlib-f4` builds a tool with
+# -DURBI_FLOAT_TYPE=4.  Compiles all sources in one cc invocation rather
+# than reusing build/host/*.o (which were compiled with f64).  ~10s build
+# per flavor; cached after first build.
+#
+# Note: urbi_stdlib_bytecode.gen.c is filtered out (same as HOST_BAKE_OBJ
+# above) — it defines urbi_stdlib_bytecode/_len symbols that also live in
+# the stub.  We use the stub at link time to break the chicken-and-egg
+# (the bake tool itself is what would normally regenerate the .gen.c).
+tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
+        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(HOST_BAKE_SRC)) \
+        tools/stub_stdlib_bytecode.c
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_FLOAT_TYPE=$* \
+	    -Iinclude -Isrc -o $@ $^ -lm
+
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
 # 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
@@ -220,8 +267,6 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 # build/) so the first build of liburbi.a does not require the bake
 # tool — closing the chicken-and-egg between the tool and the library.
 
-STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
-
 src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
                                         src/stdlib/STDLIB_ORDER.txt \
                                         $(STDLIB_U_FILES)
@@ -230,6 +275,31 @@ src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
 	    src/stdlib \
 	    $@
 endif  # URBI_BYTECODE_ONLY != 1
+
+# Shared with the per-target rebake rule below (must live outside the
+# URBI_BYTECODE_ONLY guard so the rule body can expand it).
+STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
+
+# Per-target stdlib rebake — fires only when URBI_STDLIB_FLAVOR is set
+# (see commentary near the SRC/OBJ block).  Pattern rule
+# $(BUILDDIR)/src/%.o: src/%.c does not match a source under $(BUILDDIR)/,
+# so define both the .gen.c bake step and the .gen.o compile step
+# explicitly.  Explicit rule with a recipe takes precedence over the
+# pattern rule for the same target.
+ifneq ($(URBI_STDLIB_FLAVOR),)
+$(STDLIB_BYTECODE_GEN_C): tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
+                          src/stdlib/STDLIB_ORDER.txt \
+                          $(STDLIB_U_FILES)
+	@mkdir -p $(@D)
+	./tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    $@
+
+$(STDLIB_BYTECODE_GEN_O): $(STDLIB_BYTECODE_GEN_C)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+endif
 
 # --- Integration tests --------------------------------------------------
 #
@@ -260,9 +330,81 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
+
+# v0.8.2: host-side unit tests for STM32F4 port shims, using mock BSP.
+# Each test compiles a single port shim TU against the mock BSP layer.
+# URBI_PORT_TEST=1 selects the mock-include path in the port shim TUs.
+PORT_STM32F4_TESTS := \
+	test_port_allocator \
+	test_port_time \
+	test_port_writer \
+	test_port_diag \
+	test_port_lcd \
+	test_port_gyro \
+	test_port_button
+
+PORT_STM32F4_TEST_DEPS_COMMON := \
+	tests/port_stm32f4/mock_bsp.c
+
+PORT_STM32F4_CFLAGS := -std=c99 -Wall -Wextra \
+	-DURBI_PORT_TEST=1 \
+	-I tests/port_stm32f4 \
+	-I include \
+	-I components/stm32f4-hal-baremetal/include
+
+# Each test gets its own binary in build/port_stm32f4/
+build/port_stm32f4/test_port_allocator: tests/port_stm32f4/test_port_allocator.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_allocator.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_time: tests/port_stm32f4/test_port_time.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_time.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_writer: tests/port_stm32f4/test_port_writer.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_writer.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_diag: tests/port_stm32f4/test_port_diag.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_writer.c \
+	components/stm32f4-hal-baremetal/src/port/port_diag.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_lcd: tests/port_stm32f4/test_port_lcd.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_lcd.c \
+	$(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
+
+build/port_stm32f4/test_port_gyro: tests/port_stm32f4/test_port_gyro.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_gyro.c \
+	$(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
+
+build/port_stm32f4/test_port_button: tests/port_stm32f4/test_port_button.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_button.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+.PHONY: test-port-stm32f4
+test-port-stm32f4: $(addprefix build/port_stm32f4/, $(PORT_STM32F4_TESTS))
+	@for t in $^; do echo "Running $$t..."; $$t || exit 1; done
+	@echo "All STM32F4 port tests PASS"
 
 .PHONY: test-loc-cap
 test-loc-cap:
@@ -704,6 +846,7 @@ fuzz-tools:
 # Cross-compile sanity (builds liburbi.a only; no test runner).
 cross-arm:
 	$(MAKE) TARGET=arm-cortex-m7 \
+		URBI_STDLIB_FLAVOR=4 \
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
 		        -DURBI_CLEANUP_MAX=16 \
@@ -718,11 +861,41 @@ cross-arm:
 
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
+		URBI_STDLIB_FLAVOR=4 \
 		CC=riscv64-unknown-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
 		        -DURBI_FLOAT_TYPE=4 \
 		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
+		core
+
+# v0.8.2: cross-compile for STM32F4 (Cortex-M4F).  Same arm-none-eabi
+# toolchain as cross-arm; differs in -mcpu and FPU flags.
+#
+# UVM_STACK_CAP override: default 2048 slots × 16 B = 32 KB per strand
+# register stack is too big for a 1 MB SDRAM heap with frequent watcher-
+# body spawns (gyro_tick @ 50 ms).  512 slots × 16 B = 8 KB lets ~100+
+# alive strands coexist, eliminating the OOM bursts from the v0.8.2
+# bring-up.  Mandelbrot demo functions are shallow enough (~5 nested
+# calls × ~10 locals each) that 512 slots is comfortable; complex
+# embeddings can override per-build.
+cross-stm32f4:
+	$(MAKE) TARGET=arm-cortex-m4 \
+		URBI_STDLIB_FLAVOR=4 \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m4 -mthumb \
+		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+		        -ffreestanding \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DUVM_STACK_CAP=512" \
+		AR=arm-none-eabi-ar \
 		core
 
 # T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
@@ -761,6 +934,27 @@ cross-riscv-bytecode-only:
 		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
 		core
+
+# v0.8.2: STM32F4 bytecode-only freestanding variant.
+cross-stm32f4-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-stm32f4-bytecode-only \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m4 -mthumb \
+		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+		        -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		core
+	@sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
 
 # T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
 # Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
@@ -831,9 +1025,10 @@ test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
 # it ill-suited as a default local gate (matches the existing releasetest
 # policy that excludes cross-arm/cross-riscv).  CI invokes it directly.
 .PHONY: test-freestanding
-test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only
+test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only
 	sh tests/scripts/test-freestanding.sh build/cross-arm-bytecode-only/liburbi.a
 	sh tests/scripts/test-freestanding.sh build/cross-riscv-bytecode-only/liburbi.a
+	sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
 
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
@@ -1022,4 +1217,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4

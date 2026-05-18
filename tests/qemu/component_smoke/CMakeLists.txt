@@ -1,4 +1,4 @@
-# Trivial ESP-IDF app: verifies components/urbi/ builds + links under xtensa.
+# Trivial ESP-IDF app: verifies components/esp32-idf/ builds + links under xtensa.
 #
 # Only calls urbi_api_version() — does NOT exercise VM functionality. This
 # is the FIRST cross-compile of the codebase with xtensa-esp-elf; build success

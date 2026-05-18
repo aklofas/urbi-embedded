@@ -29,9 +29,9 @@ shade_existing_protos(UVM *vm, UObject *obj)
         return;   /* empty form — nothing to shade */
     }
     if ((raw & 1U) != 0U) {
-        /* single form: bit 0 set, address in high bits — UProtos pointer-
-         * encoding (TIDY-003 design pin per pre-M4 prototype-chain spec §7.2). */
-        gc_shade_gray(vm, (UCell *)(raw >> 1));  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
+        /* single form: bit 0 set, raw pointer in remaining bits (alignment-
+         * tagged) — see urbi_object_set_protos_single for rationale. */
+        gc_shade_gray(vm, (UCell *)(raw & ~(uintptr_t)1U));  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
     } else {
         /* heap form: raw is a UProtos*. Shade the UProtos cell itself.
          * The UObject*s in items[] are reachable from the UProtos walker
@@ -57,7 +57,15 @@ urbi_object_set_protos_single(UVM *vm, UObject *obj, UObject *p)
     /* Forward barrier on the inserted child (per spec §5.3 — barrier is
      * per-write, not per-disposition). */
     gc_shade_gray(vm, (UCell *)p);
-    obj->protos = ((uintptr_t)p << 1) | 1U;
+    /* Single-form tag: bit 0 set, raw pointer in the remaining bits.
+     * UObject is allocated by urbi_gc_alloc (UCell), >=8-byte aligned, so
+     * bit 0 of the pointer is always 0 and OR'ing the tag does not collide.
+     * Previously this used `(p << 1) | 1` and the load path used `>> 1`,
+     * which silently lost the high address bit on 32-bit targets whose
+     * heap maps above 0x80000000 (e.g. STM32F4 with SDRAM heap at
+     * 0xD0000000 — the shifted address became 0x50081D70 instead of
+     * 0xD0081D70 and the next field deref hard-faulted into a wedge). */
+    obj->protos = (uintptr_t)p | 1U;
     /* T27: mark the inserted prototype so future slot installs on it bump
      * topology_gen (topology spec §4.1 row 4).  Monotonic — never cleared. */
     p->flags |= URBI_OBJ_FLAG_IS_PROTOTYPE;

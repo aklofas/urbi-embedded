@@ -27,6 +27,7 @@ typedef struct UModule {
 ```
 
 **Ownership:**
+
 - `root_proto` owns all chunk-top data including nested function-literal protos.
   `umodule_destroy` frees `root_proto` (or rescues it to `vm->rescued_protos`
   when `root_proto->refcount > 0`).
@@ -110,6 +111,7 @@ for the entire module (shell + root proto + all nested protos).  The module
 lives or dies as a unit.
 
 **Counted references:**
+
 - Each strand that references the module (set at strand-bind, cleared at
   strand-destroy).
 - Each UClosure whose `proto` field points to any proto in the module
@@ -117,6 +119,7 @@ lives or dies as a unit.
   by `pool_free` or swept by `urbi_vm_destroy`).
 
 **Not separately counted:**
+
 - Nested proto slots within `root_proto.nested[]` — their reachability is
   structural, not refcounted.  The slot is valid for the module's lifetime.
 
@@ -184,7 +187,7 @@ for explicit module eviction.
 
 ### Header
 
-```
+```text
 [ header (version=0x17, descriptor, magic, canary, zero bytes 16..23) ]
 [ source_name (length-prefixed) ]
 [ root_proto block: recursive UProto serialization ]
@@ -197,7 +200,7 @@ different version byte as `ULOAD_UNSUPPORTED_VERSION`.
 
 Each UProto block serializes as:
 
-```
+```text
 [ instructions (count + raw uint32_t[]) ]
 [ constants (count + typed UValue[]) ]
 [ line_deltas (int8_t[]) ]
@@ -278,6 +281,7 @@ must reach a live `root_proto` at the moment the refcount is decremented.
 **Required order: (1) before (2).**
 
 Rationale:
+
 - Each surviving closure in `stdlib_closures` holds `cl->proto` pointing into
   some `root_proto`.  During the `stdlib_closures` sweep, the free path calls
   `uproto_root_of(cl->proto)->refcount--`.

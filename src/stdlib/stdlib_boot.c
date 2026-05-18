@@ -111,6 +111,13 @@ urbi_stdlib_boot(UVM *vm)
          * §470).  urbi_zero used (not memset) per freestanding
          * discipline. */
         urbi_zero(m, sizeof(UModule));
+        /* Freestanding: umodule_deserialize requires module->alloc_fn for
+         * the internal proto + buffer allocations.  Hosted builds fall
+         * back to stdlib_alloc inside module_allocator(); freestanding
+         * does not and returns ULOAD_OOM if alloc_fn is NULL.  Inherit
+         * the VM's allocator so the stdlib module shares the VM heap. */
+        m->alloc_fn = vm->alloc_fn;
+        m->alloc_ud = vm->alloc_ud;
         UModuleLoadError lerr = umodule_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
         if (lerr != ULOAD_OK) {

@@ -9,7 +9,7 @@
 #define UTEST(name) static void name(void)
 
 /* Mirror the port_psram_alloc signature on host. The actual symbol is in
- * components/urbi/src/port/port_allocator.c and depends on heap_caps_*. */
+ * components/esp32-idf/src/port/port_allocator.c and depends on heap_caps_*. */
 static void *mock_port_psram_alloc(void *ptr, size_t nbytes, void *ud) {
     (void)ptr; (void)nbytes; (void)ud;
     return NULL;

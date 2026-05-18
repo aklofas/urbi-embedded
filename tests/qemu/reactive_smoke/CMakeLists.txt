@@ -1,6 +1,6 @@
 # QEMU reactive smoke test project.
 #
-# Wraps the urbi managed-component at ../../../components/urbi and runs
+# Wraps the urbi managed-component at ../../../components/esp32-idf and runs
 # under espressif/qemu via `idf.py qemu`.  See run_smoke.sh for the
 # harness + expected_markers.txt for the assertion oracle.
 
