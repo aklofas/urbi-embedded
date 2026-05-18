@@ -714,31 +714,6 @@ dispatch:
                 UValue native_out;
                 int rc = callee->native_fn(vm, self_value, args_ptr,
                                            (uint8_t)nargs, &native_out);
-                /* v0.8.2 bring-up debug: trace first 4 native-method
-                 * raises to see the actual rc + nargs + is_method state.
-                 * Remove before tag. */
-                if (rc != UEXEC_OK && vm && vm->writer_fn) {
-                    static int cnt = 0;
-                    if (cnt < 4) {
-                        cnt++;
-                        char buf[80];
-                        const char *d = "0123456789ABCDEF";
-                        int n = 0;
-                        const char *t = "fn=";
-                        while (t[n]) { buf[n] = t[n]; n++; }
-                        uintptr_t fp = (uintptr_t)callee->native_fn;
-                        for (int k = 28; k >= 0; k -= 4) buf[n++] = d[(fp >> k) & 0xF];
-                        const char *t2 = " rc=";
-                        int j = 0; while (t2[j]) { buf[n++] = t2[j++]; }
-                        buf[n++] = d[(rc >> 4) & 0xF];
-                        buf[n++] = d[rc & 0xF];
-                        const char *t3 = " m=";
-                        j = 0; while (t3[j]) { buf[n++] = t3[j++]; }
-                        buf[n++] = is_method ? '1' : '0';
-                        buf[n++] = '\r'; buf[n++] = '\n';
-                        vm->writer_fn(vm->writer_ud, "ncall", 5, buf, (size_t)n, 0);
-                    }
-                }
                 if (rc == UEXEC_OK) {
                     s->R[a] = native_out;
                     if (s->pending_unwind != UEXEC_OK) {
@@ -1937,18 +1912,6 @@ dispatch:
 
 halt_error:
     /* Error path: strand is now dead. */
-    /* v0.8.2 bring-up debug: every halt_error silently kills the strand.
-     * The watcher-body warning gates on fatal_status == UEXEC_THROW which
-     * the generic HALT path doesn't set, so body errors look like clean
-     * completions to the host.  Print last_errmsg here so we can see what
-     * actually killed the strand.  Remove before tag. */
-    if (vm && vm->writer_fn && vm->last_errmsg[0] != '\0') {
-        vm->writer_fn(vm->writer_ud, "halt", 4,
-                      vm->last_errmsg,
-                      urbi_strlen(vm->last_errmsg),
-                      0);
-        vm->writer_fn(vm->writer_ud, "halt", 4, "\r\n", 2, 0);
-    }
     s->state = USTRAND_STATE_DEAD;
     steps_consumed++;
     goto exit_strand;

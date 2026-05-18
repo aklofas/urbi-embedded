@@ -50,22 +50,6 @@ void port_lcd_init(void) {
 int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
                               UValue *args, uint8_t nargs, UValue *out) {
     (void)vm; (void)self;
-    /* v0.8.2 bring-up: count calls + print every 256th via port_writer
-     * (avoid pulling vm/uvm.h into the port shim).  Remove before tag. */
-#ifndef URBI_PORT_TEST
-    static uint32_t s_call_count = 0;
-    s_call_count++;
-    if ((s_call_count & 0xFFU) == 1U) {
-        char b[24];
-        const char *d = "0123456789ABCDEF";
-        int n = 0;
-        const char *t = "fill n=";
-        while (t[n] && n < 7) { b[n] = t[n]; n++; }
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[(s_call_count >> k) & 0xF];
-        b[n++] = '\r'; b[n++] = '\n';
-        port_writer(NULL, "lcd", 3, b, (size_t)n, 0);
-    }
-#endif
     if (nargs != 5) {
         *out = urbi_make_nil();
         return -1;  /* URBI_EXEC_ERR_ARITY */
@@ -75,28 +59,6 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
     int32_t w = (int32_t)urbi_value_as_int(args[2]);
     int32_t h = (int32_t)urbi_value_as_int(args[3]);
     uint32_t color = (uint32_t)urbi_value_as_int(args[4]);
-#ifndef URBI_PORT_TEST
-    /* v0.8.2 bring-up: dump args for the first 4 calls.  All-black LCD with
-     * fills happening = colors all zero or args misaligned.  Remove with
-     * the count tap before tag. */
-    if (s_call_count <= 4U) {
-        char b[80];
-        const char *d = "0123456789ABCDEF";
-        int n = 0;
-        const char *t = "arg x="; while (t[n] && n < 6) { b[n] = t[n]; n++; }
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[((uint32_t)x >> k) & 0xF];
-        b[n++] = ' '; b[n++] = 'y'; b[n++] = '=';
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[((uint32_t)y >> k) & 0xF];
-        b[n++] = ' '; b[n++] = 'w'; b[n++] = '=';
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[((uint32_t)w >> k) & 0xF];
-        b[n++] = ' '; b[n++] = 'h'; b[n++] = '=';
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[((uint32_t)h >> k) & 0xF];
-        b[n++] = ' '; b[n++] = 'c'; b[n++] = '=';
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[(color >> k) & 0xF];
-        b[n++] = '\r'; b[n++] = '\n';
-        port_writer(NULL, "lcd", 3, b, (size_t)n, 0);
-    }
-#endif
 
     /* Clamp negative origin */
     if (x < 0) { w += x; x = 0; }

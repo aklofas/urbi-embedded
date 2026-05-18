@@ -96,40 +96,6 @@ static size_t s_freelist_hits = 0;
 static size_t s_freelist_splits = 0;
 static size_t s_largest_satisfied = 0;
 
-/* v0.8.2 bring-up debug: distinguish leak vs alive-accumulation.
- * Track alive count per request-size bucket so we can see whether
- * specific sizes are growing unboundedly.  Five buckets cover the
- * urbi alloc footprint: <= 64 B (UObject slots / small structs),
- * <= 256 B (UClosure, UStrand, UProtoInstance), <= 1 KB (USlotArray,
- * UPropsTable, UProtos with several items), <= 16 KB (strand register
- * stacks — UVM_STACK_CAP * sizeof(UValue) lands in this bucket), and
- * > 16 KB (rare). */
-#define ALLOC_BUCKET_COUNT 5
-static const size_t s_bucket_max[ALLOC_BUCKET_COUNT] = {
-    64U, 256U, 1024U, 16384U, (size_t)-1
-};
-static size_t s_alive_bytes = 0;
-static size_t s_alloc_by_bucket[ALLOC_BUCKET_COUNT] = {0};
-static size_t s_free_by_bucket [ALLOC_BUCKET_COUNT] = {0};
-static int bucket_for(size_t total_block) {
-    for (int i = 0; i < ALLOC_BUCKET_COUNT; i++) {
-        if (total_block <= s_bucket_max[i]) return i;
-    }
-    return ALLOC_BUCKET_COUNT - 1;
-}
-size_t port_alloc_alive_bytes(void) { return s_alive_bytes; }
-size_t port_alloc_alive_in_bucket(int b) {
-    if (b < 0 || b >= ALLOC_BUCKET_COUNT) return 0;
-    return s_alloc_by_bucket[b] - s_free_by_bucket[b];
-}
-
-/* v0.8.2 bring-up debug: count allocs of EXACTLY the strand register
- * stack size (UVM_STACK_CAP=512 × sizeof(UValue)=16 + 8 hdr = 8200 B
- * = 0x2008).  Helps confirm whether the 13-alive count in the 16K
- * bucket really is 13 strand stacks or includes other allocations
- * that happen to land in that bucket.  Remove before tag. */
-static size_t s_stack_size_alloc = 0;
-static size_t s_stack_size_free  = 0;
 size_t port_alloc_heap_top(void)  { return heap_top; }
 size_t port_alloc_heap_size(void) { return URBI_HEAP_BYTES; }
 const void *port_alloc_heap_base(void) { return (const void *)heap; }
@@ -201,9 +167,6 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         s_last_null_nbytes_arg = 0;
         if (ptr == NULL) return NULL;
         fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - sizeof(fl_hdr));
-        s_alive_bytes -= h->size;
-        s_free_by_bucket[bucket_for(h->size)]++;
-        if (h->size == 0x2008U) s_stack_size_free++;
         h->next = s_freelist;
         s_freelist = h;
         s_free_count++;
@@ -250,9 +213,6 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         }
         s_freelist_hits++;
         s_alloc_count++;
-        s_alive_bytes += h->size;
-        s_alloc_by_bucket[bucket_for(h->size)]++;
-        if (h->size == 0x2008U) s_stack_size_alloc++;
         if ((size_t)h->size > s_largest_satisfied) s_largest_satisfied = (size_t)h->size;
         return (uint8_t *)h + sizeof(fl_hdr);
     }
@@ -262,62 +222,6 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         s_last_failed_request = total_need;
         s_last_null_ptr_arg = NULL;
         s_last_null_nbytes_arg = nbytes;
-#ifndef URBI_PORT_TEST
-        /* v0.8.2 bring-up debug: dump distinguishing diagnostic on every
-         * 32nd OOM.  Layout (3 lines):
-         *   [oom] req=R top=T alive_b=AB allocs=A frees=F fl_hits=H
-         *   [oom] alive_64=N1 alive_256=N2 alive_1K=N3 alive_16K=N4 alive_>=16K=N5
-         *   [oom] cum_64=C1 cum_256=C2 cum_1K=C3 cum_16K=C4 cum_>=16K=C5
-         * Remove before tag. */
-        static uint32_t s_oom_count = 0;
-        if (((s_oom_count++) & 0x1FU) == 1U) {
-            char b[160];
-            const char *d = "0123456789ABCDEF";
-            #define HEX32(val) do { \
-                for (int k = 28; k >= 0; k -= 4) b[n++] = d[((uint32_t)(val) >> k) & 0xF]; \
-            } while (0)
-            #define LIT(s) do { const char *t = (s); int j=0; while (t[j]) b[n++] = t[j++]; } while (0)
-
-            int n = 0;
-            LIT("req=");      HEX32(total_need);
-            LIT(" top=");     HEX32(heap_top);
-            LIT(" alive_b="); HEX32(s_alive_bytes);
-            LIT(" allocs=");  HEX32(s_alloc_count);
-            LIT(" frees=");   HEX32(s_free_count);
-            LIT(" fl=");      HEX32(s_freelist_hits);
-            b[n++] = '\r'; b[n++] = '\n';
-            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
-
-            n = 0;
-            LIT("alive_64="); HEX32(s_alloc_by_bucket[0] - s_free_by_bucket[0]);
-            LIT(" _256=");    HEX32(s_alloc_by_bucket[1] - s_free_by_bucket[1]);
-            LIT(" _1K=");     HEX32(s_alloc_by_bucket[2] - s_free_by_bucket[2]);
-            LIT(" _16K=");    HEX32(s_alloc_by_bucket[3] - s_free_by_bucket[3]);
-            LIT(" _big=");    HEX32(s_alloc_by_bucket[4] - s_free_by_bucket[4]);
-            b[n++] = '\r'; b[n++] = '\n';
-            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
-
-            n = 0;
-            LIT("cum_64=");   HEX32(s_alloc_by_bucket[0]);
-            LIT(" _256=");    HEX32(s_alloc_by_bucket[1]);
-            LIT(" _1K=");     HEX32(s_alloc_by_bucket[2]);
-            LIT(" _16K=");    HEX32(s_alloc_by_bucket[3]);
-            LIT(" _big=");    HEX32(s_alloc_by_bucket[4]);
-            b[n++] = '\r'; b[n++] = '\n';
-            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
-
-            /* Strand-stack-specific (size 0x2008): cumulative + alive */
-            n = 0;
-            LIT("stack8200 alive=");
-            HEX32(s_stack_size_alloc - s_stack_size_free);
-            LIT(" cum_alloc=");  HEX32(s_stack_size_alloc);
-            LIT(" cum_free=");   HEX32(s_stack_size_free);
-            b[n++] = '\r'; b[n++] = '\n';
-            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
-            #undef HEX32
-            #undef LIT
-        }
-#endif
         return NULL;
     }
     h = (fl_hdr *)&heap[heap_top];
@@ -325,9 +229,6 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
     h->next = NULL;
     heap_top += total_need;
     s_alloc_count++;
-    s_alive_bytes += total_need;
-    s_alloc_by_bucket[bucket_for(total_need)]++;
-    if (total_need == 0x2008U) s_stack_size_alloc++;
     if (total_need > s_largest_satisfied) s_largest_satisfied = total_need;
     return (uint8_t *)h + sizeof(fl_hdr);
 }

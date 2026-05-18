@@ -40,6 +40,7 @@ void port_gyro_tick_isr(void) {
     }
 }
 
+
 /* DWT enable — needed by port_time.c for DWT->CYCCNT access. */
 static void dwt_enable(void) {
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
@@ -140,26 +141,19 @@ int main(void) {
     static const char hello[] = "urbi v0.8.2-stm32f4-mandelbrot booting\r\n";
     HAL_UART_Transmit(&huart1, (const uint8_t *)hello, sizeof hello - 1U, 100);
 
-    /* Bring-up debug: short UART milestones between major steps so a silent
-     * hang lands between two known prints.  Remove before ship. */
-    #define MS(s)  HAL_UART_Transmit(&huart1, (const uint8_t *)s, sizeof s - 1U, 100)
-
     /* Stand up the VM — UVM is BSS-allocated; urbi_vm_init fills it. */
     static struct UVM vm;
-    MS("[m1] vm_init...\r\n");
     if (urbi_vm_init(&vm, port_alloc, NULL) != 0) {
         static const char err[] = "urbi_vm_init FAILED\r\n";
         HAL_UART_Transmit(&huart1, (const uint8_t *)err, sizeof err - 1U, 100);
         while (1);
     }
-    MS("[m2] setters\r\n");
     urbi_set_writer   (&vm, port_writer, NULL);
     urbi_set_time_us  (&vm, port_time_us);
     urbi_set_diag_fn  (&vm, port_diag);
     urbi_set_isr_check_fn(&vm, port_in_isr);
 
     /* Obtain the default realm — NULL arg means global realm. */
-    MS("[m3] realm_global...\r\n");
     struct URealm *realm = urbi_realm_global(&vm);
     if (realm == NULL) {
         static const char err[] = "urbi_realm_global returned NULL (OOM during realm create)\r\n";
@@ -181,18 +175,13 @@ int main(void) {
                 while (1);                                                      \
             }                                                                   \
         } while (0)
-    MS("[m4] reg lcd_fill_rect\r\n");
     REG_OR_DIE("lcd_fill_rect", port_lcd_fill_rect_native);
-    MS("[m4] reg gyro_x\r\n");
     REG_OR_DIE("gyro_x",        port_gyro_x_native);
-    MS("[m4] reg gyro_y\r\n");
     REG_OR_DIE("gyro_y",        port_gyro_y_native);
-    MS("[m4] reg gyro_z\r\n");
     REG_OR_DIE("gyro_z",        port_gyro_z_native);
     #undef REG_OR_DIE
 
     /* Register the button event and bind to EXTI ISR. */
-    MS("[m5] event_register button_press\r\n");
     urbi_event_id_t button_evt = urbi_event_register(&vm, realm,
                                                       "button_press",
                                                       NULL, NULL);
@@ -207,12 +196,10 @@ int main(void) {
                                      (uint16_t)n, 100);
         while (1);
     }
-    MS("[m6] port_button_init\r\n");
     port_button_init(&vm, (uint32_t)button_evt);
 
     /* Register the gyro_tick event (injected every 50 ms by TIM2 ISR).
      * Store vm pointer + event id in file-statics before enabling the IRQ. */
-    MS("[m7] event_register gyro_tick\r\n");
     s_gyro_tick_evt = urbi_event_register(&vm, realm, "gyro_tick", NULL, NULL);
     if (s_gyro_tick_evt == URBI_EVENT_ID_INVALID) {
         urbi_error_info_t einfo = {0};
@@ -230,9 +217,7 @@ int main(void) {
     /* Start TIM2 — gyro_tick ISR fires from here onward.  port_alloc
      * recycles freed strand stacks via its freelist (v0.8.2), so the
      * 50 ms tick rate no longer drains the heap. */
-    MS("[m8] tim2_init_50ms\r\n");
     tim2_init_50ms();
-    MS("[m9] tim2 started\r\n");
 
     /* Load baked bytecode (freestanding pattern: static UModule + umodule_deserialize).
      * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
@@ -240,7 +225,6 @@ int main(void) {
      * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
      * module_allocator() in freestanding mode returns c->alloc_fn directly (no
      * malloc fallback); NULL there → immediate ULOAD_OOM at umodule.c:1118. */
-    MS("[m10] umodule_deserialize\r\n");
     static UModule mod = {0};
     mod.alloc_fn = port_alloc;
     mod.alloc_ud = NULL;
@@ -289,10 +273,8 @@ int main(void) {
         while (1);
     }
 
-    MS("[m11] urbi_run_chunk...\r\n");
     {
         int rcc = urbi_run_chunk(&vm, realm, &mod, NULL);
-        MS("[m12] run_chunk returned\r\n");
         if (rcc != 0) {
             urbi_error_info_t einfo = {0};
             (void)urbi_last_error(&vm, &einfo);
@@ -315,39 +297,21 @@ int main(void) {
     }
 
     /* Event pump. */
-    MS("[m13] entering step loop\r\n");
-    {
-        uint32_t loop_count = 0U;
-        UStepResult last_st = (UStepResult)-1;
-        while (1) {
-            uint64_t wake_us = 0U;
-            UStepResult st = urbi_step(&vm, 256U, &wake_us);
-            /* Periodic + state-change UART tap so a hang inside the pump
-             * (or a missed wake) is visible.  64 iters ≈ a few ms. */
-            if (st != last_st || (loop_count & 0x3FU) == 0U) {
-                char b[40];
-                int n = snprintf(b, sizeof b,
-                                 "[step] n=%lu st=%d\r\n",
-                                 (unsigned long)loop_count, (int)st);
-                if (n > 0) HAL_UART_Transmit(&huart1, (const uint8_t *)b,
-                                             (uint16_t)n, 100);
-                last_st = st;
-            }
-            loop_count++;
-            switch (st) {
-                case URBI_STEP_RUNNING:
-                    break;
-                case URBI_STEP_QUIESCENT:
-                case URBI_STEP_WAKE_AT:
-                    __WFI();
-                    break;
-                case URBI_STEP_FATAL:
-                    MS("[m14] FATAL → reset\r\n");
-                    NVIC_SystemReset();
-                    break;
-                default:
-                    break;
-            }
+    while (1) {
+        uint64_t wake_us = 0U;
+        UStepResult st = urbi_step(&vm, 256U, &wake_us);
+        switch (st) {
+            case URBI_STEP_RUNNING:
+                break;
+            case URBI_STEP_QUIESCENT:
+            case URBI_STEP_WAKE_AT:
+                __WFI();
+                break;
+            case URBI_STEP_FATAL:
+                NVIC_SystemReset();
+                break;
+            default:
+                break;
         }
     }
 }
