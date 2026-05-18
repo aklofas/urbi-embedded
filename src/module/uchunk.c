@@ -121,6 +121,24 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
     for (uint32_t i = 0; i < URBI_LOADER_OUTER_CAP; i++) {
         UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
 
+        /* v0.8.2 bring-up debug: periodic progress tap so we can distinguish
+         * SDRAM-slowness from a stuck step.  Remove before tag. */
+        if (vm->writer_fn && (i & 0x1FU) == 0U) {
+            char b[40];
+            int n = 0;
+            const char *digits = "0123456789ABCDEF";
+            const char *tag = "drv i=";
+            while (tag[n] && n < 6) { b[n] = tag[n]; n++; }
+            /* hex i */
+            for (int k = 28; k >= 0; k -= 4) {
+                b[n++] = digits[(i >> k) & 0xF];
+            }
+            b[n++] = ' '; b[n++] = 'r'; b[n++] = 'c'; b[n++] = '=';
+            b[n++] = '0' + (int)step_rc;
+            b[n++] = '\r'; b[n++] = '\n';
+            vm->writer_fn(vm->writer_ud, "ld", 2, b, (size_t)n, 0);
+        }
+
         /* Path 1: fatal death.  Fatal strands are not reaped by urbi_step;
          * loader is still valid.  vm->fatal_strand points at our strand,
          * distinguishable from an unrelated strand's fatal by address.
