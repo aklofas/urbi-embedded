@@ -21,8 +21,21 @@
 #  include "stm32f429i_discovery_sdram.h"
 #endif
 
-#define LCD_W  320
-#define LCD_H  240
+/* Physical LCD on STM32F429I-DISC1 is portrait 240×320 (BSP_LCD_GetXSize
+ * = 240, GetYSize = 320).  The mandelbrot urbiscript assumes a landscape
+ * 320×240 logical surface, so port_lcd_fill_rect_native rotates 90°
+ * counter-clockwise when forwarding to BSP_LCD_FillRect:
+ *   px = py_logical
+ *   py = LCD_PHYS_H - 1 - x_logical - w_logical (mirror, so top-left
+ *        of landscape lands at top-left of portrait when held landscape)
+ *   pw = h_logical
+ *   ph = w_logical
+ * Logical bounds clamping uses the LANDSCAPE dimensions so urbi sees a
+ * 320-wide × 240-tall canvas as advertised. */
+#define LCD_PHYS_W 240
+#define LCD_PHYS_H 320
+#define LCD_W      320   /* logical (landscape) */
+#define LCD_H      240   /* logical (landscape) */
 
 void port_lcd_init(void) {
 #ifndef URBI_PORT_TEST
@@ -110,7 +123,19 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
                   | ((g6 << 2 | g6 >> 4) << 8)
                   |  (b5 << 3 | b5 >> 2);
     BSP_LCD_SetTextColor(argb);
-    BSP_LCD_FillRect((uint16_t)x, (uint16_t)y, (uint16_t)w, (uint16_t)h);
+
+    /* 90° CCW rotation: landscape (x,y,w,h) -> portrait (px,py,pw,ph).
+     * Maps logical top-left (0,0) to physical bottom-left (0, LCD_PHYS_H-1)
+     * so when the board is held landscape-oriented (long edge horizontal),
+     * the image reads naturally. */
+    int32_t px = y;
+    int32_t py = LCD_PHYS_H - x - w;
+    int32_t pw = h;
+    int32_t ph = w;
+    if (px < 0) { pw += px; px = 0; }
+    if (py < 0) { ph += py; py = 0; }
+    if (pw <= 0 || ph <= 0) { *out = urbi_make_nil(); return 0; }
+    BSP_LCD_FillRect((uint16_t)px, (uint16_t)py, (uint16_t)pw, (uint16_t)ph);
     *out = urbi_make_nil();
     return 0;
 }
