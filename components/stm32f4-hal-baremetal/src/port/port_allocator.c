@@ -122,6 +122,14 @@ size_t port_alloc_alive_in_bucket(int b) {
     if (b < 0 || b >= ALLOC_BUCKET_COUNT) return 0;
     return s_alloc_by_bucket[b] - s_free_by_bucket[b];
 }
+
+/* v0.8.2 bring-up debug: count allocs of EXACTLY the strand register
+ * stack size (UVM_STACK_CAP=512 × sizeof(UValue)=16 + 8 hdr = 8200 B
+ * = 0x2008).  Helps confirm whether the 13-alive count in the 16K
+ * bucket really is 13 strand stacks or includes other allocations
+ * that happen to land in that bucket.  Remove before tag. */
+static size_t s_stack_size_alloc = 0;
+static size_t s_stack_size_free  = 0;
 size_t port_alloc_heap_top(void)  { return heap_top; }
 size_t port_alloc_heap_size(void) { return URBI_HEAP_BYTES; }
 const void *port_alloc_heap_base(void) { return (const void *)heap; }
@@ -164,6 +172,7 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         fl_hdr *h = (fl_hdr *)((uint8_t *)ptr - sizeof(fl_hdr));
         s_alive_bytes -= h->size;
         s_free_by_bucket[bucket_for(h->size)]++;
+        if (h->size == 0x2008U) s_stack_size_free++;
         h->next = s_freelist;
         s_freelist = h;
         s_free_count++;
@@ -212,6 +221,7 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         s_alloc_count++;
         s_alive_bytes += h->size;
         s_alloc_by_bucket[bucket_for(h->size)]++;
+        if (h->size == 0x2008U) s_stack_size_alloc++;
         if ((size_t)h->size > s_largest_satisfied) s_largest_satisfied = (size_t)h->size;
         return (uint8_t *)h + sizeof(fl_hdr);
     }
@@ -264,6 +274,15 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
             LIT(" _big=");    HEX32(s_alloc_by_bucket[4]);
             b[n++] = '\r'; b[n++] = '\n';
             port_writer(NULL, "oom", 3, b, (size_t)n, 0);
+
+            /* Strand-stack-specific (size 0x2008): cumulative + alive */
+            n = 0;
+            LIT("stack8200 alive=");
+            HEX32(s_stack_size_alloc - s_stack_size_free);
+            LIT(" cum_alloc=");  HEX32(s_stack_size_alloc);
+            LIT(" cum_free=");   HEX32(s_stack_size_free);
+            b[n++] = '\r'; b[n++] = '\n';
+            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
             #undef HEX32
             #undef LIT
         }
@@ -277,6 +296,7 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
     s_alloc_count++;
     s_alive_bytes += total_need;
     s_alloc_by_bucket[bucket_for(total_need)]++;
+    if (total_need == 0x2008U) s_stack_size_alloc++;
     if (total_need > s_largest_satisfied) s_largest_satisfied = total_need;
     return (uint8_t *)h + sizeof(fl_hdr);
 }
