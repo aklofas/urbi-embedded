@@ -50,6 +50,8 @@
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
+#include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
+#include "module/umodule.h"       /* uproto_root_of, umodule_proto_refcount_dec */
 
 /* === walk_uobject ===
  *
@@ -385,6 +387,78 @@ walk_utag(struct UVM *vm, void *payload,
     }
 }
 
+/* === walk_uclosure (v0.8.4 — Option B Step B) ===
+ *
+ * Closure tracer.  Shades each captured upvalue cell directly (UUpvalCell is
+ * a GC cell, not boxed in a UValue), plus the bound proto_inst (also a GC
+ * cell).  cl->proto is NOT shaded — UProto is refcount-managed per v0.8.1
+ * Variant B fusion, not GC-managed.  The finalizer (uclosure_destroy below)
+ * decrements proto refcount on sweep.
+ *
+ * payload = cell + 1 (two bytes past the UCell header); recover UClosure* by
+ * stepping back one UCell-size to get the closure base. */
+static void
+walk_uclosure(struct UVM *vm, void *payload,
+              UGcRootCallback cb, void *ctx)
+{
+    (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
+
+    UClosure *cl = (UClosure *)((UCell *)payload - 1);
+
+    /* Shade each captured upvalue cell (UUpvalCell is GC-managed since v0.8.4).
+     * upvals[] is a trailing FAM of size cl->nupvals; null entries are skipped
+     * (an OP_CLOSURE in progress may have a partially populated array). */
+    for (uint8_t i = 0U; i < cl->nupvals; i++) {
+        if (cl->upvals[i] != NULL) {
+            gc_shade_gray(vm, &cl->upvals[i]->cell);
+        }
+    }
+
+    /* Shade proto_inst if bound (M4 follow-up wired this end-to-end). */
+    if (cl->proto_inst != NULL) {
+        gc_shade_gray(vm, (UCell *)cl->proto_inst);
+    }
+}
+
+/* === uclosure_destroy (v0.8.4 — Option B Step B) ===
+ *
+ * Drop the closure's refcount on its proto's root_proto.  Pairs with the
+ * umodule_proto_refcount_inc(uproto_root_of(proto)) call in vm_alloc_closure
+ * (uvm_closure.c:50).  No memory is freed here — the GC sweep reclaims
+ * the closure cell.  NULL-safe (proto may be NULL for native stdlib closures
+ * registered via urbi_make_native_closure). */
+static void
+uclosure_destroy(struct UVM *vm, void *payload)
+{
+    (void)vm;
+    UClosure *cl = (UClosure *)((UCell *)payload - 1);
+    if (cl->proto != NULL) {
+        umodule_proto_refcount_dec(uproto_root_of(cl->proto));
+    }
+}
+
+/* === walk_upvalcell (v0.8.4 — Option B Step B) ===
+ *
+ * Upvalue cell tracer.  When on_heap is true, the cell owns a UValue copy
+ * (heapified at OP_CLOSE / unwind) that may carry a heap-bearing cell —
+ * yield it through the mark callback so the boxed value's underlying cell
+ * gets shaded.  When on_heap is false, the cell points into the strand's
+ * register window via u.stack_ptr; the stack window is independently scanned
+ * by strand_walk_roots, so no shading is needed here.
+ *
+ * payload = cell + 1; recover UUpvalCell* by stepping back one UCell-size.
+ * No finalizer needed — UUpvalCell owns no heap memory of its own; the
+ * GC sweep reclaims the cell. */
+static void
+walk_upvalcell(struct UVM *vm, void *payload,
+               UGcRootCallback cb, void *ctx)
+{
+    UUpvalCell *uc = (UUpvalCell *)((UCell *)payload - 1);
+    if (uc->on_heap) {
+        cb(vm, &uc->u.value, ctx);
+    }
+}
+
 /* === Static UType descriptors ===
  *
  * flags = 0 (no finalizer) for every M4 type.  destroy = NULL for every
@@ -509,6 +583,25 @@ static const UType type_utag = {
     .destroy       = NULL,
 };
 
+/* UTYPE_CLOSURE (2) — dormant until Step C promotes allocation to urbi_gc_alloc.
+ * Registering the descriptor now so Step C only needs to change the allocator. */
+static const UType type_uclosure = {
+    .type_tag      = UTYPE_CLOSURE,
+    .flags         = TYPE_HAS_FINALIZER,
+    .name          = "Closure",
+    .walk_payload  = walk_uclosure,
+    .destroy       = uclosure_destroy,
+};
+
+/* UTYPE_UPVAL_CELL (20) — dormant until Step C promotes allocation to urbi_gc_alloc. */
+static const UType type_upvalcell = {
+    .type_tag      = UTYPE_UPVAL_CELL,
+    .flags         = 0U,
+    .name          = "UpvalCell",
+    .walk_payload  = walk_upvalcell,
+    .destroy       = NULL,
+};
+
 /* === urbi_object_builtin_types_init ===
  *
  * Writes the M4 cell-type descriptors directly into vm->type_table[].
@@ -518,6 +611,7 @@ static const UType type_utag = {
 void
 urbi_object_builtin_types_init(struct UVM *vm)
 {
+    vm->type_table[UTYPE_CLOSURE]         = (UType *)&type_uclosure;
     vm->type_table[UTYPE_OBJECT]          = (UType *)&type_uobject;
     vm->type_table[UTYPE_PROTOS]          = (UType *)&type_uprotos;
     vm->type_table[UTYPE_SHAPE]           = (UType *)&type_ushape;
@@ -531,4 +625,5 @@ urbi_object_builtin_types_init(struct UVM *vm)
     vm->type_table[UTYPE_EVENT]           = (UType *)&type_uevent;
     vm->type_table[UTYPE_CHANGED_NODE]    = (UType *)&type_uchanged_node;
     vm->type_table[UTYPE_TAG]             = (UType *)&type_utag;
+    vm->type_table[UTYPE_UPVAL_CELL]      = (UType *)&type_upvalcell;
 }
