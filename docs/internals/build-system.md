@@ -10,6 +10,55 @@ test runners). Cross-compilation is selected via `make cross-arm` or
 `TARGET=<dir>` and a swapped toolchain — every target gets its own
 `build/$(TARGET)/` tree, so concurrent builds never race.
 
+## Cross-compile toolchain prerequisites
+
+The host-side `make test` does not require any cross toolchain. Cross-compile
+targets (`make cross-arm`, `make cross-riscv`, `make cross-esp32s3-*`, `make cross-stm32f4*`)
+require the corresponding toolchain on PATH.
+
+### Ubuntu (24.04+) install commands
+
+| Cross target | Toolchain | Package |
+|---|---|---|
+| `cross-arm` (Cortex-M7) | arm-none-eabi-gcc | `apt install gcc-arm-none-eabi` |
+| `cross-stm32f4` (Cortex-M4F) | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
+| `cross-riscv` (rv32imc) | riscv64-unknown-elf-gcc | `apt install gcc-riscv64-unknown-elf` (or `gcc-riscv-none-elf`) |
+| `cross-esp32s3-*` (Xtensa LX7) | xtensa-esp-elf-gcc (bundled with ESP-IDF) | source `$IDF_PATH/export.sh` |
+
+### ESP-IDF environment
+
+ESP32 cross-compile targets and the ESP-IDF managed-component build require
+ESP-IDF v6.0.1 sourced into the shell:
+
+```sh
+. /opt/esp/idf/export.sh    # CI container layout (espressif/idf:v6.0.1)
+. ~/Tools/esp-idf/export.sh # local-clone layout (alternative path)
+```
+
+This puts `xtensa-esp-elf-gcc`, `xtensa-esp-elf-ar`, `xtensa-esp-elf-nm`, and
+`idf.py` on PATH. The Makefile's `cross-esp32s3-*` targets assume the env is
+already sourced; they do not source it themselves.
+
+### Fresh-clone verification
+
+The cross-compile targets are designed to work from a fresh clone with no
+prior build state. To verify after toolchain changes:
+
+```sh
+git clone <repo> urbi-embedded-test
+cd urbi-embedded-test
+# Source ESP-IDF env (if testing cross-esp32s3-*)
+. ~/Tools/esp-idf/export.sh
+make cross-arm
+make cross-riscv
+make cross-stm32f4
+make cross-esp32s3-bytecode-only
+make cross-esp32s3-full
+```
+
+All five should succeed without intermediate `make` runs. CI exercises this
+via fresh containers per job.
+
 ## Stdlib bake (M6 Wave 2)
 
 The standard library ships as a hybrid:

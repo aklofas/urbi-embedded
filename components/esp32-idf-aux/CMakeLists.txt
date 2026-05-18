@@ -1,4 +1,4 @@
-# urbi_aux — optional convenience layer for urbi-embedded.
+# esp32-idf-aux — optional convenience layer for urbi-embedded.
 #
 # Mirrors the host Makefile's separate liburbi_aux.a archive per the
 # v0.7.0 governance policy (CONTRIBUTING.md "Aux layer governance"):
@@ -8,7 +8,7 @@
 # physically — only `${URBI_ROOT}/include` is on the include path, so
 # aux code cannot reach into src/.
 #
-# Embedders opt in by listing `urbi_aux` in their component's REQUIRES.
+# Embedders opt in by listing `esp32-idf-aux` in their component's REQUIRES.
 # Default ESP-IDF builds get `urbi` only — zero aux symbols, smallest
 # footprint, no link-time cost.
 #
