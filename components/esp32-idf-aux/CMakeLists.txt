@@ -19,14 +19,14 @@ set(URBI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 idf_component_register(
     SRCS "${URBI_ROOT}/src/urbi_aux.c"
     INCLUDE_DIRS "${URBI_ROOT}/include"
-    REQUIRES urbi
+    REQUIRES esp32-idf
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -std=c99 -Wall -Wextra -mlongcalls
-    # -Wpedantic intentionally OFF for the same reasons as components/urbi/:
+    # -Wpedantic intentionally OFF for the same reasons as components/esp32-idf/:
     # _Static_assert, #include_next noise from ESP-IDF platform_include/,
-    # and computed goto in urbi internals.  See components/urbi/CMakeLists.txt
+    # and computed goto in urbi internals.  See components/esp32-idf/CMakeLists.txt
     # for the full rationale.
     -Wno-pedantic
 )

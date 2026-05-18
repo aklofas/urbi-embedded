@@ -5,7 +5,7 @@
 # liburbi_aux.a archive — embedders opt in independently via the aux
 # header / extra link), and excludes test code.
 #
-# Port glue under components/urbi/src/port/ lands incrementally in Phase 2
+# Port glue under components/esp32-idf/src/port/ lands incrementally in Phase 2
 # of the v0.7.2-esp32 plan (T14-T19).  The glob below picks up new port_*.c
 # files as they drop into place — subsequent tasks only add files, not
 # CMakeLists.txt entries.
