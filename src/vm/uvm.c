@@ -714,6 +714,31 @@ dispatch:
                 UValue native_out;
                 int rc = callee->native_fn(vm, self_value, args_ptr,
                                            (uint8_t)nargs, &native_out);
+                /* v0.8.2 bring-up debug: trace first 4 native-method
+                 * raises to see the actual rc + nargs + is_method state.
+                 * Remove before tag. */
+                if (rc != UEXEC_OK && vm && vm->writer_fn) {
+                    static int cnt = 0;
+                    if (cnt < 4) {
+                        cnt++;
+                        char buf[64];
+                        const char *d = "0123456789ABCDEF";
+                        int n = 0;
+                        const char *t = "native rc=";
+                        while (t[n]) { buf[n] = t[n]; n++; }
+                        buf[n++] = d[(rc >> 4) & 0xF];
+                        buf[n++] = d[rc & 0xF];
+                        const char *t2 = " nargs=";
+                        int j = 0; while (t2[j]) { buf[n++] = t2[j++]; }
+                        buf[n++] = d[(nargs >> 4) & 0xF];
+                        buf[n++] = d[nargs & 0xF];
+                        const char *t3 = " method=";
+                        j = 0; while (t3[j]) { buf[n++] = t3[j++]; }
+                        buf[n++] = is_method ? '1' : '0';
+                        buf[n++] = '\r'; buf[n++] = '\n';
+                        vm->writer_fn(vm->writer_ud, "ncall", 5, buf, (size_t)n, 0);
+                    }
+                }
                 if (rc == UEXEC_OK) {
                     s->R[a] = native_out;
                     if (s->pending_unwind != UEXEC_OK) {
