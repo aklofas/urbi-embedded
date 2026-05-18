@@ -162,21 +162,67 @@ Realm.render_all = function () {
 // Accumulate into pan_dx/pan_dy; apply pan only when accumulated drift
 // exceeds 0.01 fraction of the current view span.  Nested if replaces
 // the || shortcut (not available at v1.0).
+// Gyro intensity bar — always-on indicator that lives at the "top"
+// edge (which is the LEFT in landscape orientation per the LCD
+// rotation in port_lcd.c).  Color = magnitude of gyro Y rotation:
+//   green   -> stationary / drift only
+//   yellow  -> slight motion
+//   orange  -> moderate tilt
+//   red     -> vigorous tilt
+//
+// Bar refreshes every 50ms tick.  Render_all overpaints between ticks,
+// so bar will visibly flash as render proceeds + body refreshes.  No
+// redraw_requested trigger -> no OOM cascade.
+//
+// To see the color change: hold board still (green), then tilt
+// progressively faster (color climbs through yellow -> orange -> red).
+// Gyro pan: integrate angular velocity into pan_dx/pan_dy; on each tick
+// shift the view if drift exceeds a threshold fraction of the current span.
+// Also paint an intensity bar at the top so the user can see the gyro is alive.
 at (gyro_tick?) {
     var gx = gyro_x();
     var gy = gyro_y();
-    Realm.pan_dx = Realm.pan_dx + gy * 0.0005;
-    Realm.pan_dy = Realm.pan_dy + gx * 0.0005;
-    var do_pan = false;
-    if (Realm.pan_dx.abs() > 0.01) { do_pan = true };
-    if (Realm.pan_dy.abs() > 0.01) { do_pan = true };
-    if (do_pan) {
-        Realm.cx = Realm.cx + Realm.pan_dx * Realm.span;
-        Realm.cy = Realm.cy + Realm.pan_dy * Realm.span;
+    var gz = gyro_z();
+    // Integrate (50ms tick, gyro in mdeg/s).  Axes are mapped through
+    // the LCD's 90° CCW rotation: physical-X gyro drives horizontal pan,
+    // physical-Y gyro drives vertical pan.  Empirically tuned 2026-05-17
+    // for the landscape view.
+    Realm.pan_dx = Realm.pan_dx + gx * 0.000002 * Realm.span;
+    Realm.pan_dy = Realm.pan_dy + gy * 0.000002 * Realm.span;
+    if (Realm.pan_dx > 0.01 * Realm.span) {
+        Realm.cx = Realm.cx + Realm.pan_dx;
         Realm.pan_dx = 0.0;
+        Realm.redraw_requested = true
+    };
+    if (Realm.pan_dx < -0.01 * Realm.span) {
+        Realm.cx = Realm.cx + Realm.pan_dx;
+        Realm.pan_dx = 0.0;
+        Realm.redraw_requested = true
+    };
+    if (Realm.pan_dy > 0.01 * Realm.span) {
+        Realm.cy = Realm.cy + Realm.pan_dy;
         Realm.pan_dy = 0.0;
         Realm.redraw_requested = true
-    }
+    };
+    if (Realm.pan_dy < -0.01 * Realm.span) {
+        Realm.cy = Realm.cy + Realm.pan_dy;
+        Realm.pan_dy = 0.0;
+        Realm.redraw_requested = true
+    };
+    // Intensity bar at top edge — green (still) → red (vigorous tilt).
+    var mag = gx;
+    if (mag < 0.0) { mag = 0.0 - mag };
+    var magy = gy;
+    if (magy < 0.0) { magy = 0.0 - magy };
+    if (magy > mag) { mag = magy };
+    var magz = gz;
+    if (magz < 0.0) { magz = 0.0 - magz };
+    if (magz > mag) { mag = magz };
+    var c = 0x07E0;             // green
+    if (mag > 5000.0) { c = 0xFFE0 };    // yellow
+    if (mag > 20000.0) { c = 0xFD20 };   // orange
+    if (mag > 50000.0) { c = 0xF800 };   // red
+    lcd_fill_rect(0, 0, 320, 10, c)
 };
 
 // === Button zoom handler ===================================================
