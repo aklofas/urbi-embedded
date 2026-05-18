@@ -65,9 +65,16 @@ strand_still_alive(const URealm *realm, const UStrand *loader)
     return false;
 }
 
+/* v0.8.2 bring-up debug.  Remove before tag. */
+#define LDBG(s) do {                                                       \
+    if (vm && vm->writer_fn) vm->writer_fn(vm->writer_ud, "ld", 2,         \
+                                           s, sizeof(s) - 1U, 0);          \
+} while (0)
+
 int
 uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
 {
+    LDBG("drive enter\n");
     if (!vm || !loader) {
         if (out_result) {
             urbi_zero(out_result, sizeof(*out_result));
@@ -118,22 +125,30 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
      * strand_still_alive safely across iterations. */
     const URealm *loader_realm = loader->realm;
 
+    LDBG("for-loop entry\n");
     for (uint32_t i = 0; i < URBI_LOADER_OUTER_CAP; i++) {
-        UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
-
         /* v0.8.2 bring-up debug: periodic progress tap so we can distinguish
-         * SDRAM-slowness from a stuck step.  Remove before tag. */
+         * SDRAM-slowness from a stuck step.  Remove before tag.  Prints
+         * BEFORE urbi_step so a hang inside urbi_step still leaves a
+         * pre-call marker on UART. */
         if (vm->writer_fn && (i & 0x1FU) == 0U) {
             char b[40];
             int n = 0;
             const char *digits = "0123456789ABCDEF";
-            const char *tag = "drv i=";
+            const char *tag = "pre i=";
             while (tag[n] && n < 6) { b[n] = tag[n]; n++; }
-            /* hex i */
             for (int k = 28; k >= 0; k -= 4) {
                 b[n++] = digits[(i >> k) & 0xF];
             }
-            b[n++] = ' '; b[n++] = 'r'; b[n++] = 'c'; b[n++] = '=';
+            b[n++] = '\r'; b[n++] = '\n';
+            vm->writer_fn(vm->writer_ud, "ld", 2, b, (size_t)n, 0);
+        }
+        UStepResult step_rc = urbi_step(vm, URBI_LOADER_INNER_BUDGET, NULL);
+        if (vm->writer_fn && (i & 0x1FU) == 0U) {
+            char b[20];
+            int n = 0;
+            const char *tag = "post rc=";
+            while (tag[n] && n < 8) { b[n] = tag[n]; n++; }
             b[n++] = '0' + (int)step_rc;
             b[n++] = '\r'; b[n++] = '\n';
             vm->writer_fn(vm->writer_ud, "ld", 2, b, (size_t)n, 0);
@@ -239,6 +254,7 @@ int
 urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
 {
     URBI_ASSERT_NOT_ISR(vm);
+    LDBG("run_chunk enter\n");
 
     if (!realm) {
         realm = urbi_realm_global(vm);
@@ -251,6 +267,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
      * urbi_strand_create_for_module would return NULL (per its precondition)
      * and be misreported as OOM. */
     if (!module || module->root_proto == NULL || module->root_proto->instr_count == 0) {
+        LDBG("empty module\n");
         if (out_result) {
             urbi_zero(out_result, sizeof(*out_result));
             out_result->kind = UVAL_NIL;
@@ -261,11 +278,14 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
+    LDBG("strand_create_for_module...\n");
     UStrand *loader = urbi_strand_create_for_module(vm, realm, module);
     if (!loader) {
+        LDBG("strand_create NULL\n");
         vm->last_error = UVM_OOM;
         return URBI_ERR_OOM;
     }
+    LDBG("strand_create OK\n");
 
     return uchunk_loader_drive(vm, loader, out);
 }
