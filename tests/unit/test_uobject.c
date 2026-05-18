@@ -161,10 +161,12 @@ UTEST(uobject_atom_integer_singleton_links_to_root) {
     UASSERT_EQ((int)integer->object_id,        2);
 
     /* Single-tag prototype encoding per spec §4.1 (the canonical form
-     * decoded by UPROTOS_FOREACH, T9).
-     * Low bit 1 marks single-tag; high bits hold the prototype pointer. */
+     * decoded by UPROTOS_FOREACH, T9).  Low bit 1 marks single-tag; the
+     * pointer is encoded by OR'ing bit 0 (alignment makes bit 0 free),
+     * so decode is `& ~(uintptr_t)1U` not `>> 1` (v0.8.2 commit b16f997
+     * — `>> 1` lost bit 31 on heaps above 0x80000000 like STM32F4 SDRAM). */
     UASSERT((integer->protos & 1U) == 1U);
-    UASSERT((UObject *)(integer->protos >> 1) == vm.atom_object);
+    UASSERT((UObject *)(integer->protos & ~(uintptr_t)1U) == vm.atom_object);
 
     /* Idempotent — second call returns the same singleton. */
     UASSERT(urbi_object_atom(&vm, URBI_ATOM_INTEGER) == integer);
@@ -197,12 +199,13 @@ UTEST(uobject_atom_singletons_are_independent) {
     UASSERT_EQ((int)(str->flags & URBI_OBJ_ATOM_MASK), (int)URBI_ATOM_STRING);
     UASSERT_EQ((int)(tag->flags & URBI_OBJ_ATOM_MASK), (int)URBI_ATOM_TAG);
 
-    /* All three share the same root via the single-tag protos encoding. */
+    /* All three share the same root via the single-tag protos encoding
+     * (see uobject_atom_init_links_to_root above for decode rationale). */
     UObject *root = vm.atom_object;
     UASSERT(root != NULL);
-    UASSERT((UObject *)(flt->protos >> 1) == root);
-    UASSERT((UObject *)(str->protos >> 1) == root);
-    UASSERT((UObject *)(tag->protos >> 1) == root);
+    UASSERT((UObject *)(flt->protos & ~(uintptr_t)1U) == root);
+    UASSERT((UObject *)(str->protos & ~(uintptr_t)1U) == root);
+    UASSERT((UObject *)(tag->protos & ~(uintptr_t)1U) == root);
 
     urbi_vm_destroy(&vm);
 }
