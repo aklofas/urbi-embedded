@@ -622,6 +622,19 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     cell->type_tag = type_tag;
     cell->gc_byte  = vm->current_white;   /* born current_white per spec §3.5 */
 
+    /* v0.8.4: mirror the type's TYPE_HAS_FINALIZER flag onto the cell's
+     * gc_byte so that gc_sweep_step and urbi_gc_destroy will call the
+     * finalizer.  Without this, types registered with a non-NULL destroy
+     * (UTYPE_CLOSURE since Step B) would have their finalizer silently
+     * skipped — every test prior to v0.8.4 had flags == 0 on every type
+     * registration, so this code path was latent and untested. */
+    {
+        const UType *t = vm->type_table[type_tag];
+        if (t != NULL && (t->flags & TYPE_HAS_FINALIZER) != 0U) {
+            cell->gc_byte |= UGC_HAS_FINALIZER;
+        }
+    }
+
     /* Initialize sidecar node and prepend to all-cells list. */
     node->cell = cell;
     node->size = size;
