@@ -540,28 +540,6 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
         return -1;
     }
 
-    /* v0.8.2 bring-up debug: always-on tracer.  Hang is known to be inside
-     * iters 0-7 of the DFS.  Hard cap at 200 iters bails to -1.  Remove
-     * before tag. */
-#define RDBG(s) do { if (vm->writer_fn)                                      \
-    vm->writer_fn(vm->writer_ud, "rs", 2, s, sizeof(s)-1U, 0); } while (0)
-#define RDBG_HEX(label, value) do {                                          \
-    if (vm->writer_fn) {                                                     \
-        char b[40]; int n = 0;                                               \
-        const char *d = "0123456789ABCDEF";                                  \
-        const char *t = (label);                                             \
-        while (*t && n < 12) b[n++] = *t++;                                  \
-        b[n++] = '=';                                                        \
-        uintptr_t v = (uintptr_t)(value);                                    \
-        for (int k = 28; k >= 0; k -= 4) b[n++] = d[(v >> k) & 0xF];         \
-        b[n++] = '\r'; b[n++] = '\n';                                        \
-        vm->writer_fn(vm->writer_ud, "rs", 2, b, (size_t)n, 0);              \
-    }                                                                        \
-} while (0)
-
-    RDBG_HEX("recv", recv);
-    RDBG_HEX("name", name);
-
     /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
      * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
      * for the entire DFS below.
@@ -569,59 +547,40 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
      * CPPCHK-002: cppcheck flags this as always-false because it assumes a
      * 32-bit lookup_id; vm->lookup_id is uint64_t and the cast catches the
      * actual u32 wrap.  Suppressed via .cppcheck.suppressions. */
-    RDBG("pre lookup_id bump\n");
     if ((uint32_t)(vm->lookup_id + 1ULL) == 0U) {
-        RDBG("force wrap\n");
         urbi_object_lookup_id_force_wrap(vm);
     } else {
         vm->lookup_id++;
     }
-    RDBG_HEX("lookup_id", (uintptr_t)vm->lookup_id);
 
     UObject *stack[URBI_RESOLVE_STACK_CAP];
     int sp = 0;
     stack[sp++] = recv;
 
-    uint32_t iter_count = 0;
     while (sp > 0) {
         UObject *cur = stack[--sp];
-        RDBG_HEX("iter cur", cur);
-        RDBG_HEX("  stamp", cur->lookup_stamp);
         if (cur->lookup_stamp == (uint32_t)vm->lookup_id) {
-            RDBG("  dup -> continue\n");
-            iter_count++;
-            if (iter_count > 200U) { RDBG("ITER CAP 200\n"); return -1; }
             continue;
         }
         cur->lookup_stamp = (uint32_t)vm->lookup_id;
-        RDBG_HEX("  shape", cur->shape);
 
         int32_t idx = urbi_shape_find_slot(cur->shape, name);
-        RDBG_HEX("  find_slot idx", (uintptr_t)idx);
         if (idx >= 0) {
             *out_holder = cur;
             *out_index  = (uint32_t)idx;
-            RDBG("hit -> return 1\n");
             return 1;
         }
 
+        /* Push protos in reverse so left-first DFS pops them in declaration
+         * order (mirrors UPROTOS_FOREACH iteration order). */
         uint32_t n = urbi_object_proto_count(cur);
-        RDBG_HEX("  proto_n", n);
         for (uint32_t i = n; i > 0U; i--) {
             if (sp >= URBI_RESOLVE_STACK_CAP) {
-                RDBG("STACK OVERFLOW\n");
-                return -1;
+                return -1;   /* depth overflow — caller raises diagnostic */
             }
-            UObject *p = urbi_object_proto_at(cur, i - 1U);
-            RDBG_HEX("  push proto", p);
-            stack[sp++] = p;
+            stack[sp++] = urbi_object_proto_at(cur, i - 1U);
         }
-        iter_count++;
-        if (iter_count > 200U) { RDBG("ITER CAP 200\n"); return -1; }
     }
 
-    RDBG("miss -> return 0\n");
     return 0;
-#undef RDBG
-#undef RDBG_HEX
 }

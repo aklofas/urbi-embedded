@@ -47,49 +47,17 @@
 #  define UVM_USE_COMPUTED_GOTO 0
 #endif
 
-/* v0.8.2 bring-up debug: per-opcode UART tap inside the dispatch loop.
- * Fires every 64th opcode dispatch with current PC + opcode, gated by a
- * static guard so only the FIRST urbi_step invocation traces (subsequent
- * calls would drown UART at ~32k opcodes/step).  Channel "dl".  Remove
- * before tag. */
-static uint64_t s_dispatch_count = 0;
-int             s_dispatch_traced = 0;  /* non-static so uobject_slot.c can read */
-static inline void vdbg_dispatch_tap(UStrand *s) {
-    if (s_dispatch_traced) return;
-    s_dispatch_count++;
-    UVM *vm = s->vm;
-    if (vm == NULL || vm->writer_fn == NULL) return;
-    char b[48];
-    int  n = 0;
-    const char *d = "0123456789ABCDEF";
-    uint32_t cnt = (uint32_t)s_dispatch_count;
-    for (int k = 28; k >= 0; k -= 4) b[n++] = d[(cnt >> k) & 0xF];
-    b[n++] = ' '; b[n++] = 'p'; b[n++] = 'c'; b[n++] = '=';
-    uintptr_t pc = (uintptr_t)s->pc;
-    for (int k = 28; k >= 0; k -= 4) b[n++] = d[(pc >> k) & 0xF];
-    b[n++] = ' '; b[n++] = 'o'; b[n++] = 'p'; b[n++] = '=';
-    uint32_t op = uinstr_op(*s->pc);
-    b[n++] = d[(op >> 4) & 0xF];
-    b[n++] = d[op & 0xF];
-    b[n++] = '\r'; b[n++] = '\n';
-    vm->writer_fn(vm->writer_ud, "dl", 2, b, (size_t)n, 0);
-    /* Cap at 24 prints — we already know we hang at opcode ~17.  After
-     * cap, dispatch runs at full speed (and lets uobject_slot.c's resolve
-     * trace fire on the slow-path resolve walk). */
-    if (s_dispatch_count > 24U) s_dispatch_traced = 1;
-}
-
 #if UVM_USE_COMPUTED_GOTO
    /* Computed-goto dispatch — DISPATCH expands to a `goto *<expr>` statement;
     * the replacement list cannot be wrapped in parentheses (you can't
     * parenthesize a statement), so bugprone-macro-parentheses is suppressed
     * here.  CASE(op) expands to a label, also unparenthesizable. */
-#  define DISPATCH()  do { vdbg_dispatch_tap(s); goto *dispatch_table[uinstr_op(*s->pc)]; } while (0)
+#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]  /* NOLINT(bugprone-macro-parentheses) — `goto *expr` cannot be parenthesized */
 #  define CASE(op)    label_##op:
 #  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
 #  define HALT()      goto halt_error
 #else
-#  define DISPATCH()  vdbg_dispatch_tap(s); switch (uinstr_op(*s->pc))
+#  define DISPATCH()  switch (uinstr_op(*s->pc))
 #  define CASE(op)    case (op):
 #  define NEXT()      do { s->pc++; goto dispatch; } while (0)
 #  define HALT()      goto halt_error
@@ -1800,25 +1768,13 @@ dispatch:
          *     the getter body once implicit-this lands).
          *   * No vm->last_recv side effect — that field is gone at v1.6. */
         CASE(OP_SELF) {
-            /* v0.8.2 bring-up debug: trace OP_SELF sub-steps to localize
-             * a freestanding-only hang.  Fire-once gate (s_dispatch_traced
-             * already serves this — set after 200 dispatches).  Remove
-             * before tag. */
-            #define SELFDBG(msg) do {                                          \
-                if (!s_dispatch_traced && vm->writer_fn)                       \
-                    vm->writer_fn(vm->writer_ud, "self", 4, msg,               \
-                                  sizeof(msg) - 1U, 0);                        \
-            } while (0)
-            SELFDBG("enter\n");
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
-            SELFDBG("ic_resolve_pi\n");
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
-                SELFDBG("no IC table\n");
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SELF: no IC table bound");
                 HALT();
@@ -1830,16 +1786,12 @@ dispatch:
              * would otherwise destroy the receiver we need to copy to
              * R[A+1].  Snapshot first; write R[A+1] before R[A]. */
             UValue self_value = s->R[recv_reg];
-            SELFDBG("snapshot self\n");
 
             UObject *recv;
             if (self_value.kind == (uint8_t)UVAL_OBJECT) {
-                SELFDBG("recv is UVAL_OBJECT\n");
                 recv = (UObject *)self_value.v.p;
             } else {
-                SELFDBG("recv is atom -> atom_proto_for_value\n");
                 recv = urbi_atom_proto_for_value(vm, self_value);
-                SELFDBG("atom_proto_for_value returned\n");
                 if (recv == NULL) {
                     vm->last_error = UVM_OOM;
                     vm_format_type_error_msg(vm, "SELF: atom proto allocation failed");
@@ -1847,7 +1799,6 @@ dispatch:
                 }
             }
 
-            SELFDBG("pre fast-path loop\n");
             if (UNLIKELY(vm->in_watcher_install)) {
                 UCell *cell = (UCell *)recv;
                 bool already_present = false;
@@ -1867,7 +1818,6 @@ dispatch:
                 }
             }
 
-            SELFDBG("fast-path enter\n");
             /* Fast path. */
             for (uint8_t k = 0; k < ic->n; k++) {
                 if (ic->recv_shapes[k]  == recv->shape
@@ -1904,13 +1854,10 @@ dispatch:
                 }
             }
 
-            SELFDBG("slow path\n");
             /* Slow path. */
             UValue v;
             int rc = urbi_slot_get_slow(vm, recv, ic, &v);
-            SELFDBG("slow path returned\n");
             if (rc != 0) {
-                SELFDBG("slow path FAILED\n");
                 vm->last_error = UVM_TYPE_ERROR;
                 {
                     UDiagWriter _w;
