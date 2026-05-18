@@ -19,13 +19,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "urbi/types.h"   /* UValue, struct UVM (opaque), UVMAllocFn */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-struct UVM;
-struct UValue;
+/* struct UVM is forward-declared in <urbi/types.h> */
 
 /* Compile-time tunables: override via -D... at build time. */
 #ifndef URBI_HEAP_BYTES
@@ -75,8 +75,8 @@ void port_lcd_init(void);
  * urbi_native_method_fn (include/urbi/urbi.h).  Fills an axis-aligned
  * rectangle at (x, y) of size (w, h) with the given RGB565 color via
  * BSP_LCD_FillRect.  Clamps to LCD bounds. */
-int port_lcd_fill_rect_native(struct UVM *vm, struct UValue *args, int nargs,
-                              struct UValue *out);
+int port_lcd_fill_rect_native(struct UVM *vm, UValue *args, int nargs,
+                              UValue *out);
 
 /* Gyro init: brings up L3GD20 over SPI5 via BSP_GYRO_Init.  Call once
  * from main() AFTER HAL_Init(). */
@@ -85,8 +85,8 @@ void port_gyro_init(void);
 /* Gyro host-fn: registered into urbi as "gyro_read".  Signature matches
  * urbi_native_method_fn.  Returns a 3-element list of floats
  * [omega_x, omega_y, omega_z] in radians/sec via BSP_GYRO_GetXYZ. */
-int port_gyro_read_native(struct UVM *vm, struct UValue *args, int nargs,
-                          struct UValue *out);
+int port_gyro_read_native(struct UVM *vm, UValue *args, int nargs,
+                          UValue *out);
 
 /* Button GPIO init: configures PA0 as input with EXTI0 rising-edge IRQ.
  * Call BEFORE port_button_init(). */
