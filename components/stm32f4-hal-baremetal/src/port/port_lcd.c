@@ -36,7 +36,25 @@ void port_lcd_init(void) {
 
 int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
                               UValue *args, uint8_t nargs, UValue *out) {
-    (void)vm; (void)self;
+    (void)self;
+    /* v0.8.2 bring-up: count calls + print every 256th.  Confirms whether
+     * the urbiscript is reaching lcd_fill_rect at all and how fast.
+     * Remove before tag. */
+#ifndef URBI_PORT_TEST
+    static uint32_t s_call_count = 0;
+    s_call_count++;
+    if ((s_call_count & 0xFFU) == 1U) {
+        char b[24];
+        const char *d = "0123456789ABCDEF";
+        int n = 0;
+        const char *t = "fill n=";
+        while (t[n] && n < 7) { b[n] = t[n]; n++; }
+        for (int k = 28; k >= 0; k -= 4) b[n++] = d[(s_call_count >> k) & 0xF];
+        b[n++] = '\r'; b[n++] = '\n';
+        if (vm && vm->writer_fn) vm->writer_fn(vm->writer_ud, "lcd", 3,
+                                                b, (size_t)n, 0);
+    }
+#endif
     if (nargs != 5) {
         *out = urbi_make_nil();
         return -1;  /* URBI_EXEC_ERR_ARITY */
