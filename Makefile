@@ -797,6 +797,25 @@ cross-riscv:
 		AR=riscv64-unknown-elf-ar \
 		core
 
+# v0.8.2: cross-compile for STM32F4 (Cortex-M4F).  Same arm-none-eabi
+# toolchain as cross-arm; differs in -mcpu and FPU flags.
+cross-stm32f4:
+	$(MAKE) TARGET=arm-cortex-m4 \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m4 -mthumb \
+		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+		        -ffreestanding \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		core
+
 # T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
 # Used by `make test-freestanding` (T18) to verify the freestanding subset
 # contract on the embedded targets (no hosted libc fallthrough).
@@ -833,6 +852,27 @@ cross-riscv-bytecode-only:
 		        -DURBI_WATCHER_POOL_SIZE=64" \
 		AR=riscv64-unknown-elf-ar \
 		core
+
+# v0.8.2: STM32F4 bytecode-only freestanding variant.
+cross-stm32f4-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-stm32f4-bytecode-only \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m4 -mthumb \
+		        -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+		        -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		core
+	@sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
 
 # T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
 # Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
@@ -903,9 +943,10 @@ test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
 # it ill-suited as a default local gate (matches the existing releasetest
 # policy that excludes cross-arm/cross-riscv).  CI invokes it directly.
 .PHONY: test-freestanding
-test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only
+test-freestanding: cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only
 	sh tests/scripts/test-freestanding.sh build/cross-arm-bytecode-only/liburbi.a
 	sh tests/scripts/test-freestanding.sh build/cross-riscv-bytecode-only/liburbi.a
+	sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
 
 # Compilation database for clangd / CLion / VS Code indexing.
 # Generated on demand; gitignored. Re-run after changing CFLAGS/CPPFLAGS or
@@ -1094,4 +1135,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
