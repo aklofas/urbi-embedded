@@ -321,6 +321,14 @@ realm_install_const(UVM *vm, URealm *realm, USymbol *sym, UValue value,
  * being NULL) so that resolve_tag_proto / resolve_event_proto see live
  * pointers.  This is the wiring described in uvm.c §T59 comment. */
 
+/* v0.8.2 bring-up debug: localize silent hangs inside the realm-populate
+ * path by routing milestones through vm->writer_fn (port_writer on STM32 →
+ * UART).  Remove before tag. */
+#define DBG(s) do {                                                       \
+    if (vm->writer_fn) vm->writer_fn(vm->writer_ud, "rg", 2,              \
+                                     s, sizeof(s) - 1U, 0);               \
+} while (0)
+
 UErrCode
 urbi_populate_realm_globals(UVM *vm, URealm *realm)
 {
@@ -329,6 +337,7 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
     if (vm == NULL || realm == NULL || realm->global_object == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
+    DBG("enter\n");
 
     /* Ensure event_proto + tag_proto are allocated.  Idempotent: guarded by
      * the NULL check inside event_native_register / tag_native_register.
@@ -337,7 +346,9 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * root shape, and urbi_object_root is called by resolve_object_proto
      * inside the resolver loop below). */
     if (vm->event_proto == NULL) {
+        DBG("native_protos_init...\n");
         urbi_native_protos_init(vm);
+        DBG("native_protos_init OK\n");
     }
 
     /* M6 Phase 3: register Object root C-native methods on vm->atom_object
@@ -346,12 +357,16 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * for the very first urbiscript chunk that references it.  Idempotent:
      * vm->stdlib_booted gates re-entry. */
     {
+        DBG("stdlib_boot...\n");
         UErrCode rc = (UErrCode)urbi_stdlib_boot(vm);
         if (rc != URBI_OK) {
+            DBG("stdlib_boot FAILED\n");
             return rc;
         }
+        DBG("stdlib_boot OK\n");
     }
 
+    DBG("resolver loop...\n");
     for (i = 0; i < urbi_builtin_registry_count; i++) {
         const URegistryEntry *e = &urbi_builtin_registry[i];
 
@@ -400,41 +415,53 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
         }
     }
 
+    DBG("resolver loop OK\n");
+
     /* M6 Phase 6: post-registry container globals (Pair / Triplet / Tuple).
      * Lands at slots 15+, past the v1.0 packed-flag CONSTANT enforcement
      * range (slots 0..7), so it cannot displace the registry's stable
      * Object..List layout. */
     {
+        DBG("container_globals...\n");
         int rc = urbi_stdlib_register_container_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
     }
 
+    DBG("container_globals OK\n");
+
     /* M6 Phase 7: post-registry runtime-type globals (Exception).  Same
      * post-loop pattern as containers — lands at slots 15+, past the
      * v1.0 packed-flag CONSTANT enforcement range. */
     {
+        DBG("runtime_globals...\n");
         int rc = urbi_stdlib_register_runtime_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
     }
 
+    DBG("runtime_globals OK\n");
+
     /* M6 Phase 8: post-registry namespace globals (Math / System /
      * Global / CallMessage).  Same post-loop pattern.  Note: Platform
      * is nested as a slot on System, NOT a top-level realm global —
      * scripts access it as System.Platform.kind. */
     {
+        DBG("namespace_globals...\n");
         int rc = urbi_stdlib_register_namespace_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }
     }
 
+    DBG("namespace_globals OK\n");
+
     /* M6 Phase 9: post-registry primitive globals (Mutex / Date /
      * Duration).  Same post-loop pattern. */
     {
+        DBG("primitives_globals...\n");
         int rc = urbi_stdlib_register_primitives_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
@@ -458,16 +485,25 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * The class-decl emit path writes Foo into the realm-global slot
      * directly via OP_SETSLOT on global_object — no further wiring
      * needed here. */
+    DBG("primitives_globals OK\n");
+
     if (vm->stdlib_module != NULL) {
+        DBG("stdlib_module run_chunk...\n");
         UValue out;
         int rc = urbi_run_chunk(vm, realm, vm->stdlib_module, &out);
         if (rc != URBI_OK) {
+            DBG("stdlib_module run_chunk FAILED\n");
             return (UErrCode)rc;
         }
+        DBG("stdlib_module run_chunk OK\n");
+    } else {
+        DBG("no stdlib_module\n");
     }
 
+    DBG("populate OK\n");
     return URBI_OK;
 }
+#undef DBG
 
 /* === M5 public C API: realm global slot install / read (spec #5 §7) ===
  *

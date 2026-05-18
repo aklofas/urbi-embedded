@@ -37,12 +37,20 @@
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
+/* v0.8.2 bring-up debug: localize silent hangs inside stdlib boot.
+ * Routes via vm->writer_fn (port_writer → UART on STM32).  Remove before tag. */
+#define DBG(s) do {                                                       \
+    if (vm->writer_fn) vm->writer_fn(vm->writer_ud, "sb", 2,              \
+                                     s, sizeof(s) - 1U, 0);               \
+} while (0)
+
 int
 urbi_stdlib_boot(UVM *vm)
 {
     if (vm == NULL) return URBI_ERR_INVALID_ARG;
     if (vm->stdlib_booted) return URBI_OK;
 
+    DBG("object_root_register\n");
     int rc = urbi_object_root_register(vm);
     if (rc != URBI_OK) return rc;
 
@@ -51,6 +59,7 @@ urbi_stdlib_boot(UVM *vm)
      * .toString, String.length).  Integer / Float / Nil / Void protos
      * exist but inherit clone + getSlot/etc. from Object root via the
      * prototype chain. */
+    DBG("atom_protos_register\n");
     rc = urbi_atom_protos_register(vm);
     if (rc != URBI_OK) return rc;
 
@@ -58,6 +67,7 @@ urbi_stdlib_boot(UVM *vm)
      * Boolean / Integer / Float / String atom protos.  Symbolic operators
      * (`+`, `==`, …) remain inline VM opcodes; only named methods (asString,
      * bitand, sqrt, length, …) land here.  See src/stdlib/atoms.c banner. */
+    DBG("register_atom_methods\n");
     rc = urbi_stdlib_register_atom_methods(vm);
     if (rc != URBI_OK) return rc;
 
@@ -69,6 +79,7 @@ urbi_stdlib_boot(UVM *vm)
      * registry's slot 0..7 layout (Object .. List) stays stable for the
      * v1.0 packed-flag CONSTANT enforcement range.  See
      * src/stdlib/containers.c. */
+    DBG("register_containers\n");
     rc = urbi_stdlib_register_containers(vm);
     if (rc != URBI_OK) return rc;
 
@@ -78,6 +89,7 @@ urbi_stdlib_boot(UVM *vm)
      * hook urbi_stdlib_register_runtime_globals, mirroring container
      * globals so the registry's slot 0..7 layout stays stable.  See
      * src/stdlib/runtime_types.c. */
+    DBG("register_runtime_types\n");
     rc = urbi_stdlib_register_runtime_types(vm);
     if (rc != URBI_OK) return rc;
 
@@ -87,6 +99,7 @@ urbi_stdlib_boot(UVM *vm)
      * namespace names is deferred to urbi_stdlib_register_namespace_-
      * globals, again preserving the registry's slot 0..7 layout.  See
      * src/stdlib/namespaces.c. */
+    DBG("register_namespaces\n");
     rc = urbi_stdlib_register_namespaces(vm);
     if (rc != URBI_OK) return rc;
 
@@ -95,12 +108,14 @@ urbi_stdlib_boot(UVM *vm)
      * binding for the primitive names is deferred to urbi_stdlib_-
      * register_primitives_globals, again preserving the registry's
      * slot 0..7 layout.  See src/stdlib/primitives.c. */
+    DBG("register_primitives\n");
     rc = urbi_stdlib_register_primitives(vm);
     if (rc != URBI_OK) return rc;
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
      * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
+    DBG("blob deserialize\n");
     if (urbi_stdlib_bytecode_len > 0) {
         if (vm->alloc_fn == NULL) {
             return URBI_ERR_STDLIB_BOOT_FAILED;
@@ -121,15 +136,19 @@ urbi_stdlib_boot(UVM *vm)
         UModuleLoadError lerr = umodule_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
         if (lerr != ULOAD_OK) {
+            DBG("deserialize FAILED\n");
             umodule_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
+        DBG("deserialize OK\n");
         if (urbi_get_or_create_module_instance(vm, m) == NULL) {
+            DBG("get_or_create_module_instance NULL\n");
             umodule_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_OOM;
         }
+        DBG("module_instance OK\n");
         vm->stdlib_module = m;
         /* Note: running the root chunk of the stdlib module is deferred
          * to a later phase — urbi_stdlib_boot is invoked from inside
@@ -139,6 +158,8 @@ urbi_stdlib_boot(UVM *vm)
          * the global Realm is fully populated. */
     }
 
+    DBG("done\n");
     vm->stdlib_booted = 1U;
     return URBI_OK;
 }
+#undef DBG
