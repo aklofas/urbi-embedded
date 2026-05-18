@@ -260,9 +260,81 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
+
+# v0.8.2: host-side unit tests for STM32F4 port shims, using mock BSP.
+# Each test compiles a single port shim TU against the mock BSP layer.
+# URBI_PORT_TEST=1 selects the mock-include path in the port shim TUs.
+PORT_STM32F4_TESTS := \
+	test_port_allocator \
+	test_port_time \
+	test_port_writer \
+	test_port_diag \
+	test_port_lcd \
+	test_port_gyro \
+	test_port_button
+
+PORT_STM32F4_TEST_DEPS_COMMON := \
+	tests/port_stm32f4/mock_bsp.c
+
+PORT_STM32F4_CFLAGS := -std=c99 -Wall -Wextra \
+	-DURBI_PORT_TEST=1 \
+	-I tests/port_stm32f4 \
+	-I include \
+	-I components/stm32f4-hal-baremetal/include
+
+# Each test gets its own binary in build/port_stm32f4/
+build/port_stm32f4/test_port_allocator: tests/port_stm32f4/test_port_allocator.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_allocator.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_time: tests/port_stm32f4/test_port_time.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_time.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_writer: tests/port_stm32f4/test_port_writer.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_writer.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_diag: tests/port_stm32f4/test_port_diag.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_writer.c \
+	components/stm32f4-hal-baremetal/src/port/port_diag.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+build/port_stm32f4/test_port_lcd: tests/port_stm32f4/test_port_lcd.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_lcd.c \
+	$(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
+
+build/port_stm32f4/test_port_gyro: tests/port_stm32f4/test_port_gyro.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_gyro.c \
+	$(LIB)
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -lm -o $@
+
+build/port_stm32f4/test_port_button: tests/port_stm32f4/test_port_button.c \
+	$(PORT_STM32F4_TEST_DEPS_COMMON) \
+	components/stm32f4-hal-baremetal/src/port/port_button.c
+	@mkdir -p $(@D)
+	$(CC) $(PORT_STM32F4_CFLAGS) $^ -o $@
+
+.PHONY: test-port-stm32f4
+test-port-stm32f4: $(addprefix build/port_stm32f4/, $(PORT_STM32F4_TESTS))
+	@for t in $^; do echo "Running $$t..."; $$t || exit 1; done
+	@echo "All STM32F4 port tests PASS"
 
 .PHONY: test-loc-cap
 test-loc-cap:
@@ -1022,4 +1094,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-arm-bytecode-only cross-riscv-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
