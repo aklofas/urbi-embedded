@@ -87,8 +87,6 @@ tunable_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
     s->module_instance = urbi_module_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
     if (out_result) s->out_slot = out_result;
     return true;
 }

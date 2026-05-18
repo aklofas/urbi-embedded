@@ -15,14 +15,13 @@
 
 #include "uwatcher.h"
 #include "vm/uvm.h"
-#include "runtime/uclosure.h"  /* UClosure full definition — proto field + URBI_WATCHER_OWNS_* free path */
+#include "runtime/uclosure.h"  /* UClosure full definition — w->condition/body/onleave pointer types */
 #include "gc/ugc.h"            /* UTYPE_WATCHER */
 #include "gc/ugc_incremental.h" /* UGC_IS_FIXED, UGC_HAS_WATCHER_OBSERVER, current_white */
 #include "tag/utag.h"           /* UTag, member_watchers_head */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_remove */
-#include "module/umodule.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -78,97 +77,22 @@ uwatcher_pool_alloc(struct UVM *vm)
 
 /* pool_free: push one entry back onto the freelist.
  * Decrements in_use counter; does NOT touch high_water.
- * For each of URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE that is set, frees the
- * matching closure (and its detached proto) before recycling the slot.  These
- * flags are set by install_watcher_runtime / install_at_event_runtime when
- * they unlink the closures from the strand's pre-GC closure_list so
- * urbi_vm_run's post-run cleanup loop cannot free them prematurely.  The
- * three flags are independent — any subset (including none) may be set.
- *
- * WATCH-001 (v0.5.7): each free is structured as {free → null pointer →
- * clear OWNS bit} so the slot's flag byte accurately reflects post-free
- * ownership state.  This is defensive idempotency: if pool_free were ever
- * re-entered on the same slot before pool_alloc recycled it, the cleared
- * bit prevents a double-free; and if a future caller invariant changes to
- * permit closure aliasing across watchers, the cleared bit on the freeing
- * watcher accurately reports that this slot no longer claims ownership. */
+ * v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags deleted; UClosure lifetime is
+ * GC-managed since Step C-2.  Condition/body/onleave pointers are cleared for
+ * slot hygiene, not for ownership-based free. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
     URBI_INTERNAL_ASSERT(w != NULL);
     URBI_INTERNAL_ASSERT(vm->watcher_pool_in_use > 0);
 
-    /* Free owned closures (and their detached protos) acquired via
-     * install_watcher_runtime / install_at_event_runtime.
-     *
-     * URBI_WATCHER_OWNS_* is set only when strand_closure_unlink returned 1,
-     * which since v0.7.3 implies BOTH the UClosure was unlinked from the
-     * strand's closure_list AND its UProto was detached from the strand
-     * module's nested[].  That return only happens when the install ran at
-     * `s->frame_count == 0` — see the strand_closure_unlink banner for the
-     * frame-count gating that prevents subsequent OP_CLOSUREs (against a
-     * shared nested[] entry inside a multi-invocation callee) from
-     * dereferencing a freed proto.  Installs at frame_count > 0 return 0
-     * and leave both cl and proto with their original owners. */
-    /* Helper macro: dec root_proto.refcount and, if refcount hits 0 with
-     * the self-link sentinel set (umodule_destroy called with vm=NULL while
-     * refcount was > 0), promote root_proto to vm->rescued_protos so the
-     * vm_destroy rescued_protos sweep can free it.
-     *
-     * The self-link sentinel (rp->next_alloc == rp) is set in umodule.c
-     * umodule_destroy's vm=NULL branch when root_proto->refcount > 0.
-     * It is unambiguous: while root_proto is alive inside a UModule its
-     * next_alloc is NULL; on rescued_protos or stdlib_protos it points to
-     * the next list entry, never to itself. */
-#define UPROTO_DEC_AND_MAYBE_RESCUE(cl_field) \
-    do { \
-        UProto *_rp = uproto_root_of((cl_field)->proto); \
-        umodule_proto_refcount_dec(_rp); \
-        if (_rp != NULL && _rp->refcount == 0U && _rp->next_alloc == _rp) { \
-            _rp->next_alloc     = vm->rescued_protos; \
-            vm->rescued_protos  = _rp; \
-        } \
-    } while (0)
-
-    if ((w->flags & URBI_WATCHER_OWNS_COND) && w->condition != NULL) {
-        if (w->condition->proto != NULL) {
-            /* v0.8.1 Variant B Phase 2: dec root_proto.refcount via uproto_root_of.
-             * The nested proto struct itself is NOT freed here.  Under Variant B,
-             * the nested proto's lifetime is the module's — it stays in
-             * root_proto->nested[] until module/rescue destroy walks and frees it.
-             * Multiple watcher firings share the same nested proto; freeing it here
-             * would cause UAF on the next firing's OP_CLOSURE read.
-             * If root_proto was destroyed with vm=NULL (self-link sentinel), promote
-             * to rescued_protos so vm_destroy can free it. */
-            UPROTO_DEC_AND_MAYBE_RESCUE(w->condition);
-        }
-        vm->alloc_fn(w->condition, 0, vm->alloc_ud);
-        w->condition = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_COND);
-    }
-    if ((w->flags & URBI_WATCHER_OWNS_BODY) && w->body != NULL) {
-        if (w->body->proto != NULL) {
-            /* v0.8.1 Variant B Phase 2: same as OWNS_COND above. */
-            UPROTO_DEC_AND_MAYBE_RESCUE(w->body);
-        }
-        vm->alloc_fn(w->body, 0, vm->alloc_ud);
-        w->body = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_BODY);
-    }
-    if ((w->flags & URBI_WATCHER_OWNS_ONLEAVE) && w->onleave != NULL) {
-        if (w->onleave->proto != NULL) {
-            /* v0.8.1 Variant B Phase 2: same as OWNS_COND above. */
-            UPROTO_DEC_AND_MAYBE_RESCUE(w->onleave);
-        }
-        vm->alloc_fn(w->onleave, 0, vm->alloc_ud);
-        w->onleave = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_ONLEAVE);
-    }
-#undef UPROTO_DEC_AND_MAYBE_RESCUE
+    /* v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags and their free arms deleted.
+     * UClosure lifetime is GC-managed since Step C-2; watcher condition/body/
+     * onleave fields are cleared below for correctness, not for free-then-null. */
 
     /* Clear URBI_WATCHER_ACTIVE so a slab walk (uwatcher_pool_destroy,
      * WATCH-002 v0.5.7) can distinguish allocated-but-orphaned slots from
-     * recycled ones.  Per-slot OWNS_* bits were already cleared above. */
+     * recycled ones. */
     w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_ACTIVE);
 
     w->next_active             = vm->watcher_pool_freelist;
@@ -246,23 +170,12 @@ uwatcher_pool_destroy(struct UVM *vm)
     if (vm->watcher_pool_base == NULL) return;
     if (vm->alloc_fn == NULL) return;
 
-    /* Free owned closures (and their detached protos) for any watchers
-     * that are still active.  pool_free recycles them onto the freelist,
-     * which is fine — we free the whole slab below anyway.  Without this
-     * step, any watcher that holds URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE
-     * leaks those closures and protos when the slab is freed.
-     *
-     * urbi_tag_stop (called from urbi_realm_destroy during urealm_teardown_all,
-     * which runs before uwatcher_pool_destroy) moves watchers from
-     * active_watchers_head onto pending_onleave_head via
-     * pending_onleave_queue_push.  Both lists must be drained here to release
-     * all owned closures. */
+    /* Drain active and pending-onleave watcher lists so pool_free marks them
+     * recycled (WATCH-001/002 slab-walk invariants) before the slab is freed.
+     * Step C-3: OWNS_* flags deleted; pool_free no longer calls alloc_fn on
+     * closures — GC sweep handles UClosure lifetime.  Drain is still needed
+     * to keep slab-walk accounting correct. */
     drain_watcher_list(vm, &vm->active_watchers_head);
-    /* Drain watchers that were moved to the pending-onleave queue by
-     * urbi_tag_stop / pending_onleave_queue_push.  These have already been
-     * unlinked from active_watchers_head and owning_tag->member_watchers_head,
-     * but still hold owned closures (OWNS_COND / OWNS_BODY / OWNS_ONLEAVE
-     * flags are unchanged by the push).  pool_free frees those closures. */
     drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
 

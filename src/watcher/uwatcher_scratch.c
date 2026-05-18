@@ -219,40 +219,13 @@ run_on_scratch_core(struct UVM       *vm,
         strand.realm = NULL;
     }
 
-    /* Teardown sequence: adapted from urbi_vm_run's tail block (unlink reordered to before free) (src/uvm.c:2251-2305).
-     * closure_list and closed_cells are nulled before ustrand_destroy to
-     * avoid double-free on the same list if ustrand_destroy were to walk them
-     * (it doesn't at v1.0, but belt-and-suspenders matches urbi_vm_run). */
-    {
-        UClosure *cl = strand.closure_list;
-        strand.closure_list = NULL;
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            vm->alloc_fn(cl, 0, vm->alloc_ud);
-            cl = next;
-        }
-    }
-    {
-        UUpvalCell *cell = strand.closed_cells;
-        strand.closed_cells = NULL;
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
-            cell = next;
-        }
-    }
-
-    /* Free any open upvalue cells still on the strand (inlined from the
-     * static vm_free_open_upvalues helper in uvm.c). */
-    {
-        UUpvalCell *cell = strand.open_upvals;
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
-            cell = next;
-        }
-        strand.open_upvals = NULL;
-    }
+    /* v0.8.4 Option B Step C-2/C-3: UClosure and UUpvalCell are GC-managed.
+     * The pre-C-2 free loops here were double-free hazards (C-2 migrated
+     * vm_alloc_closure to urbi_gc_alloc but missed this scratch teardown path).
+     * Just clear the open_upvals head pointer — the GC sweep reclaims the cells
+     * when they become unreachable from any root.  closure_list + closed_cells
+     * fields were deleted at Step C-3. */
+    strand.open_upvals = NULL;
 
     /* Free the register stack. */
     if (strand.stack != NULL) {

@@ -44,18 +44,14 @@ struct UProto;    /* defined in umodule.h */
 struct UClosure;  /* defined in umodule.h */
 
 /* --- UUpvalCell: runtime heap cell for captured locals.
-   When a closure captures a local that is still live on a call frame
-   stack, the cell points into the register window (on_heap=false).
-   When the scope exits (OP_CLOSE), the value is copied into the cell
-   itself and on_heap is set to true. */
-typedef struct UUpvalCell {
-    bool    on_heap;
-    union {
-        UValue  *stack_ptr;     /* on_heap=false: pointer into register window */
-        UValue   value;         /* on_heap=true:  owned copy                   */
-    } u;
-    struct UUpvalCell *next;    /* intrusive singly-linked list in strand */
-} UUpvalCell;
+   Forward typedef only — the full struct definition (with UCell prefix at
+   offset 0 for GC) lives in uclosure.h.  This mirrors how UClosure is
+   forward-declared in umodule.h: uframe.h → ugc.h → umodule.h → uframe.h
+   would form a circular include chain, so the complete layout is deferred
+   to the first header that has both UValue and UCell in scope.
+   Files that only need `UUpvalCell *` (e.g. ustrand.h, uvm.h) include this
+   header; files that touch UUpvalCell fields include uclosure.h. */
+typedef struct UUpvalCell UUpvalCell;
 
 /* --- UCallFrame: per-call-frame state saved/restored on function dispatch. --- */
 typedef struct UCallFrame {

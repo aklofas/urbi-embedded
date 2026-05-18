@@ -622,6 +622,19 @@ urbi_gc_alloc(UVM *vm, size_t size, uint8_t type_tag)
     cell->type_tag = type_tag;
     cell->gc_byte  = vm->current_white;   /* born current_white per spec §3.5 */
 
+    /* v0.8.4: mirror the type's TYPE_HAS_FINALIZER flag onto the cell's
+     * gc_byte so that gc_sweep_step and urbi_gc_destroy will call the
+     * finalizer.  Without this, types registered with a non-NULL destroy
+     * (UTYPE_CLOSURE since Step B) would have their finalizer silently
+     * skipped — every test prior to v0.8.4 had flags == 0 on every type
+     * registration, so this code path was latent and untested. */
+    {
+        const UType *t = vm->type_table[type_tag];
+        if (t != NULL && (t->flags & TYPE_HAS_FINALIZER) != 0U) {
+            cell->gc_byte |= UGC_HAS_FINALIZER;
+        }
+    }
+
     /* Initialize sidecar node and prepend to all-cells list. */
     node->cell = cell;
     node->size = size;
@@ -693,14 +706,10 @@ gc_shade_gray(UVM *vm, UCell *cell)
      *      walk_utag for chain shading sets the color flag (idempotency)
      *      but the work-list push is correctly a no-op.
      *
-     *   3. UClosure cells (vm_alloc_closure): direct vm->alloc_fn alloc
-     *      with a well-formed UCell header for write-barrier safety, but
-     *      NOT enrolled on all_cells_head.  Lifetime is bound to the
-     *      strand closure_list (legacy free-list).  GC-managed promotion
-     *      is tracked as a follow-up M4 task at vm_alloc_closure() — see
-     *      its docstring.  Until then, gc_shade_gray on a UClosure cell
-     *      sets the color but performs a silent NULL-return for the
-     *      work-list push.
+     *   3. UClosure / UUpvalCell cells (vm_alloc_closure / vm_open_upvalue):
+     *      fully GC-managed since v0.8.4 Step C-2 (enrolled on all_cells_head
+     *      via urbi_gc_alloc with UTYPE_CLOSURE / UTYPE_UPVAL_CELL).  The
+     *      legacy strand closure_list free-list was deleted at Step C-3.
      *
      * Pre-GC-009-fix shape: silent `if (!node) return;` covered all three
      * cases but obscured which were intentional.  The audit asked for
@@ -864,8 +873,8 @@ urbi_gc_walk_all_cells(UVM *vm, UGcCellCallback cb, void *ctx)
 /* === urbi_gc_register_root_provider ===
  *
  * Appends provider to the VM's fixed root-provider array.
- * URBI_MAX_ROOT_PROVIDERS is 8 (row 10 §5.1); capacity assertion fires on
- * overflow so the programmer knows to raise the constant. */
+ * URBI_MAX_ROOT_PROVIDERS is 12 (bumped from 8→12 at Step C-1); capacity
+ * assertion fires on overflow so the programmer knows to raise the constant. */
 void
 urbi_gc_register_root_provider(UVM *vm, UGcRootProviderFn provider)
 {

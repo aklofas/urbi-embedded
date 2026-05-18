@@ -17,17 +17,53 @@
 
 #include <stdint.h>
 
-#include "module/umodule.h"                       /* UProto + forward typedef `UClosure` + UUpvalCell */
+#include "module/umodule.h"                       /* UProto + forward typedef `UClosure`; pulls in uframe.h which forward-declares UUpvalCell */
 #include "gc/ugc.h"                        /* UCell (2 B) */
 #include "object/umodule_instance.h"        /* UProtoInstance — M4: IC table per nested proto */
 
+/* --- UUpvalCell: runtime heap cell for captured locals (full definition).
+ * Forward typedef is in uframe.h; full layout lives here because the struct
+ * embeds UCell (from gc/ugc.h) as its FIRST member, and uframe.h cannot
+ * include ugc.h without forming a circular include (uframe.h → ugc.h →
+ * umodule.h → uframe.h).  This header has both UValue (via umodule.h) and
+ * UCell (via gc/ugc.h) in scope, so the full definition is safe here.
+ *
+ * When a closure captures a local still live on a call frame stack, the cell
+ * points into the register window (on_heap=false).  When the scope exits
+ * (OP_CLOSE), the value is copied into the cell itself and on_heap is set to
+ * true.
+ *
+ * Layout (v0.8.4): UCell prefix at offset 0 for GC; type_tag is initialised
+ * to UTYPE_UPVAL_CELL at allocation.  sizeof stays 32 B on 64-bit hosts —
+ * the compiler-inserted padding that previously preceded the 8-aligned union
+ * now holds the UCell header (bytes 0-1); on_heap moves to byte 2. */
+struct UUpvalCell {
+    UCell   cell;               /* 2 B — type_tag = UTYPE_UPVAL_CELL at offset 0/1 */
+    bool    on_heap;            /* byte 2 */
+    /* 5 B compiler padding on 64-bit (aligns the 16-B UValue union to 8 B) */
+    union {
+        UValue  *stack_ptr;     /* on_heap=false: pointer into register window */
+        UValue   value;         /* on_heap=true:  owned copy                   */
+    } u;
+    struct UUpvalCell *next;    /* intrusive singly-linked list in strand */
+};
+
+/* Layout pin (v0.8.4): UUpvalCell embeds UCell at offset 0 for GC.
+ * sizeof stays 32 B on 64-bit (compiler already padded on_heap to the
+ * 8-aligned union); the UCell prefix occupies bytes 0-1 where
+ * compiler-inserted padding lived before.
+ *
+ * On 32-bit hosts the union/pointer alignment is 4-byte, so the layout
+ * differs — pin host-pointer-size cases independently. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
+_Static_assert(sizeof(UUpvalCell) == 32,
+               "UUpvalCell size pin on 64-bit hosts (v0.8.4)");
+#endif
+
 /* --- UClosure: runtime function value (proto + captured upvalues).
- * Heap-allocated by OP_CLOSURE; lives until end-of-run via the strand's
- * pre-GC closure_list (threaded by next_alloc).  The cell header is
- * initialised (type_tag + gc_byte) so the upvalue write barrier can
- * safely cast UClosure* → UCell*, but the closure is NOT yet enrolled on
- * vm->all_cells_head — the strand-local closure_list still owns lifetime
- * pre-GC (full GC enrollment deferred to v1.x).
+ * Heap-allocated by OP_CLOSURE via urbi_gc_alloc; the GC sweep +
+ * uclosure_destroy finalizer reclaim each closure when it becomes unreachable.
+ * v0.8.4 Step C-3: next_alloc (pre-GC free-list link) deleted.
  *
  * proto_inst is bound end-to-end by the M4 follow-up landed on `main`
  * 2026-05-03: OP_CLOSURE writes
@@ -37,9 +73,7 @@
  * not occur in production paths from urbi_vm_run / urbi_run_chunk).
  *
  * The upvals[] array is a trailing flexible member — allocate
- * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*).
- * `next_alloc` threads all closures allocated in one run into a free list
- * so they can be reclaimed at halt (pre-GC bookkeeping). */
+ * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*). */
 /* Native-method extension typedef — promoted to the public API at v0.7.1
  * (<urbi/urbi.h>).  The definition is identical in both locations; the
  * guard URBI_NATIVE_METHOD_FN_DEFINED prevents a duplicate-typedef error
@@ -92,7 +126,7 @@ struct UClosure {
      * Lifetime: UModuleInstance objects are GC-managed and remain valid
      * for the VM's lifetime once created. */
     struct UModuleInstance *origin_module_instance;
-    struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
+    /* next_alloc deleted at v0.8.4 Step C-3: pre-GC free-list link no longer needed. */
     /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of
      * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on

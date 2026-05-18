@@ -22,6 +22,22 @@
 
 #define UTEST(name) static void name(void)
 
+/* === Dummy GC-managed closure helpers (T17 sentinel conversion) === */
+static int
+dummy_native_fn(struct UVM *vm, UValue self, UValue *args,
+                uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return 0;
+}
+
+static UClosure *
+make_dummy_closure(UVM *vm)
+{
+    return urbi_make_native_closure(vm, dummy_native_fn);
+}
+
 /* === Helpers === */
 
 static UValue
@@ -41,7 +57,9 @@ create_member_strand(URealm *r)
 }
 
 /* No-op onleave hook: prevents run_watcher_onleave from dispatching the
- * (UClosure *)1 sentinel through real bytecode. */
+ * native dummy closure through urbi_run_closure_on_scratch (which would crash
+ * because native closures have proto==NULL — scratch-frame arming requires a
+ * non-NULL proto with a valid instructions pointer). */
 static void
 onleave_drain_noop(struct UVM *vm, struct UWatcher *w)
 {
@@ -314,14 +332,15 @@ UTEST(realm_destroy_drain_ordering)
 
     urbi_vm_init(&vm, NULL, NULL);
 
-    /* Install a no-op onleave hook so drain doesn't dereference the
-     * (UClosure *)1 sentinel.  The test observes drain state, not onleave
-     * effects, so hook semantics don't matter. */
+    /* Install a real GC-managed onleave closure.  The no-op onleave hook still
+     * intercepts dispatch so urbi_run_closure_on_scratch is never called on the
+     * native closure (native closures have proto==NULL and would crash the
+     * scratch-frame arming path).  Test observes drain state only. */
     vm.test_watcher_onleave_hook = onleave_drain_noop;
 
     UWatcher *w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
-        /*onleave=*/(UClosure *)1, NULL, 0U);
+        /*onleave=*/make_dummy_closure(&vm), NULL, 0U);
     UASSERT(w != NULL);
 
     /* Simulate a dirty condition AND a pending cleanup simultaneously. */

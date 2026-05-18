@@ -15,9 +15,10 @@
 #include "vm/uvm_internal.h"
 #include "vm/uvm_ref.h"           /* ref_table_walk_roots */
 #include "runtime/umacros.h"      /* urbi_zero */
-#include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
+/* uclosure.h include removed at v0.8.4 Step C-3 (stdlib_closures teardown deleted). */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
+#include "gc/ugc_incremental.h"   /* gc_shade_gray (vm_misc_walk_roots Step C-1) */
 #include "value/uintern.h"        /* uintern_destroy */
 #include "sched/ustrand.h"        /* UStrand (forward) */
 #include "realm/urealm.h"         /* urealm_teardown_all */
@@ -71,6 +72,27 @@ static uint64_t default_host_time_us_stub(void) {
 /* Non-static alias: lets uvm_writer.c restore the built-in time source. */
 uint64_t urbi_default_host_time_us(void) {
     return default_host_time_us_stub();
+}
+
+/* === vm_misc_walk_roots (v0.8.4 Option B Step C-1) ===
+ *
+ * GC root provider for VM-level state that doesn't fit the realm / strand /
+ * watcher / intern-table / host-handle / object-proto categories.  Currently
+ * yields vm->last_return_closure (the result of the most-recent urbi_vm_run
+ * call, preserved across calls for host inspection).
+ *
+ * Today this yield is dormant: UClosure cells are not on all_cells_head, so
+ * gc_shade_gray sets the color byte and returns early (NULL sidecar path, per
+ * the GC-009 contract in ugc_incremental.c).  Step C-2 lights this up when
+ * UClosure is promoted to urbi_gc_alloc. */
+static void
+vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    (void)cb;
+    (void)ctx;
+    if (vm->last_return_closure != NULL) {
+        gc_shade_gray(vm, (UCell *)&vm->last_return_closure->cell);
+    }
 }
 
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
@@ -199,11 +221,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->root_provider_count = 0U;
 
     /* Register default root providers.
-     * Order: scheduler, realm, intern, host-handle, watcher table. */
+     * Order: scheduler, realm, intern, host-handle, vm-misc, watcher table. */
     urbi_gc_register_root_provider(vm, sched_walk_roots);
     urbi_gc_register_root_provider(vm, realm_list_walk_roots);
     urbi_gc_register_root_provider(vm, intern_table_walk_roots);
     urbi_gc_register_root_provider(vm, host_handle_walk_roots);
+    urbi_gc_register_root_provider(vm, vm_misc_walk_roots);   /* Step C-1 */
     urbi_gc_register_root_provider(vm, watcher_table_walk_roots);
 
     /* Type table + host-handle table. */
@@ -325,8 +348,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_drain_handler = NULL;
 
     /* M6 Phase 3: stdlib state. */
-    vm->stdlib_closures        = NULL;
-    vm->stdlib_upvalues        = NULL;
+    /* stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3 (GC-managed). */
     /* stdlib_protos + stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root). */
     vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
@@ -466,63 +488,14 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* M6 Phase 3: clear last_return_closure pointer.  Pre-Phase 3 this
-     * call freed the closure directly; Phase 3 migrates run-end closures
-     * onto vm->stdlib_closures (see uvm_run.c) so the closure gets reclaimed
-     * by the stdlib_closures sweep below.  Clearing the field guards
-     * against accidental dereference after destroy without the
-     * extra free that would now be a double-free. */
+    /* v0.8.4 Step C-3: stdlib_closures + stdlib_upvalues fields deleted.
+     * UClosure + UUpvalCell are GC-managed; urbi_gc_destroy (called above)
+     * already swept all white cells and invoked the uclosure_destroy finalizer
+     * on each closure.  vm->last_return_closure: GC-managed; cleared for
+     * post-destroy hygiene (the closure was already reclaimed above). */
     vm->last_return_closure = NULL;
-    /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
-     * registered by urbi_native_closure_create AND user closures migrated
-     * from strand closure_lists at run exit, see uvm_run.c).  All threaded
-     * via next_alloc on a single vm->stdlib_closures list.
-     *
-     * v0.8.1 Variant B Phase 2 ORDERING INVARIANT (spec §3.7):
-     * This sweep MUST run BEFORE the vm->rescued_protos sweep below.
-     * Each closure decs its proto via uproto_root_of() — that dereferences
-     * cl->proto->root (back-pointer into a root_proto).  The root_proto must
-     * still be alive at that point.  Rescued root_protos stay alive until the
-     * rescued_protos sweep frees them.  Reordering causes UAF. */
-    if (vm->alloc_fn != NULL) {
-        UClosure *cl = vm->stdlib_closures;
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            /* v0.8.1: dec root_proto.refcount before freeing the closure.
-             * The root_proto is still alive (either held by a live UModule
-             * or on the rescued_protos list).  Safe per the ordering invariant
-             * documented above. */
-            if (cl->proto != NULL) {
-                UProto *rp = uproto_root_of(cl->proto);
-                umodule_proto_refcount_dec(rp);
-                /* Self-link sentinel: if umodule_destroy was called with vm=NULL
-                 * while refcount was > 0, root_proto->next_alloc was set to
-                 * root_proto itself (unambiguous sentinel; see umodule.c).
-                 * When the last closure ref drops refcount to 0, promote the
-                 * root_proto to rescued_protos so the sweep below frees it.
-                 * This avoids a struct addition while ensuring vm=NULL destroy
-                 * paths are clean under ASan. */
-                if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
-                    rp->next_alloc     = vm->rescued_protos;
-                    vm->rescued_protos = rp;
-                }
-            }
-            vm->alloc_fn(cl, 0, vm->alloc_ud);
-            cl = next;
-        }
-        vm->stdlib_closures = NULL;
 
-        /* M6 Phase 3: free vm-lifetime heapified upvals (UUpvalCells
-         * migrated from strand closed_cells at run exit).  These must
-         * outlive their owning closures, which are also on
-         * stdlib_closures above. */
-        UUpvalCell *uc = vm->stdlib_upvalues;
-        while (uc != NULL) {
-            UUpvalCell *next = uc->next;
-            vm->alloc_fn(uc, 0, vm->alloc_ud);
-            uc = next;
-        }
-        vm->stdlib_upvalues = NULL;
+    if (vm->alloc_fn != NULL) {
 
         /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any

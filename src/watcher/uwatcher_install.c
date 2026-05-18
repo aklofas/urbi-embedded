@@ -17,7 +17,7 @@
 #include "watcher/uwatcher.h"   /* UWATCHER_AT, UWatcher, uwatcher_pool_alloc */
 #include "vm/uvm.h"                /* UVM, URBI_LOG_WARN */
 #include "sched/ustrand.h"            /* UStrand, USTRAND_WAIT_WATCHER */
-#include "runtime/uclosure.h"           /* UClosure full definition — next_alloc field for closure_list unlink */
+#include "runtime/uclosure.h"           /* UClosure full definition — function parameter types */
 #include "value/uvalue.h"             /* uvalue_truthy (WAITUNTIL fast-path test) */
 #include "runtime/ucleanup.h"           /* UCleanupEntry, UCLEANUP_TAG_SCOPE */
 #include "realm/urealm.h"       /* URealm — needed for s->realm->tag */
@@ -30,42 +30,6 @@
 #include "event/uevent_subscribe.h"   /* uevent_at_watchers_append */
 #include <stddef.h>
 #include <stdint.h>
-
-/* === strand_closure_unlink ===
- *
- * Remove `cl` from `s->closure_list` (pointer-to-pointer walk) AND detach
- * `cl->proto` from `s->module->nested[]` so umodule_destroy does not free
- * the proto when the install run ends.  Returns 1 if `cl` was found and
- * removed (cl + proto are now owned by the watcher); returns 0 otherwise.
- *
- * NB: this helper carries a known structural bug — multi-install of the
- * same cond proto via function re-invocation causes use-after-free on
- * shared protos.  Tracked by the v0.7.3 closure-lifetime spec; replaced
- * in this same release by UProto refcount + UClosure/UUpvalCell GC. */
-static int
-strand_closure_unlink(struct UStrand *s, struct UClosure *cl)
-{
-    struct UClosure **pp;
-    if (cl == NULL) return 0;
-
-    pp = &s->closure_list;
-    while (*pp != NULL) {
-        if (*pp == cl) {
-            *pp = cl->next_alloc;
-            cl->next_alloc = NULL;
-            /* v0.8.1 Variant B Option (a) per spec §3.5: no slot-implicit
-             * refcount to discharge; no ownership transfer for the proto struct.
-             * Under Variant B the nested proto's lifetime is the module's —
-             * it stays in root_proto->nested[k] until module/rescue destroy.
-             * Multiple watcher firings create closures from the same nested proto;
-             * NULLing the slot would orphan the proto for subsequent firings.
-             * The slot NULL-out is intentionally OMITTED here. */
-            return 1;   /* found and removed */
-        }
-        pp = &(*pp)->next_alloc;
-    }
-    return 0;   /* not found — test sentinel or already unlinked */
-}
 
 /* === resolve_owning_tag (spec #2 §7.2) ===
  *
@@ -213,17 +177,9 @@ install_watcher_runtime(
     w->last_value_cache = cond_value;
     w->body_strand      = NULL;
 
-    /* Ownership transfer: unlink cond/body/onleave from s->closure_list so
-     * urbi_vm_run's post-run cleanup loop does not free them.  Only closures
-     * that were heap-allocated by OP_CLOSURE will be found on the list; test
-     * sentinels ((UClosure *)1 etc.) are not on the list and are not freed.
-     * Per-closure ownership bits track which were actually unlinked so
-     * pool_free knows exactly which to free on unregister.  Proto ownership
-     * stays with the compiling module (v0.7.3 cascade fix; see the
-     * URBI_WATCHER_OWNS_* banner in uwatcher.h). */
-    if (strand_closure_unlink(s, cond))    w->flags |= URBI_WATCHER_OWNS_COND;
-    if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
-    if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;
+    /* v0.8.4 Step C-3: strand_closure_unlink + URBI_WATCHER_OWNS_* deleted.
+     * UClosure lifetime is GC-managed; watcher fields are GC roots via the
+     * walk_uwatcher tracer.  No ownership transfer needed at install time. */
 
     /* Phase 5d (spec #2 §7.6): copy read-set cells + mark bit-6.
      * UGC_HAS_WATCHER_OBSERVER (bit 6) on each cell causes the slot-write
@@ -339,9 +295,7 @@ install_at_event_runtime(
     w->last_value_cache = nil;
     w->read_set_count   = 0;
 
-    /* Ownership transfer: same pattern as install_watcher_runtime. */
-    if (strand_closure_unlink(s, body))    w->flags |= URBI_WATCHER_OWNS_BODY;
-    if (strand_closure_unlink(s, onleave)) w->flags |= URBI_WATCHER_OWNS_ONLEAVE;
+    /* Step C-3: strand_closure_unlink + OWNS_* deleted; GC manages lifetime. */
 
     uevent_at_watchers_append(e, w);
 

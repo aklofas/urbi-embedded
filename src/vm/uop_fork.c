@@ -133,9 +133,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
      * because the body closure's owning module may differ from the installing
      * strand's module; fork siblings have no such ambiguity. */
     child->module_instance = s->module_instance;
-    /* child_closure is owned by parent's closure_list; do not double-free it.
-     * If the child creates sub-closures via OP_CLOSURE they are added to
-     * child->closure_list naturally. */
+    /* child_closure is GC-managed; no manual ownership transfer needed. */
 
     return child;
 }

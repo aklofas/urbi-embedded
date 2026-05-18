@@ -10,8 +10,9 @@
  *   VM-003 — reactive-install + uop_fork must kind-check operand registers
  *            (closed by T31: reactive_install_kind_checks_cond_operand +
  *             at_event_install_kind_check).
- *   VM-005 — vm_alloc_closure OOM must not corrupt closure_list
- *            (closed by T32 — see comment on the test for OOM injection).
+ *   VM-005 — vm_alloc_closure OOM must return NULL cleanly
+ *            (closed by T32 — closure_list deleted at v0.8.4 Step C-3;
+ *             test now verifies NULL return + no alloc_fn free call).
  *   VM-013 — op_at_event_install must verify R[event_reg].kind == UVAL_EVENT
  *            (closed by T33: at_event_install_kind_check).
  *
@@ -201,12 +202,12 @@ UTEST(at_event_install_propagates_pool_oom)
 }
 
 /* ===================================================================
- * VM-005 / T32: vm_alloc_closure OOM cleans up closure_list
+ * VM-005 / T32: vm_alloc_closure OOM returns NULL
  *
  * Direct-API test against the helper function rather than going through
  * a whole compile-and-run.  We invoke vm_alloc_closure with a deliberately
- * starved allocator and verify list_head stays clean (no UAF on subsequent
- * walks). */
+ * starved allocator and verify NULL is returned without crashing.
+ * (closure_list + next_alloc deleted at v0.8.4 Step C-3.) */
 /* =================================================================== */
 
 /* fail_after_n_alloc_state: counts down to first-OOM.  Used by the
@@ -230,31 +231,16 @@ fail_after_n_alloc(void *ptr, size_t nbytes, void *ud)
     return realloc(ptr, nbytes);
 }
 
-/* vm_alloc_closure_oom_does_not_corrupt_closure_list:
+/* vm_alloc_closure_oom_returns_null:
  *
- * Phase 5 T32 / VM-005.  Two related orderings are pinned:
+ * T32 / VM-005 (v0.8.4 Step C-3 update).  Pins that vm_alloc_closure returns
+ * NULL on OOM and does not corrupt the GC heap.  The pre-C-3 test checked
+ * that list_head was not corrupted; that mechanism is deleted — now the
+ * relevant contract is: OOM returns NULL and the allocator state is clean.
  *
- * (a) vm_alloc_closure helper itself: prepend happens *only* on success,
- *     after urbi_zero/cell-init/proto-bind.  The prepend is the very last
- *     statement before return, and the only failure mode is alloc_fn
- *     returning NULL (which never touched list_head).
- *
- * (b) OP_CLOSURE caller in src/vm/uvm.c: vm_alloc_closure returns a cl
- *     already prepended onto s->closure_list, then the dispatcher reads
- *     nupvals pseudo-instructions; vm_open_upvalue OOM (or upvalue
- *     re-capture out of range) on any of those failure arms must unlink
- *     cl from s->closure_list *before* freeing it, otherwise post-run
- *     cleanup walks dereference freed memory (use-after-free).
- *
- * This unit test pins (a) by direct invocation.  (b) is structurally
- * correct via inspection — a Gate G1 stretch precedent: producing a
- * pinpoint vm_open_upvalue OOM in mid-OP_CLOSURE through a compile-and-run
- * script requires a calibrated fail-after-N allocator whose allocation
- * count is fragile against any change to upstream emit/parse, and the
- * fix shape (two-line `s->closure_list = cl->next_alloc;` insertion at
- * each of two sibling failure arms) is identical to the helper-level
- * pin already covered here. */
-UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
+ * urbi_gc_alloc makes 2 alloc_fn calls per vm_alloc_closure call (cell +
+ * sidecar node); setting allocs_remaining=0 triggers OOM on the first. */
+UTEST(vm_alloc_closure_oom_returns_null)
 {
     UVM vm;
     FailAfterNAllocState st = { .allocs_remaining = -1 };
@@ -265,25 +251,17 @@ UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
     memset(&proto, 0, sizeof(proto));
     proto.nupvals = 0;
 
-    UClosure *list = NULL;
-
     /* First alloc succeeds. */
-    UClosure *cl1 = vm_alloc_closure(&vm, &proto, &list);
+    UClosure *cl1 = vm_alloc_closure(&vm, &proto);
     UASSERT(cl1 != NULL);
-    UASSERT_EQ((long long)(uintptr_t)cl1, (long long)(uintptr_t)list);
 
-    /* Force OOM on the next alloc and call again: must return NULL and
-     * leave list pointing at cl1 (NOT cl2, because cl2 was never returned). */
+    /* Force OOM on the next alloc: must return NULL. */
     st.allocs_remaining = 0;
-    UClosure *cl2 = vm_alloc_closure(&vm, &proto, &list);
+    UClosure *cl2 = vm_alloc_closure(&vm, &proto);
     UASSERT(cl2 == NULL);
-    UASSERT_EQ((long long)(uintptr_t)cl1, (long long)(uintptr_t)list);
-    UASSERT(list->next_alloc == NULL);
 
-    /* Restore the allocator and free the lone survivor. */
+    /* cl1 is GC-managed — urbi_vm_destroy reclaims it. */
     st.allocs_remaining = -1;
-    vm.alloc_fn(cl1, 0, vm.alloc_ud);
-
     urbi_vm_destroy(&vm);
 }
 
@@ -784,8 +762,8 @@ test_vm_dispatch_ownership_suite(void)
               waituntil_install_propagates_pool_oom);
     utest_run("at_event_install_propagates_pool_oom",
               at_event_install_propagates_pool_oom);
-    utest_run("vm_alloc_closure_oom_does_not_corrupt_closure_list",
-              vm_alloc_closure_oom_does_not_corrupt_closure_list);
+    utest_run("vm_alloc_closure_oom_returns_null",
+              vm_alloc_closure_oom_returns_null);
     utest_run("reactive_install_kind_checks_cond_operand",
               reactive_install_kind_checks_cond_operand);
     utest_run("at_event_install_kind_check",

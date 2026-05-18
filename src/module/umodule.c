@@ -1234,8 +1234,8 @@ umodule_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
  *   installs).  Installs inside a callee skip the transfer entirely to
  *   avoid the cascade-wake use-after-free on shared protos, so callee-side
  *   nested[] slots stay populated and are freed normally below.  See
- *   src/watcher/uwatcher.h's URBI_WATCHER_OWNS_* banner for the design
- *   rationale. */
+ *   the watcher-ownership design rationale (URBI_WATCHER_OWNS_* flags deleted
+ *   at v0.8.4 Step C-3; GC now manages closure lifetime). */
 
 /* v0.8.1 Phase 2 (Variant B fusion): deferred-destroy check reads root_proto->refcount.
  * Strand-bind refs now land on root_proto (not module->refcount), so the "are

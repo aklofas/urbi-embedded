@@ -114,10 +114,11 @@ UTEST(gc_shade_gray_silent_on_fixed_cell_without_sidecar)
 
 UTEST(gc_shade_gray_silent_on_uclosure_regime_cell)
 {
-    /* Build a non-FIXED non-PINNED stack cell — mirrors the UClosure
-     * regime where vm_alloc_closure stamps a UCell header for write-
-     * barrier safety but doesn't enroll the closure on all_cells_head
-     * (lifetime stays with the strand closure_list legacy free-list).
+    /* Build a non-FIXED non-PINNED stack cell — mirrors the pre-v0.8.4
+     * UClosure regime where vm_alloc_closure stamped a UCell header for
+     * write-barrier safety but didn't enroll the closure on all_cells_head.
+     * UClosure is now GC-managed (v0.8.4 Step C-2); the strand closure_list
+     * legacy free-list was deleted at Step C-3.
      *
      * This is the path that fires from at_onleave.chk in M5 reactive
      * fixtures: a UClosure passed through the upvalue write barrier or

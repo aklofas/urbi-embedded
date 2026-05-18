@@ -28,6 +28,16 @@
  *      vm->rescued_protos replaces vm->stdlib_protos as sole deferred-
  *      destroy mechanism; wire format v1.6 → v1.7 (flat-on-root emitter).
  *      Minor-field bump (0/7/5 → 0/8/0) reflects structural significance.
+ *   5. v0.8.4-closure-lifetime — Option B: UClosure + UUpvalCell promoted to
+ *      GC-managed cells (urbi_gc_alloc).  UClosure loses next_alloc field
+ *      (-8 B); UStrand loses closure_list + closed_cells fields (-16 B);
+ *      UVM loses stdlib_closures + stdlib_upvalues fields (-16 B).  Public-
+ *      symbol-visible signature changes: vm_alloc_closure drops list_head
+ *      param; vm_close_upvalues drops closed_list param.  Internal API
+ *      surface (host-facing C API) unchanged.  URBI_WATCHER_OWNS_* flag
+ *      macros deleted (3 bits freed in UWatcher.flags).  Minor-field bump
+ *      (0/8/0 → 0/9/0) reflects internal struct shrinkage + lifetime-model
+ *      change despite no public-symbol additions.
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -42,7 +52,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  8
+#define URBI_API_VERSION_MINOR  9
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \

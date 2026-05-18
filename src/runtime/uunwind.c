@@ -121,8 +121,7 @@ pop_call_frame(UStrand *s)
     /* Close any open upvalue cells pointing into this frame's registers.
      * Threshold: one past the result-destination slot in the caller's window,
      * covering all locals allocated above it in the callee's window. */
-    vm_close_upvalues(s, done->base + done->result_dest_reg + 1,
-                      &s->closed_cells);
+    vm_close_upvalues(s, done->base + done->result_dest_reg + 1);
 
     /* Restore caller's register window, instruction pointer, and constant pool. */
     s->R       = done->base;

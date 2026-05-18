@@ -15,48 +15,45 @@
 #include <stdint.h>
 
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
- * Uses the VM's allocator.  Threads the new closure into *list_head so
- * the caller can free every closure at end-of-run (pre-GC bookkeeping).
  *
- * M4: UClosure embeds UCell at offset 0.  The cell header is initialised
- * here (type_tag = UTYPE_CLOSURE, gc_byte = vm->current_white) so that
- * urbi_gc_upvalue_write may safely cast UClosure* → UCell* and read a
- * valid color for the barrier check.  The closure is NOT enrolled on
- * vm->all_cells_head — lifetime stays with the strand's closure_list
- * (legacy free-list).  GC-managed allocation via urbi_gc_alloc is tracked
- * as a follow-up M4 task; it requires enrolling the transient urbi_vm_run
- * strand as a GC root before closures stored in registers can survive
- * a mid-dispatch collection cycle.
+ * v0.8.4 Option B Step C-2/C-3: UClosure is GC-managed.  urbi_gc_alloc
+ * zeroes the payload, sets type_tag = UTYPE_CLOSURE, sets
+ * gc_byte = current_white, and threads the cell onto vm->all_cells_head
+ * with a sidecar.  The type descriptor registered at Step B carries the
+ * walk_uclosure + uclosure_destroy finalizer so the GC sweep handles
+ * both marking and freeing.
+ *
+ * The legacy list_head / closure_list parameter was deleted at Step C-3.
  *
  * Returns NULL on OOM. */
-UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
-                           UClosure **list_head) {
+UClosure *vm_alloc_closure(UVM *vm, UProto *proto) {
     uint8_t nup = proto->nupvals;
     /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
     size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
     size_t nbytes = sizeof(UClosure) + extra;
-    UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
-    if (cl == NULL) return NULL;
-    urbi_zero(cl, nbytes);
-    /* Cell header (M4): well-formed for barrier safety even though the
-     * closure is not on vm->all_cells_head at this commit. */
-    cl->cell.type_tag = UTYPE_CLOSURE;
-    cl->cell.gc_byte  = vm->current_white;
-    cl->proto      = proto;
+
+    UCell *c = urbi_gc_alloc(vm, nbytes, UTYPE_CLOSURE);
+    if (c == NULL) return NULL;
+    UClosure *cl = (UClosure *)c;
+
+    cl->proto = proto;
     /* v0.8.1 Variant B Phase 2: bump root_proto.refcount via uproto_root_of()
      * so the single canonical counter accumulates all closure binds.
      * For a nested proto this lands on proto->root (the module's root_proto);
-     * for a root proto (native stdlib closures) it lands on proto itself. */
+     * for a root proto (native stdlib closures) it lands on proto itself.
+     * Paired with the dec in uclosure_destroy (the finalizer). */
     umodule_proto_refcount_inc(uproto_root_of(proto));
     cl->nupvals    = nup;
-    cl->next_alloc = *list_head;
-    *list_head     = cl;
     return cl;
 }
 
 /* Find or create an open UUpvalCell for &R[slot].
  * Cells are kept in the strand's open_upvals list, sorted by stack address
- * (descending: newest captures at the front). */
+ * (descending: newest captures at the front).
+ *
+ * v0.8.4 Option B Step C-2: UUpvalCell is now GC-managed.  urbi_gc_alloc
+ * zeroes the payload + sets type_tag = UTYPE_UPVAL_CELL.  The open_upvals
+ * chain is yielded as a GC root by strand_walk_roots (Step C-1 root #8). */
 UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
     /* Scan existing open cells. */
     UUpvalCell *cell = s->open_upvals;
@@ -64,10 +61,10 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
         if (cell->u.stack_ptr == slot) return cell;
         cell = cell->next;
     }
-    /* Create a new open cell. */
-    cell = (UUpvalCell *)vm->alloc_fn(NULL, sizeof(UUpvalCell), vm->alloc_ud);
-    if (cell == NULL) return NULL;
-    urbi_zero(cell, sizeof(UUpvalCell));
+    /* Create a new open cell via GC-managed allocation. */
+    UCell *c = urbi_gc_alloc(vm, sizeof(UUpvalCell), UTYPE_UPVAL_CELL);
+    if (c == NULL) return NULL;
+    cell = (UUpvalCell *)c;
     cell->on_heap    = false;
     cell->u.stack_ptr = slot;
     cell->next       = s->open_upvals;
@@ -76,11 +73,11 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
 }
 
 /* Heapify all open cells whose stack address is >= threshold.
- * Removed cells are appended to *closed_list (for per-run bulk free at halt).
- * Called by OP_CLOSE, OP_RET, and urbi_unwind.
+ * v0.8.4 Step C-3: closed_list parameter removed; UUpvalCell is GC-managed.
+ * Heapified cells are reachable via any closure's upvals[] array (GC root);
+ * no per-run bulk list needed.  Called by OP_CLOSE, OP_RET, and urbi_unwind.
  * Declared in uvm.h for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, const UValue *threshold,
-                       UUpvalCell **closed_list) {
+void vm_close_upvalues(UStrand *s, const UValue *threshold) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;
@@ -88,22 +85,14 @@ void vm_close_upvalues(UStrand *s, const UValue *threshold,
             cell->u.value = *cell->u.stack_ptr;
             cell->on_heap  = true;
             *link = cell->next;
-            /* Thread into closed_list using the now-free next pointer. */
-            cell->next = *closed_list;
-            *closed_list = cell;
+            cell->next = NULL;  /* no longer chained on open_upvals */
         } else {
             link = &cell->next;
         }
     }
 }
 
-/* Free all open upvalue cells remaining on a strand. */
-void vm_free_open_upvalues(UVM *vm, UStrand *s) {
-    UUpvalCell *cell = s->open_upvals;
-    while (cell != NULL) {
-        UUpvalCell *next = cell->next;
-        vm->alloc_fn(cell, 0, vm->alloc_ud);
-        cell = next;
-    }
-    s->open_upvals = NULL;
-}
+/* vm_free_open_upvalues deleted at v0.8.4 Step C-3.
+ * UUpvalCells are GC-managed; open_upvals is cleared directly at the one
+ * remaining call site (ustrand_destroy via release_strand_resource_chain).
+ * Declaration in uvm_internal.h removed simultaneously. */

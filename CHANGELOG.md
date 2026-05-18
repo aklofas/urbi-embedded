@@ -1,5 +1,106 @@
 # Changelog
 
+## v0.8.4-closure-lifetime — 2026-05-18 (UClosure + UUpvalCell GC promotion)
+
+**Tag:** `v0.8.4-closure-lifetime`
+**Theme:** Closes the closure-lifetime spec Pieces B + C deferred from
+v0.7.3.  Promotes `UClosure` and `UUpvalCell` to GC-managed cells via
+`urbi_gc_alloc`, removes the pre-GC strand `closure_list` /
+`closed_cells` free-list bookkeeping, deletes the watcher OWNS-flag
+ownership-transfer model, and surfaces + fixes a latent GC
+finalizer-plumbing bug that had been silent since the GC's introduction.
+
+**ABI:** `0/8/0` → `0/9/0` (5th use of the pre-v1.0 escape clause —
+internal struct shrinkage; no public-symbol changes).
+**Wire format:** `v1.7 / 0x17` unchanged.
+**Corpus:** 1783/13023/237 → 1786/13045/237 (+3 cases in test_closure_gc.c).
+
+### Added
+
+- `UTYPE_UPVAL_CELL = 20` GC type tag; UUpvalCell embeds `UCell` at
+  offset 0; size pinned at 32 B on 64-bit hosts.
+- `walk_uclosure` GC tracer (shades `cl->upvals[i]` + `cl->proto_inst`).
+- `walk_upvalcell` GC tracer (yields heapified `u.value` via cb).
+- `uclosure_destroy` GC finalizer (decrements
+  `uproto_root_of(cl->proto)->refcount` + promotes root_proto to
+  `vm->rescued_protos` when refcount hits 0 with self-link sentinel
+  set).
+- `strand_walk_roots` yields three new root categories:
+  `s->entry_closure`, `s->frames[i].closure` per frame, and the
+  `s->open_upvals` chain.
+- `vm_misc_walk_roots` GC root provider yields `vm->last_return_closure`.
+- `tests/unit/test_closure_gc.c` — three new reachability scenarios
+  (realm-global anchor survival, heapified-upval reachability across
+  GC cycles, multi-cycle watcher closure survival then post-unregister
+  collection).
+- `URBI_MAX_ROOT_PROVIDERS` bumped 8 → 12 (cap was at exactly 8
+  pre-v0.8.4).
+
+### Changed
+
+- `vm_alloc_closure` and `vm_open_upvalue` now allocate via
+  `urbi_gc_alloc` (enrolling each cell on `vm->all_cells_head`).
+  Closure lifetime is governed by GC reachability instead of
+  strand-owned free lists.
+- `vm_alloc_closure(vm, proto, **list_head)` →
+  `vm_alloc_closure(vm, proto)`.
+- `vm_close_upvalues(s, threshold, **closed_list)` →
+  `vm_close_upvalues(s, threshold)`.
+- Watcher install paths no longer call `strand_closure_unlink` and no
+  longer set `URBI_WATCHER_OWNS_*` flags.  Closures are reached via
+  `watcher_table_walk_roots`.
+- `release_strand_resource_chain` simplified from ~90 lines of
+  per-strand-flavor migration to a 3-line head-clear.
+- `urbi_native_closure_create` allocates via `urbi_gc_alloc`; anchored
+  via the atom-proto slot it's installed into.
+
+### Removed
+
+- `UStrand.closure_list`, `UStrand.closed_cells` fields (−16 B per strand
+  on 64-bit).
+- `UClosure.next_alloc` field (−8 B per closure).
+- `UVM.stdlib_closures`, `UVM.stdlib_upvalues` fields (−16 B per VM).
+- `URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE` macros (3 free bits in
+  `UWatcher.flags`).
+- `strand_closure_unlink`, `vm_free_open_upvalues` helpers.
+- `pool_free` closure / proto free arms.
+
+### Fixed
+
+- **Latent GC finalizer-plumbing bug** (`src/gc/ugc_incremental.c`).
+  `urbi_gc_alloc` initialised `cell->type_tag` and `cell->gc_byte =
+  current_white` but never mirrored the type's `TYPE_HAS_FINALIZER`
+  flag onto the cell's `gc_byte`.  Every type registration in the
+  codebase prior to Step B set `flags == 0` and `destroy == NULL`, so
+  the gating check `cell->gc_byte & UGC_HAS_FINALIZER` in
+  `gc_sweep_step` and `urbi_gc_destroy` was unreachable and untested.
+  Step B registered the first finalizer in the codebase
+  (`uclosure_destroy` for UTYPE_CLOSURE); Step C-2 routed UClosure
+  allocation through `urbi_gc_alloc`, surfacing the bug as a 76985 B /
+  1530 alloc nested-proto-buffer leak under the strict-CFLAGS ASan
+  releasetest gate.  Fix: at `urbi_gc_alloc` time, consult
+  `vm->type_table[type_tag]->flags` and set `UGC_HAS_FINALIZER` on
+  `cell->gc_byte` when present.
+
+### Process notes
+
+Plan was re-revised mid-execution to **Option B** (atomic GC promotion
+plus legacy purge bundled into one landing).  The original phasing
+split GC promotion (Step 1) from legacy purge (Step 5) into separate
+landings; Step C-2
+execution diagnosed deep structural coupling — once `urbi_gc_alloc`
+enrolls a cell on `vm->all_cells_head`, every manual `vm->alloc_fn(cell,
+0, ud)` site becomes a UAF on the next GC sweep.  The two phases must
+land atomically.  Recorded in the plan file's §5 phasing table.
+
+The audit (Step A) caught two correctness prerequisites missed by the
+original plan: `UTYPE_CLOSURE` and `UTYPE_UPVAL_CELL` had no
+`type_table` entries, so closure upval-cells would be treated as
+leaves by the mark phase.  Step B added both walkers and the closure
+finalizer.
+
+---
+
 ## v0.8.3-valgrind-and-cross-verify — 2026-05-18 (valgrind wedge fix + cross-esp32s3 golden refresh)
 
 **Tag:** `v0.8.3-valgrind-and-cross-verify`
