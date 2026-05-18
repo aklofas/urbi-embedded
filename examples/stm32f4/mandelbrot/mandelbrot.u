@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Mandelbrot set demo for STM32F429I-DISC1.
+// Progressive refinement (levels 32 -> 1).
+// Tilt-to-pan via L3GD20 gyro (host timer fires gyro_tick every 50ms).
+// USER button (PA0) zooms 2x at current center.
+//
+// v1.0 lex/emit guardrails in effect:
+//   * No `[...]`  list literal  — use List.new(...).
+//   * No `&&`/`||` shortcut    — nested if / boolean flag.
+//   * No `!bool`               — use == false (OP_NEG fails on UVAL_BOOL).
+//   * No `&` for bitwise AND   — use .bitand(mask).
+//   * No `every(T)` keyword    — not yet landed; gyro poll driven by a
+//     host-timer-injected `gyro_tick` event (50ms TIM2 ISR in main.c).
+//   * UVAL_INT is always truthy — use true/false for boolean flags.
+//   * Top-level vars are Realm globals; reactive bodies access them as
+//     Realm.X so the emitter resolves them via OP_GETSLOT on Realm.
+
+// === World parameters ======================================================
+Realm.W        = 320;
+Realm.H        = 240;
+Realm.MAX_ITER = 100;
+
+// View centre and half-span.
+Realm.cx   = -0.5;
+Realm.cy   = 0.0;
+Realm.span = 3.0;
+
+// Set to true when the view changes; main loop aborts and restarts render.
+Realm.redraw_requested = false;
+
+// Gyro integrator (degrees/s scaled to fraction of span per poll tick).
+Realm.pan_dx = 0.0;
+Realm.pan_dy = 0.0;
+
+// === Mandelbrot iteration ==================================================
+//
+// Returns iteration count in [0, MAX_ITER].  Uses local float variables for
+// the escape orbit so each call is self-contained.
+Realm.mandel = function (px, py) {
+    var x0 = Realm.cx - Realm.span * 0.5 + Realm.span * px / Realm.W;
+    var y0 = Realm.cy - Realm.span * 0.5 * Realm.H / Realm.W
+             + Realm.span * Realm.H / Realm.W * py / Realm.H;
+    var x  = 0.0;
+    var y  = 0.0;
+    var i  = 0;
+    while (x * x + y * y < 4.0) {
+        if (i >= Realm.MAX_ITER) {
+            x = 4.0    // force exit: x*x = 16 >= 4 breaks the while
+        } else {
+            var xt = x * x - y * y + x0;
+            y = 2.0 * x * y + y0;
+            x = xt;
+            i = i + 1
+        }
+    };
+    i
+};
+
+// === RGB565 colour map =====================================================
+//
+// Returns a 16-bit RGB565 word.  Black (0) for the set interior; a crude
+// palette cycle for the exterior.  .bitand() is required because `&` is the
+// parallel-join statement separator in urbiscript.
+Realm.color_for = function (iter) {
+    if (iter >= Realm.MAX_ITER) {
+        0
+    } else {
+        (iter * 0x0421).bitand(0xFFFF)
+    }
+};
+
+// === Render one refinement level ==========================================
+//
+// Fills the screen with L×L tiles; polls redraw_requested between tiles and
+// aborts early if set.  Inner/outer loop exits are done by jumping to the
+// end value since urbiscript has no `break` keyword at v1.0.
+Realm.render_level = function (L) {
+    var y = 0;
+    while (y < Realm.H) {
+        var x = 0;
+        while (x < Realm.W) {
+            if (Realm.redraw_requested == false) {
+                lcd_fill_rect(x, y, L, L,
+                    Realm.color_for(Realm.mandel(x, y)));
+                x = x + L
+            } else {
+                x = Realm.W    // abort inner loop
+            }
+        };
+        if (Realm.redraw_requested == false) {
+            y = y + L
+        } else {
+            y = Realm.H    // abort outer loop
+        }
+    }
+};
+
+// === Full progressive render ===============================================
+//
+// Coarse-to-fine: 32 → 16 → 8 → 4 → 2 → 1 pixel tile size.
+// Aborts each level pass as soon as redraw_requested becomes true.
+Realm.render_all = function () {
+    var levels = List.new(32, 16, 8, 4, 2, 1);
+    var i = 0;
+    while (i < levels.length()) {
+        if (Realm.redraw_requested == false) {
+            Realm.render_level(levels.get(i));
+            i = i + 1
+        } else {
+            i = levels.length()    // abort level loop
+        }
+    }
+};
+
+// === Gyro poll handler =====================================================
+//
+// `gyro_tick` is a host-registered event fired by the TIM2 ISR every 50ms
+// (registered in main.c via urbi_event_register).
+// gyro_x()/gyro_y() call BSP_GYRO_GetXYZ — each is a separate SPI
+// transaction returning the respective axis in mdeg/s.
+//
+// Accumulate into pan_dx/pan_dy; apply pan only when accumulated drift
+// exceeds 0.01 fraction of the current view span.  Nested if replaces
+// the || shortcut (not available at v1.0).
+at (gyro_tick?) {
+    var gx = gyro_x();
+    var gy = gyro_y();
+    Realm.pan_dx = Realm.pan_dx + gy * 0.0005;
+    Realm.pan_dy = Realm.pan_dy + gx * 0.0005;
+    var do_pan = false;
+    if (Realm.pan_dx.abs() > 0.01) { do_pan = true };
+    if (Realm.pan_dy.abs() > 0.01) { do_pan = true };
+    if (do_pan) {
+        Realm.cx = Realm.cx + Realm.pan_dx * Realm.span;
+        Realm.cy = Realm.cy + Realm.pan_dy * Realm.span;
+        Realm.pan_dx = 0.0;
+        Realm.pan_dy = 0.0;
+        Realm.redraw_requested = true
+    }
+};
+
+// === Button zoom handler ===================================================
+//
+// button_press is a host-registered event (urbi_event_register in main.c).
+// Rising-edge fire shrinks the span by 2x (zoom in at current centre).
+at (button_press?) {
+    Realm.span = Realm.span * 0.5;
+    Realm.redraw_requested = true
+};
+
+// === Main render loop ======================================================
+//
+// Clears the redraw flag, renders all levels (aborting on flag), then blocks
+// until the next redraw trigger (gyro pan or button zoom).  The gyro_tick
+// and button_press at-handlers run as separate coroutines between the
+// cooperative yield points inside render_all.
+while (true) {
+    Realm.redraw_requested = false;
+    Realm.render_all();
+    waituntil (Realm.redraw_requested)
+};
