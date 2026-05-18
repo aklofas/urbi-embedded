@@ -24,10 +24,27 @@
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
 
+#include "urbi/urbi.h"  /* urbi_make_native_closure — T17 sentinel conversion */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* === Dummy GC-managed closure helpers (T17 sentinel conversion) === */
+static int
+dummy_native_fn(struct UVM *vm, UValue self, UValue *args,
+                uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return 0;
+}
+
+static UClosure *
+make_dummy_closure(UVM *vm)
+{
+    return urbi_make_native_closure(vm, dummy_native_fn);
+}
 
 #define UTEST(name) static void name(void)
 
@@ -249,10 +266,10 @@ UTEST(waituntil_immediate_wake_state_explicit)
 
     UWatcherInstallResult r = install_watcher_runtime(
         &vm, &s, UWATCHER_WAITUNTIL,
-        (UClosure *)0x1,  /* sentinel cond — hook ignores it */
-        NULL,             /* body NULL for WAITUNTIL */
-        NULL,             /* onleave NULL */
-        &s);              /* waiter is s itself */
+        make_dummy_closure(&vm),  /* real GC closure — hook ignores it */
+        NULL,                     /* body NULL for WAITUNTIL */
+        NULL,                     /* onleave NULL */
+        &s);                      /* waiter is s itself */
 
     /* Immediate-wake fast-path: install must succeed; the watcher was
      * unregistered inline; strand state must remain RUNNING (the assert

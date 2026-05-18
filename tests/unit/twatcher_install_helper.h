@@ -18,10 +18,12 @@
  *
  * The helper does NOT run real bytecode dispatch on the condition closure.
  * Install-time seeding short-circuits via vm->test_watcher_condition_hook
- * when set; otherwise seeds last_value_cache to nil.  Tests passing fake
- * (UClosure *)1 sentinels MUST also set test_watcher_condition_hook before
- * any subsequent eval, since invoke_condition_closure dispatches real
- * bytecode (since v0.5.1-cond-unstub).
+ * when set; otherwise seeds last_value_cache to nil.  Tests passing real
+ * GC-managed closures (urbi_make_native_closure) as condition MUST also set
+ * test_watcher_condition_hook before any subsequent eval, since
+ * invoke_condition_closure dispatches real bytecode (v0.5.1-cond-unstub).
+ * Integer-cast sentinel values ((UClosure *)1 etc.) are deprecated; they
+ * crash the GC walker if a GC cycle runs (Step D / T17).
  *
  * Cleanup goes through the production unregister entry point
  * urbi_watcher_unregister_internal (still in src/watcher/uwatcher.c) since

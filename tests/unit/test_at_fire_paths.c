@@ -47,6 +47,28 @@
 
 #define UTEST(name) static void name(void)
 
+/* === Dummy GC-managed closure helpers (T17 sentinel conversion) ===
+ *
+ * Replaces (UClosure *)1/2/3 integer sentinels with real GC-managed closures.
+ * The GC walker (mark_root_callback) would crash on a bare integer cast to
+ * UClosure* if a GC cycle ran while a sentinel was stored in w->condition or
+ * w->onleave.  Real native closures are GC-safe; their UCell header has
+ * valid color/type fields. */
+static int
+dummy_native_fn(struct UVM *vm, UValue self, UValue *args,
+                uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return 0;
+}
+
+static UClosure *
+make_dummy_closure(UVM *vm)
+{
+    return urbi_make_native_closure(vm, dummy_native_fn);
+}
+
 /* ===================================================================
  * Shared hook state
  * =================================================================== */
@@ -118,7 +140,7 @@ UTEST(at_rising_edge_fires_body)
 
     /* Install with condition hook off so seed is NIL (falsy). */
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     UASSERT_EQ((int)w->last_value_cache.kind, (int)UVAL_NIL);
@@ -167,9 +189,9 @@ UTEST(at_with_onleave_fires_on_falling_edge)
 
     /* body=NULL so fire is observed via test_watcher_fire_hook (no realm needed). */
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL,
-        /*onleave=*/(UClosure *)3,
+        /*onleave=*/make_dummy_closure(&vm),
         NULL, 0U);
     UASSERT(w != NULL);
 
@@ -223,7 +245,7 @@ UTEST(whenever_fires_every_pass_while_truthy)
     vm.test_watcher_fire_hook      = hook_fire_count;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_WHENEVER, NULL, (UClosure *)1,
+        &vm, UWATCHER_WHENEVER, NULL, make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
@@ -257,11 +279,13 @@ UTEST(at_sync_runs_inline)
     g_fire_count  = 0;
     g_cond_truthy = 0;   /* seed false */
 
-    /* body=(UClosure*)2 to exercise invoke_body_inline path.
-     * AT_SYNC uses invoke_body_inline (no spawn, no realm needed). */
+    /* body=make_dummy_closure to exercise invoke_body_inline path.
+     * AT_SYNC uses invoke_body_inline (no spawn, no realm needed).
+     * The fire hook (hook_fire_count) intercepts before urbi_run_closure_on_scratch
+     * so the native body closure is never dispatched via bytecode. */
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT_SYNC, NULL, (UClosure *)1,
-        /*body=*/(UClosure *)2,
+        &vm, UWATCHER_AT_SYNC, NULL, make_dummy_closure(&vm),
+        /*body=*/make_dummy_closure(&vm),
         NULL, NULL, 0U);
     UASSERT(w != NULL);
 
@@ -308,7 +332,7 @@ UTEST(waituntil_rising_edge_wakes_waiter)
 
     /* Install WAITUNTIL with waiter_strand wired. */
     UWatcher *w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_WAITUNTIL, NULL, (UClosure *)1,
+        &vm, UWATCHER_WAITUNTIL, NULL, make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Wire waiter_strand manually (install_internal does not know about waiter). */
@@ -356,7 +380,7 @@ UTEST(at_no_onleave_falling_edge_no_crash)
     g_cond_truthy = 0;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1,
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 

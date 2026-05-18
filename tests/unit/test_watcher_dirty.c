@@ -20,6 +20,32 @@
 
 #define UTEST(name) static void name(void)
 
+/* === Dummy GC-managed closure helpers (T17 sentinel conversion) ===
+ *
+ * Former (UClosure *)1 / (UClosure *)3 sentinels are replaced with real
+ * GC-managed closures allocated via urbi_make_native_closure.  The GC walker
+ * (mark_root_callback) would crash on a bare integer cast to UClosure* if a
+ * GC cycle ran while such a sentinel was stored in w->condition / w->onleave.
+ * Real native closures are safe to walk: their UCell header has valid GC state.
+ *
+ * No-op native fn: always writes nil output and returns success. */
+static int
+dummy_native_fn(struct UVM *vm, UValue self, UValue *args,
+                uint8_t nargs, UValue *out)
+{
+    (void)vm; (void)self; (void)args; (void)nargs;
+    *out = urbi_make_nil();
+    return 0;
+}
+
+/* Allocate a GC-managed dummy closure.  Returns non-NULL (UASSERT'd by each
+ * caller).  No upvals; backed by dummy_native_fn. */
+static UClosure *
+make_dummy_closure(UVM *vm)
+{
+    return urbi_make_native_closure(vm, dummy_native_fn);
+}
+
 /* === Test cases === */
 
 /* 1. watcher_install_sets_bit6:
@@ -330,7 +356,7 @@ UTEST(watcher_eval_at_edge_only_fires_on_false_to_true)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Install-time seed with false: condition_hook_toggle returns UVAL_NIL
@@ -373,7 +399,7 @@ UTEST(watcher_eval_whenever_level_fires_each_dirty_pass)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_WHENEVER, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_WHENEVER, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
@@ -404,7 +430,7 @@ UTEST(watcher_eval_skips_pending_unregister)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
 
@@ -444,7 +470,7 @@ UTEST(watcher_install_seeds_last_value_cache)
     vm.test_watcher_fire_hook      = fire_hook_count;
 
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, /*condition=*/(UClosure *)1,
+        &vm, UWATCHER_AT, NULL, /*condition=*/make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Install-time seed must be truthy. */
@@ -589,11 +615,11 @@ UTEST(pending_onleave_drain_invokes_hook_when_onleave_set)
     g_onleave_order_idx = 0;
     vm.test_watcher_onleave_hook = onleave_hook_count;
 
-    /* Pass a non-NULL onleave pointer so run_watcher_onleave is entered.
-     * The pointer value doesn't matter at M3 — only non-NULL triggers the hook path. */
+    /* Pass a real GC-managed onleave closure so run_watcher_onleave is entered.
+     * The hook (onleave_hook_count) intercepts before any bytecode dispatch. */
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL, NULL, NULL,
-        /*onleave=*/(UClosure *)1, NULL, 0U);
+        /*onleave=*/make_dummy_closure(&vm), NULL, 0U);
     UASSERT(w != NULL);
 
     pending_onleave_queue_push(&vm, w);
@@ -648,11 +674,11 @@ UTEST(pending_onleave_drain_ordering_FIFO)
     vm.test_watcher_onleave_hook = onleave_hook_count;
 
     wa = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, make_dummy_closure(&vm), NULL, 0U);
     wb = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, make_dummy_closure(&vm), NULL, 0U);
     wc = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, NULL, NULL, (UClosure *)1, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, NULL, NULL, make_dummy_closure(&vm), NULL, 0U);
     UASSERT(wa != NULL && wb != NULL && wc != NULL);
 
     pending_onleave_queue_push(&vm, wa);
@@ -739,14 +765,13 @@ UTEST(watcher_root_walker_visits_active_watchers)
 
     urbi_vm_init(&vm, NULL, NULL);
 
-    /* Use non-NULL pointer sentinels for closures (cast; value not dereferenced
-     * by the GC walk itself — the GC mark callback only receives UValue pointers,
-     * and our counting stub ignores the value). */
+    /* Use real GC-managed closures.  The counting callback ignores values;
+     * using real closures makes the watcher safe if a GC cycle ran. */
     w = urbi_watcher_install_for_test(
         &vm, UWATCHER_AT, NULL,
-        /*condition=*/(UClosure *)1,
-        /*body=*/     (UClosure *)2,
-        /*onleave=*/  (UClosure *)3,
+        /*condition=*/make_dummy_closure(&vm),
+        /*body=*/     make_dummy_closure(&vm),
+        /*onleave=*/  make_dummy_closure(&vm),
         NULL, 0U);
     UASSERT(w != NULL);
 
@@ -786,7 +811,7 @@ UTEST(watcher_root_walker_visits_pending_onleave)
         &vm, UWATCHER_AT, NULL,
         /*condition=*/NULL,
         /*body=*/     NULL,
-        /*onleave=*/  (UClosure *)1,
+        /*onleave=*/  make_dummy_closure(&vm),
         NULL, 0U);
     UASSERT(w != NULL);
 
@@ -804,12 +829,10 @@ UTEST(watcher_root_walker_visits_pending_onleave)
     /* pending queue walker contributes at minimum: onleave(1) + last_value_cache(1) = 2. */
     UASSERT(count_pending >= 2);
 
-    /* Drain to clean up.  Install a no-op onleave hook so run_watcher_onleave
-     * doesn't dispatch the (UClosure *)1 sentinel through real bytecode.
-     * Test only verifies walker presence (count_pending >= 2 above), not the
-     * onleave invocation count, so use the purpose-built no-op rather than
-     * the counting hook to avoid leaking g_onleave_count state into other
-     * tests in this file. */
+    /* Drain to clean up.  The no-op hook prevents run_watcher_onleave from
+     * dispatching the native closure through urbi_run_closure_on_scratch
+     * (which would crash because native closures have proto == NULL).
+     * Test only verifies walker presence (count_pending >= 2 above). */
     vm.test_watcher_onleave_hook = onleave_drain_noop;
     drain_pending_onleave_queue(&vm);
 
@@ -882,7 +905,7 @@ UTEST(spawn_body_coroutine_relocated_still_works)
 
     /* Install with no condition hook so seed = UVAL_NIL (falsy). */
     w = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1,
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm),
         NULL, NULL, NULL, 0U);
     UASSERT(w != NULL);
     /* Confirm seed is NIL/falsy. */
@@ -921,11 +944,11 @@ UTEST(eval_pass_walks_all_watchers)
     /* All three: AT mode, no seed (install with no condition hook → NIL cache),
      * then set condition hook to fixed_true before eval so all see false→true. */
     w1 = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm), NULL, NULL, NULL, 0U);
     w2 = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm), NULL, NULL, NULL, 0U);
     w3 = urbi_watcher_install_for_test(
-        &vm, UWATCHER_AT, NULL, (UClosure *)1, NULL, NULL, NULL, 0U);
+        &vm, UWATCHER_AT, NULL, make_dummy_closure(&vm), NULL, NULL, NULL, 0U);
     UASSERT(w1 != NULL && w2 != NULL && w3 != NULL);
 
     /* Seeds are NIL (falsy) because no condition hook was set during install. */
