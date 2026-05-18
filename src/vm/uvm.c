@@ -721,18 +721,18 @@ dispatch:
                     static int cnt = 0;
                     if (cnt < 4) {
                         cnt++;
-                        char buf[64];
+                        char buf[80];
                         const char *d = "0123456789ABCDEF";
                         int n = 0;
-                        const char *t = "native rc=";
+                        const char *t = "fn=";
                         while (t[n]) { buf[n] = t[n]; n++; }
+                        uintptr_t fp = (uintptr_t)callee->native_fn;
+                        for (int k = 28; k >= 0; k -= 4) buf[n++] = d[(fp >> k) & 0xF];
+                        const char *t2 = " rc=";
+                        int j = 0; while (t2[j]) { buf[n++] = t2[j++]; }
                         buf[n++] = d[(rc >> 4) & 0xF];
                         buf[n++] = d[rc & 0xF];
-                        const char *t2 = " nargs=";
-                        int j = 0; while (t2[j]) { buf[n++] = t2[j++]; }
-                        buf[n++] = d[(nargs >> 4) & 0xF];
-                        buf[n++] = d[nargs & 0xF];
-                        const char *t3 = " method=";
+                        const char *t3 = " m=";
                         j = 0; while (t3[j]) { buf[n++] = t3[j++]; }
                         buf[n++] = is_method ? '1' : '0';
                         buf[n++] = '\r'; buf[n++] = '\n';

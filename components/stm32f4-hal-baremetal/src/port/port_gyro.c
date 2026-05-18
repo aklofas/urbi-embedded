@@ -77,7 +77,15 @@ int port_gyro_x_native(struct UVM *vm, UValue self,
     static int dbg_n = 0;
     if (dbg_n < 3) {
         dbg_n++;
-        port_writer(NULL, "gxN", 3, "called\r\n", 8, 0);
+        char buf[40];
+        const char *d = "0123456789ABCDEF";
+        int n = 0;
+        const char *t = "fn=";
+        while (t[n]) { buf[n] = t[n]; n++; }
+        uintptr_t fp = (uintptr_t)&port_gyro_x_native;
+        for (int k = 28; k >= 0; k -= 4) buf[n++] = d[(fp >> k) & 0xF];
+        buf[n++] = '\r'; buf[n++] = '\n';
+        port_writer(NULL, "gxN", 3, buf, (size_t)n, 0);
     }
 #endif
     *out = urbi_make_float(0.0);
