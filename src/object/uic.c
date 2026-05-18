@@ -121,12 +121,10 @@ ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
 int
 urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
 {
-    /* v0.8.2 bring-up debug: gated by external s_dispatch_traced (set
-     * after the [dl] tap caps).  Fires once per call after the cap.
+    /* v0.8.2 bring-up debug: always-on tracer (4 prior calls succeeded; the
+     * 5th hangs).  Each call emits ~6 markers -- ~30 UART lines total.
      * Remove before tag. */
-    extern int s_dispatch_traced;
-    int trace = s_dispatch_traced;
-#define SGDBG(s) do { if (trace && vm && vm->writer_fn)                    \
+#define SGDBG(s) do { if (vm && vm->writer_fn)                             \
     vm->writer_fn(vm->writer_ud, "sg", 2, s, sizeof(s)-1U, 0); } while (0)
 
     SGDBG("enter\n");
