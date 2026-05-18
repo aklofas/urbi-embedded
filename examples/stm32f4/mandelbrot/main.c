@@ -14,11 +14,14 @@
 #include "port_stm32f4.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"
+#include <string.h>  /* strlen from libc_stubs.c — needed to print errbuf cleanly */
+#include <stdio.h>   /* snprintf from stubs/stdio.h — diagnostic formatting */
 /* Full UVM struct definition needed for static allocation.
  * The public API only forward-declares the type; embedders that
  * allocate UVM in BSS must pull the internal header — same pattern
  * as tests/qemu/reactive_smoke/main/reactive_smoke_main.c. */
 #include "vm/uvm.h"
+#include "module/umodule.h"  /* freestanding-safe umodule_deserialize / UModuleLoadError */
 #include "mandelbrot_baked.h"   /* mandelbrot_bytecode[] + mandelbrot_bytecode_size */
 
 UART_HandleTypeDef huart1;   /* defined here; port_writer.c uses extern */
@@ -105,6 +108,22 @@ int main(void) {
     dwt_enable();
 
     BSP_SDRAM_Init();
+
+    /* SDRAM probe: write a pattern at the urbi heap base, read it back.
+     * Catches a non-functional SDRAM controller before urbi tries to alloc
+     * 1 MB into it.  Done before port_uart_init so we may not see the
+     * panic on UART — but the LCD splash WILL show, which is enough
+     * signal: if SDRAM is dead the LCD framebuffer at 0xD0000000 wouldn't
+     * be writable either. */
+    {
+        volatile uint32_t *sdram_probe = (volatile uint32_t *)0xD0080000UL;
+        *sdram_probe       = 0xDEADBEEFU;
+        *(sdram_probe + 1) = 0xCAFEBABEU;
+        if (*sdram_probe != 0xDEADBEEFU || *(sdram_probe + 1) != 0xCAFEBABEU) {
+            while (1);  /* SDRAM @ urbi heap base not writable */
+        }
+    }
+
     port_lcd_init();
     port_gyro_init();
     port_uart_init();
@@ -121,75 +140,212 @@ int main(void) {
     static const char hello[] = "urbi v0.8.2-stm32f4-mandelbrot booting\r\n";
     HAL_UART_Transmit(&huart1, (const uint8_t *)hello, sizeof hello - 1U, 100);
 
+    /* Bring-up debug: short UART milestones between major steps so a silent
+     * hang lands between two known prints.  Remove before ship. */
+    #define MS(s)  HAL_UART_Transmit(&huart1, (const uint8_t *)s, sizeof s - 1U, 100)
+
     /* Stand up the VM — UVM is BSS-allocated; urbi_vm_init fills it. */
     static struct UVM vm;
+    MS("[m1] vm_init...\r\n");
     if (urbi_vm_init(&vm, port_alloc, NULL) != 0) {
         static const char err[] = "urbi_vm_init FAILED\r\n";
         HAL_UART_Transmit(&huart1, (const uint8_t *)err, sizeof err - 1U, 100);
         while (1);
     }
+    MS("[m2] setters\r\n");
     urbi_set_writer   (&vm, port_writer, NULL);
     urbi_set_time_us  (&vm, port_time_us);
     urbi_set_diag_fn  (&vm, port_diag);
     urbi_set_isr_check_fn(&vm, port_in_isr);
 
     /* Obtain the default realm — NULL arg means global realm. */
+    MS("[m3] realm_global...\r\n");
     struct URealm *realm = urbi_realm_global(&vm);
-
-    /* Register host-fns. */
-    urbi_register(&vm, realm, "lcd_fill_rect", port_lcd_fill_rect_native);
-    urbi_register(&vm, realm, "gyro_x",        port_gyro_x_native);
-    urbi_register(&vm, realm, "gyro_y",        port_gyro_y_native);
-    urbi_register(&vm, realm, "gyro_z",        port_gyro_z_native);
-
-    /* Register the button event and bind to EXTI ISR. */
-    urbi_event_id_t button_evt = urbi_event_register(&vm, realm,
-                                                      "button_press",
-                                                      NULL, NULL);
-    port_button_init(&vm, (uint32_t)button_evt);
-
-    /* Register the gyro_tick event (injected every 50 ms by TIM2 ISR).
-     * Store vm pointer + event id in file-statics before enabling the IRQ. */
-    s_gyro_tick_evt = urbi_event_register(&vm, realm, "gyro_tick", NULL, NULL);
-    s_vm = &vm;
-
-    /* Start TIM2 — gyro_tick ISR fires from here onward. */
-    tim2_init_50ms();
-
-    /* Load baked bytecode. */
-    char errbuf[128];
-    struct UModule *module = urbi_module_from_bytes(mandelbrot_bytecode,
-                                                    mandelbrot_bytecode_size,
-                                                    errbuf, sizeof errbuf);
-    if (module == NULL) {
-        /* errbuf is NUL-terminated; send the whole buffer — unused tail is
-         * harmless and avoids a strlen dependency in freestanding mode. */
-        HAL_UART_Transmit(&huart1, (const uint8_t *)errbuf, sizeof errbuf, 100);
-        while (1);
-    }
-
-    if (urbi_run_chunk(&vm, realm, module, NULL) != 0) {
-        static const char err[] = "urbi_run_chunk FAILED\r\n";
+    if (realm == NULL) {
+        static const char err[] = "urbi_realm_global returned NULL (OOM during realm create)\r\n";
         HAL_UART_Transmit(&huart1, (const uint8_t *)err, sizeof err - 1U, 100);
         while (1);
     }
 
+    /* Register host-fns — bail fast on any failure. */
+    #define REG_OR_DIE(name_, fn_)                                              \
+        do {                                                                    \
+            int _rc = urbi_register(&vm, realm, (name_), (fn_));                \
+            if (_rc != 0) {                                                     \
+                char _buf[128];                                                 \
+                int  _n = snprintf(_buf, sizeof _buf,                           \
+                                   "urbi_register(\"%s\") FAILED rc=%d\r\n",   \
+                                   (name_), _rc);                              \
+                if (_n > 0) HAL_UART_Transmit(&huart1, (const uint8_t *)_buf,  \
+                                              (uint16_t)_n, 100);              \
+                while (1);                                                      \
+            }                                                                   \
+        } while (0)
+    MS("[m4] reg lcd_fill_rect\r\n");
+    REG_OR_DIE("lcd_fill_rect", port_lcd_fill_rect_native);
+    MS("[m4] reg gyro_x\r\n");
+    REG_OR_DIE("gyro_x",        port_gyro_x_native);
+    MS("[m4] reg gyro_y\r\n");
+    REG_OR_DIE("gyro_y",        port_gyro_y_native);
+    MS("[m4] reg gyro_z\r\n");
+    REG_OR_DIE("gyro_z",        port_gyro_z_native);
+    #undef REG_OR_DIE
+
+    /* Register the button event and bind to EXTI ISR. */
+    MS("[m5] event_register button_press\r\n");
+    urbi_event_id_t button_evt = urbi_event_register(&vm, realm,
+                                                      "button_press",
+                                                      NULL, NULL);
+    if (button_evt == URBI_EVENT_ID_INVALID) {
+        urbi_error_info_t einfo = {0};
+        (void)urbi_last_error(&vm, &einfo);
+        char buf[160];
+        int n = snprintf(buf, sizeof buf,
+                         "urbi_event_register(\"button_press\") FAILED: err=%d msg=%s\r\n",
+                         einfo.code, einfo.message ? einfo.message : "(none)");
+        if (n > 0) HAL_UART_Transmit(&huart1, (const uint8_t *)buf,
+                                     (uint16_t)n, 100);
+        while (1);
+    }
+    MS("[m6] port_button_init\r\n");
+    port_button_init(&vm, (uint32_t)button_evt);
+
+    /* Register the gyro_tick event (injected every 50 ms by TIM2 ISR).
+     * Store vm pointer + event id in file-statics before enabling the IRQ. */
+    MS("[m7] event_register gyro_tick\r\n");
+    s_gyro_tick_evt = urbi_event_register(&vm, realm, "gyro_tick", NULL, NULL);
+    if (s_gyro_tick_evt == URBI_EVENT_ID_INVALID) {
+        urbi_error_info_t einfo = {0};
+        (void)urbi_last_error(&vm, &einfo);
+        char buf[160];
+        int n = snprintf(buf, sizeof buf,
+                         "urbi_event_register(\"gyro_tick\") FAILED: err=%d msg=%s\r\n",
+                         einfo.code, einfo.message ? einfo.message : "(none)");
+        if (n > 0) HAL_UART_Transmit(&huart1, (const uint8_t *)buf,
+                                     (uint16_t)n, 100);
+        while (1);
+    }
+    s_vm = &vm;
+
+    /* Start TIM2 — gyro_tick ISR fires from here onward. */
+    MS("[m8] tim2_init_50ms\r\n");
+    tim2_init_50ms();
+    MS("[m9] tim2 started\r\n");
+
+    /* Load baked bytecode (freestanding pattern: static UModule + umodule_deserialize).
+     * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
+     *
+     * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
+     * module_allocator() in freestanding mode returns c->alloc_fn directly (no
+     * malloc fallback); NULL there → immediate ULOAD_OOM at umodule.c:1118. */
+    MS("[m10] umodule_deserialize\r\n");
+    static UModule mod = {0};
+    mod.alloc_fn = port_alloc;
+    mod.alloc_ud = NULL;
+    char errbuf[128] = {0};
+    UModuleLoadError lerr = umodule_deserialize(&mod, mandelbrot_bytecode,
+                                                 mandelbrot_bytecode_size,
+                                                 errbuf, sizeof errbuf);
+    if (lerr != ULOAD_OK) {
+        static const char prefix[] = "umodule_deserialize FAILED: ";
+        HAL_UART_Transmit(&huart1, (const uint8_t *)prefix, sizeof prefix - 1U, 100);
+        const char *name = umodule_load_error_name(lerr);
+        HAL_UART_Transmit(&huart1, (const uint8_t *)name, strlen(name), 100);
+        if (errbuf[0] != '\0') {
+            HAL_UART_Transmit(&huart1, (const uint8_t *)" - ", 3U, 100);
+            HAL_UART_Transmit(&huart1, (const uint8_t *)errbuf, strlen(errbuf), 100);
+        }
+        HAL_UART_Transmit(&huart1, (const uint8_t *)"\r\n", 2U, 100);
+
+        /* Heap diagnostics — only meaningful on ULOAD_OOM but harmless otherwise. */
+        extern size_t port_alloc_heap_top(void);
+        extern size_t port_alloc_heap_size(void);
+        extern const void *port_alloc_heap_base(void);
+        extern size_t port_alloc_last_failed_request(void);
+        extern size_t port_alloc_count(void);
+        extern size_t port_alloc_largest_satisfied(void);
+        extern const void *port_alloc_last_null_ptr(void);
+        extern size_t port_alloc_last_null_nbytes(void);
+        char dbgbuf[224];
+        int n = snprintf(dbgbuf, sizeof dbgbuf,
+                         "heap: base=%p size=%lu used=%lu\r\n"
+                         "      count=%lu largest_ok=%lu failed_req=%lu\r\n"
+                         "      last_null: ptr=%p nbytes=%lu\r\n",
+                         port_alloc_heap_base(),
+                         (unsigned long)port_alloc_heap_size(),
+                         (unsigned long)port_alloc_heap_top(),
+                         (unsigned long)port_alloc_count(),
+                         (unsigned long)port_alloc_largest_satisfied(),
+                         (unsigned long)port_alloc_last_failed_request(),
+                         port_alloc_last_null_ptr(),
+                         (unsigned long)port_alloc_last_null_nbytes());
+        if (n > 0) {
+            HAL_UART_Transmit(&huart1, (const uint8_t *)dbgbuf,
+                              (uint16_t)(n < (int)sizeof dbgbuf ? n : (int)sizeof dbgbuf - 1),
+                              100);
+        }
+        while (1);
+    }
+
+    MS("[m11] urbi_run_chunk...\r\n");
+    {
+        int rcc = urbi_run_chunk(&vm, realm, &mod, NULL);
+        MS("[m12] run_chunk returned\r\n");
+        if (rcc != 0) {
+            urbi_error_info_t einfo = {0};
+            (void)urbi_last_error(&vm, &einfo);
+            char rcbuf[224];
+            int n = snprintf(rcbuf, sizeof rcbuf,
+                             "urbi_run_chunk FAILED: rc=%d  err=%d\r\n"
+                             "  context=%s\r\n  message=%s\r\n  src=%s:%d\r\n",
+                             rcc, einfo.code,
+                             einfo.context     ? einfo.context     : "(none)",
+                             einfo.message     ? einfo.message     : "(none)",
+                             einfo.source_name ? einfo.source_name : "(none)",
+                             einfo.source_line);
+            if (n > 0) {
+                HAL_UART_Transmit(&huart1, (const uint8_t *)rcbuf,
+                                  (uint16_t)(n < (int)sizeof rcbuf ? n : (int)sizeof rcbuf - 1),
+                                  100);
+            }
+            while (1);
+        }
+    }
+
     /* Event pump. */
-    while (1) {
-        uint64_t wake_us = 0U;
-        UStepResult st = urbi_step(&vm, 256U, &wake_us);
-        switch (st) {
-            case URBI_STEP_RUNNING:
-                break;
-            case URBI_STEP_QUIESCENT:
-            case URBI_STEP_WAKE_AT:
-                __WFI();
-                break;
-            case URBI_STEP_FATAL:
-                NVIC_SystemReset();
-                break;
-            default:
-                break;
+    MS("[m13] entering step loop\r\n");
+    {
+        uint32_t loop_count = 0U;
+        UStepResult last_st = (UStepResult)-1;
+        while (1) {
+            uint64_t wake_us = 0U;
+            UStepResult st = urbi_step(&vm, 256U, &wake_us);
+            /* Periodic + state-change UART tap so a hang inside the pump
+             * (or a missed wake) is visible.  64 iters ≈ a few ms. */
+            if (st != last_st || (loop_count & 0x3FU) == 0U) {
+                char b[40];
+                int n = snprintf(b, sizeof b,
+                                 "[step] n=%lu st=%d\r\n",
+                                 (unsigned long)loop_count, (int)st);
+                if (n > 0) HAL_UART_Transmit(&huart1, (const uint8_t *)b,
+                                             (uint16_t)n, 100);
+                last_st = st;
+            }
+            loop_count++;
+            switch (st) {
+                case URBI_STEP_RUNNING:
+                    break;
+                case URBI_STEP_QUIESCENT:
+                case URBI_STEP_WAKE_AT:
+                    __WFI();
+                    break;
+                case URBI_STEP_FATAL:
+                    MS("[m14] FATAL → reset\r\n");
+                    NVIC_SystemReset();
+                    break;
+                default:
+                    break;
+            }
         }
     }
 }
