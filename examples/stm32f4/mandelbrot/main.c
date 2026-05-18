@@ -76,13 +76,21 @@ static void SystemClock_Config(void) {
     if (HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_5) != HAL_OK) while (1);
 }
 
-/* TIM2 init — 50 ms period (20 Hz) for gyro_tick injection.
+/* TIM2 init — 200 ms period (5 Hz) for gyro_tick injection.
  *
  * APB1 clock = SYSCLK / APB1Div = 180 MHz / 4 = 45 MHz.
  * TIM2 input clock = 2 * APB1 = 90 MHz (APB1Div != 1, so timer clock doubled).
  *
  * Prescaler = 8999 → timer tick = 90 MHz / (8999+1) = 10 000 Hz = 100 µs.
- * Period    = 499  → overflow period = (499+1) * 100 µs = 50 ms (20 Hz).
+ * Period    = 1999 → overflow period = (1999+1) * 100 µs = 200 ms (5 Hz).
+ *
+ * Was 50 ms (20 Hz) initially — the SDRAM-bound VM (each opcode ~µs on
+ * external SDRAM through cache) can't drain watcher bodies as fast as
+ * 20 Hz spawns them while the render strand is hot, leading to
+ * sustained heap saturation (top ~99 % full).  200 ms gives bodies
+ * time to complete + freelist time to recycle their 8 KB stacks.
+ * Real fix is scheduler fairness (give body strands more dispatch
+ * priority during render) — tracked as a v0.8.3 backlog item.
  *
  * Both values fit in 16-bit (TIM2 is 32-bit on F4, but values are small). */
 static void tim2_init_50ms(void) {
@@ -91,7 +99,7 @@ static void tim2_init_50ms(void) {
     htim2.Instance               = TIM2;
     htim2.Init.Prescaler         = 8999U;
     htim2.Init.CounterMode       = TIM_COUNTERMODE_UP;
-    htim2.Init.Period            = 499U;
+    htim2.Init.Period            = 1999U;
     htim2.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
     if (HAL_TIM_Base_Init(&htim2) != HAL_OK) while (1);
