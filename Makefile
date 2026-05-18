@@ -35,7 +35,7 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(wildcard src/stdlib/*.c)
+       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c))
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
@@ -43,7 +43,33 @@ TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
 TARGET ?= host
 BUILDDIR := build/$(TARGET)
 
-OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC))
+# Stdlib bytecode flavor selection.  The tracked
+# src/stdlib/urbi_stdlib_bytecode.gen.c is host-baked at f64
+# (URBI_FLOAT_TYPE=8).  Cross targets built with a different URBI_FLOAT_TYPE
+# need a per-target rebake — otherwise urbi_stdlib_boot fails silently
+# inside urbi_vm_init (ULOAD_FLAVOR_MISMATCH on byte 13) and urbi_realm_create
+# returns NULL because no stdlib protos got installed.
+#
+# Default (URBI_STDLIB_FLAVOR unset, e.g. host build): use the tracked .gen.c.
+# Cross builds opt in by setting URBI_STDLIB_FLAVOR=N (matches URBI_FLOAT_TYPE
+# numeric value).  The recursive cross-arm / cross-riscv / cross-stm32f4
+# targets pass URBI_STDLIB_FLAVOR=4 automatically.
+#
+# Bytecode-only targets never rebake — they only verify the freestanding
+# symbol contract, the bake tool isn't built under URBI_BYTECODE_ONLY=1, and
+# the f64 .gen.c is harmless data in that build.
+ifeq ($(URBI_BYTECODE_ONLY),1)
+  override URBI_STDLIB_FLAVOR :=
+endif
+
+ifeq ($(URBI_STDLIB_FLAVOR),)
+  STDLIB_BYTECODE_GEN_C := src/stdlib/urbi_stdlib_bytecode.gen.c
+else
+  STDLIB_BYTECODE_GEN_C := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.c
+endif
+STDLIB_BYTECODE_GEN_O := $(BUILDDIR)/src/stdlib/urbi_stdlib_bytecode.gen.o
+
+OBJ := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(SRC)) $(STDLIB_BYTECODE_GEN_O)
 AUX_OBJS := $(patsubst src/%.c,$(BUILDDIR)/src/%.o,$(AUX_SRCS))
 TEST_OBJ := $(patsubst tests/unit/%.c,$(BUILDDIR)/tests/unit/%.o,$(TEST_SRC))
 LIB := $(BUILDDIR)/liburbi.a
@@ -206,6 +232,27 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os \
 	    -Iinclude -Isrc -o $@ $< $(HOST_BAKE_OBJ) $(BAKE_STUB_O) -lm
 
+# Per-flavor bake tool variants — produce bytecode for a target with a
+# different URBI_FLOAT_TYPE than the host (the default tool above is f64).
+# Cross-compile targets that use f32 (-DURBI_FLOAT_TYPE=4) must bake their
+# bytecode using `tools/urbi-compile-stdlib-f4`, otherwise the runtime will
+# reject the module with ULOAD_FLAVOR_MISMATCH on byte 13.
+#
+# Pattern target: `tools/urbi-compile-stdlib-f4` builds a tool with
+# -DURBI_FLOAT_TYPE=4.  Compiles all sources in one cc invocation rather
+# than reusing build/host/*.o (which were compiled with f64).  ~10s build
+# per flavor; cached after first build.
+#
+# Note: urbi_stdlib_bytecode.gen.c is filtered out (same as HOST_BAKE_OBJ
+# above) — it defines urbi_stdlib_bytecode/_len symbols that also live in
+# the stub.  We use the stub at link time to break the chicken-and-egg
+# (the bake tool itself is what would normally regenerate the .gen.c).
+tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
+        $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(HOST_BAKE_SRC)) \
+        tools/stub_stdlib_bytecode.c
+	cc -std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_FLOAT_TYPE=$* \
+	    -Iinclude -Isrc -o $@ $^ -lm
+
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
 # 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
@@ -220,8 +267,6 @@ tools/urbi-compile-stdlib: tools/urbi-compile-stdlib.c $(HOST_BAKE_OBJ) $(BAKE_S
 # build/) so the first build of liburbi.a does not require the bake
 # tool — closing the chicken-and-egg between the tool and the library.
 
-STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
-
 src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
                                         src/stdlib/STDLIB_ORDER.txt \
                                         $(STDLIB_U_FILES)
@@ -230,6 +275,31 @@ src/stdlib/urbi_stdlib_bytecode.gen.c: tools/urbi-compile-stdlib \
 	    src/stdlib \
 	    $@
 endif  # URBI_BYTECODE_ONLY != 1
+
+# Shared with the per-target rebake rule below (must live outside the
+# URBI_BYTECODE_ONLY guard so the rule body can expand it).
+STDLIB_U_FILES := $(wildcard src/stdlib/*.u)
+
+# Per-target stdlib rebake — fires only when URBI_STDLIB_FLAVOR is set
+# (see commentary near the SRC/OBJ block).  Pattern rule
+# $(BUILDDIR)/src/%.o: src/%.c does not match a source under $(BUILDDIR)/,
+# so define both the .gen.c bake step and the .gen.o compile step
+# explicitly.  Explicit rule with a recipe takes precedence over the
+# pattern rule for the same target.
+ifneq ($(URBI_STDLIB_FLAVOR),)
+$(STDLIB_BYTECODE_GEN_C): tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
+                          src/stdlib/STDLIB_ORDER.txt \
+                          $(STDLIB_U_FILES)
+	@mkdir -p $(@D)
+	./tools/urbi-compile-stdlib-f$(URBI_STDLIB_FLAVOR) \
+	    src/stdlib/STDLIB_ORDER.txt \
+	    src/stdlib \
+	    $@
+
+$(STDLIB_BYTECODE_GEN_O): $(STDLIB_BYTECODE_GEN_C)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+endif
 
 # --- Integration tests --------------------------------------------------
 #
@@ -776,6 +846,7 @@ fuzz-tools:
 # Cross-compile sanity (builds liburbi.a only; no test runner).
 cross-arm:
 	$(MAKE) TARGET=arm-cortex-m7 \
+		URBI_STDLIB_FLAVOR=4 \
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -mcpu=cortex-m7 -mthumb -ffreestanding \
 		        -DURBI_CLEANUP_MAX=16 \
@@ -790,6 +861,7 @@ cross-arm:
 
 cross-riscv:
 	$(MAKE) TARGET=riscv-rv32imc \
+		URBI_STDLIB_FLAVOR=4 \
 		CC=riscv64-unknown-elf-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os -march=rv32imc -mabi=ilp32 -ffreestanding \
 		        -DURBI_FLOAT_TYPE=4 \
@@ -801,6 +873,7 @@ cross-riscv:
 # toolchain as cross-arm; differs in -mcpu and FPU flags.
 cross-stm32f4:
 	$(MAKE) TARGET=arm-cortex-m4 \
+		URBI_STDLIB_FLAVOR=4 \
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
 		        -mcpu=cortex-m4 -mthumb \
