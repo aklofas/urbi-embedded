@@ -85,8 +85,9 @@ internal struct shrinkage; no public-symbol changes).
 ### Process notes
 
 Plan was re-revised mid-execution to **Option B** (atomic GC promotion
-+ legacy purge bundled).  The original phasing split GC promotion
-(Step 1) from legacy purge (Step 5) into separate landings; Step C-2
+plus legacy purge bundled into one landing).  The original phasing
+split GC promotion (Step 1) from legacy purge (Step 5) into separate
+landings; Step C-2
 execution diagnosed deep structural coupling — once `urbi_gc_alloc`
 enrolls a cell on `vm->all_cells_head`, every manual `vm->alloc_fn(cell,
 0, ud)` site becomes a UAF on the next GC sweep.  The two phases must
