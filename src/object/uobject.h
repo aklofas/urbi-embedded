@@ -234,8 +234,8 @@ void urbi_object_set_protos_heap  (struct UVM *vm, UObject *obj, UProtos *up);
  *
  * UObject.protos is a uintptr_t with three storage forms (spec §4.1):
  *   - empty:  obj->protos == 0
- *   - single: obj->protos == ((p << 1) | 1U)   — bit 0 set, address in high bits
- *   - heap:   obj->protos == (uintptr_t)up     — bit 0 clear, raw UProtos*
+ *   - single: obj->protos == ((uintptr_t)p | 1U)   — bit 0 set, raw pointer in remaining bits (alignment makes bit 0 free)
+ *   - heap:   obj->protos == (uintptr_t)up         — bit 0 clear, raw UProtos*
  *
  * UPROTOS_FOREACH dispatches across all three forms and captures
  * obj->protos ONCE at iteration start, so iteration-during-mutation
@@ -276,9 +276,9 @@ static inline int upf_next(struct upf_ctx *c, UObject **out) {
     }
     if ((c->raw & 1U) != 0U) {
         if (c->i != 0U) return 0;
-        /* Single form: bit 0 set, UObject* in high bits — load-bearing
-         * per pre-M4 prototype-chain spec §7.2 (TIDY-003 design pin). */
-        *out = (UObject *)(c->raw >> 1);  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
+        /* Single form: bit 0 set, raw UObject* in remaining bits
+         * (alignment makes bit 0 free); see urbi_object_proto_at. */
+        *out = (UObject *)(c->raw & ~(uintptr_t)1U);  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
         c->i = 1U;
         return 1;
     }
@@ -423,11 +423,14 @@ void urbi_object_register_gc_roots(struct UVM *vm);
 
 /* Convenience inlines — count + indexed access across all three forms.
  *
- * Each int-to-pointer cast below is the UProtos high-bit encoding per
- * pre-M4 prototype-chain spec §7.2: bit 0 of obj->protos selects single-form
- * (raw>>1 is UObject*) vs heap-form (raw is UProtos*).  The encoding is a
- * load-bearing design pin (TIDY-003), so per-line NOLINT documents each
- * site. */
+ * obj->protos encoding (pre-M4 prototype-chain spec §7.2, updated v0.8.2):
+ *   - empty:  obj->protos == 0
+ *   - single: bit 0 = 1, remaining bits = raw UObject* (alignment guarantees
+ *             bit 0 of the pointer is 0 so the tag does not collide)
+ *   - heap:   bit 0 = 0, raw bits = UProtos* (alignment guarantees bit 0 = 0)
+ *
+ * The load-bearing design pin is TIDY-003: per-line NOLINT documents each
+ * int-to-pointer cast. */
 static inline uint32_t urbi_object_proto_count(const UObject *obj) {
     if (obj->protos == 0U) return 0U;
     if ((obj->protos & 1U) != 0U) return 1U;
@@ -437,7 +440,7 @@ static inline uint32_t urbi_object_proto_count(const UObject *obj) {
 static inline UObject *urbi_object_proto_at(const UObject *obj, uint32_t i) {
     if (obj->protos == 0U) return NULL;
     if ((obj->protos & 1U) != 0U) {
-        return (i == 0U) ? (UObject *)(obj->protos >> 1) : NULL;  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
+        return (i == 0U) ? (UObject *)(obj->protos & ~(uintptr_t)1U) : NULL;  /* NOLINT(performance-no-int-to-ptr) — UProtos single-form pointer-encoding */
     }
     {
         UProtos *up = (UProtos *)obj->protos;  /* NOLINT(performance-no-int-to-ptr) — UProtos heap-form pointer-encoding */

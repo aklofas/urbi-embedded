@@ -147,7 +147,7 @@ urbi_object_root(struct UVM *vm)
 /* === urbi_object_atom ===
  *
  * Lazy-allocate the named atom singleton on first call.  Each non-root
- * atom's protos field carries the single-tag encoding `(root << 1) | 1`
+ * atom's protos field carries the single-tag encoding `(uintptr_t)root | 1`
  * pointing at the root Object (the canonical single form decoded by
  * UPROTOS_FOREACH per pre-M4 prototype-chain spec §4.1).
  *
