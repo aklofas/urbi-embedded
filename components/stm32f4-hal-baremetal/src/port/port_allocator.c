@@ -190,6 +190,32 @@ void *port_alloc(void *ptr, size_t nbytes, void *ud) {
         s_last_failed_request = total_need;
         s_last_null_ptr_arg = NULL;
         s_last_null_nbytes_arg = nbytes;
+#ifndef URBI_PORT_TEST
+        /* v0.8.2 bring-up debug: dump heap stats every Nth OOM so we
+         * can confirm UVM_STACK_CAP override is in effect + see whether
+         * the freelist is recycling dead strand stacks.  Remove before
+         * tag.  Throttled to ~1 in 32 OOMs to avoid UART drown. */
+        static uint32_t s_oom_count = 0;
+        if (((s_oom_count++) & 0x1FU) == 1U) {
+            char b[100];
+            const char *d = "0123456789ABCDEF";
+            int n = 0;
+            const char *t = "OOM req=";
+            while (t[n] && n < 8) { b[n] = t[n]; n++; }
+            for (int k = 28; k >= 0; k -= 4) b[n++] = d[(total_need >> k) & 0xF];
+            const char *t2 = " top=";
+            int j = 0; while (t2[j] && j < 5) { b[n++] = t2[j]; j++; }
+            for (int k = 28; k >= 0; k -= 4) b[n++] = d[(heap_top >> k) & 0xF];
+            const char *t3 = " fl=";
+            j = 0; while (t3[j] && j < 4) { b[n++] = t3[j]; j++; }
+            for (int k = 28; k >= 0; k -= 4) b[n++] = d[(s_freelist_hits >> k) & 0xF];
+            const char *t4 = " frees=";
+            j = 0; while (t4[j] && j < 7) { b[n++] = t4[j]; j++; }
+            for (int k = 28; k >= 0; k -= 4) b[n++] = d[(s_free_count >> k) & 0xF];
+            b[n++] = '\r'; b[n++] = '\n';
+            port_writer(NULL, "oom", 3, b, (size_t)n, 0);
+        }
+#endif
         return NULL;
     }
     h = (fl_hdr *)&heap[heap_top];
