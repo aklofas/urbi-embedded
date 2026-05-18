@@ -47,17 +47,47 @@
 #  define UVM_USE_COMPUTED_GOTO 0
 #endif
 
+/* v0.8.2 bring-up debug: per-opcode UART tap inside the dispatch loop.
+ * Fires every 64th opcode dispatch with current PC + opcode, gated by a
+ * static guard so only the FIRST urbi_step invocation traces (subsequent
+ * calls would drown UART at ~32k opcodes/step).  Channel "dl".  Remove
+ * before tag. */
+static uint64_t s_dispatch_count = 0;
+static int      s_dispatch_traced = 0;
+static inline void vdbg_dispatch_tap(UStrand *s) {
+    if (s_dispatch_traced) return;
+    if ((s_dispatch_count++ & 0x3FU) != 0) return;
+    UVM *vm = s->vm;
+    if (vm == NULL || vm->writer_fn == NULL) return;
+    char b[48];
+    int  n = 0;
+    const char *d = "0123456789ABCDEF";
+    uint32_t cnt = (uint32_t)s_dispatch_count;
+    for (int k = 28; k >= 0; k -= 4) b[n++] = d[(cnt >> k) & 0xF];
+    b[n++] = ' '; b[n++] = 'p'; b[n++] = 'c'; b[n++] = '=';
+    uintptr_t pc = (uintptr_t)s->pc;
+    for (int k = 28; k >= 0; k -= 4) b[n++] = d[(pc >> k) & 0xF];
+    b[n++] = ' '; b[n++] = 'o'; b[n++] = 'p'; b[n++] = '=';
+    uint32_t op = uinstr_op(*s->pc);
+    b[n++] = d[(op >> 4) & 0xF];
+    b[n++] = d[op & 0xF];
+    b[n++] = '\r'; b[n++] = '\n';
+    vm->writer_fn(vm->writer_ud, "dl", 2, b, (size_t)n, 0);
+    /* Cap at 32 prints so we always finish even if dispatch is fast. */
+    if (s_dispatch_count > (uint64_t)(64U * 32U)) s_dispatch_traced = 1;
+}
+
 #if UVM_USE_COMPUTED_GOTO
    /* Computed-goto dispatch — DISPATCH expands to a `goto *<expr>` statement;
     * the replacement list cannot be wrapped in parentheses (you can't
     * parenthesize a statement), so bugprone-macro-parentheses is suppressed
     * here.  CASE(op) expands to a label, also unparenthesizable. */
-#  define DISPATCH()  goto *dispatch_table[uinstr_op(*s->pc)]  /* NOLINT(bugprone-macro-parentheses) — `goto *expr` cannot be parenthesized */
+#  define DISPATCH()  do { vdbg_dispatch_tap(s); goto *dispatch_table[uinstr_op(*s->pc)]; } while (0)
 #  define CASE(op)    label_##op:
 #  define NEXT()      do { s->pc++; DISPATCH(); } while (0)
 #  define HALT()      goto halt_error
 #else
-#  define DISPATCH()  switch (uinstr_op(*s->pc))
+#  define DISPATCH()  vdbg_dispatch_tap(s); switch (uinstr_op(*s->pc))
 #  define CASE(op)    case (op):
 #  define NEXT()      do { s->pc++; goto dispatch; } while (0)
 #  define HALT()      goto halt_error
