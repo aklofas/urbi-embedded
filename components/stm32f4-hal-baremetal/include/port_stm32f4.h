@@ -75,8 +75,8 @@ void port_lcd_init(void);
  * urbi_native_method_fn (include/urbi/urbi.h).  Fills an axis-aligned
  * rectangle at (x, y) of size (w, h) with the given RGB565 color via
  * BSP_LCD_FillRect.  Clamps to LCD bounds. */
-int port_lcd_fill_rect_native(struct UVM *vm, UValue *args, int nargs,
-                              UValue *out);
+int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
+                              UValue *args, uint8_t nargs, UValue *out);
 
 /* Gyro init: brings up L3GD20 over SPI5 via BSP_GYRO_Init.  Call once
  * from main() AFTER HAL_Init(). */
@@ -87,9 +87,12 @@ void port_gyro_init(void);
  * via BSP_GYRO_GetXYZ and returns the requested axis in radians/sec
  * as a UVAL_FLOAT.  Reading 3 axes = 3 SPI transactions; acceptable for
  * the demo's 50ms tick (60 reads/sec is well under L3GD20's 800 Hz max). */
-int port_gyro_x_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
-int port_gyro_y_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
-int port_gyro_z_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
+int port_gyro_x_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                       UValue *out);
+int port_gyro_y_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                       UValue *out);
+int port_gyro_z_native(struct UVM *vm, UValue self, UValue *args, uint8_t nargs,
+                       UValue *out);
 
 /* Button GPIO init: configures PA0 as input with EXTI0 rising-edge IRQ.
  * Call BEFORE port_button_init(). */

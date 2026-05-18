@@ -24,7 +24,9 @@ DEFS = -DSTM32F429xx -DUSE_HAL_DRIVER
 
 # Include paths
 INC = -I. \
+      -Istubs \
       -I$(URBI_ROOT)/include \
+      -I$(URBI_ROOT)/src \
       -I$(URBI_ROOT)/components/stm32f4-hal-baremetal/include \
       -I$(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Inc \
       -I$(HAL_ROOT)/Drivers/CMSIS/Device/ST/STM32F4xx/Include \
@@ -34,14 +36,14 @@ INC = -I. \
       -I$(HAL_ROOT)/Drivers/BSP/Components/l3gd20
 
 CFLAGS = -std=c99 -Wall -Wextra -Os $(MCU) -ffunction-sections -fdata-sections \
-         $(DEFS) $(INC) -g
+         -ffreestanding $(DEFS) $(INC) -g
 
 LDSCRIPT = STM32F429ZITx_FLASH.ld
 LDFLAGS  = $(MCU) -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(BUILD)/$(TARGET).map \
-           -specs=nosys.specs -specs=nano.specs
+           -ffreestanding -nostartfiles -nodefaultlibs -lgcc
 
 # Sources
-APP_SRC = main.c stm32f4xx_it.c
+APP_SRC = main.c stm32f4xx_it.c stubs/libc_stubs.c
 
 PORT_SRC = $(wildcard $(URBI_ROOT)/components/stm32f4-hal-baremetal/src/port/*.c)
 
@@ -60,7 +62,12 @@ HAL_SRC = $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
           $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_sdram.c \
           $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
           $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fmc.c \
-          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fsmc.c
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_fsmc.c \
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c.c \
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c_ex.c \
+          $(HAL_ROOT)/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma2d.c
 
 BSP_SRC = $(HAL_ROOT)/Drivers/BSP/STM32F429I-Discovery/stm32f429i_discovery.c \
           $(HAL_ROOT)/Drivers/BSP/STM32F429I-Discovery/stm32f429i_discovery_lcd.c \

@@ -24,7 +24,7 @@ void port_gyro_init(void) {
 #endif
 }
 
-static int gyro_axis(int axis, int nargs, UValue *out) {
+static int gyro_axis(int axis, uint8_t nargs, UValue *out) {
     if (nargs != 0) { *out = urbi_make_nil(); return -1; }
     float xyz[3];
     BSP_GYRO_GetXYZ(xyz);
@@ -32,17 +32,20 @@ static int gyro_axis(int axis, int nargs, UValue *out) {
     return 0;
 }
 
-int port_gyro_x_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
-    (void)vm; (void)args;
+int port_gyro_x_native(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out) {
+    (void)vm; (void)self; (void)args;
     return gyro_axis(0, nargs, out);
 }
 
-int port_gyro_y_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
-    (void)vm; (void)args;
+int port_gyro_y_native(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out) {
+    (void)vm; (void)self; (void)args;
     return gyro_axis(1, nargs, out);
 }
 
-int port_gyro_z_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
-    (void)vm; (void)args;
+int port_gyro_z_native(struct UVM *vm, UValue self,
+                        UValue *args, uint8_t nargs, UValue *out) {
+    (void)vm; (void)self; (void)args;
     return gyro_axis(2, nargs, out);
 }

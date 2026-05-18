@@ -196,11 +196,11 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /* Remove information from the compiler libraries */
+  /* Remove information from the compiler libraries.
+   * Note: libc.a and libm.a lines removed — this build uses no newlib;
+   * only libgcc.a is discarded (its debug sections are not needed). */
   /DISCARD/ :
   {
-    libc.a ( * )
-    libm.a ( * )
     libgcc.a ( * )
   }
 

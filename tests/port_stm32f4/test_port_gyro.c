@@ -16,16 +16,17 @@ static void test_gyro_each_axis_returns_correct_value(void) {
     UValue out;
     int rc;
 
-    rc = port_gyro_x_native(NULL, NULL, 0, &out);
+    UValue nil_self = urbi_make_nil();
+    rc = port_gyro_x_native(NULL, nil_self, NULL, 0, &out);
     assert(rc == 0);
     assert(urbi_value_kind(out) == URBI_VALUE_FLOAT);
     assert(fabsf((float)urbi_value_as_float(out) - 0.1f) < 1e-6f);
 
-    rc = port_gyro_y_native(NULL, NULL, 0, &out);
+    rc = port_gyro_y_native(NULL, nil_self, NULL, 0, &out);
     assert(rc == 0);
     assert(fabsf((float)urbi_value_as_float(out) - 0.2f) < 1e-6f);
 
-    rc = port_gyro_z_native(NULL, NULL, 0, &out);
+    rc = port_gyro_z_native(NULL, nil_self, NULL, 0, &out);
     assert(rc == 0);
     assert(fabsf((float)urbi_value_as_float(out) - 0.3f) < 1e-6f);
 
@@ -38,8 +39,9 @@ static void test_gyro_each_axis_returns_correct_value(void) {
 static void test_gyro_wrong_arity(void) {
     mock_bsp_reset();
     UValue dummy = urbi_make_int(0);
+    UValue nil_self = urbi_make_nil();
     UValue out;
-    int rc = port_gyro_x_native(NULL, &dummy, 1, &out);
+    int rc = port_gyro_x_native(NULL, nil_self, &dummy, 1, &out);
     assert(rc == -1);
     printf("test_gyro_wrong_arity PASS\n");
 }

@@ -15,7 +15,8 @@ static void test_fill_rect_passes_args_to_bsp(void) {
     args[3] = urbi_make_int(40);
     args[4] = urbi_make_int(0xF800);   /* RGB565 red */
     UValue out;
-    int rc = port_lcd_fill_rect_native(NULL, args, 5, &out);
+    UValue nil_self = urbi_make_nil();
+    int rc = port_lcd_fill_rect_native(NULL, nil_self, args, 5, &out);
     assert(rc == 0);  /* URBI_EXEC_OK */
     assert(mock_lcd.call_count == 1);
     assert(mock_lcd.last_x == 10);
@@ -35,7 +36,8 @@ static void test_fill_rect_clamps_oob(void) {
     args[3] = urbi_make_int(500);    /* > 240 */
     args[4] = urbi_make_int(0x07E0);
     UValue out;
-    int rc = port_lcd_fill_rect_native(NULL, args, 5, &out);
+    UValue nil_self = urbi_make_nil();
+    int rc = port_lcd_fill_rect_native(NULL, nil_self, args, 5, &out);
     assert(rc == 0);
     /* Expect clamping: x,y to >=0; x+w <= 320; y+h <= 240 */
     assert(mock_lcd.last_x == 0);

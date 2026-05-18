@@ -34,9 +34,9 @@ void port_lcd_init(void) {
 #endif
 }
 
-int port_lcd_fill_rect_native(struct UVM *vm, UValue *args, int nargs,
-                              UValue *out) {
-    (void)vm;
+int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
+                              UValue *args, uint8_t nargs, UValue *out) {
+    (void)vm; (void)self;
     if (nargs != 5) {
         *out = urbi_make_nil();
         return -1;  /* URBI_EXEC_ERR_ARITY */
