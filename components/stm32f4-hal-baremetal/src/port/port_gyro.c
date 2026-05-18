@@ -69,10 +69,17 @@ static int gyro_axis(int axis, uint8_t nargs, UValue *out) {
 int port_gyro_x_native(struct UVM *vm, UValue self,
                         UValue *args, uint8_t nargs, UValue *out) {
     (void)vm; (void)self; (void)args; (void)nargs;
-    /* v0.8.2 hypothesis-killing test: hard-coded success.  If VM still
-     * sees rc=2 with this, the bug is NOT in port_gyro_x_native nor in
-     * gyro_axis -- it's somewhere else (wrong closure dispatched, ABI
-     * mismatch, function-pointer corruption). */
+#ifndef URBI_PORT_TEST
+    /* v0.8.2 hypothesis kill #2: confirm whether port_gyro_x_native
+     * is even being CALLED.  If we see [gxN] lines we're called and
+     * something else corrupts rc.  If no [gxN] lines, the VM is
+     * dispatching to a DIFFERENT function with the gyro_x slot. */
+    static int dbg_n = 0;
+    if (dbg_n < 3) {
+        dbg_n++;
+        port_writer(NULL, "gxN", 3, "called\r\n", 8, 0);
+    }
+#endif
     *out = urbi_make_float(0.0);
     return 0;
 }
