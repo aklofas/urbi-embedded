@@ -5,10 +5,12 @@ __divdi3
 __eqdf2
 __eqsf2
 __extendsfdf2
+__fixdfdi
 __fixsfdi
 __floatdidf
 __floatundidf
 __gesf2
+__gtsf2
 __lesf2
 __lshrdi3
 __ltdf2
