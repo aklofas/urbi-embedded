@@ -21,8 +21,9 @@ require the corresponding toolchain on PATH.
 | Cross target | Toolchain | Package |
 |---|---|---|
 | `cross-arm` (Cortex-M7) | arm-none-eabi-gcc | `apt install gcc-arm-none-eabi` |
-| `cross-stm32f4` (Cortex-M4F) | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
-| `cross-riscv` (rv32imc) | riscv64-unknown-elf-gcc | `apt install gcc-riscv64-unknown-elf` (or `gcc-riscv-none-elf`) |
+| `cross-stm32f4` (Cortex-M4F, full)         | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
+| `cross-stm32f4-bytecode-only` (Cortex-M4F) | arm-none-eabi-gcc (same) | `apt install gcc-arm-none-eabi` |
+| `cross-riscv` (rv32imc) | riscv64-unknown-elf-gcc | `apt install gcc-riscv64-unknown-elf` |
 | `cross-esp32s3-*` (Xtensa LX7) | xtensa-esp-elf-gcc (bundled with ESP-IDF) | source `$IDF_PATH/export.sh` |
 
 ### ESP-IDF environment
@@ -52,11 +53,12 @@ cd urbi-embedded-test
 make cross-arm
 make cross-riscv
 make cross-stm32f4
+make cross-stm32f4-bytecode-only
 make cross-esp32s3-bytecode-only
 make cross-esp32s3-full
 ```
 
-All five should succeed without intermediate `make` runs. CI exercises this
+All six should succeed without intermediate `make` runs. CI exercises this
 via fresh containers per job.
 
 ## Stdlib bake (M6 Wave 2)

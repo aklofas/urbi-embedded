@@ -9,7 +9,7 @@
 # aux code cannot reach into src/.
 #
 # Embedders opt in by listing `esp32-idf-aux` in their component's REQUIRES.
-# Default ESP-IDF builds get `urbi` only — zero aux symbols, smallest
+# Default ESP-IDF builds get `esp32-idf` only — zero aux symbols, smallest
 # footprint, no link-time cost.
 #
 # Mental model: matches Lua's lua.h (core) vs lauxlib.h (auxlib) split.
