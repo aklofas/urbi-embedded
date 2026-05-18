@@ -33,6 +33,20 @@ jobs:
       - name: Inspect archive
         run: arm-none-eabi-ar t build/arm-cortex-m7/liburbi.a
 
+  cross-stm32f4:
+    name: cross-compile (STM32F4 / Cortex-M4F)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Cross-compile (full)
+        run: make cross-stm32f4
+      - name: Cross-compile (bytecode-only + freestanding gate)
+        run: make cross-stm32f4-bytecode-only
+      - name: Inspect archive
+        run: arm-none-eabi-ar t build/arm-cortex-m4/liburbi.a
+
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
     runs-on: ubuntu-latest
