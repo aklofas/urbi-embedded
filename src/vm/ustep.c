@@ -11,14 +11,30 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* v0.8.2 bring-up debug: localize a freestanding-only hang inside the very
+ * first urbi_step call.  Channel "st".  Remove before tag. */
+#define SDBG(s) do {                                                       \
+    if (vm && vm->writer_fn) vm->writer_fn(vm->writer_ud, "st", 2,         \
+                                           s, sizeof(s) - 1U, 0);          \
+} while (0)
+
+/* Static fire-once guard: first urbi_step call is the only one we want
+ * to trace verbosely; subsequent calls would drown the UART. */
+static int s_step_first_done = 0;
+
 UStepResult
 urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 {
     URBI_ASSERT_NOT_ISR(vm);
+    int trace = !s_step_first_done;
+    if (trace) { SDBG("enter\n"); s_step_first_done = 1; }
 
     /* Fast-path: previous call left a fatal strand wired; caller must inspect
      * and reset (via urbi_strand_reset) or shut down before calling again. */
-    if (vm->fatal_strand) return URBI_STEP_FATAL;
+    if (vm->fatal_strand) {
+        if (trace) { SDBG("fatal_strand wired\n"); s_step_first_done = 1; }
+        return URBI_STEP_FATAL;
+    }
 
     /* Gap R: URBI_DEBUG watchdog for open atomic sections.
      * If the embedder called urbi_atomic_begin and hasn't called urbi_atomic_end
@@ -37,14 +53,17 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     /* Drain any ISR-injected events before running bytecode. */
     if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
         uevent_ring_drain(vm);
+    if (trace) SDBG("post drain\n");
 
     vm->step_budget_remaining = budget_instructions;
 
     /* Round-robin through all READY strands until the budget is exhausted
      * or the run-queue empties. */
+    if (trace) SDBG("budget loop\n");
     while (vm->step_budget_remaining > 0 && vm->strand_runnable_count > 0) {
         UStrand *s = sched_pick_next(vm);
         if (!s) break;
+        if (trace) SDBG("pre dispatch\n");
 
         /* Remove the strand from the ready queue and charge the count.
          * sched_dequeue_ready_head decrements strand_runnable_count.
@@ -55,6 +74,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
         vm->cur_strand = s;   /* spec #3 §7.1: expose running strand for c_event_waituntil */
 
         uint64_t consumed = dispatch_loop_until_yield(s, vm->step_budget_remaining);
+        if (trace) SDBG("post dispatch\n");
         vm->cur_strand = NULL;
         /* Clamp subtraction to avoid unsigned underflow on floating rounding. */
         if (consumed >= vm->step_budget_remaining) {
@@ -160,5 +180,7 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     }
 
     /* All five counters are zero (or irrelevant): fully quiescent. */
+    if (trace) { SDBG("quiescent\n"); s_step_first_done = 1; }
     return URBI_STEP_QUIESCENT;
 }
+#undef SDBG
