@@ -58,14 +58,50 @@ Realm.mandel = function (px, py) {
 
 // === RGB565 colour map =====================================================
 //
-// Returns a 16-bit RGB565 word.  Black (0) for the set interior; a crude
-// palette cycle for the exterior.  .bitand() is required because `&` is the
-// parallel-join statement separator in urbiscript.
+// Returns a 16-bit RGB565 word.  Inside-set pixels are black; exterior
+// pixels follow a 5-band gradient that mimics the classic Wikipedia
+// Mandelbrot palette: deep blue -> light blue -> white -> orange -> black.
+// MAX_ITER is 100 so each band is 20 iter wide.  Integer-only math (urbi
+// `/` promotes to float; multiplications and subtractions stay int).
+// .bitand() / nested if/else only -- no division, no `&&`/`||`.
 Realm.color_for = function (iter) {
     if (iter >= Realm.MAX_ITER) {
         0
     } else {
-        (iter * 0x0421).bitand(0xFFFF)
+        if (iter < 20) {
+            // Band 0: dark blue ramp.  B5 = 5..24, R = G = 0.
+            5 + iter
+        } else {
+            if (iter < 40) {
+                // Band 1: deep blue -> medium blue.  B5 saturates near 30,
+                // G6 grows so the hue lifts toward cyan.
+                var g = iter - 20;
+                var b = 25 + (iter - 20);
+                if (b > 31) { b = 31 };
+                (g << 5) | b
+            } else {
+                if (iter < 60) {
+                    // Band 2: cyan-blue -> near-white.  R5 grows, G6 holds
+                    // high, B5 holds high.
+                    var r5 = iter - 40;
+                    if (r5 > 31) { r5 = 31 };
+                    (r5 << 11) | (50 << 5) | 31
+                } else {
+                    if (iter < 80) {
+                        // Band 3: white -> orange.  B5 fades fast.
+                        var b = 31 - (iter - 60) * 2;
+                        if (b < 0) { b = 0 };
+                        (31 << 11) | (50 << 5) | b
+                    } else {
+                        // Band 4: orange -> dark red -> black.  R5 + G6
+                        // fade together; near MAX_ITER pixels go almost
+                        // dark, blending into the set's black interior.
+                        var fade = 99 - iter;
+                        (fade << 11) | (fade << 5)
+                    }
+                }
+            }
+        }
     }
 };
 
