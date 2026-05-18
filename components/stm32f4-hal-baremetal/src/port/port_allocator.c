@@ -142,13 +142,44 @@ size_t port_alloc_largest_satisfied(void) { return s_largest_satisfied; }
 const void *port_alloc_last_null_ptr(void) { return s_last_null_ptr_arg; }
 size_t port_alloc_last_null_nbytes(void) { return s_last_null_nbytes_arg; }
 
-/* Pop a freelist block of total size >= need.  First-fit walk; on hit
- * unlinks and returns. */
+/* Pop a freelist block of total size >= need, BUT prefer blocks that
+ * aren't much bigger than need (size-class isolation).
+ *
+ * The naive first-fit + split-on-large-reuse design destroys big blocks
+ * when small allocs hit them: a freed 8 KB strand-stack is the only big
+ * block on the freelist, then a 64 B sidecar alloc hits it, splits it
+ * into 64 B (kept) + ~7.9 KB (tail).  Next small alloc splits the tail
+ * again.  After enough small allocs the original 8 KB block is carved
+ * into 100+ tiny pieces, none >= 8 KB, and the next strand-stack spawn
+ * fails because no fit exists and bump is at the ceiling.
+ *
+ * Fix: two-pass walk.  Pass 1 looks for a block in the "good-fit" range
+ * (size in [need, need * 2)).  Pass 2 falls back to first-fit if no
+ * good-fit block exists.  This keeps a freed 8 KB block intact for the
+ * next 8 KB request, while still letting small allocs use larger blocks
+ * if no smaller freelist entry exists.  Cost: at most two walks; in the
+ * common case (good-fit hit) one walk. */
 static fl_hdr *
 freelist_pop_fit(size_t need)
 {
-    fl_hdr **prev = &s_freelist;
-    fl_hdr  *cur  = s_freelist;
+    fl_hdr **prev = NULL;
+    fl_hdr  *cur  = NULL;
+
+    /* Pass 1: good-fit (size in [need, need*2)). */
+    prev = &s_freelist;
+    cur  = s_freelist;
+    while (cur != NULL) {
+        if ((size_t)cur->size >= need && (size_t)cur->size < need * 2U) {
+            *prev = cur->next;
+            return cur;
+        }
+        prev = &cur->next;
+        cur  = cur->next;
+    }
+
+    /* Pass 2: first-fit fallback. */
+    prev = &s_freelist;
+    cur  = s_freelist;
     while (cur != NULL) {
         if ((size_t)cur->size >= need) {
             *prev = cur->next;
