@@ -142,7 +142,7 @@ void   urbi_gc_slice(struct UVM *vm, size_t byte_budget);
 void   urbi_gc_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 
 /* Append `provider` to the VM's fixed root-provider array (capacity
- * URBI_MAX_ROOT_PROVIDERS = 8 per row 10 §5.1).  The provider function
+ * URBI_MAX_ROOT_PROVIDERS = 12 per row 10 §5.1; bumped from 8 at Step C-1).  The provider function
  * pointer is borrowed: callee retains it for the lifetime of `vm`, and
  * caller must keep the underlying code object alive at least that long.
  * URBI_INTERNAL_ASSERT fires on overflow.  Not ISR-safe. */

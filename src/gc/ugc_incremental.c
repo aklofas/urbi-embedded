@@ -864,8 +864,8 @@ urbi_gc_walk_all_cells(UVM *vm, UGcCellCallback cb, void *ctx)
 /* === urbi_gc_register_root_provider ===
  *
  * Appends provider to the VM's fixed root-provider array.
- * URBI_MAX_ROOT_PROVIDERS is 8 (row 10 §5.1); capacity assertion fires on
- * overflow so the programmer knows to raise the constant. */
+ * URBI_MAX_ROOT_PROVIDERS is 12 (bumped from 8→12 at Step C-1); capacity
+ * assertion fires on overflow so the programmer knows to raise the constant. */
 void
 urbi_gc_register_root_provider(UVM *vm, UGcRootProviderFn provider)
 {

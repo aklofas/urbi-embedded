@@ -18,6 +18,7 @@
 #include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
+#include "gc/ugc_incremental.h"   /* gc_shade_gray (vm_misc_walk_roots Step C-1) */
 #include "value/uintern.h"        /* uintern_destroy */
 #include "sched/ustrand.h"        /* UStrand (forward) */
 #include "realm/urealm.h"         /* urealm_teardown_all */
@@ -71,6 +72,27 @@ static uint64_t default_host_time_us_stub(void) {
 /* Non-static alias: lets uvm_writer.c restore the built-in time source. */
 uint64_t urbi_default_host_time_us(void) {
     return default_host_time_us_stub();
+}
+
+/* === vm_misc_walk_roots (v0.8.4 Option B Step C-1) ===
+ *
+ * GC root provider for VM-level state that doesn't fit the realm / strand /
+ * watcher / intern-table / host-handle / object-proto categories.  Currently
+ * yields vm->last_return_closure (the result of the most-recent urbi_vm_run
+ * call, preserved across calls for host inspection).
+ *
+ * Today this yield is dormant: UClosure cells are not on all_cells_head, so
+ * gc_shade_gray sets the color byte and returns early (NULL sidecar path, per
+ * the GC-009 contract in ugc_incremental.c).  Step C-2 lights this up when
+ * UClosure is promoted to urbi_gc_alloc. */
+static void
+vm_misc_walk_roots(UVM *vm, UGcRootCallback cb, void *ctx)
+{
+    (void)cb;
+    (void)ctx;
+    if (vm->last_return_closure != NULL) {
+        gc_shade_gray(vm, (UCell *)&vm->last_return_closure->cell);
+    }
 }
 
 int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
@@ -199,11 +221,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->root_provider_count = 0U;
 
     /* Register default root providers.
-     * Order: scheduler, realm, intern, host-handle, watcher table. */
+     * Order: scheduler, realm, intern, host-handle, vm-misc, watcher table. */
     urbi_gc_register_root_provider(vm, sched_walk_roots);
     urbi_gc_register_root_provider(vm, realm_list_walk_roots);
     urbi_gc_register_root_provider(vm, intern_table_walk_roots);
     urbi_gc_register_root_provider(vm, host_handle_walk_roots);
+    urbi_gc_register_root_provider(vm, vm_misc_walk_roots);   /* Step C-1 */
     urbi_gc_register_root_provider(vm, watcher_table_walk_roots);
 
     /* Type table + host-handle table. */
