@@ -31,8 +31,12 @@ extern "C" {
 
 /* --- Capacity constants --- */
 
-#define UVM_MAX_FRAMES 64
-#define UVM_STACK_CAP  2048        /* total register slots across all frames */
+#ifndef UVM_MAX_FRAMES
+#  define UVM_MAX_FRAMES 64
+#endif
+#ifndef UVM_STACK_CAP
+#  define UVM_STACK_CAP  2048      /* total register slots across all frames */
+#endif
 
 /* --- Forward declarations for pointer-only uses in struct fields --- */
 

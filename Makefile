@@ -871,6 +871,14 @@ cross-riscv:
 
 # v0.8.2: cross-compile for STM32F4 (Cortex-M4F).  Same arm-none-eabi
 # toolchain as cross-arm; differs in -mcpu and FPU flags.
+#
+# UVM_STACK_CAP override: default 2048 slots × 16 B = 32 KB per strand
+# register stack is too big for a 1 MB SDRAM heap with frequent watcher-
+# body spawns (gyro_tick @ 50 ms).  512 slots × 16 B = 8 KB lets ~100+
+# alive strands coexist, eliminating the OOM bursts from the v0.8.2
+# bring-up.  Mandelbrot demo functions are shallow enough (~5 nested
+# calls × ~10 locals each) that 512 slots is comfortable; complex
+# embeddings can override per-build.
 cross-stm32f4:
 	$(MAKE) TARGET=arm-cortex-m4 \
 		URBI_STDLIB_FLAVOR=4 \
@@ -885,7 +893,8 @@ cross-stm32f4:
 		        -DURBI_WATCHER_POOL_SIZE=16 \
 		        -DURBI_WATCHER_READSET_MAX=4 \
 		        -DURBI_EVENT_RING_DEPTH=32 \
-		        -DURBI_FLOAT_TYPE=4" \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DUVM_STACK_CAP=512" \
 		AR=arm-none-eabi-ar \
 		core
 
