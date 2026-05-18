@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.8.3-valgrind-and-cross-verify — 2026-05-18 (valgrind wedge fix + cross-esp32s3 golden refresh)
+
+**Tag:** `v0.8.3-valgrind-and-cross-verify`
+**Theme:** Interstitial hygiene release.  Closes the two gates skipped
+at the v0.8.2 ship (`test-valgrind` wedge + `test-corpus-sanitize`
+follow-on) and refreshes the cross-esp32s3 freestanding-signature
+golden that drifted from v0.8.2's freestanding Float methods.  No
+runtime code change.  Wire format **v1.7 / 0x17** unchanged.  ABI
+**0/8/0** unchanged.
+
+### Fixed
+
+- **`test-valgrind` wedge** (v0.8.2 ship "Surprise #7").  The
+  `event_ring_multi_thread_fuzz_100k` test is a 100,000-event SPSC
+  fuzz that surfaces ring-buffer races by running producer and
+  consumer on separate pthreads.  Under valgrind's memcheck thread
+  serialization (one CPU for all threads), the producer fills the
+  ring and busy-spins on `RING_FULL` while the consumer is
+  descheduled — a pathological scheduling that pushed wall-clock
+  past 30 min and lost the test's race-detection value entirely.
+  Now skipped under valgrind via `-DURBI_SKIP_THREAD_FUZZ_TESTS=1`
+  in `test-valgrind` and `test-valgrind-deep` CFLAGS; still runs
+  under `make test` and the ASan/UBSan variants.  `test-valgrind`
+  now completes in ~5 s green; full `releasetest` returns to ~40 s
+  end-to-end (Phase 1 34 s + Phase 2 8 s).
+- **`test-cross-esp32s3-freestanding-golden` drift** (CI gate, not
+  in releasetest).  v0.8.2's freestanding `Float.abs/floor/ceil/round`
+  (commit `3b857ef`) legitimately pulls two new libgcc helpers into
+  `liburbi.a`: `__fixdfdi` (`double → int64_t` truncation, from
+  `int64_t t = (int64_t)x;` in `flt_floor`/`flt_ceil`) and `__gtsf2`
+  (f32 > f32 compare, emitted by `gcc -Os` when it optimises
+  `(double)self.v.f > 0.0` into the equivalent f32 compare-with-zero
+  in `flt_ceil`).  Golden refreshed; intent verified via objdump
+  cross-reference of the calling function.  Gate has been silently
+  red since v0.8.2 ship because CI was red across the v0.7.x and
+  v0.8.0 ships and this gate is CI-only.
+
+### Changed
+
+- **`test-valgrind` / `test-valgrind-deep` Makefile targets** add
+  `-DURBI_SKIP_THREAD_FUZZ_TESTS=1` to CFLAGS.  Documented inline.
+- **`tests/golden/v0.7.2-esp32-nm-bytecode-only.txt`** content
+  refreshed (+`__fixdfdi`, +`__gtsf2`).  Filename retains v0.7.2
+  prefix — the golden-update flow per Makefile §1001 is delete +
+  regenerate in place; the prefix is the file's creation ship,
+  not its current freshness.  (A future rename pass can align the
+  prefix with current ship; not load-bearing.)
+
+### Releasetest
+
+- **All 22 gates green** (Phase 1 34 s + Phase 2 8 s = 42 s total).
+  First clean releasetest since v0.8.0-loader-strand.
+
+### Numeric outcomes
+
+- **Test corpus**: 1783/13023/237 (unchanged from v0.8.2).
+- **ABI**: **0/8/0** unchanged.
+- **Wire format**: **v1.7 / 0x17** unchanged.
+- **Commits**: 2 substantive on `topic/v0.8.3-valgrind-and-cross-verify`.
+- **Code delta**: 3 files changed, +22 / -6 lines.
+
 ## v0.8.2-stm32f4-mandelbrot — 2026-05-17 (STM32F4 bare-metal port + Mandelbrot demo)
 
 **Tag:** `v0.8.2-stm32f4-mandelbrot`
