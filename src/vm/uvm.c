@@ -1912,6 +1912,18 @@ dispatch:
 
 halt_error:
     /* Error path: strand is now dead. */
+    /* v0.8.2 bring-up debug: every halt_error silently kills the strand.
+     * The watcher-body warning gates on fatal_status == UEXEC_THROW which
+     * the generic HALT path doesn't set, so body errors look like clean
+     * completions to the host.  Print last_errmsg here so we can see what
+     * actually killed the strand.  Remove before tag. */
+    if (vm && vm->writer_fn && vm->last_errmsg[0] != '\0') {
+        vm->writer_fn(vm->writer_ud, "halt", 4,
+                      vm->last_errmsg,
+                      urbi_strlen(vm->last_errmsg),
+                      0);
+        vm->writer_fn(vm->writer_ud, "halt", 4, "\r\n", 2, 0);
+    }
     s->state = USTRAND_STATE_DEAD;
     steps_consumed++;
     goto exit_strand;
