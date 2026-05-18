@@ -1,0 +1,45 @@
+# Milestone: v0.8.2 (STM32F4 Mandelbrot demo)
+# Covers: polled-flag abort / restart pattern used by the Mandelbrot demo
+#         (examples/stm32f4/mandelbrot/mandelbrot.u render_level + render_all).
+#         A long-running compute loop polls a Realm-global flag once per
+#         iteration; an `at` watcher flips the flag mid-loop in response to
+#         a side-effect of the compute itself; the loop terminates early
+#         on the next poll; an outer "restart" cycle resets the flag and
+#         re-enters the same compute, demonstrating the restart half of
+#         the pattern works too.
+#
+# Why a fixture: the production version of this pattern depends on the
+# scheduler delivering a safepoint between each iteration of the compute's
+# `while` loop AND on the watcher dispatch picking up the dirty cond
+# during that safepoint.  Both halves are exercised by individual
+# unit tests but the end-to-end "compute body writes -> watcher sees ->
+# flag visible on next iter" interaction is what would regress most
+# silently if the loader-strand or watcher-eval paths changed.  The
+# Mandelbrot demo flips the flag from an ISR (button) or a host-timer
+# (gyro) -- both inject events that fire the watcher between strand
+# steps -- and the v1.0 .chk runner has no clean equivalent.  Driving
+# the cond off the compute's own writes is the closest pure-urbi
+# analogue and exercises the same dispatch path.
+
+var counter = 0
+var abort_flag = false
+at (Realm.counter > 3) Realm.abort_flag = true
+var compute = function() { var i = 0; while (i < 10) { if (Realm.abort_flag == false) { Realm.counter = Realm.counter + 1 } else { i = 10 }; i = i + 1 } }
+compute()
+Realm.counter
+Realm.abort_flag
+Realm.counter = 0
+Realm.abort_flag = false
+compute()
+Realm.counter
+[00000000] 0
+[00000000] false
+[00000000] nil
+[00000000] <?>
+[00000000] nil
+[00000000] 4
+[00000000] true
+[00000000] 0
+[00000000] false
+[00000000] nil
+[00000000] 4
