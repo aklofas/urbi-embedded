@@ -552,16 +552,9 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     uint8_t    pad_watchdog[3];        /* padding; zeroed */
 
     /* === M6 Phase 3 stdlib state ===
-     * stdlib_closures: linked list of native UClosures registered by
-     *   urbi_object_root_register (and future stdlib boot phases) AND of
-     *   user-script UClosures migrated from strand closure_lists at run
-     *   exit (see uvm_run.c).  Both flavours share the same VM-lifetime
-     *   ownership and are reclaimed via urbi_vm_destroy's single sweep.
-     * stdlib_upvalues: linked list of heapified UUpvalCells migrated from
-     *   strand closed_cells at run exit.  Closures that survive the run
-     *   (now on stdlib_closures) reference these upvals; freeing them at
-     *   run-end would dangle the closure's upvals[] array.  Threaded via
-     *   UUpvalCell.next; freed at urbi_vm_destroy.
+     * stdlib_closures + stdlib_upvalues: deleted at v0.8.4 Step C-3.
+     *   UClosure and UUpvalCell are GC-managed since Step C-2; no
+     *   VM-level linked lists needed for lifetime.
      * stdlib_module: heap-allocated UModule deserialized from the baked
      *   urbi_stdlib_bytecode blob during urbi_stdlib_boot.  NULL when the
      *   blob is empty (Phase 4 baseline) or boot has not run.  Owned by
@@ -570,8 +563,6 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      *   successful boot; subsequent calls are no-ops.
      * (last_recv removed at v1.6 S42 — method receivers are now passed
      *  via R[A+1] under OP_CALL's method flag, not a global side channel.) */
-    UClosure   *stdlib_closures;
-    UUpvalCell *stdlib_upvalues;
     /* stdlib_protos and stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root).
      * The whole-root_proto rescue path (vm->rescued_protos) is the sole mechanism. */
     /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
@@ -766,10 +757,9 @@ const char *uvm_error_name(UVMError code);
  * header needed. */
 
 /* Heapify all open upvalue cells whose stack address is >= threshold.
- * Removed cells are appended to *closed_list.
+ * v0.8.4 Step C-3: closed_list parameter removed; UUpvalCell is GC-managed.
  * Called by OP_CLOSE, OP_RET, and urbi_unwind. */
-void vm_close_upvalues(struct UStrand *s, const UValue *threshold,
-                       UUpvalCell **closed_list);
+void vm_close_upvalues(struct UStrand *s, const UValue *threshold);
 
 #ifdef __cplusplus
 }

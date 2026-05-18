@@ -118,8 +118,6 @@ strand_setup_for_getslot(UStrand *s, UVM *vm,
     s->module_instance = mi;
     s->frame_count     = 0;
     s->open_upvals     = NULL;
-    s->closure_list    = NULL;
-    s->closed_cells    = NULL;
     s->out_slot        = NULL;
 
     /* R[0] = the object receiver. */

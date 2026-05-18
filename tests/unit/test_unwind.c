@@ -79,8 +79,6 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     umodule_proto_refcount_inc(s->root_proto);
     s->frame_count   = 0;
     s->open_upvals   = NULL;
-    s->closure_list  = NULL;
-    s->closed_cells  = NULL;
     s->out_slot      = NULL;
     s->pending_unwind = UEXEC_OK;
 

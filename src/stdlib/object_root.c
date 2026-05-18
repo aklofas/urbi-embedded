@@ -25,6 +25,7 @@
 #include "stdlib/object_root.h"
 
 #include "gc/ugc.h"                /* UTYPE_CLOSURE */
+#include "gc/ugc_incremental.h"    /* urbi_gc_alloc */
 #include "module/umodule.h"        /* UValue, UVAL_*, UClosure typedef */
 #include "object/uobject.h"        /* urbi_object_*, urbi_object_root */
 #include "object/ushape.h"         /* urbi_shape_root */
@@ -34,7 +35,7 @@
 #include "urbi/types.h"            /* UErrCode, urbi_make_nil */
 #include "urbi/urbi.h"             /* URBI_OK, URBI_ERR_OOM */
 #include "value/uintern.h"         /* ustr_intern */
-#include "vm/uvm.h"                /* UVM, vm->stdlib_closures */
+#include "vm/uvm.h"                /* UVM, urbi_vm_destroy */
 #include "object/uic.h"            /* urbi_slot_get_slow */
 
 #include <stdint.h>
@@ -90,29 +91,20 @@ urbi_native_closure_create(UVM *vm, urbi_native_method_fn fn)
 {
     if (vm == NULL || vm->alloc_fn == NULL || fn == NULL) return NULL;
 
-    /* Native closures never carry upvals; the trailing flexible array gets
-     * one slot like the minimum bytecode closure (it is unread when
-     * nupvals == 0, but the allocator's sizing convention assumes it). */
+    /* v0.8.4 Step C-3: native closures are GC-managed via urbi_gc_alloc,
+     * same as bytecode closures (Step C-2).  The GC sweep + uclosure_destroy
+     * finalizer reclaim them; no manual free or stdlib_closures threading. */
     size_t nbytes = sizeof(UClosure);
-    UClosure *cl = (UClosure *)vm->alloc_fn(NULL, nbytes, vm->alloc_ud);
-    if (cl == NULL) return NULL;
-    urbi_zero(cl, nbytes);
+    UCell *c = urbi_gc_alloc(vm, nbytes, UTYPE_CLOSURE);
+    if (c == NULL) return NULL;
+    UClosure *cl = (UClosure *)c;
 
-    /* Cell header — well-formed for write-barrier safety even though native
-     * closures (like ordinary closures) are not on vm->all_cells_head; they
-     * are owned by vm->stdlib_closures (M6 Phase 3) and freed at
-     * urbi_vm_destroy. */
-    cl->cell.type_tag = UTYPE_CLOSURE;
-    cl->cell.gc_byte  = vm->current_white;
-    cl->proto         = NULL;
-    cl->proto_inst    = NULL;
-    cl->upvals[0]     = NULL;
-    cl->nupvals       = 0;
-    cl->native_fn     = fn;
-
-    /* Thread onto vm-level stdlib closure list. */
-    cl->next_alloc       = vm->stdlib_closures;
-    vm->stdlib_closures  = cl;
+    /* gc_byte and type_tag are set by urbi_gc_alloc.  Proto = NULL means
+     * uclosure_destroy skips uproto_root_of (no proto to dec-ref). */
+    cl->proto      = NULL;
+    cl->proto_inst = NULL;
+    cl->nupvals    = 0;
+    cl->native_fn  = fn;
     return cl;
 }
 

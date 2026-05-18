@@ -550,7 +550,7 @@ dispatch:
                 HALT();
             }
             UProto *child_proto = nested_arr[bx];
-            UClosure *cl = vm_alloc_closure(vm, child_proto, &s->closure_list);
+            UClosure *cl = vm_alloc_closure(vm, child_proto);
             if (cl == NULL) {
                 vm->last_error = UVM_OOM;
                 vm_format_oom(vm, sizeof(UClosure));
@@ -629,11 +629,9 @@ dispatch:
                     if (in_stack) {
                         UUpvalCell *uvc = vm_open_upvalue(vm, s, &s->R[src_idx]);
                         if (uvc == NULL) {
-                            /* VM-005: cl is at head of s->closure_list (prepended
-                             * by vm_alloc_closure).  Unlink before freeing so
-                             * subsequent walks do not dereference freed memory. */
-                            s->closure_list = cl->next_alloc;
-                            vm->alloc_fn(cl, 0, vm->alloc_ud);
+                            /* VM-005: Step C-3: cl is GC-managed; do NOT free via
+                             * alloc_fn (double-free hazard post-C-2).  The GC sweep
+                             * reclaims it when it becomes unreachable after HALT. */
                             vm->last_error = UVM_OOM;
                             vm_format_oom(vm, sizeof(UUpvalCell));
                             HALT();
@@ -647,9 +645,7 @@ dispatch:
                                          ? s->frames[s->frame_count - 1].closure
                                          : s->entry_closure;
                         if (par_cl == NULL || src_idx >= par_cl->nupvals) {
-                            /* VM-005: same unlink-before-free as the OOM arm. */
-                            s->closure_list = cl->next_alloc;
-                            vm->alloc_fn(cl, 0, vm->alloc_ud);
+                            /* Step C-3: GC-managed closure; no alloc_fn free needed. */
                             vm->last_error = UVM_TYPE_ERROR;
                             vm_format_type_error_msg(vm, "CLOSURE: upvalue re-capture out of range");
                             HALT();
@@ -665,7 +661,7 @@ dispatch:
 
         CASE(OP_CLOSE) {
             /* ABC: heapify all open upvalue cells at R >= R[A]. */
-            vm_close_upvalues(s, &s->R[uinstr_a(*s->pc)], &s->closed_cells);
+            vm_close_upvalues(s, &s->R[uinstr_a(*s->pc)]);
             NEXT();
         }
 

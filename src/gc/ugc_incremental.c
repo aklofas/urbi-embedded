@@ -693,14 +693,10 @@ gc_shade_gray(UVM *vm, UCell *cell)
      *      walk_utag for chain shading sets the color flag (idempotency)
      *      but the work-list push is correctly a no-op.
      *
-     *   3. UClosure cells (vm_alloc_closure): direct vm->alloc_fn alloc
-     *      with a well-formed UCell header for write-barrier safety, but
-     *      NOT enrolled on all_cells_head.  Lifetime is bound to the
-     *      strand closure_list (legacy free-list).  GC-managed promotion
-     *      is tracked as a follow-up M4 task at vm_alloc_closure() — see
-     *      its docstring.  Until then, gc_shade_gray on a UClosure cell
-     *      sets the color but performs a silent NULL-return for the
-     *      work-list push.
+     *   3. UClosure / UUpvalCell cells (vm_alloc_closure / vm_open_upvalue):
+     *      fully GC-managed since v0.8.4 Step C-2 (enrolled on all_cells_head
+     *      via urbi_gc_alloc with UTYPE_CLOSURE / UTYPE_UPVAL_CELL).  The
+     *      legacy strand closure_list free-list was deleted at Step C-3.
      *
      * Pre-GC-009-fix shape: silent `if (!node) return;` covered all three
      * cases but obscured which were intentional.  The audit asked for

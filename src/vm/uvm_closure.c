@@ -16,26 +16,22 @@
 
 /* Allocate a UClosure that can hold `nupvals` upvalue cell pointers.
  *
- * v0.8.4 Option B Step C-2: UClosure is now GC-managed.  urbi_gc_alloc
+ * v0.8.4 Option B Step C-2/C-3: UClosure is GC-managed.  urbi_gc_alloc
  * zeroes the payload, sets type_tag = UTYPE_CLOSURE, sets
  * gc_byte = current_white, and threads the cell onto vm->all_cells_head
  * with a sidecar.  The type descriptor registered at Step B carries the
  * walk_uclosure + uclosure_destroy finalizer so the GC sweep handles
  * both marking and freeing.
  *
- * list_head threading is preserved for Step C-2 so callers still pass
- * &s->closure_list; the chain is dormant (no code reads it for lifetime
- * purposes after Step C-2).  Step C-3 deletes closure_list + the param.
+ * The legacy list_head / closure_list parameter was deleted at Step C-3.
  *
  * Returns NULL on OOM. */
-UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
-                           UClosure **list_head) {
+UClosure *vm_alloc_closure(UVM *vm, UProto *proto) {
     uint8_t nup = proto->nupvals;
     /* sizeof(UClosure) already includes 1 pointer in upvals[1]; add nup-1 more. */
     size_t extra = (nup > 1U) ? (size_t)(nup - 1U) * sizeof(UUpvalCell *) : 0U;
     size_t nbytes = sizeof(UClosure) + extra;
 
-    /* v0.8.4 Option B Step C-2: promote to GC-managed allocation. */
     UCell *c = urbi_gc_alloc(vm, nbytes, UTYPE_CLOSURE);
     if (c == NULL) return NULL;
     UClosure *cl = (UClosure *)c;
@@ -48,14 +44,6 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto,
      * Paired with the dec in uclosure_destroy (the finalizer). */
     umodule_proto_refcount_inc(uproto_root_of(proto));
     cl->nupvals    = nup;
-
-    /* list_head threading is dormant — reachability via strand_walk_roots
-     * (entry_closure, frames[i].closure) handles lifetime.  Kept in
-     * signature until Step C-3 deletes it. */
-    if (list_head != NULL) {
-        cl->next_alloc = *list_head;
-        *list_head     = cl;
-    }
     return cl;
 }
 
@@ -85,11 +73,11 @@ UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot) {
 }
 
 /* Heapify all open cells whose stack address is >= threshold.
- * Removed cells are appended to *closed_list (for per-run bulk free at halt).
- * Called by OP_CLOSE, OP_RET, and urbi_unwind.
+ * v0.8.4 Step C-3: closed_list parameter removed; UUpvalCell is GC-managed.
+ * Heapified cells are reachable via any closure's upvals[] array (GC root);
+ * no per-run bulk list needed.  Called by OP_CLOSE, OP_RET, and urbi_unwind.
  * Declared in uvm.h for uunwind.c access. */
-void vm_close_upvalues(UStrand *s, const UValue *threshold,
-                       UUpvalCell **closed_list) {
+void vm_close_upvalues(UStrand *s, const UValue *threshold) {
     UUpvalCell **link = &s->open_upvals;
     while (*link != NULL) {
         UUpvalCell *cell = *link;
@@ -97,22 +85,14 @@ void vm_close_upvalues(UStrand *s, const UValue *threshold,
             cell->u.value = *cell->u.stack_ptr;
             cell->on_heap  = true;
             *link = cell->next;
-            /* Thread into closed_list using the now-free next pointer. */
-            cell->next = *closed_list;
-            *closed_list = cell;
+            cell->next = NULL;  /* no longer chained on open_upvals */
         } else {
             link = &cell->next;
         }
     }
 }
 
-/* v0.8.4 Option B Step C-2: UUpvalCells are GC-managed; sweep reclaims them.
- * This function used to alloc_fn-free every cell on the open_upvals chain;
- * now it only clears the head pointer so the strand no longer reaches them
- * as GC roots (after which the next sweep collects them if unreachable).
- * Step C-3 deletes this function outright once open_upvals management is
- * fully GC-driven and the call sites are updated. */
-void vm_free_open_upvalues(UVM *vm, UStrand *s) {
-    (void)vm;
-    s->open_upvals = NULL;
-}
+/* vm_free_open_upvalues deleted at v0.8.4 Step C-3.
+ * UUpvalCells are GC-managed; open_upvals is cleared directly at the one
+ * remaining call site (ustrand_destroy via release_strand_resource_chain).
+ * Declaration in uvm_internal.h removed simultaneously. */

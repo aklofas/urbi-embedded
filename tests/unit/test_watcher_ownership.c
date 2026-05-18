@@ -61,22 +61,18 @@ count_alloc(void *ptr, size_t n, void *ud)
  * T42 / WATCH-001: pool_free aliased closure ownership clear
  * ============================================================ */
 
-/* pool_free_aliased_closure_sets_only_owning_slot
+/* pool_free_does_not_free_gc_managed_closure
  *
- * After pool_free runs on a watcher with URBI_WATCHER_OWNS_BODY set, the
- * just-freed slot's flags must NOT carry OWNS_BODY any more — even before
- * the slot is recycled by pool_alloc.  This is the defensive-idempotency
- * invariant for WATCH-001.
+ * After pool_free runs on a watcher that references a closure, pool_free
+ * must NOT call alloc_fn to free the closure — UClosure lifetime is
+ * GC-managed since v0.8.4 Step C-2.  Manual alloc_fn calls would double-free.
  *
- * v0.8.4 Option B Step C-2: UClosure is now GC-managed.  pool_free NO
- * LONGER calls alloc_fn(closure, 0, ...) — the GC sweep owns closure
- * lifetime.  The WATCH-001 contract changes: pool_free must still NULL
- * w->body and clear OWNS_BODY (so the freelist slot is idempotent and
- * the slab-walk invariants hold), but must NOT free the closure itself.
- *
- * This test is updated to verify the new contract: zero alloc_fn free
- * calls for the closure, but the NULL + bit-clear still happen. */
-UTEST(pool_free_aliased_closure_sets_only_owning_slot)
+ * v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags deleted.  pool_free no longer
+ * tracks per-slot ownership; the WATCH-001 invariant simplifies to: recycle
+ * the slot back to the freelist without touching closure memory via alloc_fn.
+ * URBI_WATCHER_ACTIVE is still cleared; that is the only flag change pool_free
+ * makes (allowing the WATCH-002 slab-walk to detect recycled slots). */
+UTEST(pool_free_does_not_free_gc_managed_closure)
 {
     UVM vm;
     CountAlloc spy = {0, 0, -1};
@@ -87,16 +83,12 @@ UTEST(pool_free_aliased_closure_sets_only_owning_slot)
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w != NULL);
 
-    /* Manually attach a raw (non-GC) closure pointer and set OWNS_BODY.
-     * We use a stack-local UClosure to model the "watcher references a
-     * closure" state WITHOUT enrolling it in the GC heap (which would
-     * cause a double-free when urbi_vm_destroy runs the sweep).  The
-     * point of the test is the OWNS_* bit + NULL-out behaviour of pool_free,
-     * not the free-call count. */
+    /* Attach a stack-local closure pointer to model the watcher-holds-closure
+     * state WITHOUT enrolling it in the GC heap (avoiding a double-free at
+     * urbi_vm_destroy sweep time). */
     UClosure fake_body;
     memset(&fake_body, 0, sizeof(fake_body));
     w->body = &fake_body;
-    w->flags |= URBI_WATCHER_OWNS_BODY;
 
     /* Snapshot the slab slot — pool_free returns w to the freelist, but the
      * underlying memory remains valid as the slab is one allocation. */
@@ -105,19 +97,11 @@ UTEST(pool_free_aliased_closure_sets_only_owning_slot)
 
     urbi_watcher_unregister_internal(&vm, w);
 
-    /* v0.8.4 Step C-2: pool_free must NOT free GC-managed closures via
-     * alloc_fn.  Zero closure-free calls expected. */
+    /* pool_free must NOT free GC-managed closures via alloc_fn. */
     UASSERT_EQ(0, spy.free_calls - frees_before);
 
-    /* The slot pointer must be NULL'd. */
-    UASSERT(slot->body == NULL);
-
-    /* Defensive-idempotency: the OWNS_BODY bit must be cleared in the
-     * post-pool_free state so the slab-walk (WATCH-002) can distinguish
-     * allocated-but-orphaned slots from recycled ones. */
-    UASSERT_EQ(0u, (unsigned)(slot->flags & URBI_WATCHER_OWNS_BODY));
-    UASSERT_EQ(0u, (unsigned)(slot->flags & URBI_WATCHER_OWNS_COND));
-    UASSERT_EQ(0u, (unsigned)(slot->flags & URBI_WATCHER_OWNS_ONLEAVE));
+    /* URBI_WATCHER_ACTIVE must be cleared (WATCH-002 slab-walk invariant). */
+    UASSERT_EQ(0u, (unsigned)(slot->flags & URBI_WATCHER_ACTIVE));
 
     urbi_vm_destroy(&vm);
 }
@@ -282,32 +266,23 @@ UTEST(waituntil_immediate_wake_state_explicit)
 }
 
 /* ============================================================
- * T46 / WATCH-015: aliased proto closure unlink
+ * T46 / WATCH-015: aliased closure no-double-free
  * ============================================================
  *
- * strand_closure_unlink is file-static — we cannot call it directly.  We
- * exercise the no-double-free guarantee through the install pathway:
- * two watchers whose body closures share the same pointer.
+ * Two watchers whose body fields share the same closure pointer.
+ * Unregistering both must produce zero alloc_fn closure-free calls.
  *
- * v0.8.4 Option B Step C-2: UClosure is GC-managed.  pool_free no longer
- * calls alloc_fn(closure, 0, ...) on OWNS_BODY closures — the GC sweep
- * owns closure lifetime.  The test contract changes accordingly:
- *
- * Under Option B, OWNS_BODY on w1 means "w1 is the logical owner" (flags
- * for idempotency / slab-walk), but NOT "w1 will call alloc_fn to free".
- * pool_free on w1 clears OWNS_BODY and NULLs body; pool_free on w2 (which
- * never had OWNS_BODY) is a no-op on the body field.  In both cases,
- * zero alloc_fn free calls for the closure — no double-free possible. */
-UTEST(aliased_proto_closure_unlink_no_double_detach)
+ * v0.8.4 Step C-3: URBI_WATCHER_OWNS_* + strand_closure_unlink deleted.
+ * UClosure lifetime is GC-managed; pool_free never calls alloc_fn on
+ * closure fields regardless of which watchers reference them. */
+UTEST(aliased_closure_no_double_free)
 {
     UVM vm;
     CountAlloc spy = {0, 0, -1};
     urbi_vm_init(&vm, count_alloc, &spy);
 
-    /* Stack-local closure shared by both watchers.  We use a stack local
-     * (not a GC-allocated cell) to avoid the GC sweep trying to reclaim it
-     * at urbi_vm_destroy.  The OWNS_BODY aliasing contract under Option B is
-     * purely about flag/NULL clearing — not about who calls alloc_fn. */
+    /* Stack-local closure shared by both watchers — not GC-enrolled to
+     * avoid a double-free at urbi_vm_destroy sweep time. */
     UClosure fake_body;
     memset(&fake_body, 0, sizeof(fake_body));
 
@@ -317,25 +292,16 @@ UTEST(aliased_proto_closure_unlink_no_double_detach)
         &vm, UWATCHER_AT, NULL, NULL, NULL, NULL, NULL, 0);
     UASSERT(w1 != NULL && w2 != NULL);
 
-    /* Mirror the production state: w1 is the recorded owner, w2 references
-     * the same closure but does NOT own it (strand_closure_unlink would
-     * have returned 0 for w2). */
     w1->body = &fake_body;
-    w1->flags |= URBI_WATCHER_OWNS_BODY;
     w2->body = &fake_body;
-    /* w2->flags intentionally NOT given OWNS_BODY. */
 
     int frees_before = spy.free_calls;
 
-    /* Unregister w1 first — pool_free clears OWNS_BODY + NULLs body; no
-     * alloc_fn free (GC owns the closure). */
+    /* Unregister both — pool_free must NOT call alloc_fn on the closure. */
     urbi_watcher_unregister_internal(&vm, w1);
-    /* Unregister w2 — OWNS_BODY was never set; body field untouched by
-     * pool_free (w2->body may be a dangling stack pointer at this point,
-     * but pool_free does not dereference it). */
     urbi_watcher_unregister_internal(&vm, w2);
 
-    /* v0.8.4 Step C-2: zero alloc_fn free calls for the closure. */
+    /* Zero closure-free calls: GC owns closure lifetime. */
     UASSERT_EQ(0, spy.free_calls - frees_before);
 
     urbi_vm_destroy(&vm);
@@ -383,16 +349,16 @@ void
 test_watcher_ownership_suite(void)
 {
     printf("test_watcher_ownership\n");
-    utest_run("pool_free_aliased_closure_sets_only_owning_slot",
-              pool_free_aliased_closure_sets_only_owning_slot);
+    utest_run("pool_free_does_not_free_gc_managed_closure",
+              pool_free_does_not_free_gc_managed_closure);
     utest_run("tag_less_at_event_watcher_freed_on_pool_destroy",
               tag_less_at_event_watcher_freed_on_pool_destroy);
     utest_run("scratch_alloc_fail_signals_throw_not_silent_null",
               scratch_alloc_fail_signals_throw_not_silent_null);
     utest_run("waituntil_immediate_wake_state_explicit",
               waituntil_immediate_wake_state_explicit);
-    utest_run("aliased_proto_closure_unlink_no_double_detach",
-              aliased_proto_closure_unlink_no_double_detach);
+    utest_run("aliased_closure_no_double_free",
+              aliased_closure_no_double_free);
     utest_run("unknown_watcher_mode_does_not_change_state_in_release",
               unknown_watcher_mode_does_not_change_state_in_release);
 }

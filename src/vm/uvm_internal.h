@@ -47,8 +47,7 @@ void vm_format_oom(UVM *vm, size_t nbytes);
 
 /* --- From uvm_closure.c --- */
 
-UClosure   *vm_alloc_closure(UVM *vm, UProto *proto, UClosure **list_head);
+UClosure   *vm_alloc_closure(UVM *vm, UProto *proto);
 UUpvalCell *vm_open_upvalue(UVM *vm, UStrand *s, UValue *slot);
-void        vm_free_open_upvalues(UVM *vm, UStrand *s);
 
 #endif /* UVM_INTERNAL_H */

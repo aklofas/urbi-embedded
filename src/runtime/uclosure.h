@@ -61,12 +61,9 @@ _Static_assert(sizeof(UUpvalCell) == 32,
 #endif
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
- * Heap-allocated by OP_CLOSURE; lives until end-of-run via the strand's
- * pre-GC closure_list (threaded by next_alloc).  The cell header is
- * initialised (type_tag + gc_byte) so the upvalue write barrier can
- * safely cast UClosure* → UCell*, but the closure is NOT yet enrolled on
- * vm->all_cells_head — the strand-local closure_list still owns lifetime
- * pre-GC (full GC enrollment deferred to v1.x).
+ * Heap-allocated by OP_CLOSURE via urbi_gc_alloc; the GC sweep +
+ * uclosure_destroy finalizer reclaim each closure when it becomes unreachable.
+ * v0.8.4 Step C-3: next_alloc (pre-GC free-list link) deleted.
  *
  * proto_inst is bound end-to-end by the M4 follow-up landed on `main`
  * 2026-05-03: OP_CLOSURE writes
@@ -76,9 +73,7 @@ _Static_assert(sizeof(UUpvalCell) == 32,
  * not occur in production paths from urbi_vm_run / urbi_run_chunk).
  *
  * The upvals[] array is a trailing flexible member — allocate
- * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*).
- * `next_alloc` threads all closures allocated in one run into a free list
- * so they can be reclaimed at halt (pre-GC bookkeeping). */
+ * sizeof(UClosure) + (nupvals - 1) * sizeof(UUpvalCell*). */
 /* Native-method extension typedef — promoted to the public API at v0.7.1
  * (<urbi/urbi.h>).  The definition is identical in both locations; the
  * guard URBI_NATIVE_METHOD_FN_DEFINED prevents a duplicate-typedef error
@@ -131,7 +126,7 @@ struct UClosure {
      * Lifetime: UModuleInstance objects are GC-managed and remain valid
      * for the VM's lifetime once created. */
     struct UModuleInstance *origin_module_instance;
-    struct UClosure  *next_alloc; /* legacy free-list link (lifetime owner pre-GC) */
+    /* next_alloc deleted at v0.8.4 Step C-3: pre-GC free-list link no longer needed. */
     /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of
      * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on

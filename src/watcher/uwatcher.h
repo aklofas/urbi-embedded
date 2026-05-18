@@ -56,30 +56,9 @@ struct UEvent;   /* defined in event/uevent.h; used only as pointer here */
  * pending_refire_count + max_refire_queue uint8_t fields below — see the
  * URBI_WATCHER_REFIRE_QUEUE_DEFAULT discussion).  Available for reuse. */
 #define URBI_WATCHER_BODY_FIRED_SINCE_ONLEAVE  0x10U  /* body fired at least once since last onleave check (spec #2 §5.1) */
-/* Closure-ownership bits: set by install_watcher_runtime / install_at_event_runtime
- * when strand_closure_unlink confirms the heap closure was on strand.closure_list
- * AND its proto was detached from module->nested[].  Each bit means the watcher
- * owns BOTH the closure struct AND its detached proto (sub-buffers + struct);
- * pool_free frees each owned (closure, proto) pair via vm->alloc_fn.
- * The three bits are independent — any subset (including none) may be set. */
-/* OWNS_* flags: watcher owns BOTH the UClosure struct AND its detached
- * UProto.  pool_free frees each owned (closure, proto) pair via
- * vm->alloc_fn.  The three bits are independent — any subset may be set.
- *
- * v0.7.3 cascade-fix gating: strand_closure_unlink only sets these flags
- * when the install ran at `s->frame_count == 0` (the chunk-top frame).
- * Installs that occur inside a callee (frame_count > 0) leave both cl and
- * proto with their original owners — `cl` stays on the strand's
- * closure_list, the proto stays in the module's nested[] — because the
- * callee may re-execute its OP_CLOSURE against the same nested[] slot.
- * Detaching at the first install would null nested[k], and the next
- * invocation's OP_CLOSURE would dispatch into a freed proto.  See
- * strand_closure_unlink (src/watcher/uwatcher_install.c) for the full
- * rationale + the in-function-body WAITUNTIL lifecycle that this design
- * still supports correctly (waiter strand outlives the watcher). */
-#define URBI_WATCHER_OWNS_COND                 0x20U  /* condition closure + proto owned by watcher; pool_free must free both */
-#define URBI_WATCHER_OWNS_BODY                 0x40U  /* body closure + proto owned by watcher; pool_free must free both */
-#define URBI_WATCHER_OWNS_ONLEAVE              0x80U  /* onleave closure + proto owned by watcher; pool_free must free both */
+/* 0x20U, 0x40U, 0x80U — formerly URBI_WATCHER_OWNS_COND/_BODY/_ONLEAVE.
+ * Deleted at v0.8.4 Step C-3: UClosure lifetime is GC-managed; watcher
+ * install no longer needs to take manual ownership of closures. */
 
 /* === Exhaust-policy constants (M5 dispatch; field present at M3) === */
 

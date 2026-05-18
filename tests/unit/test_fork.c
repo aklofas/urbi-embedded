@@ -96,8 +96,6 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
     umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     s->frame_count = 0;
     s->open_upvals = NULL;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
     if (out_result) {
         s->out_slot = out_result;
     }

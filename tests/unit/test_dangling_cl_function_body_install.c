@@ -64,7 +64,7 @@ UTEST(dangling_cl_at_event_from_function_body)
      * returns, the chunk-strand continues; chunk_strand eventually dies
      * via urbi_vm_run cleanup.  At that point the at-handler's body
      * UClosure (allocated by OP_CLOSURE inside install()'s frame) is
-     * still anchored on chunk_strand->closure_list and gets freed. */
+     * GC-managed and kept alive by the watcher's reference. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "Realm.fired = 0;"
         "var install = function () {"

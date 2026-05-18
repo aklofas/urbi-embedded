@@ -87,30 +87,19 @@ strand_unlink_from_tags(UStrand *s)
     }
 }
 
-/* === CHSTR-029: release_strand_resource_chain (v0.8.4 Option B Step C-2) ===
+/* === CHSTR-029: release_strand_resource_chain (v0.8.4 Option B Step C-3) ===
  *
- * Clear the three head pointers on the strand without touching the closures /
- * upval cells they reference.  Both UClosure and UUpvalCell are GC-managed
- * since Step C-2; the GC sweep reclaims them when they become unreachable
- * from any root.
- *
- * Pre-C-2 this function freed (transient strands) or rescued-to-vm-lifetime
- * (persistent strands) the entire closure_list + closed_cells + open_upvals
- * chains.  Both mechanisms are now redundant — closures that escape via
- * realm globals / atom protos / watcher fields are kept alive transitively
- * through those root paths.  Closures that don't escape become unreachable
- * and GC-collectable.
- *
- * Step C-3 will delete the closure_list / closed_cells fields themselves
- * and inline this function (it becomes a one-liner clearing s->open_upvals,
- * with the other two clears no longer needed). */
+ * Clear open_upvals head pointer on the strand.  UClosure and UUpvalCell are
+ * GC-managed since Step C-2; the GC sweep reclaims them when they become
+ * unreachable from any root.  closure_list + closed_cells were deleted at
+ * Step C-3.  open_upvals is cleared here so the GC root walk for this strand
+ * stops following the chain (cells are still reachable via closures' upvals[]
+ * arrays if live). */
 static void
 release_strand_resource_chain(UVM *vm, UStrand *s)
 {
     (void)vm;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
-    s->open_upvals  = NULL;
+    s->open_upvals = NULL;
 }
 
 void
@@ -455,8 +444,6 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     s->cur_consts = s->root_proto->constants;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
     s->out_slot     = NULL;  /* caller may set before first urbi_step */
 
     /* Create a UModuleInstance for IC wiring (per-(vm, module) cache tier).
@@ -556,8 +543,6 @@ urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)
     s->cur_consts = entry->proto->constants;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
     s->out_slot     = NULL;
     return 0;
 }

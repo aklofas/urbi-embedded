@@ -3,15 +3,15 @@
  * upvalue cascade correctness across REPL sessions and emit paths.
  *
  * Root cause (audit 2026-05-10): closures stored as realm-globals via
- * setSlot / var-decl at chunk-top are migrated to vm->stdlib_closures at
- * run-end, but their UProto objects are owned by the stack-local UModule in
- * urbi_repl_eval and freed by umodule_destroy immediately after.  The next
- * REPL session that calls the closure dereferences proto->instructions —
- * a dangling pointer — producing a segfault.
+ * setSlot / var-decl at chunk-top were migrated to vm->stdlib_closures at
+ * run-end (pre-v0.8.4), but their UProto objects were owned by the stack-local
+ * UModule in urbi_repl_eval and freed by umodule_destroy immediately after.
+ * The next REPL session that called the closure dereferenced proto->instructions
+ * — a dangling pointer — producing a segfault.
  *
- * The fix: urbi_repl_eval calls urbi_steal_repl_protos(vm, &module) before
- * umodule_destroy.  Stolen protos are moved to vm->stdlib_protos and freed
- * at urbi_vm_destroy.
+ * The fix (v0.8.1): urbi_repl_eval calls rescued_protos mechanism so root
+ * protos outlive the UModule.  UClosure and UUpvalCell are GC-managed since
+ * v0.8.4 Step C-2; vm->stdlib_closures was deleted at Step C-3.
  *
  * Tests in this file exercise:
  *   1. Cross-session call (the primary regression case)

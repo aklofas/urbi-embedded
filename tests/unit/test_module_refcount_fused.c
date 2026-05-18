@@ -91,14 +91,14 @@ UTEST(strand_bind_bumps_root_proto)
  *
  * OP_FORK_JOIN allocates a closure for the `& 2` branch via vm_alloc_closure.
  * Under Variant B, that closure bumps root_proto.refcount via uproto_root_of.
- * When the loader strand dies, its closure_list is migrated to vm->stdlib_closures
- * (persistent-strand policy in release_strand_resource_chain).  After draining
- * child strands, root_proto.refcount > 0 because the closure on stdlib_closures
- * still holds a ref.
+ * UClosure is GC-managed (v0.8.4 Step C-2); vm->stdlib_closures was deleted
+ * at Step C-3.  After draining child strands, the GC sweep reclaims the
+ * closure when it becomes unreachable; uproto_root_of dec is called by the
+ * uclosure_destroy finalizer.
  *
  * The correct full lifecycle: umodule_destroy triggers rescue (root rescued to
- * vm->rescued_protos), vm_destroy closure sweep decs via uproto_root_of (§3.7
- * ordering invariant), then rescued_protos sweep frees root.  No UAF. */
+ * vm->rescued_protos), GC sweep decs via uproto_root_of (§3.7 ordering
+ * invariant), then rescued_protos sweep frees root.  No UAF. */
 UTEST(op_fork_child_bumps_root_proto)
 {
     UVM vm;
@@ -129,9 +129,9 @@ UTEST(op_fork_child_bumps_root_proto)
         if (vm.strand_runnable_count == 0) break;
     }
 
-    /* Under Variant B: the closure for `& 2` was migrated to vm->stdlib_closures
-     * (persistent-strand policy).  That closure bumped root_proto.refcount via
-     * uproto_root_of, so refcount > 0 at this point.  The full lifecycle
+    /* Under Variant B: the closure for `& 2` bumped root_proto.refcount via
+     * uproto_root_of at alloc time.  UClosure is GC-managed (v0.8.4 Step C-2);
+     * vm->stdlib_closures was deleted at Step C-3.  The full lifecycle
      * (umodule_destroy + vm_destroy) must complete without UAF. */
 
     uarena_destroy(&arena);
@@ -195,9 +195,9 @@ UTEST(closure_alloc_bumps_root_via_backptr)
     uarena_init(&arena, 4096);
 
     /* Closure alloc: vm_alloc_closure bumps root_proto.refcount via uproto_root_of.
-     * The closure ends up on vm->stdlib_closures (persistent-strand policy in
-     * release_strand_resource_chain).  umodule_destroy rescues root_proto;
-     * vm_destroy completes the lifecycle per §3.7 ordering. */
+     * UClosure is GC-managed (v0.8.4 Step C-2; vm->stdlib_closures deleted at C-3).
+     * umodule_destroy rescues root_proto; vm_destroy completes the lifecycle
+     * per §3.7 ordering. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "var f = function () { 1 }; f()",
         NULL);
@@ -220,9 +220,9 @@ UTEST(closure_alloc_bumps_root_via_backptr)
      * The slot-implicit ref was dropped; no refcount lives on the nested struct. */
     UASSERT_EQ((unsigned)0, (unsigned)nested->refcount);
 
-    /* root_proto.refcount > 0: the closure on vm->stdlib_closures holds a ref
+    /* root_proto.refcount > 0: a GC-managed UClosure holds a ref
      * via uproto_root_of.  Strand-bind refs were discharged at strand exit,
-     * but the closure's ref keeps root alive. */
+     * but the closure's ref keeps root alive until GC collection. */
     UASSERT((unsigned)rp->refcount > 0U);
 
     /* Full lifecycle: umodule_destroy rescues root_proto because refcount > 0. */
@@ -232,7 +232,7 @@ UTEST(closure_alloc_bumps_root_via_backptr)
     UASSERT_EQ((void *)saved_root, (void *)vm.rescued_protos);
 
     uarena_destroy(&arena);
-    /* vm_destroy: stdlib_closures sweep decs via uproto_root_of FIRST (§3.7),
+    /* vm_destroy: GC sweep decs via uproto_root_of (§3.7 ordering invariant),
      * then rescued_protos sweep frees saved_root.  No UAF. */
     urbi_vm_destroy(&vm);
 }
@@ -262,7 +262,7 @@ UTEST(escaping_closure_rescues_whole_root_proto)
 
     /* Closure alloc bumped root_proto via uproto_root_of.
      * Strand released its bind (root_proto dec).  Net: still > 0
-     * because the closure on vm->stdlib_closures holds a ref. */
+     * because a GC-managed UClosure holds a ref via uproto_root_of. */
     UASSERT((unsigned)m->root_proto->refcount > 0U);
 
     /* Destroy module shell — rescue path triggers. */
@@ -275,9 +275,9 @@ UTEST(escaping_closure_rescues_whole_root_proto)
     vm.alloc_fn(m, 0, vm.alloc_ud);
     uarena_destroy(&arena);
 
-    /* vm_destroy: stdlib_closures sweep MUST run before rescued_protos sweep
-     * (§3.7 ordering invariant): each closure decs via uproto_root_of while
-     * root is still alive.  No UAF. */
+    /* vm_destroy: GC sweep decs via uproto_root_of (§3.7 ordering invariant)
+     * while root is still on rescued_protos.  Then rescued_protos sweep frees
+     * saved_root.  No UAF. */
     urbi_vm_destroy(&vm);
 }
 
@@ -300,8 +300,8 @@ UTEST(vm_null_destroy_with_live_closure)
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* Closure escapes to Realm.f — migrated to vm->stdlib_closures at strand
-     * exit.  root_proto.refcount > 0 after draining. */
+    /* Closure escapes to Realm.f — GC-managed UClosure keeps a ref on
+     * root_proto via uproto_root_of.  root_proto.refcount > 0 after draining. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, m,
         "var f = function () { 1 }; Realm.f = f",
         NULL);
@@ -310,7 +310,7 @@ UTEST(vm_null_destroy_with_live_closure)
 
     struct UProto *saved_root = m->root_proto;
     UASSERT(saved_root != NULL);
-    /* Closure still alive on vm->stdlib_closures; root_proto.refcount > 0. */
+    /* Closure GC-managed; root_proto.refcount > 0 via uproto_root_of. */
     UASSERT(saved_root->refcount > 0U);
 
     /* Call destroy WITH NULL vm (defensive contract path).
@@ -326,9 +326,9 @@ UTEST(vm_null_destroy_with_live_closure)
     vm.alloc_fn(m, 0, vm.alloc_ud);
     uarena_destroy(&arena);
 
-    /* vm_destroy: stdlib_closures sweep dec's via uproto_root_of (§3.7
-     * ordering); detects self-link sentinel on root_proto, promotes to
-     * rescued_protos, then rescued_protos sweep frees it.  No leak per ASan. */
+    /* vm_destroy: GC sweep dec's via uproto_root_of (§3.7 ordering);
+     * detects self-link sentinel on root_proto, promotes to rescued_protos,
+     * then rescued_protos sweep frees it.  No leak per ASan. */
     urbi_vm_destroy(&vm);
 }
 

@@ -46,11 +46,10 @@ struct USymbol;
 
 /* === urbi_native_closure_create ===
  *
- * Allocate a UClosure whose native_fn pointer is set; proto / proto_inst
- * / upvals are NULL.  The closure is threaded onto vm->stdlib_closures so
- * urbi_vm_destroy can reclaim it; it is NOT enrolled on a strand
- * closure_list (those are freed at strand destruction, which happens
- * during nested scripted runs).
+ * Allocate a GC-managed UClosure whose native_fn pointer is set; proto /
+ * proto_inst / upvals are NULL.  The GC sweep reclaims it when it becomes
+ * unreachable (v0.8.4 Step C-3: migrated from alloc_fn + stdlib_closures
+ * to urbi_gc_alloc, matching bytecode closures).
  *
  * Returns NULL on OOM. */
 struct UClosure *urbi_native_closure_create(struct UVM *vm,

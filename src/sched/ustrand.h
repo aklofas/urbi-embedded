@@ -269,8 +269,8 @@ struct UStrand {
     UCallFrame              frames[UVM_MAX_FRAMES];
     int                     frame_count;
     UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */
-    struct UClosure        *closure_list;   /* pre-GC: all closures allocated this run */
-    UUpvalCell             *closed_cells;   /* pre-GC: all heapified upvalue cells this run */
+    /* closure_list + closed_cells deleted at v0.8.4 Step C-3: UClosure and
+     * UUpvalCell are GC-managed; no per-strand free-lists needed. */
     UValue                 *out_slot;       /* adapter-set: OP_RET at top-frame writes here */
 };
 
@@ -282,9 +282,9 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3912,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3896,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
-               /* v0.8.1 Phase 1: +8 B from UProto *root_proto field (3904 → 3912) */);
+               /* v0.8.4 Step C-3: -16 B from deleting closure_list + closed_cells (3912 → 3896) */);
 #endif
 
 /* === Lifecycle functions ===
@@ -367,8 +367,8 @@ int urbi_strand_arm_init(struct UStrand *s);
 /* === spec #1 §5.5: urbi_strand_arm_from_closure ===
  *
  * Allocate a register stack for `s` and wire up the execution-state fields
- * (R, pc, pc_base, cur_consts, frame_count, open_upvals, closure_list,
- * closed_cells, out_slot) from `entry` and the strand's own vm->alloc_fn.
+ * (R, pc, pc_base, cur_consts, frame_count, open_upvals, out_slot) from
+ * `entry` and the strand's own vm->alloc_fn.
  *
  * Called by fork_spawn_child (T38) and the watcher body-spawn path (T24)
  * so the stack-alloc + pc-arming sequence is not duplicated.

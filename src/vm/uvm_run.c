@@ -29,12 +29,8 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     vm->last_error = UVM_OK;
     vm->last_errmsg[0] = '\0';
 
-    /* M6 Phase 3: previously this site freed vm->last_return_closure at
-     * the start of each new run.  With the closure migration introduced in
-     * this phase (run-end closures move to vm->stdlib_closures rather than
-     * being freed), the closure stays alive until vm_destroy.  Just clear
-     * the pointer — the closure is already owned by the stdlib_closures
-     * sweep. */
+    /* Clear last_return_closure; the GC keeps it alive via the root walker
+     * (vm_misc_walk_roots) until this assignment drops the last reference. */
     vm->last_return_closure = NULL;
 
     /* Initialize out to Nil; overwritten on OP_RET success. */
@@ -126,8 +122,6 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     strand.module_instance = urbi_module_instance_create(vm, (UModule *)module);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
-    strand.closure_list = NULL;
-    strand.closed_cells = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */
     strand.state      = USTRAND_STATE_RUNNING;
     /* Arm the per-strand instruction budget via sched_strand_init so the
@@ -179,36 +173,20 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         break;
     }
 
-    /* v0.8.4 Option B Step C-2: UClosure + UUpvalCell are GC-managed.
-     * Pre-C-2 these two blocks migrated strand.closure_list onto
-     * vm->stdlib_closures and strand.closed_cells onto vm->stdlib_upvalues
-     * to prevent UAF on closures that escaped into long-lived storage.
-     * With GC management, reachable closures survive via the root paths
-     * registered at Step C-1 (strand entry_closure / call-frame closures /
-     * realm globals / watcher fields); unreachable closures are swept.
-     * No migration needed — just clear the dormant head pointers.
-     *
-     * vm->last_return_closure: still set for callers that inspect the result
-     * across urbi_vm_run calls; the closure is GC-rooted via that field
-     * (vm_misc_walk_roots registered at Step C-1). */
+    /* v0.8.4 Step C-3: closure_list / closed_cells fields deleted.
+     * UClosure + UUpvalCell are GC-managed; reachable cells survive via the
+     * root paths (entry_closure / call-frame closures / realm globals /
+     * watcher fields); unreachable cells are swept.  Record last_return_closure
+     * for callers that inspect the result across calls (GC root via
+     * vm_misc_walk_roots). */
     {
         UClosure *out_cl = (out->kind == (uint8_t)UVAL_CLOSURE)
                            ? (UClosure *)out->v.p : NULL;
         vm->last_return_closure = out_cl;
-
-        /* Dormant — GC manages lifetime; clear to keep chain NULL before
-         * release_strand_resource_chain (which also clears it, but belt-and-
-         * suspenders prevents any confusion during the C-2 → C-3 window). */
-        strand.closure_list = NULL;
     }
 
-    /* Dormant — GC manages UUpvalCell lifetime; clear chain. */
-    strand.closed_cells = NULL;
-
-    /* vm_free_open_upvalues is now a no-op clear (Step C-2); remove the
-     * redundant call.  open_upvals is cleared by release_strand_resource_chain
-     * inside ustrand_destroy; clear here as belt-and-suspenders to match
-     * the pre-C-2 ordering pattern. */
+    /* open_upvals: cleared inline (release_strand_resource_chain also clears
+     * it in ustrand_destroy; belt-and-suspenders). */
     strand.open_upvals = NULL;
 
     /* CHSTR-044: free register stack via triplet helper. */

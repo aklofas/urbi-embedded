@@ -77,63 +77,22 @@ uwatcher_pool_alloc(struct UVM *vm)
 
 /* pool_free: push one entry back onto the freelist.
  * Decrements in_use counter; does NOT touch high_water.
- * For each of URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE that is set, frees the
- * matching closure (and its detached proto) before recycling the slot.  These
- * flags are set by install_watcher_runtime / install_at_event_runtime when
- * they unlink the closures from the strand's pre-GC closure_list so
- * urbi_vm_run's post-run cleanup loop cannot free them prematurely.  The
- * three flags are independent — any subset (including none) may be set.
- *
- * WATCH-001 (v0.5.7): each free is structured as {free → null pointer →
- * clear OWNS bit} so the slot's flag byte accurately reflects post-free
- * ownership state.  This is defensive idempotency: if pool_free were ever
- * re-entered on the same slot before pool_alloc recycled it, the cleared
- * bit prevents a double-free; and if a future caller invariant changes to
- * permit closure aliasing across watchers, the cleared bit on the freeing
- * watcher accurately reports that this slot no longer claims ownership. */
+ * v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags deleted; UClosure lifetime is
+ * GC-managed since Step C-2.  Condition/body/onleave pointers are cleared for
+ * slot hygiene, not for ownership-based free. */
 static void
 pool_free(struct UVM *vm, UWatcher *w)
 {
     URBI_INTERNAL_ASSERT(w != NULL);
     URBI_INTERNAL_ASSERT(vm->watcher_pool_in_use > 0);
 
-    /* Free owned closures (and their detached protos) acquired via
-     * install_watcher_runtime / install_at_event_runtime.
-     *
-     * URBI_WATCHER_OWNS_* is set only when strand_closure_unlink returned 1,
-     * which since v0.7.3 implies BOTH the UClosure was unlinked from the
-     * strand's closure_list AND its UProto was detached from the strand
-     * module's nested[].  That return only happens when the install ran at
-     * `s->frame_count == 0` — see the strand_closure_unlink banner for the
-     * frame-count gating that prevents subsequent OP_CLOSUREs (against a
-     * shared nested[] entry inside a multi-invocation callee) from
-     * dereferencing a freed proto.  Installs at frame_count > 0 return 0
-     * and leave both cl and proto with their original owners. */
-    /* v0.8.4 Option B Step C-2: closure free arms removed.
-     * UClosures are GC-managed since C-2; the GC sweep + uclosure_destroy
-     * finalizer reclaim them and dec root_proto.refcount.  The
-     * UPROTO_DEC_AND_MAYBE_RESCUE macro and vm->alloc_fn(closure, 0, ...) calls
-     * that were here are now double-free hazards and have been removed.
-     * URBI_WATCHER_OWNS_* flags remain set (written by install paths); they are
-     * dormant and removed at Step C-3.  Clear them here so pool_free is
-     * idempotent on recycled slots and the WATCH-001 / WATCH-002 slab-walk
-     * invariants still hold. */
-    if (w->flags & URBI_WATCHER_OWNS_COND) {
-        w->condition = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_COND);
-    }
-    if (w->flags & URBI_WATCHER_OWNS_BODY) {
-        w->body = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_BODY);
-    }
-    if (w->flags & URBI_WATCHER_OWNS_ONLEAVE) {
-        w->onleave = NULL;
-        w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_OWNS_ONLEAVE);
-    }
+    /* v0.8.4 Step C-3: URBI_WATCHER_OWNS_* flags and their free arms deleted.
+     * UClosure lifetime is GC-managed since Step C-2; watcher condition/body/
+     * onleave fields are cleared below for correctness, not for free-then-null. */
 
     /* Clear URBI_WATCHER_ACTIVE so a slab walk (uwatcher_pool_destroy,
      * WATCH-002 v0.5.7) can distinguish allocated-but-orphaned slots from
-     * recycled ones.  Per-slot OWNS_* bits were already cleared above. */
+     * recycled ones. */
     w->flags = (uint8_t)(w->flags & ~(uint8_t)URBI_WATCHER_ACTIVE);
 
     w->next_active             = vm->watcher_pool_freelist;
@@ -211,23 +170,12 @@ uwatcher_pool_destroy(struct UVM *vm)
     if (vm->watcher_pool_base == NULL) return;
     if (vm->alloc_fn == NULL) return;
 
-    /* Free owned closures (and their detached protos) for any watchers
-     * that are still active.  pool_free recycles them onto the freelist,
-     * which is fine — we free the whole slab below anyway.  Without this
-     * step, any watcher that holds URBI_WATCHER_OWNS_COND / _BODY / _ONLEAVE
-     * leaks those closures and protos when the slab is freed.
-     *
-     * urbi_tag_stop (called from urbi_realm_destroy during urealm_teardown_all,
-     * which runs before uwatcher_pool_destroy) moves watchers from
-     * active_watchers_head onto pending_onleave_head via
-     * pending_onleave_queue_push.  Both lists must be drained here to release
-     * all owned closures. */
+    /* Drain active and pending-onleave watcher lists so pool_free marks them
+     * recycled (WATCH-001/002 slab-walk invariants) before the slab is freed.
+     * Step C-3: OWNS_* flags deleted; pool_free no longer calls alloc_fn on
+     * closures — GC sweep handles UClosure lifetime.  Drain is still needed
+     * to keep slab-walk accounting correct. */
     drain_watcher_list(vm, &vm->active_watchers_head);
-    /* Drain watchers that were moved to the pending-onleave queue by
-     * urbi_tag_stop / pending_onleave_queue_push.  These have already been
-     * unlinked from active_watchers_head and owning_tag->member_watchers_head,
-     * but still hold owned closures (OWNS_COND / OWNS_BODY / OWNS_ONLEAVE
-     * flags are unchanged by the push).  pool_free frees those closures. */
     drain_watcher_list(vm, &vm->pending_onleave_head);
     vm->pending_onleave_tail = NULL;
 

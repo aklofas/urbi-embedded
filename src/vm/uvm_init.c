@@ -15,7 +15,7 @@
 #include "vm/uvm_internal.h"
 #include "vm/uvm_ref.h"           /* ref_table_walk_roots */
 #include "runtime/umacros.h"      /* urbi_zero */
-#include "runtime/uclosure.h"     /* full UClosure for stdlib_closures teardown */
+/* uclosure.h include removed at v0.8.4 Step C-3 (stdlib_closures teardown deleted). */
 #include "urbi/urbi.h"            /* URBI_CALLBACK_WARN_US, URBI_WATCHDOG_WARN */
 #include "urbi/gc.h"              /* urbi_gc_init, urbi_gc_destroy */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray (vm_misc_walk_roots Step C-1) */
@@ -348,8 +348,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_drain_handler = NULL;
 
     /* M6 Phase 3: stdlib state. */
-    vm->stdlib_closures        = NULL;
-    vm->stdlib_upvalues        = NULL;
+    /* stdlib_closures + stdlib_upvalues deleted at v0.8.4 Step C-3 (GC-managed). */
     /* stdlib_protos + stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root). */
     vm->rescued_protos         = NULL;   /* Phase 2 Task 9 (v0.8.1): whole-root_proto rescue list */
     vm->stdlib_module          = NULL;   /* M6 Phase 4: lazy-allocated by urbi_stdlib_boot */
@@ -489,23 +488,12 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* v0.8.4 Option B Step C-2: UClosure + UUpvalCell are GC-managed.
-     * urbi_gc_destroy (called above) already swept all white GC cells and
-     * invoked the uclosure_destroy finalizer on each closure — that finalizer
-     * decs root_proto.refcount and performs sentinel-promotion (the same
-     * per-closure work the pre-C-2 stdlib_closures loop did).
-     *
-     * vm->stdlib_closures + vm->stdlib_upvalues are always NULL at this point
-     * (Step C-2 stopped the migration loops in uvm_run.c and
-     * release_strand_resource_chain).  Clear both defensively and skip the
-     * sweep loops — they would be no-ops and the sweep comments are
-     * now misleading.  Step C-3 deletes both fields.
-     *
-     * vm->last_return_closure: GC-managed; cleared for post-destroy hygiene.
-     * The closure (if any) was already reclaimed by urbi_gc_destroy above. */
+    /* v0.8.4 Step C-3: stdlib_closures + stdlib_upvalues fields deleted.
+     * UClosure + UUpvalCell are GC-managed; urbi_gc_destroy (called above)
+     * already swept all white cells and invoked the uclosure_destroy finalizer
+     * on each closure.  vm->last_return_closure: GC-managed; cleared for
+     * post-destroy hygiene (the closure was already reclaimed above). */
     vm->last_return_closure = NULL;
-    vm->stdlib_closures = NULL;
-    vm->stdlib_upvalues = NULL;
 
     if (vm->alloc_fn != NULL) {
 

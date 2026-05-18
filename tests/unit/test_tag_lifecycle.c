@@ -243,8 +243,6 @@ strand_setup_t30(UStrand *s, UVM *vm,
     s->module     = NULL;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
-    s->closure_list = NULL;
-    s->closed_cells = NULL;
     s->out_slot     = NULL;
 }
 

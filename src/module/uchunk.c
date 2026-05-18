@@ -19,7 +19,7 @@
 #include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
-#include "runtime/uclosure.h"  /* UClosure — full struct for vm->stdlib_closures walk */
+#include "runtime/uclosure.h"  /* UClosure — full struct for closure type usage */
 #include "sched/ustrand.h"     /* UStrand, USTRAND_IS_WAITING, USTRAND_GET_STATE, USTRAND_DEAD */
 #include <stddef.h>    /* size_t */
 #include <stdint.h>    /* uint32_t */
