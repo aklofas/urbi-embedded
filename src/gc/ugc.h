@@ -108,11 +108,12 @@ typedef struct UType {
 #define UTYPE_SLOT_ARRAY       17   /* M4 — USlotArray wrapper (UObject's grow-on-write slot storage, T26) */
 #define UTYPE_EVENT            18   /* M5 — UEvent reactive cell (spec #3 §3.1) */
 #define UTYPE_CHANGED_NODE     19   /* M5 — UChangedNode slot-change subscriber (spec #4 §3.1) */
-/* Tags 20-63 are RESERVED for future runtime expansion (v1.x/v2.0 GC cell
+#define UTYPE_UPVAL_CELL       20   /* v0.8.4 — captured-local upvalue cell (closure-lifetime spec Piece C) */
+/* Tags 21-63 are RESERVED for future runtime expansion (v1.x/v2.0 GC cell
  * types such as UString heap cells, UArray, UDict, UWeakRef, UFiber, etc.).
  * Do not assign host types here; use the host range below.
  *
- * Runtime tags claimed so far (1-19):
+ * Runtime tags claimed so far (1-20):
  *   1  UTYPE_OBJECT            9  UTYPE_PROTOS
  *   2  UTYPE_CLOSURE          10  UTYPE_SHAPE
  *   3  UTYPE_STRING           11  UTYPE_PROPS
@@ -123,7 +124,8 @@ typedef struct UType {
  *   8  UTYPE_NAMESPACE        16  UTYPE_PROPS_TABLE
  *                             17  UTYPE_SLOT_ARRAY
  *                             18  UTYPE_EVENT
- *                             19  UTYPE_CHANGED_NODE */
+ *                             19  UTYPE_CHANGED_NODE
+ *                             20  UTYPE_UPVAL_CELL */
 #define UTYPE_HOST_BASE  64  /* host-registered types start here (64-255) */
 #define UTYPE_HOST_MAX   255
 
