@@ -583,9 +583,15 @@ test-determinism: test-determinism-footprint test-determinism-default test-deter
 # The wall-clock win in releasetest comes from running test-valgrind
 # in parallel with test-valgrind-deep + the sanitizer matrix + lint +
 # coverage etc., which IS what releasetest does.
+# URBI_SKIP_THREAD_FUZZ_TESTS skips event_ring_multi_thread_fuzz_100k, which
+# memcheck cannot meaningfully run: it serializes threads onto one CPU, so
+# the SPSC producer fills the ring then busy-spins on RING_FULL while the
+# consumer is descheduled — the test loses race-detection value AND pushes
+# wall-clock past 30 min (v0.8.2 wedge symptom). The test still runs under
+# `make test` and the sanitizer variants where threads do execute concurrently.
 test-valgrind: valgrind-tools
 	$(MAKE) TARGET=host-valgrind \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O1 -g -DURBI_SKIP_THREAD_FUZZ_TESTS=1" \
 		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full -q" \
 		test
 
@@ -599,7 +605,7 @@ test-valgrind: valgrind-tools
 # Sharding env vars (URBI_SHARD_TOTAL/INDEX) work here too.
 test-valgrind-deep: valgrind-tools
 	$(MAKE) TARGET=host-valgrind-deep \
-		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g" \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -O0 -g -DURBI_SKIP_THREAD_FUZZ_TESTS=1" \
 		RUNNER_WRAPPER="valgrind --tool=memcheck --error-exitcode=1 --leak-check=full --track-origins=yes --show-leak-kinds=all -q" \
 		test
 

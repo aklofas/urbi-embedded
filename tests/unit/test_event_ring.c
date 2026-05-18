@@ -236,8 +236,16 @@ UTEST(event_ring_drain_without_handler_advances_read_idx_only)
     urbi_vm_destroy(&vm);
 }
 
-/* ---- Case 11 (Linux-only): multi-threaded fuzz — 100k events ----------- */
-#ifdef __linux__
+/* ---- Case 11 (Linux-only): multi-threaded fuzz — 100k events -----------
+ *
+ * Skipped under valgrind via URBI_SKIP_THREAD_FUZZ_TESTS (set in the
+ * test-valgrind Makefile target).  Memcheck serializes threads onto one
+ * CPU, so the producer fills the ring and busy-spins on RING_FULL while
+ * the consumer is descheduled — pathological scheduling pushes the test
+ * past 30 min wall-clock (v0.8.2 wedge symptom) AND loses the race-
+ * detection value entirely (no concurrent execution to surface a race).
+ * The test still runs under `make test` and the sanitizer variants. */
+#if defined(__linux__) && !defined(URBI_SKIP_THREAD_FUZZ_TESTS)
 #include <pthread.h>
 #include <stdint.h>
 
@@ -321,7 +329,7 @@ UTEST(event_ring_multi_thread_fuzz_100k)
     UASSERT_EQ((long long)pargs.checksum, (long long)expected);
     UASSERT_EQ((long long)cargs.checksum, (long long)expected);
 }
-#endif /* __linux__ */
+#endif /* __linux__ && !URBI_SKIP_THREAD_FUZZ_TESTS */
 
 /* ---- Case 12 (T25 / EVENT-003): payload field is 8-byte aligned ------- */
 UTEST(uevent_ring_entry_payload_is_8aligned)
@@ -359,7 +367,7 @@ void test_event_ring_suite(void)
               event_ring_drain_without_handler_advances_read_idx_only);
     utest_run("uevent_ring_entry_payload_is_8aligned",
               uevent_ring_entry_payload_is_8aligned);
-#ifdef __linux__
+#if defined(__linux__) && !defined(URBI_SKIP_THREAD_FUZZ_TESTS)
     utest_run("event_ring_multi_thread_fuzz_100k",
               event_ring_multi_thread_fuzz_100k);
 #endif
