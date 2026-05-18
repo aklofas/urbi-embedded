@@ -227,17 +227,12 @@ int main(void) {
     }
     s_vm = &vm;
 
-    /* v0.8.2 bring-up: TIM2 is disabled while port_alloc stays a leak-only
-     * bump allocator.  Each gyro_tick event spawns a watcher body strand
-     * needing ~32 KB register stack; with no real free, the 1 MB heap
-     * fills in ~32 spawns and every subsequent body fails with
-     * `out of memory (stack alloc)` -- exactly the ESP32-EYE failure
-     * from the v0.7.2 retrospective.  Re-enable once port_alloc grows a
-     * freelist (or after switching to a real heap implementation).
-     * Button remains live (rare, manual fires only). */
-    MS("[m8] tim2 SKIPPED (heap-leak mitigation)\r\n");
-    /* tim2_init_50ms(); */
-    MS("[m9] tim2 skipped\r\n");
+    /* Start TIM2 — gyro_tick ISR fires from here onward.  port_alloc
+     * recycles freed strand stacks via its freelist (v0.8.2), so the
+     * 50 ms tick rate no longer drains the heap. */
+    MS("[m8] tim2_init_50ms\r\n");
+    tim2_init_50ms();
+    MS("[m9] tim2 started\r\n");
 
     /* Load baked bytecode (freestanding pattern: static UModule + umodule_deserialize).
      * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
