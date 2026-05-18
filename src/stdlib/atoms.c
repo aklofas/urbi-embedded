@@ -337,6 +337,74 @@ DEF_FLOAT_UNARY(ceil,  ceil)
 DEF_FLOAT_UNARY(abs,   fabs)
 DEF_FLOAT_UNARY(round, round)
 #else
+/* Freestanding: most Float methods need libm and stay stubbed (raise
+ * TypeError "libm not linked").  But a handful are trivial-to-implement
+ * without libm — abs is sign-bit-clear, floor/ceil/round are int casts
+ * with edge-case fixups.  v0.8.2 freestanding-fix: provide real impls
+ * for these so embedded ports get usable Float math without pulling in
+ * libm.  On Cortex-M4F, the compiler maps fabsf() to a single VABS.F32
+ * instruction; the inline ternary below compiles to the same. */
+
+static int
+flt_abs(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.abs", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.abs: self must be Float", out);
+    double x = (double)self.v.f;
+    *out = val_float(x < 0.0 ? -x : x);
+    return UEXEC_OK;
+}
+
+static int
+flt_floor(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.floor", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.floor: self must be Float", out);
+    double x = (double)self.v.f;
+    int64_t t = (int64_t)x;
+    double tf = (double)t;
+    /* For negatives where x != tf, truncation rounded TOWARD zero; floor
+     * needs to round DOWN, so subtract 1.  Edge case: huge values that
+     * overflow int64_t fall through unchanged — acceptable for v0.8.2. */
+    if (x < 0.0 && tf != x) tf -= 1.0;
+    *out = val_float(tf);
+    return UEXEC_OK;
+}
+
+static int
+flt_ceil(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.ceil", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.ceil: self must be Float", out);
+    double x = (double)self.v.f;
+    int64_t t = (int64_t)x;
+    double tf = (double)t;
+    if (x > 0.0 && tf != x) tf += 1.0;
+    *out = val_float(tf);
+    return UEXEC_OK;
+}
+
+static int
+flt_round(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out)
+{
+    (void)args;
+    if (nargs != 0) return urbi_raise_arity(vm, "Float.round", 0, nargs, out);
+    if (self.kind != (uint8_t)UVAL_FLOAT)
+        return urbi_raise_type(vm, "Float.round: self must be Float", out);
+    double x = (double)self.v.f;
+    /* Round half-away-from-zero (matches glibc round()). */
+    double biased = x < 0.0 ? x - 0.5 : x + 0.5;
+    *out = val_float((double)(int64_t)biased);
+    return UEXEC_OK;
+}
+
+/* Remaining methods still need libm — stay stubbed. */
 #  define DEF_FLOAT_UNARY_FREESTANDING(name)                                 \
     static int                                                               \
     flt_##name(UVM *vm, UValue self, UValue *args, uint8_t nargs, UValue *out) \
@@ -354,10 +422,6 @@ DEF_FLOAT_UNARY_FREESTANDING(atan)
 DEF_FLOAT_UNARY_FREESTANDING(log)
 DEF_FLOAT_UNARY_FREESTANDING(log10)
 DEF_FLOAT_UNARY_FREESTANDING(exp)
-DEF_FLOAT_UNARY_FREESTANDING(floor)
-DEF_FLOAT_UNARY_FREESTANDING(ceil)
-DEF_FLOAT_UNARY_FREESTANDING(abs)
-DEF_FLOAT_UNARY_FREESTANDING(round)
 #  undef DEF_FLOAT_UNARY_FREESTANDING
 #endif
 
