@@ -68,30 +68,13 @@ static int gyro_axis(int axis, uint8_t nargs, UValue *out) {
 
 int port_gyro_x_native(struct UVM *vm, UValue self,
                         UValue *args, uint8_t nargs, UValue *out) {
-    (void)vm; (void)self; (void)args;
-    int rc = gyro_axis(0, nargs, out);
-#ifndef URBI_PORT_TEST
-    /* v0.8.2 bring-up debug: print the value we ACTUALLY return so we
-     * can rule out the host-fn vs the VM dispatch as the source of
-     * rc=2.  First 3 calls only. */
-    static int dbg_n = 0;
-    if (dbg_n < 3) {
-        dbg_n++;
-        char buf[40];
-        const char *d = "0123456789ABCDEF";
-        int n = 0;
-        const char *t = "gx returning rc=";
-        while (t[n]) { buf[n] = t[n]; n++; }
-        buf[n++] = d[(rc >> 4) & 0xF];
-        buf[n++] = d[rc & 0xF];
-        buf[n++] = ' '; buf[n++] = 'n'; buf[n++] = 'a'; buf[n++] = '=';
-        buf[n++] = d[(nargs >> 4) & 0xF];
-        buf[n++] = d[nargs & 0xF];
-        buf[n++] = '\r'; buf[n++] = '\n';
-        port_writer(NULL, "gx", 2, buf, (size_t)n, 0);
-    }
-#endif
-    return rc;
+    (void)vm; (void)self; (void)args; (void)nargs;
+    /* v0.8.2 hypothesis-killing test: hard-coded success.  If VM still
+     * sees rc=2 with this, the bug is NOT in port_gyro_x_native nor in
+     * gyro_axis -- it's somewhere else (wrong closure dispatched, ABI
+     * mismatch, function-pointer corruption). */
+    *out = urbi_make_float(0.0);
+    return 0;
 }
 
 int port_gyro_y_native(struct UVM *vm, UValue self,
