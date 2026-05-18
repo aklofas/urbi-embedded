@@ -130,6 +130,25 @@ exercised them.
 - **ABI unchanged at 0/8/0.**  No struct-layout changes in public types;
   no symbol additions; no signature breaks.
 
+### Known gate status at ship
+
+- **Phase 1 (20 gates): all green** — `test`, `test-asan`, `test-ubsan`,
+  `test-debug`, `test-switch`, `lint`, `docs-check`, `coverage`,
+  `test-stress`, `test-gc-none-build`, `test-scan-build`, `test-cppcheck`,
+  `test-tidy-strict`, `test-wire-format-determinism`,
+  `test-docstring-coverage`, `test-bake-smoke`, `test-bytecode-only`,
+  `test-gc-roots-coverage`, `test-aux-symbols`, `test-embedding-guide`
+  all passed clean.
+- **Phase 2 `test-valgrind`: NOT RUN at ship.**  Wedged at ~32 min of
+  wall-clock vs the historical ~5-min baseline.  Process showed alive
+  (RSS growing, not deadlocked) but throughput collapsed to ~4 % CPU
+  after an initial high-utilisation phase.  Killed and not retried;
+  v0.8.3 will investigate the slowdown.  ASan + UBSan (Phase 1) cover
+  the most common leak / UAF / overflow patterns and remained clean.
+  Tracked as a v0.8.3 followup item; design-risks entry filed.
+- **Phase 2 `test-corpus-sanitize`: NOT RUN** (sequential after
+  `test-valgrind`).  Same v0.8.3 followup.
+
 ---
 
 ## v0.8.1-uproto-root — 2026-05-17 (UModule thin-shell refactor + module-grain lifetime)
