@@ -56,7 +56,7 @@ static uint64_t s_dispatch_count = 0;
 static int      s_dispatch_traced = 0;
 static inline void vdbg_dispatch_tap(UStrand *s) {
     if (s_dispatch_traced) return;
-    if ((s_dispatch_count++ & 0x3FU) != 0) return;
+    s_dispatch_count++;
     UVM *vm = s->vm;
     if (vm == NULL || vm->writer_fn == NULL) return;
     char b[48];
@@ -73,8 +73,10 @@ static inline void vdbg_dispatch_tap(UStrand *s) {
     b[n++] = d[op & 0xF];
     b[n++] = '\r'; b[n++] = '\n';
     vm->writer_fn(vm->writer_ud, "dl", 2, b, (size_t)n, 0);
-    /* Cap at 32 prints so we always finish even if dispatch is fast. */
-    if (s_dispatch_count > (uint64_t)(64U * 32U)) s_dispatch_traced = 1;
+    /* Cap at 200 prints (~6 KB UART, ~0.5s at 115200 baud).  The hang is
+     * known to be inside opcodes 2..N; we just need the last opcode that
+     * prints before silence.  After cap, dispatch runs at full speed. */
+    if (s_dispatch_count > 200U) s_dispatch_traced = 1;
 }
 
 #if UVM_USE_COMPUTED_GOTO
