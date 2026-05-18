@@ -7,7 +7,7 @@ idf_component_register(
         "."
         "${CMAKE_CURRENT_BINARY_DIR}"
     REQUIRES
-        urbi
+        esp32-idf
         freertos
         esp_timer
 )
