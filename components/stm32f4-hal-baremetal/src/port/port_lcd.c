@@ -97,7 +97,19 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue self,
         return 0;
     }
 
-    BSP_LCD_SetTextColor(color);
+    /* BSP_LCD_SetTextColor expects ARGB8888 (top byte = alpha).  The urbi
+     * script computes RGB565 values; passing them straight in leaves
+     * alpha=0 (fully transparent) and BSP_LCD_FillRect becomes a no-op.
+     * Convert: RGB565 -> ARGB8888 with alpha=0xFF, expanding each channel
+     * from 5/6/5 to 8/8/8 bits. */
+    uint32_t r5 = (color >> 11) & 0x1FU;
+    uint32_t g6 = (color >> 5)  & 0x3FU;
+    uint32_t b5 =  color        & 0x1FU;
+    uint32_t argb = 0xFF000000U
+                  | ((r5 << 3 | r5 >> 2) << 16)
+                  | ((g6 << 2 | g6 >> 4) << 8)
+                  |  (b5 << 3 | b5 >> 2);
+    BSP_LCD_SetTextColor(argb);
     BSP_LCD_FillRect((uint16_t)x, (uint16_t)y, (uint16_t)w, (uint16_t)h);
     *out = urbi_make_nil();
     return 0;
