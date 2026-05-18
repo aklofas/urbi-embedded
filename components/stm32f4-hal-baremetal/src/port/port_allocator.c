@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Static-buffer allocator for urbi on bare-metal STM32F4.
  *
- * Uses a bump allocator with free-list fallback.  Buffer lives in .bss
+ * Bump allocator; free is a no-op (intentional leak).  Buffer lives in .bss
  * (internal SRAM).  Sized at URBI_HEAP_BYTES (default 80 KB).
  *
  * Suitable for urbi's allocation pattern (a handful of long-lived objects
@@ -23,25 +23,11 @@
 static uint8_t heap[URBI_HEAP_BYTES] __attribute__((aligned(8)));
 static size_t  heap_top = 0;
 
-/* Free-list node header lives at the start of each freed block. */
-typedef struct FreeNode {
-    size_t size;            /* including header */
-    struct FreeNode *next;
-} FreeNode;
-
-static FreeNode *freelist = NULL;
-
 void *port_alloc(void *ptr, size_t nbytes, void *ud) {
     (void)ud;
 
-    /* free(ptr) — nbytes == 0 */
+    /* free(ptr) — nbytes == 0.  Bump allocator — free is a no-op (intentional leak). */
     if (nbytes == 0) {
-        if (ptr == NULL) return NULL;
-        /* Push onto freelist.  We don't know the original block size from
-         * urbi's free path, so we record it in a header BEFORE the user ptr
-         * during allocation (see below).  For simplicity here we treat
-         * free as a no-op leak — bump allocator's natural behavior. */
-        (void)freelist;  /* freelist reserved for future coalescence */
         return NULL;
     }
 
