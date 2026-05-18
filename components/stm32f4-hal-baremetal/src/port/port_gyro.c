@@ -1,21 +1,15 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Gyro wrapper for STM32F429I-DISC1 (L3GD20 via SPI5).
  *
- * Exposes gyro_read() host-fn returning the raw angular-velocity vector as a
- * urbi_make_ptr() pointing to an internal float[3] {omega_x, omega_y, omega_z}
- * in millidegrees/sec (BSP_GYRO_GetXYZ raw units; calibration is demo-side).
+ * Exposes three host-fns gyro_x/y/z, each returning one axis as UVAL_FLOAT.
+ * Three independent calls avoid the urbi_make_list public-API gap (lists
+ * are stdlib-only at v0.8.2).  L3GD20 max output rate is 800 Hz; calling
+ * three times per 50ms tick (60/sec) is well within the budget.
  *
- * Design note: the original plan assumed urbi_make_list / urbi_value_list_*
- * APIs (spec §table gyro_read row), but those were never shipped — List is a
- * stdlib UObject container with no public C construction API.  Returning a
- * UVAL_PTR is the only public-API-safe way to hand 3 floats to a native host
- * function without a live VM.  Production scripts read the axes via companion
- * gyro_x / gyro_y / gyro_z native accessors registered alongside gyro_read()
- * in main.c.  Revisit if urbi_make_list lands in v0.9+.
- *
- * port_gyro_init() drives BSP_GYRO_Init (250 dps full-scale, default ODR). */
+ * port_gyro_init() drives BSP_GYRO_Init with default sensitivity (250 dps). */
 
 #include "port_stm32f4.h"
+#include "urbi/urbi.h"
 #include "urbi/types.h"
 
 #ifdef URBI_PORT_TEST
@@ -24,27 +18,31 @@
 #  include "stm32f429i_discovery_gyroscope.h"
 #endif
 
-/* Module-static result buffer.  Single-VM cooperative scheduler: no
- * concurrent native calls, so one buffer is safe.  Caller must read the
- * values before the next gyro_read() invocation. */
-static float s_gyro_xyz[3];
-
 void port_gyro_init(void) {
 #ifndef URBI_PORT_TEST
     BSP_GYRO_Init();
 #endif
 }
 
-int port_gyro_read_native(struct UVM *vm, UValue *args, int nargs,
-                          UValue *out) {
-    (void)vm;
-    (void)args;
-    if (nargs != 0) {
-        *out = urbi_make_nil();
-        return -1;
-    }
-
-    BSP_GYRO_GetXYZ(s_gyro_xyz);
-    *out = urbi_make_ptr(s_gyro_xyz);
+static int gyro_axis(int axis, int nargs, UValue *out) {
+    if (nargs != 0) { *out = urbi_make_nil(); return -1; }
+    float xyz[3];
+    BSP_GYRO_GetXYZ(xyz);
+    *out = urbi_make_float((double)xyz[axis]);
     return 0;
+}
+
+int port_gyro_x_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
+    (void)vm; (void)args;
+    return gyro_axis(0, nargs, out);
+}
+
+int port_gyro_y_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
+    (void)vm; (void)args;
+    return gyro_axis(1, nargs, out);
+}
+
+int port_gyro_z_native(struct UVM *vm, UValue *args, int nargs, UValue *out) {
+    (void)vm; (void)args;
+    return gyro_axis(2, nargs, out);
 }

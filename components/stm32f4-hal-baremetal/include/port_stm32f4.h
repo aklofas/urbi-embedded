@@ -82,11 +82,14 @@ int port_lcd_fill_rect_native(struct UVM *vm, UValue *args, int nargs,
  * from main() AFTER HAL_Init(). */
 void port_gyro_init(void);
 
-/* Gyro host-fn: registered into urbi as "gyro_read".  Signature matches
- * urbi_native_method_fn.  Returns a 3-element list of floats
- * [omega_x, omega_y, omega_z] in radians/sec via BSP_GYRO_GetXYZ. */
-int port_gyro_read_native(struct UVM *vm, UValue *args, int nargs,
-                          UValue *out);
+/* Gyro host-fns: registered into urbi as "gyro_x", "gyro_y", "gyro_z".
+ * Signature matches urbi_native_method_fn.  Each reads the L3GD20 once
+ * via BSP_GYRO_GetXYZ and returns the requested axis in radians/sec
+ * as a UVAL_FLOAT.  Reading 3 axes = 3 SPI transactions; acceptable for
+ * the demo's 50ms tick (60 reads/sec is well under L3GD20's 800 Hz max). */
+int port_gyro_x_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
+int port_gyro_y_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
+int port_gyro_z_native(struct UVM *vm, UValue *args, int nargs, UValue *out);
 
 /* Button GPIO init: configures PA0 as input with EXTI0 rising-edge IRQ.
  * Call BEFORE port_button_init(). */
