@@ -53,7 +53,7 @@
  * calls would drown UART at ~32k opcodes/step).  Channel "dl".  Remove
  * before tag. */
 static uint64_t s_dispatch_count = 0;
-static int      s_dispatch_traced = 0;
+int             s_dispatch_traced = 0;  /* non-static so uobject_slot.c can read */
 static inline void vdbg_dispatch_tap(UStrand *s) {
     if (s_dispatch_traced) return;
     s_dispatch_count++;
@@ -73,10 +73,10 @@ static inline void vdbg_dispatch_tap(UStrand *s) {
     b[n++] = d[op & 0xF];
     b[n++] = '\r'; b[n++] = '\n';
     vm->writer_fn(vm->writer_ud, "dl", 2, b, (size_t)n, 0);
-    /* Cap at 200 prints (~6 KB UART, ~0.5s at 115200 baud).  The hang is
-     * known to be inside opcodes 2..N; we just need the last opcode that
-     * prints before silence.  After cap, dispatch runs at full speed. */
-    if (s_dispatch_count > 200U) s_dispatch_traced = 1;
+    /* Cap at 24 prints — we already know we hang at opcode ~17.  After
+     * cap, dispatch runs at full speed (and lets uobject_slot.c's resolve
+     * trace fire on the slow-path resolve walk). */
+    if (s_dispatch_count > 24U) s_dispatch_traced = 1;
 }
 
 #if UVM_USE_COMPUTED_GOTO

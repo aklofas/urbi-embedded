@@ -540,6 +540,32 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
         return -1;
     }
 
+    /* v0.8.2 bring-up debug: trace the DFS walk to localize a hang.
+     * Fires once (when s_dispatch_traced is still 0, before the dispatch
+     * tap has capped out — they're set together once we've gathered
+     * enough data).  Remove before tag. */
+    extern int s_dispatch_traced;
+    static int s_resolve_traced = 0;
+    int trace = (!s_resolve_traced) && (!s_dispatch_traced);
+#define RDBG(s) do { if (trace && vm->writer_fn)                  \
+    vm->writer_fn(vm->writer_ud, "rs", 2, s, sizeof(s)-1U, 0); } while (0)
+#define RDBG_HEX(label, value) do {                                          \
+    if (trace && vm->writer_fn) {                                            \
+        char b[40]; int n = 0;                                               \
+        const char *d = "0123456789ABCDEF";                                  \
+        const char *t = (label);                                             \
+        while (*t && n < 12) b[n++] = *t++;                                  \
+        b[n++] = '=';                                                        \
+        uintptr_t v = (uintptr_t)(value);                                    \
+        for (int k = 28; k >= 0; k -= 4) b[n++] = d[(v >> k) & 0xF];         \
+        b[n++] = '\r'; b[n++] = '\n';                                        \
+        vm->writer_fn(vm->writer_ud, "rs", 2, b, (size_t)n, 0);              \
+    }                                                                        \
+} while (0)
+
+    RDBG_HEX("recv", recv);
+    RDBG_HEX("name", name);
+
     /* Same wrap protocol as urbi_object_lookup: pre-bump if safe, otherwise
      * force a clear pass and reset to 1.  This pins lookup_stamp uniqueness
      * for the entire DFS below.
@@ -552,35 +578,55 @@ urbi_object_resolve_slot(UVM *vm, UObject *recv, const USymbol *name,
     } else {
         vm->lookup_id++;
     }
+    RDBG_HEX("lookup_id", (uintptr_t)vm->lookup_id);
 
     UObject *stack[URBI_RESOLVE_STACK_CAP];
     int sp = 0;
     stack[sp++] = recv;
 
+    uint32_t iter_count = 0;
     while (sp > 0) {
         UObject *cur = stack[--sp];
+        if (trace && (iter_count < 16U || (iter_count & 0x3FU) == 0U)) {
+            RDBG_HEX("cur", cur);
+            RDBG_HEX("stamp", cur->lookup_stamp);
+        }
         if (cur->lookup_stamp == (uint32_t)vm->lookup_id) {
+            if (trace && iter_count < 16U) RDBG("dup\n");
+            iter_count++;
             continue;
         }
         cur->lookup_stamp = (uint32_t)vm->lookup_id;
+        if (trace && iter_count < 16U) RDBG_HEX("shape", cur->shape);
 
         int32_t idx = urbi_shape_find_slot(cur->shape, name);
         if (idx >= 0) {
             *out_holder = cur;
             *out_index  = (uint32_t)idx;
+            if (trace) { RDBG("hit -> return 1\n"); s_resolve_traced = 1; }
             return 1;
         }
 
         /* Push protos in reverse so left-first DFS pops them in declaration
          * order (mirrors UPROTOS_FOREACH iteration order). */
         uint32_t n = urbi_object_proto_count(cur);
+        if (trace && iter_count < 16U) RDBG_HEX("proto_n", n);
         for (uint32_t i = n; i > 0U; i--) {
             if (sp >= URBI_RESOLVE_STACK_CAP) {
+                if (trace) { RDBG("STACK OVERFLOW\n"); s_resolve_traced = 1; }
                 return -1;   /* depth overflow — caller raises diagnostic */
             }
             stack[sp++] = urbi_object_proto_at(cur, i - 1U);
         }
+        iter_count++;
+        if (iter_count > 100000U) {
+            if (trace) { RDBG("ITER CAP 100K -> bailing\n"); s_resolve_traced = 1; }
+            return -1;
+        }
     }
 
+    if (trace) { RDBG("miss -> return 0\n"); s_resolve_traced = 1; }
     return 0;
+#undef RDBG
+#undef RDBG_HEX
 }
