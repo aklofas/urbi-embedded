@@ -28,6 +28,8 @@ the urbi register hooks.
 |--------|------------|--------|-----------------------------------|
 | FLASH  | 0x08000000 | 2 MB   | code + .rodata + baked bytecode   |
 | SRAM1  | 0x20000000 | 112 KB | .data + .bss + stack + urbi heap  |
+| SRAM2  | 0x2001C000 | 16 KB  | spare (DMA buffers, stack)        |
+| SRAM3  | 0x20020000 | 64 KB  | spare (DMA buffers, stack)        |
 | CCM    | 0x10000000 | 64 KB  | reserved                          |
 | SDRAM  | 0xD0000000 | 8 MB   | framebuffer + spare               |
 

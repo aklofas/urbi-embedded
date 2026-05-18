@@ -33,8 +33,9 @@ struct UValue;
 #endif
 
 /* Allocator: static .bss heap carved from internal SRAM.  Signature matches
- * UVMAllocFn (include/urbi/types.h) — pass directly to urbi_vm_alloc.
- * The heap is statically sized at URBI_HEAP_BYTES (default 80 KB). */
+ * UVMAllocFn (include/urbi/types.h) — pass as the alloc_fn parameter to
+ * urbi_vm_init.  The heap is statically sized at URBI_HEAP_BYTES (default
+ * 80 KB). */
 void *port_alloc(void *ptr, size_t nbytes, void *ud);
 
 /* Monotonic-microseconds time source.  Signature matches urbi_time_us_fn
