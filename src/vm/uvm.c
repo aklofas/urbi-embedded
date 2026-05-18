@@ -1800,13 +1800,25 @@ dispatch:
          *     the getter body once implicit-this lands).
          *   * No vm->last_recv side effect — that field is gone at v1.6. */
         CASE(OP_SELF) {
+            /* v0.8.2 bring-up debug: trace OP_SELF sub-steps to localize
+             * a freestanding-only hang.  Fire-once gate (s_dispatch_traced
+             * already serves this — set after 200 dispatches).  Remove
+             * before tag. */
+            #define SELFDBG(msg) do {                                          \
+                if (!s_dispatch_traced && vm->writer_fn)                       \
+                    vm->writer_fn(vm->writer_ud, "self", 4, msg,               \
+                                  sizeof(msg) - 1U, 0);                        \
+            } while (0)
+            SELFDBG("enter\n");
             uint32_t i = *s->pc;
             uint8_t  dst_reg  = uinstr_a(i);
             uint8_t  recv_reg = uinstr_b(i);
             uint8_t  ic_index = uinstr_c(i);
 
+            SELFDBG("ic_resolve_pi\n");
             UProtoInstance *pi = ic_resolve_pi(s);
             if (pi == NULL || pi->ic_table == NULL) {
+                SELFDBG("no IC table\n");
                 vm->last_error = UVM_TYPE_ERROR;
                 vm_format_type_error_msg(vm, "SELF: no IC table bound");
                 HALT();
@@ -1818,12 +1830,16 @@ dispatch:
              * would otherwise destroy the receiver we need to copy to
              * R[A+1].  Snapshot first; write R[A+1] before R[A]. */
             UValue self_value = s->R[recv_reg];
+            SELFDBG("snapshot self\n");
 
             UObject *recv;
             if (self_value.kind == (uint8_t)UVAL_OBJECT) {
+                SELFDBG("recv is UVAL_OBJECT\n");
                 recv = (UObject *)self_value.v.p;
             } else {
+                SELFDBG("recv is atom -> atom_proto_for_value\n");
                 recv = urbi_atom_proto_for_value(vm, self_value);
+                SELFDBG("atom_proto_for_value returned\n");
                 if (recv == NULL) {
                     vm->last_error = UVM_OOM;
                     vm_format_type_error_msg(vm, "SELF: atom proto allocation failed");
@@ -1831,6 +1847,7 @@ dispatch:
                 }
             }
 
+            SELFDBG("pre fast-path loop\n");
             if (UNLIKELY(vm->in_watcher_install)) {
                 UCell *cell = (UCell *)recv;
                 bool already_present = false;
@@ -1850,6 +1867,7 @@ dispatch:
                 }
             }
 
+            SELFDBG("fast-path enter\n");
             /* Fast path. */
             for (uint8_t k = 0; k < ic->n; k++) {
                 if (ic->recv_shapes[k]  == recv->shape
@@ -1886,10 +1904,13 @@ dispatch:
                 }
             }
 
+            SELFDBG("slow path\n");
             /* Slow path. */
             UValue v;
             int rc = urbi_slot_get_slow(vm, recv, ic, &v);
+            SELFDBG("slow path returned\n");
             if (rc != 0) {
+                SELFDBG("slow path FAILED\n");
                 vm->last_error = UVM_TYPE_ERROR;
                 {
                     UDiagWriter _w;
