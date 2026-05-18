@@ -46,9 +46,9 @@ struct UClosure;  /* defined in umodule.h */
 /* --- UUpvalCell: runtime heap cell for captured locals.
    Forward typedef only — the full struct definition (with UCell prefix at
    offset 0 for GC) lives in uclosure.h.  This mirrors how UClosure is
-   forward-declared in umodule.h: uframe.h → umodule.h → ugc.h would form
-   a circular include chain, so the complete layout is deferred to the first
-   header that has both UValue and UCell in scope.
+   forward-declared in umodule.h: uframe.h → ugc.h → umodule.h → uframe.h
+   would form a circular include chain, so the complete layout is deferred
+   to the first header that has both UValue and UCell in scope.
    Files that only need `UUpvalCell *` (e.g. ustrand.h, uvm.h) include this
    header; files that touch UUpvalCell fields include uclosure.h. */
 typedef struct UUpvalCell UUpvalCell;

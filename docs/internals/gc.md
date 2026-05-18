@@ -190,7 +190,7 @@ proper GC cell let it own GC-managed `UValue` slots safely. `UEvent` and
 `UChangedNode` are the reactive-runtime cells that flow through the
 slot-change pipeline; see `reactive-runtime.md`.
 
-Type tags 20–63 are reserved for future runtime cells; host types start at
+Type tags 21–63 are reserved for future runtime cells; host types start at
 `UTYPE_HOST_BASE = 64` and are registered through `urbi_register_type`.
 
 ## Configurable knobs
