@@ -232,28 +232,19 @@ fail_after_n_alloc(void *ptr, size_t nbytes, void *ud)
 
 /* vm_alloc_closure_oom_does_not_corrupt_closure_list:
  *
- * Phase 5 T32 / VM-005.  Two related orderings are pinned:
+ * Phase 5 T32 / VM-005.  Pins that vm_alloc_closure prepends to list_head
+ * only on success — OOM leaves list_head pointing at any previously
+ * allocated closure, not at the failed allocation.
  *
- * (a) vm_alloc_closure helper itself: prepend happens *only* on success,
- *     after urbi_zero/cell-init/proto-bind.  The prepend is the very last
- *     statement before return, and the only failure mode is alloc_fn
- *     returning NULL (which never touched list_head).
+ * v0.8.4 Option B Step C-2: vm_alloc_closure now calls urbi_gc_alloc, which
+ * internally makes TWO alloc_fn calls (cell + sidecar node).  The OOM contract
+ * is the same — urbi_gc_alloc returns NULL on either failure — but the test
+ * must account for 2 alloc_fn calls per vm_alloc_closure call.
  *
- * (b) OP_CLOSURE caller in src/vm/uvm.c: vm_alloc_closure returns a cl
- *     already prepended onto s->closure_list, then the dispatcher reads
- *     nupvals pseudo-instructions; vm_open_upvalue OOM (or upvalue
- *     re-capture out of range) on any of those failure arms must unlink
- *     cl from s->closure_list *before* freeing it, otherwise post-run
- *     cleanup walks dereference freed memory (use-after-free).
- *
- * This unit test pins (a) by direct invocation.  (b) is structurally
- * correct via inspection — a Gate G1 stretch precedent: producing a
- * pinpoint vm_open_upvalue OOM in mid-OP_CLOSURE through a compile-and-run
- * script requires a calibrated fail-after-N allocator whose allocation
- * count is fragile against any change to upstream emit/parse, and the
- * fix shape (two-line `s->closure_list = cl->next_alloc;` insertion at
- * each of two sibling failure arms) is identical to the helper-level
- * pin already covered here. */
+ * Critically: cl1 is now GC-managed (enrolled on vm->all_cells_head).  Do NOT
+ * manually free cl1 via alloc_fn — the GC sweep at urbi_vm_destroy reclaims
+ * it.  The manual free was the pre-C-2 double-free hazard; removing it here
+ * fixes the double-free reported in the Step C-2 test run. */
 UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
 {
     UVM vm;
@@ -267,22 +258,25 @@ UTEST(vm_alloc_closure_oom_does_not_corrupt_closure_list)
 
     UClosure *list = NULL;
 
-    /* First alloc succeeds. */
+    /* First alloc succeeds (urbi_gc_alloc makes 2 alloc_fn calls internally:
+     * one for the UClosure cell, one for the GC sidecar node). */
     UClosure *cl1 = vm_alloc_closure(&vm, &proto, &list);
     UASSERT(cl1 != NULL);
     UASSERT_EQ((long long)(uintptr_t)cl1, (long long)(uintptr_t)list);
 
     /* Force OOM on the next alloc and call again: must return NULL and
-     * leave list pointing at cl1 (NOT cl2, because cl2 was never returned). */
+     * leave list pointing at cl1 (NOT cl2, because cl2 was never returned).
+     * With urbi_gc_alloc the first internal call (cell alloc) returns NULL,
+     * so no partial state is written. */
     st.allocs_remaining = 0;
     UClosure *cl2 = vm_alloc_closure(&vm, &proto, &list);
     UASSERT(cl2 == NULL);
     UASSERT_EQ((long long)(uintptr_t)cl1, (long long)(uintptr_t)list);
     UASSERT(list->next_alloc == NULL);
 
-    /* Restore the allocator and free the lone survivor. */
+    /* Restore the allocator.  cl1 is GC-managed — do NOT call alloc_fn(cl1,
+     * 0, ...) here.  urbi_vm_destroy sweeps it via the GC. */
     st.allocs_remaining = -1;
-    vm.alloc_fn(cl1, 0, vm.alloc_ud);
 
     urbi_vm_destroy(&vm);
 }

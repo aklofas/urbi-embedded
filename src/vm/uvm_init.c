@@ -489,63 +489,25 @@ void urbi_vm_destroy(UVM *vm) {
 
     /* M2 baseline teardown. */
     uintern_destroy(vm);
-    /* M6 Phase 3: clear last_return_closure pointer.  Pre-Phase 3 this
-     * call freed the closure directly; Phase 3 migrates run-end closures
-     * onto vm->stdlib_closures (see uvm_run.c) so the closure gets reclaimed
-     * by the stdlib_closures sweep below.  Clearing the field guards
-     * against accidental dereference after destroy without the
-     * extra free that would now be a double-free. */
-    vm->last_return_closure = NULL;
-    /* M6 Phase 3: free vm-lifetime UClosures (both native stdlib closures
-     * registered by urbi_native_closure_create AND user closures migrated
-     * from strand closure_lists at run exit, see uvm_run.c).  All threaded
-     * via next_alloc on a single vm->stdlib_closures list.
+    /* v0.8.4 Option B Step C-2: UClosure + UUpvalCell are GC-managed.
+     * urbi_gc_destroy (called above) already swept all white GC cells and
+     * invoked the uclosure_destroy finalizer on each closure — that finalizer
+     * decs root_proto.refcount and performs sentinel-promotion (the same
+     * per-closure work the pre-C-2 stdlib_closures loop did).
      *
-     * v0.8.1 Variant B Phase 2 ORDERING INVARIANT (spec §3.7):
-     * This sweep MUST run BEFORE the vm->rescued_protos sweep below.
-     * Each closure decs its proto via uproto_root_of() — that dereferences
-     * cl->proto->root (back-pointer into a root_proto).  The root_proto must
-     * still be alive at that point.  Rescued root_protos stay alive until the
-     * rescued_protos sweep frees them.  Reordering causes UAF. */
-    if (vm->alloc_fn != NULL) {
-        UClosure *cl = vm->stdlib_closures;
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            /* v0.8.1: dec root_proto.refcount before freeing the closure.
-             * The root_proto is still alive (either held by a live UModule
-             * or on the rescued_protos list).  Safe per the ordering invariant
-             * documented above. */
-            if (cl->proto != NULL) {
-                UProto *rp = uproto_root_of(cl->proto);
-                umodule_proto_refcount_dec(rp);
-                /* Self-link sentinel: if umodule_destroy was called with vm=NULL
-                 * while refcount was > 0, root_proto->next_alloc was set to
-                 * root_proto itself (unambiguous sentinel; see umodule.c).
-                 * When the last closure ref drops refcount to 0, promote the
-                 * root_proto to rescued_protos so the sweep below frees it.
-                 * This avoids a struct addition while ensuring vm=NULL destroy
-                 * paths are clean under ASan. */
-                if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
-                    rp->next_alloc     = vm->rescued_protos;
-                    vm->rescued_protos = rp;
-                }
-            }
-            vm->alloc_fn(cl, 0, vm->alloc_ud);
-            cl = next;
-        }
-        vm->stdlib_closures = NULL;
+     * vm->stdlib_closures + vm->stdlib_upvalues are always NULL at this point
+     * (Step C-2 stopped the migration loops in uvm_run.c and
+     * release_strand_resource_chain).  Clear both defensively and skip the
+     * sweep loops — they would be no-ops and the sweep comments are
+     * now misleading.  Step C-3 deletes both fields.
+     *
+     * vm->last_return_closure: GC-managed; cleared for post-destroy hygiene.
+     * The closure (if any) was already reclaimed by urbi_gc_destroy above. */
+    vm->last_return_closure = NULL;
+    vm->stdlib_closures = NULL;
+    vm->stdlib_upvalues = NULL;
 
-        /* M6 Phase 3: free vm-lifetime heapified upvals (UUpvalCells
-         * migrated from strand closed_cells at run exit).  These must
-         * outlive their owning closures, which are also on
-         * stdlib_closures above. */
-        UUpvalCell *uc = vm->stdlib_upvalues;
-        while (uc != NULL) {
-            UUpvalCell *next = uc->next;
-            vm->alloc_fn(uc, 0, vm->alloc_ud);
-            uc = next;
-        }
-        vm->stdlib_upvalues = NULL;
+    if (vm->alloc_fn != NULL) {
 
         /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any

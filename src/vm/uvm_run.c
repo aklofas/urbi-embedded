@@ -179,68 +179,37 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         break;
     }
 
-    /* M6 Phase 3: migrate every run-allocated closure onto vm->stdlib_closures
-     * instead of freeing them at run end.  The earlier shape eagerly freed the
-     * strand's closure_list at uvm_run exit, but a run can leak references to
-     * those closures into long-lived storage (realm-global slots stored via
-     * SETSLOT, watcher condition / body / onleave fields, etc.) that the
-     * subsequent run's GC walker would dereference, hitting use-after-free.
+    /* v0.8.4 Option B Step C-2: UClosure + UUpvalCell are GC-managed.
+     * Pre-C-2 these two blocks migrated strand.closure_list onto
+     * vm->stdlib_closures and strand.closed_cells onto vm->stdlib_upvalues
+     * to prevent UAF on closures that escaped into long-lived storage.
+     * With GC management, reachable closures survive via the root paths
+     * registered at Step C-1 (strand entry_closure / call-frame closures /
+     * realm globals / watcher fields); unreachable closures are swept.
+     * No migration needed — just clear the dormant head pointers.
      *
-     * Phase 3 surfaced this latent issue (it was always there, but pre-Phase 3
-     * the realm-global-store-then-GC-walk pattern stayed under the GC trigger
-     * threshold; Phase 3's nine extra Object-proto slots add enough allocation
-     * pressure to cross the threshold and trigger the walk on the next run).
-     *
-     * The fix here: closures created by OP_CLOSURE share lifetime with the VM
-     * (vm_destroy reclaims them via the stdlib_closures sweep already in
-     * uvm_init.c).  This wastes memory on truly transient closures (the
-     * common case for a single-shot run) but eliminates the dangling-pointer
-     * class.  v1.x GC-managed UClosure (regime 3 promotion in
-     * gc_incremental.c) replaces this with proper sweep-time reclamation.
-     *
-     * vm->last_return_closure is still set so urbi_vm_run callers can
-     * inspect the result; the underlying memory is no longer freed at the
-     * next call (it's already on stdlib_closures), so the field is now
-     * effectively informational. */
+     * vm->last_return_closure: still set for callers that inspect the result
+     * across urbi_vm_run calls; the closure is GC-rooted via that field
+     * (vm_misc_walk_roots registered at Step C-1). */
     {
         UClosure *out_cl = (out->kind == (uint8_t)UVAL_CLOSURE)
                            ? (UClosure *)out->v.p : NULL;
         vm->last_return_closure = out_cl;
 
-        UClosure *cl = strand.closure_list;
-        strand.closure_list = NULL;  /* null before ustrand_destroy to avoid double-free */
-        /* O(n) per-closure migration with no tail-walk: pop the head off
-         * strand.closure_list and prepend onto vm->stdlib_closures.  The
-         * order of closures within stdlib_closures is irrelevant — the
-         * list is only used for the destroy-time sweep. */
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            cl->next_alloc = vm->stdlib_closures;
-            vm->stdlib_closures = cl;
-            cl = next;
-        }
+        /* Dormant — GC manages lifetime; clear to keep chain NULL before
+         * release_strand_resource_chain (which also clears it, but belt-and-
+         * suspenders prevents any confusion during the C-2 → C-3 window). */
+        strand.closure_list = NULL;
     }
 
-    /* M6 Phase 3: migrate heapified upvals to vm->stdlib_upvalues so they
-     * outlive their owning closures (which are also migrated to
-     * vm->stdlib_closures above).  Symmetric with the closure migration —
-     * both are reclaimed at urbi_vm_destroy.  Pre-Phase 3 these were freed
-     * eagerly, but a closure that survives the run holds references to
-     * its upvals; freeing the upvals dangles `closure->upvals[i]`. */
-    {
-        UUpvalCell *cell = strand.closed_cells;
-        strand.closed_cells = NULL;  /* null before ustrand_destroy to avoid double-free */
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            cell->next = vm->stdlib_upvalues;
-            vm->stdlib_upvalues = cell;
-            cell = next;
-        }
-    }
+    /* Dormant — GC manages UUpvalCell lifetime; clear chain. */
+    strand.closed_cells = NULL;
 
-    /* Free any open upvalue cells still on the strand. */
-    vm_free_open_upvalues(vm, &strand);
-    strand.open_upvals = NULL;  /* null before ustrand_destroy to avoid double-free */
+    /* vm_free_open_upvalues is now a no-op clear (Step C-2); remove the
+     * redundant call.  open_upvals is cleared by release_strand_resource_chain
+     * inside ustrand_destroy; clear here as belt-and-suspenders to match
+     * the pre-C-2 ordering pattern. */
+    strand.open_upvals = NULL;
 
     /* CHSTR-044: free register stack via triplet helper. */
     urbi_strand_register_stack_free(&strand, vm);

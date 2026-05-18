@@ -87,95 +87,30 @@ strand_unlink_from_tags(UStrand *s)
     }
 }
 
-/* === CHSTR-029: release_strand_resource_chain ===
+/* === CHSTR-029: release_strand_resource_chain (v0.8.4 Option B Step C-2) ===
  *
- * Free the three allocation chains owned by a strand: closure_list,
- * closed_cells, and open_upvals.  Centralises the near-identical free loops
- * that previously appeared in ustrand_destroy.
+ * Clear the three head pointers on the strand without touching the closures /
+ * upval cells they reference.  Both UClosure and UUpvalCell are GC-managed
+ * since Step C-2; the GC sweep reclaims them when they become unreachable
+ * from any root.
  *
- * closure_list / closed_cells lifetime policy (v0.8.0):
+ * Pre-C-2 this function freed (transient strands) or rescued-to-vm-lifetime
+ * (persistent strands) the entire closure_list + closed_cells + open_upvals
+ * chains.  Both mechanisms are now redundant — closures that escape via
+ * realm globals / atom protos / watcher fields are kept alive transitively
+ * through those root paths.  Closures that don't escape become unreachable
+ * and GC-collectable.
  *
- *   Transient strands (is_transient_strand == 1, i.e. urbi_vm_run):
- *     urbi_vm_run pre-migrates closure_list → vm->stdlib_closures and
- *     closed_cells → vm->stdlib_upvalues before calling ustrand_destroy.
- *     By the time this function is reached, both chains are NULL — the
- *     loops below are no-ops.
- *
- *   Persistent strands (is_transient_strand == 0, i.e. urbi_strand_create
- *   paths — loader strands, watcher body strands, fork children):
- *     Closures and heapified upvals created during the strand's run may have
- *     been installed as realm-globals (var f = function...) or captured by
- *     persistent watchers.  Freeing them here would dangle those references.
- *     Instead, migrate them to vm->stdlib_closures / vm->stdlib_upvalues so
- *     they are freed at urbi_vm_destroy.  This is the same lifetime extension
- *     the old transient path applied; v1.x GC UClosure promotion replaces
- *     this migrate-to-stdlib pattern with proper sweep-time reclamation.
- *
- *   Open upvalue cells are always freed eagerly (they were not heapified, so
- *   no live reference can exist to their stack-relative storage).
- *
- * closure_list: skips any closure that equals vm->last_return_closure (the
- * caller-owned return value kept alive between urbi_vm_run calls). */
+ * Step C-3 will delete the closure_list / closed_cells fields themselves
+ * and inline this function (it becomes a one-liner clearing s->open_upvals,
+ * with the other two clears no longer needed). */
 static void
 release_strand_resource_chain(UVM *vm, UStrand *s)
 {
-    UClosure  *cl;
-    UUpvalCell *cell;
-
-    /* Closure list (pre-GC closure bookkeeping).
-     * Non-transient strands: migrate to vm->stdlib_closures to prevent UAF on
-     * realm-global UVAL_CLOSURE references that outlive this strand. */
-    cl = s->closure_list;
+    (void)vm;
     s->closure_list = NULL;
-    if (s->is_transient_strand) {
-        /* Transient: lists were pre-migrated by urbi_vm_run; this is a no-op.
-         * Keep the skip-logic for last_return_closure as a safety net. */
-        while (cl != NULL) {
-            UClosure *next = cl->next_alloc;
-            if (cl != vm->last_return_closure)
-                vm->alloc_fn(cl, 0, vm->alloc_ud);
-            cl = next;
-        }
-    } else {
-        /* Persistent: splice entire closure_list onto vm->stdlib_closures.
-         * Find the tail of cl's chain so we can prepend in O(n). */
-        if (cl != NULL) {
-            UClosure *tail = cl;
-            while (tail->next_alloc != NULL) tail = tail->next_alloc;
-            tail->next_alloc = vm->stdlib_closures;
-            vm->stdlib_closures = cl;
-        }
-    }
-
-    /* Heapified upvalue cells.
-     * Same policy: migrate persistent-strand upvals to vm->stdlib_upvalues. */
-    cell = s->closed_cells;
     s->closed_cells = NULL;
-    if (s->is_transient_strand) {
-        while (cell != NULL) {
-            UUpvalCell *next = cell->next;
-            vm->alloc_fn(cell, 0, vm->alloc_ud);
-            cell = next;
-        }
-    } else {
-        if (cell != NULL) {
-            UUpvalCell *tail = cell;
-            while (tail->next != NULL) tail = tail->next;
-            tail->next = vm->stdlib_upvalues;
-            vm->stdlib_upvalues = cell;
-        }
-    }
-
-    /* Open upvalue cells (not closed before strand death): always free.
-     * Open cells store a pointer into the strand's register stack, which is
-     * being freed; no live reference to the open cell can exist elsewhere. */
-    cell = s->open_upvals;
-    s->open_upvals = NULL;
-    while (cell != NULL) {
-        UUpvalCell *next = cell->next;
-        vm->alloc_fn(cell, 0, vm->alloc_ud);
-        cell = next;
-    }
+    s->open_upvals  = NULL;
 }
 
 void
