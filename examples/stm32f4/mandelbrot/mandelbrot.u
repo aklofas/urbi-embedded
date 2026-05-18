@@ -59,11 +59,14 @@ Realm.mandel = function (px, py) {
 // === RGB565 colour map =====================================================
 //
 // Returns a 16-bit RGB565 word.  Inside-set pixels are black; exterior
-// pixels follow a 5-band gradient that mimics the classic Wikipedia
-// Mandelbrot palette: deep blue -> light blue -> white -> orange -> black.
-// MAX_ITER is 100 so each band is 20 iter wide.  Integer-only math (urbi
-// `/` promotes to float; multiplications and subtractions stay int).
-// .bitand() / nested if/else only -- no division, no `&&`/`||`.
+// pixels follow a 5-band gradient that mimics the canonical Wikipedia
+// Mandelbrot palette: deep blue -> cyan -> near-white -> orange -> black.
+// MAX_ITER is 100 so each band is 20 iter wide.
+//
+// v1.0 urbi note: `<<` is the sequential-atomic separator, `|` is also a
+// separator; bitwise shift/or aren't operators.  Each channel occupies
+// disjoint bits in RGB565 (R5 = bits 11..15, G6 = 5..10, B5 = 0..4) so
+// `+` substitutes for `|` and `* 2048` / `* 32` substitute for shifts.
 Realm.color_for = function (iter) {
     if (iter >= Realm.MAX_ITER) {
         0
@@ -73,31 +76,32 @@ Realm.color_for = function (iter) {
             5 + iter
         } else {
             if (iter < 40) {
-                // Band 1: deep blue -> medium blue.  B5 saturates near 30,
-                // G6 grows so the hue lifts toward cyan.
+                // Band 1: deep blue -> cyan-blue.  G6 grows 0..19, B5
+                // climbs and saturates near 31.
                 var g = iter - 20;
                 var b = 25 + (iter - 20);
                 if (b > 31) { b = 31 };
-                (g << 5) | b
+                g * 32 + b
             } else {
                 if (iter < 60) {
-                    // Band 2: cyan-blue -> near-white.  R5 grows, G6 holds
-                    // high, B5 holds high.
+                    // Band 2: cyan-blue -> near-white.  R5 grows 0..19,
+                    // G6 holds at 50, B5 holds at 31.
                     var r5 = iter - 40;
                     if (r5 > 31) { r5 = 31 };
-                    (r5 << 11) | (50 << 5) | 31
+                    r5 * 2048 + 50 * 32 + 31
                 } else {
                     if (iter < 80) {
-                        // Band 3: white -> orange.  B5 fades fast.
+                        // Band 3: white -> orange.  R5 = 31, G6 = 50,
+                        // B5 fades 31 -> 0.
                         var b = 31 - (iter - 60) * 2;
                         if (b < 0) { b = 0 };
-                        (31 << 11) | (50 << 5) | b
+                        31 * 2048 + 50 * 32 + b
                     } else {
                         // Band 4: orange -> dark red -> black.  R5 + G6
-                        // fade together; near MAX_ITER pixels go almost
-                        // dark, blending into the set's black interior.
+                        // fade together; near MAX_ITER pixels blend into
+                        // the set's black interior.
                         var fade = 99 - iter;
-                        (fade << 11) | (fade << 5)
+                        fade * 2048 + fade * 32
                     }
                 }
             }
