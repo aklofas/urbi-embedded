@@ -121,32 +121,52 @@ ic_fill_at_cursor(UIC *ic, const UVM *vm, const UObject *recv,
 int
 urbi_slot_get_slow(UVM *vm, UObject *recv, UIC *ic, UValue *out_value)
 {
+    /* v0.8.2 bring-up debug: gated by external s_dispatch_traced (set
+     * after the [dl] tap caps).  Fires once per call after the cap.
+     * Remove before tag. */
+    extern int s_dispatch_traced;
+    int trace = s_dispatch_traced;
+#define SGDBG(s) do { if (trace && vm && vm->writer_fn)                    \
+    vm->writer_fn(vm->writer_ud, "sg", 2, s, sizeof(s)-1U, 0); } while (0)
+
+    SGDBG("enter\n");
     if (vm == NULL || recv == NULL || ic == NULL
         || ic->name == NULL || out_value == NULL) {
+        SGDBG("INVALID ARG\n");
         return -1;
     }
 
     UObject *holder = NULL;
     uint32_t idx    = 0U;
+    SGDBG("pre resolve_slot\n");
     int rc = urbi_object_resolve_slot(vm, recv, ic->name, &holder, &idx);
+    SGDBG("post resolve_slot\n");
     if (rc <= 0) {
         /* 0 == miss; -1 == resolve-stack overflow.  T40 will land the
          * fallback retry; for now both surface as "not found" to caller. */
+        SGDBG("resolve miss\n");
         return -1;
     }
-
+    SGDBG("pre uprops_for_resolved\n");
     UProps  *up    = ic_uprops_for_resolved_slot(holder, idx);
+    SGDBG("pre flags_for_resolved\n");
     uint8_t  flags = ic_flags_for_resolved_slot(recv, holder, idx);
+    SGDBG("pre ic_fill_at_cursor\n");
     ic_fill_at_cursor(ic, vm, recv, holder, idx, up, flags);
+    SGDBG("post ic_fill_at_cursor\n");
 
     if (flags & URBI_SLOT_FLAG_OGET) {
         /* Caller (OP_GETSLOT slow path) inspects the just-filled flags and
          * invokes URBI_VM_DISPATCH_GETTER.  Don't write *out_value. */
+        SGDBG("OGET return\n");
         return 0;
     }
 
+    SGDBG("publish out_value\n");
     *out_value = holder->slots[idx];
+    SGDBG("return 0\n");
     return 0;
+#undef SGDBG
 }
 
 /* === urbi_slot_set_slow ===
