@@ -1,5 +1,137 @@
 # Changelog
 
+## v0.8.2-stm32f4-mandelbrot — 2026-05-17 (STM32F4 bare-metal port + Mandelbrot demo)
+
+**Tag:** `v0.8.2-stm32f4-mandelbrot`
+**Theme:** First non-RTOS embedded port.  Bare-metal STM32F429I-DISC1
+(Cortex-M4F, 192 KB SRAM + 8 MB SDRAM, 240×320 LCD, L3GD20 gyro, USER
+button) with a progressive-refinement Mandelbrot demo as the bring-up
+vehicle.  Eight thin port-shim TUs wrap STM32CubeF4 BSP; urbi's
+cooperative scheduler runs directly on bare metal — no FreeRTOS.  The
+demo exercises arithmetic + host-fn dispatch + ISR-safe event ring +
+polled-flag abort/restart cooperative-cancellation pattern + freestanding
+allocator survival under tight RAM.  Bring-up surfaced 7 latent runtime
+bugs, all fixed inline; none required wire-format or ABI changes.
+
+### Added
+
+- **`components/stm32f4-hal-baremetal/`** managed-component shell wrapping
+  STM32CubeF4 HAL.  Eight port shims: `port_allocator` (bump+two-pass-fit
+  freelist over a static `.bss` heap, sized for the demo's 8 KB strand
+  stacks), `port_time` (DWT cycle counter), `port_writer` (USART1 via
+  ST-Link VCP), `port_diag` (URBI_LOG_* routing), `port_isr_check` (CMSIS
+  IPSR intrinsic), `port_lcd` (`BSP_LCD_FillRect` with bounds clamp +
+  RGB565→ARGB8888 conversion), `port_gyro` (L3GD20 via SPI5, three
+  axis-specific host-fns), `port_button` (PA0 EXTI0 → urbi event ring
+  from ISR context).
+- **`examples/stm32f4/mandelbrot/`** full demo: 247-line `mandelbrot.u`
+  plus 317-line `main.c` plus STM32F429ZITx linker script plus minimal
+  libc stubs for freestanding link.  Progressive 32→1 pixel-tile refinement with
+  polled-flag abort/restart; tilt-pan via gyro integration; button-press
+  2× zoom; gyro tilt-intensity bar overlay.  Builds via
+  `examples/stm32f4/mandelbrot/Makefile` (out-of-tree, depends on a
+  STM32CubeF4 sibling checkout).
+- **`make cross-stm32f4`** and **`make cross-stm32f4-bytecode-only`**
+  top-level cross-compile targets (Cortex-M4F + f32 UValue layout +
+  `URBI_STDLIB_FLAVOR=4` rebake).  CI matrix gains a `cross-stm32f4`
+  job alongside the existing `cross-arm` and `cross-esp32s3`.
+- **`URBI_STDLIB_FLAVOR`** Makefile knob + `tools/urbi-compile-stdlib-f%`
+  pattern rule to rebake the stdlib bytecode for non-default
+  `URBI_FLOAT_TYPE` targets.  Tracked `src/stdlib/urbi_stdlib_bytecode.gen.c`
+  remains host-baked f64; per-target rebake produces a flavor-matching
+  blob and the loader's flavor check (byte 13) no longer rejects.
+- **`tests/port_stm32f4/`** host-side unit tests for each port shim, run
+  against a mock BSP layer (`mock_bsp.{c,h}`).  Eight tests covering
+  allocator behaviour, time/writer/diag plumbing, LCD bounds, gyro
+  rate/zero handling, button-event-from-ISR injection.  Wired into
+  `make test` via the new `test-port-stm32f4` target.
+- **`Float.abs` / `Float.floor` / `Float.ceil` / `Float.round`** real
+  implementations in freestanding builds.  Previously throw-stubs;
+  silently killed any body strand calling them (the gyro pan body in
+  the Mandelbrot demo).  No libm dependency — pure C arithmetic.
+- **`tests/chk/reactive/polled_abort_restart.chk`** regression for the
+  polled-flag abort/restart pattern used by the Mandelbrot demo (236 →
+  237 .chk fixtures).
+
+### Changed
+
+- **`UObject.protos` single-form encoding** switched from shift-encoded
+  `(p << 1) | 1` / decode `>> 1` to alignment-tag encoded
+  `(uintptr_t)p | 1U` / decode `& ~(uintptr_t)1U`.  The shift encoding
+  silently lost bit 31 of the prototype pointer on any heap above
+  `0x80000000` (e.g. STM32F4 SDRAM at `0xD0000000`).  Alignment makes
+  bit 0 of any aligned UObject pointer free, so OR-tagging is correct
+  and costs the same.  Internal change; no public API impact.
+- **`urbi_stdlib_boot`** now inherits `vm->alloc_fn` + `vm->alloc_ud` into
+  the stdlib UModule it allocates for the baked bytecode.  Pre-fix, the
+  module's `alloc_fn` stayed NULL and `module_allocator()` silently fell
+  back to `stdlib_alloc` on hosted builds (hiding the bug); on
+  freestanding builds the fallback isn't available and
+  `umodule_deserialize` failed with `ULOAD_OOM` before any real
+  allocation — the symptom was `urbi_realm_global` returning NULL on
+  every freestanding embedder.  Two-line fix.
+- **`components/urbi` / `components/urbi_aux`** renamed to
+  **`components/esp32-idf` / `components/esp32-idf-aux`** to make room
+  for the second port-component family.  ESP-IDF embedders updating
+  from v0.8.1 must adjust their `idf_component.yml` references.
+
+### Fixed (runtime bugs surfaced during STM32F4 bring-up)
+
+In addition to the architectural changes above, six other latent bugs
+were caught by the on-hardware bring-up cycle and fixed inline.  All
+six manifest only under the specific allocator / float-layout / display-
+orientation conditions of the F4 demo; the host test suite never
+exercised them.
+
+- **`tests/unit/test_sched_pool_exhaust.c::count_alloc`** missing realloc
+  semantics.  The test's allocator did `malloc(nbytes)` for non-zero
+  calls, ignoring the incoming pointer.  Worked by accident before
+  `urbi_stdlib_boot` propagated `vm->alloc_fn` into the stdlib UModule;
+  after that fix surfaced a segfault inside `umodule_destroy_proto_buffers`
+  walking uninitialised nested-slot tails.  Switched to plain
+  `realloc(ptr, nbytes)` per the `UVMAllocFn` contract.
+- **`tests/unit/test_uobject.c`** atom-singleton decode used the
+  superseded `protos >> 1` form; updated to `& ~(uintptr_t)1U` to match
+  the new single-form encoding (see Changed above).
+- **`UModule.alloc_fn` not propagating** (see Changed above) — the
+  bring-up debugging that found this also surfaced silent-failure mode:
+  embedders on freestanding targets had no way to know
+  `urbi_realm_create` had partially-failed until they tried to use
+  realm globals.  No new error code; the existing
+  `URBI_ERR_STDLIB_BOOT_FAILED` propagates as expected, just now
+  reaches embedders that exercise the path.
+- **Stdlib bytecode flavor mismatch on cross-compile** — tracked
+  bytecode blob is host-baked f64; cross-stm32f4 runtime is f32.  Per-
+  target rebake via the new `URBI_STDLIB_FLAVOR` knob (see Added).
+- **Bump-only allocator could not reuse strand-stack blocks** — the
+  initial `port_allocator.c` had no freelist; freed 8 KB strand stacks
+  leaked.  Rewritten as bump + two-pass-fit freelist (good-fit for
+  `size in [need, need*2)` then first-fit fallback) so freed stacks
+  stay intact for matching 8 KB requests.
+- **`URBI_FLOAT_TYPE` layout mismatch between embedder TU and library**
+  silently zeroed every `UVAL_FLOAT`.  Embedder compiled with default
+  `URBI_FLOAT_TYPE=8` (`v.f` is double); `liburbi.a` built with `=4`
+  (`v.f` is float).  Different store widths at the same struct offset;
+  the low 32 bits of any "nice" double are `0x00000000`.  Fixed at the
+  call site (embedder must set `-DURBI_FLOAT_TYPE=4` to match the
+  library); a follow-up link-time guard is tracked in design-risks
+  ("v1.0-rc — URBI_FLOAT_TYPE link-time mismatch is silent").
+
+### Spec / plan
+
+- Spec: `docs/superpowers/specs/2026-05-17-v0.8.2-stm32f4-mandelbrot-design.md`
+- Plan: `docs/superpowers/plans/2026-05-17-v0.8.2-stm32f4-mandelbrot.md`
+- Retrospective: `docs/milestones/v0.8.2-stm32f4-mandelbrot.md`
+
+### Wire format / ABI
+
+- **Wire format unchanged at v1.7 / 0x17.**  No bytecode-layout work in
+  this release; v1.7 modules baked at v0.8.1 continue to load.
+- **ABI unchanged at 0/8/0.**  No struct-layout changes in public types;
+  no symbol additions; no signature breaks.
+
+---
+
 ## v0.8.1-uproto-root — 2026-05-17 (UModule thin-shell refactor + module-grain lifetime)
 
 **Tag:** `v0.8.1-uproto-root`
@@ -85,8 +217,8 @@ realm-owned `loaded_protos[]` registry.
 - **Test-helper `utest_e2e_compile_and_run` UAF** on still-live nested
   protos (v0.7.2-shipped OPEN, design-risks entry "v0.7.x — test-helper
   UAFs").  Phase 0 confirmed a clean ASan pass: the v0.7.3 UProto refcount
-  + v0.8.0 UModule refcount mechanisms together closed the UAF before this
-  refactor began.  Permanent regression net at
+  combined with the v0.8.0 UModule refcount mechanisms together closed
+  the UAF before this refactor began.  Permanent regression net at
   `tests/unit/test_test_helper_uaf_repro.c`.  Design-risks entry deleted.
 - **IC-names leak** after non-strand `module->X` hot-path migration
   (Task 5 follow-up; was 928 bytes/stdlib_boot per valgrind).
