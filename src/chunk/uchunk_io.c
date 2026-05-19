@@ -279,8 +279,8 @@ UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
 /* --- Per-section decoder context (file-private) --- */
 
 typedef struct {
-    UProto         *module;  /* root UProto; v0.9.2: UModule deleted, root IS the decode target */
-    UProto         *rp;      /* same as module (root); kept for decode_verify compatibility */
+    UProto         *root_proto;  /* root UProto; v0.9.2: UModule deleted, root IS the decode target */
+    UProto         *rp;          /* same as root_proto (root); kept for decode_verify compatibility */
     const uint8_t  *buf;
     size_t          size;
     size_t          off;
@@ -301,11 +301,12 @@ static UChunkLoadError decode_header(MDecCtx *d) {
         set_errmsg(d->errmsg, d->errcap, "bad magic (expected \"URBI\")");
         return UCHUNK_LOAD_BAD_MAGIC;
     }
-    /* version byte: 0x17 = v1.7 (16*major + minor); all prior versions are
-       hard-rejected.  v1.6 → v1.7 is the v0.8.1-uproto-root Phase 3 break
-       (UModule body shrinks to header + source_name + recursive root_proto
-       block; per-field duplication of chunk-top fields removed).  Loading
-       older modules silently would parse the body as the wrong structure. */
+    /* version byte: 0x18 = v1.8 (16*major + minor); all prior versions are
+       hard-rejected.  v1.7 → v1.8 is the v0.9.2-uproto-only Approach C bump
+       (UModule struct deleted; wire-byte layout unchanged — the bump is
+       semantic, signaling no separate loader-shell type).  Loading older
+       modules silently would produce unknown opcodes, misread GC state, or
+       wrongly-sized IC tables. */
     if (d->buf[4] != URBI_BYTECODE_VERSION_BYTE) {
         set_errmsg(d->errmsg, d->errcap,
                    "unsupported version byte 0x%02x (v%u.%u); this build expects 0x%02x (v%u.%u)",
@@ -381,16 +382,16 @@ static UChunkLoadError decode_metadata(MDecCtx *d) {
         return UCHUNK_LOAD_TRUNCATED;
     }
     if (src_len > 0U) {
-        UChunkAllocFn alloc = module_allocator(d->module);
+        UChunkAllocFn alloc = module_allocator(d->root_proto);
         if (alloc == NULL) {
             set_errmsg(d->errmsg, d->errcap, "no allocator for source_name");
             return UCHUNK_LOAD_OOM;
         }
-        char *name = (char *)alloc(NULL, src_len + 1U, d->module->alloc_ud);
+        char *name = (char *)alloc(NULL, src_len + 1U, d->root_proto->alloc_ud);
         if (name == NULL) return UCHUNK_LOAD_OOM;
         module_memcpy(name, d->buf + d->off, src_len);
         name[src_len] = '\0';
-        d->module->source_name = name;
+        d->root_proto->source_name = name;
         d->off += src_len;
     }
     return UCHUNK_LOAD_OK;
@@ -763,27 +764,27 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
     }
     for (uint64_t i = 0; i < n_nested; i++) {
         /* Allocate child proto under parent's module ownership. */
-        UChunkAllocFn alloc = module_allocator(d->module);
+        UChunkAllocFn alloc = module_allocator(d->root_proto);
         if (alloc == NULL) return UCHUNK_LOAD_OOM;
         /* Grow parent->nested[] array. */
         if (parent->nested_count >= parent->nested_cap) {
             size_t new_cap = parent->nested_cap == 0 ? 4 : parent->nested_cap * 2;
             void *fresh = alloc((void *)parent->nested, new_cap * sizeof(UProto *),
-                                d->module->alloc_ud);
+                                d->root_proto->alloc_ud);
             if (fresh == NULL) return UCHUNK_LOAD_OOM;
             parent->nested     = (UProto **)fresh;
             parent->nested_cap = new_cap;
         }
-        UProto *child = (UProto *)alloc(NULL, sizeof(UProto), d->module->alloc_ud);
+        UProto *child = (UProto *)alloc(NULL, sizeof(UProto), d->root_proto->alloc_ud);
         if (child == NULL) return UCHUNK_LOAD_OOM;
         urbi_zero(child, sizeof(*child));
-        child->alloc_fn = d->module->alloc_fn;
-        child->alloc_ud = d->module->alloc_ud;
+        child->alloc_fn = d->root_proto->alloc_fn;
+        child->alloc_ud = d->root_proto->alloc_ud;
         /* v0.8.5: assign DFS pre-order serial identical to the emit path.
          * Recurse order matches uproto_alloc_nested's DFS pre-order
          * because decode_proto is called per child (depth-first) before
          * moving to the next sibling. */
-        child->ic_index = ++d->module->next_proto_serial;
+        child->ic_index = ++d->root_proto->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
         rc = decode_proto(d, child);
         if (rc != UCHUNK_LOAD_OK) return rc;
@@ -799,7 +800,7 @@ static UChunkLoadError decode_proto(MDecCtx *d, UProto *p) {
     if (alloc == NULL) {
         /* Hosted-build fallback: caller did not supply an allocator and
            the proto inherits from the module which uses stdlib_alloc. */
-        alloc = module_allocator(d->module);
+        alloc = module_allocator(d->root_proto);
     }
     void *alloc_ud = p->alloc_ud;
 
@@ -1157,8 +1158,8 @@ UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t
     rp->heap_allocated = true;    /* caller frees via uchunk_destroy */
 
     MDecCtx d;
-    d.module = rp;   /* v0.9.2: module == root */
-    d.rp     = rp;
+    d.root_proto = rp;   /* v0.9.2: UModule deleted, root IS the decode target */
+    d.rp         = rp;
     d.buf    = buf;
     d.size   = size;
     d.off    = 0;

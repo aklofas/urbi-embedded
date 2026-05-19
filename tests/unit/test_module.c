@@ -288,15 +288,16 @@ UTEST(deserialize_rejects_v1_4_module) {
 }
 
 UTEST(deserialize_rejects_v1_6_module) {
-    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.7 loader.
+    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.8 loader.
      * v1.7 changed the UProto body layout (header + source_name + recursive
-     * root_proto block; per-field duplication removed).  Loading v1.6
-     * silently would parse the body as the wrong structure. */
+     * root_proto block; per-field duplication removed).  v1.8 retains that
+     * layout but bumps the version byte semantically (UModule struct deleted).
+     * Loading v1.6 silently would parse the body as the wrong structure. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.7 loader) */
+    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.8 loader) */
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg (v1.6 metadata) */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -315,17 +316,16 @@ UTEST(deserialize_rejects_v1_6_module) {
     uchunk_destroy(c, NULL);
 }
 
-UTEST(deserialize_accepts_current_version_module) {
-    /* A minimal well-formed module at the current bytecode version
-     * (URBI_BYTECODE_VERSION_BYTE = 0x17) must be accepted.  This is the
-     * positive-control twin of the deserialize_rejects_v1_X tests. */
+UTEST(deserialize_rejects_v1_7_module) {
+    /* Version byte 0x17 (v0.8.1) must be rejected by the v1.8 loader.
+     * v1.8 (v0.9.2-uproto-only Approach C) deletes UModule entirely;
+     * wire-byte layout is unchanged but the semantic bump means v1.7
+     * bytecode is rejected with UCHUNK_LOAD_UNSUPPORTED_VERSION. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = URBI_BYTECODE_VERSION_BYTE;
-    /* v1.7 body: source_name + root_proto block (same as the accepts_good_header
-     * test above; repeated here for clarity as a version-specific positive ctrl). */
+    buf[4] = 0x17;  /* version byte (v1.7 — should be rejected by v1.8 loader) */
     size_t offset = 24;
     buf[offset++] = 0;  /* varint source_name_len = 0 */
     buf[offset++] = 0;  /* max_reg */
@@ -338,7 +338,40 @@ UTEST(deserialize_accepts_current_version_module) {
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
+    buf[offset++] = 0;  /* varint nested_count = 0 */
+    UProto *c = NULL;
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x17") != NULL || strstr(errmsg, "1.7") != NULL);
+    uchunk_destroy(c, NULL);
+}
+
+UTEST(deserialize_accepts_current_version_module) {
+    /* A minimal well-formed module at the current bytecode version
+     * (URBI_BYTECODE_VERSION_BYTE = 0x18) must be accepted.  This is the
+     * positive-control twin of the deserialize_rejects_v1_X tests. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;
+    /* v1.8 body: source_name + root_proto block (same byte layout as v1.7;
+     * repeated here for clarity as a version-specific positive ctrl). */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.8) */
     UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
@@ -2218,6 +2251,8 @@ void test_module_suite(void) {
               deserialize_rejects_v1_4_module);
     utest_run("deserialize rejects v1.6 module (v0.8.1 root_proto layout break)",
               deserialize_rejects_v1_6_module);
+    utest_run("deserialize rejects v1.7 module (v0.9.2 Approach C semantic bump)",
+              deserialize_rejects_v1_7_module);
     utest_run("deserialize accepts current-version module",
               deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",

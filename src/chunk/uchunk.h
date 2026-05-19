@@ -36,6 +36,14 @@ extern "C" {
                 Non-root UProtos write nested_count = 0 (flat-on-root
                 emitter per spec §4.2).  v1.6 rejected as
                 UCHUNK_LOAD_UNSUPPORTED_VERSION.).
+   v1.8 = 0x18 (v0.9.2-uproto-only — Approach C: UModule struct deleted.
+                Wire-byte layout unchanged from v1.7 — source_name was
+                already at the chunk-body level pre-cliff, the spec §4.1
+                description of a separate "UModule-header section" was
+                imprecise; the bump is semantic, signaling that the
+                emitting runtime treats every chunk as a UProto with no
+                separate loader-shell type.  v1.7 rejected as
+                UCHUNK_LOAD_UNSUPPORTED_VERSION.).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
    a hard UCHUNK_LOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
@@ -44,7 +52,7 @@ extern "C" {
    Re-emit from source to migrate. */
 
 #define URBI_BYTECODE_VERSION_MAJOR  1U
-#define URBI_BYTECODE_VERSION_MINOR  7U
+#define URBI_BYTECODE_VERSION_MINOR  8U
 #define URBI_BYTECODE_VERSION_BYTE   ((URBI_BYTECODE_VERSION_MAJOR << 4U) | URBI_BYTECODE_VERSION_MINOR)
 
 /* --- Header canary bytes (offsets 6-11) ---
