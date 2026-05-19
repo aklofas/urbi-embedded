@@ -249,6 +249,7 @@ extern void test_module_refcount_fused_suite(void);
 extern void test_rescued_protos_suite(void);
 extern void test_module_grain_lifetime_suite(void);
 extern void test_closure_gc_suite(void);
+extern void test_recursive_emit_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -474,6 +475,7 @@ static const struct suite_entry suites[] = {
     {"rescued_protos",               test_rescued_protos_suite},
     {"module_grain_lifetime",        test_module_grain_lifetime_suite},
     {"closure_gc",                   test_closure_gc_suite},
+    {"recursive_emit",               test_recursive_emit_suite},
     /* Add new suites here as test files are added. */
 };
 

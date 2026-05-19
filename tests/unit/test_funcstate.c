@@ -456,7 +456,7 @@ UTEST(funcstate_ic_close_copies_into_target_proto) {
      * the only path where ic_count/ic_names actually land somewhere
      * (UProto has these fields, UModule does not). */
     UFuncState *parent = uemit_open_function(&e, NULL);
-    UProto *child_proto = umodule_alloc_nested_proto(&m);
+    UProto *child_proto = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(child_proto != NULL);
     UFuncState *child = uemit_open_function(&e, parent);
     UASSERT(child != NULL);
@@ -487,7 +487,7 @@ UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {
     setup(&e, &m, &a, &v);
 
     UFuncState *parent = uemit_open_function(&e, NULL);
-    UProto *child_proto = umodule_alloc_nested_proto(&m);
+    UProto *child_proto = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(child_proto != NULL);
     UFuncState *child = uemit_open_function(&e, parent);
     UASSERT(child != NULL);

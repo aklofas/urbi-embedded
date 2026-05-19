@@ -1,0 +1,8 @@
+# Milestone: v0.8.5-recursive-emit
+# Covers: end-to-end execution of deeply nested closures with upvalue
+#         capture under recursive emission.  Validates parse -> emit ->
+#         serialize -> deserialize -> execute round-trip with per-parent
+#         OP_CLOSURE Bx and executing-proto resolution.
+
+var make_adder = function() { var base = 100; function(delta) { function(extra) { base + delta + extra } } }; var add_to_100 = make_adder(); var add_20_to_100 = add_to_100(20); add_20_to_100(7)
+[00000001] 127

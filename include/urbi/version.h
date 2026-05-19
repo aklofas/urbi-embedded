@@ -38,6 +38,18 @@
  *      macros deleted (3 bits freed in UWatcher.flags).  Minor-field bump
  *      (0/8/0 → 0/9/0) reflects internal struct shrinkage + lifetime-model
  *      change despite no public-symbol additions.
+ *   6. v0.8.5-recursive-emit — UClosure loses origin_nested +
+ *      origin_nested_count fields (-16 B with alignment); UProto gains
+ *      ic_index field (+2 B); UModule gains next_proto_serial +
+ *      total_proto_count fields (+4 B).  umodule_alloc_nested_proto
+ *      signature changes from (module) to (module, parent_proto) — internal
+ *      symbol not exposed by the public `include/urbi/` headers.  OP_CLOSURE dispatch arm
+ *      rewrites to resolve Bx against executing_proto->nested[] (per-parent
+ *      index) instead of cur_cl->origin_nested (flat root index).  Wire
+ *      format unchanged at v1.7 / 0x17; on-disk bytes change for any source
+ *      with nested function literals.  Minor-field bump (0/9/0 → 0/10/0)
+ *      reflects UClosure layout shrinkage + the internal alloc_nested
+ *      signature change.  No public-symbol additions or removals.
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -52,7 +64,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  9
+#define URBI_API_VERSION_MINOR  10
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \

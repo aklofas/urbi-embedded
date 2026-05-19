@@ -1,5 +1,98 @@
 # Changelog
 
+## v0.8.5-recursive-emit — 2026-05-18 (Truly-recursive emitter)
+
+**Tag:** `v0.8.5-recursive-emit`
+**Theme:** Closes the post-v0.8.1 backlog item filed in
+`docs/urbi-embedded-design-risks.md` ("Truly-recursive emitter —
+`OP_CLOSURE Bx` per-enclosing-proto").  Flips `emit_function_literal` to
+allocate function-literal `UProto`s under the enclosing parent's
+`nested[]` instead of flat under `root_proto->nested[]`; flips the
+`OP_CLOSURE` dispatch arm to resolve `Bx` against the executing
+`UProto`'s own `nested[]`.  Shrinks `UClosure` by 16 B on 64-bit by
+deleting two now-redundant fields.
+
+**ABI:** `0/9/0` → `0/10/0` (6th use of the pre-v1.0 escape clause —
+internal struct shrinkage + emitter helper signature change; no
+public-symbol additions or removals).
+**Wire format:** `v1.7 / 0x17` unchanged.  On-disk bytes change for any
+source with nested function literals (deeper tree replaces flat); flat-
+only sources are byte-identical.
+**Corpus:** 1786/13045/237 → 1795/13146/238 (+9 cases / +101 checks /
++1 fixture — `test_recursive_emit` 7-case suite + `recursive_emit_smoke.chk`).
+
+### Added
+
+- `UProto.ic_index` (runtime-only `uint16_t`): DFS pre-order serial
+  assigned at construction.  Root proto gets `ic_index = 0`; each
+  subsequent `umodule_alloc_nested_proto` allocation gets
+  `++module->next_proto_serial`.
+- `UModule.next_proto_serial` + `UModule.total_proto_count` (runtime-only):
+  monotonic counter + final total populated identically at emit
+  (`uemit_finish`) and deserialize (`umodule_deserialize`).
+- `tests/unit/test_recursive_emit.c` — 9-case regression suite:
+  `ic_index_root_is_zero`, `ic_index_nested_increments_in_alloc_order`,
+  `total_proto_count_set_at_uemit_finish`,
+  `proto_instances_n_equals_total_proto_count`,
+  `verifier_accepts_emitted_module`, `emitter_produces_recursive_tree`,
+  `sibling_density_at_depth`, `mixed_tree_3x3`,
+  `ic_index_dense_and_dfs_preorder`.
+- `tests/chk/closure/recursive_emit_smoke.chk` — end-to-end 3-deep
+  closure with upvalue capture across all layers.
+- `tests/golden/v0.8.5-recursive-emit-{bytecode,wire-format}-hashes.txt`
+  snapshots.
+
+### Changed
+
+- `umodule_alloc_nested_proto(module)` →
+  `umodule_alloc_nested_proto(module, parent_proto)` (internal symbol).
+  Sole production caller `emit_function_literal` updated to pass
+  `parent_fs->target_proto`.  20 in-tree test call sites updated.
+- `emit_function_literal` now allocates `child_proto` under
+  `parent_fs->target_proto->nested[]`; `proto_idx = parent.nested_count
+  - 1` (per-parent index).  For top-level function literals
+  `parent_fs->target_proto` is NULL and the fallback selects
+  `root_proto` (byte-identical to pre-v0.8.5 on-disk shape).
+- `OP_CLOSURE` `Bx` resolves against `executing_proto->nested[Bx]`
+  where `executing_proto = (frame_count > 0) ? cur_cl->proto :
+  s->root_proto`.  Replaces the `cur_cl->origin_nested` fallback chain.
+- `OP_CLOSURE` IC binding: `cl->proto_inst =
+  &mi->proto_instances->entries[child_proto->ic_index]` (per-UProto
+  globally-unique index) instead of `entries[bx + 1]`.  Cross-session
+  fallback through `par_cl->origin_module_instance` retained for now
+  (Partial bundle — see Decision Register row 5 in the spec).
+- `decode_verify` walks the proto tree recursively
+  (`verify_proto_recursive`) and passes each proto's own `nested_count`
+  to `verify_walk_block`.
+- `urbi_get_or_create_module_instance` sizes `proto_instances->n` to
+  `module->total_proto_count` (recursive total) and populates entries
+  in DFS pre-order via the new `init_ic_slices_recursive` helper.
+- `uemit_finish` and `umodule_deserialize` back-pointer walks
+  (`UProto.root`) made recursive so grandchildren get `root` set
+  correctly under recursive emission.
+
+### Removed
+
+- `UClosure.origin_nested` (8 B) — superseded by `cl->proto->nested`.
+- `UClosure.origin_nested_count` (2 B + 6 B alignment) — superseded by
+  `cl->proto->nested_count`.
+
+### Layout
+
+- `sizeof(UClosure)`: 72 B → 56 B on 64-bit (-16 B).
+- `sizeof(UProto)`: +2 B (`ic_index`, alignment-absorbed).
+- `sizeof(UModule)`: +4 B (`next_proto_serial` + `total_proto_count`).
+
+### Carry-forward
+
+- `UClosure.origin_module_instance` retained (Partial bundle per spec
+  §7.3 Decision Register row 5) — cross-session IC binding still
+  routes through it.  Test
+  `test_emit_closure_capture::closure_capture_three_deep` is the
+  load-bearing regression.  Truly retiring this field requires a
+  per-proto back-pointer to its owning `UModuleInstance`; deferred to
+  a follow-up tag.
+
 ## v0.8.4-closure-lifetime — 2026-05-18 (UClosure + UUpvalCell GC promotion)
 
 **Tag:** `v0.8.4-closure-lifetime`

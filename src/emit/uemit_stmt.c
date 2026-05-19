@@ -158,9 +158,23 @@ uint8_t emit_function_literal(UEmitter *e,
      * leaves child_proto in nested[] but at least it is consistently a
      * fully-allocated empty proto (umodule_destroy walks NULL slots
      * cleanly). */
-    UProto *child_proto = umodule_alloc_nested_proto(e->module);
+    /* v0.8.5 Task 5: allocate child_proto under the ENCLOSING parent's
+     * nested[] (parent_fs->target_proto), not flat under root_proto.  For
+     * top-level function literals parent_fs->target_proto == root_proto so
+     * the on-disk shape is byte-identical to pre-v0.8.5; for nested
+     * function literals (function-inside-function) the child UProto becomes
+     * a true child of the enclosing function's UProto and OP_CLOSURE Bx is
+     * a per-parent index into that scope's nested[].
+     *
+     * All parameter interns have already succeeded; from here on, any
+     * failure leaves child_proto in parent_proto->nested[] but at least
+     * it is consistently a fully-allocated empty proto (umodule_destroy
+     * walks NULL slots cleanly). */
+    UProto *parent_proto = parent_fs->target_proto;
+    if (parent_proto == NULL) parent_proto = e->module->root_proto;
+    UProto *child_proto = umodule_alloc_nested_proto(e->module, parent_proto);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
-    int proto_idx = (int)(e->module->root_proto->nested_count - 1);
+    int proto_idx = (int)(parent_proto->nested_count - 1);
 
     /* 2. Open a nested FuncState targeting child_proto. */
     UFuncState *child_fs = uemit_open_function(e, parent_fs);

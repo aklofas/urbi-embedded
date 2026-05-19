@@ -96,24 +96,6 @@ struct UClosure {
      * Either way the field order below matches natural pointer alignment;
      * no manual pad bytes are inserted. */
     UProto           *proto;
-    /* origin_nested [runtime-only]: pointer to the nested[] proto array of
-     * the UModule this closure was compiled in.  Set at OP_CLOSURE creation
-     * from s->module->nested.  Used by OP_CLOSURE inside the callee to look
-     * up sibling nested protos via the current frame's closure rather than
-     * s->module->nested (which points at the TOP-LEVEL session module, not
-     * the callee's originating module).
-     *
-     * Lifetime: v0.8.1 Variant B rescues the whole root_proto (which carries
-     * the nested[] array) to vm->rescued_protos when umodule_destroy is called
-     * while root_proto->refcount > 0 (surviving closures).  The array remains
-     * valid until vm_destroy frees all rescued root_protos.  The old
-     * urbi_steal_repl_protos (per-nested steal) is deleted at v0.8.1.
-     *
-     * NULL for native-fn closures and closures whose module has no nested
-     * protos (nupvals == 0 closures that don't create inner functions).
-     * OP_CLOSURE falls back to s->module->nested when NULL. */
-    struct UProto   **origin_nested;
-    uint16_t          origin_nested_count;
     UProtoInstance   *proto_inst;  /* M4 follow-up: per-(vm,proto) IC tier
                                       pointer.  See banner above for
                                       binding/lifecycle. */

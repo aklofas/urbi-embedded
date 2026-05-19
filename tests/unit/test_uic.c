@@ -78,7 +78,7 @@ UTEST(module_instance_basic_create) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
 
     /* Pretend the emitter populated three IC sites. */
@@ -142,7 +142,7 @@ UTEST(module_instance_two_instances_independent) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
 
     USymbol *alpha = (USymbol *)ustr_intern(&vm, "alpha", 5);
@@ -220,7 +220,7 @@ UTEST(module_instance_proto_with_zero_ic_count) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
     /* Leave p->ic_count = 0, p->ic_names = NULL (zero-init from
      * umodule_alloc_nested_proto). */
@@ -573,7 +573,7 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
 
     USymbol *foo_a = (USymbol *)ustr_intern(&vm_a, "foo", 3);
@@ -686,7 +686,7 @@ UTEST(determinism_checksum_includes_ic_state) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
     p->ic_count = 1;
     p->ic_names = (USymbol **)malloc(sizeof(USymbol *));

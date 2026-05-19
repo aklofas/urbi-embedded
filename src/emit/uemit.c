@@ -542,6 +542,18 @@ UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
     return EMIT_OK;
 }
 
+/* v0.8.5: recursively set every UProto's root back-pointer to the module's
+ * root proto.  For flat trees (pre-Task-5 emitter) the inner recursion is
+ * a no-op because nested_count == 0 at depth 1.  For recursive trees
+ * (post-Task-5) every grandchild also gets root set correctly. */
+static void set_root_recursive(UProto *node, UProto *root) {
+    if (node == NULL) return;
+    node->root = (node == root) ? NULL : root;
+    for (size_t i = 0U; i < node->nested_count; i++) {
+        set_root_recursive(node->nested[i], root);
+    }
+}
+
 UEmitError uemit_finish(UEmitter *e) {
     if (e->finished) return e->error;
     if (e->error == EMIT_OK && e->any_stmt_emitted) {
@@ -558,13 +570,19 @@ UEmitError uemit_finish(UEmitter *e) {
     if (e->module->root_proto != NULL) {
         UProto *rp = e->module->root_proto;
         rp->max_reg = e->max_reg_seen;
-        /* Back-pointer walk: set every nested proto's root field. */
-        size_t k;
-        for (k = 0U; k < rp->nested_count; k++) {
-            if (rp->nested[k] != NULL) {
-                rp->nested[k]->root = rp;
-            }
-        }
+        /* Back-pointer walk: every nested proto's root field points at rp.
+         * v0.8.5 made this recursive (was flat-only): walks the full tree
+         * DFS so grandchildren also get root set correctly when the
+         * truly-recursive emitter (Task 5) starts producing depth >1.
+         * For flat trees (pre-Task-5) the recursive descent is a no-op
+         * because nested_count == 0 at depth 1. */
+        set_root_recursive(rp, rp);
+    }
+    /* v0.8.5: stamp total_proto_count for module-instance sizing.
+     * next_proto_serial is the LAST assigned serial (root = 0 not counted);
+     * total includes root. */
+    if (e->module->root_proto != NULL) {
+        e->module->total_proto_count = (uint16_t)(e->module->next_proto_serial + 1U);
     }
 
     return e->error;

@@ -202,22 +202,24 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
     urbi_zero(proto, sizeof(*proto));
 }
 
-UProto *umodule_alloc_nested_proto(UModule *module) {
+UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto) {
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc == NULL) return NULL;
-    /* Task 11: nested[] lives on root_proto (allocated at uemit_init). */
-    UProto *root = module->root_proto;
-    if (root == NULL) return NULL;
+    /* v0.8.5: parent_proto is the explicit nested[] target.  For top-level
+     * function literals callers pass module->root_proto; for nested
+     * function literals callers pass the enclosing UProto. */
+    if (parent_proto == NULL) return NULL;
 
-    /* Grow root_proto->nested[] array if needed. */
-    if (root->nested_count >= root->nested_cap) {
-        size_t new_cap = root->nested_cap == 0 ? 4 : root->nested_cap * 2;
+    /* Grow parent_proto->nested[] array if needed. */
+    if (parent_proto->nested_count >= parent_proto->nested_cap) {
+        size_t new_cap = parent_proto->nested_cap == 0 ? 4 : parent_proto->nested_cap * 2;
         /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
-        void *fresh = alloc((void *)root->nested, new_cap * sizeof(UProto *),
+        void *fresh = alloc((void *)parent_proto->nested,
+                            new_cap * sizeof(UProto *),
                             module->alloc_ud);
         if (fresh == NULL) return NULL;
-        root->nested     = (UProto **)fresh;
-        root->nested_cap = new_cap;
+        parent_proto->nested     = (UProto **)fresh;
+        parent_proto->nested_cap = new_cap;
     }
 
     /* Allocate the UProto struct itself.
@@ -254,7 +256,14 @@ UProto *umodule_alloc_nested_proto(UModule *module) {
      * uproto_root_of() at vm_alloc_closure; that is the only accounting needed. */
     proto->refcount = 0U;
 
-    root->nested[root->nested_count++] = proto;
+    /* v0.8.5: assign DFS pre-order serial.  Root's ic_index = 0 was set at
+     * root-proto allocation (uemit_init / umodule_deserialize); each call
+     * here produces the next available serial.  The first nested
+     * allocation produces ic_index = 1 because next_proto_serial starts
+     * at 0 via the UModule zero-init. */
+    proto->ic_index = ++module->next_proto_serial;
+
+    parent_proto->nested[parent_proto->nested_count++] = proto;
     return proto;
 }
 
@@ -761,6 +770,11 @@ static UModuleLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         urbi_zero(child, sizeof(*child));
         child->alloc_fn = d->module->alloc_fn;
         child->alloc_ud = d->module->alloc_ud;
+        /* v0.8.5: assign DFS pre-order serial identical to the emit path.
+         * Recurse order matches umodule_alloc_nested_proto's DFS pre-order
+         * because decode_proto is called per child (depth-first) before
+         * moving to the next sibling. */
+        child->ic_index = ++d->module->next_proto_serial;
         parent->nested[parent->nested_count++] = child;
         rc = decode_proto(d, child);
         if (rc != ULOAD_OK) return rc;
@@ -1056,40 +1070,43 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
     return ULOAD_OK;
 }
 
-static UModuleLoadError decode_verify(MDecCtx *d) {
-    /* Task 11: root chunk fields now live on root_proto. */
-    UProto *rp = d->rp;
-    /* Verify the root chunk. */
+/* v0.8.5: recursive verifier walk.  Each UProto is verified against its
+ * OWN nested_count (per-parent OP_CLOSURE Bx index space), matching the
+ * truly-recursive emitter contract.  Pre-v0.8.5 the verifier passed
+ * the root-level nested_count for every nested proto because the flat
+ * emitter routed every OP_CLOSURE to root's nested[] regardless of
+ * lexical scope. */
+static UModuleLoadError verify_proto_recursive(MDecCtx *d, const UProto *p) {
+    if (p == NULL) return ULOAD_OK;
     UModuleLoadError rc = verify_walk_block(d,
-                                            rp->max_reg,
-                                            rp->const_count,
-                                            rp->instr_count,
-                                            rp->nested_count,
-                                            rp->ic_count,
-                                            rp->instructions);
+                                            p->max_reg,
+                                            p->const_count,
+                                            p->instr_count,
+                                            p->nested_count,
+                                            p->ic_count,
+                                            p->instructions);
     if (rc != ULOAD_OK) return rc;
-
-    /* Verify each nested proto's instruction stream against its own
-       bounds.  v1.5 in-tree emitter allocates all function literals as
-       flat siblings under the root UModule's nested[]; an OP_CLOSURE
-       inside a nested proto refers to a sibling slot in the same
-       root nested[] array.  Per-proto nested_count for verify purposes
-       is therefore the root-level nested_count.  v1.x deeply-nested
-       closures may need a per-proto nested_count if/when the emitter
-       starts allocating child arrays. */
-    for (size_t pi = 0; pi < rp->nested_count; pi++) {
-        const UProto *p = rp->nested[pi];
-        if (p == NULL) continue;  /* watcher-detached slot or stub */
-        rc = verify_walk_block(d,
-                               p->max_reg,
-                               p->const_count,
-                               p->instr_count,
-                               rp->nested_count,
-                               p->ic_count,
-                               p->instructions);
+    for (size_t i = 0; i < p->nested_count; i++) {
+        rc = verify_proto_recursive(d, p->nested[i]);
         if (rc != ULOAD_OK) return rc;
     }
     return ULOAD_OK;
+}
+
+static UModuleLoadError decode_verify(MDecCtx *d) {
+    return verify_proto_recursive(d, d->rp);
+}
+
+/* v0.8.5: recursively set every UProto's root back-pointer.  The module's
+ * root_proto gets root = NULL; every other proto in the tree gets
+ * root = rp.  Mirrors set_root_recursive in uemit.c — kept independent
+ * to avoid cross-module static-helper coupling. */
+static void set_root_backptr_recursive(UProto *node, UProto *root) {
+    if (node == NULL) return;
+    node->root = (node == root) ? NULL : root;
+    for (size_t i = 0U; i < node->nested_count; i++) {
+        set_root_backptr_recursive(node->nested[i], root);
+    }
 }
 
 /* --- Public API --- */
@@ -1146,17 +1163,17 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
     if ((rc = decode_trailer(&d))  != ULOAD_OK) return rc;
     if ((rc = decode_verify(&d))   != ULOAD_OK) return rc;
 
-    /* Back-pointer walk: set every nested proto's root field.
-     * v1.7 flat-on-root emitter: only root_proto.nested[] is populated;
-     * nested protos have nested_count == 0.  The walk covers one level. */
-    {
-        size_t k;
-        for (k = 0U; k < rp->nested_count; k++) {
-            if (rp->nested[k] != NULL) {
-                rp->nested[k]->root = rp;
-            }
-        }
-    }
+    /* Back-pointer walk: every UProto's root field points at rp.
+     * v0.8.5 made this recursive (was flat-only): walks the full tree
+     * DFS so grandchildren also get root set under recursive emission.
+     * For flat trees (pre-v0.8.5 bytecode) the inner recursion is a no-op
+     * because nested_count == 0 at depth 1. */
+    set_root_backptr_recursive(rp, rp);
+
+    /* v0.8.5: stamp total_proto_count to match the emit path (uemit_finish).
+     * next_proto_serial holds the last assigned non-root serial; total
+     * includes root (ic_index = 0). */
+    module->total_proto_count = (uint16_t)(module->next_proto_serial + 1U);
 
     return ULOAD_OK;
 }
