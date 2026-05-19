@@ -263,6 +263,7 @@ extern void test_repl_global_atom_suite(void);
 extern void test_compile_budget_suite(void);
 extern void test_repl_ndjson_parse_suite(void);
 extern void test_repl_ndjson_emit_suite(void);
+extern void test_repl_dispatcher_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -502,6 +503,7 @@ static const struct suite_entry suites[] = {
     {"compile_budget",                   test_compile_budget_suite},
     {"repl_ndjson_parse",                test_repl_ndjson_parse_suite},
     {"repl_ndjson_emit",                 test_repl_ndjson_emit_suite},
+    {"repl_dispatcher",                  test_repl_dispatcher_suite},
     /* Add new suites here as test files are added. */
 };
 
