@@ -37,6 +37,24 @@
 ### Build switch
 - `URBI_ENABLE_REPL=1` opts in to `src/repl/` (TCP/Unix/UART REPL service). Default 0.
 
+### Phase 4: Introspection + Debug namespace + JSON parse-back
+
+#### Added
+- **9 introspection C primitives** in `src/repl/urepl_introspect.{c,h}`: `urbi_introspect_coros`, `_tags`, `_watchers`, `_events`, `_profile`, `_gc`, `_lobbies`, `_stack(coro_id)`, `_slots(realm, obj_path)`.  Each walks VM linked lists on the MAIN thread and emits a single JSON object into a caller-provided buffer.  Used by the NDJSON `introspect` op (dispatcher) and the urbiscript `Debug` namespace.
+- **NDJSON `introspect` op dispatch** — `dispatch_introspect` in `urepl_dispatch.c` switches on `req.what` to one of the 9 primitives, wraps inner JSON in `{kind:"result",value:<inner>}`.  Unknown `what` emits `{kind:"error",code:"unknown_introspect"}`.
+- **`src/repl/ujson.{c,h}`** — tiny recursive-descent JSON parser.  Supports object, array, string (with `\uXXXX` and surrogate pairs), int / double, bool, null.  DoS-bounded: `UJSON_MAX_DEPTH=32`, `UJSON_MAX_NODES=10000`, `UJSON_MAX_LEN=1 MiB`.  Returns a `UJsonNode` tree freed via `ujson_free_node`.
+- **`Debug` urbiscript namespace** — 9 C-native methods (`Debug.coros()`, `Debug.tags()`, …, `Debug.stack(id)`, `Debug.slots(path)`) bound on each realm's `Global.Debug` slot.  Each method calls the corresponding introspect primitive, validates the JSON via `ujson_parse`, and returns the JSON as a urbi `String`.
+- **`vm->debug_proto`** (void* in UVM, REPL-condition-free header).  Single per-VM singleton; GC reachability via `object_roots_walker`.
+
+#### Carry-forward to v1.x
+- **`Debug.*()` returns a String** rather than a structured Dict/List.  v1.0 has no `UVAL_LIST`/`UVAL_DICT` — lists/dicts are UObjects in the `URBI_ATOM_LIST`/`URBI_ATOM_DICT` families.  Building a List/Dict from C requires walking `containers.c` internals; out of v0.9.1 scope.  Wire JSON shape is locked so an upgrade to first-class structured returns is transparent to existing clients that already parse the string.
+- **Profile primitive is a stub** — `urbi_introspect_profile` emits empty `per_function` / `per_opcode` / `per_watcher` arrays plus `note:"profiling deferred to v1.x"`.  No profiling infrastructure exists in v0.9.1; the wire shape is locked for forward compatibility.
+- **Tag enumeration is per-realm-root** — `urbi_introspect_tags` walks `vm->realms_head` and emits one entry per realm root tag.  Host-created child tags (via `urbi_tag_create`) are not centrally enumerated at v0.9.1; a central tag registry is in the v1.x design-risks register.
+- **`coro_id` is the strand pointer's low 32 bits** — `UStrand` has no explicit id field at v0.9.1.  Identity is stable per VM run (no strand recycling).  v1.x may upgrade to a monotonic counter when multi-host introspection requires cross-process stability.
+
+#### Build
+- `tools/urbi-compile-stdlib` (bake tool) now picks up `$(REPL_SRCS)` in its link list when `URBI_ENABLE_REPL=1`.  Required because `stdlib_boot.o` references `urbi_debug_namespace_register` which itself references the introspect / JSON primitives in `src/repl/`.
+
 ---
 
 ## v0.9.0-repl-foundation — 2026-05-19
