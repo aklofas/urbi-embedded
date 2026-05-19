@@ -37,6 +37,27 @@
 
 
 /* ---------------------------------------------------------------------------
+ * urealm_register_module
+ *
+ * Register `m` onto `realm->loaded_protos_head` via head-insertion if not
+ * already linked.  Idempotent: a second call with the same module for the
+ * same realm is a no-op (owning_realm already set to this realm).
+ * Shared modules (e.g. vm->stdlib_module) may be run into multiple realms;
+ * they keep owning_realm pointing at the FIRST realm they were registered
+ * in and are NOT re-registered for subsequent realms.  The unload path
+ * (Task 12 / 13) handles per-realm teardown independently.  v0.9.0-repl. */
+static void
+urealm_register_module(URealm *realm, UModule *m)
+{
+    if (realm == NULL || m == NULL) return;
+    /* Already registered (in some realm) — skip to avoid double-linking. */
+    if (m->owning_realm != NULL) return;
+    m->next_in_realm = realm->loaded_protos_head;
+    m->owning_realm  = realm;
+    realm->loaded_protos_head = m;
+}
+
+/* ---------------------------------------------------------------------------
  * uchunk_loader_drive
  *
  * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
@@ -227,6 +248,9 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         if (!realm) return URBI_ERR_OOM;
     }
 
+    /* Register module onto realm->loaded_protos_head (idempotent). */
+    urealm_register_module(realm, module);
+
     /* Empty module (instr_count == 0): nothing to dispatch.  Mirrors the
      * urbi_vm_run fast-path (uvm_run.c:44-47) so callers that compile an
      * empty REPL line still get URBI_OK + nil result.  Without this guard,
@@ -395,6 +419,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
+            /* Unlink the transient stack-allocated module before destroy.
+             * Task 13 will replace this transient register/unlink with a
+             * heap allocation that stays in the registry past return. */
+            if (module.owning_realm != NULL) {
+                URealm *r = module.owning_realm;
+                if (r->loaded_protos_head == &module) {
+                    r->loaded_protos_head = module.next_in_realm;
+                } else {
+                    for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+                        if (p->next_in_realm == &module) {
+                            p->next_in_realm = module.next_in_realm;
+                            break;
+                        }
+                    }
+                }
+                module.owning_realm = NULL;
+                module.next_in_realm = NULL;
+            }
             umodule_destroy(&module, vm);
             uarena_destroy(&arena);
             return URBI_OK;
@@ -402,6 +444,22 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         /* Copy vm->last_errmsg into out_buf; it was populated by the driver. */
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
+        }
+        /* Unlink transient stack-allocated module before destroy. */
+        if (module.owning_realm != NULL) {
+            URealm *r = module.owning_realm;
+            if (r->loaded_protos_head == &module) {
+                r->loaded_protos_head = module.next_in_realm;
+            } else {
+                for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+                    if (p->next_in_realm == &module) {
+                        p->next_in_realm = module.next_in_realm;
+                        break;
+                    }
+                }
+            }
+            module.owning_realm = NULL;
+            module.next_in_realm = NULL;
         }
         umodule_destroy(&module, vm);
         uarena_destroy(&arena);
@@ -413,6 +471,22 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
+    /* Unlink transient stack-allocated module before destroy. */
+    if (module.owning_realm != NULL) {
+        URealm *r = module.owning_realm;
+        if (r->loaded_protos_head == &module) {
+            r->loaded_protos_head = module.next_in_realm;
+        } else {
+            for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+                if (p->next_in_realm == &module) {
+                    p->next_in_realm = module.next_in_realm;
+                    break;
+                }
+            }
+        }
+        module.owning_realm = NULL;
+        module.next_in_realm = NULL;
+    }
     umodule_destroy(&module, vm);
     uarena_destroy(&arena);
     return URBI_OK;
@@ -598,6 +672,15 @@ urbi_load_module(UVM *vm, UModule *module, const char *module_name)
      * import-table registration step. */
     if (urbi_get_or_create_module_instance(vm, module) == NULL) {
         return URBI_ERR_OOM;
+    }
+
+    /* Registration happens transitively via urbi_run_chunk (called from
+     * urbi_run_script).  Call explicitly here against the global realm so
+     * the module is registered even if urbi_run_script short-circuits on an
+     * empty root chunk.  Idempotent — second call from run_chunk is a no-op. */
+    URealm *global_realm = urbi_realm_global(vm);
+    if (global_realm != NULL) {
+        urealm_register_module(global_realm, module);
     }
 
     return urbi_run_script(vm, NULL, module);
