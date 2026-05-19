@@ -860,3 +860,189 @@ Multi-VM-per-process will allow one OS thread per VM with no shared state betwee
 ### Rejected path
 
 A Java/CPython-style GIL or shared-mutable-state model is permanently off the table. urbiscript's language semantics do not require it, and the robotics/real-time audience specifically benefits from the absence of locking overhead.
+
+---
+
+## 12. REPL Service
+
+Build with `URBI_ENABLE_REPL=1`. Adds `<urbi/repl.h>`, the `src/repl/` subsystem (NDJSON codec, MPSC eval queue, per-session output ringbuf, dispatcher, pluggable transports), and the `urbi-server` / `urbi-send` host binaries.
+
+The service exposes a line-oriented NDJSON protocol over a `UTransport` vtable (TCP, Unix socket, UART, pty, in-process buffer). One TCP connection = one `URealm` (a "lobby") bound to that session for its entire lifetime. Output produced by strands hosted under that lobby's realm flows back to that lobby's client only.
+
+For the on-the-wire shape, thread layout, and dispatcher internals, see `docs/internals/repl-service.md`.
+
+### Minimal embedder
+
+```c
+/* STANDALONE EXAMPLE — compile with:
+ *   cc -std=c99 -Iinclude -Isrc -DURBI_ENABLE_REPL=1 repl_min.c \
+ *      build/host/liburbi.a build/host/liburbi_aux.a -lm -lpthread -o repl_min
+ *
+ * Requires: liburbi.a built with URBI_ENABLE_REPL=1 (run
+ * `make URBI_ENABLE_REPL=1`). */
+
+#include <signal.h>
+#include <stdio.h>
+#include "urbi/urbi.h"
+#include "urbi/repl.h"
+#include "vm/uvm.h"
+
+static volatile sig_atomic_t running = 1;
+static void on_sigint(int sig) { (void)sig; running = 0; }
+
+int main(void)
+{
+    struct UVM vm;
+    if (urbi_vm_init(&vm, NULL, NULL) != URBI_OK) return 1;
+    urbi_stdlib_boot(&vm);
+
+    UReplConfig cfg = {
+        .bind_addr          = "127.0.0.1",  /* loopback => no token needed */
+        .tcp_port           = 54000,
+        .max_clients        = 16,
+        .output_ringbuf_cap = 64 * 1024,
+    };
+
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(&vm, &cfg, &err);
+    if (!server) {
+        fprintf(stderr, "urbi_repl_serve: err=%d\n", err);
+        urbi_vm_destroy(&vm);
+        return 1;
+    }
+
+    signal(SIGINT, on_sigint);
+
+    /* Drive the VM. urbi_step drains the MPSC eval queue at every step
+     * boundary; the listener pthread + per-client reader pthreads accept
+     * and parse on their own. */
+    while (running) {
+        urbi_step(&vm, 1024, NULL);
+    }
+
+    urbi_repl_stop(server);
+    urbi_vm_destroy(&vm);
+    return 0;
+}
+```
+
+Then from another shell:
+
+```sh
+urbi-send eval "1 + 2"
+# → 3
+```
+
+### Configuration: `UReplConfig`
+
+```c
+typedef struct UReplConfig {
+    const char    *bind_addr;          /* "127.0.0.1" | "0.0.0.0" | NULL = loopback */
+    int            tcp_port;           /* -1 to disable TCP */
+    const char    *unix_path;          /* NULL to disable Unix-socket listener */
+    const char    *auth_token;         /* NULL = no token (loopback-only) */
+    int            max_clients;        /* 0 → 16 default */
+    size_t         output_ringbuf_cap; /* 0 → 64 KiB default */
+    UCompileBudget default_budget;     /* 0-fields → URBI_DEFAULT_REPL_BUDGET */
+} UReplConfig;
+```
+
+`bind_addr` starting with `/` is treated as a Unix-socket path and considered loopback for the default-secure check. `tcp_port == -1` disables the TCP listener (useful when only registering a UART or in-process transport).
+
+### Auth posture: default-secure refuse-to-start
+
+`urbi_repl_serve` refuses to start with `URBI_ERR_INSECURE_CONFIG` if `bind_addr` is non-loopback and `auth_token` is NULL. Loopback addresses (`127.0.0.1`, `::1`, NULL, `/...`) are exempt — local development "just works" with no token. To expose the server on a LAN address, pass an `auth_token`; the server's `hello` envelope advertises `auth_required: true` and rejects any op other than `auth` until the client presents a matching token.
+
+Token comparison is constant-time. Per-source-IP rate-limiting is automatic: 5 failed `auth` attempts within 30 s from the same peer locks that IP out for 60 s (LRU table, 8 entries). Local Unix-socket peers are tracked by pid instead of IP.
+
+### Per-realm writer
+
+`urbi_realm_set_writer(vm, realm, fn, ud)` installs an output writer scoped to one realm. Strands hosted under that realm route `echo` / `Stream.write` / `cerr` output through the realm writer; if unset, the runtime falls back to the VM-wide writer installed via `urbi_set_writer`. The REPL service uses this internally to send each session's output to that session's ringbuf — embedders rarely call it directly, but it is public for hosts that want explicit per-tenant output isolation without the full REPL service.
+
+`urbi_vm_write_in_realm(vm, realm, channel, ...)` is the explicit C-side dispatch entry; `urbi_vm_write` is a thin wrapper with `realm == NULL`.
+
+### Per-realm compile-budget
+
+`urbi_repl_eval` honors a per-realm `UCompileBudget`:
+
+```c
+typedef struct UCompileBudget {
+    uint32_t max_parser_depth;  /* recursive-descent stack ceiling */
+    uint32_t max_ast_nodes;     /* AST allocations per compile */
+    uint32_t max_source_bytes;  /* source-length cap (checked at entry) */
+} UCompileBudget;
+
+extern const UCompileBudget URBI_DEFAULT_REPL_BUDGET;  /* 256 / 100000 / 1 MiB */
+
+void urbi_realm_set_compile_budget(URealm *realm, const UCompileBudget *budget);
+```
+
+`urbi_realm_create_repl` automatically applies `URBI_DEFAULT_REPL_BUDGET` to the new realm. The default global realm (`urbi_realm_global`) has no budget by default — trusted host code is not rate-limited. Pass `NULL` to clear.
+
+Budget exhaustion raises `URBI_ERR_COMPILE_BUDGET_DEPTH` / `_NODES` / `_SOURCE` from the parser; the dispatcher turns these into NDJSON `{kind:"error", code:"compile_budget_*"}` envelopes for the originating client.
+
+### NDJSON wire protocol (summary)
+
+One JSON document per line, terminated by `\n` (client may send `\r\n`; server always emits `\n`). Maximum line length defaults to 1 MiB (matches `max_source_bytes`).
+
+Client ops: `auth`, `eval`, `cancel`, `introspect`, `lobby_new`, `lobby_close`.
+Server response kinds: `hello`, `auth_ok`, `result`, `output`, `done`, `error`, `event`, `goodbye`.
+
+```jsonc
+// Client → server
+{"id":2, "op":"eval", "code":"1 + 2"}
+{"id":3, "op":"introspect", "what":"coros"}
+{"id":4, "op":"cancel", "tag":"experiment_42"}
+
+// Server → client
+{"kind":"hello", "version":"v0.9.1", "lobby":"a3f2", "auth_required":false}
+{"id":2, "kind":"result", "value":3, "ts":1234567}
+{"id":2, "kind":"done"}
+{"kind":"output", "lobby":"a3f2", "channel":"clog", "msg":"every-tick", "ts":1236600}
+```
+
+`id` is client-assigned and echoed on correlated responses. `output` originating from strands that outlive their `eval` carries `lobby` + `channel` but no `id`. Full schema lives in `docs/internals/repl-service.md` and inline in `<urbi/repl.h>`.
+
+### Introspection: the nine commands
+
+Available both as NDJSON `{op:"introspect", what:"..."}` ops and as `Debug.<op>()` urbiscript methods bound on each realm's `Global.Debug` slot:
+
+| Op | C primitive | Returns |
+|---|---|---|
+| `coros` | `urbi_introspect_coros(vm, buf, cap, &n)` | All strands: id, state, wake deadline, source location, tag stack |
+| `tags` | `urbi_introspect_tags(...)` | All active tags: name, state, member coro_ids |
+| `watchers` | `urbi_introspect_watchers(...)` | All `at` / `whenever` watchers: predicate / body location, fire count |
+| `events` | `urbi_introspect_events(...)` | All registered events: name, subscriber count |
+| `stack` | `urbi_introspect_stack(vm, coro_id, ...)` | Backtrace frames (file:line:function) |
+| `slots` | `urbi_introspect_slots(vm, realm, obj_path, ...)` | An object's slot dump |
+| `profile` | `urbi_introspect_profile(...)` | Stubbed in v0.9.1 (locked wire shape; populated v1.x) |
+| `gc` | `urbi_introspect_gc(...)` | Heap stats: alive cells / bytes, last_gc_us, total_gc_time_us |
+| `lobbies` | `urbi_introspect_lobbies(...)` | Active sessions: lobby_id, peer_addr, connect_ts, eval_count |
+
+Each primitive walks VM-internal linked lists on the MAIN thread and emits a single JSON object into a caller-provided buffer. Wire JSON shape is locked at v0.9.1 and frozen forward to v1.0.
+
+### Step-driven mode (bare-metal)
+
+Hosts without an OS thread for `urbi_repl_serve` to spawn its listener pthread can use the manual driver:
+
+```c
+UReplServer *server = NULL;
+urbi_repl_serve_init(&vm, &cfg, &server);
+urbi_repl_register_transport(server, &UREPL_TCP_TRANSPORT, tcp_state);
+/* or &UREPL_PTY_TRANSPORT / &UREPL_PICO_UART_TRANSPORT / ... */
+
+while (running) {
+    urbi_repl_serve_step(server, /*timeout_us=*/1000);
+    urbi_step(&vm, 1024, NULL);
+}
+
+urbi_repl_serve_shutdown(server);
+```
+
+One `serve_step` performs at most one accept + read + dispatch + write cycle across all registered transports, returns when no transport has progress to make or `timeout_us` elapses.
+
+### See also
+
+- `docs/internals/repl-service.md` — thread model, queue + ringbuf contracts, session lifecycle, transport adapter pattern, full NDJSON schema.
+- `<urbi/repl.h>` — public API surface; inline doc comments on `UReplConfig` / `UTransport`.
+- `tools/urbi-server.c`, `tools/urbi-send.c` — reference embedders.

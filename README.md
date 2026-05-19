@@ -6,7 +6,7 @@ An embeddable orchestration scripting language for robotics and physical systems
 
 Implements **urbiscript** — a prototype-based, parallel-by-default, event-driven language designed for coordinating sensors, actuators, and reactive control loops on fast underlying code. Sits above C/C++ control loops the way Lua sits above game engines: handles concurrency, time, events, and cancellation as first-class primitives instead of patterns the developer has to construct by hand.
 
-**Status:** M6 stdlib Wave 1 — language scaffolding for the standard library. String literals, atom-method dispatch (`1.foo` / `"bar".length`), `Object` root C-native methods (setSlot/getSlot/clone/addProto/...), atom proto stubs (Boolean/Integer/Float/String/Nil/Void as realm globals), `Class.new()` / `.clone()` semantics, class declarations (`class Foo : public A, B { body }`) with multi-proto MRO and nested-class shadow scoping, and the scripted `Event.new()` constructor. Builds on the M5 reactive runtime (`at` / `whenever` / `waituntil` / `every` / tag-scope `enter` / `leave`), M4 prototype object model + GC, M3 cooperative scheduler + incremental tri-color GC (sub-3 µs pause), parallel separators (`,` / `&`), exception unwind, realm/namespace chunk lifecycle, ISR-safe event ring, and determinism infrastructure. Bytecode wire format v1.5. **1409 unit cases / 7933 checks / 168 `.chk` conformance fixtures** passing at release / debug / ASan / UBSan / valgrind / cross-ARM / cross-RISC-V / stress / GC-none / 3-preset × 100-run determinism. Strict-tooling all-categories hard-gated: cppcheck-strict, tidy-strict, scan-build, docstring-coverage. Tagged `v0.6.0-stdlib-scaffold`.
+**Status:** M8 part 2 — networked REPL service. NDJSON line-protocol REPL over pluggable transports (TCP / Unix socket / UART / pty / in-process), 9 introspection ops + `Debug` urbiscript namespace, bearer-token auth with per-source rate-limiting, per-realm output writer + compile-budget, `Global` mutable shared atom (15 builtin atom protos marked readonly), `share/urbi/lobby.u` overlay (`echo` / `wall` / `handleDisconnect` / `Lobby.lobbies`), and three host binaries (`urbi`, `urbi-server`, `urbi-send`). Opt-in via `URBI_ENABLE_REPL=1`. Builds on the v0.9.0 realm-per-session lobby model, M6 stdlib (atoms, containers, runtime primitives), M5 reactive runtime (`at` / `whenever` / `waituntil` / `every` / tag-scope `enter` / `leave`), M4 prototype object model + GC, M3 cooperative scheduler + incremental tri-color GC (sub-3 µs pause), parallel separators (`,` / `&`), exception unwind, realm/namespace chunk lifecycle, ISR-safe event ring, and determinism infrastructure. Bytecode wire format v1.7, ABI 0/12/0. **1981 unit cases / 14011 checks** (URBI_ENABLE_REPL=1) passing at release / debug / ASan / UBSan / valgrind / cross-ARM / cross-RISC-V / stress / GC-none / 3-preset × 100-run determinism. Strict-tooling all-categories hard-gated. Tagged `v0.9.1-repl-service`.
 
 ## Design goals
 
@@ -73,6 +73,41 @@ Disassemble:
 ```
 
 See `./build/host/urbi --help` for the full flag list.
+
+## REPL service
+
+Opt-in subsystem (build with `URBI_ENABLE_REPL=1`): NDJSON line-protocol REPL over TCP / Unix socket / UART, with bearer-token auth, per-session output isolation, and 9 introspection ops. Builds two extra host binaries: `urbi-server` (headless) and `urbi-send` (client).
+
+Build:
+
+```sh
+make URBI_ENABLE_REPL=1            # liburbi.a with REPL support
+make urbi-server-bin URBI_ENABLE_REPL=1  # build/host/urbi-server
+make urbi-send-bin   URBI_ENABLE_REPL=1  # build/host/urbi-send
+```
+
+Start a server on loopback (no token needed):
+
+```sh
+./build/host/urbi-server --port 54000
+```
+
+From a second shell, send one-shot ops:
+
+```sh
+./build/host/urbi-send eval "1 + 2"             # → 3
+./build/host/urbi-send introspect coros         # → JSON list of strands
+./build/host/urbi-send --tail eval "every(1s) { echo 'tick' }"
+```
+
+Exposing the server on a LAN interface requires `--token`:
+
+```sh
+./build/host/urbi-server --bind 0.0.0.0 --port 54000 --token "$(openssl rand -hex 16)"
+./build/host/urbi-send --host robot.local:54000 --token "$TOK" eval "Robot.battery"
+```
+
+Embedders can also combine local linenoise REPL + network service in one process via the `urbi --listen` flag, or start the service programmatically with `urbi_repl_serve` from `<urbi/repl.h>`. See `docs/embedding-guide.md` §12 (REPL Service) and `docs/internals/repl-service.md` for the full API + wire-protocol reference.
 
 ## Source layout
 
