@@ -697,8 +697,9 @@ urbi_unload(UVM *vm, UModule *module)
 
     /* v0.9.0-repl (CHSTR-027): free the module shell if it was heap-allocated
      * by urbi_repl_eval or urbi_module_from_bytes.  Caller-allocated (stack /
-     * static) modules are freed by their owner; do NOT free them here. */
-    if (heap && vm != NULL) {
+     * static) modules are freed by their owner; do NOT free them here.
+     * vm != NULL is guaranteed by the early-return guard at function entry. */
+    if (heap) {
         vm->alloc_fn(module, 0, vm->alloc_ud);
     }
     return URBI_OK;

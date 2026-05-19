@@ -165,7 +165,8 @@ run_on_scratch_core(struct UVM       *vm,
      * back to global_realm when the chain is absent (native closures, stubs). */
     {
         URealm *scratch_realm = NULL;
-        if (closure != NULL && closure->proto != NULL
+        /* closure != NULL is guaranteed by the early-return guard above. */
+        if (closure->proto != NULL
                 && closure->proto->owning_module_instance != NULL
                 && closure->proto->owning_module_instance->module != NULL) {
             scratch_realm = closure->proto->owning_module_instance->module->owning_realm;
