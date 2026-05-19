@@ -158,7 +158,12 @@ uint8_t emit_function_literal(UEmitter *e,
      * leaves child_proto in nested[] but at least it is consistently a
      * fully-allocated empty proto (umodule_destroy walks NULL slots
      * cleanly). */
-    UProto *child_proto = umodule_alloc_nested_proto(e->module);
+    /* v0.8.5 Task 1 plumbing: pass parent_proto explicitly.  Still routes
+     * to root_proto here; Task 5 flips this to parent_fs->target_proto
+     * (truly-recursive emission).  Behavior identical for this commit:
+     * all function literals remain flat siblings under root. */
+    UProto *child_proto = umodule_alloc_nested_proto(e->module,
+                                                     e->module->root_proto);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(e->module->root_proto->nested_count - 1);
 

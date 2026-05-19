@@ -1,0 +1,149 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* tests/unit/test_recursive_emit.c — v0.8.5-recursive-emit regressions.
+ *
+ * Validates that UProto.ic_index is assigned in DFS pre-order at both
+ * emit and deserialize time, that umodule_alloc_nested_proto routes to
+ * the correct parent, and that OP_CLOSURE dispatch resolves against the
+ * executing proto's own nested[]. */
+
+#include "utest.h"
+
+#include <string.h>
+#include <stdlib.h>
+
+#include "value/uarena.h"
+#include "parse/uast.h"
+#include "emit/uemit.h"
+#include "lex/ulex.h"
+#include "module/umodule.h"
+#include "parse/uparse.h"
+#include "vm/uvm.h"
+#include "urbi/urbi.h"
+
+#define UTEST(name) static void name(void)
+
+/* -----------------------------------------------------------------------
+ * Helpers
+ * ----------------------------------------------------------------------- */
+
+/* Compile source into module via the standard emit pipeline.  Returns
+ * EMIT_OK on success.  Caller owns module (must destroy) and arena. */
+static UEmitError compile_src(const char *src,
+                              UVM *vm,
+                              UModule *module,
+                              UArena *arena) {
+    ULexer lex;
+    ulex_init(&lex, src, strlen(src));
+    UEmitter e;
+    uemit_init(&e, module, arena, vm, NULL);
+    UParser p;
+    uparse_init(&p, &lex, arena);
+    UAstNode *node;
+    while ((node = uparse_next_statement(&p)) != NULL) {
+        if (node->kind == AST_ERROR) break;
+        (void)uemit_statement(&e, node);
+        uarena_reset(arena);
+    }
+    return uemit_finish(&e);
+}
+
+/* -----------------------------------------------------------------------
+ * Task 1: ic_index plumbing tests
+ * ----------------------------------------------------------------------- */
+
+UTEST(ic_index_root_is_zero) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+    UEmitter e;
+    uemit_init(&e, &m, &arena, &vm, NULL);
+
+    UASSERT(m.root_proto != NULL);
+    UASSERT_EQ(m.root_proto->ic_index, 0);
+    UASSERT_EQ(m.next_proto_serial, 0);
+
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(ic_index_nested_increments_in_alloc_order) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+    UEmitter e;
+    uemit_init(&e, &m, &arena, &vm, NULL);
+    UASSERT(m.root_proto != NULL);
+
+    /* Allocate three protos under root.  Even with the post-Task-5
+     * recursive emitter, this direct-allocation pattern still allocates
+     * under the explicit parent — so all three are flat siblings. */
+    UProto *p1 = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p2 = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p3 = umodule_alloc_nested_proto(&m, p1);
+
+    UASSERT(p1 != NULL);
+    UASSERT(p2 != NULL);
+    UASSERT(p3 != NULL);
+
+    /* DFS pre-order: root=0; p1=1; p2=2; p3=3. */
+    UASSERT_EQ(p1->ic_index, 1);
+    UASSERT_EQ(p2->ic_index, 2);
+    UASSERT_EQ(p3->ic_index, 3);
+    UASSERT_EQ(m.next_proto_serial, 3);
+
+    /* Tree shape: root has [p1, p2]; p1 has [p3]; p2 has nothing. */
+    UASSERT_EQ(m.root_proto->nested_count, 2);
+    UASSERT(m.root_proto->nested[0] == p1);
+    UASSERT(m.root_proto->nested[1] == p2);
+    UASSERT_EQ(p1->nested_count, 1);
+    UASSERT(p1->nested[0] == p3);
+    UASSERT_EQ(p2->nested_count, 0);
+
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(total_proto_count_set_at_uemit_finish) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+
+    /* Three top-level function literals; pre-Task-5 flat siblings under root.
+     * total_proto_count = 1 (root) + 3 = 4. */
+    UEmitError rc = compile_src(
+        "var a = function() { 1 };"
+        "var b = function() { 2 };"
+        "var c = function() { 3 };", &vm, &m, &arena);
+    UASSERT_EQ(rc, EMIT_OK);
+    UASSERT(m.root_proto != NULL);
+    UASSERT_EQ(m.root_proto->nested_count, 3);
+    UASSERT_EQ(m.total_proto_count, 4);
+
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* ===================================================================
+ * Suite entry
+ * =================================================================== */
+
+void
+test_recursive_emit_suite(void)
+{
+    printf("test_recursive_emit\n");
+    utest_run("ic_index_root_is_zero",
+              ic_index_root_is_zero);
+    utest_run("ic_index_nested_increments_in_alloc_order",
+              ic_index_nested_increments_in_alloc_order);
+    utest_run("total_proto_count_set_at_uemit_finish",
+              total_proto_count_set_at_uemit_finish);
+}

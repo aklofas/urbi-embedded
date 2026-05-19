@@ -399,6 +399,16 @@ typedef struct UProto {
      * uint16_t with saturation at UINT16_MAX (logs URBI_LOG_WARN; proto leaks
      * — acceptable for the v1.0 timeframe). */
     uint16_t       refcount;
+
+    /* [runtime-only, NOT serialized] DFS pre-order serial assigned at
+     * UProto construction.  Root proto gets ic_index = 0; subsequent
+     * UProto allocations get module->next_proto_serial++ via either the
+     * emit path (umodule_alloc_nested_proto) or the deserialize path
+     * (decode_nested_protos_into).  Used by OP_CLOSURE to bind
+     * cl->proto_inst via UModuleInstance.proto_instances->entries[ic_index]
+     * — a single index that works for both flat and recursive trees.
+     * v0.8.5-recursive-emit. */
+    uint16_t       ic_index;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
@@ -446,6 +456,24 @@ typedef struct UModule {
      * loader/emitter use them to grow + free struct-internal buffers. */
     UModuleAllocFn alloc_fn;
     void         *alloc_ud;
+
+    /* next_proto_serial [runtime-only, NOT serialized]: monotonic counter
+     * holding the LAST ic_index assigned to a non-root UProto in this
+     * module.  Bumped in umodule_alloc_nested_proto (emit path) and
+     * decode_nested_protos_into (deserialize path).  Both paths walk the
+     * tree in DFS pre-order so serial assignment is identical regardless
+     * of load source.  Root proto's ic_index = 0 is set explicitly at
+     * root-proto allocation; the first nested allocation produces
+     * ic_index = 1.  v0.8.5-recursive-emit. */
+    uint16_t       next_proto_serial;
+
+    /* total_proto_count [runtime-only, NOT serialized]: equals
+     * next_proto_serial + 1 (i.e., includes the root).  Stamped at
+     * uemit_finish (emit path) and at successful umodule_deserialize
+     * (load path).  Used by urbi_get_or_create_module_instance to size
+     * proto_instances->entries[] under recursive nesting.
+     * v0.8.5-recursive-emit. */
+    uint16_t       total_proto_count;
 } UModule;
 
 /* --- errors --- */
@@ -534,7 +562,12 @@ void umodule_strand_refcount_dec(UModule *m, UProto *root_proto,
  * After detach, the corresponding nested[k] slot becomes NULL and ownership
  * transfers to the watcher (freed via pool_free on watcher recycle).
  * umodule_destroy is robust to NULL slots in nested[].  See also MOD-015. */
-UProto *umodule_alloc_nested_proto(UModule *module);
+/* v0.8.5: parent_proto explicitly selects the nested[] array to grow
+ * (module->root_proto for top-level function literals, the enclosing
+ * UProto for nested function literals).  Each call increments
+ * module->next_proto_serial and assigns the new proto's ic_index from
+ * the post-increment value, matching DFS pre-order. */
+UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto);
 
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
  * (it is owned by the module's nested[] array, or by a watcher pool slot

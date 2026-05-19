@@ -367,7 +367,7 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
     /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
     UASSERT_EQ((unsigned)p->ic_count, 0U);
     UASSERT_EQ((void *)p->ic_names, (void *)NULL);
@@ -381,7 +381,7 @@ UTEST(uproto_destroy_frees_ic_names) {
     /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m);
+    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
     UASSERT(p != NULL);
     /* Pretend the emitter populated ic_count + ic_names with two opaque slots. */
     p->ic_count = 2;
@@ -1190,7 +1190,7 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
      * (nested[] lives on root_proto).  Allocate with stdlib_alloc (hosted). */
     a.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(a.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&a);
+    UProto *p = umodule_alloc_nested_proto(&a, a.root_proto);
     UASSERT(p != NULL);
 
     /* One UVAL_FLOAT in the nested proto's constant pool. */
