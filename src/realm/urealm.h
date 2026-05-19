@@ -20,6 +20,7 @@ extern "C" {
 struct UVM;
 struct UTag;
 struct UNamespace;
+struct UModule;
 
 /* === Realm flag bits (stored in URealm.flags) === */
 
@@ -73,6 +74,17 @@ typedef struct URealm {
      * GC-walker contract for UStrand: see ustrand.h (top-of-file comment)
      * "Strand walker contract" for the full mark+sweep interaction. */
     struct UStrand *strands_head;
+
+    /* [runtime-only, NOT serialized] Singly-linked list of UModule shells
+     * loaded under this realm via urbi_run_chunk / urbi_repl_eval /
+     * urbi_load_module.  Threaded via UModule.next_in_realm; head-insertion.
+     * Walked at urbi_realm_destroy time to unload each module (Task 12).
+     *
+     * Not a GC root chain: UModule is host-allocated (not GC-managed).
+     * The UModuleInstance objects referenced by these modules stay
+     * GC-rooted via vm->module_instances_head — no shading needed here.
+     * v0.9.0-repl. */
+    struct UModule *loaded_protos_head;
 } URealm;
 
 /* UGcRootCallback is defined in uvm.h (the canonical location).
@@ -132,6 +144,7 @@ void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 URealm *urbi_realm_create(struct UVM *vm);
 void    urbi_realm_destroy(struct UVM *vm, URealm *realm);
 URealm *urbi_realm_global(struct UVM *vm);
+URealm *urbi_realm_create_repl(struct UVM *vm);
 
 /* VM-wide liveness inspection.
  * Reads vm->strand_runnable_count / vm->watcher_active_count /

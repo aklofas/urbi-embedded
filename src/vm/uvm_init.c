@@ -440,6 +440,14 @@ void urbi_vm_destroy(UVM *vm) {
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
+    /* Clear module_instances_head before GC destroy so that:
+     *   (a) object_roots_walker stops shading now-unreachable UModuleInstance
+     *       cells (harmless but tidy), and
+     *   (b) umodule_destroy_internal's vm->module_instances_head walk (Task 10)
+     *       skips the list instead of dereferencing GC-freed cells post-destroy.
+     * The GC sweep will reclaim all UModuleInstance cells regardless; we only
+     * clear the pointer so the walk in the stdlib teardown path below is safe. */
+    vm->module_instances_head = NULL;
     /* GC destroy must run after all subsystems that hold GC-managed cells.
      * Realm teardown (above) releases bindings; remaining infrastructure (event ring,
      * sched queues) is freed below — none of it owns GC cells. */

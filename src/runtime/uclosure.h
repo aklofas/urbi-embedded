@@ -99,16 +99,12 @@ struct UClosure {
     UProtoInstance   *proto_inst;  /* M4 follow-up: per-(vm,proto) IC tier
                                       pointer.  See banner above for
                                       binding/lifecycle. */
-    /* origin_module_instance [runtime-only]: the UModuleInstance that was
-     * active at OP_CLOSURE creation time.  Set from s->module_instance.
-     * Used by OP_CLOSURE inside the callee to resolve proto_inst entries
-     * for inner closures via origin_module_instance->proto_instances->
-     * entries[bx+1], even when s->module_instance belongs to a different
-     * session.  NULL for native-fn closures (those never execute bytecode).
-     * Lifetime: UModuleInstance objects are GC-managed and remain valid
-     * for the VM's lifetime once created. */
-    struct UModuleInstance *origin_module_instance;
     /* next_alloc deleted at v0.8.4 Step C-3: pre-GC free-list link no longer needed. */
+    /* origin_module_instance deleted at v0.9.0 Task 8: field retired in favour
+     * of UProto.owning_module_instance (Tasks 1+2); OP_CLOSURE reads
+     * child_proto->owning_module_instance directly (Task 7).  Reachability:
+     * UClosure -> proto_inst; UModuleInstance kept alive via
+     * object_roots_walker -> vm->module_instances_head. */
     /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of
      * pushing a bytecode frame.  proto / proto_inst / upvals are NULL on
@@ -120,5 +116,15 @@ struct UClosure {
     uint8_t           nupvals;
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
 };
+
+/* Layout pin (v0.9.0): UClosure shrunk 56 -> 48 B after origin_module_instance
+ * retirement (Task 8).  Remaining fields: UCell (2 B) + pad (6 B) + proto ptr
+ * (8 B) + proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad
+ * (7 B) + upvals[1] ptr (8 B) = 48 B.  Pin on 64-bit hosts only (pointer
+ * size drives the layout; 32-bit assertion is not separately tracked). */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
+_Static_assert(sizeof(UClosure) == 48,
+               "UClosure must be 48 B after v0.9.0 retirement; struct grew unexpectedly");
+#endif
 
 #endif /* UCLOSURE_H */

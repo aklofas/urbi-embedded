@@ -37,6 +37,27 @@
 
 
 /* ---------------------------------------------------------------------------
+ * urealm_register_module
+ *
+ * Register `m` onto `realm->loaded_protos_head` via head-insertion if not
+ * already linked.  Idempotent: a second call with the same module for the
+ * same realm is a no-op (owning_realm already set to this realm).
+ * Shared modules (e.g. vm->stdlib_module) may be run into multiple realms;
+ * they keep owning_realm pointing at the FIRST realm they were registered
+ * in and are NOT re-registered for subsequent realms.  The unload path
+ * (Task 12 / 13) handles per-realm teardown independently.  v0.9.0-repl. */
+static void
+urealm_register_module(URealm *realm, UModule *m)
+{
+    if (realm == NULL || m == NULL) return;
+    /* Already registered (in some realm) — skip to avoid double-linking. */
+    if (m->owning_realm != NULL) return;
+    m->next_in_realm = realm->loaded_protos_head;
+    m->owning_realm  = realm;
+    realm->loaded_protos_head = m;
+}
+
+/* ---------------------------------------------------------------------------
  * uchunk_loader_drive
  *
  * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
@@ -227,6 +248,9 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         if (!realm) return URBI_ERR_OOM;
     }
 
+    /* Register module onto realm->loaded_protos_head (idempotent). */
+    urealm_register_module(realm, module);
+
     /* Empty module (instr_count == 0): nothing to dispatch.  Mirrors the
      * urbi_vm_run fast-path (uvm_run.c:44-47) so callers that compile an
      * empty REPL line still get URBI_OK + nil result.  Without this guard,
@@ -289,14 +313,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* CHSTR-003: use explicit zero-init via urbi_zero rather than = {0} to
-     * document that the module must be fully zero-initialised before uemit_init
-     * populates every field.  urbi_zero is the canonical pattern for this. */
-    UModule module;
-    urbi_zero(&module, sizeof(module));
+    /* v0.9.0-repl (CHSTR-027): heap-allocate UModule per REPL line so each
+     * module persists in realm->loaded_protos_head past return.  The old
+     * stack-alloc reused the same address across REPL lines, causing the
+     * realm registry to alias.  Freed by urbi_realm_destroy (session-end)
+     * or the root_proto-refcount rescue mechanism (if a strand parks). */
+    UModule *module = (UModule *)vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
+    if (module == NULL) {
+        if (out_buf && out_buf_size > 0) {
+            urbi_strncpy_truncating(out_buf, out_buf_size, "OOM allocating module");
+        }
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
+    urbi_zero(module, sizeof *module);
+    module->shell_heap_allocated = true;
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, NULL);
+    uemit_init(&e, module, &arena, vm, NULL);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -335,8 +369,10 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
 #if __STDC_HOSTED__
             if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
-                /* Full format "stdin:line:col: message" matches compile_source. */
-                snprintf(out_buf, out_buf_size, "<stdin>:%d:%d: %s",
+                /* v0.9.0-repl: route lex.source_name through so syncline-framed
+                 * REPL submissions show correct file:line in errors. */
+                snprintf(out_buf, out_buf_size, "%s:%d:%d: %s",
+                         ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
             } else
 #endif
@@ -352,14 +388,18 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
-        umodule_destroy(&module, vm);
+        /* Compile-error path: module was never registered in the realm
+         * (urbi_run_chunk was not reached), so it is not realm-owned.
+         * Destroy its internals then free the heap allocation directly. */
+        umodule_destroy(module, vm);
+        vm->alloc_fn(module, 0, vm->alloc_ud);
         uarena_destroy(&arena);
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
     /* Run the module's root chunk via the persistent loader strand path. */
     UValue result = {0};
-    int run_rc = urbi_run_chunk(vm, realm, &module, &result);
+    int run_rc = urbi_run_chunk(vm, realm, module, &result);
 
     /* API-009: drain any body strands spawned by watcher eval during this run.
      * urbi_run_chunk now returns when the loader strand parks (persists
@@ -395,7 +435,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
-            umodule_destroy(&module, vm);
+            /* Module is realm-owned (heap-alloc); do NOT unload here —
+             * closures may still reference its protos.  urbi_realm_destroy
+             * or the refcount-rescue mechanism handles final cleanup. */
             uarena_destroy(&arena);
             return URBI_OK;
         }
@@ -403,7 +445,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
-        umodule_destroy(&module, vm);
+        /* Module is realm-owned (heap-alloc); do NOT unload here —
+         * closures may still reference its protos.  urbi_realm_destroy
+         * handles final cleanup. */
         uarena_destroy(&arena);
         return run_rc;
     }
@@ -413,7 +457,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
-    umodule_destroy(&module, vm);
+    /* Module is realm-owned (heap-alloc); do NOT unload here — it persists
+     * in realm->loaded_protos_head until urbi_realm_destroy or explicit
+     * urbi_unload by the host.  This is the CHSTR-027 close-out. */
     uarena_destroy(&arena);
     return URBI_OK;
 #else
@@ -600,5 +646,61 @@ urbi_load_module(UVM *vm, UModule *module, const char *module_name)
         return URBI_ERR_OOM;
     }
 
+    /* Registration happens transitively via urbi_run_chunk (called from
+     * urbi_run_script).  Call explicitly here against the global realm so
+     * the module is registered even if urbi_run_script short-circuits on an
+     * empty root chunk.  Idempotent — second call from run_chunk is a no-op. */
+    URealm *global_realm = urbi_realm_global(vm);
+    if (global_realm != NULL) {
+        urealm_register_module(global_realm, module);
+    }
+
     return urbi_run_script(vm, NULL, module);
+}
+
+/* ---------------------------------------------------------------------------
+ * urbi_unload  (v0.9.0-repl Task 11)
+ *
+ * Unlink module from its owning realm's loaded_protos_head list and route
+ * through umodule_destroy.  If root_proto->refcount > 0 the rescue mechanism
+ * defers final cleanup; this call returns URBI_OK either way.
+ * --------------------------------------------------------------------------- */
+int
+urbi_unload(UVM *vm, UModule *module)
+{
+    if (vm == NULL || module == NULL)   return URBI_ERR_INVALID_ARG;
+    if (module->owning_realm == NULL)   return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    URealm *r = module->owning_realm;
+
+    /* Unlink from the realm's loaded_protos_head list. */
+    if (r->loaded_protos_head == module) {
+        r->loaded_protos_head = module->next_in_realm;
+    } else {
+        for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+            if (p->next_in_realm == module) {
+                p->next_in_realm = module->next_in_realm;
+                break;
+            }
+        }
+    }
+    module->owning_realm  = NULL;
+    module->next_in_realm = NULL;
+
+    /* Route through umodule_destroy.  If refcount > 0, rescue mechanism
+     * defers final cleanup; this call always returns success.  After
+     * Task 10's fix, umodule_destroy also unlinks any UModuleInstance
+     * from vm->module_instances_head, so no dangling cells survive. */
+    bool heap = module->shell_heap_allocated;
+    umodule_destroy(module, vm);
+
+    /* v0.9.0-repl (CHSTR-027): free the module shell if it was heap-allocated
+     * by urbi_repl_eval or urbi_module_from_bytes.  Caller-allocated (stack /
+     * static) modules are freed by their owner; do NOT free them here.
+     * vm != NULL is guaranteed by the early-return guard at function entry. */
+    if (heap) {
+        vm->alloc_fn(module, 0, vm->alloc_ud);
+    }
+    return URBI_OK;
 }

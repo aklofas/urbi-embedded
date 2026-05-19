@@ -107,6 +107,16 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
+/* Convenience wrapper: creates a URealm and sets REALM_REPL on it.  Equivalent
+ * to urbi_realm_create followed by an internal flag set.  Use this for
+ * per-session REPL lobbies.  The flag marks the realm for REPL-specific
+ * behaviors that may land in v0.9.1-repl-service (e.g. disconnect-cleanup,
+ * introspection visibility).
+ *
+ * Returns NULL on OOM.
+ * Thread safety: MAIN. */
+struct URealm *urbi_realm_create_repl(struct UVM *vm);
+
 /* Liveness query: reads VM-wide runnable / active-watcher / pending-wakeup
  * counters.  Populates out_strands / out_watchers / out_wakes (any may be
  * NULL).  Returns true if any counter is positive.
@@ -195,6 +205,21 @@ int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
 int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module);
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
+
+/* === v0.9.0-repl: urbi_unload ===
+ *
+ * Unload `module` from its owning realm's loaded_protos_head list.  If the
+ * module's root_proto refcount is > 0 (a strand is parked on the loader, or
+ * closures hold UProtos), the rescue mechanism transfers the root_proto to
+ * vm->rescued_protos and final cleanup completes when the last refcount-
+ * holder releases.  Otherwise the module is destroyed immediately.
+ *
+ * Returns URBI_OK on success (whether immediate or deferred).
+ * Returns URBI_ERR_INVALID_ARG if vm or module is NULL, or if module is not
+ *   bound to any realm (already unloaded).
+ *
+ * Thread safety: MAIN.  Not ISR-safe. */
+int urbi_unload(struct UVM *vm, struct UModule *module);
 
 /* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
  * as int) to the corresponding public UErrCode.  Currently routes

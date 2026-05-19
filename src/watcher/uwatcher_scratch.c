@@ -145,8 +145,8 @@ run_on_scratch_core(struct UVM       *vm,
      * Failure leaves cleanup_base=NULL; OP_TRY_BEGIN detects and halts safely. */
     (void)strand_cleanup_stack_init(&strand, vm, URBI_CLEANUP_MAX);
 
-    /* Thread onto global_realm->strands_head so the GC walker sees the
-     * strand's register window (mirrors urbi_vm_run's transient-strand dance).
+    /* Thread onto a realm's strands_head so the GC walker sees the strand's
+     * register window (mirrors urbi_vm_run's transient-strand dance).
      *
      * GC-006 + GC-038 (audit findings closed by construction):
      * Before this linkage step, no GC slice can fire — every prior allocation
@@ -158,13 +158,26 @@ run_on_scratch_core(struct UVM       *vm,
      * strand.R[k] (including the payload write at line 94 below) is rooted
      * for the duration of dispatch.  Unlinking happens below in the teardown
      * block, after dispatch_loop_until_yield returns and *out_result has been
-     * captured into the caller's local. */
+     * captured into the caller's local.
+     *
+     * v0.9.0-repl: use the closure's owning realm so that OP_LOAD_REALM_GLOBAL
+     * resolves globals from the realm where the closure was compiled.  Fall
+     * back to global_realm when the chain is absent (native closures, stubs). */
     {
-        URealm *gr = urbi_realm_global(vm);
-        if (gr != NULL) {
-            strand.realm         = gr;
-            strand.next_in_realm = gr->strands_head;
-            gr->strands_head     = &strand;
+        URealm *scratch_realm = NULL;
+        /* closure != NULL is guaranteed by the early-return guard above. */
+        if (closure->proto != NULL
+                && closure->proto->owning_module_instance != NULL
+                && closure->proto->owning_module_instance->module != NULL) {
+            scratch_realm = closure->proto->owning_module_instance->module->owning_realm;
+        }
+        if (scratch_realm == NULL) {
+            scratch_realm = urbi_realm_global(vm);
+        }
+        if (scratch_realm != NULL) {
+            strand.realm         = scratch_realm;
+            strand.next_in_realm = scratch_realm->strands_head;
+            scratch_realm->strands_head = &strand;
         }
     }
 

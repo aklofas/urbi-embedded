@@ -348,6 +348,12 @@ static int run_interactive(UVM *vm) {
     clock_gettime(CLOCK_MONOTONIC, &g_start_time);
     signal(SIGINT, sigint_handler);
 
+    struct URealm *repl_realm = urbi_realm_create_repl(vm);
+    if (repl_realm == NULL) {
+        fprintf(stderr, "OOM creating REPL realm\n");
+        return 1;
+    }
+
     char *histpath = history_path();
     linenoiseHistorySetMaxLen(1000);
     if (histpath) linenoiseHistoryLoad(histpath);
@@ -390,7 +396,7 @@ static int run_interactive(UVM *vm) {
          * 512 bytes: large enough for all parse-error messages (longest is
          * ~200 chars for the 'closure' retirement message + line/col prefix). */
         char result_buf[512] = {0};
-        int eval_rc = urbi_repl_eval(vm, NULL, buf, final_len,
+        int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
                                      result_buf, sizeof result_buf);
         if (eval_rc == URBI_OK) {
             printf("[%08u] %s\n", ms_since_start(), result_buf);
@@ -407,6 +413,7 @@ static int run_interactive(UVM *vm) {
 
     if (histpath) linenoiseHistorySave(histpath);
     free(histpath);
+    urbi_realm_destroy(vm, repl_realm);
     return 0;
 }
 

@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.9.0-repl-foundation — 2026-05-19
+
+### Foundation (M8 part 1 of 2)
+
+- **`urbi_unload(vm, module)`** — new public API; unloads a single module from its realm's registry; defer-destroy via root_proto->refcount rescue.
+- **`urbi_realm_create_repl(vm)`** — new convenience; creates a URealm with `REALM_REPL` set.
+- **`urbi_realm_destroy` extended** to walk `loaded_protos_head` before strand teardown.
+- **`urbi_repl_eval`** now heap-allocates the UModule per line (closes CHSTR-027); previous stack-alloc pattern leaked address-aliasing across REPL lines.
+
+### Runtime
+
+- **UClosure shrunk** 56 → 48 B by retiring `origin_module_instance`.  Replaced by per-UProto `owning_module_instance` back-pointer; OP_CLOSURE simplified from ~50 LOC fallback chain to 5 LOC single read.  Closes v0.8.5 "Partial bundle" carry-forward.
+- **URealm gains `loaded_protos_head`** — singly-linked list of UModule shells loaded under the realm; lifecycle registry only (not a GC root chain).
+- **UModule gains `next_in_realm` + `owning_realm`** for the registry linkage.
+
+### Lexer
+
+- **Synclines** — `//#line N "FILE"`, `//#push N "FILE"`, `//#pop` recognized in the comment-skip path; rewrite `lex->line` + `lex->source_name` so error messages report correct file:line for framed multi-line REPL submissions.  Stack depth tunable via `URBI_SYNCLINE_STACK_MAX` (default 4).  Malformed / overflow / underflow degrade silently.
+
+### ABI
+
+- **0/10/0 → 0/11/0** (7th pre-v1.0 escape-clause use): UClosure, UProto, UModule, URealm all change layout; ULexer gains transient state.
+
+### Build modes
+
+- All three modes preserved: bytecode-only / default / (REPL service introduced in v0.9.1).  `urbi_unload` + `urbi_realm_create_repl` are always available; synclines ride with the lexer (off in bytecode-only builds).
+
+### Footprint
+
+`size --total liburbi.a` at v0.9.0-repl-foundation (host x86-64 gcc -Os):
+
+- host: 215,581 B text + 5,016 B data = 220,597 B total (~55% of 400 KB cap)
+- arm Cortex-M7 bytecode-only (`URBI_BYTECODE_ONLY=1`): 75,895 B text (~95% of 80 KB cap)
+- riscv rv32imc bytecode-only: 93,382 B text (~98% of 95 KB cap)
+
+`cross-arm` / `cross-riscv` full-library targets fail on this machine due to the
+ARM/RISC-V bare-metal toolchain missing hosted-C sysroot headers (`string.h` etc.
+under `-ffreestanding`).  This is a pre-existing toolchain environment gap
+(confirmed present on v0.8.5 baseline); the bytecode-only variants compile clean.
+CI remains authoritative for full-library cross-target verification.
+
+### Tests
+
+- `tests/unit/test_uproto_owning_mi.c` — 4 cases verifying `UProto.owning_module_instance` is stamped on every proto by `urbi_module_instance_create`.
+- `tests/unit/test_loaded_protos_registry.c` — 2 cases verifying `URealm.loaded_protos_head` registration at `urbi_run_chunk` entry.
+- `tests/unit/test_multi_realm.c` — 4 cases gating Phase 2 OP_CLOSURE rewire (isolation, shared atom, cross-realm call, cross-realm-survives-destroy).
+- `tests/unit/test_umodule_instance_lifetime.c` — 2 cases pinning the instance-unlink-on-module-destroy invariant.
+- `tests/unit/test_urbi_unload.c` — 5 cases for the `urbi_unload` public API + the CHSTR-027 heap-alloc regression + `urbi_realm_create_repl` smoke.
+- `tests/unit/test_realm_destroy_with_parked_loader.c` — 2 cases verifying `urbi_realm_destroy` walks `loaded_protos_head` and respects stdlib exclusion.
+- `tests/unit/test_lexer_syncline.c` — 7 cases for the `//#line`/`//#push`/`//#pop` mini-parser + the `urbi_repl_eval` source-name error-format integration.
+- `tests/integration/repl_smoke.sh` — added cross-line `Object.foo` shared-proto smoke case (31 → 32 total).
+
+---
+
 ## v0.8.5-recursive-emit — 2026-05-18 (Truly-recursive emitter)
 
 **Tag:** `v0.8.5-recursive-emit`

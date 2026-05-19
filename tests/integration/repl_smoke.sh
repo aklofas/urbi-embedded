@@ -346,5 +346,17 @@ else
     fail "-i lex error: rc=$rc, out='$out'"
 fi
 
+# --- REPL realm: cross-line shared-proto access ---
+# Object is a VM singleton (atom proto), so a slot set on line 1 must be
+# visible when read back on line 2 of the same -i session.
+test_case
+out=$(printf 'Object.foo = 42\nObject.foo\n' | "$URBI" -i)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^\[[0-9]{8}\] 42$'; then
+    ok 'Object.foo shared across REPL lines (REPL realm end-to-end)'
+else
+    fail "Object.foo not visible across REPL lines: rc=$rc, out='$out'"
+fi
+
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"
 [ "$FAIL" -eq 0 ]

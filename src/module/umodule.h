@@ -309,6 +309,19 @@ typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
 struct USymbol;
 typedef struct USymbol USymbol;
 
+/* Forward declaration — UModuleInstance is introduced in M4 (see
+ * object/umoduleinstance.h).  UProto.owning_module_instance (added v0.9.0)
+ * holds a back-pointer to the runtime instance this proto was first
+ * instantiated under.  Defined as opaque here to avoid a circular dependency
+ * on object/ layer types. */
+struct UModuleInstance;
+
+/* Forward declaration — URealm is introduced in M8 (see runtime/urealm.h).
+ * UModule.owning_realm (added v0.9.0) and UModule.next_in_realm thread
+ * modules onto the realm's loaded_protos_head list.  Defined as opaque
+ * to avoid circular dependency. */
+struct URealm;
+
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
  * function body.  The root chunk lives directly in UModule; nested
@@ -409,6 +422,22 @@ typedef struct UProto {
      * — a single index that works for both flat and recursive trees.
      * v0.8.5-recursive-emit. */
     uint16_t       ic_index;
+
+    /* [runtime-only, NOT serialized] Back-pointer to the UModuleInstance
+     * this UProto was first instantiated under.  Populated once at
+     * urbi_module_instance_create time (tree walk over every proto).  Used
+     * by OP_CLOSURE to bind cl->proto_inst without a fallback chain:
+     * cl->proto_inst = &owning_module_instance->proto_instances->entries[ic_index].
+     *
+     * Lifetime contract: owning_module_instance is GC-managed and remains
+     * valid as long as this UProto exists (the instance is kept reachable
+     * via vm->module_instances_head; the module-destroy path unlinks the
+     * instance from that list before the proto's refcount can hit 0).
+     *
+     * Zero-initialised at alloc time; populated lazily on first instance
+     * creation.  NULL is the "not yet instantiated" state and is detected
+     * by the OP_CLOSURE assert when read.  v0.9.0-repl. */
+    struct UModuleInstance *owning_module_instance;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
@@ -474,6 +503,22 @@ typedef struct UModule {
      * proto_instances->entries[] under recursive nesting.
      * v0.8.5-recursive-emit. */
     uint16_t       total_proto_count;
+
+    /* [runtime-only, NOT serialized] Realm-lifecycle linkage.  A UModule is
+     * threaded onto its owning_realm's loaded_protos_head list at every
+     * urbi_run_chunk / urbi_repl_eval / urbi_load_module entry.  Cleared
+     * by urbi_unload when the module leaves a realm.  v0.9.0-repl. */
+    struct UModule *next_in_realm;
+    struct URealm  *owning_realm;
+
+    /* [runtime-only, NOT serialized] True when the UModule shell itself was
+     * heap-allocated by the runtime (e.g. via urbi_repl_eval or
+     * urbi_module_from_bytes).  When set, urbi_unload frees the shell via
+     * vm->alloc_fn after umodule_destroy.  Caller-allocated (stack or static)
+     * modules leave this false; their shell is freed by the caller.
+     * Fits in natural padding after total_proto_count on 64-bit hosts.
+     * v0.9.0-repl (CHSTR-027). */
+    bool           shell_heap_allocated;
 } UModule;
 
 /* --- errors --- */

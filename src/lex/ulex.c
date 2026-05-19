@@ -7,8 +7,10 @@
 #include "urbi/types.h"   /* URBI_STATIC_ASSERT */
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>   /* memcmp, memcpy */
 
 /* strtod (for float literal parsing): from stdlib.h on hosted; declared
  * explicitly for freestanding builds (newlib / picolibc supply it at link
@@ -806,6 +808,11 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
     lex->cur = src;
     lex->line = 1;
     lex->line_start = src;
+    lex->source_name = "<stdin>";
+    lex->syncline_depth = 0;
+    /* syncline_stack contents irrelevant when depth == 0 */
+    lex->syncline_pool_idx = 0;
+    /* syncline_name_pool contents irrelevant until first //#line or //#push */
 
     /* LEX-002: post-init invariant.  `line_start == src` even on empty input;
      * for len == 0, (cur - line_start) is 0 and the column computed by
@@ -826,6 +833,126 @@ typedef struct {
     int col;
     int len;       /* error span length; defaults to 2 (the slash-star prefix) */
 } UTriviaResult;
+
+/* try_parse_syncline — mini-parser for //#line / //#push / //#pop directives.
+ *
+ * Called with l->cur pointing at the '#' character (the two '//' have already
+ * been consumed).  On success: advances l->cur to the end-of-line position
+ * (just before '\n' or at EOF); updates lexer state; returns true.  The
+ * caller's plain-comment loop then skips the terminating newline.
+ *
+ * On failure (malformed or unrecognized directive): resets l->cur to 'start'
+ * (the '#' position); returns false.  The caller falls back to plain-comment
+ * skip-to-newline, treating the whole sequence as a comment.
+ *
+ * Overflow (//#push when syncline_depth == URBI_SYNCLINE_STACK_MAX) and
+ * underflow (//#pop on empty stack) degrade silently: the directive is
+ * consumed (returns true) but the lexer state is left unchanged.
+ *
+ * Filename storage: per-lex round-robin name pool of (URBI_SYNCLINE_STACK_MAX+1)
+ * slots of URBI_SYNCLINE_NAME_MAX bytes each.  Filenames longer than
+ * URBI_SYNCLINE_NAME_MAX-1 are silently truncated.  Pool slot count exceeds
+ * the stack depth by one, guaranteeing that the live source_name and all
+ * stacked entries remain valid simultaneously.
+ *
+ * v0.9.0-repl. */
+static bool
+try_parse_syncline(ULexer *l)
+{
+    const char *start = l->cur;       /* points at '#' */
+    if (l->cur >= l->end || *l->cur != '#') goto fail;
+    l->cur++;                         /* past '#' */
+
+    /* Directive name: scan lowercase ASCII letters. */
+    const char *name_start = l->cur;
+    while (l->cur < l->end && *l->cur >= 'a' && *l->cur <= 'z') l->cur++;
+    size_t name_len = (size_t)(l->cur - name_start);
+
+    /* Skip whitespace after directive name. */
+    while (l->cur < l->end && (*l->cur == ' ' || *l->cur == '\t')) l->cur++;
+
+    /* --- //#pop --- */
+    if (name_len == 3 && memcmp(name_start, "pop", 3) == 0) {
+        /* No arguments.  Remaining characters to '\n' must be whitespace. */
+        const char *p = l->cur;
+        while (p < l->end && *p != '\n') {
+            if (*p != ' ' && *p != '\t' && *p != '\r') goto fail;
+            p++;
+        }
+        l->cur = p;   /* at '\n' or EOF */
+        if (l->syncline_depth > 0) {
+            l->syncline_depth--;
+            l->source_name = l->syncline_stack[l->syncline_depth].file;
+            l->line        = (int)l->syncline_stack[l->syncline_depth].line;
+        }
+        /* else: underflow — silent no-op */
+        return true;
+    }
+
+    /* --- //#line and //#push both take N "FILE" --- */
+    bool is_push = (name_len == 4 && memcmp(name_start, "push", 4) == 0);
+    bool is_line = (name_len == 4 && memcmp(name_start, "line", 4) == 0);
+    if (!is_push && !is_line) goto fail;
+
+    /* Parse decimal line number (required, at least one digit). */
+    if (l->cur >= l->end || *l->cur < '0' || *l->cur > '9') goto fail;
+    uint32_t n = 0;
+    while (l->cur < l->end && *l->cur >= '0' && *l->cur <= '9') {
+        if (n > 0xFFFFFFFFU / 10U) goto fail;   /* overflow guard */
+        n = n * 10U + (uint32_t)(*l->cur - '0');
+        l->cur++;
+    }
+    while (l->cur < l->end && (*l->cur == ' ' || *l->cur == '\t')) l->cur++;
+
+    /* Parse "FILE" — opening quote, no escape sequences, closing quote. */
+    if (l->cur >= l->end || *l->cur != '"') goto fail;
+    l->cur++;                         /* past opening '"' */
+    const char *file_start = l->cur;
+    while (l->cur < l->end && *l->cur != '"' && *l->cur != '\n') l->cur++;
+    if (l->cur >= l->end || *l->cur != '"') goto fail;
+    size_t file_len = (size_t)(l->cur - file_start);
+    l->cur++;                         /* past closing '"' */
+
+    /* Remaining characters to '\n' must be whitespace. */
+    const char *p = l->cur;
+    while (p < l->end && *p != '\n') {
+        if (*p != ' ' && *p != '\t' && *p != '\r') goto fail;
+        p++;
+    }
+    l->cur = p;   /* at '\n' or EOF */
+
+    /* Allocate filename in the round-robin name pool.
+     * Truncate to URBI_SYNCLINE_NAME_MAX - 1 bytes if necessary. */
+    uint8_t slot = l->syncline_pool_idx;
+    l->syncline_pool_idx =
+        (uint8_t)((slot + 1U) % (uint8_t)(URBI_SYNCLINE_STACK_MAX + 1));
+    size_t copy_len = file_len < (URBI_SYNCLINE_NAME_MAX - 1U)
+                      ? file_len : (URBI_SYNCLINE_NAME_MAX - 1U);
+    memcpy(l->syncline_name_pool[slot], file_start, copy_len);
+    l->syncline_name_pool[slot][copy_len] = '\0';
+    const char *stored_file = l->syncline_name_pool[slot];
+
+    if (is_push) {
+        if (l->syncline_depth < URBI_SYNCLINE_STACK_MAX) {
+            /* Save current state before applying N + FILE. */
+            l->syncline_stack[l->syncline_depth].file = l->source_name;
+            l->syncline_stack[l->syncline_depth].line = (uint32_t)l->line;
+            l->syncline_stack[l->syncline_depth].col  = 0;
+            l->syncline_depth++;
+        }
+        /* else: overflow — still apply N + FILE (matches //#line semantics),
+         * but don't push anything onto the (full) stack. */
+    }
+
+    /* Apply: set line so the next physical newline bumps it to N. */
+    l->line        = (int)n - 1;
+    l->source_name = stored_file;
+    return true;
+
+fail:
+    l->cur = start;
+    return false;
+}
 
 static UTriviaResult skip_trivia(ULexer *l) {
     /* LEX-003: initialize line/col to 1 (not 0) so that even if a future
@@ -854,8 +981,16 @@ static UTriviaResult skip_trivia(ULexer *l) {
                 break;
             }
         } else if (c == '/' && l->cur + 1 < l->end && l->cur[1] == '/') {
-            /* Line comment — skip to LF or EOF. */
-            l->cur += 2;
+            /* Line comment.  v0.9.0-repl: check for syncline directive
+             * (//#line / //#push / //#pop) before treating as plain comment. */
+            l->cur += 2;   /* past '//' */
+            if (l->cur < l->end && *l->cur == '#') {
+                /* Mini-parser handles directive; on failure falls back to
+                 * plain-comment skip-to-newline below. */
+                (void)try_parse_syncline(l);
+            }
+            /* Skip remainder of line (handles both failure fall-through and
+             * any trailing whitespace past a successfully-parsed directive). */
             while (l->cur < l->end && *l->cur != '\n') {
                 l->cur++;
             }
