@@ -611,8 +611,23 @@ UAstNode *parse_expression_cont(UParser *p, UAstNode *lhs, int min_prec) {
 /* --- parse_expression: Pratt precedence climbing over parse_prefix. --- */
 
 UAstNode *parse_expression(UParser *p, int min_prec) {
+    /* v0.9.1: depth-guarded entry.  parse_expression is the canonical
+     * recursive descent site for nested expressions like `(((1)))` or
+     * deep operator chains — a pathological compile bomb (e.g. 1000
+     * nested parens) trips here before stack exhaust.  parse_prefix and
+     * parse_expression_cont call back into parse_expression for grouped
+     * sub-expressions, so guarding the entry is sufficient. */
+    if (!uparse_budget_enter(p)) return NULL;
     UAstNode *lhs = parse_prefix(p);
-    if (!lhs) return NULL;
-    if (lhs->kind == AST_ERROR) return lhs;
-    return parse_expression_cont(p, lhs, min_prec);
+    if (!lhs) {
+        uparse_budget_leave(p);
+        return NULL;
+    }
+    if (lhs->kind == AST_ERROR) {
+        uparse_budget_leave(p);
+        return lhs;
+    }
+    UAstNode *r = parse_expression_cont(p, lhs, min_prec);
+    uparse_budget_leave(p);
+    return r;
 }

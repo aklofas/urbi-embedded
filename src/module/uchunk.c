@@ -306,6 +306,20 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         out_buf[0] = '\0';
 
+    /* v0.9.1 compile-budget: source-byte check fires before any allocation
+     * so an oversized submission is rejected without touching the arena or
+     * UModule allocator.  Depth + node-count limits are enforced inside
+     * the parser via UCompileBudget threaded through UParser. */
+    const UCompileBudget *budget = urbi_realm_get_compile_budget(realm);
+    if (budget != NULL && budget->max_source_bytes > 0U
+            && line_len > (size_t)budget->max_source_bytes) {
+        if (out_buf && out_buf_size > 0) {
+            urbi_strncpy_truncating(out_buf, out_buf_size,
+                "compile-budget exceeded: source bytes");
+        }
+        return URBI_ERR_COMPILE_BUDGET_SOURCE;
+    }
+
     /* lex → parse → emit pipeline (inline; no urbi_compile public API yet). */
     ULexer lex;
     ulex_init(&lex, line, line_len);
@@ -334,6 +348,11 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     UParser p;
     uparse_init(&p, &lex, &arena);
+    /* v0.9.1: thread the realm's compile-budget (if any) into the parser so
+     * depth + node-count limits are enforced as we go.  budget is NULL when
+     * the realm has no budget — uparse_set_budget(NULL) is the explicit
+     * "unlimited" path and matches the default uparse_init left behind. */
+    uparse_set_budget(&p, budget);
 
     bool has_error = false;
     const char *parse_errmsg = NULL;  /* static message from AST_ERROR node */
@@ -366,8 +385,22 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     }
 
     if (has_error) {
+        /* v0.9.1: budget trip surfaces here when uparse_next_statement
+         * returned the OOM sentinel (or a NULL from an inner make_node).
+         * Latch is sticky in UParser; check before composing the diag. */
+        int budget_err = uparse_budget_err(&p);
         if (out_buf && out_buf_size > 0) {
 #if __STDC_HOSTED__
+            if (budget_err != URBI_OK) {
+                /* Pin the specific limit in the message so embedders can
+                 * recognise the failure mode from the buffer alone. */
+                const char *which =
+                    (budget_err == URBI_ERR_COMPILE_BUDGET_DEPTH) ? "depth" :
+                    (budget_err == URBI_ERR_COMPILE_BUDGET_NODES) ? "nodes" :
+                                                                    "source";
+                snprintf(out_buf, out_buf_size,
+                         "compile-budget exceeded: %s", which);
+            } else
             if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
                 /* v0.9.0-repl: route lex.source_name through so syncline-framed
                  * REPL submissions show correct file:line in errors. */
@@ -394,6 +427,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         umodule_destroy(module, vm);
         vm->alloc_fn(module, 0, vm->alloc_ud);
         uarena_destroy(&arena);
+        if (budget_err != URBI_OK) return budget_err;
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 

@@ -27,6 +27,47 @@ void uparse_init(UParser *p, ULexer *lex, UArena *arena) {
     p->have_peek2 = false;
     p->at_event_cond = false;
     p->class_body_depth = 0;
+
+    /* v0.9.1 compile-budget guard — uninstalled by default. */
+    p->budget          = NULL;
+    p->cur_depth       = 0U;
+    p->node_count      = 0U;
+    p->budget_exceeded = false;
+    p->budget_err      = URBI_OK;
+}
+
+/* === v0.9.1 budget helpers ============================================ */
+
+void uparse_set_budget(UParser *p, const UCompileBudget *budget) {
+    if (!p) return;
+    p->budget          = budget;
+    p->cur_depth       = 0U;
+    p->node_count      = 0U;
+    p->budget_exceeded = false;
+    p->budget_err      = URBI_OK;
+}
+
+bool uparse_budget_enter(UParser *p) {
+    if (!p) return false;
+    if (p->budget_exceeded) return false;
+    if (p->budget != NULL && p->budget->max_parser_depth > 0U
+            && p->cur_depth >= p->budget->max_parser_depth) {
+        p->budget_exceeded = true;
+        p->budget_err      = URBI_ERR_COMPILE_BUDGET_DEPTH;
+        return false;
+    }
+    p->cur_depth++;
+    return true;
+}
+
+void uparse_budget_leave(UParser *p) {
+    if (!p) return;
+    if (p->cur_depth > 0U) p->cur_depth--;
+}
+
+int uparse_budget_err(const UParser *p) {
+    if (!p) return URBI_OK;
+    return p->budget_err;
 }
 
 UAstNode *uparse_next_statement(UParser *p) {
