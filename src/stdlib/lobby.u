@@ -1,0 +1,76 @@
+// Lobby stdlib — v0.9.1 Phase 5.
+//
+// Adds per-session output primitives + the Lobby.lobbies collection +
+// the disconnect-event surface to the Lobby proto.  The proto itself
+// (vm->lobby_proto) is created by C-side urbi_lobby_native_register at
+// stdlib boot (which also installs the __builtin_lobby_send primitive)
+// and bound to the realm-global "Lobby" via the post-loop hook.  This
+// overlay layers the scripted methods on top.
+//
+// Why we use the class-body + addProto pattern (not `function Lobby.X`):
+//   The Lobby proto is marked URBI_OBJ_FLAG_READONLY by the v0.9.1
+//   Task 4 mark pass BEFORE this overlay runs (spec section 3.6/4.2 -
+//   Lobby joins the 15-element readonly cohort).  Direct OP_SETSLOT
+//   writes to a readonly proto raise TypeError; the LobbyMethods pattern
+//   parallels list_overlay.u / dict_overlay.u and works because addProto
+//   is a C-native method that bypasses the OP_SETSLOT readonly check.
+//
+// Slot lookup on a session lobby instance walks:
+//   instance -> Lobby -> LobbyMethods -> finds echo / wall / etc.
+// `this` binds to the instance, so `onDisconnect!(this)` emits with the
+// per-session lobby as the value.
+//
+// Legacy reference: share/urbi/lobby.u (Gostai 2008-2012).
+
+class LobbyMethods {
+    // echo(msg, tag, prefix): format + write to the current realm's writer
+    // via the __builtin_lobby_send C primitive (which routes through
+    // urbi_vm_write_in_realm so per-session writers win).  Default tag
+    // is empty (drops the `:tag` segment); default prefix is "***".
+    var echo = function(msg, tag, prefix) {
+        __builtin_lobby_send(msg.asString(), tag, prefix)
+    };
+
+    // wall(msg, tag): broadcast to every OTHER lobby in Lobby.lobbies.
+    // Skips `this` so the originating session doesn't receive its own
+    // broadcast.  Sequential iteration via for| (atomic) so partial
+    // delivery cannot strand mid-loop.
+    var wall = function(msg, tag) {
+        var n = Lobby.lobbies.length();
+        var i = 0;
+        while (i < n) {
+            var l = Lobby.lobbies.get(i);
+            if (l != this) { l.echo(msg, tag, "***") };
+            i = i + 1
+        }
+    };
+
+    // handleDisconnect: per-instance overrideable hook fired by the C
+    // dispatcher (urbi_lobby_invoke_handleDisconnect) on session
+    // destroy.  Default fires the onDisconnect event for any
+    // subscribers (the `!` postfix desugars to `.emit([arg])`).  User
+    // code overrides per-instance via `this.handleDisconnect =
+    // function() { ... }` from inside the session — the instance-local
+    // slot wins over this proto default.
+    var handleDisconnect = function() {
+        onDisconnect!(this)
+    };
+
+    // onDisconnect: per-Lobby Event shared across every session instance
+    // (resolved via proto-chain walk).  Subscribers see disconnects from
+    // any session.  Phase 8's .chk corpus exercises this.
+    var onDisconnect = Event.new();
+
+    // lobbies: List of active session lobby instances.  The C-side
+    // dispatcher (urepl_session_create / urepl_session_destroy) appends
+    // / removes entries through the urbi_lobby_register_session /
+    // urbi_lobby_unregister_session helpers in lobby_native.c.  Read-
+    // only from urbiscript (the underlying List is mutable from C only;
+    // urbiscript .add()/.set() on Lobby.lobbies would technically work
+    // at the runtime level but is reserved as a host-side surface).
+    // v1.0 lex has no `[]` list-literal; List.new() is the canonical
+    // empty-list construction (parallels list_overlay.u).
+    var lobbies = List.new()
+} |
+
+Lobby.addProto(LobbyMethods);
