@@ -591,13 +591,6 @@ dispatch:
                  * degrades to the megamorphic slow path. */
             }
 
-            /* v0.8.5: origin_nested + origin_nested_count are dead under
-             * recursive emission (the closure's body looks up via
-             * cl->proto->nested directly).  Field writes kept until Task 7
-             * deletes the fields; writing the executing_proto's array here
-             * is harmless and keeps the GC walker's NULL-check happy. */
-            cl->origin_nested       = nested_arr;
-            cl->origin_nested_count = (uint16_t)nested_cnt;
             /* origin_module_instance carries forward (Partial bundle per
              * spec §7.3 Decision Register row 5): cross-session calls
              * resolve IC binding through this back-pointer to the
