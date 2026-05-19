@@ -154,6 +154,61 @@ UTEST(introspect_slots_unknown_global_emits_error)
     urbi_vm_destroy(&vm);
 }
 
+/* ---- Debug urbiscript namespace (Task 22) ---------------------------- */
+
+UTEST(debug_coros_from_urbiscript)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+    char out[1024];
+    int rc = urbi_repl_eval(&vm, r, "Debug.coros()", 13, out, sizeof(out));
+    UASSERT_EQ(rc, URBI_OK);
+    /* Result is the JSON output as a urbi String — the printable form is
+     * the string contents, which contains the "coros" key. */
+    UASSERT(strstr(out, "coros") != NULL);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(debug_gc_from_urbiscript_returns_string_with_stats)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    URealm *r = urbi_realm_global(&vm);
+    char out[1024];
+    int rc = urbi_repl_eval(&vm, r, "Debug.gc()", 10, out, sizeof(out));
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(strstr(out, "alive_bytes") != NULL);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(debug_slots_from_urbiscript)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    URealm *r = urbi_realm_global(&vm);
+    char out[2048];
+    int rc = urbi_repl_eval(&vm, r,
+                            "Debug.slots(\"DoesNotExist\")", 27,
+                            out, sizeof(out));
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(strstr(out, "unknown_global") != NULL);
+    urbi_vm_destroy(&vm);
+}
+
+UTEST(debug_stack_unknown_coro_from_urbiscript)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+    URealm *r = urbi_realm_global(&vm);
+    char out[1024];
+    int rc = urbi_repl_eval(&vm, r, "Debug.stack(0)", 14, out, sizeof(out));
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT(strstr(out, "unknown_coro") != NULL);
+    urbi_vm_destroy(&vm);
+}
+
 void test_introspect_each_suite(void)
 {
     utest_run("introspect_coros_idle_has_key",       introspect_coros_idle_has_key);
@@ -173,6 +228,14 @@ void test_introspect_each_suite(void)
               introspect_slots_global_realm_returns_array);
     utest_run("introspect_slots_unknown_global_emits_error",
               introspect_slots_unknown_global_emits_error);
+    utest_run("debug_coros_from_urbiscript",
+              debug_coros_from_urbiscript);
+    utest_run("debug_gc_from_urbiscript_returns_string_with_stats",
+              debug_gc_from_urbiscript_returns_string_with_stats);
+    utest_run("debug_slots_from_urbiscript",
+              debug_slots_from_urbiscript);
+    utest_run("debug_stack_unknown_coro_from_urbiscript",
+              debug_stack_unknown_coro_from_urbiscript);
 }
 
 #else  /* !URBI_ENABLE_REPL */

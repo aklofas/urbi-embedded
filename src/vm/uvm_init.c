@@ -107,6 +107,12 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * reads this field).  Initialized first so partial-init bailout paths
      * never leave it as stack garbage. */
     vm->repl_server = NULL;
+    /* v0.9.1 Task 22 — must be NULLed BEFORE object_roots_walker runs.
+     * Tests that don't call urbi_stdlib_boot still trigger GC slices via
+     * realm creation, and the walker dereferences vm->debug_proto if
+     * non-NULL.  Stack-allocated UVMs would otherwise leak stack garbage
+     * into the shade-gray path and segfault. */
+    vm->debug_proto = NULL;
 
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;

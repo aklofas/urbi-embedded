@@ -232,7 +232,8 @@ HOST_BAKE_SRC := \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(wildcard src/stdlib/*.c)
+       $(wildcard src/stdlib/*.c) \
+       $(REPL_SRCS)
 HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
                               $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o

@@ -30,6 +30,9 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#ifdef URBI_ENABLE_REPL
+#  include "stdlib/debug_namespace.h"
+#endif
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -97,6 +100,17 @@ urbi_stdlib_boot(UVM *vm)
      * slot 0..7 layout.  See src/stdlib/primitives.c. */
     rc = urbi_stdlib_register_primitives(vm);
     if (rc != URBI_OK) return rc;
+
+#ifdef URBI_ENABLE_REPL
+    /* v0.9.1 Task 22: Debug namespace.  Allocates the singleton proto +
+     * binds 9 native-method slots.  The realm-global "Debug" binding is
+     * deferred to urbi_debug_namespace_register_globals (called from
+     * urbi_populate_realm_globals AFTER the mark_readonly pass).  The
+     * proto itself is NOT marked readonly — symmetry with Global, the
+     * other reflective namespace. */
+    rc = urbi_debug_namespace_register(vm);
+    if (rc != URBI_OK) return rc;
+#endif
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
      * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)

@@ -705,6 +705,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * free of an URBI_ENABLE_REPL conditional include cascade; the REPL
      * TUs cast back to UReplServer*. */
     void *repl_server;
+
+    /* --- v0.9.1 Debug namespace proto (Task 22) ---
+     * Lazily allocated by urbi_debug_namespace_register on first call;
+     * stashed here so subsequent realm-global binds see the same singleton
+     * and the GC root walker shades it once.  void* keeps the core VM
+     * header free of an URBI_ENABLE_REPL conditional include cascade; the
+     * debug_namespace TU casts back to UObject*. */
+    void *debug_proto;
 } UVM;
 
 /* --- API --- */

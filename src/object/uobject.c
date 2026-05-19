@@ -321,6 +321,12 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
     if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
 
+    /* v0.9.1 Debug namespace proto.  Always present when URBI_ENABLE_REPL=1
+     * AND urbi_debug_namespace_register has run; NULL on default builds.
+     * The void* in UVM keeps this header REPL-condition-free; cast back
+     * to UObject* for the shade. */
+    if (vm->debug_proto != NULL) gc_shade_gray(vm, (UCell *)vm->debug_proto);
+
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 
