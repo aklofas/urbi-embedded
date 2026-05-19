@@ -1,0 +1,14 @@
+# v0.9.1 Phase 8 Task 32 — compile-budget depth limit.
+#
+# Spec §3.4: max_parser_depth caps recursive descent.
+# Exit-criterion 11: triggers URBI_ERR_COMPILE_BUDGET_DEPTH, surfaced as
+# "code":"budget_depth" in the dispatcher's eval handler.
+#
+# Use a tight @budget-depth=5 override so the fixture stays compact;
+# the production 256 default is exercised by tests/unit/test_compile_budget.c.
+
+@budget-depth=5
+
+> {"id":12,"op":"eval","code":"(((((((1)))))))"}
+< "id":12 | "kind":"error" | "code":"budget_depth"
+< "id":12 | "kind":"done"

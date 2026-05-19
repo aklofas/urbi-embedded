@@ -1,0 +1,15 @@
+# v0.9.1 Phase 8 Task 32 — Global is a mutable VM singleton.
+#
+# Spec §4.3 / §14 exit-criterion 7: Global.foo = 5 from one session
+# becomes visible to all other sessions on the same VM.  Within a
+# single-session .chk fixture we verify the write succeeds and the read
+# back round-trips.  The genuine cross-session round-trip is exercised
+# by tests/unit/test_repl_multi_client.c (Task 33) over real TCP.
+
+> {"id":9,"op":"eval","code":"Global.foo = 11"}
+< "id":9 | "kind":"result" | "value":"11"
+< "id":9 | "kind":"done"
+
+> {"id":10,"op":"eval","code":"Global.foo"}
+< "id":10 | "kind":"result" | "value":"11"
+< "id":10 | "kind":"done"

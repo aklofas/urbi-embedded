@@ -383,10 +383,13 @@ endif
 # as test-integration — urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal).
 
+# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-
+# process by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which
+# expects urbiscript input.  Excluded here.
 test-chk: $(BUILDDIR)/urbi
 	@set -e; \
 	count=0; \
-	for f in $$(find tests/chk -name '*.chk' 2>/dev/null | sort); do \
+	for f in $$(find tests/chk -path tests/chk/repl -prune -o -name '*.chk' -print 2>/dev/null | sort); do \
 	    count=$$((count + 1)); \
 	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
 	done; \

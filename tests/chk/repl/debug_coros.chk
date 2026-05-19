@@ -1,0 +1,13 @@
+# v0.9.1 Phase 8 Task 32 — Debug namespace from urbiscript.
+#
+# Spec §10.2 / §14 exit-criterion 9: Debug.coros() from urbiscript
+# returns the same coros JSON shape as the NDJSON introspect op.  The
+# native urbi_introspect_coros() backs both; Debug.coros() converts the
+# JSON to a String which the dispatcher then wraps as a JSON-string
+# value (escapes the inner quotes).  We search for the substring
+# "coros\\" — the escaped form of the inner JSON key after the
+# dispatcher's eval-result JSON-string wrapper has been applied.
+
+> {"id":15,"op":"eval","code":"Debug.coros()"}
+< "id":15 | "kind":"result" | coros
+< "id":15 | "kind":"done"

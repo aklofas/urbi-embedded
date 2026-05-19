@@ -1,0 +1,8 @@
+# v0.9.1 Phase 8 Task 32 — basic eval round-trip.
+#
+# Spec §6: request/response NDJSON envelopes.
+# Exit-criterion 2: eval "1+2" returns 3.
+
+> {"id":1,"op":"eval","code":"1+2"}
+< "id":1 | "kind":"result" | "value":"3"
+< "id":1 | "kind":"done"

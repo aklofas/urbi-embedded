@@ -1,0 +1,15 @@
+# v0.9.1 Phase 8 Task 32 — handleDisconnect override slot.
+#
+# Spec §9.2 / §14 exit-criterion 15: user defines
+# `Realm.handleDisconnect = function() { ... }`; the C dispatcher fires
+# it on session destroy.  This fixture verifies the install path
+# (the user function lands on the realm's lobby instance and is
+# invocable).  The actual on-destroy invocation is verified by
+# tests/unit/test_repl_dispatcher.c::dispatcher_handleDisconnect_invoked_on_destroy
+# and end-to-end over TCP by tests/unit/test_repl_multi_client.c (Task 33).
+
+# Install override, then call it directly to confirm it's wired up and
+# the body runs (mutates Global.dx to 42).
+> {"id":19,"op":"eval","code":"Realm.handleDisconnect = function() { Global.dx = 42 } | Realm.handleDisconnect() | Global.dx"}
+< "id":19 | "kind":"result" | "value":"42"
+< "id":19 | "kind":"done"

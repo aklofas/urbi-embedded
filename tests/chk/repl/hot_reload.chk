@@ -1,0 +1,20 @@
+# v0.9.1 Phase 8 Task 32 — hot-reload pattern.
+#
+# Spec §14 exit-criterion 10: client sends `mytag.stop()`, then redefine
+# a function, then re-arm.  We exercise the structural sequence without
+# depending on async timer fire: define f → call f → redefine f → call
+# f again → verify second call returns the new value.  This is the
+# "live-code update" pattern the REPL is designed to support.
+#
+# v1.0 named-function declarations are not supported; use `var name =
+# function(...) { ... }` per the lexer's diagnostic.
+
+# Define f returning 1.
+> {"id":7,"op":"eval","code":"var f = function() { 1 } | f()"}
+< "id":7 | "kind":"result" | "value":"1"
+< "id":7 | "kind":"done"
+
+# Redefine f returning 2.
+> {"id":8,"op":"eval","code":"var f = function() { 2 } | f()"}
+< "id":8 | "kind":"result" | "value":"2"
+< "id":8 | "kind":"done"

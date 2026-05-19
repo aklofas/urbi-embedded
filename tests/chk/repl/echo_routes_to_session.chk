@@ -1,0 +1,17 @@
+# v0.9.1 Phase 8 Task 32 — output routes to the session writer.
+#
+# Spec §9.1 / §14 exit-criterion 4: A's `echo "hi"` reaches A's output.
+# We invoke __builtin_lobby_send directly via Lobby.__builtin_lobby_send
+# (the v0.9.1 baseline doesn't yet resolve unqualified `__builtin_lobby_send`
+# from inside Lobby.echo's closure body — that's a v1.x emit-resolution
+# follow-up).  This routes through __builtin_lobby_send →
+# urbi_vm_write_in_realm → session writer → "kind":"output" envelope
+# with the eval id.
+#
+# The cross-session non-routing aspect (A's output NOT reaching B/C/D)
+# is verified by tests/unit/test_repl_multi_client.c (Task 33) over TCP.
+
+> {"id":16,"op":"eval","code":"Lobby.__builtin_lobby_send(\"from-session\", \"\", \"***\")"}
+< "id":16 | "kind":"output" | *** from-session
+< "id":16 | "kind":"result"
+< "id":16 | "kind":"done"
