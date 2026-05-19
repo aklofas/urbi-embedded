@@ -101,7 +101,7 @@ struct URealm;           /* urealm.h — forward-decl for strand lifecycle conte
 struct UModule;          /* umodule.h — forward-decl for strand execution context */
 struct UProto;           /* module/umodule.h — forward-decl for root_proto fast-path (v0.8.1) */
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
-struct UModuleInstance;  /* object/umodule_instance.h — M4 follow-up: per-(vm,module) IC tier */
+struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
 
 /* === UStrand struct ===
@@ -259,13 +259,13 @@ struct UStrand {
      * (defensive).
      *
      * CHSTR-043: GC-managed, NOT freed by ustrand_destroy.  The
-     * UModuleInstance is shared across strands within a realm and has its
+     * UChunkInstance is shared across strands within a realm and has its
      * own GC lifecycle — vm->module_instances_head heads the live list and
      * walk_umoduleinstance (src/object/utypes_init.c) traces each instance
      * during the realm's strand walker.  ustrand_destroy clears the strand
      * via urbi_zero / release_strand_resource_chain for hygiene only; the
      * pointer is not free'd here. */
-    struct UModuleInstance *module_instance;
+    struct UChunkInstance *module_instance;
     UCallFrame              frames[UVM_MAX_FRAMES];
     int                     frame_count;
     UUpvalCell             *open_upvals;    /* open upvalue cells still pointing into stack */
@@ -391,7 +391,7 @@ int urbi_strand_arm_init(struct UStrand *s);
  *   - fork_spawn_child inherits parent's s->module_instance (siblings share
  *     modules);
  *   - the watcher body-spawn path pointer-range-searches vm->module_instances_head
- *     to find the closure's owning UModuleInstance;
+ *     to find the closure's owning UChunkInstance;
  *   - the scratch-frame path synthesizes a one-entry UProtoInstanceArr shell.
  * Without a post-arm assignment, OP_GETSLOT / OP_SETSLOT at frame_count == 0
  * would dereference NULL via s->module_instance->proto_instances. */
@@ -402,7 +402,7 @@ int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
  * Allocates a non-transient scheduler-managed strand bound to module's root
  * chunk.  Bumps module.refcount.  Arms register stack (via urbi_strand_arm_init)
  * and wires instruction pointers, constant pool, module pointer, and
- * UModuleInstance.  Transitions DORMANT → READY via urbi_strand_start so the
+ * UChunkInstance.  Transitions DORMANT → READY via urbi_strand_start so the
  * host's main urbi_step loop picks it up.
  *
  * Distinct from urbi_strand_create(realm, closure): chunk-top has no closure

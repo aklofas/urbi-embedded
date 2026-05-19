@@ -19,7 +19,7 @@
 #include "object/uobject.h"
 #include "object/uobject_internal.h"
 #include "object/ushape.h"
-#include "object/umodule_instance.h"  /* T36: walk module_instances_head */
+#include "object/uchunk_instance.h"  /* T36: walk module_instances_head */
 #include "vm/uvm.h"
 #include "urbi/gc.h"      /* urbi_gc_alloc + urbi_gc_register_root_provider */
 #include "gc/ugc_incremental.h"   /* gc_shade_gray */
@@ -254,12 +254,12 @@ urbi_object_clone(UVM *vm, UObject *parent)
     return clone;
 }
 
-/* === T36: GC root provider for atom singletons + UModuleInstance list ===
+/* === T36: GC root provider for atom singletons + UChunkInstance list ===
  *
  * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Three new root sources:
  *   1. Atom-family singletons (vm->atom_object .. vm->atom_symbol).
  *   2. The root shape (vm->root_shape).
- *   3. UModuleInstance chain reachable from vm->module_instances_head.
+ *   3. UChunkInstance chain reachable from vm->module_instances_head.
  *
  * Each is a direct UCell pointer (not a UValue), so we shade via
  * gc_shade_gray rather than calling cb (mark_root_callback acts on UValue
@@ -337,9 +337,9 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     /* Root shape. */
     if (vm->root_shape != NULL) gc_shade_gray(vm, (UCell *)vm->root_shape);
 
-    /* UModuleInstance chain (each cell's IC tables + proto_instances are
+    /* UChunkInstance chain (each cell's IC tables + proto_instances are
      * traced by walk_umoduleinstance / walk_uprotoinstance). */
-    for (UModuleInstance *mi = vm->module_instances_head;
+    for (UChunkInstance *mi = vm->module_instances_head;
          mi != NULL;
          mi = mi->next_in_vm) {
         gc_shade_gray(vm, (UCell *)mi);

@@ -423,7 +423,7 @@ int urbi_object_set_property_value (struct UVM *vm, UObject *obj,
  * Per pre-M3 GC roots spec §5.3 + pre-M4 amendments.  Registered via
  * urbi_gc_register_root_provider in urbi_vm_init after urbi_object_builtin_types_init.
  * Walks: vm->atom_object .. vm->atom_symbol (the nine atom-family singletons),
- * vm->root_shape, and every UModuleInstance reachable from
+ * vm->root_shape, and every UChunkInstance reachable from
  * vm->module_instances_head.  Each non-NULL cell is shaded gray directly via
  * gc_shade_gray (the cells are direct UCell pointers, not UValue slots — the
  * mark_root_callback only handles UVAL_CLOSURE / UVAL_OBJECT slots).

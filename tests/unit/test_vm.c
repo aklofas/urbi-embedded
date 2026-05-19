@@ -1086,7 +1086,7 @@ UTEST(vm_op_ret_nested_call_routes_through_walker) {
 
 UTEST(vm_uclosure_carries_proto_inst_field) {
     /* Pin that the M4 UClosure.proto_inst field is populated by OP_CLOSURE
-     * when a UModuleInstance is bound (urbi_vm_run wires it).  A module with no
+     * when a UChunkInstance is bound (urbi_vm_run wires it).  A module with no
      * nested functions has ic_count==0 so proto_inst for index bx+1==1 won't
      * be in range — proto_inst stays NULL, which is the correct defensive
      * outcome.  See uclosure.h field comment. */

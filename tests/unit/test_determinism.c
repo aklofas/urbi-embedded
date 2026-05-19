@@ -31,7 +31,7 @@ UTEST(determinism_checksum_smoke)
 #include "realm/urealm.h"
 #include "chunk/uchunk.h"      /* UValue, UValKind */
 #include "object/uic.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "value/uintern.h"       /* ustr_intern */
 
 #include <stdlib.h>  /* calloc / malloc / free */
@@ -167,7 +167,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
      * checksum.  The fix reads ic_count from mi->module->root_proto->ic_count.
      *
      * Build a module with ic_count == 1 at the root level (no nested protos).
-     * Create a UModuleInstance, verify the checksum changes after mutating
+     * Create a UChunkInstance, verify the checksum changes after mutating
      * the root-chunk IC entry (entries[0].ic_table[0]). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -191,7 +191,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UASSERT(m.root_proto->ic_names != NULL);
     m.root_proto->ic_names[0] = xsym;
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     /* entries[0] must now have a real ic_table (T3 guarantee). */

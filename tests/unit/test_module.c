@@ -9,7 +9,7 @@
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -1157,7 +1157,7 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UVM vm_b;
     urbi_vm_init(&vm_b, NULL, NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
+    UChunkInstance *mi = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi != NULL);
 
     /* Post-condition: ic_names is now populated on root_proto (v0.8.1 Phase 1:
@@ -1174,7 +1174,7 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     /* Idempotency: a second call must not re-allocate.  The helper's
      * fast path returns immediately when ic_names is already populated. */
     USymbol **before = b.root_proto->ic_names;
-    UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
+    UChunkInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
     UASSERT(mi2 != NULL);
     UASSERT_EQ((void *)before, (void *)b.root_proto->ic_names);
 

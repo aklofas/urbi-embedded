@@ -350,7 +350,7 @@ UTEST(load_module_null_args_rejected)
  * Compile a tiny module with a top-level `var x = 42` binding, hand it to
  * urbi_load_module, then read back via urbi_realm_get_global.  The original
  * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
- * binds a UModuleInstance and runs the root chunk under the global Realm
+ * binds a UChunkInstance and runs the root chunk under the global Realm
  * so top-level bindings install.  module_name is advisory at v0.6.0
  * (no import-table lookup yet — v1.x backlog).
  *

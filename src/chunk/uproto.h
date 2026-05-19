@@ -87,12 +87,12 @@ typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
 struct USymbol;
 typedef struct USymbol USymbol;
 
-/* Forward declaration — UModuleInstance is introduced in M4 (see
+/* Forward declaration — UChunkInstance is introduced in M4 (see
  * object/umoduleinstance.h).  UProto.owning_module_instance (added v0.9.0)
  * holds a back-pointer to the runtime instance this proto was first
  * instantiated under.  Defined as opaque here to avoid a circular dependency
  * on object/ layer types. */
-struct UModuleInstance;
+struct UChunkInstance;
 
 /* Forward declaration — UModule is introduced in uchunk.h (the loader shell).
  * Used here only for UProto.owning_module_instance resolution; uchunk.h
@@ -200,7 +200,7 @@ typedef struct UProto {
      * first nested allocation produces ic_index = 1.  v0.8.5-recursive-emit. */
     uint16_t       ic_index;
 
-    /* [runtime-only, NOT serialized] Back-pointer to the UModuleInstance
+    /* [runtime-only, NOT serialized] Back-pointer to the UChunkInstance
      * this UProto was first instantiated under.  Populated once at
      * urbi_module_instance_create time (tree walk over every proto).  Used
      * by OP_CLOSURE to bind cl->proto_inst without a fallback chain:
@@ -214,7 +214,7 @@ typedef struct UProto {
      * Zero-initialised at alloc time; populated lazily on first instance
      * creation.  NULL is the "not yet instantiated" state and is detected
      * by the OP_CLOSURE assert when read.  v0.9.0-repl. */
-    struct UModuleInstance *owning_module_instance;
+    struct UChunkInstance *owning_module_instance;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).

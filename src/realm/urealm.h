@@ -111,7 +111,7 @@ typedef struct URealm {
      * Walked at urbi_realm_destroy time to unload each module (Task 12).
      *
      * Not a GC root chain: UModule is host-allocated (not GC-managed).
-     * The UModuleInstance objects referenced by these modules stay
+     * The UChunkInstance objects referenced by these modules stay
      * GC-rooted via vm->module_instances_head — no shading needed here.
      * v0.9.0-repl. */
     struct UModule *loaded_protos_head;

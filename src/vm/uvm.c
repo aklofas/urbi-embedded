@@ -26,7 +26,7 @@
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
 #include "vm/uvm_op_overload.h"  /* vm_arith_method_fallback / _unary / _cmp (Gap #4) */
@@ -557,7 +557,7 @@ dispatch:
              * s->module_instance first, then the parent closure's
              * origin_module_instance.  Eliminates both the two-branch
              * proto_inst binding AND the origin_module_instance propagation. */
-            struct UModuleInstance *omi = child_proto->owning_module_instance;
+            struct UChunkInstance *omi = child_proto->owning_module_instance;
             URBI_DISPATCH_ASSERT(omi != NULL);
             URBI_DISPATCH_ASSERT(omi->proto_instances != NULL);
             URBI_DISPATCH_ASSERT((size_t)child_proto->ic_index <

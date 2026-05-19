@@ -172,7 +172,7 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  * chunk under the global Realm so top-level bindings install into realm
  * globals.  module_name is currently advisory (no import-table lookup yet —
  * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
- * argument is NULL, URBI_ERR_OOM on UModuleInstance allocation failure, or
+ * argument is NULL, URBI_ERR_OOM on UChunkInstance allocation failure, or
  * a UVMError-derived code if root-chunk execution fails. */
 
 struct UModule;       /* forward decl — definition in umodule.h */
@@ -971,12 +971,12 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 /* === M4 module-instance C API (T16) ===
  *
  * UModule is read-only (flash-resident on freestanding targets).  The
- * mutable IC state lives in a per-VM UModuleInstance.  Two instances of
+ * mutable IC state lives in a per-VM UChunkInstance.  Two instances of
  * the same UModule (one per VM, or two per VM for redundant chunks) hold
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
  *
- * urbi_module_instance_create allocates the UModuleInstance + its
+ * urbi_module_instance_create allocates the UChunkInstance + its
  * UProtoInstanceArr bulk in two GC cells.  Returns NULL on OOM.
  *
  * urbi_module_instance_destroy is a no-op at v1.0 — both cells are
@@ -991,11 +991,11 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  * of the v1.0 API. */
 #ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
 #define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
-typedef struct UModuleInstance UModuleInstance;
+typedef struct UChunkInstance UChunkInstance;
 #endif
 
-UModuleInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
-void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
+UChunkInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
+void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
  *
@@ -1052,7 +1052,7 @@ void urbi_lock_heap(struct UVM *vm);
  *   3. gc_total_allocated counter
  *   4. intern table entry count
  *   5. topology_gen, lookup_id, next_object_id (M4 object-model counters)
- *   6. per-IC observable state across every live UModuleInstance (M4 T30):
+ *   6. per-IC observable state across every live UChunkInstance (M4 T30):
  *      ic->n, ic->replace_cursor, and ic->topology_gen[0..n) for each
  *      UIC site in each UProtoInstance's IC table.  Heap pointers
  *      (recv_shapes, slots, uprops) are deliberately NOT folded —

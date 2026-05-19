@@ -18,7 +18,7 @@
 #include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "urbi/urbi.h"
 
 #include <stddef.h>  /* ptrdiff_t */
@@ -157,7 +157,7 @@ UTEST(proto_instances_n_equals_total_proto_count) {
     UValue out = {0};
     (void)urbi_vm_run(&vm, NULL, &m, &out);
 
-    UModuleInstance *mi = vm.module_instances_head;
+    UChunkInstance *mi = vm.module_instances_head;
     UASSERT(mi != NULL);
     UASSERT(mi->proto_instances != NULL);
     UASSERT_EQ(m.root_proto->nested_count, 3);

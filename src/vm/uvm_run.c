@@ -9,7 +9,7 @@
 #include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
-#include "object/umodule_instance.h" /* urbi_module_instance_create */
+#include "object/uchunk_instance.h" /* urbi_module_instance_create */
 #include "chunk/uchunk.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
@@ -108,7 +108,7 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
      * this function (single matched pair for the transient path).  strand.root_proto
      * is already set above; ustrand_destroy reads s->root_proto directly. */
     umodule_proto_refcount_inc(strand.root_proto);
-    /* M4 follow-up / T72 fix: always create a fresh UModuleInstance for each
+    /* M4 follow-up / T72 fix: always create a fresh UChunkInstance for each
      * urbi_vm_run call.  urbi_get_or_create_module_instance is unsuitable here
      * because the REPL stack-allocates UModule and reuses the same stack
      * address across calls; the cache lookup would return a stale instance

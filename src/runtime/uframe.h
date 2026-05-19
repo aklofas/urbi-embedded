@@ -11,7 +11,7 @@
    uproto.h, which defines UValue and then includes uframe.h), so this
    is satisfied automatically.
 
-   T6 migration: UCallFrame and UUpvalCell moved from umodule.h to uframe.h.
+   T6 migration: UCallFrame and UUpvalCell moved from umodule.h (now uproto.h) to uframe.h.
    UVM_MAX_FRAMES and UVM_STACK_CAP moved from uvm.h to uframe.h.
    uproto.h includes uframe.h to re-export the types it previously defined.
    ustrand.h includes uframe.h after uvalue.h so UValue is available. */
@@ -41,13 +41,13 @@ extern "C" {
 
 /* --- Forward declarations for pointer-only uses in struct fields --- */
 
-struct UProto;    /* defined in umodule.h */
-struct UClosure;  /* defined in umodule.h */
+struct UProto;    /* defined in uproto.h */
+struct UClosure;  /* defined in uproto.h */
 
 /* --- UUpvalCell: runtime heap cell for captured locals.
    Forward typedef only — the full struct definition (with UCell prefix at
    offset 0 for GC) lives in uclosure.h.  This mirrors how UClosure is
-   forward-declared in umodule.h: uframe.h → ugc.h → umodule.h → uframe.h
+   forward-declared in uproto.h: uframe.h → ugc.h → uproto.h → uframe.h
    would form a circular include chain, so the complete layout is deferred
    to the first header that has both UValue and UCell in scope.
    Files that only need `UUpvalCell *` (e.g. ustrand.h, uvm.h) include this

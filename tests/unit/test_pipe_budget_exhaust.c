@@ -32,7 +32,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "sched/usched_cooperative.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 
 #include <string.h>
 #include <stdint.h>

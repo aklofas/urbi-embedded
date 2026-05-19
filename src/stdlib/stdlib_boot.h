@@ -36,7 +36,7 @@ int urbi_stdlib_boot(struct UVM *vm);
  * (urbi_stdlib_bytecode_len == 0) until Phase 10 populates the order
  * file.  When non-empty, urbi_stdlib_boot deserializes the blob into a
  * heap-allocated UModule stored on vm->stdlib_module, then binds a
- * per-VM UModuleInstance via urbi_get_or_create_module_instance.  Phase
+ * per-VM UChunkInstance via urbi_get_or_create_module_instance.  Phase
  * 4's empty-blob baseline never reaches the deserialize path. */
 extern const unsigned char urbi_stdlib_bytecode[];
 extern const size_t        urbi_stdlib_bytecode_len;

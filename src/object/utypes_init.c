@@ -27,7 +27,7 @@
  *            via offsetof(USlotArray, entries) recovery (T26).
  *   USlotHandle walks owner (UObject*); shape_at_create + name are
  *            reachable transitively through the owner.  T37.
- *   UModuleInstance / UProtoInstance — see walkers below.
+ *   UChunkInstance / UProtoInstance — see walkers below.
  *
  * cb is the GC's own mark_root_callback (see src/gc/ugc_incremental.c) —
  * it knows how to shade only those UValKinds that carry a heap cell.  At
@@ -40,7 +40,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "event/uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
@@ -217,7 +217,7 @@ walk_uprops(struct UVM *vm, void *payload,
  * stronger paths and need no separate scan.  Used post-M4 by:
  *   - UPropsTable        (reached via owning UShape)
  *   - USlotArray         (reached via owning UObject's walk_uobject)
- *   - UProtoInstance     (reached via UModuleInstance owner; stronger
+ *   - UProtoInstance     (reached via UChunkInstance owner; stronger
  *                         paths cover IC children — see comment at
  *                         type_uproto_instance below for the OBJ-028
  *                         retirement rationale)
@@ -254,7 +254,7 @@ walk_uslothandle(struct UVM *vm, void *payload,
 /* === walk_umoduleinstance (T16) ===
  *
  * Shades the UProtoInstanceArr bulk so it survives sweep as long as the
- * UModuleInstance is alive.  module is a non-owning pointer to a UModule
+ * UChunkInstance is alive.  module is a non-owning pointer to a UModule
  * that lives outside the GC heap (flash-resident in freestanding builds;
  * caller-owned struct in hosted builds), so it's not shaded. */
 static void
@@ -263,7 +263,7 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
 {
     (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
 
-    UModuleInstance *mi = (UModuleInstance *)((UCell *)payload - 1);
+    UChunkInstance *mi = (UChunkInstance *)((UCell *)payload - 1);
     if (mi->proto_instances != NULL) {
         gc_shade_gray(vm, (UCell *)mi->proto_instances);
     }
@@ -554,14 +554,14 @@ static const UType type_uslothandle = {
 static const UType type_umodule_instance = {
     .type_tag      = UTYPE_MODULE_INSTANCE,
     .flags         = 0U,
-    .name          = "UModuleInstance",
+    .name          = "UChunkInstance",
     .walk_payload  = walk_umoduleinstance,
     .destroy       = NULL,
 };
 
 /* UProtoInstance walker is a no-op: every UIC entry's children
  * (recv_shapes[e], slots[e], uprops[e]) are reachable through stronger
- * paths (UModuleInstance owns the UProtoInstanceArr; UShapes used by
+ * paths (UChunkInstance owns the UProtoInstanceArr; UShapes used by
  * IC entries are kept alive via walk_ushape from the receiver-side
  * UObject; UProps cells are kept alive via walk_ushape's props_table
  * walk).  The previous walk_uprotoinstance function was an explicit

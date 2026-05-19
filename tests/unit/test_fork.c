@@ -14,7 +14,7 @@
 #include "sched/ustrand.h"
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"

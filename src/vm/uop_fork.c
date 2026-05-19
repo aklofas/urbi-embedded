@@ -122,7 +122,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
      * root_proto, not module->refcount.  child->root_proto is already set
      * above; ustrand_destroy will dec it at child death. */
     umodule_proto_refcount_inc(child->root_proto);
-    /* CHSTR-014 (T102): inherit the parent's UModuleInstance pointer so that
+    /* CHSTR-014 (T102): inherit the parent's UChunkInstance pointer so that
      * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
      * frame_count == 0 (which reads s->module_instance->proto_instances
      * ->entries[0].ic_table).  ,-spawned and &-spawned siblings execute in

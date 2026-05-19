@@ -9,7 +9,7 @@
 #include "value/uarena.h"
 #include "runtime/umacros.h"
 #include "object/uic.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #if !defined(URBI_BYTECODE_ONLY)
 #  include "lex/ulex.h"
 #  include "parse/uparse.h"
@@ -368,7 +368,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     FNV1A_MIX(ctx.h, vm->lookup_id);
     FNV1A_MIX(ctx.h, (uint64_t)vm->next_object_id);
 
-    /* 6. M4 T30 — per-IC observable state.  Walk every live UModuleInstance
+    /* 6. M4 T30 — per-IC observable state.  Walk every live UChunkInstance
      *    on the per-VM registry (insertion-order; deterministic in any
      *    well-formed test harness) and, for each UIC site in each
      *    UProtoInstance's IC table, fold in:
@@ -383,7 +383,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
      *    detect ordering divergences across runs because IC fill ordering
      *    is itself driven by topology_gen ticks. */
     {
-        const struct UModuleInstance *mi;
+        const struct UChunkInstance *mi;
         for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
             const UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL) continue;

@@ -299,7 +299,7 @@ UTEST(atom_clone_zero_allocations) {
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
     size_t post = vm.gc_total_allocated;
-    /* The compile-and-run sequence allocates a UModule + UModuleInstance
+    /* The compile-and-run sequence allocates a UModule + UChunkInstance
      * + IC tables for the parse — that's the script overhead, not the
      * loop-body overhead.  But the LOOP itself (1000 iterations) must
      * allocate nothing.  We can't separate "compile cost" from "loop

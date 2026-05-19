@@ -149,7 +149,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_proto = NULL;
     vm->tag_proto   = NULL;
 
-    /* M4 T30 — UModuleInstance registry head: empty until first
+    /* M4 T30 — UChunkInstance registry head: empty until first
      * urbi_module_instance_create. */
     vm->module_instances_head = NULL;
 
@@ -257,7 +257,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_object_builtin_types_init(vm);
 
     /* T36: register the M4 GC root provider for atom singletons +
-     * vm->root_shape + the UModuleInstance chain.  Replaces the manual
+     * vm->root_shape + the UChunkInstance chain.  Replaces the manual
      * urbi_pin calls on atom singletons that lived in T8.  Must come
      * after the type-table setup so the walker's gc_shade_gray invocations
      * find a registered UType for each cell. */
@@ -459,11 +459,11 @@ void urbi_vm_destroy(UVM *vm) {
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
     /* Clear module_instances_head before GC destroy so that:
-     *   (a) object_roots_walker stops shading now-unreachable UModuleInstance
+     *   (a) object_roots_walker stops shading now-unreachable UChunkInstance
      *       cells (harmless but tidy), and
      *   (b) umodule_destroy_internal's vm->module_instances_head walk (Task 10)
      *       skips the list instead of dereferencing GC-freed cells post-destroy.
-     * The GC sweep will reclaim all UModuleInstance cells regardless; we only
+     * The GC sweep will reclaim all UChunkInstance cells regardless; we only
      * clear the pointer so the walk in the stdlib teardown path below is safe. */
     vm->module_instances_head = NULL;
     /* GC destroy must run after all subsystems that hold GC-managed cells.
@@ -525,7 +525,7 @@ void urbi_vm_destroy(UVM *vm) {
 
         /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
-         * UModuleInstance referencing this module has already been
+         * UChunkInstance referencing this module has already been
          * reaped — no dangling ic_names back-reference can survive.
          *
          * Ordering: BEFORE rescued_protos sweep below.  umodule_destroy may

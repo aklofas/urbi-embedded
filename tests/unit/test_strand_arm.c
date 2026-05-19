@@ -11,7 +11,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */
 #include "urbi/urbi.h" /* urbi_strand_create, urbi_strand_destroy, urbi_realm_create */
@@ -186,7 +186,7 @@ strand_arm_from_closure_initializes_module_instance(void)
     UASSERT(s->module_instance == NULL);
 
     /* Mirror the fork_spawn_child wiring: post-arm explicit set. */
-    UModuleInstance fake_mi = {0};
+    UChunkInstance fake_mi = {0};
     s->module_instance = &fake_mi;
     UASSERT(s->module_instance == &fake_mi);
 

@@ -6,7 +6,7 @@
 #include "value/uvarint.h"
 #include "uopcode_shape.h"
 #include "vm/uvm.h"               /* struct UVM access for umodule_destroy rescue path */
-#include "object/umodule_instance.h" /* UModuleInstance: unlink on destroy (§5.4) */
+#include "object/uchunk_instance.h" /* UChunkInstance: unlink on destroy (§5.4) */
 #include "realm/urealm.h"            /* URealm.loaded_protos_head: unlink on destroy */
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
@@ -20,7 +20,7 @@ static void module_memcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) pd[i] = ps[i];
 }
 
-/* Canary constant lives in module/umodule.h as URBI_BYTECODE_CANARY (MOD-029). */
+/* Canary constant lives in chunk/uchunk.h as URBI_BYTECODE_CANARY (MOD-029). */
 
 #if __STDC_HOSTED__
 #  include <stdio.h>
@@ -1338,7 +1338,7 @@ umodule_destroy(UModule *module, struct UVM *vm)
 static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
 
-    /* §5.4: unlink any UModuleInstances bound to this module from
+    /* §5.4: unlink any UChunkInstances bound to this module from
      * vm->module_instances_head BEFORE freeing module buffers.  Without this,
      * instances are left with mi->module pointing to freed memory — a
      * dormant dangling-pointer bug masked previously because vm_destroy calls
@@ -1349,10 +1349,10 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
      * any stale pointer reaching the orphaned instance crashes deterministically
      * rather than reading freed memory. */
     if (vm != NULL) {
-        struct UModuleInstance **slot = &vm->module_instances_head;
+        struct UChunkInstance **slot = &vm->module_instances_head;
         while (*slot != NULL) {
             if ((*slot)->module == module) {
-                struct UModuleInstance *dead = *slot;
+                struct UChunkInstance *dead = *slot;
                 *slot = dead->next_in_vm;
                 dead->next_in_vm = NULL;
                 dead->module     = NULL;

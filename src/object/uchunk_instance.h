@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* umodule_instance.h — UModuleInstance + UProtoInstance: per-VM IC RAM tier.
+/* uchunk_instance.h — UChunkInstance + UProtoInstance: per-VM IC RAM tier.
  *
  * UModule is read-only (flash-resident on freestanding targets); it owns the
  * bytecode + UProto definitions + ic_count / ic_names side tables.  The
- * mutable IC state lives in a per-VM UModuleInstance allocated at module
+ * mutable IC state lives in a per-VM UChunkInstance allocated at module
  * load time.  Two instances of the same UModule (e.g. one per VM) hold
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
@@ -12,7 +12,7 @@
  *   docs/superpowers/specs/2026-04-29-urbi-pre-m4-getslot-setslot-encoding-design.md §4.1, §4.3
  *
  * Layout:
- *   UModuleInstance (GC cell, type_tag = UTYPE_MODULE_INSTANCE)
+ *   UChunkInstance (GC cell, type_tag = UTYPE_MODULE_INSTANCE)
  *     -> module: non-owning UModule*
  *     -> vm:     non-owning UVM* (debug + future cross-instance assertions)
  *     -> proto_instances: non-owning UProtoInstanceArr* (separate GC cell)
@@ -37,7 +37,7 @@
  *     contiguous range.
  *
  * Reachability:
- *   The UModuleInstance walker shades the UProtoInstanceArr.  The arr
+ *   The UChunkInstance walker shades the UProtoInstanceArr.  The arr
  *   walker is a no-op at T16 because every UIC entry is zero-initialised
  *   (recv_shapes / slots / uprops all NULL); IC fill lands at T22+, at
  *   which point that walker grows to shade each UIC.recv_shapes[e],
@@ -51,10 +51,10 @@
  *   init=1 — no live shape ever has gen 0).
  *
  *   urbi_module_instance_destroy is a no-op; both cells are GC-managed
- *   and reaped by sweep when no roots reach the UModuleInstance. */
+ *   and reaped by sweep when no roots reach the UChunkInstance. */
 
-#ifndef UMODULEINSTANCE_H
-#define UMODULEINSTANCE_H
+#ifndef UCHUNK_INSTANCE_H
+#define UCHUNK_INSTANCE_H
 
 #include <stdint.h>
 
@@ -70,7 +70,7 @@ struct UVM;
 
 #ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
 #define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
-typedef struct UModuleInstance UModuleInstance;
+typedef struct UChunkInstance UChunkInstance;
 #endif
 
 /* === UProtoInstance === */
@@ -81,7 +81,7 @@ typedef struct UProtoInstance {
 
 /* === UProtoInstanceArr ===
  *
- * Bulk allocation; one GC cell per UModuleInstance.  Field order is
+ * Bulk allocation; one GC cell per UChunkInstance.  Field order is
  * load-bearing (UCell first member; explicit pad to 8 B before entries[]). */
 typedef struct UProtoInstanceArr {
     UCell           cell;          /* type_tag = UTYPE_PROTO_INSTANCE */
@@ -91,37 +91,37 @@ typedef struct UProtoInstanceArr {
     UProtoInstance  entries[];     /* flexible array; trailing IC bytes follow */
 } UProtoInstanceArr;
 
-/* === UModuleInstance ===
+/* === UChunkInstance ===
  *
  * Public typedef provided in include/urbi/urbi.h via a guarded forward decl;
  * include that header before this one when both are needed. */
-struct UModuleInstance {
+struct UChunkInstance {
     UCell                    cell;            /* type_tag = UTYPE_MODULE_INSTANCE */
     /* 6 B compiler-inserted padding before module */
     UModule                 *module;          /* non-owning */
     struct UVM              *vm;              /* non-owning */
     UProtoInstanceArr       *proto_instances; /* non-owning; separate GC cell */
-    /* Per-VM list of all live UModuleInstance cells.  Threaded onto
+    /* Per-VM list of all live UChunkInstance cells.  Threaded onto
      * vm->module_instances_head at create time so the determinism checksum
      * (and any future cross-instance walker) can iterate every live IC
      * table without an out-of-band registry. */
-    struct UModuleInstance  *next_in_vm;
+    struct UChunkInstance  *next_in_vm;
 };
 
 /* === API === */
 
-/* Allocate a fresh UModuleInstance bound to (vm, m).  Allocates the
+/* Allocate a fresh UChunkInstance bound to (vm, m).  Allocates the
  * UProtoInstanceArr bulk in a second GC cell, sized for one entry per
  * (root chunk + nested proto) plus the contiguous IC tables.  Returns
  * NULL on OOM (either cell allocation may fail). */
-UModuleInstance *urbi_module_instance_create (struct UVM *vm, UModule *m);
+UChunkInstance *urbi_module_instance_create (struct UVM *vm, UModule *m);
 
 /* No-op: both cells are GC-managed and freed by sweep.  Provided so the
  * public ABI matches the create/destroy pair convention (T22 may grow
  * an explicit teardown for IC entries that pin host resources). */
-void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
+void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
-/* Look up a UModuleInstance for (vm, m) on vm->module_instances_head; if
+/* Look up a UChunkInstance for (vm, m) on vm->module_instances_head; if
  * absent, create it via urbi_module_instance_create and thread on.  Used by
  * the chunk-run path so OP_GETSLOT / OP_SETSLOT find a real IC table on
  * first execution of a module.  Returns NULL only on OOM during create.
@@ -132,10 +132,10 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
  * must not invoke from multiple host threads concurrently against the same
  * vm.  Safe today under URBI_SCHED_COOPERATIVE; revisit if parallel realms
  * ship. */
-UModuleInstance *urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
+UChunkInstance *urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* UMODULEINSTANCE_H */
+#endif /* UCHUNK_INSTANCE_H */

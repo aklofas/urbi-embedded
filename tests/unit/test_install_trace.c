@@ -25,8 +25,8 @@
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
 #include "object/uic.h"                     /* UIC */
-#include "object/umodule_instance.h"         /* urbi_module_instance_create,
-                                               UModuleInstance, UProtoInstance */
+#include "object/uchunk_instance.h"         /* urbi_module_instance_create,
+                                               UChunkInstance, UProtoInstance */
 #include "sched/usched_cooperative.h"       /* sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */
 #include "watcher/uwatcher_install.h"       /* install_watcher_runtime */
@@ -99,7 +99,7 @@ strand_setup_for_getslot(UStrand *s, UVM *vm,
                          const uint32_t *instrs,
                          UValue *reg_stack,
                          UObject *obj,
-                         UModuleInstance *mi)
+                         UChunkInstance *mi)
 {
     /* Zero-init via volatile to silence compilers complaining about the
      * partially-initialised struct (UStrand has many fields). */
@@ -140,7 +140,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     if (!make_module_with_one_ic_site(vm, &m, instrs, 2)) return 0;
 
-    UModuleInstance *mi = urbi_get_or_create_module_instance(vm, &m);
+    UChunkInstance *mi = urbi_get_or_create_module_instance(vm, &m);
     if (mi == NULL) { free(m.root_proto->ic_names); free(m.root_proto); m.root_proto = NULL; return 0; }
 
     /* Wire the IC name so the slow path can resolve it on first miss. */

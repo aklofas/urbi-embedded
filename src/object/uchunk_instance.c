@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* umodule_instance.c — UModuleInstance + UProtoInstanceArr lifecycle.
+/* uchunk_instance.c — UChunkInstance + UProtoInstanceArr lifecycle.
  *
- * See umodule_instance.h for the design contract and layout invariants. */
+ * See uchunk_instance.h for the design contract and layout invariants. */
 
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
 #include "vm/uvm.h"              /* UVM (for the typed pointer) */
@@ -73,7 +73,7 @@ static UModuleAllocFn intern_alloc_for(UModuleAllocFn fn) {
  * UTF-8 strings.  Walk the strings, intern each into the VM, and populate
  * ic_names so the existing init_ic_slice fill site sees a fully populated
  * USymbol** array.  Returns true on success, false on OOM (which the
- * caller surfaces as a NULL UModuleInstance return).
+ * caller surfaces as a NULL UChunkInstance return).
  *
  * Idempotent: if ic_names is already populated, returns true with no
  * work.  Subsequent instance-create calls on the same module skip the
@@ -117,7 +117,7 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
  * DFS pre-order; idempotent (re-running on the same tree overwrites with
  * the same value).  Added v0.9.0-repl (Task 2). */
 static void
-stamp_owning_mi(UProto *p, UModuleInstance *mi)
+stamp_owning_mi(UProto *p, UChunkInstance *mi)
 {
     if (p == NULL) return;
     p->owning_module_instance = mi;
@@ -146,7 +146,7 @@ static size_t ic_bytes_recursive(const UProto *proto) {
  * doesn't carry a proto back-pointer).  Nested protos get proto = node.
  *
  * Returns false on OOM during string-to-symbol intern (caller surfaces as
- * NULL UModuleInstance). */
+ * NULL UChunkInstance). */
 static bool init_ic_slices_recursive(struct UVM *vm,
                                      UProto *node,
                                      UProtoInstanceArr *arr,
@@ -180,7 +180,7 @@ static bool init_ic_slices_recursive(struct UVM *vm,
     return true;
 }
 
-UModuleInstance *
+UChunkInstance *
 urbi_module_instance_create(struct UVM *vm, UModule *m)
 {
     if (vm == NULL || m == NULL) {
@@ -189,14 +189,14 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
     UProto *rp = m->root_proto;
 
-    /* Cell 1: UModuleInstance.  Cast cell pointer to struct (UCell is the
+    /* Cell 1: UChunkInstance.  Cast cell pointer to struct (UCell is the
      * first member; addresses coincide).  Caller is responsible for OOM. */
-    UCell *mi_cell = urbi_gc_alloc(vm, sizeof(UModuleInstance),
+    UCell *mi_cell = urbi_gc_alloc(vm, sizeof(UChunkInstance),
                                    UTYPE_MODULE_INSTANCE);
     if (mi_cell == NULL) {
         return NULL;
     }
-    UModuleInstance *mi = (UModuleInstance *)mi_cell;
+    UChunkInstance *mi = (UChunkInstance *)mi_cell;
     mi->module          = m;
     mi->vm              = vm;
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
@@ -289,7 +289,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     vm->module_instances_head = mi;
 
     /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
-     * UModuleInstance.  DFS pre-order matches ic_index assignment order.
+     * UChunkInstance.  DFS pre-order matches ic_index assignment order.
      * The field is currently unread by the runtime; Task 7 will use it. */
     stamp_owning_mi(m->root_proto, mi);
 
@@ -297,7 +297,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
 }
 
 void
-urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
+urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi)
 {
     /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
      * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
@@ -308,11 +308,11 @@ urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
     (void)mi;
 }
 
-UModuleInstance *
+UChunkInstance *
 urbi_get_or_create_module_instance(struct UVM *vm, UModule *m)
 {
     if (vm == NULL || m == NULL) return NULL;
-    UModuleInstance *mi;
+    UChunkInstance *mi;
     for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
         if (mi->module == m) return mi;
     }

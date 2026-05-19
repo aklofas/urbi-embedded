@@ -693,7 +693,7 @@ gc_shade_gray(UVM *vm, UCell *cell)
      * legitimate, expected outcome for the other two — NOT a bug:
      *
      *   1. urbi_gc_alloc cells (UObject, UEvent, UTag, UChangedNode,
-     *      UShape, UProtos, USlots, UModuleInstance ...): sidecar
+     *      UShape, UProtos, USlots, UChunkInstance ...): sidecar
      *      enrolled at alloc; sweep walks via cursor; gc_shade_gray
      *      pushes onto the gray work-list via the sidecar so the
      *      drain_gray loop reaches walk_payload.

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Verify every UProto in a freshly-created UModuleInstance has its
+/* Verify every UProto in a freshly-created UChunkInstance has its
  * owning_module_instance back-pointer populated.  v0.9.0-repl. */
 
 #include "utest.h"
@@ -10,7 +10,7 @@
 
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
@@ -20,7 +20,7 @@
 #define UTEST(name) static void name(void)
 
 /* DFS walk: assert every UProto in the tree has owning_module_instance == mi. */
-static void verify_proto_owns(UProto *p, UModuleInstance *mi)
+static void verify_proto_owns(UProto *p, UChunkInstance *mi)
 {
     if (p == NULL) return;
     UASSERT(p->owning_module_instance == mi);
@@ -66,7 +66,7 @@ UTEST(root_proto_owning_mi_populated)
     UASSERT_EQ(0, rc);
     UASSERT(mod.root_proto != NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     UASSERT(mod.root_proto->owning_module_instance == mi);
@@ -94,7 +94,7 @@ UTEST(nested_proto_owning_mi_populated)
     UASSERT(mod.root_proto != NULL);
     UASSERT(mod.root_proto->nested_count >= 1);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     verify_proto_owns(mod.root_proto, mi);
@@ -124,7 +124,7 @@ UTEST(recursive_nested_owning_mi_populated)
     UASSERT_EQ(0, rc);
     UASSERT(mod.root_proto != NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     /* Verify the full tree recursively — root + outer + inner. */
@@ -168,7 +168,7 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     UASSERT_EQ(ULOAD_OK, load_rc);
     UASSERT(m2.root_proto != NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m2);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &m2);
     UASSERT(mi != NULL);
 
     verify_proto_owns(m2.root_proto, mi);

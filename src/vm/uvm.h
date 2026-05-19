@@ -28,7 +28,7 @@ struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
-struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h */
+struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h */
 
 /* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
 #include "event/uevent_registry.h"
@@ -297,14 +297,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *event_proto;
     struct UObject *tag_proto;
 
-    /* === M4 T30 — UModuleInstance registry ===
-     * Linked list head of every live UModuleInstance threaded via
-     * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
+    /* === M4 T30 — UChunkInstance registry ===
+     * Linked list head of every live UChunkInstance threaded via
+     * UChunkInstance.next_in_vm.  Created at urbi_module_instance_create
      * time (no removal at v1.0 — the GC reaps both the cell and any chain
      * dangling references when the instance becomes unreachable; this
      * registry is consulted only by the determinism checksum which itself
      * runs at quiescent points where instance removal isn't observed). */
-    struct UModuleInstance *module_instances_head;
+    struct UChunkInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent urbi_vm_run() call.  Freed at the start of the next urbi_vm_run() or

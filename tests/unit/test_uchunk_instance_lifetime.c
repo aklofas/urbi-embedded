@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Verify UModuleInstance is unlinked from vm->module_instances_head when its
+/* Verify UChunkInstance is unlinked from vm->module_instances_head when its
  * UModule is destroyed (immediate-destroy path).  Latent-bug hunt per
  * spec §5.4.
  *
@@ -18,15 +18,15 @@
 
 #include "urbi/urbi.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
 
 /* Walk vm->module_instances_head; return true if mi is present. */
-static bool instance_on_vm_list(UVM *vm, UModuleInstance *mi)
+static bool instance_on_vm_list(UVM *vm, UChunkInstance *mi)
 {
-    for (UModuleInstance *p = vm->module_instances_head;
+    for (UChunkInstance *p = vm->module_instances_head;
          p != NULL; p = p->next_in_vm) {
         if (p == mi) return true;
     }
@@ -59,7 +59,7 @@ UTEST(instance_unlinked_on_module_destroy)
     UASSERT_EQ(ULOAD_OK, umodule_deserialize(&mod, bc, bc_len,
                                               errmsg, sizeof errmsg));
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
     /* Precondition: instance is registered. */
     UASSERT(instance_on_vm_list(&vm, mi));
@@ -94,8 +94,8 @@ UTEST(correct_instance_unlinked_multi)
     UASSERT_EQ(ULOAD_OK, umodule_deserialize(&mod_b, bc_b, bc_b_len,
                                               errmsg, sizeof errmsg));
 
-    UModuleInstance *mi_a = urbi_module_instance_create(&vm, &mod_a);
-    UModuleInstance *mi_b = urbi_module_instance_create(&vm, &mod_b);
+    UChunkInstance *mi_a = urbi_module_instance_create(&vm, &mod_a);
+    UChunkInstance *mi_b = urbi_module_instance_create(&vm, &mod_b);
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
     UASSERT(instance_on_vm_list(&vm, mi_a));
@@ -119,10 +119,10 @@ UTEST(correct_instance_unlinked_multi)
  * ----------------------------------------------------------------------- */
 
 void
-test_umodule_instance_lifetime_suite(void)
+test_uchunk_instance_lifetime_suite(void)
 {
-    utest_run("umodule_instance_lifetime: instance unlinked on module destroy",
+    utest_run("uchunk_instance_lifetime: instance unlinked on module destroy",
               instance_unlinked_on_module_destroy);
-    utest_run("umodule_instance_lifetime: correct instance unlinked (multi-module)",
+    utest_run("uchunk_instance_lifetime: correct instance unlinked (multi-module)",
               correct_instance_unlinked_multi);
 }

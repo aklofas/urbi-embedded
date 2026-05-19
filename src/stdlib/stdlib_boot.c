@@ -9,7 +9,7 @@
  *   1. C-native Object root methods (urbi_object_root_register)
  *   2. C-native atom proto stubs (urbi_atom_protos_register)
  *   3. Deserialize the baked .u stdlib bytecode blob into
- *      vm->stdlib_module + bind a per-VM UModuleInstance
+ *      vm->stdlib_module + bind a per-VM UChunkInstance
  *
  * Step 3 only runs when urbi_stdlib_bytecode_len > 0.  At Phase 4
  * baseline the blob is empty (STDLIB_ORDER.txt empty), so this branch
@@ -37,7 +37,7 @@
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "chunk/uchunk.h"          /* UModule, umodule_deserialize, umodule_destroy */
-#include "object/umodule_instance.h" /* urbi_get_or_create_module_instance */
+#include "object/uchunk_instance.h" /* urbi_get_or_create_module_instance */
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
@@ -127,7 +127,7 @@ urbi_stdlib_boot(UVM *vm)
 #endif
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
-     * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)
+     * and bind a per-VM UChunkInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
     if (urbi_stdlib_bytecode_len > 0) {
         if (vm->alloc_fn == NULL) {

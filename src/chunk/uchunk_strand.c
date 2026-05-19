@@ -16,7 +16,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
+#include "object/uchunk_instance.h"  /* urbi_get_or_create_module_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for closure type usage */
@@ -535,7 +535,7 @@ urbi_run_script(UVM *vm, URealm *realm, UModule *module)
  * "load" semantic permits without an import table:
  *
  *   1. Validate (vm, module, module_name) all non-NULL.
- *   2. Bind a UModuleInstance via urbi_get_or_create_module_instance — this
+ *   2. Bind a UChunkInstance via urbi_get_or_create_module_instance — this
  *      lazy-interns the IC name strings and prepares the per-(vm, module)
  *      runtime IC backing.  Subsequent urbi_run_chunk / urbi_run_script
  *      calls reuse the same instance.
@@ -671,7 +671,7 @@ urbi_load_module(UVM *vm, UModule *module, const char *module_name)
         return URBI_ERR_INVALID_ARG;
     }
 
-    /* Bind a UModuleInstance.  urbi_run_chunk would do this anyway; doing
+    /* Bind a UChunkInstance.  urbi_run_chunk would do this anyway; doing
      * it explicitly here lets us surface OOM as URBI_ERR_OOM rather than
      * conflate it with a runtime-side STRAND_FATAL.  module_name is not
      * stored on the instance at v0.6.0 — it is reserved for v1.x's
@@ -724,7 +724,7 @@ urbi_unload(UVM *vm, UModule *module)
 
     /* Route through umodule_destroy.  If refcount > 0, rescue mechanism
      * defers final cleanup; this call always returns success.  After
-     * Task 10's fix, umodule_destroy also unlinks any UModuleInstance
+     * Task 10's fix, umodule_destroy also unlinks any UChunkInstance
      * from vm->module_instances_head, so no dangling cells survive. */
     bool heap = module->shell_heap_allocated;
     umodule_destroy(module, vm);

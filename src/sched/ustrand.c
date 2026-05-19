@@ -14,7 +14,7 @@
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
 #include "chunk/uchunk.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -391,7 +391,7 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
  *     realm link (next_in_realm + strands_head insert), ambient-tag attach,
  *     sched_strand_init.  Leaves strand DORMANT.
  *   - This function adds: module bind + refcount, register-stack arm,
- *     execution-state wiring, UModuleInstance creation.
+ *     execution-state wiring, UChunkInstance creation.
  *   - urbi_strand_start transitions DORMANT → READY.
  *
  * OOM recovery: any allocation failure after urbi_strand_create succeeds
@@ -446,7 +446,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     s->open_upvals  = NULL;
     s->out_slot     = NULL;  /* caller may set before first urbi_step */
 
-    /* Create a UModuleInstance for IC wiring (per-(vm, module) cache tier).
+    /* Create a UChunkInstance for IC wiring (per-(vm, module) cache tier).
      * urbi_module_instance_create always allocates fresh — safe here because
      * this is a new strand owning its own IC entry (matches uvm_run.c §T72
      * rationale; urbi_get_or_create_module_instance is unsuitable for

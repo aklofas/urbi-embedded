@@ -19,7 +19,7 @@
 
 #include "chunk/uchunk.h"                       /* UProto + forward typedef `UClosure`; pulls in uframe.h which forward-declares UUpvalCell */
 #include "gc/ugc.h"                        /* UCell (2 B) */
-#include "object/umodule_instance.h"        /* UProtoInstance — M4: IC table per nested proto */
+#include "object/uchunk_instance.h"        /* UProtoInstance — M4: IC table per nested proto */
 
 /* --- UUpvalCell: runtime heap cell for captured locals (full definition).
  * Forward typedef is in uframe.h; full layout lives here because the struct
@@ -103,7 +103,7 @@ struct UClosure {
     /* origin_module_instance deleted at v0.9.0 Task 8: field retired in favour
      * of UProto.owning_module_instance (Tasks 1+2); OP_CLOSURE reads
      * child_proto->owning_module_instance directly (Task 7).  Reachability:
-     * UClosure -> proto_inst; UModuleInstance kept alive via
+     * UClosure -> proto_inst; UChunkInstance kept alive via
      * object_roots_walker -> vm->module_instances_head. */
     /* M6 Phase 3: C-native method dispatch. NULL for ordinary urbiscript
      * closures.  When non-NULL, OP_CALL calls this function instead of

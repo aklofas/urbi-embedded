@@ -6,7 +6,7 @@
 # into urbi_stdlib_bytecode[] (src/stdlib/urbi_stdlib_bytecode.gen.c).
 #
 # Boot order: urbi_stdlib_boot deserializes the blob and binds it as a
-# per-VM UModuleInstance after all C-native registration completes.
+# per-VM UChunkInstance after all C-native registration completes.
 # The blob's top-level statements run during realm-globals population.
 
 mixins.u
