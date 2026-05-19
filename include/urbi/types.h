@@ -335,6 +335,26 @@ URBI_STATIC_ASSERT(offsetof(UValue, kind) == 0,
                "UValue.kind must be at offset 0 (ABI pin)");
 #endif
 
+/* === UCompileBudget — per-realm parse-time guard (v0.9.1) ===
+ *
+ * Per-realm limits enforced during source-text compilation. Zero in any
+ * field means "unlimited" for that limit. urbi_realm_create_repl auto-
+ * applies URBI_DEFAULT_REPL_BUDGET; the global Realm has no budget by
+ * default (trusted host code).
+ *
+ * Three limits, evaluated in order:
+ *   max_parser_depth  — recursive-descent stack ceiling
+ *                       (URBI_ERR_COMPILE_BUDGET_DEPTH)
+ *   max_ast_nodes     — total AST allocations per compile
+ *                       (URBI_ERR_COMPILE_BUDGET_NODES)
+ *   max_source_bytes  — checked once at urbi_repl_eval entry
+ *                       (URBI_ERR_COMPILE_BUDGET_SOURCE) */
+typedef struct {
+    uint32_t max_parser_depth;
+    uint32_t max_ast_nodes;
+    uint32_t max_source_bytes;
+} UCompileBudget;
+
 /* === Named-event ID (Gap B) ===
  *
  * urbi_event_id_t: opaque handle returned by urbi_event_register.

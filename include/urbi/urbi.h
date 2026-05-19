@@ -586,10 +586,13 @@ int urbi_event_unregister(struct UVM *vm, struct URealm *realm,
  * Pass NULL writer to urbi_set_writer to restore the default.
  *
  * Thread safety: MAIN. */
+#ifndef URBI_WRITER_FN_TYPEDEF_DEFINED
+#define URBI_WRITER_FN_TYPEDEF_DEFINED
 typedef void (*urbi_writer_fn)(void *ud,
                                const char *channel, size_t channel_len,
                                const char *msg,     size_t msg_len,
                                uint64_t ts_us);
+#endif
 
 void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
 
