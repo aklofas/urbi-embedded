@@ -85,6 +85,33 @@ echo "$RESULT" | grep -q '"value":"3"' || {
     echo "$RESULT"
     exit 1
 }
-echo "urbi_server_smoke: OK ($RESULT)" | tr '\n' ' '
-echo
+echo "urbi_server_smoke: python eval OK"
+
+# --- urbi-send round-trip (skip if binary not built) ----------------
+if [ -x "$SEND" ]; then
+    SEND_OUT=$("$SEND" --host "127.0.0.1:$PORT" eval "1+2" 2>/dev/null)
+    SEND_RC=$?
+    if [ "$SEND_RC" -ne 0 ]; then
+        echo "urbi_server_smoke: urbi-send eval failed rc=$SEND_RC"
+        echo "$SEND_OUT"
+        exit 1
+    fi
+    echo "$SEND_OUT" | grep -q '"value":"3"' || {
+        echo "urbi_server_smoke: urbi-send eval missing value:3"
+        echo "$SEND_OUT"
+        exit 1
+    }
+    echo "urbi_server_smoke: urbi-send eval OK"
+
+    # introspect coros: any result envelope is success.
+    INSP_OUT=$("$SEND" --host "127.0.0.1:$PORT" introspect coros 2>/dev/null)
+    INSP_RC=$?
+    if [ "$INSP_RC" -ne 0 ] || ! echo "$INSP_OUT" | grep -q '"coros"'; then
+        echo "urbi_server_smoke: urbi-send introspect coros failed rc=$INSP_RC"
+        echo "$INSP_OUT"
+        exit 1
+    fi
+    echo "urbi_server_smoke: urbi-send introspect OK"
+fi
+
 exit 0
