@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.9.1-repl-service — unreleased
+
+### Added
+- *(populated as tasks land)*
+
+### Changed
+- ABI 0/11/0 → 0/12/0 (additive).
+
+### Breaking
+- `Object.x = 5` and other mutation of builtin atom protos now raises `TypeError`. Use `Global.x = 5` for cross-session mutable shared state.
+
+### Build switch
+- `URBI_ENABLE_REPL=1` opts in to `src/repl/` (TCP/Unix/UART REPL service). Default 0.
+
+---
+
 ## v0.9.0-repl-foundation — 2026-05-19
 
 ### Foundation (M8 part 1 of 2)
