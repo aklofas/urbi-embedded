@@ -76,7 +76,7 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     s->pc         = s->root_proto->instructions;
     s->pc_base    = s->root_proto->instructions;
     s->cur_consts = NULL;
-    umodule_proto_refcount_inc(s->root_proto);
+    uproto_refcount_inc(s->root_proto);
     s->frame_count   = 0;
     s->open_upvals   = NULL;
     s->out_slot      = NULL;

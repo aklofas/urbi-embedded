@@ -129,7 +129,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
  * allocator (matches the rest of the emitter — funcstate itself is
  * arena-allocated, but variable-sized side tables go through the module
  * allocator so they survive into the proto and are freed via
- * umodule_destroy_proto_buffers). */
+ * uproto_destroy_buffers). */
 int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     if (e == NULL || e->current_fs == NULL) return -1;
     UFuncState *fs = e->current_fs;
@@ -367,8 +367,8 @@ UFuncState *uemit_close_function(UEmitter *e) {
 
         /* M4 T15: copy IC names side table into the UProto.  Use the
          * proto's own allocator (inherited from the module at
-         * umodule_alloc_nested_proto time); the resulting array is freed
-         * by umodule_destroy_proto_buffers.
+         * uproto_alloc_nested time); the resulting array is freed
+         * by uproto_destroy_buffers.
          *
          * T22 (EMIT-005): mirror the module-sibling pattern below — only
          * write p->ic_count / p->ic_names after the IC-array allocation

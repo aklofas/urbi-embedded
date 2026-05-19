@@ -121,7 +121,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
     /* v0.8.1 Phase 2 (Variant B fusion): child strand-bind bump goes to
      * root_proto, not module->refcount.  child->root_proto is already set
      * above; ustrand_destroy will dec it at child death. */
-    umodule_proto_refcount_inc(child->root_proto);
+    uproto_refcount_inc(child->root_proto);
     /* CHSTR-014 (T102): inherit the parent's UChunkInstance pointer so that
      * OP_GETSLOT / OP_SETSLOT in the child can resolve the IC table at
      * frame_count == 0 (which reads s->module_instance->proto_instances

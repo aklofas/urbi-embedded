@@ -552,7 +552,7 @@ void urbi_vm_destroy(UVM *vm) {
          * Walk each rescued root_proto:
          *   1. Capture next_alloc, alloc_fn/alloc_ud before any zero operation.
          *   2. Free all buffers (including nested[] sub-protos) via
-         *      umodule_destroy_proto_buffers — zeroes *rp.
+         *      uproto_destroy_buffers — zeroes *rp.
          *   3. Free the root_proto struct itself. */
         {
             struct UProto *rp = vm->rescued_protos;
@@ -566,7 +566,7 @@ void urbi_vm_destroy(UVM *vm) {
                     rp_ud    = vm->alloc_ud;
                 }
                 /* Step 2: free all buffers (nested[] freed recursively inside). */
-                umodule_destroy_proto_buffers(rp, rp_alloc, rp_ud);
+                uproto_destroy_buffers(rp, rp_alloc, rp_ud);
                 /* Step 3: free the root_proto struct. */
                 rp_alloc(rp, 0, rp_ud);
                 rp = next;

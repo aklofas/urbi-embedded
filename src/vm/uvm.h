@@ -575,7 +575,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * module shell (source_name and the UModule struct itself) is freed normally.
      *
      * At urbi_vm_destroy, each rescued root_proto is freed via
-     * umodule_destroy_proto_buffers (walks nested[], frees all owned buffers),
+     * uproto_destroy_buffers (walks nested[], frees all owned buffers),
      * then the root_proto struct itself is freed via its stored allocator.
      * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
      * the sole deferred-destroy mechanism. */

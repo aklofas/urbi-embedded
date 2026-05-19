@@ -94,7 +94,7 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
     s->pc         = s->root_proto->instructions;
     s->pc_base    = s->root_proto->instructions;
     s->cur_consts = s->root_proto->constants;
-    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    uproto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     s->frame_count = 0;
     s->open_upvals = NULL;
     if (out_result) {

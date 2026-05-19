@@ -51,7 +51,7 @@
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
-#include "chunk/uchunk.h"       /* uproto_root_of, umodule_proto_refcount_dec */
+#include "chunk/uchunk.h"       /* uproto_root_of, uproto_refcount_dec */
 
 /* === walk_uobject ===
  *
@@ -426,7 +426,7 @@ walk_uclosure(struct UVM *vm, void *payload,
  * hits zero with the self-link sentinel set, promote root_proto to
  * vm->rescued_protos so the vm_destroy sweep can free it.
  *
- * Pairs with the umodule_proto_refcount_inc(uproto_root_of(proto)) call in
+ * Pairs with the uproto_refcount_inc(uproto_root_of(proto)) call in
  * vm_alloc_closure (uvm_closure.c).  No memory is freed here — the GC sweep
  * reclaims the closure cell.  NULL-safe (proto may be NULL for native stdlib
  * closures registered via urbi_make_native_closure).
@@ -444,7 +444,7 @@ uclosure_destroy(struct UVM *vm, void *payload)
     if (cl->proto == NULL) return;
 
     UProto *rp = uproto_root_of(cl->proto);
-    umodule_proto_refcount_dec(rp);
+    uproto_refcount_dec(rp);
 
     /* v0.8.4 Option B Step C-2: sentinel-promotion. */
     if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {

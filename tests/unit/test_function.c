@@ -2,7 +2,7 @@
 /* T14: function definition + nested proto tests.
  *
  * Covers: parse_function(), AST_FUNCTION emit (OP_CLOSURE in root chunk,
- * UProto in module->nested[]), umodule_alloc_nested_proto(), VM OP_CLOSURE
+ * UProto in module->nested[]), uproto_alloc_nested(), VM OP_CLOSURE
  * producing a UVAL_CLOSURE value.  Call dispatch (OP_CALL) is deferred to T15;
  * these tests only verify that function *definitions* are well-formed and
  * execute to a closure value without crashing or error. */
@@ -115,14 +115,14 @@ static UEmitError fn_emit_error(const char *src) {
 }
 
 /* -----------------------------------------------------------------------
- * umodule_alloc_nested_proto API
+ * uproto_alloc_nested API
  * ----------------------------------------------------------------------- */
 
 UTEST(nested_proto_alloc_creates_first_entry) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));  /* Task 11: needed for alloc_nested */
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p != NULL);
     UASSERT_EQ((size_t)1, m.root_proto->nested_count);
     UASSERT(p == m.root_proto->nested[0]);
@@ -133,9 +133,9 @@ UTEST(nested_proto_alloc_multiple_grows_array) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));  /* Task 11: needed for alloc_nested */
     UASSERT(m.root_proto != NULL);
-    UProto *p0 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p1 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p2 = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p0 = uproto_alloc_nested(&m, m.root_proto);
+    UProto *p1 = uproto_alloc_nested(&m, m.root_proto);
+    UProto *p2 = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p0 != NULL);
     UASSERT(p1 != NULL);
     UASSERT(p2 != NULL);
@@ -150,7 +150,7 @@ UTEST(nested_proto_zero_initialized) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p != NULL);
     UASSERT_EQ((size_t)0, p->instr_count);
     UASSERT_EQ((size_t)0, p->const_count);
@@ -164,7 +164,7 @@ UTEST(nested_proto_destroy_frees_buffers) {
     UModule m = {0};
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p != NULL);
     /* Destroy should not crash even when the proto has no buffers. */
     umodule_destroy(&m, NULL);

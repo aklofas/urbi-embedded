@@ -492,7 +492,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     strand_setup_cleanup(&s, &vm);
     s.module     = &fake_mod;  /* required by urbi_unwind catch-absorption */
     s.root_proto = &fake_rp;
-    umodule_proto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    uproto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Give sufficient budget so the safepoint after THROW doesn't soft-yield
        before the catch handler can run; OP_THROW → safepoint → urbi_unwind
        → catch absorbed → dispatch continues from handler. */
@@ -518,7 +518,7 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
     UASSERT_EQ((long long)retval.v.i, 42LL);
 
     /* fake_rp is static (not heap-allocated); null root_proto so
-     * ustrand_destroy skips the umodule_strand_refcount_dec→free path. */
+     * ustrand_destroy skips the uproto_strand_refcount_dec→free path. */
     s.root_proto = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);
@@ -717,7 +717,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     strand_setup_cleanup(&s, &vm);
     s.module     = &fake_caller_mod;
     s.root_proto = &fake_caller_rp;
-    umodule_proto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    uproto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Need non-zero budget so safepoints at CALL and non-top RET don't soft-yield. */
     s.instruction_budget_remaining = 100U;
 
@@ -732,7 +732,7 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     UASSERT(consumed >= 3U);
 
     /* fake_caller_rp is static (not heap-allocated); null root_proto so
-     * ustrand_destroy skips the umodule_strand_refcount_dec→free path. */
+     * ustrand_destroy skips the uproto_strand_refcount_dec→free path. */
     s.root_proto = NULL;
     ustrand_destroy(&s, &vm);
     urbi_vm_destroy(&vm);

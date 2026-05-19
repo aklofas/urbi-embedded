@@ -8,7 +8,7 @@
  *
  *   1. UProto.ic_count / UProto.ic_names — per-proto (both root and nested).
  *      Populated by uemit at compile time, persisted in bytecode v1.3+,
- *      freed by umodule_destroy_proto_buffers.
+ *      freed by uproto_destroy_buffers.
  *   2. UProtoInstance.ic_count + UIC entries[] — runtime IC table per
  *      (vm, proto) pair (object/umoduleinstance.h).  Sized from #1 at
  *      module-instance creation; UIC.name is copied from ic_names.
@@ -130,13 +130,13 @@ typedef struct UProto {
     uint16_t       ic_count;
     /* Parallel array, length == ic_count; set at emit time and consumed at
      * module-instance load to populate UIC.name for each IC site.  Owned by
-     * the proto's allocator; freed in umodule_destroy_proto_buffers. */
+     * the proto's allocator; freed in uproto_destroy_buffers. */
     USymbol      **ic_names;
     /* Parallel string array; one entry per IC site; UTF-8, NUL-terminated.
      * Populated by the emitter (mirroring ic_names) and by the deserializer
      * (in lieu of ic_names, which stays NULL until module-instance create
      * interns the strings).  Owned by the proto's allocator; each entry and
-     * the array itself are freed in umodule_destroy_proto_buffers. */
+     * the array itself are freed in uproto_destroy_buffers. */
     char         **ic_name_strs;
 
     /* Allocator hook inherited from the owning module. */
@@ -168,7 +168,7 @@ typedef struct UProto {
      *     in-module or in-list proto never points to itself.
      *
      * Zero-initialized alongside the rest of UProto at alloc time
-     * (umodule_alloc_nested_proto). */
+     * (uproto_alloc_nested). */
     struct UProto *next_alloc;
 
     /* [runtime-only, NOT serialized] Back-pointer to the root UProto of the
@@ -193,7 +193,7 @@ typedef struct UProto {
     /* [runtime-only, NOT serialized] DFS pre-order serial assigned at
      * UProto construction.  Root proto gets ic_index = 0; subsequent
      * UProto allocations get module->next_proto_serial++ via either the
-     * emit path (umodule_alloc_nested_proto) or the deserialize path
+     * emit path (uproto_alloc_nested) or the deserialize path
      * (decode_nested_protos_into).  Both paths walk the tree in DFS pre-order
      * so serial assignment is identical regardless of load source.  Root
      * proto's ic_index = 0 is set explicitly at root-proto allocation; the
@@ -245,7 +245,7 @@ uproto_root_of(UProto *proto)
 /* Refcount helpers — declared inline in the header so OP_CLOSURE's hot
  * path stays cheap.  See UProto.refcount above for the design. */
 static inline void
-umodule_proto_refcount_inc(UProto *p)
+uproto_refcount_inc(UProto *p)
 {
     if (p == NULL) return;
     if (p->refcount == UINT16_MAX) {
@@ -258,7 +258,7 @@ umodule_proto_refcount_inc(UProto *p)
 }
 
 static inline void
-umodule_proto_refcount_dec(UProto *p)
+uproto_refcount_dec(UProto *p)
 {
     if (p == NULL) return;
     if (p->refcount == 0U || p->refcount == UINT16_MAX) {

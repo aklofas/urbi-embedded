@@ -41,7 +41,7 @@
  *   6. v0.8.5-recursive-emit — UClosure loses origin_nested +
  *      origin_nested_count fields (-16 B with alignment); UProto gains
  *      ic_index field (+2 B); UModule gains next_proto_serial +
- *      total_proto_count fields (+4 B).  umodule_alloc_nested_proto
+ *      total_proto_count fields (+4 B).  uproto_alloc_nested
  *      signature changes from (module) to (module, parent_proto) — internal
  *      symbol not exposed by the public `include/urbi/` headers.  OP_CLOSURE dispatch arm
  *      rewrites to resolve Bx against executing_proto->nested[] (per-parent

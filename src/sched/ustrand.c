@@ -108,11 +108,11 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
      * Pairs with the bump in urbi_strand_create_for_module (below), uvm_run.c
      * (transient path), and uop_fork.c (child spawn).
      * Use s->root_proto (fast-path alias set at bind time); pass module so
-     * umodule_strand_refcount_dec can fire the deferred-destroy if this was
+     * uproto_strand_refcount_dec can fire the deferred-destroy if this was
      * the last binding and the host already called umodule_destroy.
      * Null both fields after — prevents double-dec on pool recycle paths. */
     if (s->root_proto != NULL) {
-        umodule_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);
+        uproto_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);
         s->root_proto = NULL;
     }
     s->module = NULL;
@@ -425,7 +425,7 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
      * there is no module dereference at dec time. */
     s->module     = module;
     s->root_proto = module->root_proto;
-    umodule_proto_refcount_inc(s->root_proto);
+    uproto_refcount_inc(s->root_proto);
 
     /* Allocate and zero the per-strand register stack.
      * On failure: urbi_strand_destroy drops the refcount and frees the strand. */

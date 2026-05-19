@@ -3,7 +3,7 @@
  * mechanism.  After Task 11 (v0.8.1-uproto-root), UModule.refcount and
  * UModule.destroy_requested are deleted; refcount lives on root_proto only.
  * umodule_refcount_inc/dec (UModule-level) are deleted; callers use
- * umodule_proto_refcount_inc/dec on root_proto directly. */
+ * uproto_refcount_inc/dec on root_proto directly. */
 
 #include "utest.h"
 #include "utest_e2e_helpers.h"
@@ -30,9 +30,9 @@ UTEST(refcount_lives_on_root_proto)
     UProto rp = {0};
     m.root_proto = &rp;
     UASSERT_EQ((unsigned)0, (unsigned)rp.refcount);
-    umodule_proto_refcount_inc(&rp);
+    uproto_refcount_inc(&rp);
     UASSERT_EQ((unsigned)1, (unsigned)rp.refcount);
-    umodule_proto_refcount_dec(&rp);
+    uproto_refcount_dec(&rp);
     UASSERT_EQ((unsigned)0, (unsigned)rp.refcount);
 }
 
@@ -72,7 +72,7 @@ UTEST(umodule_destroy_rescues_when_refcount_nonzero)
     m->root_proto = rp;
 
     /* Simulate a strand binding: bump root_proto->refcount to 1. */
-    umodule_proto_refcount_inc(rp);
+    uproto_refcount_inc(rp);
     UASSERT_EQ((unsigned)1, (unsigned)rp->refcount);
 
     /* vm->rescued_protos starts NULL. */

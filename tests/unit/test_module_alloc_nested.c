@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: umodule_alloc_nested_proto OOM behaviour (MOD-003).
+/* Unit tests: uproto_alloc_nested OOM behaviour (MOD-003).
  *
  * The function performs two allocations:
  *   1. Optional grow of module->nested[] (skipped when nested_cap is enough).
@@ -73,7 +73,7 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     spy.new_calls = 0;
     spy.fail_at_new_call = 1;  /* fail the 2nd NEW alloc (UProto) */
 
-    UProto *p = umodule_alloc_nested_proto(&module, module.root_proto);
+    UProto *p = uproto_alloc_nested(&module, module.root_proto);
     UASSERT(p == NULL);
 
     /* nested_count must NOT have been bumped. */
@@ -88,7 +88,7 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     /* Now turn off OOM injection and retry — must succeed.  The retry path
      * skips the grow (cap == 4 already) and tries the UProto alloc. */
     spy.fail_at_new_call = -1;
-    UProto *p2 = umodule_alloc_nested_proto(&module, module.root_proto);
+    UProto *p2 = uproto_alloc_nested(&module, module.root_proto);
     UASSERT(p2 != NULL);
     UASSERT_EQ((long long)module.root_proto->nested_count, 1LL);
     UASSERT_EQ((void *)module.root_proto->nested[0], (void *)p2);
@@ -112,7 +112,7 @@ nested_proto_oom_at_grow_keeps_module_pristine(void)
     spy.new_calls = 0;
     spy.fail_at_new_call = 0;
 
-    UProto *p = umodule_alloc_nested_proto(&module, module.root_proto);
+    UProto *p = uproto_alloc_nested(&module, module.root_proto);
     UASSERT(p == NULL);
 
     /* Module fields stay at the zero-init values: no nested[] buffer
@@ -139,7 +139,7 @@ nested_over_cap_iteration_stops_at_count(void)
     UASSERT(module.root_proto != NULL);
 
     /* First call: succeed both grow + UProto. */
-    UProto *p1 = umodule_alloc_nested_proto(&module, module.root_proto);
+    UProto *p1 = uproto_alloc_nested(&module, module.root_proto);
     UASSERT(p1 != NULL);
     UASSERT_EQ((long long)module.root_proto->nested_count, 1LL);
     size_t cap_after_first = module.root_proto->nested_cap;

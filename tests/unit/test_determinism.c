@@ -180,7 +180,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
      * Task 11 of v0.8.1-uproto-root moved all chunk-top data (ic_count,
      * ic_names, nested[]) from UModule onto UModule.root_proto.
      * umodule_destroy with alloc_fn==NULL falls back to stdlib_alloc,
-     * which will call umodule_destroy_proto_buffers (frees ic_names[])
+     * which will call uproto_destroy_buffers (frees ic_names[])
      * then free(root_proto). */
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
@@ -213,7 +213,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
 
     urbi_module_instance_destroy(&vm, mi);
     /* umodule_destroy: alloc_fn==NULL → stdlib_alloc fallback.
-     * umodule_destroy_proto_buffers frees m.root_proto->ic_names[],
+     * uproto_destroy_buffers frees m.root_proto->ic_names[],
      * then free(root_proto) is called by umodule_destroy_internal. */
     umodule_destroy(&m, NULL);
     urbi_vm_destroy(&vm);

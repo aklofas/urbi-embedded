@@ -58,7 +58,7 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 #endif  /* __STDC_HOSTED__ */
 
 /* Forward declaration — umodule_destroy_internal is defined below, after
- * umodule_destroy_proto_buffers.  The public umodule_destroy shim (v0.8.0
+ * uproto_destroy_buffers.  The public umodule_destroy shim (v0.8.0
  * deferred-destroy) calls into this. */
 static void umodule_destroy_internal(UModule *module, struct UVM *vm);
 
@@ -130,7 +130,7 @@ static UChunkLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* MOD-032: free a single buffer through `alloc`, skipping NULL.
  * Centralizes the `if (p != NULL) (void)alloc(p, 0, ud);` pattern that
- * appears 6× in umodule_destroy (and 5× in umodule_destroy_proto_buffers,
+ * appears 6× in umodule_destroy (and 5× in uproto_destroy_buffers,
  * which we leave alone for surgical scope).  The pointer is not NULLed
  * because both call sites zero the containing struct via urbi_zero after
  * all frees complete. */
@@ -162,7 +162,7 @@ static void free_owned_str_constants(UValue *constants, size_t count,
     }
 }
 
-void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
+void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud) {
     /* MOD-030: every caller guards proto != NULL; the runtime contract is
      * "non-NULL proto" — assert rather than silently no-op. */
@@ -175,7 +175,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
         for (i = 0; i < proto->nested_count; i++) {
             UProto *p = proto->nested[i];
             if (p == NULL) continue;  /* MOD-015: watcher-detached slot */
-            umodule_destroy_proto_buffers(p, alloc, alloc_ud);
+            uproto_destroy_buffers(p, alloc, alloc_ud);
             alloc(p, 0, alloc_ud);
         }
         alloc((void *)proto->nested, 0, alloc_ud);
@@ -204,7 +204,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
     urbi_zero(proto, sizeof(*proto));
 }
 
-UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto) {
+UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
     UChunkAllocFn alloc = module_allocator(module);
     if (alloc == NULL) return NULL;
     /* v0.8.5: parent_proto is the explicit nested[] target.  For top-level
@@ -242,7 +242,7 @@ UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto) {
      * benign over-cap.  The "benign over-cap" state is observed by:
      *   - umodule_destroy: walks [0..nested_count) only.
      *   - serialize: writes nested_count, not nested_cap.
-     *   - subsequent umodule_alloc_nested_proto: enters the grow branch
+     *   - subsequent uproto_alloc_nested: enters the grow branch
      *     only when nested_count >= nested_cap, which now skips the
      *     realloc and proceeds to UProto alloc.
      * No code path reads beyond [0..nested_count). */
@@ -701,7 +701,7 @@ static UChunkLoadError decode_ic_names_into(MDecCtx *d,
     char **strs = (char **)alloc(NULL, (size_t)count * sizeof(char *), alloc_ud);
     if (strs == NULL) return UCHUNK_LOAD_OOM;
     /* Zero-init so partial-fail cleanup (umodule_destroy /
-       umodule_destroy_proto_buffers) walks well-defined NULL slots. */
+       uproto_destroy_buffers) walks well-defined NULL slots. */
     for (uint64_t k = 0; k < count; k++) strs[k] = NULL;
     *out_strs = strs;
     for (uint64_t k = 0; k < count; k++) {
@@ -773,7 +773,7 @@ static UChunkLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
         child->alloc_fn = d->module->alloc_fn;
         child->alloc_ud = d->module->alloc_ud;
         /* v0.8.5: assign DFS pre-order serial identical to the emit path.
-         * Recurse order matches umodule_alloc_nested_proto's DFS pre-order
+         * Recurse order matches uproto_alloc_nested's DFS pre-order
          * because decode_proto is called per child (depth-first) before
          * moving to the next sibling. */
         child->ic_index = ++d->module->next_proto_serial;
@@ -1132,11 +1132,11 @@ UChunkLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t 
     /* Task 11: allocate root_proto before decoding so decode functions
      * write chunk-top fields directly into root_proto (no alias-copy).
      * If re-deserializing into the same module struct, free the old
-     * root_proto (and its buffers) first via umodule_destroy_proto_buffers. */
+     * root_proto (and its buffers) first via uproto_destroy_buffers. */
     UChunkAllocFn root_alloc = module_allocator(module);
     if (root_alloc == NULL) return UCHUNK_LOAD_OOM;
     if (module->root_proto != NULL) {
-        umodule_destroy_proto_buffers(module->root_proto, root_alloc, module->alloc_ud);
+        uproto_destroy_buffers(module->root_proto, root_alloc, module->alloc_ud);
         root_alloc(module->root_proto, 0, module->alloc_ud);
         module->root_proto = NULL;
     }
@@ -1208,10 +1208,10 @@ UChunkLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t 
  * sets root_proto->next_alloc = root_proto (self-link sentinel) instead.
  * When refcount hits 0 here, the sentinel signals deferred destroy. */
 void
-umodule_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
+uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
 {
     if (root_proto == NULL) return;
-    umodule_proto_refcount_dec(root_proto);
+    uproto_refcount_dec(root_proto);
     /* Deferred-destroy trigger: self-link sentinel means the module shell
      * was already freed (vm=NULL destroy path) but root_proto was left with
      * a non-zero refcount.  Now that the last strand-bind ref is gone and
@@ -1221,10 +1221,10 @@ umodule_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
         /* Deferred-destroy triggered: the host already called umodule_destroy
          * with vm=NULL (self-link sentinel path) while a strand was alive.
          * Now that the last strand-bind ref is gone, perform the actual free.
-         * Clear sentinel first so umodule_destroy_proto_buffers can walk
+         * Clear sentinel first so uproto_destroy_buffers can walk
          * nested[] cleanly (next_alloc is not walked, but zeroing is safe). */
         root_proto->next_alloc = NULL;
-        umodule_destroy_proto_buffers(root_proto, root_proto->alloc_fn, root_proto->alloc_ud);
+        uproto_destroy_buffers(root_proto, root_proto->alloc_fn, root_proto->alloc_ud);
         if (root_proto->alloc_fn != NULL) {
             root_proto->alloc_fn(root_proto, 0, root_proto->alloc_ud);
         }
@@ -1294,7 +1294,7 @@ umodule_destroy(UModule *module, struct UVM *vm)
         } else {
             /* No vm available — cannot rescue root_proto onto vm->rescued_protos
              * immediately.  Set self-link sentinel (next_alloc == root_proto)
-             * on root_proto so that umodule_strand_refcount_dec can detect
+             * on root_proto so that uproto_strand_refcount_dec can detect
              * the deferred-destroy when refcount hits 0.
              *
              * Task 11: UModule.destroy_requested deleted.  The sentinel is
@@ -1389,14 +1389,14 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     UChunkAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
         /* Task 11: all chunk-top data (nested[], buffers, ic_names) lives on
-         * root_proto.  umodule_destroy_proto_buffers frees everything owned
+         * root_proto.  uproto_destroy_buffers frees everything owned
          * by root_proto; then free the root_proto struct itself.
          * The per-nested rescue walk (vm->stdlib_protos) is deleted — under
          * Variant B Option (a) nested refcounts are always 0 at this point;
          * whole-root_proto rescue via vm->rescued_protos handles surviving
          * closures (see umodule_destroy). */
         if (module->root_proto != NULL) {
-            umodule_destroy_proto_buffers(module->root_proto, alloc, module->alloc_ud);
+            uproto_destroy_buffers(module->root_proto, alloc, module->alloc_ud);
             alloc(module->root_proto, 0, module->alloc_ud);
         }
         module_buf_free(alloc, module->alloc_ud, module->source_name);

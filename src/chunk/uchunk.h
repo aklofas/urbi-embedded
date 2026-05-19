@@ -258,7 +258,7 @@ typedef struct UModule {
     /* root_proto: the root UProto for this module.
      * Allocated by uemit_init (at compile time) or umodule_deserialize (at
      * load time).  Owns instructions, constants, nested[], IC tables, etc.
-     * Freed by umodule_destroy_internal via umodule_destroy_proto_buffers.
+     * Freed by umodule_destroy_internal via uproto_destroy_buffers.
      * NULL only if uemit_init / umodule_deserialize failed (OOM). */
     struct UProto *root_proto;
 
@@ -279,7 +279,7 @@ typedef struct UModule {
 
     /* next_proto_serial [runtime-only, NOT serialized]: monotonic counter
      * holding the LAST ic_index assigned to a non-root UProto in this
-     * module.  Bumped in umodule_alloc_nested_proto (emit path) and
+     * module.  Bumped in uproto_alloc_nested (emit path) and
      * decode_nested_protos_into (deserialize path).  Both paths walk the
      * tree in DFS pre-order so serial assignment is identical regardless
      * of load source.  Root proto's ic_index = 0 is set explicitly at
@@ -342,7 +342,7 @@ typedef enum {
  * module->destroy_requested previously-set, fires umodule_destroy_internal.
  * Callers must pass the still-valid module pointer; pass NULL for either
  * to no-op safely.  vm may be NULL in test contexts. */
-void umodule_strand_refcount_dec(UModule *m, UProto *root_proto,
+void uproto_strand_refcount_dec(UModule *m, UProto *root_proto,
                                  struct UVM *vm);
 
 /* Allocate a new UProto as root_proto->nested[nested_count++].
@@ -360,12 +360,12 @@ void umodule_strand_refcount_dec(UModule *m, UProto *root_proto,
  * UProto for nested function literals).  Each call increments
  * module->next_proto_serial and assigns the new proto's ic_index from
  * the post-increment value, matching DFS pre-order. */
-UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto);
+UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto);
 
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
  * (it is owned by the module's nested[] array, or by a watcher pool slot
  * after strand_closure_unlink has detached it). */
-void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
+void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud);
 
 /* Populate `module` from `buf`.  `module` MUST be zero-initialized before

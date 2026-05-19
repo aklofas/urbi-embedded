@@ -169,7 +169,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
              * null both fields so ustrand_destroy (via urealm_teardown_all)
              * does not double-dec. */
             if (loader->root_proto != NULL) {
-                umodule_strand_refcount_dec((UModule *)loader->module,
+                uproto_strand_refcount_dec((UModule *)loader->module,
                                            loader->root_proto, vm);
                 loader->root_proto = NULL;
             }

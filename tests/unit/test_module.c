@@ -31,13 +31,13 @@ UTEST(destroy_empty_module_is_noop) {
 UTEST(destroy_module_with_buffers_frees_them) {
     /* Task 11: All chunk-top buffers live on root_proto.
      * Simulate allocation via stdlib calloc; umodule_destroy frees root_proto
-     * buffers via umodule_destroy_proto_buffers then the proto itself via alloc_fn.
+     * buffers via uproto_destroy_buffers then the proto itself via alloc_fn.
      * alloc_fn == NULL means the proto struct was NOT heap-allocated separately
      * (caller-owned stack object), so we skip the root_proto free and only verify
      * the sub-buffers are cleared.
      *
      * To exercise the full free path, allocate root_proto on the heap with
-     * alloc_fn == NULL (signals stdlib ownership).  umodule_destroy_proto_buffers
+     * alloc_fn == NULL (signals stdlib ownership).  uproto_destroy_buffers
      * uses proto->alloc_fn; with NULL it uses stdlib free. */
     UModule c = {0};
     UProto *rp = (UProto *)calloc(1, sizeof(UProto));
@@ -360,14 +360,14 @@ UTEST(deserialize_accepts_current_version_module) {
 }
 
 UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
-    /* M4 v1.3: umodule_alloc_nested_proto must zero ic_count and ic_names
+    /* M4 v1.3: uproto_alloc_nested must zero ic_count and ic_names
        (encoding spec §5.1).  Subsequent M4 tasks rely on this so freshly
        allocated protos start with no IC sites. */
     UModule m = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
+    /* Task 11: root_proto must exist before uproto_alloc_nested. */
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p != NULL);
     UASSERT_EQ((unsigned)p->ic_count, 0U);
     UASSERT_EQ((void *)p->ic_names, (void *)NULL);
@@ -375,13 +375,13 @@ UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
 }
 
 UTEST(uproto_destroy_frees_ic_names) {
-    /* M4 v1.3: umodule_destroy_proto_buffers must free the ic_names array.
+    /* M4 v1.3: uproto_destroy_buffers must free the ic_names array.
        Allocate via stdlib so destroy (alloc_fn == NULL → stdlib_alloc) frees it. */
     UModule m = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
+    /* Task 11: root_proto must exist before uproto_alloc_nested. */
     m.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *p = uproto_alloc_nested(&m, m.root_proto);
     UASSERT(p != NULL);
     /* Pretend the emitter populated ic_count + ic_names with two opaque slots. */
     p->ic_count = 2;
@@ -389,7 +389,7 @@ UTEST(uproto_destroy_frees_ic_names) {
     UASSERT(p->ic_names != NULL);
     p->ic_names[0] = NULL;
     p->ic_names[1] = NULL;
-    /* umodule_destroy frees nested protos via umodule_destroy_proto_buffers. */
+    /* umodule_destroy frees nested protos via uproto_destroy_buffers. */
     umodule_destroy(&m, NULL);
     /* If we reach here without leaking under ASan, ic_names was freed. */
 }
@@ -1195,11 +1195,11 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
  * UVAL_FLOAT, round-trip, and assert the FLOAT survives. */
 UTEST(roundtrip_preserves_nested_proto_float_constant) {
     UModule a = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto
+    /* Task 11: root_proto must exist before uproto_alloc_nested
      * (nested[] lives on root_proto).  Allocate with stdlib_alloc (hosted). */
     a.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(a.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&a, a.root_proto);
+    UProto *p = uproto_alloc_nested(&a, a.root_proto);
     UASSERT(p != NULL);
 
     /* One UVAL_FLOAT in the nested proto's constant pool. */

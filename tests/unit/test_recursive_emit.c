@@ -2,7 +2,7 @@
 /* tests/unit/test_recursive_emit.c — v0.8.5-recursive-emit regressions.
  *
  * Validates that UProto.ic_index is assigned in DFS pre-order at both
- * emit and deserialize time, that umodule_alloc_nested_proto routes to
+ * emit and deserialize time, that uproto_alloc_nested routes to
  * the correct parent, and that OP_CLOSURE dispatch resolves against the
  * executing proto's own nested[]. */
 
@@ -85,9 +85,9 @@ UTEST(ic_index_nested_increments_in_alloc_order) {
     /* Allocate three protos under root.  Even with the post-Task-5
      * recursive emitter, this direct-allocation pattern still allocates
      * under the explicit parent — so all three are flat siblings. */
-    UProto *p1 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p2 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p3 = umodule_alloc_nested_proto(&m, p1);
+    UProto *p1 = uproto_alloc_nested(&m, m.root_proto);
+    UProto *p2 = uproto_alloc_nested(&m, m.root_proto);
+    UProto *p3 = uproto_alloc_nested(&m, p1);
 
     UASSERT(p1 != NULL);
     UASSERT(p2 != NULL);
