@@ -252,6 +252,7 @@ extern void test_closure_gc_suite(void);
 extern void test_recursive_emit_suite(void);
 extern void test_uproto_owning_mi_suite(void);
 extern void test_loaded_protos_registry_suite(void);
+extern void test_multi_realm_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -480,6 +481,7 @@ static const struct suite_entry suites[] = {
     {"recursive_emit",               test_recursive_emit_suite},
     {"uproto_owning_mi",             test_uproto_owning_mi_suite},
     {"loaded_protos_registry",       test_loaded_protos_registry_suite},
+    {"multi_realm",                  test_multi_realm_suite},
     /* Add new suites here as test files are added. */
 };
 
