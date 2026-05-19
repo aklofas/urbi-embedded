@@ -874,18 +874,17 @@ For the on-the-wire shape, thread layout, and dispatcher internals, see `docs/in
 ### Minimal embedder
 
 ```c
-/* STANDALONE EXAMPLE — compile with:
- *   cc -std=c99 -Iinclude -Isrc -DURBI_ENABLE_REPL=1 repl_min.c \
- *      build/host/liburbi.a build/host/liburbi_aux.a -lm -lpthread -o repl_min
- *
- * Requires: liburbi.a built with URBI_ENABLE_REPL=1 (run
- * `make URBI_ENABLE_REPL=1`). */
+/* FRAGMENT — minimal REPL embedder.
+ * Requires URBI_ENABLE_REPL=1 build flags and link against liburbi.a + -lm.
+ * Compile-only validated; linking deferred (URBI_ENABLE_REPL symbols not in
+ * default build). */
 
 #include <signal.h>
 #include <stdio.h>
 #include "urbi/urbi.h"
 #include "urbi/repl.h"
-#include "vm/uvm.h"
+#include "vm/uvm.h"               /* struct UVM for stack allocation */
+#include "stdlib/stdlib_boot.h"   /* urbi_stdlib_boot */
 
 static volatile sig_atomic_t running = 1;
 static void on_sigint(int sig) { (void)sig; running = 0; }
