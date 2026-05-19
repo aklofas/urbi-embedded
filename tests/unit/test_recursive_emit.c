@@ -18,6 +18,7 @@
 #include "module/umodule.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
+#include "object/umodule_instance.h"
 #include "urbi/urbi.h"
 
 #define UTEST(name) static void name(void)
@@ -132,6 +133,42 @@ UTEST(total_proto_count_set_at_uemit_finish) {
     urbi_vm_destroy(&vm);
 }
 
+/* -----------------------------------------------------------------------
+ * Task 2: proto_instances sizing + IC binding via ic_index
+ * ----------------------------------------------------------------------- */
+
+UTEST(proto_instances_n_equals_total_proto_count) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+
+    UEmitError rc = compile_src(
+        "var a = function() { 1 };"
+        "var b = function() { 2 };"
+        "var c = function() { 3 };", &vm, &m, &arena);
+    UASSERT_EQ(rc, EMIT_OK);
+
+    /* Trigger module-instance creation by running.  urbi_vm_run binds the
+     * VM to the module via urbi_get_or_create_module_instance internally. */
+    UValue out = {0};
+    (void)urbi_vm_run(&vm, NULL, &m, &out);
+
+    UModuleInstance *mi = vm.module_instances_head;
+    UASSERT(mi != NULL);
+    UASSERT(mi->proto_instances != NULL);
+    UASSERT_EQ(m.root_proto->nested_count, 3);
+    UASSERT_EQ(m.total_proto_count, 4);
+    /* proto_instances->n must equal total_proto_count (was 1 + nested_count
+     * — identical for flat trees, diverges for recursive). */
+    UASSERT_EQ(mi->proto_instances->n, 4);
+
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -146,4 +183,6 @@ test_recursive_emit_suite(void)
               ic_index_nested_increments_in_alloc_order);
     utest_run("total_proto_count_set_at_uemit_finish",
               total_proto_count_set_at_uemit_finish);
+    utest_run("proto_instances_n_equals_total_proto_count",
+              proto_instances_n_equals_total_proto_count);
 }

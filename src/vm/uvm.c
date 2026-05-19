@@ -556,39 +556,46 @@ dispatch:
                 vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
-            /* M4 follow-up: bind proto_inst so the new closure can dispatch
-             * OP_GETSLOT/OP_SETSLOT against the per-VM IC table.  entries[0]
-             * is the root chunk; entries[bx + 1] is the matching nested proto.
+            /* v0.8.5: bind proto_inst via child_proto->ic_index.  ic_index
+             * is globally unique within ONE MODULE TREE (DFS pre-order,
+             * root = 0), so a single index works for both flat and recursive
+             * trees — replacing the prior `bx + 1` math.
              *
-             * Phase 5 (Gap #1): when executing inside a cross-session closure
-             * call, s->module_instance belongs to the current session's module
-             * (not the closure's originating session), so entries[bx+1] may
-             * be out of range.  Fall back to the current frame's closure's
-             * origin_module_instance — that was the active module_instance
-             * when the parent closure was compiled, and its entries[] array
-             * covers all nested protos from the originating module. */
+             * Cross-session subtlety (Phase 5 / Gap #1 — partial-bundle
+             * retained at v0.8.5): when a closure compiled in session A is
+             * called from session B, s->module_instance belongs to session B
+             * (with only its own root in entries[]), so the originating
+             * proto's ic_index is out of range there.  Fall back to the
+             * parent frame's closure's origin_module_instance — that was
+             * the active mi when the parent closure was compiled, and its
+             * entries[] array covers all protos from the originating module.
+             *
+             * (Truly retiring origin_module_instance requires a per-proto
+             * back-pointer to its owning module_instance — deferred to a
+             * follow-up tag per spec §7.3 Decision Register row 5.) */
             {
                 struct UModuleInstance *mi = s->module_instance;
                 if (mi != NULL
                         && mi->proto_instances != NULL
-                        && (size_t)bx + 1U < (size_t)mi->proto_instances->n) {
-                    cl->proto_inst = &mi->proto_instances->entries[bx + 1U];
+                        && (size_t)child_proto->ic_index <
+                           (size_t)mi->proto_instances->n) {
+                    cl->proto_inst =
+                        &mi->proto_instances->entries[child_proto->ic_index];
                 } else if (s->frame_count > 0) {
-                    /* Try the parent frame's closure's origin_module_instance. */
                     UClosure *par_cl = s->frames[s->frame_count - 1].closure;
                     struct UModuleInstance *omi = par_cl
                                                   ? par_cl->origin_module_instance
                                                   : NULL;
                     if (omi != NULL
                             && omi->proto_instances != NULL
-                            && (size_t)bx + 1U < (size_t)omi->proto_instances->n) {
-                        cl->proto_inst = &omi->proto_instances->entries[bx + 1U];
+                            && (size_t)child_proto->ic_index <
+                               (size_t)omi->proto_instances->n) {
+                        cl->proto_inst =
+                            &omi->proto_instances->entries[child_proto->ic_index];
                     }
                 }
-                /* If neither path worked, proto_inst stays NULL.  A subsequent
-                 * OP_GETSLOT will produce "no IC table bound" — this is the
-                 * pre-Phase-5 megamorphic bail, now limited to truly unusual
-                 * cases (VM init without module_instance wiring). */
+                /* Otherwise proto_inst stays NULL; subsequent OP_GETSLOT
+                 * degrades to the megamorphic slow path. */
             }
 
             /* Phase 5 (Gap #1): propagate the resolved nested[] array and

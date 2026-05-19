@@ -113,6 +113,60 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
     return true;
 }
 
+/* v0.8.5: recursive IC-byte tally.  Walks the proto tree DFS pre-order and
+ * sums (proto->ic_count * sizeof(UIC)) for every proto including root.
+ * Replaces the prior flat "root + sum(root.nested[i])" sizing — identical
+ * total for flat trees, larger total for recursive trees with grandchildren. */
+static size_t ic_bytes_recursive(const UProto *proto) {
+    if (proto == NULL) return 0U;
+    size_t bytes = (size_t)proto->ic_count * sizeof(UIC);
+    for (size_t i = 0; i < proto->nested_count; i++) {
+        bytes += ic_bytes_recursive(proto->nested[i]);
+    }
+    return bytes;
+}
+
+/* v0.8.5: recursive IC-slice populator.  Walks the proto tree DFS pre-order;
+ * each proto's slot in arr->entries is indexed by proto->ic_index.  Root
+ * (ic_index = 0) gets `proto = NULL` in its entry (existing convention —
+ * the root chunk's IC table covers top-level GETSLOT/SETSLOT but the entry
+ * doesn't carry a proto back-pointer).  Nested protos get proto = node.
+ *
+ * Returns false on OOM during string-to-symbol intern (caller surfaces as
+ * NULL UModuleInstance). */
+static bool init_ic_slices_recursive(struct UVM *vm,
+                                     UProto *node,
+                                     UProtoInstanceArr *arr,
+                                     UIC **ic_cursor) {
+    if (node == NULL) return true;
+
+    /* Intern this proto's IC names (lazy, idempotent — deserialized modules
+     * carry raw strings in ic_name_strs but no ic_names until first
+     * instance-create resolves them). */
+    if (!intern_ic_names_from_strs(vm, node->ic_count, &node->ic_names,
+                                   node->ic_name_strs,
+                                   node->alloc_fn, node->alloc_ud)) {
+        return false;
+    }
+
+    /* Populate this proto's entry.  ic_index = 0 is the root (proto = NULL
+     * in its entry, matching the pre-v0.8.5 convention for arr->entries[0]). */
+    uint16_t slot = node->ic_index;
+    if (slot >= arr->n) return false;  /* paranoia — should never fire */
+    init_ic_slice(&arr->entries[slot],
+                  (slot == 0U) ? NULL : node,
+                  node->ic_count, node->ic_names, ic_cursor);
+
+    /* Recurse into children in DFS pre-order (matches ic_index assignment
+     * order at allocation time). */
+    for (size_t i = 0; i < node->nested_count; i++) {
+        if (!init_ic_slices_recursive(vm, node->nested[i], arr, ic_cursor)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 UModuleInstance *
 urbi_module_instance_create(struct UVM *vm, UModule *m)
 {
@@ -152,16 +206,23 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      *           + n * sizeof(UProtoInstance)              (entries[] payload)
      *           + root_ic_count * sizeof(UIC)            (root-chunk IC region)
      *           + sum(nested[i]->ic_count) * sizeof(UIC)  (nested IC region) */
-    uint16_t n = (uint16_t)(1U + root_nested_count);
+    /* v0.8.5: size proto_instances against the recursive total proto count.
+     * For flat trees total_proto_count == 1 + root_nested_count (identical
+     * to the prior formula).  For recursive trees it includes grandchildren.
+     * Fall back to the flat formula if total_proto_count is 0 — that
+     * happens only for hand-wired test modules that bypass uemit_finish
+     * and umodule_deserialize. */
+    uint16_t n = m->total_proto_count;
+    if (n == 0U) {
+        n = (uint16_t)(1U + root_nested_count);
+    }
 
     size_t entries_bytes = (size_t)n * sizeof(UProtoInstance);
 
-    size_t ic_bytes = (size_t)root_ic_count * sizeof(UIC);  /* root-chunk ICs */
-    for (size_t i = 0U; i < root_nested_count; i++) {
-        UProto *p = root_nested[i];
-        if (p == NULL) continue;
-        ic_bytes += (size_t)p->ic_count * sizeof(UIC);
-    }
+    /* v0.8.5: ic_bytes folds in root's own ic_count via the recursive walk;
+     * no separate `root_ic_count * sizeof(UIC)` add. */
+    size_t ic_bytes = (rp != NULL) ? ic_bytes_recursive(rp)
+                                   : ((size_t)root_ic_count * sizeof(UIC));
 
     size_t arr_size = sizeof(UProtoInstanceArr) + entries_bytes + ic_bytes;
 
@@ -181,42 +242,26 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * TIDY-006: single (char *) cast avoids casting-through-void. */
     UIC *ic_cursor = (UIC *)((char *)arr->entries + entries_bytes);
 
-    /* entries[0]: root chunk.  ic_table populated from root chunk's ic_count /
-     * ic_names side table (M4 follow-up — root chunk now carries IC sites
-     * for top-level GETSLOT/SETSLOT).  proto = NULL for the root chunk.
+    /* v0.8.5: walk the proto tree DFS pre-order, populating entries[ic_index]
+     * for every proto including root.  Replaces the prior split between
+     * entries[0]-root and the flat entries[1..n-1] loop.
      *
      * MOD-016: deserialized modules carry raw strings in ic_name_strs but
      * have ic_names == NULL (intern needs a VM in scope, which the loader
-     * does not have).  Walk + intern lazily on first instance-create.
-     * Helper is idempotent — second call with ic_names already populated
-     * is a no-op.
-     * Task 11: ownership lives on root_proto; write directly to rp->ic_names. */
-    if (rp != NULL && !intern_ic_names_from_strs(vm, root_ic_count, &rp->ic_names,
-                                                  root_ic_strs,
-                                                  root_alloc_fn, root_alloc_ud)) {
-        /* OOM during string-to-symbol intern.  Both GC cells are reachable
-         * only via this return path; sweep reclaims them. */
-        return NULL;
-    }
-    if (rp != NULL) root_ic_names = rp->ic_names;
-    init_ic_slice(&arr->entries[0], NULL,
-                  root_ic_count, root_ic_names, &ic_cursor);
-
-    /* entries[1..n-1]: parallel to module->nested[].  Each gets its own
-     * slice of the trailing IC region; unfilled sites have topology_gen == 0
-     * (the sentinel per pre-M4 topology-generation spec §3.1).
-     * v0.8.1 Phase 1: walk via root_nested (root_proto or module alias). */
-    for (size_t i = 0U; i < root_nested_count; i++) {
-        UProto *p = root_nested[i];
-        if (p != NULL &&
-            !intern_ic_names_from_strs(vm, p->ic_count, &p->ic_names,
-                                       p->ic_name_strs,
-                                       p->alloc_fn, p->alloc_ud)) {
+     * does not have).  init_ic_slices_recursive interns lazily per-proto
+     * via intern_ic_names_from_strs (idempotent on second call).
+     *
+     * Hand-wired test modules with no root_proto fall back to the legacy
+     * single-entry init using the root_ic_* variables captured above. */
+    if (rp != NULL) {
+        if (!init_ic_slices_recursive(vm, rp, arr, &ic_cursor)) {
+            /* OOM during string-to-symbol intern.  Both GC cells are
+             * reachable only via this return path; sweep reclaims them. */
             return NULL;
         }
-        uint16_t   pc = (p != NULL) ? p->ic_count : 0U;
-        USymbol  **pn = (p != NULL) ? p->ic_names : NULL;
-        init_ic_slice(&arr->entries[i + 1U], p, pc, pn, &ic_cursor);
+    } else {
+        init_ic_slice(&arr->entries[0], NULL,
+                      root_ic_count, root_ic_names, &ic_cursor);
     }
 
     /* Publish the bulk pointer last so a partial-init mi never hands a
