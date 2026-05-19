@@ -259,6 +259,7 @@ extern void test_realm_destroy_with_parked_loader_suite(void);
 extern void test_lexer_syncline_suite(void);
 extern void test_repl_per_realm_writer_suite(void);
 extern void test_repl_uproto_readonly_suite(void);
+extern void test_repl_global_atom_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -494,6 +495,7 @@ static const struct suite_entry suites[] = {
     {"lexer_syncline",                   test_lexer_syncline_suite},
     {"repl_per_realm_writer",            test_repl_per_realm_writer_suite},
     {"repl_uproto_readonly",             test_repl_uproto_readonly_suite},
+    {"repl_global_atom",                 test_repl_global_atom_suite},
     /* Add new suites here as test files are added. */
 };
 
