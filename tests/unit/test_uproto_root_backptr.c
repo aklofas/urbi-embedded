@@ -72,7 +72,7 @@ UTEST(root_proto_allocated_after_finish)
     UASSERT_EQ(module.root_proto->instr_count, module.root_proto->instr_count);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -105,7 +105,7 @@ UTEST(nested_proto_root_backptr_set)
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -127,14 +127,14 @@ UTEST(root_proto_nested_alias_matches_module)
     UASSERT_EQ(module.root_proto->nested_count, module.root_proto->nested_count);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
 UTEST(deserialize_roundtrip_root_proto_invariants)
 {
     /* Round-trip a compiled module through serialize → deserialize and verify
-     * that umodule_deserialize correctly populates root_proto and its aliases.
+     * that uchunk_deserialize correctly populates root_proto and its aliases.
      * Exercises the deserialize aliasing block independently of uemit_finish. */
     struct UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
@@ -162,7 +162,7 @@ UTEST(deserialize_roundtrip_root_proto_invariants)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm2, NULL, NULL));
     UModule m2 = {0};
     char errmsg[128];
-    UChunkLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
+    UChunkLoadError load_rc = uchunk_deserialize(&m2, buf, (size_t)wrote,
                                                    errmsg, sizeof errmsg);
     UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
 
@@ -185,9 +185,9 @@ UTEST(deserialize_roundtrip_root_proto_invariants)
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&m1, &vm);
+    uchunk_destroy(&m1, &vm);
     urbi_vm_destroy(&vm);
-    umodule_destroy(&m2, &vm2);
+    uchunk_destroy(&m2, &vm2);
     urbi_vm_destroy(&vm2);
 }
 

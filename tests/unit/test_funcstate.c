@@ -25,7 +25,7 @@ static void setup(UEmitter *e, UModule *m, UArena *a, UVM *v) {
 }
 static void teardown(UModule *m, UArena *a, UVM *v) {
     uarena_destroy(a);
-    umodule_destroy(m, NULL);
+    uchunk_destroy(m, NULL);
     urbi_vm_destroy(v);
 }
 
@@ -479,7 +479,7 @@ UTEST(funcstate_ic_close_copies_into_target_proto) {
     UASSERT_EQ((uint16_t)0, child->ic_names_cap);
 
     uemit_close_function(&e);                   /* close parent */
-    teardown(&m, &a, &v);                       /* umodule_destroy frees child_proto->ic_names */
+    teardown(&m, &a, &v);                       /* uchunk_destroy frees child_proto->ic_names */
 }
 
 UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {

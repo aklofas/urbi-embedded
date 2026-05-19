@@ -56,7 +56,7 @@ UTEST(instance_unlinked_on_module_destroy)
 
     UModule mod = {0};
     char errmsg[128];
-    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod, bc, bc_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod, bc, bc_len,
                                               errmsg, sizeof errmsg));
 
     UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
@@ -65,7 +65,7 @@ UTEST(instance_unlinked_on_module_destroy)
     UASSERT(instance_on_vm_list(&vm, mi));
 
     /* Destroy the module — instance must be unlinked. */
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
 
     UASSERT(!instance_on_vm_list(&vm, mi));
 
@@ -89,9 +89,9 @@ UTEST(correct_instance_unlinked_multi)
 
     UModule mod_a = {0}, mod_b = {0};
     char errmsg[128];
-    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod_a, bc_a, bc_a_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod_a, bc_a, bc_a_len,
                                               errmsg, sizeof errmsg));
-    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod_b, bc_b, bc_b_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod_b, bc_b, bc_b_len,
                                               errmsg, sizeof errmsg));
 
     UChunkInstance *mi_a = urbi_module_instance_create(&vm, &mod_a);
@@ -102,13 +102,13 @@ UTEST(correct_instance_unlinked_multi)
     UASSERT(instance_on_vm_list(&vm, mi_b));
 
     /* Destroy only mod_a. */
-    umodule_destroy(&mod_a, &vm);
+    uchunk_destroy(&mod_a, &vm);
 
     /* mi_a must be gone; mi_b must survive. */
     UASSERT(!instance_on_vm_list(&vm, mi_a));
     UASSERT(instance_on_vm_list(&vm, mi_b));
 
-    umodule_destroy(&mod_b, &vm);
+    uchunk_destroy(&mod_b, &vm);
     free(bc_a);
     free(bc_b);
     urbi_vm_destroy(&vm);

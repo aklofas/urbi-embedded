@@ -72,7 +72,7 @@ UTEST(run_chunk_registers_module)
     UASSERT(mod.owning_realm == realm);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -115,7 +115,7 @@ UTEST(run_chunk_register_idempotent)
     UASSERT(mod.next_in_realm == next_after_first);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

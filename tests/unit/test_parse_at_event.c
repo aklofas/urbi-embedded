@@ -65,7 +65,7 @@ static UEmitError at_event_compile(const char *src,
 }
 
 static void at_event_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }

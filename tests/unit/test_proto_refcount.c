@@ -8,11 +8,11 @@
  *                 rescue, discharged by the stdlib_protos sweep)
  *
  * Discharge sites: strand_closure_unlink detach (-1 from nested),
- * umodule_destroy's walk (-1 from nested), pool_free OWNS_* arms (-1 per
+ * uchunk_destroy's walk (-1 from nested), pool_free OWNS_* arms (-1 per
  * cl), stdlib_protos sweep (-1 list ref).  Proto is freed when refcount
  * hits 0.
  *
- * These tests pin the basic mechanics and the umodule_destroy → rescue →
+ * These tests pin the basic mechanics and the uchunk_destroy → rescue →
  * pool_free → stdlib_protos sweep flow that exposed the v0.7.3 cascade-
  * fix double-free regression. */
 
@@ -58,7 +58,7 @@ UTEST(proto_refcount_rescue_then_pool_free_no_double_free)
      * refcount > 0 (the body closure holds a ref).  Rescue path
      * transfers it to vm->stdlib_protos. */
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
 
     /* Fire the watcher once (validates the rescued proto still works). */
     urbi_inject_event(&vm, (uint32_t)fire, NULL, 0U);

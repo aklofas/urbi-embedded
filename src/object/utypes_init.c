@@ -432,7 +432,7 @@ walk_uclosure(struct UVM *vm, void *payload,
  * closures registered via urbi_make_native_closure).
  *
  * Sentinel-promotion (Step C-2): mirrors the pre-v0.8.4 stdlib_closures
- * sweep in uvm_init.c:498-509.  When umodule_destroy was called with vm=NULL
+ * sweep in uvm_init.c:498-509.  When uchunk_destroy was called with vm=NULL
  * while refcount > 0, root_proto->next_alloc was set to root_proto itself as
  * an unambiguous "rescue me later" signal (see umodule.c).  When the last
  * closure ref drops refcount to 0, promote root_proto to vm->rescued_protos

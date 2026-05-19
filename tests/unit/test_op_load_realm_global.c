@@ -60,7 +60,7 @@ static UEmitError rg_ctx_compile(RGCtx *c)
 static void rg_ctx_destroy(RGCtx *c)
 {
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module, NULL);
+    uchunk_destroy(&c->module, NULL);
     if (c->realm != NULL) urbi_realm_destroy(&c->vm, c->realm);
     urbi_vm_destroy(&c->vm);
 }

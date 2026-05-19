@@ -5,7 +5,7 @@
  * Root cause (audit 2026-05-10): closures stored as realm-globals via
  * setSlot / var-decl at chunk-top were migrated to vm->stdlib_closures at
  * run-end (pre-v0.8.4), but their UProto objects were owned by the stack-local
- * UModule in urbi_repl_eval and freed by umodule_destroy immediately after.
+ * UModule in urbi_repl_eval and freed by uchunk_destroy immediately after.
  * The next REPL session that called the closure dereferenced proto->instructions
  * — a dangling pointer — producing a segfault.
  *

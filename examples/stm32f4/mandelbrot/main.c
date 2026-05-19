@@ -21,7 +21,7 @@
  * allocate UVM in BSS must pull the internal header — same pattern
  * as tests/qemu/reactive_smoke/main/reactive_smoke_main.c. */
 #include "vm/uvm.h"
-#include "chunk/uchunk.h"  /* freestanding-safe umodule_deserialize / UChunkLoadError */
+#include "chunk/uchunk.h"  /* freestanding-safe uchunk_deserialize / UChunkLoadError */
 #include "mandelbrot_baked.h"   /* mandelbrot_bytecode[] + mandelbrot_bytecode_size */
 
 UART_HandleTypeDef huart1;   /* defined here; port_writer.c uses extern */
@@ -219,7 +219,7 @@ int main(void) {
      * 50 ms tick rate no longer drains the heap. */
     tim2_init_50ms();
 
-    /* Load baked bytecode (freestanding pattern: static UModule + umodule_deserialize).
+    /* Load baked bytecode (freestanding pattern: static UModule + uchunk_deserialize).
      * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
      *
      * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
@@ -229,13 +229,13 @@ int main(void) {
     mod.alloc_fn = port_alloc;
     mod.alloc_ud = NULL;
     char errbuf[128] = {0};
-    UChunkLoadError lerr = umodule_deserialize(&mod, mandelbrot_bytecode,
+    UChunkLoadError lerr = uchunk_deserialize(&mod, mandelbrot_bytecode,
                                                  mandelbrot_bytecode_size,
                                                  errbuf, sizeof errbuf);
     if (lerr != UCHUNK_LOAD_OK) {
-        static const char prefix[] = "umodule_deserialize FAILED: ";
+        static const char prefix[] = "uchunk_deserialize FAILED: ";
         HAL_UART_Transmit(&huart1, (const uint8_t *)prefix, sizeof prefix - 1U, 100);
-        const char *name = umodule_load_error_name(lerr);
+        const char *name = uchunk_load_error_name(lerr);
         HAL_UART_Transmit(&huart1, (const uint8_t *)name, strlen(name), 100);
         if (errbuf[0] != '\0') {
             HAL_UART_Transmit(&huart1, (const uint8_t *)" - ", 3U, 100);

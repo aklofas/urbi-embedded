@@ -48,20 +48,20 @@ static UEmitError compile_only(UVM *vm, const char *src)
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return EMIT_AST_ERROR;
         }
         UEmitError err = uemit_statement(&e, node);
         if (err != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return err;
         }
         uarena_reset(&arena);
     }
     UEmitError final_err = uemit_finish(&e);
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     return final_err;
 }
 
@@ -81,25 +81,25 @@ static int compile_and_run(UVM *vm, const char *src)
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         if (uemit_statement(&e, node) != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         uarena_reset(&arena);
     }
     if (uemit_finish(&e) != EMIT_OK) {
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         return URBI_ERR_COMPILE;
     }
     UValue out = {0};
     int rc = urbi_run_chunk(vm, NULL, &module, &out);
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     return rc;
 }
 

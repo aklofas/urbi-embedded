@@ -49,7 +49,7 @@ UTEST(uproto_root_of_routing)
     UASSERT(uproto_root_of(NULL)    == NULL);
 }
 
-/* Probe the rescue path: if root_proto->refcount > 0 when umodule_destroy is
+/* Probe the rescue path: if root_proto->refcount > 0 when uchunk_destroy is
  * called with a non-NULL vm, the root_proto is rescued to vm->rescued_protos.
  * vm_destroy then frees the rescued root_proto. */
 UTEST(umodule_destroy_rescues_when_refcount_nonzero)
@@ -78,14 +78,14 @@ UTEST(umodule_destroy_rescues_when_refcount_nonzero)
     /* vm->rescued_protos starts NULL. */
     UASSERT(vm.rescued_protos == NULL);
 
-    umodule_destroy(m, &vm);  /* host releases ref — vm != NULL → rescue path */
+    uchunk_destroy(m, &vm);  /* host releases ref — vm != NULL → rescue path */
 
     /* Task 9 rescue path: root_proto must now be on vm->rescued_protos. */
     UASSERT(vm.rescued_protos == rp);
     /* module->root_proto detached. */
     UASSERT(m->root_proto == NULL);
 
-    /* Release the heap UModule struct (zeroed by umodule_destroy_internal). */
+    /* Release the heap UModule struct (zeroed by uchunk_destroy_internal). */
     vm.alloc_fn(m, 0, vm.alloc_ud);
 
     /* urbi_vm_destroy must free rescued_protos (rp) cleanly — no leaks. */
@@ -101,10 +101,10 @@ UTEST(umodule_destroy_immediate_when_refcount_zero)
     UASSERT(m != NULL);
     memset(m, 0, sizeof(UModule));
 
-    /* refcount == 0 (no strand binding); umodule_destroy frees sub-buffers
+    /* refcount == 0 (no strand binding); uchunk_destroy frees sub-buffers
      * and zeroes the struct immediately (legacy behavior unchanged).
      * The UModule struct allocation itself is caller-owned; free it here. */
-    umodule_destroy(m, &vm);
+    uchunk_destroy(m, &vm);
     vm.alloc_fn(m, 0, vm.alloc_ud);  /* release the heap UModule struct */
 
     urbi_vm_destroy(&vm);
@@ -133,7 +133,7 @@ UTEST(refcount_bump_decrement_via_strand_binding)
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -142,9 +142,9 @@ void test_module_refcount_suite(void) {
               refcount_lives_on_root_proto);
     utest_run("module_refcount: uproto_root_of routing",
               uproto_root_of_routing);
-    utest_run("module_refcount: umodule_destroy rescues when refcount nonzero",
+    utest_run("module_refcount: uchunk_destroy rescues when refcount nonzero",
               umodule_destroy_rescues_when_refcount_nonzero);
-    utest_run("module_refcount: umodule_destroy immediate when refcount zero",
+    utest_run("module_refcount: uchunk_destroy immediate when refcount zero",
               umodule_destroy_immediate_when_refcount_zero);
     utest_run("module_refcount: bump/decrement via strand binding",
               refcount_bump_decrement_via_strand_binding);

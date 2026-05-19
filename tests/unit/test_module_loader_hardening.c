@@ -109,9 +109,9 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     buf[off++] = 0;                          /* nested.nparams */
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T78 (Wave-4): deeply-nested closure verifier sanity (regression) ---
@@ -153,9 +153,9 @@ UTEST(deeply_nested_closure_verifier) {
     off = hard_put_varint(buf, off, 0);      /* nested_count = 0 */
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T77 (Wave-4): ic_names cross-validation ---
@@ -198,9 +198,9 @@ UTEST(ic_names_with_invalid_indices_rejected) {
     off = hard_put_varint(buf, off, 0);      /* nested_count */
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T76 (MOD-019): n_const cap is strictly `> UINT16_MAX + 1` (not `>=`) ---
@@ -228,9 +228,9 @@ UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
     off = hard_put_varint(buf, off, 65537U); /* n_const > cap */
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T75 (MOD-018): n_abs capped at <= instr_count --- */
@@ -256,9 +256,9 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     off = hard_put_varint(buf, off, 2);      /* n_abs = 2 (> n_instr=1) */
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T72 (MOD-004): module_grow rejects target * elem_size overflow ---
@@ -286,10 +286,10 @@ UTEST(module_grow_rejects_overflow) {
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     /* T74 caps the count first; T72 fallback is also acceptable. */
     UASSERT(rc == UCHUNK_LOAD_OVERSIZED || rc == UCHUNK_LOAD_OOM);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
@@ -310,25 +310,25 @@ UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
 
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, buf, off, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_OVERSIZED, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T73 (MOD-007): deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG --- */
 UTEST(deserialize_null_buf_returns_invalid_arg) {
     UModule m = {0};
-    UChunkLoadError rc = umodule_deserialize(&m, NULL, 64, NULL, 0);
+    UChunkLoadError rc = uchunk_deserialize(&m, NULL, 64, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_INVALID_ARG, rc);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T71 (MOD-001 + MOD-002): partial-failure destroy idempotent ---
  *
  * Truncate a serialized module mid-decode at multiple offsets; on
- * deserialize failure call umodule_destroy.  Run under ASan / valgrind
+ * deserialize failure call uchunk_destroy.  Run under ASan / valgrind
  * to catch double-free or leaks.  The v0.5.6 MOD-039 docstring claims:
- *   "module may hold partial buffers on error; umodule_destroy is safe
+ *   "module may hold partial buffers on error; uchunk_destroy is safe
  *    in either case."
  * This test verifies the implementation matches that claim. */
 UTEST(deserialize_partial_failure_destroy_idempotent) {
@@ -341,17 +341,17 @@ UTEST(deserialize_partial_failure_destroy_idempotent) {
     size_t i;
     for (i = 1; i < total; i++) {
         UModule m = {0};
-        UChunkLoadError rc = umodule_deserialize(&m, buf, total - i, NULL, 0);
+        UChunkLoadError rc = uchunk_deserialize(&m, buf, total - i, NULL, 0);
         UASSERT(rc != UCHUNK_LOAD_OK);
-        umodule_destroy(&m, NULL);   /* must not double-free */
-        umodule_destroy(&m, NULL);   /* idempotent on already-destroyed module */
+        uchunk_destroy(&m, NULL);   /* must not double-free */
+        uchunk_destroy(&m, NULL);   /* idempotent on already-destroyed module */
     }
 
     /* Successful deserialize -> destroy -> destroy must also be idempotent. */
     UModule m = {0};
-    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&m, buf, total, NULL, 0));
-    umodule_destroy(&m, NULL);
-    umodule_destroy(&m, NULL);
+    UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&m, buf, total, NULL, 0));
+    uchunk_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 void test_module_loader_hardening_suite(void);

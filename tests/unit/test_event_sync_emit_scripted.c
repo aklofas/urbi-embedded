@@ -97,7 +97,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_CLOSURE, (int)closure_val.kind);
     if (rc != URBI_OK || closure_val.kind != UVAL_CLOSURE) {
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         uarena_destroy(&arena);
         urbi_vm_destroy(&vm);
         return;
@@ -110,7 +110,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
     if (e == NULL) {
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         uarena_destroy(&arena);
         urbi_vm_destroy(&vm);
         return;
@@ -156,7 +156,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     while (e->at_watchers_head != NULL)
         urbi_watcher_unregister_internal(&vm, e->at_watchers_head);
     ustrand_destroy(&inst_strand, &vm);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

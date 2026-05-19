@@ -56,7 +56,7 @@ static UEmitError gl_ctx_run(GlCtx *c)
 static void gl_ctx_destroy(GlCtx *c)
 {
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module, NULL);
+    uchunk_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 

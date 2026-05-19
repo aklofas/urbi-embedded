@@ -5,7 +5,7 @@
 #include "runtime/umacros.h"
 #include "value/uvarint.h"
 #include "uopcode_shape.h"
-#include "vm/uvm.h"               /* struct UVM access for umodule_destroy rescue path */
+#include "vm/uvm.h"               /* struct UVM access for uchunk_destroy rescue path */
 #include "object/uchunk_instance.h" /* UChunkInstance: unlink on destroy (§5.4) */
 #include "realm/urealm.h"            /* URealm.loaded_protos_head: unlink on destroy */
 
@@ -57,10 +57,10 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 }
 #endif  /* __STDC_HOSTED__ */
 
-/* Forward declaration — umodule_destroy_internal is defined below, after
- * uproto_destroy_buffers.  The public umodule_destroy shim (v0.8.0
+/* Forward declaration — uchunk_destroy_internal is defined below, after
+ * uproto_destroy_buffers.  The public uchunk_destroy shim (v0.8.0
  * deferred-destroy) calls into this. */
-static void umodule_destroy_internal(UModule *module, struct UVM *vm);
+static void uchunk_destroy_internal(UModule *module, struct UVM *vm);
 
 /* Resolve the effective allocator for a module. */
 static UChunkAllocFn module_allocator(const UModule *c) {
@@ -130,7 +130,7 @@ static UChunkLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
 
 /* MOD-032: free a single buffer through `alloc`, skipping NULL.
  * Centralizes the `if (p != NULL) (void)alloc(p, 0, ud);` pattern that
- * appears 6× in umodule_destroy (and 5× in uproto_destroy_buffers,
+ * appears 6× in uchunk_destroy (and 5× in uproto_destroy_buffers,
  * which we leave alone for surgical scope).  The pointer is not NULLed
  * because both call sites zero the containing struct via urbi_zero after
  * all frees complete. */
@@ -240,7 +240,7 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
      * prior pointer when it returns a different address, restoring would
      * mean re-allocating yet again — net cost higher than carrying the
      * benign over-cap.  The "benign over-cap" state is observed by:
-     *   - umodule_destroy: walks [0..nested_count) only.
+     *   - uchunk_destroy: walks [0..nested_count) only.
      *   - serialize: writes nested_count, not nested_cap.
      *   - subsequent uproto_alloc_nested: enters the grow branch
      *     only when nested_count >= nested_cap, which now skips the
@@ -259,7 +259,7 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
     proto->refcount = 0U;
 
     /* v0.8.5: assign DFS pre-order serial.  Root's ic_index = 0 was set at
-     * root-proto allocation (uemit_init / umodule_deserialize); each call
+     * root-proto allocation (uemit_init / uchunk_deserialize); each call
      * here produces the next available serial.  The first nested
      * allocation produces ic_index = 1 because next_proto_serial starts
      * at 0 via the UModule zero-init. */
@@ -464,7 +464,7 @@ static UChunkLoadError decode_constants_into(MDecCtx *d,
              * allocate a NUL-terminated buffer via the module allocator and
              * record ownership with the _pad[0] = 1 marker.  Module-instance
              * create (or any future fixup pass) interns the bytes against
-             * the runtime VM and clears the marker.  umodule_destroy walks
+             * the runtime VM and clears the marker.  uchunk_destroy walks
              * constants and frees any v.p whose owner-flag is still set. */
             uint64_t slen = 0;
             rc = module_decode_varint_u(d->buf + d->off, d->size - d->off,
@@ -700,7 +700,7 @@ static UChunkLoadError decode_ic_names_into(MDecCtx *d,
     if (alloc == NULL) return UCHUNK_LOAD_OOM;
     char **strs = (char **)alloc(NULL, (size_t)count * sizeof(char *), alloc_ud);
     if (strs == NULL) return UCHUNK_LOAD_OOM;
-    /* Zero-init so partial-fail cleanup (umodule_destroy /
+    /* Zero-init so partial-fail cleanup (uchunk_destroy /
        uproto_destroy_buffers) walks well-defined NULL slots. */
     for (uint64_t k = 0; k < count; k++) strs[k] = NULL;
     *out_strs = strs;
@@ -1113,7 +1113,7 @@ static void set_root_backptr_recursive(UProto *node, UProto *root) {
 
 /* --- Public API --- */
 
-UChunkLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
+UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap) {
     /* errmsg/errcap contract: the (NULL, 0) pair suppresses diagnostics; any
      * other shape — including (non-NULL, 0) — is silently accepted as
@@ -1201,8 +1201,8 @@ UChunkLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t 
  * Called by ustrand_destroy and the fatal-loader early-discharge path
  * (uchunk.c) when we hold the still-valid module pointer.
  * Decrements root_proto->refcount; if it reaches 0 and the self-link
- * sentinel is set (umodule_destroy was called with vm=NULL), fires
- * umodule_destroy_internal immediately.
+ * sentinel is set (uchunk_destroy was called with vm=NULL), fires
+ * uchunk_destroy_internal immediately.
  *
  * Task 11: UModule.destroy_requested deleted.  The vm=NULL deferred path
  * sets root_proto->next_alloc = root_proto (self-link sentinel) instead.
@@ -1218,7 +1218,7 @@ uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
      * the sentinel is set, perform the actual internal free.  m may be NULL
      * if the module shell has already been freed via that path. */
     if (root_proto->refcount == 0U && root_proto->next_alloc == root_proto) {
-        /* Deferred-destroy triggered: the host already called umodule_destroy
+        /* Deferred-destroy triggered: the host already called uchunk_destroy
          * with vm=NULL (self-link sentinel path) while a strand was alive.
          * Now that the last strand-bind ref is gone, perform the actual free.
          * Clear sentinel first so uproto_destroy_buffers can walk
@@ -1233,7 +1233,7 @@ uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
     }
     /* When refcount hits 0 and no self-link sentinel: the module shell is still
      * owned by the host.  Do not auto-destroy — the host is responsible for
-     * calling umodule_destroy explicitly.  If the host never calls it, the
+     * calling uchunk_destroy explicitly.  If the host never calls it, the
      * module buffers are freed at vm_destroy via vm->rescued_protos or simply
      * left for the host to manage (stack/static storage).  The refcount reaching
      * zero is only a signal that no strands are currently bound; it does not
@@ -1245,7 +1245,7 @@ uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
  *   from module->nested[] when its UClosure is captured by a watcher
  *   (transferring ownership from the module to the watcher pool).  After
  *   detach, nested[k] reads NULL.  This is the expected steady-state for any
- *   chunk that installed reactive watchers — umodule_destroy must skip NULL
+ *   chunk that installed reactive watchers — uchunk_destroy must skip NULL
  *   slots without freeing them, since the watcher's pool_free now owns
  *   that proto and will free it on watcher recycle.
  *
@@ -1259,22 +1259,22 @@ uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
 /* v0.8.1 Phase 2 (Variant B fusion): deferred-destroy check reads root_proto->refcount.
  * Strand-bind refs now land on root_proto (not module->refcount), so the "are
  * any strands still alive?" test must check root_proto.  Host's existing pattern
- * (umodule_destroy after urbi_vm_destroy) still works: vm_destroy kills all strands
+ * (uchunk_destroy after urbi_vm_destroy) still works: vm_destroy kills all strands
  * first → root_proto->refcount drops to 0 → immediate free.
  *
  * module->refcount is always 0 after Phase 2 redirect (nothing bumps it);
  * it is retained in the struct until Task 11 deletes it. */
 void
-umodule_destroy(UModule *module, struct UVM *vm)
+uchunk_destroy(UModule *module, struct UVM *vm)
 {
     if (module == NULL) return;
     /* Variant B coexistence path (Phase 2 Task 9 of v0.8.1-uproto-root):
      * when root_proto->refcount > 0 (a strand is still alive), rescue the
      * whole root_proto to vm->rescued_protos.  The root_proto carries ownership
      * of nested[] and all chunk-top buffers; the module shell fields are
-     * NULLed so umodule_destroy_internal does not double-free them.
+     * NULLed so uchunk_destroy_internal does not double-free them.
      *
-     * The per-nested rescue path in umodule_destroy_internal (vm->stdlib_protos)
+     * The per-nested rescue path in uchunk_destroy_internal (vm->stdlib_protos)
      * still runs for the remaining (NULLed) nested[] and buffers — it is a
      * no-op since all the pointers are now NULL.  Coexistence is safe because
      * the two lists are independent; Task 10 removes the per-nested path once
@@ -1332,17 +1332,17 @@ umodule_destroy(UModule *module, struct UVM *vm)
             return;
         }
     }
-    umodule_destroy_internal(module, vm);
+    uchunk_destroy_internal(module, vm);
 }
 
-static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
+static void uchunk_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
 
     /* §5.4: unlink any UChunkInstances bound to this module from
      * vm->module_instances_head BEFORE freeing module buffers.  Without this,
      * instances are left with mi->module pointing to freed memory — a
      * dormant dangling-pointer bug masked previously because vm_destroy calls
-     * urbi_gc_destroy (which sweeps GC cells) before any umodule_destroy.
+     * urbi_gc_destroy (which sweeps GC cells) before any uchunk_destroy.
      * Mid-session module destroy (e.g. urbi_unload) hits this path live.
      * The instance cell itself is GC-managed; unlinking it here allows the
      * next GC sweep to reclaim it.  Setting mi->module = NULL is defensive:
@@ -1363,10 +1363,10 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     }
 
     /* Unlink from owning_realm's loaded_protos_head list before freeing.
-     * Without this, direct umodule_destroy calls leave stale pointers in the
+     * Without this, direct uchunk_destroy calls leave stale pointers in the
      * realm list, which urbi_realm_destroy's walk would then dereference
      * (use-after-free).  urbi_unload already does this unlink; doing it here
-     * too makes direct umodule_destroy callers safe.  Idempotent: if
+     * too makes direct uchunk_destroy callers safe.  Idempotent: if
      * owning_realm is NULL (already unlinked by urbi_unload), skip.
      * v0.9.0-repl Task 12. */
     if (module->owning_realm != NULL) {
@@ -1394,7 +1394,7 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
          * The per-nested rescue walk (vm->stdlib_protos) is deleted — under
          * Variant B Option (a) nested refcounts are always 0 at this point;
          * whole-root_proto rescue via vm->rescued_protos handles surviving
-         * closures (see umodule_destroy). */
+         * closures (see uchunk_destroy). */
         if (module->root_proto != NULL) {
             uproto_destroy_buffers(module->root_proto, alloc, module->alloc_ud);
             alloc(module->root_proto, 0, module->alloc_ud);
@@ -1406,7 +1406,7 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     urbi_zero(module, sizeof(*module));
 }
 
-const char *umodule_load_error_name(UChunkLoadError code) {
+const char *uchunk_load_error_name(UChunkLoadError code) {
     switch (code) {
     case UCHUNK_LOAD_OK:                  return "UCHUNK_LOAD_OK";
     case UCHUNK_LOAD_BAD_MAGIC:           return "UCHUNK_LOAD_BAD_MAGIC";

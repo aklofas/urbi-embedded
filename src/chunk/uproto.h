@@ -160,7 +160,7 @@ typedef struct UProto {
      *     next_alloc threads it onto vm->rescued_protos.
      *     NULL while the proto is still owned by its originating UModule.
      *
-     * (b) Self-link sentinel — set by umodule_destroy(m, NULL) (the vm=NULL
+     * (b) Self-link sentinel — set by uchunk_destroy(m, NULL) (the vm=NULL
      *     defensive path) when root_proto->refcount > 0 but no vm is available
      *     to rescue immediately.  next_alloc == root_proto itself signals
      *     "destroy pending — promote to vm->rescued_protos when refcount hits 0
@@ -176,13 +176,13 @@ typedef struct UProto {
      * on every nested proto at allocation time.  Used by Phase 2 refcount
      * bumpers to find the canonical refcount via (proto->root ?: proto).
      * Zero-initialized at alloc time; populated by uemit_finish and
-     * umodule_deserialize post-pass. */
+     * uchunk_deserialize post-pass. */
     struct UProto *root;
 
     /* [runtime-only, NOT serialized] Per-root-proto reference count for the
      * module-grain closure lifetime fix (v0.7.3 + v0.8.1).  Bumped at every
      * strand bind (uproto_root_of(proto)->refcount); decremented when the
-     * strand or closure is released.  umodule_destroy checks this counter:
+     * strand or closure is released.  uchunk_destroy checks this counter:
      * if 0, the root_proto is freed normally; if non-zero, it is rescued onto
      * vm->rescued_protos so surviving closures keep a valid backing proto.
      *

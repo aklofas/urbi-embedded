@@ -83,7 +83,7 @@ UTEST(strand_bind_bumps_root_proto)
     UASSERT_EQ((unsigned)0, (unsigned)rp->refcount);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -96,7 +96,7 @@ UTEST(strand_bind_bumps_root_proto)
  * closure when it becomes unreachable; uproto_root_of dec is called by the
  * uclosure_destroy finalizer.
  *
- * The correct full lifecycle: umodule_destroy triggers rescue (root rescued to
+ * The correct full lifecycle: uchunk_destroy triggers rescue (root rescued to
  * vm->rescued_protos), GC sweep decs via uproto_root_of (§3.7 ordering
  * invariant), then rescued_protos sweep frees root.  No UAF. */
 UTEST(op_fork_child_bumps_root_proto)
@@ -132,11 +132,11 @@ UTEST(op_fork_child_bumps_root_proto)
     /* Under Variant B: the closure for `& 2` bumped root_proto.refcount via
      * uproto_root_of at alloc time.  UClosure is GC-managed (v0.8.4 Step C-2);
      * vm->stdlib_closures was deleted at Step C-3.  The full lifecycle
-     * (umodule_destroy + vm_destroy) must complete without UAF. */
+     * (uchunk_destroy + vm_destroy) must complete without UAF. */
 
     uarena_destroy(&arena);
-    /* umodule_destroy: rescue fires because root_proto.refcount > 0. */
-    umodule_destroy(&module, &vm);
+    /* uchunk_destroy: rescue fires because root_proto.refcount > 0. */
+    uchunk_destroy(&module, &vm);
     /* vm_destroy: closure sweep dec's via uproto_root_of BEFORE rescued_protos
      * sweep frees rp (§3.7 ordering invariant).  Must not crash or UAF. */
     urbi_vm_destroy(&vm);
@@ -168,7 +168,7 @@ UTEST(module_refcount_lives_on_root_proto)
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -176,11 +176,11 @@ UTEST(module_refcount_lives_on_root_proto)
  *
  * Case 4: local closure (no escape).  After strand exits, root_proto->refcount
  * must be 0 (Variant B Option (a): no slot-implicit ref, closure ref discharged
- * at strand exit).  umodule_destroy must not trigger rescue.
+ * at strand exit).  uchunk_destroy must not trigger rescue.
  *
  * Case 5: escaping closure (stored in realm global).  After strand exits,
  * root_proto->refcount > 0 (vm_alloc_closure bumped via uproto_root_of).
- * umodule_destroy must rescue root_proto.  vm_destroy must dec via
+ * uchunk_destroy must rescue root_proto.  vm_destroy must dec via
  * uproto_root_of before freeing rescued_protos (§3.7 ordering invariant). */
 
 UTEST(closure_alloc_bumps_root_via_backptr)
@@ -196,7 +196,7 @@ UTEST(closure_alloc_bumps_root_via_backptr)
 
     /* Closure alloc: vm_alloc_closure bumps root_proto.refcount via uproto_root_of.
      * UClosure is GC-managed (v0.8.4 Step C-2; vm->stdlib_closures deleted at C-3).
-     * umodule_destroy rescues root_proto; vm_destroy completes the lifecycle
+     * uchunk_destroy rescues root_proto; vm_destroy completes the lifecycle
      * per §3.7 ordering. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "var f = function () { 1 }; f()",
@@ -225,9 +225,9 @@ UTEST(closure_alloc_bumps_root_via_backptr)
      * but the closure's ref keeps root alive until GC collection. */
     UASSERT((unsigned)rp->refcount > 0U);
 
-    /* Full lifecycle: umodule_destroy rescues root_proto because refcount > 0. */
+    /* Full lifecycle: uchunk_destroy rescues root_proto because refcount > 0. */
     struct UProto *saved_root = rp;
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     UASSERT(vm.rescued_protos != NULL);
     UASSERT_EQ((void *)saved_root, (void *)vm.rescued_protos);
 
@@ -267,7 +267,7 @@ UTEST(escaping_closure_rescues_whole_root_proto)
 
     /* Destroy module shell — rescue path triggers. */
     struct UProto *saved_root = m->root_proto;
-    umodule_destroy(m, &vm);
+    uchunk_destroy(m, &vm);
     /* rescued_protos must be non-NULL after rescue. */
     UASSERT(vm.rescued_protos != NULL);
     UASSERT_EQ((void *)vm.rescued_protos, (void *)saved_root);
@@ -281,9 +281,9 @@ UTEST(escaping_closure_rescues_whole_root_proto)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 6: umodule_destroy with vm=NULL when a closure is still live.
+/* Case 6: uchunk_destroy with vm=NULL when a closure is still live.
  *
- * Verifies the self-link sentinel mechanism: umodule_destroy(m, NULL) must
+ * Verifies the self-link sentinel mechanism: uchunk_destroy(m, NULL) must
  * not crash, must mark root_proto with next_alloc == root_proto (sentinel),
  * and the subsequent urbi_vm_destroy must sweep cleanly (no leak per ASan). */
 UTEST(vm_null_destroy_with_live_closure)
@@ -315,7 +315,7 @@ UTEST(vm_null_destroy_with_live_closure)
 
     /* Call destroy WITH NULL vm (defensive contract path).
      * Must not crash; must set the self-link sentinel. */
-    umodule_destroy(m, NULL);
+    uchunk_destroy(m, NULL);
     /* Self-link sentinel: root_proto stays attached to the module shell
      * (module->root_proto is not NULLed on the vm=NULL path) and
      * next_alloc == root_proto signals pending rescue. */

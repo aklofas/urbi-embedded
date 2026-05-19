@@ -101,7 +101,7 @@ UTEST(at_event_brace_block_body_compiles)
     UASSERT_EQ(100LL, c.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -139,7 +139,7 @@ UTEST(at_cond_brace_block_body_compiles)
     UASSERT_EQ(1LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -177,7 +177,7 @@ UTEST(whenever_brace_block_body_compiles)
     UASSERT(fired.v.i >= 1);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -207,7 +207,7 @@ UTEST(at_event_brace_onleave_handler_compiles)
     UASSERT_EQ(URBI_OK, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

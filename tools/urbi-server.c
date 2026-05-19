@@ -144,7 +144,7 @@ static int run_boot_script(UVM *vm, const char *path) {
             rc = 1;
         }
     }
-    umodule_destroy(&module, vm);
+    uchunk_destroy(&module, vm);
     uarena_destroy(&arena);
     free(src);
     return rc;

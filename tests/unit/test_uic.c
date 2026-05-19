@@ -131,7 +131,7 @@ UTEST(module_instance_basic_create) {
     }
 
     urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -185,7 +185,7 @@ UTEST(module_instance_two_instances_independent) {
 
     urbi_module_instance_destroy(&vm, mi_b);
     urbi_module_instance_destroy(&vm, mi_a);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -206,7 +206,7 @@ UTEST(module_instance_zero_nested_protos) {
     UASSERT(mi->proto_instances->entries[0].ic_table == NULL);
 
     urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -232,7 +232,7 @@ UTEST(module_instance_proto_with_zero_ic_count) {
     UASSERT(mi->proto_instances->entries[1].ic_table == NULL);
 
     urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -540,12 +540,12 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].replace_cursor, 0);
 
     urbi_module_instance_destroy(&vm, mi);
-    /* Prevent umodule_destroy from freeing the static names[] array. */
+    /* Prevent uchunk_destroy from freeing the static names[] array. */
     rp.ic_names = NULL;
     rp.ic_count = 0;
     /* root_proto is stack-allocated; detach before destroy to avoid double-free. */
     m.root_proto = NULL;
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -620,7 +620,7 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
 
     urbi_module_instance_destroy(&vm_b, mi_b);
     urbi_module_instance_destroy(&vm_a, mi_a);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm_b);
     urbi_vm_destroy(&vm_a);
 }
@@ -645,8 +645,8 @@ UTEST(get_or_create_module_instance_caches_per_module) {
     UASSERT(a1 == a2);   /* same module → same instance */
     UASSERT(a1 != b1);   /* different module → different instance */
 
-    umodule_destroy(&m1, NULL);
-    umodule_destroy(&m2, NULL);
+    uchunk_destroy(&m1, NULL);
+    uchunk_destroy(&m2, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -670,7 +670,7 @@ UTEST(get_or_create_module_instance_isolated_per_vm) {
     UASSERT(vm_a.module_instances_head == mi_a);
     UASSERT(vm_b.module_instances_head == mi_b);
 
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm_b);
     urbi_vm_destroy(&vm_a);
 }
@@ -708,7 +708,7 @@ UTEST(determinism_checksum_includes_ic_state) {
     UASSERT(h_before != h_after);
 
     urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -771,7 +771,7 @@ UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     UASSERT(vm.module_instances_head != NULL);
     UASSERT(vm.module_instances_head->module == &m);
 
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

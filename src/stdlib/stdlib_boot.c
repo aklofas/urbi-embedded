@@ -36,7 +36,7 @@
 #endif
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
-#include "chunk/uchunk.h"          /* UModule, umodule_deserialize, umodule_destroy */
+#include "chunk/uchunk.h"          /* UModule, uchunk_deserialize, uchunk_destroy */
 #include "object/uchunk_instance.h" /* urbi_get_or_create_module_instance */
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
@@ -135,26 +135,26 @@ urbi_stdlib_boot(UVM *vm)
         }
         UModule *m = vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
         if (m == NULL) return URBI_ERR_OOM;
-        /* Zero-init: umodule_destroy on a zero UModule is safe (header
+        /* Zero-init: uchunk_destroy on a zero UModule is safe (header
          * §470).  urbi_zero used (not memset) per freestanding
          * discipline. */
         urbi_zero(m, sizeof(UModule));
-        /* Freestanding: umodule_deserialize requires module->alloc_fn for
+        /* Freestanding: uchunk_deserialize requires module->alloc_fn for
          * the internal proto + buffer allocations.  Hosted builds fall
          * back to stdlib_alloc inside module_allocator(); freestanding
          * does not and returns UCHUNK_LOAD_OOM if alloc_fn is NULL.  Inherit
          * the VM's allocator so the stdlib module shares the VM heap. */
         m->alloc_fn = vm->alloc_fn;
         m->alloc_ud = vm->alloc_ud;
-        UChunkLoadError lerr = umodule_deserialize(
+        UChunkLoadError lerr = uchunk_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
         if (lerr != UCHUNK_LOAD_OK) {
-            umodule_destroy(m, vm);
+            uchunk_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
         if (urbi_get_or_create_module_instance(vm, m) == NULL) {
-            umodule_destroy(m, vm);
+            uchunk_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_OOM;
         }

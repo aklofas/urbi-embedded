@@ -223,7 +223,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * to the prior formula).  For recursive trees it includes grandchildren.
      * Fall back to the flat formula if total_proto_count is 0 — that
      * happens only for hand-wired test modules that bypass uemit_finish
-     * and umodule_deserialize. */
+     * and uchunk_deserialize. */
     uint16_t n = m->total_proto_count;
     if (n == 0U) {
         n = (uint16_t)(1U + root_nested_count);

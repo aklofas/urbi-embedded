@@ -5,7 +5,7 @@
  *
  * The unsafe shape: utest_e2e_compile_and_run (bare, not _with_module)
  * compiles a chunk that installs a closure into a realm global and then
- * calls umodule_destroy.  If that closure still holds a UProto pointer
+ * calls uchunk_destroy.  If that closure still holds a UProto pointer
  * into the freed module's nested[] array, any subsequent dispatch through
  * it is a heap-use-after-free.
  *

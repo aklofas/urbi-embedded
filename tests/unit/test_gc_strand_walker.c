@@ -254,7 +254,7 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     UASSERT(vm.global_realm->strands_head == NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

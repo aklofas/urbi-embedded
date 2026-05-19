@@ -59,7 +59,7 @@ make_object_with_x_slot(UVM *vm)
 }
 
 /* Set up a UModule with ic_count=1 for the root proto ("x" IC site 0).
- * Caller must umodule_destroy(&m) when done.
+ * Caller must uchunk_destroy(&m) when done.
  * Returns 1 on success, 0 on failure. */
 static int
 make_module_with_one_ic_site(UVM *vm, UModule *m, uint32_t *instrs_out,
@@ -153,7 +153,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
-    /* Module IC names are heap-allocated in this helper; umodule_destroy
+    /* Module IC names are heap-allocated in this helper; uchunk_destroy
      * would free instructions (stack here), so only free ic_names + root_proto manually. */
     free(m.root_proto->ic_names);
     m.root_proto->ic_names = NULL;

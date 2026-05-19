@@ -2,7 +2,7 @@
 /* test_rescued_protos — Phase 2 Task 9 of v0.8.1-uproto-root (re-ordered
  * to land before Task 8 per controller plan revision).
  *
- * Verifies the whole-root_proto rescue path: when umodule_destroy fires
+ * Verifies the whole-root_proto rescue path: when uchunk_destroy fires
  * while root_proto->refcount > 0 (strand still bound), the root_proto is
  * moved to vm->rescued_protos and freed cleanly at vm_destroy (no ASan
  * leaks, no double-frees).
@@ -66,7 +66,7 @@ rp_compile_chunk(UVM *vm, UModule *out_mod, const char *src)
 
 /* ---- test cases ---- */
 
-/* Case 1: when root_proto->refcount > 0 (strand still bound), umodule_destroy
+/* Case 1: when root_proto->refcount > 0 (strand still bound), uchunk_destroy
  * must rescue root_proto to vm->rescued_protos rather than freeing it.
  * The strand is then destroyed (dec refcount), and vm_destroy frees
  * rescued_protos cleanly. */
@@ -94,7 +94,7 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
 
     /* Destroy the module while the strand is still alive.
      * Should rescue root_proto, NOT free it. */
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
 
     /* rescued_protos must be non-NULL and point to the rescued root_proto. */
     UASSERT(vm.rescued_protos != NULL);
@@ -107,7 +107,7 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 2: when root_proto->refcount == 0, umodule_destroy must NOT rescue
+/* Case 2: when root_proto->refcount == 0, uchunk_destroy must NOT rescue
  * anything — the normal free path runs and vm->rescued_protos stays NULL. */
 UTEST(no_rescue_when_refcount_zero)
 {
@@ -122,7 +122,7 @@ UTEST(no_rescue_when_refcount_zero)
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     /* Destroy module — no strand bound, refcount is 0, normal path runs. */
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
 
     /* Nothing should have been rescued. */
     UASSERT(vm.rescued_protos == NULL);
@@ -154,11 +154,11 @@ UTEST(two_modules_one_rescued_one_normal)
     UASSERT_EQ((unsigned)0, (unsigned)mb.root_proto->refcount);
 
     /* Destroy B first (normal path, no rescue). */
-    umodule_destroy(&mb, &vm);
+    uchunk_destroy(&mb, &vm);
     UASSERT(vm.rescued_protos == NULL);
 
     /* Destroy A while strand alive (rescue path). */
-    umodule_destroy(&ma, &vm);
+    uchunk_destroy(&ma, &vm);
     UASSERT(vm.rescued_protos != NULL);
     UASSERT(vm.rescued_protos == saved_rp_a);
 

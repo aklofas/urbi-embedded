@@ -109,7 +109,7 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
      * (transient path), and uop_fork.c (child spawn).
      * Use s->root_proto (fast-path alias set at bind time); pass module so
      * uproto_strand_refcount_dec can fire the deferred-destroy if this was
-     * the last binding and the host already called umodule_destroy.
+     * the last binding and the host already called uchunk_destroy.
      * Null both fields after — prevents double-dec on pool recycle paths. */
     if (s->root_proto != NULL) {
         uproto_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);

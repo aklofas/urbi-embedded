@@ -54,7 +54,7 @@ static UEmitError slot_change_compile(const char *src,
 }
 
 static void slot_change_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }

@@ -85,7 +85,7 @@ UTEST(ustrand_has_root_proto_field)
     uchunk_loader_drive(&vm, s, &result);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -127,7 +127,7 @@ UTEST(root_proto_aliases_module_root_proto)
     urbi_strand_destroy(s);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -181,7 +181,7 @@ UTEST(fork_child_inherits_root_proto)
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

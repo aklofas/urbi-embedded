@@ -83,7 +83,7 @@ UTEST(loader_drive_completes_trivial_chunk)
      * The refcount discharge happens at strand_destroy time. */
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -127,7 +127,7 @@ UTEST(loader_drive_parks_on_sleep)
     urbi_strand_destroy(s);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -158,7 +158,7 @@ UTEST(run_chunk_chunktop_amp_works)
     UASSERT_EQ((int64_t)2, b.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -192,7 +192,7 @@ UTEST(run_chunk_chunktop_comma_works)
     UASSERT_EQ((int64_t)100, b.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -226,7 +226,7 @@ UTEST(run_chunk_chain_call_forks)
     UASSERT_EQ((int64_t)8, b.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -259,13 +259,13 @@ UTEST(run_chunk_parks_on_waituntil)
 
     /* Note: we cannot let urbi_vm_destroy run with a parked strand AND
      * a heap-allocated module, because the parked strand keeps the
-     * module ref alive past umodule_destroy.  For this test we accept
+     * module ref alive past uchunk_destroy.  For this test we accept
      * the parked-forever strand will be torn down by urbi_vm_destroy
      * (which kills all realm strands first → drops bindings →
      * refcount → 0 → immediate free). */
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -296,7 +296,7 @@ UTEST(strand_create_for_module_returns_non_transient)
     UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

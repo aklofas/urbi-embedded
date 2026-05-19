@@ -558,7 +558,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * stdlib_module: heap-allocated UModule deserialized from the baked
      *   urbi_stdlib_bytecode blob during urbi_stdlib_boot.  NULL when the
      *   blob is empty (Phase 4 baseline) or boot has not run.  Owned by
-     *   the VM; freed via umodule_destroy + alloc_fn at urbi_vm_destroy.
+     *   the VM; freed via uchunk_destroy + alloc_fn at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
      * (last_recv removed at v1.6 S42 — method receivers are now passed
@@ -566,11 +566,11 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* stdlib_protos and stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root).
      * The whole-root_proto rescue path (vm->rescued_protos) is the sole mechanism. */
     /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
-     * objects rescued from umodule_destroy when root_proto->refcount > 0 at
+     * objects rescued from uchunk_destroy when root_proto->refcount > 0 at
      * destroy time (Phase 2 Task 9 of v0.8.1-uproto-root).
      *
      * When a module is destroyed while a strand still holds a reference to its
-     * root_proto, umodule_destroy detaches the root_proto (with all nested[]
+     * root_proto, uchunk_destroy detaches the root_proto (with all nested[]
      * and chunk-top buffer ownership) and threads it onto this list.  The
      * module shell (source_name and the UModule struct itself) is freed normally.
      *

@@ -72,7 +72,7 @@ UTEST(root_proto_owning_mi_populated)
     UASSERT(mod.root_proto->owning_module_instance == mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -100,7 +100,7 @@ UTEST(nested_proto_owning_mi_populated)
     verify_proto_owns(mod.root_proto, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -131,7 +131,7 @@ UTEST(recursive_nested_owning_mi_populated)
     verify_proto_owns(mod.root_proto, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -163,7 +163,7 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     /* Deserialize into a fresh module. */
     UModule m2 = {0};
     char errmsg[128];
-    UChunkLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
+    UChunkLoadError load_rc = uchunk_deserialize(&m2, buf, (size_t)wrote,
                                                    errmsg, sizeof errmsg);
     UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
     UASSERT(m2.root_proto != NULL);
@@ -174,8 +174,8 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     verify_proto_owns(m2.root_proto, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&m1, &vm);
-    umodule_destroy(&m2, &vm);
+    uchunk_destroy(&m1, &vm);
+    uchunk_destroy(&m2, &vm);
     urbi_vm_destroy(&vm);
 }
 

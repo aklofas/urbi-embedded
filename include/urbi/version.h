@@ -18,7 +18,7 @@
  * PATCH bumps MAY break ABI per standard semver convention — each bump
  * enumerates breakages in CHANGELOG. Uses to date:
  *   1. v0.7.2-esp32 — S41 urbi_set_diag_fn addition (0/7/1 → 0/7/3).
- *   2. v0.7.3-bugfixes — umodule_destroy signature change (0/7/3 → 0/7/4).
+ *   2. v0.7.3-bugfixes — uchunk_destroy signature change (0/7/3 → 0/7/4).
  *   3. v0.8.0-loader-strand — UModule.refcount + destroy_requested fields;
  *      urbi_run_chunk const-revert; URBI_ERR_LOADER_BUDGET addition
  *      (0/7/4 → 0/7/5).

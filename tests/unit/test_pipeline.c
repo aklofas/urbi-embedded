@@ -63,7 +63,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return vm_rc;

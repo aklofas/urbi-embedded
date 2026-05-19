@@ -59,7 +59,7 @@ static UEmitError watcher_compile(const char *src,
 }
 
 static void watcher_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }
@@ -202,7 +202,7 @@ UTEST(emit_at_with_assign_in_cond_warns) {
             strstr(e.diag_buf[0].message, "feedback loop") != NULL);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

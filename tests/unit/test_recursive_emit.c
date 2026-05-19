@@ -67,7 +67,7 @@ UTEST(ic_index_root_is_zero) {
     UASSERT_EQ(m.root_proto->ic_index, 0);
     UASSERT_EQ(m.next_proto_serial, 0);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -107,7 +107,7 @@ UTEST(ic_index_nested_increments_in_alloc_order) {
     UASSERT(p1->nested[0] == p3);
     UASSERT_EQ(p2->nested_count, 0);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -130,7 +130,7 @@ UTEST(total_proto_count_set_at_uemit_finish) {
     UASSERT_EQ(m.root_proto->nested_count, 3);
     UASSERT_EQ(m.total_proto_count, 4);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -166,7 +166,7 @@ UTEST(proto_instances_n_equals_total_proto_count) {
      * — identical for flat trees, diverges for recursive). */
     UASSERT_EQ(mi->proto_instances->n, 4);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -200,15 +200,15 @@ UTEST(verifier_accepts_emitted_module) {
 
     UModule m2 = {0};
     char errmsg[256] = {0};
-    UChunkLoadError lerr = umodule_deserialize(&m2, blob, (size_t)need,
+    UChunkLoadError lerr = uchunk_deserialize(&m2, blob, (size_t)need,
                                                 errmsg, sizeof(errmsg));
     UASSERT_EQ(lerr, UCHUNK_LOAD_OK);
     UASSERT(m2.root_proto != NULL);
     UASSERT_EQ(m2.total_proto_count, m.total_proto_count);
 
     free(blob);
-    umodule_destroy(&m2, &vm);
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m2, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -252,7 +252,7 @@ UTEST(emitter_produces_recursive_tree) {
     UASSERT(middle->root == m.root_proto);
     UASSERT(inner->root  == m.root_proto);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -290,7 +290,7 @@ UTEST(sibling_density_at_depth) {
     UASSERT_EQ(outer->nested_count, 50);
     UASSERT_EQ(m.total_proto_count, 52);  /* root + outer + 50 */
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -329,7 +329,7 @@ UTEST(mixed_tree_3x3) {
     }
     UASSERT_EQ(m.total_proto_count, 13);  /* 1 + 3 + 9 */
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -362,7 +362,7 @@ UTEST(ic_index_dense_and_dfs_preorder) {
     UASSERT_EQ(m.root_proto->nested[1]->nested[0]->ic_index, 4);
     UASSERT_EQ(m.total_proto_count, 5);
 
-    umodule_destroy(&m, &vm);
+    uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

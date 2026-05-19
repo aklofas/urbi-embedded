@@ -85,7 +85,7 @@ UTEST(amp_inside_function_called_from_at_handler)
     UASSERT_EQ(3LL, rhs.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -122,7 +122,7 @@ UTEST(amp_at_chunktop_works_v0_8_0)
     UASSERT_EQ((int64_t)2, b.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

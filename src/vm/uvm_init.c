@@ -32,7 +32,7 @@
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
-#include "chunk/uchunk.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
+#include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 
 #if __STDC_HOSTED__
@@ -461,7 +461,7 @@ void urbi_vm_destroy(UVM *vm) {
     /* Clear module_instances_head before GC destroy so that:
      *   (a) object_roots_walker stops shading now-unreachable UChunkInstance
      *       cells (harmless but tidy), and
-     *   (b) umodule_destroy_internal's vm->module_instances_head walk (Task 10)
+     *   (b) uchunk_destroy_internal's vm->module_instances_head walk (Task 10)
      *       skips the list instead of dereferencing GC-freed cells post-destroy.
      * The GC sweep will reclaim all UChunkInstance cells regardless; we only
      * clear the pointer so the walk in the stdlib teardown path below is safe. */
@@ -528,11 +528,11 @@ void urbi_vm_destroy(UVM *vm) {
          * UChunkInstance referencing this module has already been
          * reaped — no dangling ic_names back-reference can survive.
          *
-         * Ordering: BEFORE rescued_protos sweep below.  umodule_destroy may
+         * Ordering: BEFORE rescued_protos sweep below.  uchunk_destroy may
          * rescue a non-zero-refcount root_proto onto vm->rescued_protos; that
          * rescued proto is freed by the sweep that follows. */
         if (vm->stdlib_module != NULL) {
-            umodule_destroy(vm->stdlib_module, vm);
+            uchunk_destroy(vm->stdlib_module, vm);
             vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
             vm->stdlib_module = NULL;
         }
@@ -542,7 +542,7 @@ void urbi_vm_destroy(UVM *vm) {
 
         /* Phase 2 Task 9 (v0.8.1-uproto-root): free rescued whole root_protos.
          * Each entry is a root_proto that was detached from its UModule by
-         * umodule_destroy when root_proto->refcount > 0 (strand still alive).
+         * uchunk_destroy when root_proto->refcount > 0 (strand still alive).
          * The root_proto carries ownership of nested[] and all chunk-top buffers
          * (module shell was freed normally with those fields NULLed).
          *

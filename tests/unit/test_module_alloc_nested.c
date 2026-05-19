@@ -60,7 +60,7 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     module.alloc_fn = proto_oom_alloc;
     module.alloc_ud = &spy;
     /* Task 11: root_proto carries chunk-top data; alloc it outside the spy
-     * so the spy's new_call count is unaffected.  umodule_destroy frees it
+     * so the spy's new_call count is unaffected.  uchunk_destroy frees it
      * via the spy's free-path (n==0 → free(ptr)). */
     module.root_proto = (UProto *)calloc(1, sizeof(UProto));
     UASSERT(module.root_proto != NULL);
@@ -93,7 +93,7 @@ nested_proto_oom_after_grow_recovers_on_retry(void)
     UASSERT_EQ((long long)module.root_proto->nested_count, 1LL);
     UASSERT_EQ((void *)module.root_proto->nested[0], (void *)p2);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 /* Case 2: nested[] grow OOM (1st NEW alloc fails) leaves module untouched. */
@@ -121,7 +121,7 @@ nested_proto_oom_at_grow_keeps_module_pristine(void)
     UASSERT_EQ((long long)module.root_proto->nested_cap, 0LL);
     UASSERT_EQ((long long)module.root_proto->nested_count, 0LL);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 /* Case 3: serialize / iterate paths do not read beyond nested_count.
@@ -152,7 +152,7 @@ nested_over_cap_iteration_stops_at_count(void)
     /* Slots beyond nested_count are not initialised; we do NOT read them. */
     (void)cap_after_first;
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 void test_module_alloc_nested_suite(void)

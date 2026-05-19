@@ -138,7 +138,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         tight_count = run_to_quiescent(&vm, 1);
         UASSERT(tight_count > 0);
 
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);
     }
@@ -165,7 +165,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         loose_count = run_to_quiescent(&vm, 10000);
         UASSERT(loose_count > 0);
 
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);
     }
@@ -217,7 +217,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     }
     UASSERT(reached);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

@@ -50,7 +50,7 @@ static UEmitError diag_emit(const char *src, UEmitter *e_out,
 }
 
 static void diag_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }
@@ -86,7 +86,7 @@ UTEST(emit_diag_warn_records_message) {
     UASSERT(strstr(e.diag_buf[0].message, "test warning 42") != NULL);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -145,7 +145,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     UASSERT_EQ(3, e.diag_buf[2].line);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -168,7 +168,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UASSERT_EQ(0, e.diag_buf[0].col);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
