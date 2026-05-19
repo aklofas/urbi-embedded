@@ -549,68 +549,25 @@ dispatch:
                 vm_format_oom(vm, sizeof(UClosure));
                 HALT();
             }
-            /* v0.8.5: bind proto_inst via child_proto->ic_index.  ic_index
-             * is globally unique within ONE MODULE TREE (DFS pre-order,
-             * root = 0), so a single index works for both flat and recursive
-             * trees — replacing the prior `bx + 1` math.
+            /* v0.9.0-repl: cross-session-IC binding via per-UProto back-pointer.
+             * child_proto->owning_module_instance was stamped at instance
+             * creation (Task 2) and is the mi where this proto was born.
              *
-             * Cross-session subtlety (Phase 5 / Gap #1 — partial-bundle
-             * retained at v0.8.5): when a closure compiled in session A is
-             * called from session B, s->module_instance belongs to session B
-             * (with only its own root in entries[]), so the originating
-             * proto's ic_index is out of range there.  Fall back to the
-             * parent frame's closure's origin_module_instance — that was
-             * the active mi when the parent closure was compiled, and its
-             * entries[] array covers all protos from the originating module.
-             *
-             * (Truly retiring origin_module_instance requires a per-proto
-             * back-pointer to its owning module_instance — deferred to a
-             * follow-up tag per spec §7.3 Decision Register row 5.) */
-            {
-                struct UModuleInstance *mi = s->module_instance;
-                if (mi != NULL
-                        && mi->proto_instances != NULL
-                        && (size_t)child_proto->ic_index <
-                           (size_t)mi->proto_instances->n) {
-                    cl->proto_inst =
-                        &mi->proto_instances->entries[child_proto->ic_index];
-                } else if (s->frame_count > 0) {
-                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
-                    struct UModuleInstance *omi = par_cl
-                                                  ? par_cl->origin_module_instance
-                                                  : NULL;
-                    if (omi != NULL
-                            && omi->proto_instances != NULL
-                            && (size_t)child_proto->ic_index <
-                               (size_t)omi->proto_instances->n) {
-                        cl->proto_inst =
-                            &omi->proto_instances->entries[child_proto->ic_index];
-                    }
-                }
-                /* Otherwise proto_inst stays NULL; subsequent OP_GETSLOT
-                 * degrades to the megamorphic slow path. */
-            }
-
-            /* origin_module_instance carries forward (Partial bundle per
-             * spec §7.3 Decision Register row 5): cross-session calls
-             * resolve IC binding through this back-pointer to the
-             * originating session's mi.  Same fallback logic as proto_inst
-             * above, now using child_proto->ic_index. */
-            {
-                struct UModuleInstance *mi = s->module_instance;
-                if (s->frame_count > 0
-                        && !(mi != NULL
-                             && mi->proto_instances != NULL
-                             && (size_t)child_proto->ic_index <
-                                (size_t)mi->proto_instances->n)) {
-                    UClosure *par_cl = s->frames[s->frame_count - 1].closure;
-                    cl->origin_module_instance = par_cl
-                                                 ? par_cl->origin_module_instance
-                                                 : mi;
-                } else {
-                    cl->origin_module_instance = mi;
-                }
-            }
+             * Replaces the v0.8.5 partial-bundle fallback chain that tried
+             * s->module_instance first, then the parent closure's
+             * origin_module_instance.  Eliminates both the two-branch
+             * proto_inst binding AND the origin_module_instance propagation. */
+            struct UModuleInstance *omi = child_proto->owning_module_instance;
+            URBI_DISPATCH_ASSERT(omi != NULL);
+            URBI_DISPATCH_ASSERT(omi->proto_instances != NULL);
+            URBI_DISPATCH_ASSERT((size_t)child_proto->ic_index <
+                                 (size_t)omi->proto_instances->n);
+            cl->proto_inst =
+                &omi->proto_instances->entries[child_proto->ic_index];
+            /* TEMP: keep origin_module_instance populated until Task 8
+             * deletes the field.  This single assignment replaces the
+             * entire propagation chain that was here previously. */
+            cl->origin_module_instance = omi;
 
             /* Read nupvals pseudo-instructions. */
             {
