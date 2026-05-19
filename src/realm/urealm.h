@@ -144,6 +144,7 @@ void realm_list_walk_roots(struct UVM *vm, UGcRootCallback cb, void *ctx);
 URealm *urbi_realm_create(struct UVM *vm);
 void    urbi_realm_destroy(struct UVM *vm, URealm *realm);
 URealm *urbi_realm_global(struct UVM *vm);
+URealm *urbi_realm_create_repl(struct UVM *vm);
 
 /* VM-wide liveness inspection.
  * Reads vm->strand_runnable_count / vm->watcher_active_count /

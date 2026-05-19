@@ -107,6 +107,16 @@ void           urbi_realm_destroy(struct UVM *vm, struct URealm *realm);
  * Returns NULL on OOM. */
 struct URealm *urbi_realm_global(struct UVM *vm);
 
+/* Convenience wrapper: creates a URealm and sets REALM_REPL on it.  Equivalent
+ * to urbi_realm_create followed by an internal flag set.  Use this for
+ * per-session REPL lobbies.  The flag marks the realm for REPL-specific
+ * behaviors that may land in v0.9.1-repl-service (e.g. disconnect-cleanup,
+ * introspection visibility).
+ *
+ * Returns NULL on OOM.
+ * Thread safety: MAIN. */
+struct URealm *urbi_realm_create_repl(struct UVM *vm);
+
 /* Liveness query: reads VM-wide runnable / active-watcher / pending-wakeup
  * counters.  Populates out_strands / out_watchers / out_wakes (any may be
  * NULL).  Returns true if any counter is positive.

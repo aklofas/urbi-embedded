@@ -189,6 +189,24 @@ UTEST(repl_eval_no_alias_across_lines)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 5: urbi_realm_create_repl sets REALM_REPL flag
+ * ----------------------------------------------------------------------- */
+
+UTEST(realm_create_repl_sets_flag)
+{
+    UVM vm;
+    urbi_zero(&vm, sizeof vm);
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *r = urbi_realm_create_repl(&vm);
+    UASSERT(r != NULL);
+    UASSERT((r->flags & REALM_REPL) != 0);
+
+    urbi_realm_destroy(&vm, r);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry
  * ----------------------------------------------------------------------- */
 
@@ -203,4 +221,6 @@ test_urbi_unload_suite(void)
               urbi_unload_double_unload);
     utest_run("repl_eval: each line gets a distinct heap-alloc module (CHSTR-027)",
               repl_eval_no_alias_across_lines);
+    utest_run("urbi_realm_create_repl: sets REALM_REPL flag",
+              realm_create_repl_sets_flag);
 }

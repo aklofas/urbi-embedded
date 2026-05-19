@@ -97,6 +97,17 @@ fail_tag:
     return NULL;
 }
 
+/* === urbi_realm_create_repl === (v0.9.0-repl) */
+URealm *
+urbi_realm_create_repl(struct UVM *vm)
+{
+    URealm *r = urbi_realm_create(vm);
+    if (r != NULL) {
+        r->flags |= REALM_REPL;
+    }
+    return r;
+}
+
 /* === urbi_realm_destroy ===
  *
  * Destruction order per spec §4.4:
