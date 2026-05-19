@@ -18,6 +18,22 @@ ifeq ($(URBI_BYTECODE_ONLY),1)
   COMPILER_FRONTEND_DIRS_EXCLUDED := 1
 endif
 
+# v0.9.1 — opt-in REPL service over TCP/Unix/UART.  Requires the
+# compiler frontend (URBI_BYTECODE_ONLY=0); the combination is rejected
+# at the Makefile level because urbi_repl_eval cannot exist without
+# src/lex/, src/parse/, src/emit/ linked in.  Adds src/repl/*.c to the
+# core archive.
+ifeq ($(URBI_ENABLE_REPL),1)
+  ifeq ($(URBI_BYTECODE_ONLY),1)
+    $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
+  endif
+  CFLAGS += -DURBI_ENABLE_REPL=1
+  CPPFLAGS += -DURBI_ENABLE_REPL=1
+  REPL_SRCS := $(wildcard src/repl/*.c)
+else
+  REPL_SRCS :=
+endif
+
 SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
@@ -35,7 +51,8 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c))
+       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
+       $(REPL_SRCS)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c

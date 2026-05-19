@@ -1205,4 +1205,15 @@ void urbi_module_free(struct UModule *module);
 }
 #endif
 
+/* === REPL service (v0.9.1) ===
+ *
+ * Opt-in surface — only included when URBI_ENABLE_REPL is defined at
+ * configuration time.  The REPL service requires the compiler frontend
+ * (it accepts source text over the wire), so it is mutually exclusive
+ * with URBI_BYTECODE_ONLY (enforced both at build time in the Makefile
+ * and at #include time inside <urbi/repl.h>). */
+#if defined(URBI_ENABLE_REPL) && !defined(URBI_BYTECODE_ONLY)
+#  include <urbi/repl.h>
+#endif
+
 #endif

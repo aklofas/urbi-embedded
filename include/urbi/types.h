@@ -466,7 +466,12 @@ typedef enum {
      * is exceeded.  See <urbi/types.h> UCompileBudget. */
     URBI_ERR_COMPILE_BUDGET_DEPTH       = -22,
     URBI_ERR_COMPILE_BUDGET_NODES       = -23,
-    URBI_ERR_COMPILE_BUDGET_SOURCE      = -24
+    URBI_ERR_COMPILE_BUDGET_SOURCE      = -24,
+    /* v0.9.1: urbi_repl_serve refused a non-loopback bind without an
+     * auth_token (default-secure posture).  Embedder must either set
+     * cfg->auth_token or restrict cfg->bind_addr to "127.0.0.1" / "::1"
+     * / a Unix-socket path starting with '/'. */
+    URBI_ERR_INSECURE_CONFIG            = -25
 } UErrCode;
 
 /* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn
