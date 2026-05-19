@@ -58,30 +58,6 @@ urealm_register_module(URealm *realm, UModule *m)
 }
 
 /* ---------------------------------------------------------------------------
- * urealm_unlink_module
- *
- * Undo a transient stack-allocated module's registration before destroy.
- * Task 13 will replace all callers with heap-alloc; delete helper then.
- * v0.9.0-repl. */
-static void
-urealm_unlink_module(URealm *r, UModule *m)
-{
-    if (r == NULL || m == NULL || m->owning_realm != r) return;
-    if (r->loaded_protos_head == m) {
-        r->loaded_protos_head = m->next_in_realm;
-    } else {
-        for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
-            if (p->next_in_realm == m) {
-                p->next_in_realm = m->next_in_realm;
-                break;
-            }
-        }
-    }
-    m->owning_realm  = NULL;
-    m->next_in_realm = NULL;
-}
-
-/* ---------------------------------------------------------------------------
  * uchunk_loader_drive
  *
  * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
@@ -443,9 +419,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
-            /* Unlink transient stack-allocated module before destroy. */
-            urealm_unlink_module(module.owning_realm, &module);
-            umodule_destroy(&module, vm);
+            urbi_unload(vm, &module);
             uarena_destroy(&arena);
             return URBI_OK;
         }
@@ -453,9 +427,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
-        /* Unlink transient stack-allocated module before destroy. */
-        urealm_unlink_module(module.owning_realm, &module);
-        umodule_destroy(&module, vm);
+        urbi_unload(vm, &module);
         uarena_destroy(&arena);
         return run_rc;
     }
@@ -465,9 +437,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
-    /* Unlink transient stack-allocated module before destroy. */
-    urealm_unlink_module(module.owning_realm, &module);
-    umodule_destroy(&module, vm);
+    urbi_unload(vm, &module);
     uarena_destroy(&arena);
     return URBI_OK;
 #else
@@ -664,4 +634,42 @@ urbi_load_module(UVM *vm, UModule *module, const char *module_name)
     }
 
     return urbi_run_script(vm, NULL, module);
+}
+
+/* ---------------------------------------------------------------------------
+ * urbi_unload  (v0.9.0-repl Task 11)
+ *
+ * Unlink module from its owning realm's loaded_protos_head list and route
+ * through umodule_destroy.  If root_proto->refcount > 0 the rescue mechanism
+ * defers final cleanup; this call returns URBI_OK either way.
+ * --------------------------------------------------------------------------- */
+int
+urbi_unload(UVM *vm, UModule *module)
+{
+    if (vm == NULL || module == NULL)   return URBI_ERR_INVALID_ARG;
+    if (module->owning_realm == NULL)   return URBI_ERR_INVALID_ARG;
+    URBI_ASSERT_NOT_ISR(vm);
+
+    URealm *r = module->owning_realm;
+
+    /* Unlink from the realm's loaded_protos_head list. */
+    if (r->loaded_protos_head == module) {
+        r->loaded_protos_head = module->next_in_realm;
+    } else {
+        for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+            if (p->next_in_realm == module) {
+                p->next_in_realm = module->next_in_realm;
+                break;
+            }
+        }
+    }
+    module->owning_realm  = NULL;
+    module->next_in_realm = NULL;
+
+    /* Route through umodule_destroy.  If refcount > 0, rescue mechanism
+     * defers final cleanup; this call always returns success.  After
+     * Task 10's fix, umodule_destroy also unlinks any UModuleInstance
+     * from vm->module_instances_head, so no dangling cells survive. */
+    umodule_destroy(module, vm);
+    return URBI_OK;
 }

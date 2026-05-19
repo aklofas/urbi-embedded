@@ -196,6 +196,21 @@ int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module
 
 int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
 
+/* === v0.9.0-repl: urbi_unload ===
+ *
+ * Unload `module` from its owning realm's loaded_protos_head list.  If the
+ * module's root_proto refcount is > 0 (a strand is parked on the loader, or
+ * closures hold UProtos), the rescue mechanism transfers the root_proto to
+ * vm->rescued_protos and final cleanup completes when the last refcount-
+ * holder releases.  Otherwise the module is destroyed immediately.
+ *
+ * Returns URBI_OK on success (whether immediate or deferred).
+ * Returns URBI_ERR_INVALID_ARG if vm or module is NULL, or if module is not
+ *   bound to any realm (already unloaded).
+ *
+ * Thread safety: MAIN.  Not ISR-safe. */
+int urbi_unload(struct UVM *vm, struct UModule *module);
+
 /* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
  * as int) to the corresponding public UErrCode.  Currently routes
  * ULOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and

@@ -254,6 +254,7 @@ extern void test_uproto_owning_mi_suite(void);
 extern void test_loaded_protos_registry_suite(void);
 extern void test_multi_realm_suite(void);
 extern void test_umodule_instance_lifetime_suite(void);
+extern void test_urbi_unload_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -484,6 +485,7 @@ static const struct suite_entry suites[] = {
     {"loaded_protos_registry",       test_loaded_protos_registry_suite},
     {"multi_realm",                  test_multi_realm_suite},
     {"umodule_instance_lifetime",    test_umodule_instance_lifetime_suite},
+    {"urbi_unload",                  test_urbi_unload_suite},
     /* Add new suites here as test files are added. */
 };
 
