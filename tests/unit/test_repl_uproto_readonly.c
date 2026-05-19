@@ -112,6 +112,78 @@ UTEST(setslot_readonly_can_be_cleared)
     urbi_vm_destroy(&vm);
 }
 
+/* ---- T4: all builtin atom protos are marked readonly at boot ---------- */
+UTEST(all_builtin_atom_protos_are_readonly)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+
+    URealm *r = urbi_realm_global(&vm);
+    UASSERT(r != NULL);
+
+    /* Names that must resolve to readonly UObjects at boot.  Tracks the
+     * urbi_atom_protos_mark_readonly cohort: atom singletons + runtime-
+     * type singletons; excludes Global (mutable per spec §4.1). */
+    static const char *READONLY_NAMES[] = {
+        "Object", "Integer", "Float", "String",
+        "Boolean", "Nil", "Void",
+        "List", "Dict", "Symbol",
+        "Tag", "Event", "Mutex", "Date", "Duration",
+        NULL
+    };
+
+    size_t i;
+    for (i = 0; READONLY_NAMES[i] != NULL; i++) {
+        const char *name = READONLY_NAMES[i];
+        UValue v;
+        int rc = urbi_realm_get_global(&vm, r, name,
+                                       (size_t)strlen(name), &v);
+        UASSERT_EQ(rc, URBI_OK);
+        UASSERT_EQ(v.kind, (uint8_t)UVAL_OBJECT);
+        UObject *p = (UObject *)v.v.p;
+        UASSERT(p != NULL);
+        UASSERT((p->flags & UPROTO_FLAG_READONLY) != 0U);
+    }
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ---- T5: Global is NOT readonly (mutable shared atom per spec §4.1) --- */
+UTEST(global_atom_is_not_readonly)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+
+    URealm *r = urbi_realm_global(&vm);
+    UValue v;
+    int rc = urbi_realm_get_global(&vm, r, "Global", 6, &v);
+    UASSERT_EQ(rc, URBI_OK);
+    UASSERT_EQ(v.kind, (uint8_t)UVAL_OBJECT);
+
+    UObject *p = (UObject *)v.v.p;
+    UASSERT(p != NULL);
+    UASSERT((p->flags & UPROTO_FLAG_READONLY) == 0U);
+
+    urbi_vm_destroy(&vm);
+}
+
+/* ---- T6: Object.foo = 5 at fresh boot raises (without our test poking) - */
+UTEST(boot_object_setslot_raises_typeerror)
+{
+    UVM vm;
+    UASSERT_EQ(urbi_vm_init(&vm, NULL, NULL), URBI_OK);
+
+    char buf[256];
+    buf[0] = '\0';
+    int rc = urbi_repl_eval(&vm, NULL, "Object.foo = 5", 14, buf, sizeof(buf));
+    UASSERT(rc != URBI_OK);
+    UASSERT(strstr(buf, "frozen") != NULL ||
+            strstr(buf, "UPROTO_READONLY") != NULL ||
+            strstr(buf, "TypeError") != NULL);
+
+    urbi_vm_destroy(&vm);
+}
+
 /* ---- suite entry ------------------------------------------------------ */
 void
 test_repl_uproto_readonly_suite(void)
@@ -120,4 +192,7 @@ test_repl_uproto_readonly_suite(void)
     utest_run("setslot_on_readonly_uobject_raises", setslot_on_readonly_uobject_raises);
     utest_run("setslot_on_mutable_clone_succeeds",  setslot_on_mutable_clone_succeeds);
     utest_run("setslot_readonly_can_be_cleared",    setslot_readonly_can_be_cleared);
+    utest_run("all_builtin_atom_protos_are_readonly", all_builtin_atom_protos_are_readonly);
+    utest_run("global_atom_is_not_readonly",        global_atom_is_not_readonly);
+    utest_run("boot_object_setslot_raises_typeerror", boot_object_setslot_raises_typeerror);
 }

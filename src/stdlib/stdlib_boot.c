@@ -139,6 +139,15 @@ urbi_stdlib_boot(UVM *vm)
          * the global Realm is fully populated. */
     }
 
+    /* v0.9.1 Task 4: mark every builtin atom + runtime-type proto readonly
+     * AFTER all population phases (1-9) so the method-install passes are not
+     * blocked by their own readonly bits.  Spec §4.2.  The Global namespace
+     * proto (vm->global_namespace_proto) is left mutable by design. */
+    {
+        int rc_ro = urbi_atom_protos_mark_readonly(vm);
+        if (rc_ro != URBI_OK) return rc_ro;
+    }
+
     vm->stdlib_booted = 1U;
     return URBI_OK;
 }

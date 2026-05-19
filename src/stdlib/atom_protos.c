@@ -176,3 +176,68 @@ urbi_atom_protos_register(UVM *vm)
 
     return URBI_OK;
 }
+
+/* === urbi_atom_protos_mark_readonly (v0.9.1, spec §4.2) ===
+ *
+ * Walks the builtin atom + runtime-type protos registered earlier in
+ * urbi_stdlib_boot and sets UPROTO_FLAG_READONLY on each so that
+ * urbiscript-side mutation (OP_SETSLOT) raises TypeError.
+ *
+ * The cohort marked here closely tracks the spec's 15-element list
+ * (Object, Number, String, Float, Bool, Nil, List, Dict, Tag, Event,
+ * Function, Closure, Date, Mutex, Lobby) but adapts to the actual proto
+ * inventory in this codebase:
+ *   - "Number"   -> URBI_ATOM_INTEGER (mapped per CHANGELOG entry)
+ *   - "Bool"     -> URBI_ATOM_BOOLEAN
+ *   - "Function" / "Closure" / "Lobby" — no standalone atom proto exists
+ *     at v0.9.1 baseline; Lobby lands in Phase 5; Function/Closure will be
+ *     surfaced when the closure inheritance work in v1.0 lands.
+ * Plus the M6 Phase 4-9 runtime-type protos (Mutex/Date) and
+ * the Symbol/Void/Duration protos that exist for parity.
+ *
+ * Global (vm->global_namespace_proto) is deliberately NOT marked readonly
+ * per spec §4.1 — it's the designated mutable shared-state proto.
+ *
+ * Idempotent: setting the same bit on the same UObject repeatedly is a
+ * no-op.  No allocation, no failure mode. */
+int
+urbi_atom_protos_mark_readonly(UVM *vm)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+
+    /* Atom singletons populated by urbi_object_atom at boot. */
+    static const URBIAtomFamily ATOM_FAMILIES[] = {
+        URBI_ATOM_OBJECT,    /* Object  */
+        URBI_ATOM_INTEGER,   /* Number  (legacy: Integer)         */
+        URBI_ATOM_FLOAT,     /* Float                              */
+        URBI_ATOM_STRING,    /* String                             */
+        URBI_ATOM_BOOLEAN,   /* Bool    (legacy: Boolean)         */
+        URBI_ATOM_NIL,       /* Nil                                */
+        URBI_ATOM_LIST,      /* List                               */
+        URBI_ATOM_DICT,      /* Dict                               */
+        URBI_ATOM_SYMBOL,    /* Symbol  (codebase-only; v1.x parity)*/
+        URBI_ATOM_VOID       /* Void    (codebase-only; v1.x parity)*/
+    };
+    size_t i;
+    for (i = 0; i < sizeof(ATOM_FAMILIES) / sizeof(ATOM_FAMILIES[0]); i++) {
+        UObject *p = urbi_object_atom(vm, ATOM_FAMILIES[i]);
+        if (p != NULL) {
+            p->flags |= URBI_OBJ_FLAG_READONLY;
+        }
+    }
+
+    /* Runtime-type protos owned by VM singletons (Tag/Event/Mutex/Date). */
+    if (vm->tag_proto      != NULL) vm->tag_proto->flags      |= URBI_OBJ_FLAG_READONLY;
+    if (vm->event_proto    != NULL) vm->event_proto->flags    |= URBI_OBJ_FLAG_READONLY;
+    if (vm->mutex_proto    != NULL) vm->mutex_proto->flags    |= URBI_OBJ_FLAG_READONLY;
+    if (vm->date_proto     != NULL) vm->date_proto->flags     |= URBI_OBJ_FLAG_READONLY;
+    if (vm->duration_proto != NULL) vm->duration_proto->flags |= URBI_OBJ_FLAG_READONLY;
+
+    /* Global (vm->global_namespace_proto): intentionally NOT marked
+     * readonly per spec §4.1 — it's the designated mutable cross-session
+     * namespace.  Documented here so a future refactor doesn't sweep it
+     * into the loop above. */
+    /* if (vm->global_namespace_proto != NULL) { ... }  -- DO NOT ENABLE */
+
+    return URBI_OK;
+}
