@@ -7,10 +7,13 @@
 
 #ifdef URBI_ENABLE_REPL
 
-#include "repl/urepl_queue.h"
+#include "urbi/urbi.h"
 #include "urbi/types.h"
-/* repl/urepl_dispatch.h + repl/urepl.h pulled in by Task 13's
- * dispatcher_handles_eval_op test extension. */
+#include "vm/uvm.h"
+#include "realm/urealm.h"
+#include "repl/urepl_queue.h"
+#include "repl/urepl_dispatch.h"
+#include "repl/urepl.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -253,6 +256,277 @@ UTEST(ringbuf_zero_size_init_rejects)
     UASSERT(rc != URBI_OK);
 }
 
+/* ---- Dispatcher tests (Task 13) -------------------------------------- */
+
+/* Helper: create a loopback (no-auth) server backed by a fresh VM. */
+static UReplServer *
+mk_server(UVM **out_vm)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    if (vm == NULL) return NULL;
+    if (urbi_vm_init(vm, NULL, NULL) != URBI_OK) {
+        free(vm);
+        return NULL;
+    }
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port = -1;
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    if (server == NULL) {
+        urbi_vm_destroy(vm);
+        free(vm);
+        return NULL;
+    }
+    *out_vm = vm;
+    return server;
+}
+
+static void
+free_server(UReplServer *server, UVM *vm)
+{
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+}
+
+UTEST(dispatcher_session_create_destroy)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UASSERT(server != NULL);
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s != NULL);
+    UASSERT(s->realm != NULL);
+    UASSERT(s->session_id == 1);
+    UASSERT(strlen(s->lobby_id_hex) == 4);
+    /* Auto-applied REPL compile budget should be visible on the realm. */
+    UASSERT(urbi_realm_get_compile_budget(s->realm) != NULL);
+    urepl_session_destroy(server, s);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_session_find_by_id)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s1 = urepl_session_create(server);
+    UReplSession *s2 = urepl_session_create(server);
+    UASSERT(s1 != s2);
+    UASSERT(urepl_session_find(server, s1->session_id) == s1);
+    UASSERT(urepl_session_find(server, s2->session_id) == s2);
+    UASSERT(urepl_session_find(server, 9999) == NULL);
+    UASSERT(urepl_session_find_by_lobby(server, s1->lobby_id_hex) == s1);
+    UASSERT(urepl_session_find_by_lobby(server, "ffff") == NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_handles_eval_op)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s != NULL);
+    s->authed = true;
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 1;
+    job->req.op = UREPL_OP_EVAL;
+    job->req.code = (char *)malloc(6);
+    memcpy(job->req.code, "1 + 2", 6);
+    job->req.code_len = 5;
+
+    urepl_dispatch_job(server, job);
+
+    /* Drain output ringbuf — expect a result envelope then done. */
+    char out[1024];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(n > 0);
+    UASSERT(strstr(out, "\"kind\":\"result\"") != NULL);
+    UASSERT(strstr(out, "\"value\":\"3\"") != NULL);
+    UASSERT(strstr(out, "\"kind\":\"done\"") != NULL);
+    UASSERT(strstr(out, "\"id\":1") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_eval_compile_error_emits_error_envelope)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    s->authed = true;
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 2;
+    job->req.op = UREPL_OP_EVAL;
+    /* Pathological input — open paren only. */
+    job->req.code = (char *)malloc(4);
+    memcpy(job->req.code, "1+(", 4);
+    job->req.code_len = 3;
+    urepl_dispatch_job(server, job);
+
+    char out[1024];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"kind\":\"error\"") != NULL);
+    UASSERT(strstr(out, "\"kind\":\"done\"") != NULL);
+    UASSERT(strstr(out, "\"id\":2") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_auth_op_without_token_grants)
+{
+    /* mk_server() leaves cfg.auth_token == NULL — auth becomes a no-op
+     * success path (loopback default). */
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s->authed == false);
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 3;
+    job->req.op = UREPL_OP_AUTH;
+    /* No token; with auth_token unset this is still OK. */
+    urepl_dispatch_job(server, job);
+    UASSERT(s->authed == true);
+
+    char out[256];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"kind\":\"auth_ok\"") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_auth_op_with_correct_token)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    urbi_vm_init(vm, NULL, NULL);
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port = -1;
+    cfg.auth_token = "hunter2";
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    UASSERT(server != NULL);
+
+    UReplSession *s = urepl_session_create(server);
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 4;
+    job->req.op = UREPL_OP_AUTH;
+    job->req.token = strdup("hunter2");
+    urepl_dispatch_job(server, job);
+    UASSERT(s->authed == true);
+
+    char out[256];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"kind\":\"auth_ok\"") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_auth_op_with_wrong_token_rejects)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    urbi_vm_init(vm, NULL, NULL);
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port = -1;
+    cfg.auth_token = "hunter2";
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    UReplSession *s = urepl_session_create(server);
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 5;
+    job->req.op = UREPL_OP_AUTH;
+    job->req.token = strdup("wrong");
+    urepl_dispatch_job(server, job);
+    UASSERT(s->authed == false);
+
+    char out[256];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"kind\":\"error\"") != NULL);
+    UASSERT(strstr(out, "\"code\":\"auth_failed\"") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_preauth_eval_rejected_when_token_required)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    urbi_vm_init(vm, NULL, NULL);
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr = "127.0.0.1";
+    cfg.tcp_port = -1;
+    cfg.auth_token = "sekret";
+    int err = 0;
+    UReplServer *server = urbi_repl_serve(vm, &cfg, &err);
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s->authed == false);
+
+    /* Attempt eval pre-auth. */
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 6;
+    job->req.op = UREPL_OP_EVAL;
+    job->req.code = strdup("1+2");
+    job->req.code_len = 3;
+    urepl_dispatch_job(server, job);
+
+    char out[256];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"code\":\"auth_required\"") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_unknown_session_dropped)
+{
+    /* Job for a session that doesn't exist must not crash and must
+     * release the req strings. */
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = 99999;
+    job->req.id = 7;
+    job->req.op = UREPL_OP_EVAL;
+    job->req.code = strdup("1");
+    job->req.code_len = 1;
+    urepl_dispatch_job(server, job);  /* must not crash */
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_eval_id_tracking_round_trip)
+{
+    /* During an eval frame the session's current_eval_id is set;
+     * a no-arg eval like "1+2" doesn't trigger session_writer (no
+     * echo / print in the source), but we can still confirm the id
+     * is reset to 0 after dispatch_job returns. */
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    s->authed = true;
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 42;
+    job->req.op = UREPL_OP_EVAL;
+    job->req.code = strdup("1+2");
+    job->req.code_len = 3;
+    urepl_dispatch_job(server, job);
+    UASSERT_EQ(s->current_eval_id, 0);
+    free_server(server, vm);
+}
+
 void
 test_repl_dispatcher_suite(void)
 {
@@ -271,7 +545,23 @@ test_repl_dispatcher_suite(void)
     utest_run("ringbuf_write_larger_than_cap",      ringbuf_write_larger_than_cap);
     utest_run("ringbuf_read_empty_returns_zero",    ringbuf_read_empty_returns_zero);
     utest_run("ringbuf_zero_size_init_rejects",     ringbuf_zero_size_init_rejects);
-    /* Task 13 adds dispatcher_handles_eval_op + session-machinery tests. */
+    utest_run("dispatcher_session_create_destroy",  dispatcher_session_create_destroy);
+    utest_run("dispatcher_session_find_by_id",      dispatcher_session_find_by_id);
+    utest_run("dispatcher_handles_eval_op",         dispatcher_handles_eval_op);
+    utest_run("dispatcher_eval_compile_error_emits_error_envelope",
+              dispatcher_eval_compile_error_emits_error_envelope);
+    utest_run("dispatcher_auth_op_without_token_grants",
+              dispatcher_auth_op_without_token_grants);
+    utest_run("dispatcher_auth_op_with_correct_token",
+              dispatcher_auth_op_with_correct_token);
+    utest_run("dispatcher_auth_op_with_wrong_token_rejects",
+              dispatcher_auth_op_with_wrong_token_rejects);
+    utest_run("dispatcher_preauth_eval_rejected_when_token_required",
+              dispatcher_preauth_eval_rejected_when_token_required);
+    utest_run("dispatcher_unknown_session_dropped",
+              dispatcher_unknown_session_dropped);
+    utest_run("dispatcher_eval_id_tracking_round_trip",
+              dispatcher_eval_id_tracking_round_trip);
 }
 
 #else  /* !URBI_ENABLE_REPL */

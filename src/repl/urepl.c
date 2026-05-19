@@ -5,6 +5,8 @@
  * registration.  The listener thread + per-connection reader thread come
  * online in Phase 3 (Task 16). */
 #include "repl/urepl.h"
+#include "repl/urepl_queue.h"
+#include "repl/urepl_dispatch.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -73,9 +75,20 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         }
         return NULL;
     }
-    /* Listener thread / sessions list / job queue come online in
-     * Phase 3 (TCP) and Phase 2 Tasks 12-13 (queue + dispatcher).
-     * For now this just verifies the default-secure posture. */
+    /* Allocate the per-server job queue.  Phase 3 hooks the listener
+     * thread up to it; in Phase 2 it is used by direct callers to
+     * urepl_dispatch_drain for unit tests. */
+    server->job_queue = (UReplQueue *)calloc(1, sizeof(*server->job_queue));
+    if (server->job_queue == NULL
+        || urepl_queue_init(server->job_queue) != URBI_OK) {
+        free(server->job_queue);
+        pthread_mutex_destroy(&server->sessions_mutex);
+        free(server);
+        if (out_err != NULL) {
+            *out_err = URBI_ERR_OOM;
+        }
+        return NULL;
+    }
     return server;
 }
 
@@ -86,6 +99,21 @@ urbi_repl_stop(UReplServer *server)
         return;
     }
     server->shutting_down = true;
+
+    /* Tear down all live sessions before destroying the realm-borrowing
+     * VM.  Each session_destroy unlinks itself from the head list. */
+    while (server->sessions_head != NULL) {
+        urepl_session_destroy(server, server->sessions_head);
+    }
+
+    /* Drain + free the job queue. */
+    if (server->job_queue != NULL) {
+        urepl_queue_signal_shutdown(server->job_queue);
+        urepl_queue_destroy(server->job_queue);
+        free(server->job_queue);
+        server->job_queue = NULL;
+    }
+
     /* Free transport-list entries.  Listener-state is owned by the
      * caller of urbi_repl_register_transport. */
     UReplTransportEntry *e = server->transports;
