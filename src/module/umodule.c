@@ -6,6 +6,7 @@
 #include "value/uvarint.h"
 #include "uopcode_shape.h"
 #include "vm/uvm.h"               /* struct UVM access for umodule_destroy rescue path */
+#include "object/umodule_instance.h" /* UModuleInstance: unlink on destroy (§5.4) */
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
@@ -1317,7 +1318,31 @@ umodule_destroy(UModule *module, struct UVM *vm)
 
 static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
     if (module == NULL) return;
-    (void)vm;  /* Task 11: per-nested stdlib_protos rescue path deleted */
+
+    /* §5.4: unlink any UModuleInstances bound to this module from
+     * vm->module_instances_head BEFORE freeing module buffers.  Without this,
+     * instances are left with mi->module pointing to freed memory — a
+     * dormant dangling-pointer bug masked previously because vm_destroy calls
+     * urbi_gc_destroy (which sweeps GC cells) before any umodule_destroy.
+     * Mid-session module destroy (e.g. urbi_unload) hits this path live.
+     * The instance cell itself is GC-managed; unlinking it here allows the
+     * next GC sweep to reclaim it.  Setting mi->module = NULL is defensive:
+     * any stale pointer reaching the orphaned instance crashes deterministically
+     * rather than reading freed memory. */
+    if (vm != NULL) {
+        struct UModuleInstance **slot = &vm->module_instances_head;
+        while (*slot != NULL) {
+            if ((*slot)->module == module) {
+                struct UModuleInstance *dead = *slot;
+                *slot = dead->next_in_vm;
+                dead->next_in_vm = NULL;
+                dead->module     = NULL;
+                continue;   /* re-check same slot position — don't advance */
+            }
+            slot = &(*slot)->next_in_vm;
+        }
+    }
+
     UModuleAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
         /* Task 11: all chunk-top data (nested[], buffers, ic_names) lives on
