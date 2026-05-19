@@ -2,14 +2,37 @@
 
 ## v0.9.1-repl-service — unreleased
 
-### Added
-- *(populated as tasks land)*
+### Phase 1: Foundations (per-realm writer / compile-budget / readonly atoms / Global)
 
-### Changed
-- ABI 0/11/0 → 0/12/0 (additive).
+#### Added
+- **`urbi_realm_set_writer(vm, realm, fn, ud)`** — per-realm output writer.  Strands hosted under `realm` route channel writes through this callback first; if unset, the runtime falls back to the VM-wide writer installed via `urbi_set_writer`.  Used by the REPL service to route per-session output to the originating client.
+- **`urbi_realm_set_compile_budget(realm, &budget)` + `urbi_realm_get_compile_budget(realm)`** — install / inspect per-realm parser limits.  `budget == NULL` clears (unlimited).  Three limits per `UCompileBudget`:
+  - `max_parser_depth` — recursive-descent stack ceiling (raises `URBI_ERR_COMPILE_BUDGET_DEPTH`).
+  - `max_ast_nodes` — total `make_node` allocations per compile (`URBI_ERR_COMPILE_BUDGET_NODES`).
+  - `max_source_bytes` — checked once at `urbi_repl_eval` entry (`URBI_ERR_COMPILE_BUDGET_SOURCE`).
+- **`URBI_DEFAULT_REPL_BUDGET`** — exported constant (256 / 100000 / 1 MiB) auto-applied by `urbi_realm_create_repl`.  Global realm has no budget by default (trusted host code).
+- **`urbi_vm_write_in_realm(vm, realm, channel, ...)`** — new dispatch entry; consults the realm writer first, then the VM writer, then the built-in default.  `urbi_vm_write` becomes a thin wrapper (realm=NULL).
+- **`URBI_OBJ_FLAG_READONLY`** — new bit (bit 7) on `UObject.flags`.  Public spelling `UPROTO_FLAG_READONLY` (the spec calls atom protos "uprotos" even though the storage struct is UObject).  `OP_SETSLOT` raises `TypeError: cannot mutate frozen prototype` when the receiver carries this bit.  Host-side C API mutators are not gated — they populate protos before the bit is set.
+- **`UCompileBudget` struct** in `<urbi/types.h>` (3× `uint32_t`).
+- New `UErrCode` values: `URBI_ERR_FROZEN_PROTO` (-21), `URBI_ERR_COMPILE_BUDGET_DEPTH` (-22), `URBI_ERR_COMPILE_BUDGET_NODES` (-23), `URBI_ERR_COMPILE_BUDGET_SOURCE` (-24).
 
-### Breaking
-- `Object.x = 5` and other mutation of builtin atom protos now raises `TypeError`. Use `Global.x = 5` for cross-session mutable shared state.
+#### Runtime
+- **URealm grows by ~24 B** (`has_compile_budget` bool + `compile_budget` struct + `writer_fn` + `writer_ud`).  No reorder of existing fields.
+- **15 builtin atom protos** marked readonly at `urbi_stdlib_boot`: Object, Integer, Float, String, Boolean, Nil, Void, List, Dict, Symbol, Tag, Event, Mutex, Date, Duration.  Symbol/Void/Duration are codebase-only extras not in the spec's 15-list but covered here for parity.  Function / Closure / Lobby don't exist as standalone atom protos at v0.9.1 baseline (Lobby lands in Phase 5; the others are v1.x).
+- **Global stays mutable** by design — it's the designated cross-session shared atom per spec §4.1.  The proto already existed since M6 Phase 8 as `vm->global_namespace_proto`; v0.9.1 adopts it as the spec's "Global" without a separate allocation.
+- **Compile-budget enforcement** threaded through `UParser`: new fields `budget`, `cur_depth`, `node_count`, `budget_exceeded` (sticky), `budget_err`.  Depth checked at `parse_expression` entry; node count checked in `make_node`; source bytes checked at `urbi_repl_eval` entry before any alloc.
+
+#### Tests migrated to the Global idiom
+- `tests/integration/repl_smoke.sh` — cross-line shared-proto smoke now uses `Global.foo`; added regression that confirms `Object.x = ...` raises TypeError.
+- `tests/unit/test_multi_realm.c` — three cross-realm sharing scenarios (foo/f/g) ported from `Object.*` to `Global.*`.
+- `tests/chk/objects/fallback.chk` — COW slot-write fixture migrated from `Object.blurg` to `Global.blurg`.
+- `tests/chk/objects/atom_method_dispatch.chk` — rewritten to verify atom-method dispatch via the existing C-native methods (`asString` / `length`) instead of the now-rejected script-installed `Integer.marker = 42` style.
+
+#### Changed
+- **ABI 0/11/0 → 0/12/0** (8th pre-v1.0 escape-clause use).
+
+#### Breaking
+- `Object.x = 5` and other mutation of builtin atom protos now raises `TypeError: cannot mutate frozen prototype`.  Use `Global.x = 5` for cross-session mutable shared state.  Host-side C API (`urbi_object_set_local_slot`, `urbi_realm_set_global`, stdlib registration helpers) is unaffected.
 
 ### Build switch
 - `URBI_ENABLE_REPL=1` opts in to `src/repl/` (TCP/Unix/UART REPL service). Default 0.
