@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
 #include "repl/urepl_dispatch.h"
+#include "repl/urepl_auth.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
 #include "realm/urealm.h"
@@ -285,7 +286,14 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
         }
         return;
     }
-    if (job->req.token != NULL && strcmp(job->req.token, expected) == 0) {
+    /* v0.9.1 Task 17: constant-time comparison.  strcmp's length-
+     * dependent timing leaks ~1 byte per probe to an attacker timing
+     * round-trips; urepl_auth_token_match walks the full token length
+     * with a volatile accumulator (spec §7.3). */
+    size_t token_len = (job->req.token != NULL) ? strlen(job->req.token) : 0U;
+    size_t expected_len = strlen(expected);
+    if (urepl_auth_token_match(job->req.token, token_len,
+                               expected, expected_len)) {
         s->authed = true;
         if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
             push_env(s, env, n);
