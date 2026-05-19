@@ -274,7 +274,7 @@ typedef struct UModule {
      * buffers.  Caller sets these BEFORE umodule_deserialize / uemit_init.
      * NULL alloc_fn → stdlib realloc (hosted builds only).  Never persisted;
      * loader/emitter use them to grow + free struct-internal buffers. */
-    UModuleAllocFn alloc_fn;
+    UChunkAllocFn alloc_fn;
     void         *alloc_ud;
 
     /* next_proto_serial [runtime-only, NOT serialized]: monotonic counter
@@ -365,7 +365,7 @@ UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto);
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
  * (it is owned by the module's nested[] array, or by a watcher pool slot
  * after strand_closure_unlink has detached it). */
-void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
+void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud);
 
 /* Populate `module` from `buf`.  `module` MUST be zero-initialized before

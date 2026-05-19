@@ -140,7 +140,7 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     if (fs->ic_next >= fs->ic_names_cap) {
         uint16_t new_cap = (fs->ic_names_cap == 0U) ? 16U
             : (fs->ic_names_cap < 128U ? (uint16_t)(fs->ic_names_cap * 2U) : 256U);
-        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        UChunkAllocFn alloc = emit_alloc_for(e->module);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
         /* TIDY-005: explicit (void *) cast on the inout pointer prevents
          * bugprone-multi-level-implicit-pointer-conversion from firing on
@@ -192,7 +192,7 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     /* line_deltas: resize to new instr_count, shift right, insert at [0].
      * line_deltas uses no separate cap — allocate exactly instr_count bytes. */
     {
-        UModuleAllocFn alloc = p->alloc_fn;
+        UChunkAllocFn alloc = p->alloc_fn;
 #if __STDC_HOSTED__
         if (alloc == NULL) alloc = emit_stdlib_alloc;
 #else
@@ -268,7 +268,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 
     /* line_deltas: reallocate to new instr_count bytes, shift, insert. */
     {
-        UModuleAllocFn alloc = emit_alloc_for(m);
+        UChunkAllocFn alloc = emit_alloc_for(m);
         if (alloc == NULL) { e->error = EMIT_OOM; return false; }
         int8_t *fresh = (int8_t *)alloc(rp->line_deltas,
                                         rp->instr_count * sizeof(int8_t),
@@ -378,7 +378,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
          * fails and propagates the failure via e->error alone, matching
          * the module path. */
         if (fs->ic_next > 0U) {
-            UModuleAllocFn palloc = p->alloc_fn;
+            UChunkAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
             if (palloc == NULL) palloc = emit_alloc_for(e->module);
 #endif
@@ -435,7 +435,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * uemit_init; always non-NULL here).  Mirrors the UProto path above. */
     if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
         UProto *rp = e->module->root_proto;
-        UModuleAllocFn malloc_fn = emit_alloc_for(e->module);
+        UChunkAllocFn malloc_fn = emit_alloc_for(e->module);
         if (malloc_fn == NULL || rp == NULL) {
             e->error = EMIT_OOM;
         } else {
@@ -483,7 +483,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
      * above; for top-level funcstates they were copied into UModule by the
      * block above.  Either way the funcstate-side buffer is now redundant. */
     if (fs->ic_names != NULL) {
-        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        UChunkAllocFn alloc = emit_alloc_for(e->module);
         if (alloc != NULL) {
             /* TIDY-005: explicit (void *) cast on free path. */
             alloc((void *)fs->ic_names, 0, e->module->alloc_ud);

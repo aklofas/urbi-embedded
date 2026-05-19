@@ -34,7 +34,7 @@ static UProto *current_proto(const UEmitter *e) {
 static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
     size_t len = urbi_strlen(src);
-    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    UChunkAllocFn alloc = emit_alloc_for(e->module);
     char *copy = (char *)alloc(NULL, len + 1U, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
     emit_memcpy(copy, src, len + 1U);
@@ -61,7 +61,7 @@ static void emit_copy_source_name(UEmitter *e, const char *src) {
 bool emit_grow(UModule *c, void **data, size_t *cap,
                size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
-    UModuleAllocFn alloc = emit_alloc_for(c);
+    UChunkAllocFn alloc = emit_alloc_for(c);
     if (alloc == NULL) return false;
     size_t target = *cap == 0U ? 8U : *cap;
     while (target < new_cap) target *= 2U;
@@ -79,7 +79,7 @@ bool proto_grow(UModule *module, UProto *proto,
                 void **data, size_t *cap,
                 size_t new_cap, size_t elem_size) {
     if (proto != NULL) {
-        UModuleAllocFn alloc = proto->alloc_fn;
+        UChunkAllocFn alloc = proto->alloc_fn;
         if (alloc == NULL) {
 #if __STDC_HOSTED__
             alloc = emit_stdlib_alloc;
@@ -273,7 +273,7 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
     URBI_INTERNAL_ASSERT(p->instr_count > 0U);
     if (p->instr_count == 0U) return;
-    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    UChunkAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     void *fresh = alloc(p->line_deltas,
                         p->instr_count * sizeof(int8_t),
@@ -494,7 +494,7 @@ void uemit_init(UEmitter *e, UModule *module, UArena *arena,
      * current_proto() can return it immediately, and the emitter writes
      * directly into root_proto buffers (no alias-copy at finish). */
     {
-        UModuleAllocFn alloc = emit_alloc_for(module);
+        UChunkAllocFn alloc = emit_alloc_for(module);
         if (alloc != NULL) {
             UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
             if (rp != NULL) {

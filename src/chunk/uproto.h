@@ -71,7 +71,7 @@ typedef struct {
 
 /* --- pluggable allocator (matches uarena pattern) --- */
 
-typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
+typedef void *(*UChunkAllocFn)(void *ptr, size_t nbytes, void *ud);
 /* Standard realloc semantics:
  *   ptr == NULL && nbytes > 0  : allocate fresh buffer; return non-NULL or NULL on OOM.
  *   ptr != NULL && nbytes == 0 : free ptr; return NULL.
@@ -140,7 +140,7 @@ typedef struct UProto {
     char         **ic_name_strs;
 
     /* Allocator hook inherited from the owning module. */
-    UModuleAllocFn alloc_fn;
+    UChunkAllocFn alloc_fn;
     void          *alloc_ud;
 
     /* NEW (Phase 1 v0.8.1-uproto-root): recursive child protos.

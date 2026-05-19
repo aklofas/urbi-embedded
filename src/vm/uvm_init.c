@@ -559,7 +559,7 @@ void urbi_vm_destroy(UVM *vm) {
             while (rp != NULL) {
                 /* Step 1: capture before any zero operation. */
                 struct UProto  *next     = rp->next_alloc;
-                UModuleAllocFn  rp_alloc = rp->alloc_fn;
+                UChunkAllocFn  rp_alloc = rp->alloc_fn;
                 void           *rp_ud    = rp->alloc_ud;
                 if (rp_alloc == NULL) {
                     rp_alloc = vm->alloc_fn;

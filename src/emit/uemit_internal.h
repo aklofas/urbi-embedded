@@ -50,7 +50,7 @@ static inline void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
    freestanding builds so that emit_grow can call it unconditionally.
    In freestanding builds the stdlib fallback is absent; the caller must have
    supplied alloc_fn, and emit_grow will return false if it is NULL. */
-static inline UModuleAllocFn emit_alloc_for(const UModule *c) {
+static inline UChunkAllocFn emit_alloc_for(const UModule *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
 #else

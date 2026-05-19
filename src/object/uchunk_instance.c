@@ -61,7 +61,7 @@ static void *intern_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
 }
 #endif
 
-static UModuleAllocFn intern_alloc_for(UModuleAllocFn fn) {
+static UChunkAllocFn intern_alloc_for(UChunkAllocFn fn) {
 #if __STDC_HOSTED__
     return fn != NULL ? fn : intern_stdlib_alloc;
 #else
@@ -86,13 +86,13 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
                                       uint16_t ic_count,
                                       USymbol ***ic_names_inout,
                                       char *const *ic_name_strs,
-                                      UModuleAllocFn alloc_fn,
+                                      UChunkAllocFn alloc_fn,
                                       void *alloc_ud)
 {
     if (ic_count == 0U) return true;
     if (*ic_names_inout != NULL) return true;
     if (ic_name_strs == NULL) return false;
-    UModuleAllocFn alloc = intern_alloc_for(alloc_fn);
+    UChunkAllocFn alloc = intern_alloc_for(alloc_fn);
     if (alloc == NULL) return false;
     USymbol **fresh = (USymbol **)alloc(NULL,
                                         (size_t)ic_count * sizeof(USymbol *),

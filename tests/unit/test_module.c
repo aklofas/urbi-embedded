@@ -1711,8 +1711,8 @@ UTEST(deserialize_module_grow_reuses_existing_cap) {
     c.root_proto->instr_count = 0;
     c.root_proto->abs_line_count = 0;
     if (c.root_proto->line_deltas != NULL) {
-        UModuleAllocFn alloc = c.alloc_fn != NULL ? c.alloc_fn
-                            : (UModuleAllocFn)NULL; /* stdlib handled by destroy later */
+        UChunkAllocFn alloc = c.alloc_fn != NULL ? c.alloc_fn
+                            : (UChunkAllocFn)NULL; /* stdlib handled by destroy later */
         (void)alloc; /* just keep the pointer, don't free now */
         free(c.root_proto->line_deltas); c.root_proto->line_deltas = NULL;
     }

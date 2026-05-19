@@ -63,7 +63,7 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 static void umodule_destroy_internal(UModule *module, struct UVM *vm);
 
 /* Resolve the effective allocator for a module. */
-static UModuleAllocFn module_allocator(const UModule *c) {
+static UChunkAllocFn module_allocator(const UModule *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : stdlib_alloc;
 #else
@@ -76,7 +76,7 @@ static UModuleAllocFn module_allocator(const UModule *c) {
 /* Grow *data in-place using an explicit allocator.  Used by both the
    top-level (module-target) decoders and the per-proto decoders called
    from decode_proto. */
-static bool module_grow_with_alloc(UModuleAllocFn alloc, void *alloc_ud,
+static bool module_grow_with_alloc(UChunkAllocFn alloc, void *alloc_ud,
                                    void **data, size_t *cap,
                                    size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
@@ -134,7 +134,7 @@ static UModuleLoadError module_decode_varint_zz(const uint8_t *buf, size_t size,
  * which we leave alone for surgical scope).  The pointer is not NULLed
  * because both call sites zero the containing struct via urbi_zero after
  * all frees complete. */
-static inline void module_buf_free(UModuleAllocFn alloc, void *alloc_ud,
+static inline void module_buf_free(UChunkAllocFn alloc, void *alloc_ud,
                                    void *p) {
     if (p != NULL) (void)alloc(p, 0, alloc_ud);
 }
@@ -149,7 +149,7 @@ static inline void module_buf_free(UModuleAllocFn alloc, void *alloc_ud,
  * post-fixup buffers have _pad[0] == 0.  Module-instance create clears the
  * marker after the lazy intern fixup so this helper never double-frees. */
 static void free_owned_str_constants(UValue *constants, size_t count,
-                                     UModuleAllocFn alloc, void *alloc_ud) {
+                                     UChunkAllocFn alloc, void *alloc_ud) {
     if (constants == NULL || alloc == NULL) return;
     for (size_t i = 0U; i < count; i++) {
         if (constants[i].kind == (uint8_t)UVAL_STR
@@ -162,7 +162,7 @@ static void free_owned_str_constants(UValue *constants, size_t count,
     }
 }
 
-void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
+void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud) {
     /* MOD-030: every caller guards proto != NULL; the runtime contract is
      * "non-NULL proto" — assert rather than silently no-op. */
@@ -205,7 +205,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UModuleAllocFn alloc,
 }
 
 UProto *umodule_alloc_nested_proto(UModule *module, UProto *parent_proto) {
-    UModuleAllocFn alloc = module_allocator(module);
+    UChunkAllocFn alloc = module_allocator(module);
     if (alloc == NULL) return NULL;
     /* v0.8.5: parent_proto is the explicit nested[] target.  For top-level
      * function literals callers pass module->root_proto; for nested
@@ -374,7 +374,7 @@ static UModuleLoadError decode_metadata(MDecCtx *d) {
         return ULOAD_TRUNCATED;
     }
     if (src_len > 0U) {
-        UModuleAllocFn alloc = module_allocator(d->module);
+        UChunkAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) {
             set_errmsg(d->errmsg, d->errcap, "no allocator for source_name");
             return ULOAD_OOM;
@@ -396,7 +396,7 @@ static UModuleLoadError decode_constants_into(MDecCtx *d,
                                               UValue **target_buf,
                                               size_t *target_count,
                                               size_t *target_cap,
-                                              UModuleAllocFn alloc,
+                                              UChunkAllocFn alloc,
                                               void *alloc_ud) {
     uint64_t n_const = 0;
     size_t consumed = 0;
@@ -478,7 +478,7 @@ static UModuleLoadError decode_constants_into(MDecCtx *d,
                 set_errmsg(d->errmsg, d->errcap, "truncated at UVAL_STR bytes");
                 return ULOAD_TRUNCATED;
             }
-            UModuleAllocFn alloc_fn = alloc;
+            UChunkAllocFn alloc_fn = alloc;
             char *bytes = (char *)alloc_fn(NULL, (size_t)slen + 1U, alloc_ud);
             if (bytes == NULL) {
                 return ULOAD_OOM;
@@ -508,7 +508,7 @@ static UModuleLoadError decode_instructions_into(MDecCtx *d,
                                                  uint32_t **target_buf,
                                                  size_t *target_count,
                                                  size_t *target_cap,
-                                                 UModuleAllocFn alloc,
+                                                 UChunkAllocFn alloc,
                                                  void *alloc_ud) {
     uint64_t n_instr = 0;
     size_t consumed = 0;
@@ -577,7 +577,7 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
                                                size_t instr_count,
                                                size_t *abs_line_count_out,
                                                size_t *abs_line_cap_out,
-                                               UModuleAllocFn alloc,
+                                               UChunkAllocFn alloc,
                                                void *alloc_ud) {
     uint64_t n_deltas = 0;
     size_t consumed = 0;
@@ -676,7 +676,7 @@ static UModuleLoadError decode_line_table_into(MDecCtx *d,
 static UModuleLoadError decode_ic_names_into(MDecCtx *d,
                                               uint16_t *out_count,
                                               char ***out_strs,
-                                              UModuleAllocFn alloc,
+                                              UChunkAllocFn alloc,
                                               void *alloc_ud) {
     uint64_t count = 0;
     size_t consumed = 0;
@@ -756,7 +756,7 @@ static UModuleLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
     }
     for (uint64_t i = 0; i < n_nested; i++) {
         /* Allocate child proto under parent's module ownership. */
-        UModuleAllocFn alloc = module_allocator(d->module);
+        UChunkAllocFn alloc = module_allocator(d->module);
         if (alloc == NULL) return ULOAD_OOM;
         /* Grow parent->nested[] array. */
         if (parent->nested_count >= parent->nested_cap) {
@@ -788,7 +788,7 @@ static UModuleLoadError decode_nested_protos_into(MDecCtx *d, UProto *parent) {
  * v1.7: recursive — reads nested_count + nested[] children at end.
  * The proto's alloc_fn/alloc_ud must be set by the caller. */
 static UModuleLoadError decode_proto(MDecCtx *d, UProto *p) {
-    UModuleAllocFn alloc = p->alloc_fn;
+    UChunkAllocFn alloc = p->alloc_fn;
     if (alloc == NULL) {
         /* Hosted-build fallback: caller did not supply an allocator and
            the proto inherits from the module which uses stdlib_alloc. */
@@ -1133,7 +1133,7 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
      * write chunk-top fields directly into root_proto (no alias-copy).
      * If re-deserializing into the same module struct, free the old
      * root_proto (and its buffers) first via umodule_destroy_proto_buffers. */
-    UModuleAllocFn root_alloc = module_allocator(module);
+    UChunkAllocFn root_alloc = module_allocator(module);
     if (root_alloc == NULL) return ULOAD_OOM;
     if (module->root_proto != NULL) {
         umodule_destroy_proto_buffers(module->root_proto, root_alloc, module->alloc_ud);
@@ -1323,7 +1323,7 @@ umodule_destroy(UModule *module, struct UVM *vm)
             /* Free the module shell (source_name + struct) — root_proto
              * survives with the self-link sentinel. */
             {
-                UModuleAllocFn alloc = module_allocator(module);
+                UChunkAllocFn alloc = module_allocator(module);
                 if (alloc != NULL) {
                     module_buf_free(alloc, module->alloc_ud, module->source_name);
                 }
@@ -1386,7 +1386,7 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
         module->next_in_realm = NULL;
     }
 
-    UModuleAllocFn alloc = module_allocator(module);
+    UChunkAllocFn alloc = module_allocator(module);
     if (alloc != NULL) {
         /* Task 11: all chunk-top data (nested[], buffers, ic_names) lives on
          * root_proto.  umodule_destroy_proto_buffers frees everything owned
