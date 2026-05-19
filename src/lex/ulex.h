@@ -11,6 +11,14 @@
 extern "C" {
 #endif
 
+/* v0.9.0-repl: depth cap for //#push / //#pop syncline directives.
+ * 4 is sufficient for any plausible REPL framing (top + include + macro-expand
+ * + safety).  Overflow degrades silently (drop further pushes); underflow
+ * pops on an empty stack also degrade silently. */
+#ifndef URBI_SYNCLINE_STACK_MAX
+#  define URBI_SYNCLINE_STACK_MAX 4
+#endif
+
 /* Full token-type space of the lexer.  Every call to ulex_next returns
    exactly one of these values in UToken.type. */
 typedef enum {
@@ -177,6 +185,17 @@ typedef struct {
     const char *cur;
     int line;
     const char *line_start;
+    /* v0.9.0-repl: syncline state.
+     * source_name defaults to "<stdin>" (or whatever was passed to ulex_init).
+     * Rewritten by //#line / //#push / //#pop.  Pointer into the symbol
+     * table (lifetime = VM lifetime). */
+    const char *source_name;
+    struct {
+        const char *file;
+        uint32_t    line;
+        uint32_t    col;
+    } syncline_stack[URBI_SYNCLINE_STACK_MAX];
+    uint8_t syncline_depth;
 } ULexer;
 
 /* Initialize the ULexer over a source buffer.  No allocation.
@@ -195,6 +214,14 @@ typedef struct {
  * Preconditions are enforced by URBI_INTERNAL_ASSERT in URBI_DEBUG builds;
  * release builds inherit the original UB-on-violation semantics. */
 void ulex_init(ULexer *lex, const char *src, size_t len);
+
+/* v0.9.0-repl: current claimed source name (syncline-aware).  Defaults to
+ * "<stdin>" if no syncline directive has been seen. */
+static inline const char *
+ulex_current_source(const ULexer *lex)
+{
+    return lex && lex->source_name ? lex->source_name : "<stdin>";
+}
 
 /* Read and return the next UToken.  Idempotent at EOF — subsequent calls
  * keep returning TOK_EOF.

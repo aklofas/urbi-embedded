@@ -806,6 +806,9 @@ void ulex_init(ULexer *lex, const char *src, const size_t len) {
     lex->cur = src;
     lex->line = 1;
     lex->line_start = src;
+    lex->source_name = "<stdin>";
+    lex->syncline_depth = 0;
+    /* syncline_stack contents irrelevant when depth == 0 */
 
     /* LEX-002: post-init invariant.  `line_start == src` even on empty input;
      * for len == 0, (cur - line_start) is 0 and the column computed by
