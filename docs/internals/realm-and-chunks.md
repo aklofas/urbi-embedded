@@ -1,18 +1,20 @@
-# Realm and Modules
+# Realm and Chunks
 
 ## Overview
 
 A `URealm` is the per-execution-context type. It owns the top-level globals
 visible to bytecode (via `realm->global_object`), an implicit cleanup `UTag`,
-and a list of strands created under it. Modules are read-only artifacts
-(`UModule`); their per-VM mutable IC state lives in `UModuleInstance` cells.
-Each VM keeps a single linked list of every live `UModuleInstance` rooted at
-`vm->module_instances_head`; `urbi_get_or_create_module_instance` walks that
-list and prepends a fresh entry on miss.
+and a list of strands created under it. Chunks are compiled artifacts
+represented by a root `UProto`; their per-VM mutable IC state lives in
+`UChunkInstance` cells. Each VM keeps a single linked list of every live
+`UChunkInstance` rooted at `vm->module_instances_head`;
+`urbi_get_or_create_chunk_instance` walks that list and prepends a fresh
+entry on miss.
 
 Source: `src/realm/urealm.{h,c}`, `src/realm/urealm_globals.{h,c}`,
-`src/realm/urealm_namespace.c`, `src/object/umodule_instance.{h,c}`,
-`src/module/umodule.{h,c}`, `src/module/uchunk.c`, `src/vm/uvm_run.c`,
+`src/realm/urealm_namespace.c`, `src/object/uchunk_instance.{h,c}`,
+`src/chunk/uproto.{h,c}`, `src/chunk/uchunk.{h,c}`,
+`src/chunk/uchunk_strand.c`, `src/vm/uvm_run.c`,
 `include/urbi/urbi.h`.
 
 ---
@@ -35,6 +37,10 @@ Source: `src/realm/urealm.{h,c}`, `src/realm/urealm_globals.{h,c}`,
 - `strands_head` — singly-linked list of `UStrand` objects allocated under
   this realm. Walked by `urbi_realm_destroy` before `utag_destroy` so the
   tag's member-strand list is empty by the time the tag is freed.
+- `loaded_protos_head` — singly-linked list (via `UProto.next_in_realm`) of
+  every root `UProto` loaded into this realm. Populated by `urbi_load_chunk`
+  and `urbi_run_chunk` via head-insertion; unlinked and freed by
+  `urbi_chunk_free` or `urbi_realm_destroy`.
 - `prev_in_vm` / `next_in_vm` — doubly-linked list rooted at
   `vm->realms_head`; head-insertion at create.
 
@@ -79,29 +85,29 @@ write uses `__ATOMIC_RELEASE`, paired with `__ATOMIC_ACQUIRE` in
 
 ---
 
-## Module instance cache
+## Chunk instance cache
 
-`UModuleInstance` (`src/object/umodule_instance.h`) is the per-VM IC RAM tier
-that mirrors the read-only `UModule`. Two GC cells:
+`UChunkInstance` (`src/object/uchunk_instance.h`) is the per-VM IC RAM tier
+that mirrors the read-only root `UProto`. Two GC cells:
 
-- `UModuleInstance` (`UTYPE_MODULE_INSTANCE`) — header, `module`, `vm`,
+- `UChunkInstance` (`UTYPE_MODULE_INSTANCE`) — header, root `UProto*`, `vm`,
   `proto_instances`, and `next_in_vm`.
 - `UProtoInstanceArr` (`UTYPE_PROTO_INSTANCE`) — single bulk allocation
-  holding `entries[1 + module->nested_count]` plus the contiguous IC
-  tables. `entries[0]` is the root chunk; `entries[1..n-1]` mirror
-  `module->nested[]`.
+  holding `entries[1 + root->nested_count]` plus the contiguous IC
+  tables. `entries[0]` is the root proto-instance; `entries[1..n-1]` mirror
+  `root->nested[]`.
 
-### `urbi_get_or_create_module_instance`
+### `urbi_get_or_create_chunk_instance`
 
 ```c
-UModuleInstance *
-urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
+UChunkInstance *
+urbi_get_or_create_chunk_instance(struct UVM *vm, UProto *root);
 ```
 
-Walks `vm->module_instances_head` looking for a matching `module ==
-m`; on hit, returns the cached entry. On miss, calls
-`urbi_module_instance_create`, which prepends the new instance at the head
-of the list. The cost is O(N) in distinct loaded modules per VM (typically
+Walks `vm->module_instances_head` looking for a matching root proto;
+on hit, returns the cached entry. On miss, calls
+`urbi_chunk_instance_create`, which prepends the new instance at the head
+of the list. The cost is O(N) in distinct loaded chunks per VM (typically
 < 10).
 
 The walk-then-prepend is **unsynchronised**. Single-threaded-VM contract:
@@ -111,28 +117,28 @@ this safe; parallel-realms support is a post-`v1.0` expansion.
 
 ### Auto-binding from chunk-run paths
 
-- `urbi_run_chunk` (`src/module/uchunk.c`) resolves the realm (NULL →
+- `urbi_run_chunk` (`src/chunk/uchunk_strand.c`) resolves the realm (NULL →
   global) and calls `urbi_vm_run`. No separate pre-create — the strand's
   cache resolution happens inside `urbi_vm_run` itself.
 - `urbi_vm_run` (`src/vm/uvm_run.c`) unconditionally calls
-  `urbi_module_instance_create(vm, module)` for its transient strand.
+  `urbi_chunk_instance_create(vm, root)` for its transient strand.
   Forcing a fresh create defends against the REPL pattern of
-  stack-allocating `UModule` and reusing the same address — a cache hit on
-  a stale stack-allocated module would hand out an instance with freed
+  stack-allocating a root `UProto` and reusing the same address — a cache
+  hit on a stale stack-allocated proto would hand out an instance with freed
   `ic_names`.
 
 ---
 
 ## `ic_name_strs` lazy interning
 
-`UProto.ic_names` and the root-chunk `UModule.ic_names` are arrays of
-interned `USymbol *` parallel to each chunk's IC sites. The deserializer
-cannot intern (interning needs a VM in scope, and the loader does not have
-one), so it instead populates the companion `char **ic_name_strs` with
-freshly-allocated UTF-8 copies and leaves `ic_names == NULL`.
+`UProto.ic_names` and `UProto.ic_name_strs` are parallel arrays per proto
+(both root and nested), sized to `UProto.ic_count`. The deserializer cannot
+intern (interning needs a VM in scope, and the loader does not have one), so
+it instead populates `ic_name_strs` with freshly-allocated UTF-8 copies and
+leaves `ic_names == NULL`.
 
-`intern_ic_names_from_strs` (in `src/object/umodule_instance.c`) closes the
-gap on first `urbi_module_instance_create`. For each chunk:
+`intern_ic_names_from_strs` (in `src/object/uchunk_instance.c`) closes the
+gap on first `urbi_chunk_instance_create`. For each proto in the tree:
 
 1. If `ic_count == 0`, return success.
 2. If `ic_names != NULL`, return success — already interned.
@@ -142,37 +148,41 @@ gap on first `urbi_module_instance_create`. For each chunk:
 6. Publish into `ic_names`.
 
 The helper is **idempotent** — second and subsequent
-`urbi_module_instance_create` calls on the same `UModule` are no-ops.
+`urbi_chunk_instance_create` calls on the same root proto are no-ops.
 
 ---
 
-## Module-load contract
+## Chunk-load contract
 
-`umodule_deserialize(module, buf, size, errmsg, errcap)` populates a
-zero-initialized `UModule` from a `.urb` byte buffer. Refer to
+`uchunk_deserialize(root, buf, size, alloc_fn, alloc_ctx, errmsg, errcap)`
+allocates a root `UProto` from a `.urb` byte buffer. Refer to
 [bytecode-format.md](bytecode-format.md) for the wire format itself.
+
+The public API is `urbi_chunk_from_bytes(buf, len, errmsg, errcap)`, which
+calls `uchunk_deserialize` with the default allocator, then registers the
+root proto onto the target realm's `loaded_protos_head` list.
 
 ### Strict zero on header bytes 16–23
 
 `v1.0` defines no flag bits in the 8-byte reserved region at header offsets
 16–23. The loader rejects any non-zero byte in that range with
-`ULOAD_CORRUPT` and a diagnostic `"non-zero reserved byte 0x%02x at offset
-%zu"`. Earlier forward-compat tolerance silently dropped flags older
+`UCHUNK_LOAD_CORRUPT` and a diagnostic `"non-zero reserved byte 0x%02x at
+offset %zu"`. Earlier forward-compat tolerance silently dropped flags older
 builds did not recognize, which is the wrong policy when bytecode stability
 is not yet promised.
 
 ### Partial-buffer-on-error policy
 
-On any non-OK return other than `ULOAD_INVALID_ARG` (NULL module or buffer),
-`module` may hold partial buffers from whichever decode section completed
-before the failure. `umodule_destroy(module)` is safe in **either** case
-— success or failed-partial — and is the correct cleanup path either way.
-Internally, every per-section decoder zero-initialises its target slots
-before populating, so the destroy walk sees well-defined NULLs even after
-mid-section failure.
+On any non-OK return other than `UCHUNK_LOAD_INVALID_ARG` (NULL root or
+buffer), the root `UProto` may hold partial allocations from whichever
+decode section completed before the failure. `uchunk_destroy(root, vm)` is
+safe in **either** case — success or failed-partial — and is the correct
+cleanup path either way. Internally, every per-section decoder
+zero-initialises its target slots before populating, so the destroy walk
+sees well-defined NULLs even after mid-section failure.
 
 `ic_names` interning is deferred to the first
-`urbi_module_instance_create` (above); deserialize itself does not require
+`urbi_chunk_instance_create` (above); deserialize itself does not require
 a VM. See also [object-model.md](object-model.md) for the per-VM IC RAM
 tier and how interned `ic_names` feed `UIC.name`, and
 [closures.md](closures.md) for how `UClosure` carries its enclosing
@@ -185,7 +195,7 @@ tier and how interned `ic_names` feed `UIC.name`, and
 Two structures in this area assume a single-threaded VM and are pinned to
 the `v1.0` `URBI_SCHED_COOPERATIVE` baseline:
 
-- **`urbi_get_or_create_module_instance`** — walk-then-prepend on
+- **`urbi_get_or_create_chunk_instance`** — walk-then-prepend on
   `vm->module_instances_head` is unsynchronised.
 - **The deferred slot-change ring** (`vm->deferred_slot_changes`, capacity
   `URBI_DEFERRED_SLOT_CHANGE_RING_SIZE`) — entries are weakly referenced
@@ -214,10 +224,10 @@ into a three-step boot:
    allocates `Boolean` / `Nil` / `Void` singletons and installs the
    minimum Wave-1 method set (`Boolean.toString`, `String.length`).
 3. **Baked-bytecode load** — when `urbi_stdlib_bytecode_len > 0`,
-   `umodule_deserialize` parses the blob into a heap-allocated
-   `UModule` stored on `vm->stdlib_module`, then
-   `urbi_get_or_create_module_instance` binds a per-VM
-   `UModuleInstance` so the IC machinery sees the chunk's
+   `uchunk_deserialize` parses the blob into a heap-allocated root `UProto`
+   stored on `vm->stdlib_module`, then
+   `urbi_get_or_create_chunk_instance` binds a per-VM
+   `UChunkInstance` so the IC machinery sees the chunk's
    `ic_name_strs` lazy-interned to live `USymbol *`.
 
 The baked blob comes from `tools/urbi-compile-stdlib`, which walks
@@ -239,14 +249,14 @@ the source-compile path linked in.
 and the deserialize+bind branch becomes live.
 
 **Run-end deferral.** `urbi_stdlib_boot` does **not** run the stdlib
-module's root chunk — it is reachable from the realm-create path, and
+chunk's root proto — it is reachable from the realm-create path, and
 `urbi_run_chunk` would re-enter realm population.  Phase 10 wires a
 deferred-run hook that fires once the global Realm is fully
 populated.  Errors during deserialize or bind surface as
 `URBI_ERR_STDLIB_BOOT_FAILED` (slot −15 in `UErrCode`); allocation
 failures still surface as `URBI_ERR_OOM`.
 
-Module ownership: `vm->stdlib_module` is freed via `umodule_destroy`
-plus `vm->alloc_fn(_, 0, _)` from inside `urbi_vm_destroy`, sequenced
-**after** `urbi_gc_destroy` so any `UModuleInstance` referencing the
-module has already been reaped.
+Chunk ownership: `vm->stdlib_module` is a root `UProto*` freed via
+`uchunk_destroy` plus `vm->alloc_fn(_, 0, _)` from inside
+`urbi_vm_destroy`, sequenced **after** `urbi_gc_destroy` so any
+`UChunkInstance` referencing the chunk has already been reaped.

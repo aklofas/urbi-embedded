@@ -208,7 +208,7 @@ inventory is laid out in [gc.md](gc.md); the object-model subset is:
 | `UTYPE_SHAPE`           | 10    | `UShape`                   |
 | `UTYPE_PROPS`           | 11    | `UProps`                   |
 | `UTYPE_SLOTHANDLE`      | 12    | `USlotHandle` (handle API) |
-| `UTYPE_MODULE_INSTANCE` | 13    | `UModuleInstance`          |
+| `UTYPE_MODULE_INSTANCE` | 13    | `UChunkInstance`           |
 | `UTYPE_PROTO_INSTANCE`  | 14    | `UProtoInstance`           |
 | `UTYPE_SHAPE_MAP`       | 15    | `UShapeMap`                |
 | `UTYPE_PROPS_TABLE`     | 16    | `UPropsTable` (wrapper)    |
@@ -231,8 +231,8 @@ C is not a register — it's an inline-cache site index into the function's
 per-call-site IC table. The emitter assigns one IC slot per `GETSLOT` /
 `SETSLOT` site at compile time; the runtime allocates the IC table when the
 module is bound to a VM. The IC table itself lives in the per-VM
-`UProtoInstance` (see [realm-and-modules.md](realm-and-modules.md) for the
-module-instance binding protocol and the per-VM IC RAM tier).
+`UProtoInstance` (see [realm-and-chunks.md](realm-and-chunks.md) for the
+chunk-instance binding protocol and the per-VM IC RAM tier).
 
 Dispatch flow in `src/vm/uvm.c`:
 
@@ -418,8 +418,8 @@ flag bit.
 - [GC](gc.md) — cell types, gc_byte bit layout, the slot-write barrier
   (`urbi_gc_slot_write`), and the realm-hierarchy walker that keeps
   `UObject` / `UShape` / `UProps` / wrapper cells reachable.
-- [Realm and modules](realm-and-modules.md) — how the per-VM
-  `UModuleInstance` carries the IC RAM tier and lazy-interns IC name
+- [Realm and chunks](realm-and-chunks.md) — how the per-VM
+  `UChunkInstance` carries the IC RAM tier and lazy-interns IC name
   strings on first use.
 - [Closures](closures.md) — `UClosure.proto_inst` is the binding the
   `OP_GETSLOT` / `OP_SETSLOT` dispatch arms read to resolve the IC table.

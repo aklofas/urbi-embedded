@@ -311,8 +311,8 @@ explaining the ordering requirement.  Both sweeps are O(N).
   §§2–4 — architecture, refcount fusion, wire format, risk register.
 - **Predecessor model:** [loader-strand.md](loader-strand.md) — v0.8.0
   persistent loader strand + UModule.refcount (now fused with root_proto).
-- **Realm context:** [realm-and-modules.md](realm-and-modules.md) — per-realm
-  globals, module instance cache, ic_name_strs lazy interning.
+- **Realm context:** [realm-and-chunks.md](realm-and-chunks.md) — per-realm
+  globals, chunk instance cache, ic_name_strs lazy interning.
 - **Closure ownership:** [closures.md](closures.md) — OWNS_* watcher flags,
   `strand_closure_unlink`, `vm->stdlib_closures`.
 - **Wire format detail:** [bytecode-format.md](bytecode-format.md) — version
