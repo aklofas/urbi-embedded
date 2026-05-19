@@ -19,6 +19,12 @@ extern "C" {
 #  define URBI_SYNCLINE_STACK_MAX 4
 #endif
 
+/* Maximum length of a //#line or //#push filename (including NUL).
+ * Filenames longer than this are silently truncated. */
+#ifndef URBI_SYNCLINE_NAME_MAX
+#  define URBI_SYNCLINE_NAME_MAX 256
+#endif
+
 /* Full token-type space of the lexer.  Every call to ulex_next returns
    exactly one of these values in UToken.type. */
 typedef enum {
@@ -196,6 +202,13 @@ typedef struct {
         uint32_t    col;
     } syncline_stack[URBI_SYNCLINE_STACK_MAX];
     uint8_t syncline_depth;
+    /* Name pool for //#line and //#push filenames.  Round-robin allocation
+     * over (URBI_SYNCLINE_STACK_MAX + 1) slots keeps the current source_name
+     * plus all stacked names alive for the lifetime of the ULexer.
+     * Filenames longer than URBI_SYNCLINE_NAME_MAX - 1 are truncated.
+     * v0.9.0-repl. */
+    char    syncline_name_pool[URBI_SYNCLINE_STACK_MAX + 1][URBI_SYNCLINE_NAME_MAX];
+    uint8_t syncline_pool_idx;
 } ULexer;
 
 /* Initialize the ULexer over a source buffer.  No allocation.
