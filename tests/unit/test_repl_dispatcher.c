@@ -594,6 +594,117 @@ UTEST(dispatcher_introspect_unknown_what_emits_error)
     free_server(server, vm);
 }
 
+/* ---- v0.9.1 Phase 5: Lobby session-lifecycle integration ------------- */
+
+/* Helper: evaluate `expr` in the global realm and return the printed
+ * result.  Used to peek at Lobby.lobbies.length() between dispatcher
+ * mutations.  Returns the substring search for `needle` after eval. */
+static int
+eval_contains(UVM *vm, const char *expr, const char *needle)
+{
+    URealm *gr = urbi_realm_global(vm);
+    char out[256];
+    out[0] = '\0';
+    int rc = urbi_repl_eval(vm, gr, expr, strlen(expr), out, sizeof(out));
+    if (rc != URBI_OK) return 0;
+    return strstr(out, needle) != NULL;
+}
+
+UTEST(dispatcher_session_create_grows_lobby_lobbies)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UASSERT(server != NULL);
+
+    /* Start: Lobby.lobbies is empty (lobby.u initialised it to List.new(),
+     * and no REPL sessions have been created yet). */
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "0"));
+
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s != NULL);
+
+    /* After session_create: one entry. */
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "1"));
+
+    urepl_session_destroy(server, s);
+
+    /* After session_destroy: empty again. */
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "0"));
+
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_handleDisconnect_invoked_on_destroy)
+{
+    /* Validates that urepl_session_destroy invokes the C-side
+     * urbi_lobby_invoke_handleDisconnect — observable through
+     * mutation of the lobby instance itself.  The session's
+     * Realm.global_object is a mutable cloned lobby, so the test
+     * overrides handleDisconnect to write a sentinel back to Global
+     * (Global is mutable; session-local writes survive the realm
+     * teardown because Global is a VM singleton).
+     *
+     * This skips the cross-realm at-event-emit timing issue (the
+     * watcher body fires asynchronously; getting it to drain in time
+     * for a subsequent eval is brittle in unit-test scope).  The
+     * direct slot-write check below verifies the invoke-hook end-to-
+     * end without depending on the M5 reactive scheduler. */
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UASSERT(server != NULL);
+
+    URealm *gr = urbi_realm_global(vm);
+    char out[256];
+    static const char INIT[] = "Global.disconnect_fired = 0";
+    UASSERT_EQ(urbi_repl_eval(vm, gr, INIT, sizeof(INIT) - 1U,
+                              out, sizeof(out)),
+               URBI_OK);
+
+    UReplSession *s = urepl_session_create(server);
+    UASSERT(s != NULL);
+
+    /* Install a per-session handleDisconnect override that bumps the
+     * counter on Global.  Realm.handleDisconnect = function() { ... }
+     * writes to the session realm's global_object (the lobby
+     * instance), which is mutable. */
+    static const char OVERRIDE[] =
+        "Realm.handleDisconnect = "
+        "function() { Global.disconnect_fired = Global.disconnect_fired + 1 }";
+    UASSERT_EQ(urbi_repl_eval(vm, s->realm,
+                              OVERRIDE, sizeof(OVERRIDE) - 1U,
+                              out, sizeof(out)),
+               URBI_OK);
+
+    urepl_session_destroy(server, s);
+
+    UASSERT(eval_contains(vm, "Global.disconnect_fired", "1"));
+
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_multiple_sessions_grow_and_shrink_lobby_lobbies)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UASSERT(server != NULL);
+
+    UReplSession *a = urepl_session_create(server);
+    UReplSession *b = urepl_session_create(server);
+    UReplSession *c = urepl_session_create(server);
+    UASSERT(a && b && c);
+
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "3"));
+
+    urepl_session_destroy(server, b);
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "2"));
+
+    urepl_session_destroy(server, a);
+    urepl_session_destroy(server, c);
+    UASSERT(eval_contains(vm, "Lobby.lobbies.length()", "0"));
+
+    free_server(server, vm);
+}
+
 void
 test_repl_dispatcher_suite(void)
 {
@@ -635,6 +746,12 @@ test_repl_dispatcher_suite(void)
               dispatcher_handles_introspect_gc);
     utest_run("dispatcher_introspect_unknown_what_emits_error",
               dispatcher_introspect_unknown_what_emits_error);
+    utest_run("dispatcher_session_create_grows_lobby_lobbies",
+              dispatcher_session_create_grows_lobby_lobbies);
+    utest_run("dispatcher_multiple_sessions_grow_and_shrink_lobby_lobbies",
+              dispatcher_multiple_sessions_grow_and_shrink_lobby_lobbies);
+    utest_run("dispatcher_handleDisconnect_invoked_on_destroy",
+              dispatcher_handleDisconnect_invoked_on_destroy);
 }
 
 #else  /* !URBI_ENABLE_REPL */

@@ -6,6 +6,7 @@
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
 #include "realm/urealm.h"
+#include "stdlib/lobby_native.h"  /* v0.9.1 Phase 5 — Lobby.lobbies + handleDisconnect */
 #include "vm/uvm.h"
 
 #include <stdio.h>
@@ -123,6 +124,16 @@ urepl_session_create(UReplServer *server)
      * ringbuf instead of the VM's default stderr writer. */
     urbi_realm_set_writer(server->vm, r, session_writer, s);
 
+    /* v0.9.1 Phase 5: register this session's global_object on
+     * Lobby.lobbies so the urbiscript-side view stays in sync.  A
+     * failure here would surface as URBI_ERR_OOM, but the slot is
+     * already initialised by lobby.u (the bake-blob's deferred run
+     * fires during urbi_realm_create_repl -> urbi_populate_realm_-
+     * globals above), so practical OOM is unlikely.  We swallow it:
+     * a session whose entry didn't land in Lobby.lobbies still works
+     * for its own client; only `wall` broadcast would miss it. */
+    (void)urbi_lobby_register_session(server->vm, r);
+
     /* Link into server's session list (head-insert). */
     pthread_mutex_lock(&server->sessions_mutex);
     s->next = server->sessions_head;
@@ -174,7 +185,10 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
     if (server == NULL || session == NULL) {
         return;
     }
-    /* Unlink from server's session list. */
+    /* Unlink from server's session list FIRST so concurrent finders
+     * (`urepl_session_find` from the listener subthread) won't see a
+     * session that's mid-teardown.  After this point only the caller
+     * holds a reference. */
     pthread_mutex_lock(&server->sessions_mutex);
     UReplSession **cur = &server->sessions_head;
     while (*cur != NULL) {
@@ -185,6 +199,28 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
         cur = &(*cur)->next;
     }
     pthread_mutex_unlock(&server->sessions_mutex);
+
+    /* v0.9.1 Phase 5 disconnect-cleanup sequence (spec section 9):
+     *
+     *   1. Fire handleDisconnect against the session's lobby instance
+     *      so user code or the default onDisconnect Event runs while
+     *      the realm is still live.  Errors silently dropped — teardown
+     *      shouldn't abort because a user-supplied hook faulted.
+     *   2. Unregister from Lobby.lobbies so subsequent `wall` calls
+     *      and `Lobby.lobbies.length()` reads see consistent state.
+     *   3. Clear the realm writer so any late writer call during step 4
+     *      teardown can't hit session_writer with a freed session.
+     *   4. urbi_realm_destroy cancels any tags + strands owned by this
+     *      realm, then frees the realm (and the v0.7.3 root_proto-
+     *      refcount mechanism rescues any persistent strand still
+     *      holding a UProto reference).
+     *   5. Destroy the output ringbuf and free the session struct.
+     *
+     * Steps 1-2 are no-ops in builds where the lobby.u overlay didn't
+     * run (e.g. URBI_BYTECODE_ONLY builds — though such builds also
+     * disable urbi_repl_eval so the dispatcher is unreachable). */
+    (void)urbi_lobby_invoke_handleDisconnect(server->vm, session->realm);
+    (void)urbi_lobby_unregister_session(server->vm, session->realm);
 
     /* Clear the realm's writer before destroying the realm to avoid a
      * dangling callback during teardown. */
