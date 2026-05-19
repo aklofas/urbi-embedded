@@ -150,7 +150,8 @@ reader_main(void *arg)
         return NULL;
     }
 
-    while (!r->stop_requested && !server->shutting_down) {
+    while (!UREPL_ATOMIC_LOAD_BOOL(&r->stop_requested)
+           && !UREPL_ATOMIC_LOAD_BOOL(&server->shutting_down)) {
         struct pollfd pfds[2];
         int nfds = 0;
         pfds[nfds].fd = pollable;
@@ -363,7 +364,7 @@ listener_main(void *arg)
     struct pollfd pfds[MAX_TRANSPORTS + 1];
     const UReplTransportEntry *entries[MAX_TRANSPORTS];
 
-    while (!server->shutting_down) {
+    while (!UREPL_ATOMIC_LOAD_BOOL(&server->shutting_down)) {
         int nfds = 0;
         UReplTransportEntry *e = server->transports;
         while (e != NULL && nfds < MAX_TRANSPORTS) {
@@ -440,8 +441,32 @@ listener_main(void *arg)
                     }
                 }
 
-                (void)spawn_reader(server, te->transport, client_fd,
-                                   peer_id);
+                /* Hand off to the VM thread.  spawn_reader does
+                 * VM-touching work (urepl_session_create allocates a
+                 * realm + boots stdlib via urbi_run_chunk → urbi_step)
+                 * and MUST NOT run on the listener thread.  Push onto
+                 * the accept queue; urepl_listener_drain_accepts on
+                 * the VM thread (called from the dispatch drain hook)
+                 * pops and calls spawn_reader. */
+                UReplAcceptItem *item =
+                    (UReplAcceptItem *)calloc(1, sizeof(*item));
+                if (item == NULL) {
+                    if (te->transport->close_fn != NULL) {
+                        te->transport->close_fn(client_fd);
+                    }
+                    continue;
+                }
+                item->client_fd = client_fd;
+                item->peer_id   = peer_id;
+                item->transport = te->transport;
+                pthread_mutex_lock(&server->accept_queue_mutex);
+                if (server->accept_tail != NULL) {
+                    server->accept_tail->next = item;
+                } else {
+                    server->accept_head = item;
+                }
+                server->accept_tail = item;
+                pthread_mutex_unlock(&server->accept_queue_mutex);
             }
         }
     }
@@ -486,7 +511,7 @@ urepl_listener_start(UReplServer *server)
             return URBI_ERR_OOM;
         }
     }
-    server->shutting_down = false;
+    UREPL_ATOMIC_STORE_BOOL(&server->shutting_down, false);
     if (pthread_create(&server->listener_thread, NULL,
                        listener_main, server) != 0) {
         close(server->stop_eventfd);
@@ -504,7 +529,7 @@ urepl_listener_stop_and_join(UReplServer *server)
         return;
     }
     /* Tell the listener thread + all readers to exit. */
-    server->shutting_down = true;
+    UREPL_ATOMIC_STORE_BOOL(&server->shutting_down, true);
 
     if (server->listener_running && server->stop_eventfd >= 0) {
         eventfd_signal(server->stop_eventfd);
@@ -518,7 +543,7 @@ urepl_listener_stop_and_join(UReplServer *server)
     pthread_mutex_lock(&server->sessions_mutex);
     UReplReader *r = server->readers_head;
     while (r != NULL) {
-        r->stop_requested = true;
+        UREPL_ATOMIC_STORE_BOOL(&r->stop_requested, true);
         if (r->client_fd >= 0 && r->transport != NULL
             && r->transport->close_fn != NULL) {
             /* Half-close the socket so the reader's recv() returns 0
@@ -582,4 +607,29 @@ urepl_listener_wake_all_readers(UReplServer *server)
         r = r->next;
     }
     pthread_mutex_unlock(&server->sessions_mutex);
+}
+
+void
+urepl_listener_drain_accepts(UReplServer *server)
+{
+    if (server == NULL) {
+        return;
+    }
+    /* Detach the entire queue under the accept_queue_mutex, then
+     * process outside the lock.  Keeps the listener thread's push
+     * path unblocked while spawn_reader runs (slow — bootstraps a
+     * realm). */
+    pthread_mutex_lock(&server->accept_queue_mutex);
+    UReplAcceptItem *head = server->accept_head;
+    server->accept_head = NULL;
+    server->accept_tail = NULL;
+    pthread_mutex_unlock(&server->accept_queue_mutex);
+
+    while (head != NULL) {
+        UReplAcceptItem *next = head->next;
+        (void)spawn_reader(server, head->transport,
+                           head->client_fd, head->peer_id);
+        free(head);
+        head = next;
+    }
 }

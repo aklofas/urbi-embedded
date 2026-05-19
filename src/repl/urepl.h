@@ -21,6 +21,33 @@ typedef struct UReplQueue UReplQueue;
 typedef struct UReplRingbuf UReplRingbuf;
 typedef struct UReplJob UReplJob;
 typedef struct UReplTransportEntry UReplTransportEntry;
+typedef struct UReplAcceptItem UReplAcceptItem;
+
+/* Pending-accept item.  Listener thread accepts a connection on the
+ * kernel side (socket fd + peer id) and pushes one of these onto the
+ * server's accept queue.  VM thread drains the queue at the dispatch
+ * boundary and does the *VM-touching* work — session create (allocates
+ * a realm + stdlib boot) + reader-pthread spawn — on the VM thread,
+ * preserving the spec §3.1 invariant that VM state is single-threaded.
+ *
+ * Without this hand-off the listener thread would call
+ * urbi_realm_create_repl → urbi_run_chunk → urbi_step, racing with the
+ * host's own urbi_step on the VM. */
+struct UReplAcceptItem {
+    int                      client_fd;
+    uint32_t                 peer_id;
+    const UTransport        *transport;
+    struct UReplAcceptItem  *next;
+};
+
+/* Cross-thread bool helpers.  shutting_down (server) and stop_requested
+ * (reader) are set by one thread and polled by another; the bare bool
+ * would be a data race even though the semantics are benign (one-shot
+ * transition false→true, eventfd carries the wake-up).  Acquire/release
+ * pairing makes the transition observable to helgrind/tsan and gives a
+ * happens-before edge between the write and a subsequent read. */
+#define UREPL_ATOMIC_LOAD_BOOL(p)  __atomic_load_n((p), __ATOMIC_ACQUIRE)
+#define UREPL_ATOMIC_STORE_BOOL(p, v) __atomic_store_n((p), (v), __ATOMIC_RELEASE)
 
 /* Transport list entry.  Each call to urbi_repl_register_transport
  * appends one of these to the server's transport chain. */
@@ -68,6 +95,13 @@ struct UReplServer {
     /* Per-session reader threads.  Indexed by session_id via the
      * sessions list; reader joins happen at urbi_repl_stop. */
     struct UReplReader      *readers_head;
+
+    /* Pending-accept queue (listener producer / VM-thread consumer).
+     * Protected by accept_queue_mutex; the listener pushes each new
+     * accepted fd here, the VM thread drains in the dispatch hook. */
+    UReplAcceptItem         *accept_head;
+    UReplAcceptItem         *accept_tail;
+    pthread_mutex_t          accept_queue_mutex;
 
     /* Phase 3 — per-IP auth-fail rate-limiter (Task 18 plugs the
      * impl).  void* keeps the auth-internal struct private to the

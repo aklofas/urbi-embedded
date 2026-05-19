@@ -462,10 +462,20 @@ urepl_dispatch_drain(UReplServer *server)
     }
 }
 
-/* Step-driver hook.  Called from urbi_step() before any opcode work;
- * pulls all jobs off the server's MPSC queue, dispatches each (which
- * writes envelopes into per-session output ringbufs), then wakes every
- * reader subthread so it flushes its session's ringbuf to socket.
+/* Step-driver hook.  Called from urbi_step() before any opcode work.
+ *
+ * Order matters:
+ *
+ *   1. Drain the listener's pending-accept queue first.  Listener
+ *      thread does no VM-touching work; new sessions get their realm
+ *      bootstrapped here on the VM thread (spec §3.1).  Any session
+ *      created in step 1 is then findable by sub-step 2/3.
+ *
+ *   2. Drain the job MPSC queue and dispatch each — writes response
+ *      envelopes into per-session output ringbufs.
+ *
+ *   3. Wake every reader subthread so it flushes its session's
+ *      ringbuf to socket.
  *
  * Linked weakly from src/vm/ustep.c so the default (URBI_ENABLE_REPL=0)
  * build resolves to a no-op without dragging the REPL TUs in. */
@@ -476,6 +486,7 @@ urepl_dispatch_drain_if_active(struct UVM *vm)
         return;
     }
     UReplServer *server = (UReplServer *)vm->repl_server;
+    urepl_listener_drain_accepts(server);
     urepl_dispatch_drain(server);
     urepl_listener_wake_all_readers(server);
 }

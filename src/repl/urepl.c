@@ -87,6 +87,15 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         }
         return NULL;
     }
+    if (pthread_mutex_init(&server->accept_queue_mutex, NULL) != 0) {
+        pthread_mutex_destroy(&server->auth_limiter_mutex);
+        pthread_mutex_destroy(&server->sessions_mutex);
+        free(server);
+        if (out_err != NULL) {
+            *out_err = URBI_ERR_OOM;
+        }
+        return NULL;
+    }
     /* Allocate the per-server job queue.  Phase 3 hooks the listener
      * thread up to it; in Phase 2 it is used by direct callers to
      * urepl_dispatch_drain for unit tests. */
@@ -94,6 +103,7 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
     if (server->job_queue == NULL
         || urepl_queue_init(server->job_queue) != URBI_OK) {
         free(server->job_queue);
+        pthread_mutex_destroy(&server->accept_queue_mutex);
         pthread_mutex_destroy(&server->auth_limiter_mutex);
         pthread_mutex_destroy(&server->sessions_mutex);
         free(server);
@@ -113,6 +123,7 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         if (lim == NULL) {
             urepl_queue_destroy(server->job_queue);
             free(server->job_queue);
+            pthread_mutex_destroy(&server->accept_queue_mutex);
             pthread_mutex_destroy(&server->auth_limiter_mutex);
             pthread_mutex_destroy(&server->sessions_mutex);
             free(server);
@@ -138,7 +149,7 @@ urbi_repl_stop(UReplServer *server)
     if (server == NULL) {
         return;
     }
-    server->shutting_down = true;
+    UREPL_ATOMIC_STORE_BOOL(&server->shutting_down, true);
 
     /* Phase 3: signal + join the listener pthread and all reader
      * subthreads BEFORE tearing down sessions/queue/vm.  Reader threads
@@ -178,6 +189,22 @@ urbi_repl_stop(UReplServer *server)
         server->auth_limiter = NULL;
     }
     pthread_mutex_destroy(&server->auth_limiter_mutex);
+
+    /* Drain + free any pending-accept items that the listener pushed
+     * after the last VM-thread drain but before shutdown.  Each item
+     * owns its client_fd; close + free. */
+    UReplAcceptItem *ai = server->accept_head;
+    server->accept_head = NULL;
+    server->accept_tail = NULL;
+    while (ai != NULL) {
+        UReplAcceptItem *anext = ai->next;
+        if (ai->transport != NULL && ai->transport->close_fn != NULL) {
+            ai->transport->close_fn(ai->client_fd);
+        }
+        free(ai);
+        ai = anext;
+    }
+    pthread_mutex_destroy(&server->accept_queue_mutex);
 
     /* Unhook the VM back-pointer so the step-driver drain hook no
      * longer sees a freed server. */

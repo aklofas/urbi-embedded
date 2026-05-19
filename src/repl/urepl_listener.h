@@ -44,6 +44,13 @@ void urepl_listener_stop_and_join(UReplServer *server);
  * Called by the dispatch-drain hook after each VM-thread drain. */
 void urepl_listener_wake_all_readers(UReplServer *server);
 
+/* Drain the pending-accept queue on the VM thread.  For each item the
+ * listener thread pushed (one per accepted client), this allocates a
+ * session (which boots a realm — VM-touching) and spawns the per-
+ * connection reader subthread.  MUST run on the VM thread; called by
+ * urepl_dispatch_drain_if_active. */
+void urepl_listener_drain_accepts(UReplServer *server);
+
 #ifdef __cplusplus
 }
 #endif
