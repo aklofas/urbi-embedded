@@ -1007,16 +1007,19 @@ UTEST(roundtrip_ast_unary_neg_5) {
     roundtrip_ast(&neg, "a/b/c.u");
 }
 
-/* T12+T13 follow-up regression test: round-trip of a module with one
- * (or more) nested function literal protos.  Pre-fix proto_wire_size
- * disagreed with write_proto on instruction-pad alignment (C1); pre-fix
- * decode_verify per-proto walks passed nested_count=0 and rejected
- * legitimate OP_CLOSURE Bx in nested protos (C2).  The source produces
- * two nested protos: nested[0] is the outer function, nested[1] is the
- * inner one; the outer's body contains `OP_CLOSURE Bx=1` referring to
- * nested[1] in the SAME root-level nested[] array (the v1.5 emitter
- * allocates all function literals as flat siblings).  Post-fix the
- * round-trip succeeds and decode_verify accepts the bytecode. */
+/* T12+T13 follow-up regression test: round-trip of a module with a
+ * nested function literal proto.  Pre-fix proto_wire_size disagreed with
+ * write_proto on instruction-pad alignment (C1); pre-fix decode_verify
+ * per-proto walks passed nested_count=0 and rejected legitimate
+ * OP_CLOSURE Bx in nested protos (C2).  Post-fix the round-trip succeeds
+ * and decode_verify accepts the bytecode.
+ *
+ * v0.8.5-recursive-emit shape change: under recursive emission the inner
+ * function literal is a CHILD of the outer function's UProto, not a flat
+ * sibling under root.  Tree: root.nested = [outer]; outer.nested = [inner].
+ * The outer's body holds OP_CLOSURE Bx=0 referring to outer.nested[0]
+ * (its own child).  Pre-v0.8.5 the same source produced flat siblings
+ * with root.nested_count >= 2 and OP_CLOSURE Bx=1 in outer's body. */
 UTEST(roundtrip_module_with_nested_closure_proto) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -1046,7 +1049,12 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
         UASSERT_EQ(EMIT_OK, uemit_statement(&e, node));
     }
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
-    UASSERT(a.root_proto->nested_count >= (size_t)2);
+    /* v0.8.5 recursive shape: root has 1 child (outer); outer has 1
+     * child (inner). */
+    UASSERT_EQ(a.root_proto->nested_count, (size_t)1);
+    UASSERT(a.root_proto->nested[0] != NULL);
+    UASSERT_EQ(a.root_proto->nested[0]->nested_count, (size_t)1);
+    UASSERT(a.root_proto->nested[0]->nested[0] != NULL);
 
     /* Two-pass serialize: query size, then write.  The contract is
      * that the wrote count equals the queried size (C1 violates this). */
@@ -1067,9 +1075,10 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     UASSERT_EQ(ULOAD_OK, rc);
     UASSERT_EQ(a.root_proto->nested_count, b.root_proto->nested_count);
     UASSERT(b.root_proto->nested[0] != NULL);
-    UASSERT(b.root_proto->nested[1] != NULL);
+    UASSERT_EQ(b.root_proto->nested[0]->nested_count, (size_t)1);
+    UASSERT(b.root_proto->nested[0]->nested[0] != NULL);
     UASSERT(b.root_proto->nested[0]->instr_count > (size_t)0);
-    UASSERT(b.root_proto->nested[1]->instr_count > (size_t)0);
+    UASSERT(b.root_proto->nested[0]->nested[0]->instr_count > (size_t)0);
 
     free(buf);
     umodule_destroy(&a, NULL);

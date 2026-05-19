@@ -1237,10 +1237,12 @@ UTEST(disassemble_closure_with_prelude) {
     /* Compile "function() { var x = 1; var y = 2; function() { x + y } }"
      * through the parse+emit pipeline.  The innermost closure captures x and y
      * as two upvalues from the enclosing function body (which declares them as
-     * locals).  The root chunk gets the outer function as nested[0];
-     * nested[1] is the inner closure with 2 upvalues.
+     * locals).
      *
-     * Note: upval[N] lines only appear in the parent proto's (nested[0])
+     * v0.8.5 recursive shape: root.nested = [outer]; outer.nested = [inner].
+     * Pre-v0.8.5 (flat) the inner was root.nested[1].
+     *
+     * Note: upval[N] lines only appear in the parent proto's (outer's)
      * disassembly, not in the root module's disassembly.  We verify the
      * upvalue count structurally and check the root disassembly contains
      * a CLOSURE instruction for the outer function. */
@@ -1248,11 +1250,15 @@ UTEST(disassemble_closure_with_prelude) {
     emit_ctx_init(&c, "function() { var x = 1; var y = 2; function() { x + y } }");
     UEmitError rc = emit_ctx_run(&c);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT(c.module.root_proto->nested_count >= 2U);
-    /* The outer proto (nested[0]) captures nothing from the chunk top. */
-    UASSERT(c.module.root_proto->nested[0]->nupvals == 0U);
-    /* The inner proto (nested[1]) captures x and y as 2 upvalues. */
-    UASSERT(c.module.root_proto->nested[1]->nupvals == 2U);
+    UASSERT_EQ(c.module.root_proto->nested_count, (size_t)1);
+    UProto *outer = c.module.root_proto->nested[0];
+    UASSERT(outer != NULL);
+    /* The outer proto captures nothing from the chunk top. */
+    UASSERT(outer->nupvals == 0U);
+    /* Outer contains inner as outer.nested[0]; inner captures x and y. */
+    UASSERT_EQ(outer->nested_count, (size_t)1);
+    UASSERT(outer->nested[0] != NULL);
+    UASSERT(outer->nested[0]->nupvals == 2U);
 
     /* Root module disassembly must show at least one instruction and
      * a CLOSURE P0 entry for the outer function proto. */

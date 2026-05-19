@@ -21,6 +21,8 @@
 #include "object/umodule_instance.h"
 #include "urbi/urbi.h"
 
+#include <stddef.h>  /* ptrdiff_t */
+
 #define UTEST(name) static void name(void)
 
 /* -----------------------------------------------------------------------
@@ -169,6 +171,92 @@ UTEST(proto_instances_n_equals_total_proto_count) {
     urbi_vm_destroy(&vm);
 }
 
+/* -----------------------------------------------------------------------
+ * Task 3: recursive verifier round-trip
+ * -----------------------------------------------------------------------
+ * Confirms the verifier accepts what the emitter currently produces (flat
+ * trees today; recursive trees post-Task 5).  Round-trip emit→serialize→
+ * deserialize succeeds end-to-end. */
+
+UTEST(verifier_accepts_emitted_module) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+
+    UEmitError rc = compile_src(
+        "function() { function() { 0 } }", &vm, &m, &arena);
+    UASSERT_EQ(rc, EMIT_OK);
+
+    /* Serialize, then deserialize into a fresh module — exercises
+     * decode_verify against the emitted shape. */
+    ptrdiff_t need = umodule_serialize(&m, NULL, 0);
+    UASSERT(need > 0);
+    uint8_t *blob = (uint8_t *)malloc((size_t)need);
+    UASSERT(blob != NULL);
+    ptrdiff_t written = umodule_serialize(&m, blob, (size_t)need);
+    UASSERT_EQ(written, need);
+
+    UModule m2 = {0};
+    char errmsg[256] = {0};
+    UModuleLoadError lerr = umodule_deserialize(&m2, blob, (size_t)need,
+                                                errmsg, sizeof(errmsg));
+    UASSERT_EQ(lerr, ULOAD_OK);
+    UASSERT(m2.root_proto != NULL);
+    UASSERT_EQ(m2.total_proto_count, m.total_proto_count);
+
+    free(blob);
+    umodule_destroy(&m2, &vm);
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
+ * Task 5: emitter produces a truly recursive proto tree
+ * ----------------------------------------------------------------------- */
+
+UTEST(emitter_produces_recursive_tree) {
+    UVM vm;
+    urbi_vm_init(&vm, NULL, NULL);
+    UArena arena;
+    uarena_init(&arena, 4096);
+    UModule m = {0};
+
+    /* outer contains middle, middle contains inner.  Pre-Task-5: all three
+     * are flat siblings under root, so root.nested_count == 3.
+     * Post-Task-5: root.nested_count == 1 (outer), outer.nested_count == 1
+     * (middle), middle.nested_count == 1 (inner). */
+    UEmitError rc = compile_src(
+        "function() { function() { function() { 0 } } }", &vm, &m, &arena);
+    UASSERT_EQ(rc, EMIT_OK);
+    UASSERT(m.root_proto != NULL);
+
+    UASSERT_EQ(m.root_proto->nested_count, 1);
+    UProto *outer = m.root_proto->nested[0];
+    UASSERT(outer != NULL);
+    UASSERT_EQ(outer->nested_count, 1);
+    UProto *middle = outer->nested[0];
+    UASSERT(middle != NULL);
+    UASSERT_EQ(middle->nested_count, 1);
+    UProto *inner = middle->nested[0];
+    UASSERT(inner != NULL);
+    UASSERT_EQ(inner->nested_count, 0);
+
+    /* total_proto_count = 4 (root + outer + middle + inner). */
+    UASSERT_EQ(m.total_proto_count, 4);
+
+    /* root_proto-back-pointer walk reached every depth. */
+    UASSERT(outer->root  == m.root_proto);
+    UASSERT(middle->root == m.root_proto);
+    UASSERT(inner->root  == m.root_proto);
+
+    umodule_destroy(&m, &vm);
+    uarena_destroy(&arena);
+    urbi_vm_destroy(&vm);
+}
+
 /* ===================================================================
  * Suite entry
  * =================================================================== */
@@ -185,4 +273,8 @@ test_recursive_emit_suite(void)
               total_proto_count_set_at_uemit_finish);
     utest_run("proto_instances_n_equals_total_proto_count",
               proto_instances_n_equals_total_proto_count);
+    utest_run("verifier_accepts_emitted_module",
+              verifier_accepts_emitted_module);
+    utest_run("emitter_produces_recursive_tree",
+              emitter_produces_recursive_tree);
 }

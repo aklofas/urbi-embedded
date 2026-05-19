@@ -242,20 +242,26 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
         "var f = function() { return function () { return 1 + 2; }; }");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* The inner ()->(1+2) proto: nparams==0.  Both nested protos have
-     * nparams==0 (f and the inner closure); pick the one whose
-     * instructions contain OP_ADD. */
+    /* The inner ()->(1+2) proto: nparams==0.  Walk the proto tree
+     * recursively (v0.8.5: inner is outer.nested[0], not a flat sibling
+     * under root) and pick the one whose instructions contain OP_ADD. */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
-        if (q == NULL) continue;
-        for (size_t j = 0; j < q->instr_count; j++) {
-            if (uinstr_op(q->instructions[j]) == OP_ADD) {
-                p = q;
+    UProto *stack[8];
+    size_t sp = 0;
+    stack[sp++] = module.root_proto;
+    while (sp > 0 && p == NULL) {
+        UProto *node = stack[--sp];
+        if (node == NULL) continue;
+        for (size_t j = 0; j < node->instr_count; j++) {
+            if (uinstr_op(node->instructions[j]) == OP_ADD) {
+                p = node;
                 break;
             }
         }
         if (p != NULL) break;
+        for (size_t i = 0; i < node->nested_count && sp < 8; i++) {
+            stack[sp++] = node->nested[i];
+        }
     }
     UASSERT(p != NULL);
 
