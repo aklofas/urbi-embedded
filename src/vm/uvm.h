@@ -696,6 +696,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
      * (registered at urbi_vm_init). */
     URefTable ref_table;
+
+    /* --- v0.9.1 REPL service back-pointer ---
+     * Set by urbi_repl_serve when a server is started against this VM;
+     * cleared by urbi_repl_stop.  Read by urepl_dispatch_drain_if_active
+     * (weakly linked from src/vm/ustep.c) to find the queue/sessions
+     * during each urbi_step boundary.  void* keeps the core VM header
+     * free of an URBI_ENABLE_REPL conditional include cascade; the REPL
+     * TUs cast back to UReplServer*. */
+    void *repl_server;
 } UVM;
 
 /* --- API --- */

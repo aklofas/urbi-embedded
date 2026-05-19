@@ -265,6 +265,7 @@ extern void test_repl_ndjson_parse_suite(void);
 extern void test_repl_ndjson_emit_suite(void);
 extern void test_repl_dispatcher_suite(void);
 extern void test_repl_buffer_transport_suite(void);
+extern void test_repl_tcp_loopback_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -506,6 +507,7 @@ static const struct suite_entry suites[] = {
     {"repl_ndjson_emit",                 test_repl_ndjson_emit_suite},
     {"repl_dispatcher",                  test_repl_dispatcher_suite},
     {"repl_buffer_transport",            test_repl_buffer_transport_suite},
+    {"repl_tcp_loopback",                test_repl_tcp_loopback_suite},
     /* Add new suites here as test files are added. */
 };
 

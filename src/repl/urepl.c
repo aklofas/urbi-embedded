@@ -5,8 +5,10 @@
  * registration.  The listener thread + per-connection reader thread come
  * online in Phase 3 (Task 16). */
 #include "repl/urepl.h"
-#include "repl/urepl_queue.h"
 #include "repl/urepl_dispatch.h"
+#include "repl/urepl_listener.h"
+#include "repl/urepl_queue.h"
+#include "vm/uvm.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -68,7 +70,16 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
     server->vm = vm;
     server->cfg = *cfg;
     server->next_session_id = 1U;
+    server->stop_eventfd = -1;
     if (pthread_mutex_init(&server->sessions_mutex, NULL) != 0) {
+        free(server);
+        if (out_err != NULL) {
+            *out_err = URBI_ERR_OOM;
+        }
+        return NULL;
+    }
+    if (pthread_mutex_init(&server->auth_limiter_mutex, NULL) != 0) {
+        pthread_mutex_destroy(&server->sessions_mutex);
         free(server);
         if (out_err != NULL) {
             *out_err = URBI_ERR_OOM;
@@ -82,6 +93,7 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
     if (server->job_queue == NULL
         || urepl_queue_init(server->job_queue) != URBI_OK) {
         free(server->job_queue);
+        pthread_mutex_destroy(&server->auth_limiter_mutex);
         pthread_mutex_destroy(&server->sessions_mutex);
         free(server);
         if (out_err != NULL) {
@@ -89,6 +101,11 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         }
         return NULL;
     }
+
+    /* Register the server on the VM so urepl_dispatch_drain_if_active
+     * (the step-driver hook) finds it without a global lookup table. */
+    vm->repl_server = server;
+
     return server;
 }
 
@@ -100,8 +117,15 @@ urbi_repl_stop(UReplServer *server)
     }
     server->shutting_down = true;
 
-    /* Tear down all live sessions before destroying the realm-borrowing
-     * VM.  Each session_destroy unlinks itself from the head list. */
+    /* Phase 3: signal + join the listener pthread and all reader
+     * subthreads BEFORE tearing down sessions/queue/vm.  Reader threads
+     * destroy their sessions on the way out (see reader_main), so by
+     * the time this returns sessions_head is typically empty.  Any
+     * still-attached session (e.g. unit tests that created sessions
+     * directly) gets reaped in the loop below. */
+    urepl_listener_stop_and_join(server);
+
+    /* Reap any unit-test sessions that weren't owned by a reader. */
     while (server->sessions_head != NULL) {
         urepl_session_destroy(server, server->sessions_head);
     }
@@ -123,6 +147,21 @@ urbi_repl_stop(UReplServer *server)
         e = next;
     }
     server->transports = NULL;
+
+    /* auth_limiter struct is allocated by Task 18 (urepl_auth.c) if a
+     * token is configured; free if present. */
+    if (server->auth_limiter != NULL) {
+        free(server->auth_limiter);
+        server->auth_limiter = NULL;
+    }
+    pthread_mutex_destroy(&server->auth_limiter_mutex);
+
+    /* Unhook the VM back-pointer so the step-driver drain hook no
+     * longer sees a freed server. */
+    if (server->vm != NULL && server->vm->repl_server == server) {
+        server->vm->repl_server = NULL;
+    }
+
     pthread_mutex_destroy(&server->sessions_mutex);
     free(server);
 }
@@ -174,5 +213,16 @@ urbi_repl_register_transport(UReplServer *server,
      * own accept loop in Phase 3). */
     entry->next = server->transports;
     server->transports = entry;
+
+    /* Phase 3: lazily start the listener pthread on first transport
+     * registration.  Embedders that only use the in-process buffer
+     * transport (unit tests) drive the dispatcher manually; the
+     * listener thread no-ops on buffer transport (its pollable
+     * listener fd is -1) so starting it here is harmless even for
+     * the test path.  Tests can opt out of starting the listener by
+     * never calling urbi_repl_register_transport — the dispatcher
+     * tests in Phase 2 use that path. */
+    (void)urepl_listener_start(server);
+
     return URBI_OK;
 }

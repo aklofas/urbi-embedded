@@ -36,6 +36,10 @@ struct UReplSession {
     /* Live correlation id during a dispatch_eval frame; 0 outside an
      * eval (so session_writer routes streaming output as lobby-scoped). */
     uint64_t              current_eval_id;
+    /* Phase 3 — Back-pointer to the reader subthread driving this
+     * session's socket I/O.  NULL for sessions created outside the
+     * listener path (e.g. unit-test sessions; buffer transport). */
+    struct UReplReader   *reader;
     struct UReplSession  *next;
 };
 
@@ -64,5 +68,15 @@ void urepl_dispatch_job(UReplServer *server, UReplJob *job);
 /* Drain the server's job queue and dispatch each.  Convenience wrapper
  * for the listener thread (Phase 3). */
 void urepl_dispatch_drain(UReplServer *server);
+
+/* Step-driver hook (Phase 3).  Called from urbi_step at the top of
+ * every host-thread driver invocation: if vm->repl_server is non-NULL,
+ * drains its job queue + dispatches each job, then signals all session
+ * reader subthreads to flush their output ringbufs to socket.
+ *
+ * The src/vm/ustep.c side declares this as a weak symbol so the default
+ * build (URBI_ENABLE_REPL=0) links cleanly even though no urepl_*.o
+ * archives are present.  The weak fallback is a no-op. */
+void urepl_dispatch_drain_if_active(struct UVM *vm);
 
 #endif /* SRC_REPL_UREPL_DISPATCH_H */

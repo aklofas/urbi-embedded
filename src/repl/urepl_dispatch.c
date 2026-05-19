@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
 #include "repl/urepl_dispatch.h"
+#include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
 #include "realm/urealm.h"
+#include "vm/uvm.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -429,4 +431,22 @@ urepl_dispatch_drain(UReplServer *server)
         urepl_dispatch_job(server, head);
         head = next;
     }
+}
+
+/* Step-driver hook.  Called from urbi_step() before any opcode work;
+ * pulls all jobs off the server's MPSC queue, dispatches each (which
+ * writes envelopes into per-session output ringbufs), then wakes every
+ * reader subthread so it flushes its session's ringbuf to socket.
+ *
+ * Linked weakly from src/vm/ustep.c so the default (URBI_ENABLE_REPL=0)
+ * build resolves to a no-op without dragging the REPL TUs in. */
+void
+urepl_dispatch_drain_if_active(struct UVM *vm)
+{
+    if (vm == NULL || vm->repl_server == NULL) {
+        return;
+    }
+    UReplServer *server = (UReplServer *)vm->repl_server;
+    urepl_dispatch_drain(server);
+    urepl_listener_wake_all_readers(server);
 }
