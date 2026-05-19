@@ -291,6 +291,18 @@ uproto_source_name(const UProto *p)
     return p->root ? p->root->source_name : p->source_name;
 }
 
+/* Layout pin — update deliberately when UProto fields change.
+ * Guarded on pointer width to avoid a hard failure on 32-bit cross
+ * targets, matching the UStrand / UEvent pattern.  Post-v0.9.2 Task 4.1:
+ * +40 B on 64-bit from absorbed root metadata (source_name, origin_vm,
+ * next_proto_serial, total_proto_count, next_in_realm, owning_realm,
+ * heap_allocated) relative to the v0.9.1 layout. */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
+URBI_STATIC_ASSERT(sizeof(UProto) == 224,
+               "UProto size pin on 64-bit — update deliberately when fields change"
+               /* v0.9.2 Task 7.1: 224 B post-absorption of 7 root-only UModule fields */);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

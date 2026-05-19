@@ -68,6 +68,17 @@
  *      List, Dict, Symbol, Tag, Event, Mutex, Date, Duration) are marked
  *      readonly at urbi_stdlib_boot.  Global stays mutable per spec §4.1.
  *      (0/11/0 → 0/12/0)
+ *   9. v0.9.2-uproto-only — UModule struct deleted; UProto absorbs root
+ *      metadata (source_name, origin_vm, next_proto_serial, total_proto_count,
+ *      next_in_realm, owning_realm, heap_allocated).  Public API: 7 functions
+ *      renamed (urbi_module_* → urbi_chunk_*; urbi_load_module →
+ *      urbi_load_chunk; urbi_get_or_create_module_instance →
+ *      urbi_get_or_create_chunk_instance).  Type renames: UModuleInstance →
+ *      UChunkInstance; UModuleAllocFn → UChunkAllocFn (UAllocFn was already
+ *      taken in uarena.h); UModuleLoadError → UChunkLoadError + ULOAD_* →
+ *      UCHUNK_LOAD_*.  UStrand.module field deleted.  Wire format v1.7 →
+ *      v1.8 (semantic bump only — byte layout unchanged).  9th use of
+ *      pre-v1.0 escape clause.  (0/12/0 → 0/13/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -82,7 +93,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  12
+#define URBI_API_VERSION_MINOR  13
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
