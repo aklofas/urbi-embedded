@@ -316,6 +316,12 @@ typedef struct USymbol USymbol;
  * on object/ layer types. */
 struct UModuleInstance;
 
+/* Forward declaration — URealm is introduced in M8 (see runtime/urealm.h).
+ * UModule.owning_realm (added v0.9.0) and UModule.next_in_realm thread
+ * modules onto the realm's loaded_protos_head list.  Defined as opaque
+ * to avoid circular dependency. */
+struct URealm;
+
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
  * function body.  The root chunk lives directly in UModule; nested
@@ -497,6 +503,13 @@ typedef struct UModule {
      * proto_instances->entries[] under recursive nesting.
      * v0.8.5-recursive-emit. */
     uint16_t       total_proto_count;
+
+    /* [runtime-only, NOT serialized] Realm-lifecycle linkage.  A UModule is
+     * threaded onto its owning_realm's loaded_protos_head list at every
+     * urbi_run_chunk / urbi_repl_eval / urbi_load_module entry.  Cleared
+     * by urbi_unload when the module leaves a realm.  v0.9.0-repl. */
+    struct UModule *next_in_realm;
+    struct URealm  *owning_realm;
 } UModule;
 
 /* --- errors --- */
