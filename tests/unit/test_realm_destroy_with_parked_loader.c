@@ -21,29 +21,37 @@
 #define UTEST(name) static void name(void)
 
 /* Compile and run a source string under the given realm.
- * Returns the urbi_run_chunk return code. */
+ * Returns the urbi_run_chunk return code.
+ * Each call uses its own arena so that oversized emitter chunks (UFuncState
+ * is ~16 KB; default chunk_size is 4 KB) are freed on return and never
+ * orphaned by a subsequent compile that reuses the same arena. */
 static int compile_and_load(const char *src, UVM *vm, URealm *realm,
-                             UModule *mod, UArena *arena)
+                             UModule *mod)
 {
+    UArena  arena;
     ULexer  lex;
     UParser p;
     UEmitter e;
     UAstNode *node;
+    int rc;
 
+    uarena_init(&arena, 4096);
     ulex_init(&lex, src, strlen(src));
-    uemit_init(&e, mod, arena, vm, NULL);
-    uparse_init(&p, &lex, arena);
+    uemit_init(&e, mod, &arena, vm, NULL);
+    uparse_init(&p, &lex, &arena);
 
     while ((node = uparse_next_statement(&p)) != NULL) {
-        if (node->kind == AST_ERROR) return -1;
-        if (uemit_statement(&e, node) != EMIT_OK) return -1;
-        uarena_reset(arena);
+        if (node->kind == AST_ERROR) { uarena_destroy(&arena); return -1; }
+        if (uemit_statement(&e, node) != EMIT_OK) { uarena_destroy(&arena); return -1; }
+        uarena_reset(&arena);
     }
-    if (uemit_finish(&e) != EMIT_OK) return -1;
+    if (uemit_finish(&e) != EMIT_OK) { uarena_destroy(&arena); return -1; }
+    uarena_destroy(&arena);
 
     UValue out;
     urbi_zero(&out, sizeof(out));
-    return urbi_run_chunk(vm, realm, mod, &out);
+    rc = urbi_run_chunk(vm, realm, mod, &out);
+    return rc;
 }
 
 /* -----------------------------------------------------------------------
@@ -59,19 +67,16 @@ UTEST(realm_destroy_unloads_modules)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UArena arena;
-    uarena_init(&arena, 4096);
-
     UModule mod1;
     UModule mod2;
     urbi_zero(&mod1, sizeof(mod1));
     urbi_zero(&mod2, sizeof(mod2));
 
-    int rc1 = compile_and_load("1 |", &vm, r, &mod1, &arena);
+    int rc1 = compile_and_load("1 |", &vm, r, &mod1);
     UASSERT_EQ(URBI_OK, rc1);
     UASSERT(mod1.owning_realm == r);
 
-    int rc2 = compile_and_load("2 |", &vm, r, &mod2, &arena);
+    int rc2 = compile_and_load("2 |", &vm, r, &mod2);
     UASSERT_EQ(URBI_OK, rc2);
     UASSERT(mod2.owning_realm == r);
 
@@ -104,7 +109,6 @@ UTEST(realm_destroy_unloads_modules)
         UASSERT(vm.stdlib_module == stdlib);
     }
 
-    uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
 
@@ -126,13 +130,10 @@ UTEST(realm_destroy_stdlib_exclusion)
     UASSERT(a != NULL);
     UASSERT(b != NULL);
 
-    UArena arena;
-    uarena_init(&arena, 4096);
-
     /* Run a trivial module under realm A. */
     UModule mod_a;
     urbi_zero(&mod_a, sizeof(mod_a));
-    int rca = compile_and_load("3 |", &vm, a, &mod_a, &arena);
+    int rca = compile_and_load("3 |", &vm, a, &mod_a);
     UASSERT_EQ(URBI_OK, rca);
     UASSERT(mod_a.owning_realm == a);
 
@@ -154,7 +155,6 @@ UTEST(realm_destroy_stdlib_exclusion)
     int rcb = urbi_repl_eval(&vm, b, "1 + 1", 5, buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rcb);
 
-    uarena_destroy(&arena);
     urbi_realm_destroy(&vm, b);
     urbi_vm_destroy(&vm);
 }
