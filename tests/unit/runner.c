@@ -266,6 +266,7 @@ extern void test_repl_ndjson_emit_suite(void);
 extern void test_repl_dispatcher_suite(void);
 extern void test_repl_buffer_transport_suite(void);
 extern void test_repl_tcp_loopback_suite(void);
+extern void test_repl_uart_pty_suite(void);
 extern void test_repl_auth_flow_suite(void);
 extern void test_introspect_each_suite(void);
 extern void test_json_parse_suite(void);
@@ -511,6 +512,7 @@ static const struct suite_entry suites[] = {
     {"repl_dispatcher",                  test_repl_dispatcher_suite},
     {"repl_buffer_transport",            test_repl_buffer_transport_suite},
     {"repl_tcp_loopback",                test_repl_tcp_loopback_suite},
+    {"repl_uart_pty",                    test_repl_uart_pty_suite},
     {"repl_auth_flow",                   test_repl_auth_flow_suite},
     {"introspect_each",                  test_introspect_each_suite},
     {"json_parse",                       test_json_parse_suite},

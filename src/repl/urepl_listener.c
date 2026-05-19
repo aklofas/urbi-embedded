@@ -10,6 +10,7 @@
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_ndjson.h"
 #include "repl/urepl_queue.h"
+#include "repl/urepl_transport_pty.h"
 #include "repl/urepl_transport_tcp.h"
 
 #include <arpa/inet.h>
@@ -330,14 +331,15 @@ spawn_reader(UReplServer *server, const UTransport *transport,
  * transports that don't have a kernel fd (in-process buffer transport),
  * which the listener thread will skip.
  *
- * v0.9.1 supports exactly two transports built-in: TCP and the in-
- * process buffer (test-only).  The pluggable UTransport vtable does not
- * surface a "listener-side pollable fd" hook (its pollable_fd_fn is
- * per-client), so we lift the listen fd out by type-discriminating on
- * the transport pointer.  When v0.9.1 Phase 7 adds Unix and UART
- * transports, extend this dispatch (or extend the vtable).  Phase 7
- * also lands the UTransport.listener_pollable_fn extension — for now
- * the lock-in here is intentional and narrow. */
+ * v0.9.1 supports three transports with a real listen fd: TCP (a real
+ * AF_INET listen socket), pty (the slave fd of an openpty() pair —
+ * single-client, see urepl_transport_pty.c), plus the in-process buffer
+ * transport which is unpollable and driven manually by unit tests.
+ * The pluggable UTransport vtable does not surface a "listener-side
+ * pollable fd" hook (its pollable_fd_fn is per-client), so we lift the
+ * listen fd out by type-discriminating on the transport pointer.  Phase
+ * 7 of v0.9.1 will land the UTransport.listener_pollable_fn extension;
+ * for now the lock-in here is intentional and narrow. */
 static int
 listener_pollable_fd(const UReplTransportEntry *e)
 {
@@ -348,8 +350,90 @@ listener_pollable_fd(const UReplTransportEntry *e)
         const UTcpListener *l = (const UTcpListener *)e->listener_state;
         return l->listen_fd;
     }
+    if (e->transport == &UREPL_PTY_TRANSPORT) {
+        return urepl_pty_slave_fd((const UPtyState *)e->listener_state);
+    }
     /* Buffer transport and anything else without a kernel listen fd. */
     return -1;
+}
+
+/* Drain accept_fn on one transport, queueing each new client.  Bounded
+ * by the inner accept_fn returning -1 (would-block / EAGAIN) — for
+ * single-client transports (pty, UART) that's after the first call;
+ * for multi-client transports (TCP) it's when accept() drains. */
+static void
+drain_transport_accepts(UReplServer *server,
+                        const UReplTransportEntry *te)
+{
+    for (;;) {
+        int client_fd = -1;
+        int ar = te->transport->accept_fn(te->listener_state,
+                                          &client_fd);
+        if (ar == -1) return;           /* EAGAIN / no more clients */
+        if (ar != 0)  return;           /* hard error */
+
+        /* Task 18: extract peer id from accepted socket.  TCP →
+         * IPv4 in_addr_t in network byte order; non-TCP (Unix /
+         * pty / buffer) leaves it as 0. */
+        uint32_t peer_id = 0;
+        if (te->transport == &UREPL_TCP_TRANSPORT) {
+            struct sockaddr_in sa;
+            socklen_t slen = (socklen_t)sizeof(sa);
+            if (getpeername(client_fd,
+                            (struct sockaddr *)&sa, &slen) == 0
+                && sa.sin_family == AF_INET) {
+                peer_id = sa.sin_addr.s_addr;
+            }
+        }
+
+        /* Task 18: per-IP rate-limit check.  Locked-out peers
+         * get the connection closed immediately, without ever
+         * seeing a hello envelope. */
+        if (server->auth_limiter != NULL) {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                              + (uint64_t)ts.tv_nsec / 1000ULL;
+            pthread_mutex_lock(&server->auth_limiter_mutex);
+            bool allowed = urepl_auth_limiter_check(
+                (UReplAuthLimiter *)server->auth_limiter,
+                peer_id, now_us);
+            pthread_mutex_unlock(&server->auth_limiter_mutex);
+            if (!allowed) {
+                if (te->transport->close_fn != NULL) {
+                    te->transport->close_fn(client_fd);
+                }
+                continue;
+            }
+        }
+
+        /* Hand off to the VM thread.  spawn_reader does
+         * VM-touching work (urepl_session_create allocates a
+         * realm + boots stdlib via urbi_run_chunk → urbi_step)
+         * and MUST NOT run on the listener thread.  Push onto
+         * the accept queue; urepl_listener_drain_accepts on
+         * the VM thread (called from the dispatch drain hook)
+         * pops and calls spawn_reader. */
+        UReplAcceptItem *item =
+            (UReplAcceptItem *)calloc(1, sizeof(*item));
+        if (item == NULL) {
+            if (te->transport->close_fn != NULL) {
+                te->transport->close_fn(client_fd);
+            }
+            continue;
+        }
+        item->client_fd = client_fd;
+        item->peer_id   = peer_id;
+        item->transport = te->transport;
+        pthread_mutex_lock(&server->accept_queue_mutex);
+        if (server->accept_tail != NULL) {
+            server->accept_tail->next = item;
+        } else {
+            server->accept_head = item;
+        }
+        server->accept_tail = item;
+        pthread_mutex_unlock(&server->accept_queue_mutex);
+    }
 }
 
 static void *
@@ -363,6 +447,20 @@ listener_main(void *arg)
     enum { MAX_TRANSPORTS = 8 };
     struct pollfd pfds[MAX_TRANSPORTS + 1];
     const UReplTransportEntry *entries[MAX_TRANSPORTS];
+
+    /* Pre-poll eager accept pass for single-client pre-connected
+     * transports (pty / future UART variants).  Their listen fd is
+     * either absent or already-readable would-block on POLLIN until
+     * the peer writes, so polling them first would deadlock the hello
+     * envelope behind the master's first write.  accept_fn is
+     * idempotent — it returns -1 after the single accept, so this
+     * pass is a no-op on subsequent iterations.  TCP also goes
+     * through this path on the first iteration but its accept_fn
+     * returns -1 immediately (no pending connections at startup). */
+    for (UReplTransportEntry *e = server->transports;
+         e != NULL; e = e->next) {
+        drain_transport_accepts(server, e);
+    }
 
     while (!UREPL_ATOMIC_LOAD_BOOL(&server->shutting_down)) {
         int nfds = 0;
@@ -397,77 +495,7 @@ listener_main(void *arg)
         /* Accept any waiting clients on each transport with POLLIN. */
         for (int i = 0; i < stop_idx; ++i) {
             if (!(pfds[i].revents & POLLIN)) continue;
-            const UReplTransportEntry *te = entries[i];
-            /* Drain — accept() may have multiple pending. */
-            for (;;) {
-                int client_fd = -1;
-                int ar = te->transport->accept_fn(te->listener_state,
-                                                  &client_fd);
-                if (ar == -1) break;            /* EAGAIN */
-                if (ar != 0) break;             /* hard error */
-
-                /* Task 18: extract peer id from accepted socket.  TCP
-                 * → IPv4 in_addr_t in network byte order; non-TCP
-                 * (Unix-socket / buffer) leaves it as 0. */
-                uint32_t peer_id = 0;
-                if (te->transport == &UREPL_TCP_TRANSPORT) {
-                    struct sockaddr_in sa;
-                    socklen_t slen = (socklen_t)sizeof(sa);
-                    if (getpeername(client_fd,
-                                    (struct sockaddr *)&sa, &slen) == 0
-                        && sa.sin_family == AF_INET) {
-                        peer_id = sa.sin_addr.s_addr;
-                    }
-                }
-
-                /* Task 18: per-IP rate-limit check.  Locked-out peers
-                 * get the connection closed immediately, without ever
-                 * seeing a hello envelope. */
-                if (server->auth_limiter != NULL) {
-                    struct timespec ts;
-                    clock_gettime(CLOCK_MONOTONIC, &ts);
-                    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
-                                      + (uint64_t)ts.tv_nsec / 1000ULL;
-                    pthread_mutex_lock(&server->auth_limiter_mutex);
-                    bool allowed = urepl_auth_limiter_check(
-                        (UReplAuthLimiter *)server->auth_limiter,
-                        peer_id, now_us);
-                    pthread_mutex_unlock(&server->auth_limiter_mutex);
-                    if (!allowed) {
-                        if (te->transport->close_fn != NULL) {
-                            te->transport->close_fn(client_fd);
-                        }
-                        continue;
-                    }
-                }
-
-                /* Hand off to the VM thread.  spawn_reader does
-                 * VM-touching work (urepl_session_create allocates a
-                 * realm + boots stdlib via urbi_run_chunk → urbi_step)
-                 * and MUST NOT run on the listener thread.  Push onto
-                 * the accept queue; urepl_listener_drain_accepts on
-                 * the VM thread (called from the dispatch drain hook)
-                 * pops and calls spawn_reader. */
-                UReplAcceptItem *item =
-                    (UReplAcceptItem *)calloc(1, sizeof(*item));
-                if (item == NULL) {
-                    if (te->transport->close_fn != NULL) {
-                        te->transport->close_fn(client_fd);
-                    }
-                    continue;
-                }
-                item->client_fd = client_fd;
-                item->peer_id   = peer_id;
-                item->transport = te->transport;
-                pthread_mutex_lock(&server->accept_queue_mutex);
-                if (server->accept_tail != NULL) {
-                    server->accept_tail->next = item;
-                } else {
-                    server->accept_head = item;
-                }
-                server->accept_tail = item;
-                pthread_mutex_unlock(&server->accept_queue_mutex);
-            }
+            drain_transport_accepts(server, entries[i]);
         }
     }
 
