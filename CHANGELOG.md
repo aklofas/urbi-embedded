@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.9.0-repl-foundation — unreleased
+## v0.9.0-repl-foundation — 2026-05-19
 
 ### Foundation (M8 part 1 of 2)
 
@@ -40,6 +40,17 @@ ARM/RISC-V bare-metal toolchain missing hosted-C sysroot headers (`string.h` etc
 under `-ffreestanding`).  This is a pre-existing toolchain environment gap
 (confirmed present on v0.8.5 baseline); the bytecode-only variants compile clean.
 CI remains authoritative for full-library cross-target verification.
+
+### Tests
+
+- `tests/unit/test_uproto_owning_mi.c` — 4 cases verifying `UProto.owning_module_instance` is stamped on every proto by `urbi_module_instance_create`.
+- `tests/unit/test_loaded_protos_registry.c` — 2 cases verifying `URealm.loaded_protos_head` registration at `urbi_run_chunk` entry.
+- `tests/unit/test_multi_realm.c` — 4 cases gating Phase 2 OP_CLOSURE rewire (isolation, shared atom, cross-realm call, cross-realm-survives-destroy).
+- `tests/unit/test_umodule_instance_lifetime.c` — 2 cases pinning the instance-unlink-on-module-destroy invariant.
+- `tests/unit/test_urbi_unload.c` — 5 cases for the `urbi_unload` public API + the CHSTR-027 heap-alloc regression + `urbi_realm_create_repl` smoke.
+- `tests/unit/test_realm_destroy_with_parked_loader.c` — 2 cases verifying `urbi_realm_destroy` walks `loaded_protos_head` and respects stdlib exclusion.
+- `tests/unit/test_lexer_syncline.c` — 7 cases for the `//#line`/`//#push`/`//#pop` mini-parser + the `urbi_repl_eval` source-name error-format integration.
+- `tests/integration/repl_smoke.sh` — added cross-line `Object.foo` shared-proto smoke case (31 → 32 total).
 
 ---
 
