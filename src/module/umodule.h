@@ -309,6 +309,13 @@ typedef void *(*UModuleAllocFn)(void *ptr, size_t nbytes, void *ud);
 struct USymbol;
 typedef struct USymbol USymbol;
 
+/* Forward declaration — UModuleInstance is introduced in M4 (see
+ * object/umoduleinstance.h).  UProto.owning_module_instance (added v0.9.0)
+ * holds a back-pointer to the runtime instance this proto was first
+ * instantiated under.  Defined as opaque here to avoid a circular dependency
+ * on object/ layer types. */
+struct UModuleInstance;
+
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
  * function body.  The root chunk lives directly in UModule; nested
@@ -409,6 +416,22 @@ typedef struct UProto {
      * — a single index that works for both flat and recursive trees.
      * v0.8.5-recursive-emit. */
     uint16_t       ic_index;
+
+    /* [runtime-only, NOT serialized] Back-pointer to the UModuleInstance
+     * this UProto was first instantiated under.  Populated once at
+     * urbi_module_instance_create time (tree walk over every proto).  Used
+     * by OP_CLOSURE to bind cl->proto_inst without a fallback chain:
+     * cl->proto_inst = &owning_module_instance->proto_instances->entries[ic_index].
+     *
+     * Lifetime contract: owning_module_instance is GC-managed and remains
+     * valid as long as this UProto exists (the instance is kept reachable
+     * via vm->module_instances_head; the module-destroy path unlinks the
+     * instance from that list before the proto's refcount can hit 0).
+     *
+     * Zero-initialised at alloc time; populated lazily on first instance
+     * creation.  NULL is the "not yet instantiated" state and is detected
+     * by the OP_CLOSURE assert when read.  v0.9.0-repl. */
+    struct UModuleInstance *owning_module_instance;
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
