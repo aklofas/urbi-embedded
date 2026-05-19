@@ -87,6 +87,12 @@ int urbi_stdlib_list_remove_first_equal(struct UVM *vm,
                                         struct UObject *list_obj,
                                         UValue item);
 
+/* Create an empty List UObject (clone of the List atom proto, fresh
+ * UList backing).  Used by lobby_native to install Lobby.lobbies as a
+ * VM-singleton slot at boot.  Returns the new List UObject or NULL on
+ * OOM. */
+struct UObject *urbi_stdlib_list_new_empty(struct UVM *vm);
+
 #ifdef __cplusplus
 }
 #endif

@@ -41,9 +41,11 @@
  */
 
 #include "stdlib/lobby_native.h"
-#include "stdlib/containers.h"        /* urbi_stdlib_list_append_value */
+#include "stdlib/containers.h"        /* urbi_stdlib_list_append_value / urbi_stdlib_list_new_empty */
 #include "stdlib/object_root.h"       /* urbi_native_closure_create + raise helpers */
 
+#include "event/uevent.h"             /* urbi_event_create */
+#include "event/uevent_native.h"      /* uvalue_from_event */
 #include "module/umodule.h"           /* UValue / UVAL_* */
 #include "object/uobject.h"           /* urbi_object_alloc / set_protos_single / set_local_slot / resolve_slot */
 #include "realm/urealm.h"             /* URealm + global_object */
@@ -189,7 +191,37 @@ install_native_method(UVM *vm, UObject *proto, const char *name,
     return URBI_OK;
 }
 
-/* === urbi_lobby_native_register ========================================= */
+/* === urbi_lobby_native_register =========================================
+ *
+ * Allocates vm->lobby_proto + installs three slots that are intentionally
+ * VM-SINGLETONS (one each per VM, shared across every realm):
+ *
+ *   __builtin_lobby_send  — native primitive that all Lobby.echo /
+ *                           Lobby.wall calls funnel through (per-realm
+ *                           writer routing happens inside).
+ *   lobbies               — empty List, mutated by urbi_lobby_register_-
+ *                           session / unregister_session as REPL sessions
+ *                           come and go.
+ *   onDisconnect          — Event subscribed to by user code; the default
+ *                           handleDisconnect (defined in lobby.u)
+ *                           emits this with the session lobby as payload.
+ *
+ * The script-side methods (echo / wall / handleDisconnect) live on a
+ * LobbyMethods proto installed by lobby.u via Lobby.addProto.  That
+ * design accepts that lobby.u runs per-realm (so each realm prepends a
+ * fresh LobbyMethods to Lobby.protos) — the methods themselves are
+ * functionally identical across realms, so most-recent-wins via DFS is
+ * a non-issue.  Critically, lobbies + onDisconnect live on Lobby itself
+ * (not on LobbyMethods), so they are TRULY shared regardless of how
+ * many LobbyMethods get prepended.
+ *
+ * Pre-mark-readonly: this function runs inside urbi_stdlib_boot before
+ * urbi_atom_protos_mark_readonly, so urbi_object_set_local_slot succeeds
+ * on the freshly-allocated proto.  After mark_readonly the proto is
+ * readonly to urbiscript; C-side mutators (urbi_lobby_register_session)
+ * still work because they reach into the List's UList backing directly,
+ * not via OP_SETSLOT.  Idempotent: re-entry returns URBI_OK without
+ * re-running.  Returns URBI_OK / URBI_ERR_INVALID_ARG / URBI_ERR_OOM. */
 
 int
 urbi_lobby_native_register(UVM *vm)
@@ -207,13 +239,47 @@ urbi_lobby_native_register(UVM *vm)
     if (root == NULL) return URBI_ERR_OOM;
     urbi_object_set_protos_single(vm, proto, root);
 
-    /* Bind to VM BEFORE installing the method so the GC walker shades
-     * the partially populated proto on any allocation that triggers
+    /* Bind to VM BEFORE installing slots so the GC walker shades the
+     * partially populated proto on any allocation that triggers
      * collection during install. */
     vm->lobby_proto = proto;
 
-    return install_native_method(vm, proto, "__builtin_lobby_send",
-                                 builtin_lobby_send);
+    int rc = install_native_method(vm, proto, "__builtin_lobby_send",
+                                   builtin_lobby_send);
+    if (rc != URBI_OK) return rc;
+
+    /* Install `lobbies` (empty List) — the VM-singleton collection of
+     * active sessions.  Containers boot phase already ran (urbi_stdlib_-
+     * register_containers fires before lobby_native in stdlib_boot), so
+     * the List atom proto + its native methods are available. */
+    UObject *lobbies = urbi_stdlib_list_new_empty(vm);
+    if (lobbies == NULL) return URBI_ERR_OOM;
+    {
+        USymbol *sym = (USymbol *)ustr_intern(vm, "lobbies", 7);
+        if (sym == NULL) return URBI_ERR_OOM;
+        UValue v = urbi_make_nil();
+        v.kind = (uint8_t)UVAL_OBJECT;
+        v.v.p  = lobbies;
+        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
+            return URBI_ERR_OOM;
+    }
+
+    /* Install `onDisconnect` (fresh Event) — shared across every session
+     * lobby instance so a subscriber from any realm sees every
+     * disconnect.  Event_native already registered at this point
+     * (event_native_register fires at urbi_vm_init / urbi_native_-
+     * protos_init in urealm_globals.c before urbi_stdlib_boot). */
+    {
+        struct UEvent *e = urbi_event_create(vm);
+        if (e == NULL) return URBI_ERR_OOM;
+        USymbol *sym = (USymbol *)ustr_intern(vm, "onDisconnect", 12);
+        if (sym == NULL) return URBI_ERR_OOM;
+        UValue v = uvalue_from_event(e);
+        if (urbi_object_set_local_slot(vm, proto, sym, v) != 0)
+            return URBI_ERR_OOM;
+    }
+
+    return URBI_OK;
 }
 
 /* === urbi_lobby_native_register_globals =================================

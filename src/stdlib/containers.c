@@ -1012,3 +1012,17 @@ urbi_stdlib_list_remove_first_equal(UVM *vm, UObject *list_obj, UValue item)
     }
     return URBI_OK;  /* not found — silent no-op (mirrors Lobby spec) */
 }
+
+UObject *
+urbi_stdlib_list_new_empty(UVM *vm)
+{
+    if (vm == NULL) return NULL;
+    UObject *list_proto = urbi_object_atom(vm, URBI_ATOM_LIST);
+    if (list_proto == NULL) return NULL;
+    UList *l = list_alloc(vm, 4U);
+    if (l == NULL) return NULL;
+    UObject *o = urbi_object_clone(vm, list_proto);
+    if (o == NULL) return NULL;
+    if (attach_storage(vm, o, l) != 0) return NULL;
+    return o;
+}
