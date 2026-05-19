@@ -53,6 +53,21 @@
  *   7. v0.9.0-repl-foundation — UClosure 56 -> 48 B: origin_module_instance
  *      retired; UProto + UModule + URealm gain runtime back-pointers;
  *      ULexer gains transient syncline state.  (0/10/0 → 0/11/0)
+ *   8. v0.9.1-repl-service Phase 1 — URealm gains has_compile_budget +
+ *      compile_budget (UCompileBudget) + writer_fn + writer_ud fields
+ *      (+24 B on 64-bit with alignment).  Public-API additions:
+ *      urbi_realm_set_writer / set_compile_budget / get_compile_budget;
+ *      urbi_vm_write_in_realm; URBI_DEFAULT_REPL_BUDGET exported const.
+ *      New UErrCode values: URBI_ERR_FROZEN_PROTO (-21),
+ *      URBI_ERR_COMPILE_BUDGET_DEPTH / NODES / SOURCE (-22..-24).
+ *      UObject.flags gains URBI_OBJ_FLAG_READONLY (bit 7; UPROTO_FLAG_READONLY
+ *      public spelling).  UCompileBudget struct added to <urbi/types.h>.
+ *      Breaking-from-bytecode: OP_SETSLOT now raises TypeError when the
+ *      receiver UObject carries URBI_OBJ_FLAG_READONLY — the 15 builtin
+ *      atom protos (Object, Integer, Float, String, Boolean, Nil, Void,
+ *      List, Dict, Symbol, Tag, Event, Mutex, Date, Duration) are marked
+ *      readonly at urbi_stdlib_boot.  Global stays mutable per spec §4.1.
+ *      (0/11/0 → 0/12/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -67,7 +82,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  11
+#define URBI_API_VERSION_MINOR  12
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
