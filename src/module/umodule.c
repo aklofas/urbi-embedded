@@ -7,6 +7,7 @@
 #include "uopcode_shape.h"
 #include "vm/uvm.h"               /* struct UVM access for umodule_destroy rescue path */
 #include "object/umodule_instance.h" /* UModuleInstance: unlink on destroy (§5.4) */
+#include "realm/urealm.h"            /* URealm.loaded_protos_head: unlink on destroy */
 
 #include <stdarg.h>               /* va_list / va_start / va_end — freestanding-ok */
 #include <stdint.h>
@@ -1301,6 +1302,24 @@ umodule_destroy(UModule *module, struct UVM *vm)
              * alive inside a UModule, next_alloc is NULL; on rescued_protos,
              * next_alloc points to the next list entry, never to itself. */
             module->root_proto->next_alloc = module->root_proto;
+            /* Unlink from realm list before zeroing (v0.9.0-repl Task 12).
+             * owning_realm is available even without a vm pointer. */
+            if (module->owning_realm != NULL) {
+                URealm *r = module->owning_realm;
+                if (r->loaded_protos_head == module) {
+                    r->loaded_protos_head = module->next_in_realm;
+                } else {
+                    for (struct UModule *p = r->loaded_protos_head; p != NULL;
+                         p = p->next_in_realm) {
+                        if (p->next_in_realm == module) {
+                            p->next_in_realm = module->next_in_realm;
+                            break;
+                        }
+                    }
+                }
+                module->owning_realm  = NULL;
+                module->next_in_realm = NULL;
+            }
             /* Free the module shell (source_name + struct) — root_proto
              * survives with the self-link sentinel. */
             {
@@ -1341,6 +1360,30 @@ static void umodule_destroy_internal(UModule *module, struct UVM *vm) {
             }
             slot = &(*slot)->next_in_vm;
         }
+    }
+
+    /* Unlink from owning_realm's loaded_protos_head list before freeing.
+     * Without this, direct umodule_destroy calls leave stale pointers in the
+     * realm list, which urbi_realm_destroy's walk would then dereference
+     * (use-after-free).  urbi_unload already does this unlink; doing it here
+     * too makes direct umodule_destroy callers safe.  Idempotent: if
+     * owning_realm is NULL (already unlinked by urbi_unload), skip.
+     * v0.9.0-repl Task 12. */
+    if (module->owning_realm != NULL) {
+        URealm *r = module->owning_realm;
+        if (r->loaded_protos_head == module) {
+            r->loaded_protos_head = module->next_in_realm;
+        } else {
+            for (struct UModule *p = r->loaded_protos_head; p != NULL;
+                 p = p->next_in_realm) {
+                if (p->next_in_realm == module) {
+                    p->next_in_realm = module->next_in_realm;
+                    break;
+                }
+            }
+        }
+        module->owning_realm  = NULL;
+        module->next_in_realm = NULL;
     }
 
     UModuleAllocFn alloc = module_allocator(module);

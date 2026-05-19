@@ -169,6 +169,36 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
         realm->tag = NULL;
     }
 
+    /* Step 2b (v0.9.0-repl Task 12): walk loaded_protos_head and unload each
+     * non-stdlib module.  Strands were stopped in step 1, so strand-bind
+     * refcounts have dropped; closures from other realms that reference these
+     * modules' protos survive via the root_proto-refcount rescue mechanism
+     * (umodule_destroy stashes them onto vm->rescued_protos).
+     *
+     * Stdlib exclusion: vm->stdlib_module is VM-owned (freed by
+     * urbi_vm_destroy) and must NEVER be unloaded here.  It only appears in
+     * the FIRST realm's list (urealm_register_module silently skips when
+     * owning_realm != NULL — Task 5).  Skip it explicitly and clear its
+     * back-pointer to avoid a dangling reference to this (about-to-be-freed)
+     * realm. */
+    {
+        UModule *m = realm->loaded_protos_head;
+        while (m != NULL) {
+            UModule *next = m->next_in_realm;
+            if (m != vm->stdlib_module) {
+                urbi_unload(vm, m);
+            }
+            m = next;
+        }
+        /* If stdlib was in the list, clear its back-pointer. */
+        if (vm->stdlib_module != NULL &&
+            vm->stdlib_module->owning_realm == realm) {
+            vm->stdlib_module->owning_realm  = NULL;
+            vm->stdlib_module->next_in_realm = NULL;
+        }
+        realm->loaded_protos_head = NULL;
+    }
+
     /* Step 3: Free namespace. */
     unamespace_destroy(vm, realm->bindings);
     realm->bindings = NULL;
