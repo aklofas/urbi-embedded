@@ -18,7 +18,7 @@
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
 #include "value/uintern.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"

@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#include "chunk/umodule.h"   /* UValue, UValKind */
+#include "chunk/uchunk.h"   /* UValue, UValKind */
 
 #ifdef __cplusplus
 extern "C" {

@@ -10,7 +10,7 @@
  * That made the public header non-self-contained — external consumers
  * using only -Iinclude could not resolve sibling internal includes.
  *
- * Internal headers (src/chunk/umodule.h, src/sched/ustrand.h, src/vm/uvm.h)
+ * Internal headers (src/chunk/uchunk.h, src/sched/ustrand.h, src/vm/uvm.h)
  * include this file rather than redefining the types, ensuring single
  * source of truth.
  *
@@ -52,7 +52,7 @@ extern "C" {
  *   8 → double (f64)  -- default for hosted builds
  *   4 → float  (f32)  -- typically set on 32-bit cross-targets via
  *                        -DURBI_FLOAT_TYPE=4 in build flags.
- * The canonical definition lives in src/chunk/umodule.h; this header
+ * The canonical definition lives in src/chunk/uchunk.h; this header
  * supplies the same default so external consumers see the same layout. */
 #ifndef URBI_FLOAT_TYPE
 #define URBI_FLOAT_TYPE 8
@@ -73,7 +73,7 @@ struct UEvent;
 
 /* === UValKind: tag byte for UValue's union discriminant ===
  *
- * Numeric values pinned by the bytecode wire format (umodule.h is the
+ * Numeric values pinned by the bytecode wire format (uchunk.h is the
  * runtime mirror; this header is the consumer-facing copy). 11-15 are
  * reserved; the loader rejects > UVAL_STR in constant pools at v1.0. */
 typedef enum {
@@ -93,7 +93,7 @@ typedef enum {
 /* === UValue: 16-byte tagged union ===
  *
  * 1 byte kind + 7 byte pad + 8 byte payload.  Layout mirrored exactly by
- * src/chunk/umodule.h. */
+ * src/chunk/uchunk.h. */
 typedef struct {
     uint8_t  kind;       /* UValKind */
     uint8_t  _pad[7];

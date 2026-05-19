@@ -17,7 +17,7 @@
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"
 #include "watcher/uwatcher.h"

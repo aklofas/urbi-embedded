@@ -22,7 +22,7 @@
 #include "emit/uemit_internal.h"
 #include "value/uintern.h"
 #include "parse/uast.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include <stddef.h>
 #include <stdint.h>

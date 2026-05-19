@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "gc/ugc.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/uic.h"
 #include "runtime/umacros.h"  /* urbi_strlen */
 #include "value/uintern.h"    /* ustr_intern */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Bytecode UModule deserializer + verifier + destroy.  Freestanding. */
 
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include "value/uvarint.h"
 #include "uopcode_shape.h"

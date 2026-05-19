@@ -12,7 +12,7 @@
 
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

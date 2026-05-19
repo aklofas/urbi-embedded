@@ -19,7 +19,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "urbi/urbi.h"
 #include "value/uvalue.h"

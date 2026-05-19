@@ -34,7 +34,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "urbi/urbi.h"
 #include "urbi/types.h"

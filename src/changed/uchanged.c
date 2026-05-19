@@ -10,7 +10,7 @@
                                    * UGC_COLOR_MASK, gc_shade_gray, UNLIKELY */
 #include "vm/uvm.h"                  /* UVM, host_log_fn */
 #include "urbi/urbi.h"            /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include <stddef.h>
 
 /* USymbol is just an interned const char* — the typedef lives in umodule.h

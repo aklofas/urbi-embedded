@@ -7,7 +7,7 @@
 #include "value/uarena.h"
 #include "emit/uemit.h"
 #include "value/uintern.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 /* Expose find_or_install_upvalue for cascade tests. */

@@ -9,7 +9,7 @@
 #include <stddef.h>
 
 #include "urbi/urbi.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/umodule_instance.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"

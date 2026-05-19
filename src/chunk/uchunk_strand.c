@@ -15,7 +15,7 @@
 #include "chunk/uchunk_strand.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */

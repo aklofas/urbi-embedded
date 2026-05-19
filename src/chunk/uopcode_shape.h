@@ -39,7 +39,7 @@
 #ifndef URBI_UOPCODE_SHAPE_H
 #define URBI_UOPCODE_SHAPE_H
 
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include <stdbool.h>
 #include <stdint.h>
 

@@ -11,7 +11,7 @@
 
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"

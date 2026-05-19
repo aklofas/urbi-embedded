@@ -29,7 +29,7 @@
 #include "gc/ugc.h"              /* UCell, UTYPE_CHANGED_NODE */
 #include "gc/ugc_incremental.h"  /* UGC_HAS_SLOT_CHANGE_EVENT, LIKELY, UNLIKELY */
 #include "event/uevent.h"              /* UEvent forward-compatible include */
-#include "chunk/umodule.h"             /* UValue, USymbol */
+#include "chunk/uchunk.h"             /* UValue, USymbol */
 
 #ifdef __cplusplus
 extern "C" {

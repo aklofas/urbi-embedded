@@ -23,7 +23,7 @@
 #include "utest.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"

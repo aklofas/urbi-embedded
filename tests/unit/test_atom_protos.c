@@ -7,7 +7,7 @@
 #include "utest.h"
 
 #include "object/uobject.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"

@@ -34,7 +34,7 @@
 #include "urbi/urbi.h"
 #include "urbi/types.h"
 #include "vm/uvm.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 
 #define UTEST(name) static void name(void)

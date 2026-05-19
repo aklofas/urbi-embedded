@@ -28,7 +28,7 @@
 
 #include "urbi/urbi.h"
 #include "value/uarena.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 /* utest_e2e_compile_and_run: lex + parse + emit + run `src` under the

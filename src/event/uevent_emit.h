@@ -6,7 +6,7 @@
 #ifndef UEVENT_EMIT_H
 #define UEVENT_EMIT_H
 
-#include "chunk/umodule.h"   /* UValue */
+#include "chunk/uchunk.h"   /* UValue */
 
 #ifdef __cplusplus
 extern "C" {

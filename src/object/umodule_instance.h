@@ -60,7 +60,7 @@
 
 #include "gc/ugc.h"           /* UCell, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
 #include "object/uic.h"       /* UIC */
-#include "chunk/umodule.h"          /* UModule, UProto */
+#include "chunk/uchunk.h"          /* UModule, UProto */
 
 #ifdef __cplusplus
 extern "C" {

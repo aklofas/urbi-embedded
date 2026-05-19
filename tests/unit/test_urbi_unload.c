@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 #include "urbi/urbi.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"

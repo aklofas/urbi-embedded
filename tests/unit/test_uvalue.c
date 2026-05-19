@@ -3,7 +3,7 @@
 
 #include "utest.h"
 
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uvalue.h"
 
 #include <math.h>

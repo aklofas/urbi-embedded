@@ -32,7 +32,7 @@
 #include "value/uintern.h"
 #include "sched/ustrand.h"
 #include "runtime/uunwind.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "urbi/urbi.h"
 
 #include <stddef.h>

@@ -37,7 +37,7 @@
 #include "stdlib/containers.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
-#include "chunk/umodule.h"            /* UValue / UVAL_* */
+#include "chunk/uchunk.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_alloc / atom / clone / set_local_slot */
 #include "realm/urealm.h"              /* URealm + global_object */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */

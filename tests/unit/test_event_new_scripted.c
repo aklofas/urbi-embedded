@@ -31,7 +31,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uintern.h"
 #include "object/uobject.h"
 

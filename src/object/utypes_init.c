@@ -51,7 +51,7 @@
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
-#include "chunk/umodule.h"       /* uproto_root_of, umodule_proto_refcount_dec */
+#include "chunk/uchunk.h"       /* uproto_root_of, umodule_proto_refcount_dec */
 
 /* === walk_uobject ===
  *

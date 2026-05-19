@@ -14,7 +14,7 @@
 #include "gc/ugc_incremental.h" /* gc_shade_gray + urbi_gc_slot_write */
 #include "gc/ugc.h"             /* UTYPE_SLOT_ARRAY / UTYPE_PROPS / UTYPE_PROPS_TABLE */
 #include "changed/uchanged_node.h" /* urbi_emit_slot_change_if_subscribed */
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 
 /* uprops_alloc — allocate a fresh UProps cell with all flags clear and
  * oget/oset = UVAL_VOID.  Returns NULL on OOM. */

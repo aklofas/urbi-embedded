@@ -32,7 +32,7 @@
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/umodule_instance.h"
 #include "runtime/uframe.h"
 #include <stddef.h>

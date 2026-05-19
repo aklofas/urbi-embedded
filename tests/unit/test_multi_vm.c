@@ -10,7 +10,7 @@
 #include "emit/uemit.h"
 #include "value/uintern.h"
 #include "lex/ulex.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 

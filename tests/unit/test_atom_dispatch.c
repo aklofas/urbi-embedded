@@ -14,7 +14,7 @@
 #include "object/uobject.h"
 #include "object/uic.h"        /* UIC, urbi_slot_set_slow — T23 cleanup absorption */
 #include "object/ushape.h"     /* urbi_shape_find_slot, URBI_SHAPE_SLOT_INVALID */
-#include "chunk/umodule.h"   /* UValue, UModule */
+#include "chunk/uchunk.h"   /* UValue, UModule */
 #include "value/uintern.h"    /* ustr_intern — T20/T21 set local slots on atom protos */
 #include "value/uarena.h"
 #include "lex/ulex.h"

@@ -10,7 +10,7 @@
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/umodule_instance.h"
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"   /* UVM_STACK_CAP */

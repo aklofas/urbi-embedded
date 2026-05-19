@@ -22,7 +22,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>

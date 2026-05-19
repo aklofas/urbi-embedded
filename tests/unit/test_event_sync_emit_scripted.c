@@ -41,7 +41,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "value/uarena.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"

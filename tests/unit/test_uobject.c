@@ -9,7 +9,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"  /* UShape — T26 set_local_slot tests */
-#include "chunk/umodule.h"   /* UValue */
+#include "chunk/uchunk.h"   /* UValue */
 #include "value/uintern.h"   /* ustr_intern — T26 set_local_slot tests */
 #include "vm/uvm.h"
 #include "urbi/gc.h"       /* urbi_gc_alloc — T9 heap UProtos */

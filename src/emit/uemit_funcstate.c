@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "emit/uemit.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include "value/uarena.h"
 

@@ -4,7 +4,7 @@
 
 #include "uemit_internal.h"
 #include "emit/uemit.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uast.h"
 #include "runtime/umacros.h"
 

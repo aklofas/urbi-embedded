@@ -26,7 +26,7 @@
 
 #include "gc/ugc.h"                /* UTYPE_CLOSURE */
 #include "gc/ugc_incremental.h"    /* urbi_gc_alloc */
-#include "chunk/umodule.h"        /* UValue, UVAL_*, UClosure typedef */
+#include "chunk/uchunk.h"        /* UValue, UVAL_*, UClosure typedef */
 #include "object/uobject.h"        /* urbi_object_*, urbi_object_root */
 #include "object/ushape.h"         /* urbi_shape_root */
 #include "runtime/uclosure.h"      /* struct UClosure full def */

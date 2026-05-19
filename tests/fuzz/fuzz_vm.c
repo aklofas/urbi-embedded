@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {

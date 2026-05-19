@@ -13,7 +13,7 @@
 #include <string.h>
 
 #include "emit/uemit.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 
 #define UTEST(name) static void name(void)
 

@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "vm/uvm.h"
-#include "chunk/umodule.h"   /* UModule, UProto */
+#include "chunk/uchunk.h"   /* UModule, UProto */
 #include "runtime/uclosure.h" /* UClosure, UUpvalCell */
 #include "sched/ustrand.h"    /* UStrand */
 

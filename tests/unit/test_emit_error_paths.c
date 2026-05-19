@@ -27,7 +27,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)

@@ -11,7 +11,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"

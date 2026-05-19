@@ -4,7 +4,7 @@
 
 #include "uemit_internal.h"
 #include "value/uvarint.h"
-#include "chunk/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include <stddef.h>
 #include <stdint.h>

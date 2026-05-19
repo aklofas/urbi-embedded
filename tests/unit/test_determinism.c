@@ -29,7 +29,7 @@ UTEST(determinism_checksum_smoke)
 #ifdef URBI_DEBUG
 
 #include "realm/urealm.h"
-#include "chunk/umodule.h"      /* UValue, UValKind */
+#include "chunk/uchunk.h"      /* UValue, UValKind */
 #include "object/uic.h"
 #include "object/umodule_instance.h"
 #include "value/uintern.h"       /* ustr_intern */

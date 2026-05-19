@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 #include "gc/ugc.h"    /* UCell, UTYPE_EVENT */
-#include "chunk/umodule.h"   /* UValue, UVAL_NIL */
+#include "chunk/uchunk.h"   /* UValue, UVAL_NIL */
 
 #ifdef __cplusplus
 extern "C" {
