@@ -117,4 +117,14 @@ struct UClosure {
     UUpvalCell       *upvals[1];  /* flexible trailing array of pointers */
 };
 
+/* Layout pin (v0.9.0): UClosure shrunk 56 -> 48 B after origin_module_instance
+ * retirement (Task 8).  Remaining fields: UCell (2 B) + pad (6 B) + proto ptr
+ * (8 B) + proto_inst ptr (8 B) + native_fn ptr (8 B) + nupvals (1 B) + pad
+ * (7 B) + upvals[1] ptr (8 B) = 48 B.  Pin on 64-bit hosts only (pointer
+ * size drives the layout; 32-bit assertion is not separately tracked). */
+#if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
+_Static_assert(sizeof(UClosure) == 48,
+               "UClosure must be 48 B after v0.9.0 retirement; struct grew unexpectedly");
+#endif
+
 #endif /* UCLOSURE_H */

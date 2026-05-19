@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.9.0-repl-foundation — unreleased
+
+### Foundation (M8 part 1 of 2)
+
+- **`urbi_unload(vm, module)`** — new public API; unloads a single module from its realm's registry; defer-destroy via root_proto->refcount rescue.
+- **`urbi_realm_create_repl(vm)`** — new convenience; creates a URealm with `REALM_REPL` set.
+- **`urbi_realm_destroy` extended** to walk `loaded_protos_head` before strand teardown.
+- **`urbi_repl_eval`** now heap-allocates the UModule per line (closes CHSTR-027); previous stack-alloc pattern leaked address-aliasing across REPL lines.
+
+### Runtime
+
+- **UClosure shrunk** 56 → 48 B by retiring `origin_module_instance`.  Replaced by per-UProto `owning_module_instance` back-pointer; OP_CLOSURE simplified from ~50 LOC fallback chain to 5 LOC single read.  Closes v0.8.5 "Partial bundle" carry-forward.
+- **URealm gains `loaded_protos_head`** — singly-linked list of UModule shells loaded under the realm; lifecycle registry only (not a GC root chain).
+- **UModule gains `next_in_realm` + `owning_realm`** for the registry linkage.
+
+### Lexer
+
+- **Synclines** — `//#line N "FILE"`, `//#push N "FILE"`, `//#pop` recognized in the comment-skip path; rewrite `lex->line` + `lex->source_name` so error messages report correct file:line for framed multi-line REPL submissions.  Stack depth tunable via `URBI_SYNCLINE_STACK_MAX` (default 4).  Malformed / overflow / underflow degrade silently.
+
+### ABI
+
+- **0/10/0 → 0/11/0** (7th pre-v1.0 escape-clause use): UClosure, UProto, UModule, URealm all change layout; ULexer gains transient state.
+
+### Build modes
+
+- All three modes preserved: bytecode-only / default / (REPL service introduced in v0.9.1).  `urbi_unload` + `urbi_realm_create_repl` are always available; synclines ride with the lexer (off in bytecode-only builds).
+
+---
+
 ## v0.8.5-recursive-emit — 2026-05-18 (Truly-recursive emitter)
 
 **Tag:** `v0.8.5-recursive-emit`

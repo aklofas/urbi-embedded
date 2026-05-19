@@ -50,6 +50,9 @@
  *      with nested function literals.  Minor-field bump (0/9/0 → 0/10/0)
  *      reflects UClosure layout shrinkage + the internal alloc_nested
  *      signature change.  No public-symbol additions or removals.
+ *   7. v0.9.0-repl-foundation — UClosure 56 -> 48 B: origin_module_instance
+ *      retired; UProto + UModule + URealm gain runtime back-pointers;
+ *      ULexer gains transient syncline state.  (0/10/0 → 0/11/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -64,7 +67,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  10
+#define URBI_API_VERSION_MINOR  11
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \
