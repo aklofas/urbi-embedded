@@ -113,6 +113,19 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
     return true;
 }
 
+/* Stamp owning_module_instance back-pointers on every UProto in the tree.
+ * DFS pre-order; idempotent (re-running on the same tree overwrites with
+ * the same value).  Added v0.9.0-repl (Task 2). */
+static void
+stamp_owning_mi(UProto *p, UModuleInstance *mi)
+{
+    if (p == NULL) return;
+    p->owning_module_instance = mi;
+    for (size_t i = 0; i < p->nested_count; i++) {
+        stamp_owning_mi(p->nested[i], mi);
+    }
+}
+
 /* v0.8.5: recursive IC-byte tally.  Walks the proto tree DFS pre-order and
  * sums (proto->ic_count * sizeof(UIC)) for every proto including root.
  * Replaces the prior flat "root + sum(root.nested[i])" sizing — identical
@@ -274,6 +287,11 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * the iteration order is stable across runs. */
     mi->next_in_vm = vm->module_instances_head;
     vm->module_instances_head = mi;
+
+    /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
+     * UModuleInstance.  DFS pre-order matches ic_index assignment order.
+     * The field is currently unread by the runtime; Task 7 will use it. */
+    stamp_owning_mi(m->root_proto, mi);
 
     return mi;
 }
