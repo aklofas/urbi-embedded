@@ -189,14 +189,13 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
 
-    /* All chunk-top fields from root_proto. */
+    /* Chunk-top fields needed by the no-rp fallback path below.  Other
+     * root_proto fields (ic_name_strs, alloc_fn, alloc_ud, nested[]) are
+     * now consumed inside init_ic_slices_recursive / ic_bytes_recursive
+     * which read them off `rp` directly (v0.8.5). */
     uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : 0U;
     USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : NULL;
-    char     **root_ic_strs     = (rp != NULL) ? rp->ic_name_strs : NULL;
-    UModuleAllocFn root_alloc_fn = (rp != NULL) ? rp->alloc_fn    : m->alloc_fn;
-    void          *root_alloc_ud = (rp != NULL) ? rp->alloc_ud    : m->alloc_ud;
-    size_t         root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
-    UProto       **root_nested       = (rp != NULL) ? rp->nested       : NULL;
+    size_t     root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for root chunk + every nested proto's ic_count.

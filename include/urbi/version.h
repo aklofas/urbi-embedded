@@ -43,7 +43,7 @@
  *      ic_index field (+2 B); UModule gains next_proto_serial +
  *      total_proto_count fields (+4 B).  umodule_alloc_nested_proto
  *      signature changes from (module) to (module, parent_proto) — internal
- *      symbol not exposed by include/urbi/*.h.  OP_CLOSURE dispatch arm
+ *      symbol not exposed by the public `include/urbi/` headers.  OP_CLOSURE dispatch arm
  *      rewrites to resolve Bx against executing_proto->nested[] (per-parent
  *      index) instead of cur_cl->origin_nested (flat root index).  Wire
  *      format unchanged at v1.7 / 0x17; on-disk bytes change for any source
