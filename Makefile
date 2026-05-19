@@ -161,6 +161,38 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
+# --- v0.9.1 REPL CLIs (URBI_ENABLE_REPL=1 only) ------------------------
+#
+# urbi-server: headless network REPL daemon — boots a UVM, optionally
+#   runs a boot script, registers the TCP transport, drives urbi_step()
+#   until SIGINT/SIGTERM.  Links against liburbi.a + libm.
+#
+# urbi-send: NDJSON client utility — pure POSIX sockets + libc.  Does
+#   NOT link against liburbi.  Gated behind URBI_ENABLE_REPL=1 only to
+#   avoid maintaining a binary nobody can talk to (server side disabled).
+
+ifeq ($(URBI_ENABLE_REPL),1)
+URBI_SERVER := $(BUILDDIR)/urbi-server
+URBI_SEND   := $(BUILDDIR)/urbi-send
+
+$(BUILDDIR)/tools/urbi-server.o: tools/urbi-server.c | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -c -o $@ $<
+
+$(URBI_SERVER): $(BUILDDIR)/tools/urbi-server.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-server.o $(LIB) -lm
+
+$(BUILDDIR)/tools/urbi-send.o: tools/urbi-send.c | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(URBI_SEND): $(BUILDDIR)/tools/urbi-send.o
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-send.o
+
+urbi-server-bin: $(URBI_SERVER)
+urbi-send-bin:   $(URBI_SEND)
+
+all: $(URBI_SERVER) $(URBI_SEND)
+endif
+
 # --- Stdlib bake tool (host-only) ---------------------------------------
 #
 # tools/urbi-compile-stdlib is the Wave-2 build-time bake tool.  It
@@ -330,6 +362,18 @@ endif
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
+# v0.9.1: urbi-server end-to-end smoke (URBI_ENABLE_REPL=1 only).  Spins
+# up the daemon on a high port, runs `1+2` via NDJSON, expects the
+# `"value":"3"` envelope back, then SIGTERMs the daemon.  Uses python3
+# as the TCP client; skips cleanly if python3 is missing.
+ifeq ($(URBI_ENABLE_REPL),1)
+test-urbi-server-smoke: $(URBI_SERVER)
+	BUILD=$(BUILDDIR) tests/integration/urbi_server_smoke.sh
+else
+test-urbi-server-smoke:
+	@echo "test-urbi-server-smoke: URBI_ENABLE_REPL=0; skipping"
+endif
+
 # --- .chk conformance fixtures -----------------------------------------
 #
 # test-chk iterates all tests/chk/**/*.chk against the built urbi binary
@@ -348,7 +392,7 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4 test-urbi-server-smoke
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
@@ -1241,4 +1285,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
