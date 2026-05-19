@@ -267,6 +267,7 @@ extern void test_repl_dispatcher_suite(void);
 extern void test_repl_buffer_transport_suite(void);
 extern void test_repl_tcp_loopback_suite(void);
 extern void test_repl_auth_flow_suite(void);
+extern void test_introspect_each_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -510,6 +511,7 @@ static const struct suite_entry suites[] = {
     {"repl_buffer_transport",            test_repl_buffer_transport_suite},
     {"repl_tcp_loopback",                test_repl_tcp_loopback_suite},
     {"repl_auth_flow",                   test_repl_auth_flow_suite},
+    {"introspect_each",                  test_introspect_each_suite},
     /* Add new suites here as test files are added. */
 };
 
