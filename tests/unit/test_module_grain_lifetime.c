@@ -1,21 +1,19 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* test_module_grain_lifetime — Phase 5 Task 17 regression for v0.8.1-uproto-root.
+/* test_module_grain_lifetime — Variant B module-grain lifetime.
  *
- * Variant B module-grain lifetime: asserts the bounded-overhead promise.
+ * v0.9.0-repl update: urbi_repl_eval now heap-allocates one UModule per REPL
+ * line (CHSTR-027 close-out).  Modules persist in realm->loaded_protos_head
+ * until urbi_realm_destroy; they are NOT destroyed (and thus NOT rescued onto
+ * vm->rescued_protos) during the eval loop.
  *
- * Under repeated urbi_repl_eval + closure-escape patterns, each iteration
- * rescues exactly ONE root_proto to vm->rescued_protos (the entire root_proto,
- * not per-closure or per-nested entries).  This is the structural invariant for
- * the bounded-overhead claim from spec §3.5:
+ * The bounded-overhead invariant is now expressed as:
+ *   (a) Structural: realm->loaded_protos_head accumulates exactly N user modules
+ *       after N urbi_repl_eval calls (one heap-alloc UModule per chunk).
+ *   (b) Allocation: per-iteration GC allocation < 8 KB (same bound as before;
+ *       the module shell is ~400 bytes, not tracked by the GC allocator).
  *
- *   "One rescued root_proto per chunk, regardless of how many closures that
- *    chunk exposes via realm globals."
- *
- * Two complementary checks per test case:
- *   (a) Structural: vm->rescued_protos list length == N (one per chunk).
- *   (b) Allocation: per-iteration GC allocation < 2 KB (via
- *       urbi_gc_bytes_allocated_inline, which tracks monotonic total
- *       allocated bytes; per-iteration average must stay bounded).
+ * The old vm->rescued_protos check is deleted — with heap-alloc modules staying
+ * in the realm, rescued_protos remains empty during the eval loop.
  *
  * ASan/UBSan in CI verify the no-leak / no-UB contract across all iterations.
  */
@@ -26,6 +24,7 @@
 #include "urbi/gc.h"
 #include "vm/uvm.h"
 #include "module/umodule.h"
+#include "realm/urealm.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -34,39 +33,43 @@
 
 #define UTEST(name) static void name(void)
 
-/* Walk vm->rescued_protos (intrusive list via UProto.next_alloc) and return
- * the number of entries.  O(N) but N is small (one per chunk). */
+/* Count user modules in realm->loaded_protos_head (excludes vm->stdlib_module).
+ * v0.9.0-repl: each urbi_repl_eval call leaves one heap-alloc UModule in the
+ * realm list; this replaces the old vm->rescued_protos count. */
 static size_t
-count_rescued_protos(const UVM *vm)
+count_user_modules(const UVM *vm, const URealm *realm)
 {
     size_t count = 0;
-    const UProto *rp = vm->rescued_protos;
-    while (rp != NULL) {
-        count++;
-        rp = rp->next_alloc;
+    const UModule *m = realm->loaded_protos_head;
+    while (m != NULL) {
+        if (m != vm->stdlib_module) count++;
+        m = m->next_in_realm;
     }
     return count;
 }
 
-/* Run one urbi_repl_eval line; return URBI_OK or abort on error. */
+/* Run one urbi_repl_eval line into realm; return URBI_OK or abort on error. */
 static int
-repl(UVM *vm, const char *src)
+repl(UVM *vm, URealm *realm, const char *src)
 {
     char buf[256];
-    return urbi_repl_eval(vm, NULL, src, strlen(src), buf, sizeof(buf));
+    return urbi_repl_eval(vm, realm, src, strlen(src), buf, sizeof(buf));
 }
 
 /* -------------------------------------------------------------------------
  * Case 1: single closure escaped per chunk.
  *
  * Each iteration: "var f<i> = function() { <i> }"
- * Expected: N rescues after N iterations (one root_proto per chunk).
- * Also: per-iteration GC allocation < 2 KB.
+ * Expected: N modules in realm after N iterations (one heap-alloc UModule per
+ * chunk).  Also: per-iteration GC allocation < 8 KB.
  * ------------------------------------------------------------------------- */
 UTEST(single_closure_escape_bounded)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
 
     size_t baseline = urbi_gc_bytes_allocated_inline(&vm);
 
@@ -74,13 +77,15 @@ UTEST(single_closure_escape_bounded)
     char src[128];
     for (int i = 0; i < N; i++) {
         snprintf(src, sizeof(src), "var f%d = function() { %d };", i, i);
-        UASSERT_EQ(URBI_OK, repl(&vm, src));
+        UASSERT_EQ(URBI_OK, repl(&vm, r, src));
     }
 
     size_t after = urbi_gc_bytes_allocated_inline(&vm);
 
-    /* Structural invariant: exactly N rescued root_protos (one per chunk). */
-    size_t list_len = count_rescued_protos(&vm);
+    /* Structural invariant: exactly N user modules in realm (one per chunk).
+     * v0.9.0-repl: heap-alloc modules persist in realm->loaded_protos_head;
+     * vm->rescued_protos is not used during the eval loop. */
+    size_t list_len = count_user_modules(&vm, r);
     UASSERT_EQ((long long)list_len, (long long)N);
 
     /* Allocation bound: per-iteration GC allocation < 8 KB.
@@ -96,6 +101,7 @@ UTEST(single_closure_escape_bounded)
                per_iter);
     }
 
+    urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
 
@@ -103,10 +109,8 @@ UTEST(single_closure_escape_bounded)
  * Case 2: multiple closures escaped per chunk.
  *
  * Each iteration escapes TWO closures from the same chunk: "var a<i> = ...,
- * var b<i> = ...".  The key: despite two closures sharing the root_proto,
- * only ONE root_proto is rescued (Variant B fusion — both closures share
- * the same root, so refcount is bumped once per closure but only one rescue
- * happens).
+ * var b<i> = ...".  Despite two closures, only ONE UModule is allocated per
+ * chunk (the heap-alloc granularity is per urbi_repl_eval call).
  *
  * Expected: list_len == N (not 2*N).
  * ------------------------------------------------------------------------- */
@@ -115,53 +119,62 @@ UTEST(multi_closure_per_chunk_still_one_rescue)
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
     const int N = 30;
     char src[256];
     for (int i = 0; i < N; i++) {
         snprintf(src, sizeof(src),
             "var a%d = function() { %d }; var b%d = function() { %d };",
             i, i, i, i + 1000);
-        UASSERT_EQ(URBI_OK, repl(&vm, src));
+        UASSERT_EQ(URBI_OK, repl(&vm, r, src));
     }
 
-    /* Both closures from each chunk share one root_proto — only one rescue
-     * per chunk, regardless of closure count. */
-    size_t list_len = count_rescued_protos(&vm);
+    /* One heap-alloc UModule per urbi_repl_eval call regardless of how many
+     * closures that chunk exposes. */
+    size_t list_len = count_user_modules(&vm, r);
     UASSERT_EQ((long long)list_len, (long long)N);
 
+    urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------
- * Case 3: chunks without escaping closures do NOT rescue.
+ * Case 3: all chunks — with or without escaping closures — produce one module.
  *
- * Interleave: even iterations escape a closure (one rescue each), odd
- * iterations are pure arithmetic (no escape, no rescue).
+ * Interleave: even iterations escape a closure, odd iterations are pure
+ * arithmetic.  With heap-alloc modules, ALL N iterations produce one UModule
+ * in the realm (the module shell persists regardless of closure-escape).
  *
- * Expected: list_len == N/2 (only the even iterations rescue).
+ * Expected: list_len == N (all iterations, not just the even ones).
  * ------------------------------------------------------------------------- */
 UTEST(no_escape_no_rescue)
 {
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
     const int N = 40;
     char src[128];
     for (int i = 0; i < N; i++) {
         if (i % 2 == 0) {
-            /* Escapes a closure — will rescue root_proto. */
+            /* Escapes a closure. */
             snprintf(src, sizeof(src), "var h%d = function() { %d };", i, i);
         } else {
-            /* Pure arithmetic — no surviving closure, no rescue. */
+            /* Pure arithmetic — no surviving closure. */
             snprintf(src, sizeof(src), "var x%d = %d + 1;", i, i);
         }
-        UASSERT_EQ(URBI_OK, repl(&vm, src));
+        UASSERT_EQ(URBI_OK, repl(&vm, r, src));
     }
 
-    /* Only the even iterations produce rescued root_protos. */
-    size_t list_len = count_rescued_protos(&vm);
-    UASSERT_EQ((long long)list_len, (long long)(N / 2));
+    /* All iterations produce one heap-alloc UModule in the realm. */
+    size_t list_len = count_user_modules(&vm, r);
+    UASSERT_EQ((long long)list_len, (long long)N);
 
+    urbi_realm_destroy(&vm, r);
     urbi_vm_destroy(&vm);
 }
 

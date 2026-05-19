@@ -510,6 +510,15 @@ typedef struct UModule {
      * by urbi_unload when the module leaves a realm.  v0.9.0-repl. */
     struct UModule *next_in_realm;
     struct URealm  *owning_realm;
+
+    /* [runtime-only, NOT serialized] True when the UModule shell itself was
+     * heap-allocated by the runtime (e.g. via urbi_repl_eval or
+     * urbi_module_from_bytes).  When set, urbi_unload frees the shell via
+     * vm->alloc_fn after umodule_destroy.  Caller-allocated (stack or static)
+     * modules leave this false; their shell is freed by the caller.
+     * Fits in natural padding after total_proto_count on 64-bit hosts.
+     * v0.9.0-repl (CHSTR-027). */
+    bool           shell_heap_allocated;
 } UModule;
 
 /* --- errors --- */

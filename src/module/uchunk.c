@@ -313,14 +313,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* CHSTR-003: use explicit zero-init via urbi_zero rather than = {0} to
-     * document that the module must be fully zero-initialised before uemit_init
-     * populates every field.  urbi_zero is the canonical pattern for this. */
-    UModule module;
-    urbi_zero(&module, sizeof(module));
+    /* v0.9.0-repl (CHSTR-027): heap-allocate UModule per REPL line so each
+     * module persists in realm->loaded_protos_head past return.  The old
+     * stack-alloc reused the same address across REPL lines, causing the
+     * realm registry to alias.  Freed by urbi_realm_destroy (session-end)
+     * or the root_proto-refcount rescue mechanism (if a strand parks). */
+    UModule *module = (UModule *)vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
+    if (module == NULL) {
+        if (out_buf && out_buf_size > 0) {
+            urbi_strncpy_truncating(out_buf, out_buf_size, "OOM allocating module");
+        }
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
+    urbi_zero(module, sizeof *module);
+    module->shell_heap_allocated = true;
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, NULL);
+    uemit_init(&e, module, &arena, vm, NULL);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -376,14 +386,18 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
                 urbi_strncpy_truncating(out_buf, out_buf_size, msg);
             }
         }
-        umodule_destroy(&module, vm);
+        /* Compile-error path: module was never registered in the realm
+         * (urbi_run_chunk was not reached), so it is not realm-owned.
+         * Destroy its internals then free the heap allocation directly. */
+        umodule_destroy(module, vm);
+        vm->alloc_fn(module, 0, vm->alloc_ud);
         uarena_destroy(&arena);
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
     }
 
     /* Run the module's root chunk via the persistent loader strand path. */
     UValue result = {0};
-    int run_rc = urbi_run_chunk(vm, realm, &module, &result);
+    int run_rc = urbi_run_chunk(vm, realm, module, &result);
 
     /* API-009: drain any body strands spawned by watcher eval during this run.
      * urbi_run_chunk now returns when the loader strand parks (persists
@@ -419,7 +433,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
-            urbi_unload(vm, &module);
+            /* Module is realm-owned (heap-alloc); do NOT unload here —
+             * closures may still reference its protos.  urbi_realm_destroy
+             * or the refcount-rescue mechanism handles final cleanup. */
             uarena_destroy(&arena);
             return URBI_OK;
         }
@@ -427,7 +443,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
-        urbi_unload(vm, &module);
+        /* Module is realm-owned (heap-alloc); do NOT unload here —
+         * closures may still reference its protos.  urbi_realm_destroy
+         * handles final cleanup. */
         uarena_destroy(&arena);
         return run_rc;
     }
@@ -437,7 +455,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     if (out_buf && out_buf_size > 0)
         uvalue_format(&result, out_buf, out_buf_size);
 
-    urbi_unload(vm, &module);
+    /* Module is realm-owned (heap-alloc); do NOT unload here — it persists
+     * in realm->loaded_protos_head until urbi_realm_destroy or explicit
+     * urbi_unload by the host.  This is the CHSTR-027 close-out. */
     uarena_destroy(&arena);
     return URBI_OK;
 #else
@@ -670,6 +690,14 @@ urbi_unload(UVM *vm, UModule *module)
      * defers final cleanup; this call always returns success.  After
      * Task 10's fix, umodule_destroy also unlinks any UModuleInstance
      * from vm->module_instances_head, so no dangling cells survive. */
+    bool heap = module->shell_heap_allocated;
     umodule_destroy(module, vm);
+
+    /* v0.9.0-repl (CHSTR-027): free the module shell if it was heap-allocated
+     * by urbi_repl_eval or urbi_module_from_bytes.  Caller-allocated (stack /
+     * static) modules are freed by their owner; do NOT free them here. */
+    if (heap && vm != NULL) {
+        vm->alloc_fn(module, 0, vm->alloc_ud);
+    }
     return URBI_OK;
 }

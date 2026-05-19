@@ -146,6 +146,49 @@ UTEST(urbi_unload_double_unload)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 4: CHSTR-027 regression — urbi_repl_eval must heap-alloc UModule
+ *         so each REPL line accumulates as a distinct entry in the realm's
+ *         loaded_protos_head list.  Pre-v0.9.0 stack-alloc reused the same
+ *         address across iterations, causing subsequent lines to collide.
+ * ----------------------------------------------------------------------- */
+
+UTEST(repl_eval_no_alias_across_lines)
+{
+    UVM vm;
+    UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
+
+    URealm *r = urbi_realm_create(&vm);
+    UASSERT(r != NULL);
+
+    /* 50 REPL lines.  Each should heap-allocate its own UModule.  If the
+     * pre-v0.9.0 stack-aliasing pattern reappeared, the realm registry
+     * would see fewer entries (subsequent lines reusing the same address). */
+    char buf[256];
+    for (int i = 0; i < 50; i++) {
+        char src[64];
+        int slen = 0;
+        /* Build "var x_NN = NN |" manually without snprintf dependency
+         * (this file already includes <stdlib.h> and the runner has <stdio.h>;
+         * snprintf is safe here since __STDC_HOSTED__ is defined for unit tests). */
+        slen = snprintf(src, sizeof src, "var x_%d = %d |", i, i);
+        buf[0] = '\0';
+        int rc = urbi_repl_eval(&vm, r, src, (size_t)slen, buf, sizeof buf);
+        UASSERT_EQ(URBI_OK, rc);
+    }
+
+    /* Walk registry — count user modules (skip vm->stdlib_module). */
+    int user_count = 0;
+    for (UModule *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
+        if (m != vm.stdlib_module) user_count++;
+    }
+    /* Expect 50 distinct heap-allocated modules, one per REPL line. */
+    UASSERT_EQ(50, user_count);
+
+    urbi_realm_destroy(&vm, r);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry
  * ----------------------------------------------------------------------- */
 
@@ -158,4 +201,6 @@ test_urbi_unload_suite(void)
               urbi_unload_invalid_args);
     utest_run("urbi_unload: double unload returns URBI_ERR_INVALID_ARG",
               urbi_unload_double_unload);
+    utest_run("repl_eval: each line gets a distinct heap-alloc module (CHSTR-027)",
+              repl_eval_no_alias_across_lines);
 }
