@@ -564,10 +564,6 @@ dispatch:
                                  (size_t)omi->proto_instances->n);
             cl->proto_inst =
                 &omi->proto_instances->entries[child_proto->ic_index];
-            /* TEMP: keep origin_module_instance populated until Task 8
-             * deletes the field.  This single assignment replaces the
-             * entire propagation chain that was here previously. */
-            cl->origin_module_instance = omi;
 
             /* Read nupvals pseudo-instructions. */
             {
