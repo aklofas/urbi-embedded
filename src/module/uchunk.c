@@ -369,8 +369,10 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (out_buf && out_buf_size > 0) {
 #if __STDC_HOSTED__
             if (parse_errmsg && (parse_err_line > 0 || parse_err_col > 0)) {
-                /* Full format "stdin:line:col: message" matches compile_source. */
-                snprintf(out_buf, out_buf_size, "<stdin>:%d:%d: %s",
+                /* v0.9.0-repl: route lex.source_name through so syncline-framed
+                 * REPL submissions show correct file:line in errors. */
+                snprintf(out_buf, out_buf_size, "%s:%d:%d: %s",
+                         ulex_current_source(&lex),
                          parse_err_line, parse_err_col, parse_errmsg);
             } else
 #endif

@@ -6,7 +6,11 @@
 
 #include <string.h>
 
+#include "urbi/urbi.h"
+#include "realm/urealm.h"
+#include "vm/uvm.h"
 #include "lex/ulex.h"
+#include "runtime/umacros.h"   /* urbi_zero */
 
 #define UTEST(name) static void name(void)
 
@@ -161,6 +165,36 @@ UTEST(syncline_unrecognized_directive_is_comment)
 }
 
 /* -----------------------------------------------------------------------
+ * Test 7: error messages inside syncline framing show the claimed source name
+ * ----------------------------------------------------------------------- */
+
+UTEST(syncline_error_message_uses_source_name)
+{
+    UVM vm;
+    urbi_zero(&vm, sizeof vm);
+    urbi_vm_init(&vm, NULL, NULL);
+
+    URealm *realm = urbi_realm_create(&vm);
+    UASSERT(realm != NULL);
+
+    /* Frame a parse error inside //#push "test.u"; the error message must
+     * say "test.u" not "<stdin>". */
+    const char *src =
+        "//#push 5 \"test.u\"\n"
+        "var x = $$$ |\n"        /* invalid syntax → parse error */
+        "//#pop\n";
+    char buf[512] = {0};
+    int rc = urbi_repl_eval(&vm, realm, src, strlen(src), buf, sizeof buf);
+
+    UASSERT(rc != URBI_OK);
+    UASSERT(strstr(buf, "test.u") != NULL);
+    UASSERT(strstr(buf, "<stdin>") == NULL);
+
+    urbi_realm_destroy(&vm, realm);
+    urbi_vm_destroy(&vm);
+}
+
+/* -----------------------------------------------------------------------
  * Suite entry
  * ----------------------------------------------------------------------- */
 
@@ -179,4 +213,6 @@ test_lexer_syncline_suite(void)
               syncline_malformed_is_comment);
     utest_run("syncline: unrecognized directive falls through as comment",
               syncline_unrecognized_directive_is_comment);
+    utest_run("syncline: error message uses source name from framing",
+              syncline_error_message_uses_source_name);
 }
