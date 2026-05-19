@@ -123,12 +123,14 @@ UTEST(all_builtin_atom_protos_are_readonly)
 
     /* Names that must resolve to readonly UObjects at boot.  Tracks the
      * urbi_atom_protos_mark_readonly cohort: atom singletons + runtime-
-     * type singletons; excludes Global (mutable per spec §4.1). */
+     * type singletons; excludes Global (mutable per spec §4.1).
+     * v0.9.1 Phase 5 adds "Lobby" — the lobby-stdlib proto. */
     static const char *READONLY_NAMES[] = {
         "Object", "Integer", "Float", "String",
         "Boolean", "Nil", "Void",
         "List", "Dict", "Symbol",
         "Tag", "Event", "Mutex", "Date", "Duration",
+        "Lobby",
         NULL
     };
 

@@ -26,6 +26,7 @@
 #include "stdlib/runtime_types.h"  /* urbi_stdlib_register_runtime_globals — M6 Phase 7 */
 #include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals — M6 Phase 8 */
 #include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals — M6 Phase 9 */
+#include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -439,6 +440,19 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * Duration).  Same post-loop pattern. */
     {
         int rc = urbi_stdlib_register_primitives_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v0.9.1 Phase 5: bind Lobby as a realm global.  Same post-loop
+     * pattern — slot 15+, past the v1.0 packed-flag CONSTANT enforcement
+     * range.  The proto carries __builtin_lobby_send (installed at
+     * stdlib_boot); the script-side echo/wall/handleDisconnect/lobbies/
+     * onDisconnect slots are added by the lobby.u overlay run in the
+     * deferred urbi_run_chunk step below. */
+    {
+        int rc = urbi_lobby_native_register_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

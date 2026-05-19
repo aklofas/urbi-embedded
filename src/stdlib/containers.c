@@ -957,3 +957,58 @@ urbi_stdlib_register_container_globals(UVM *vm, URealm *realm)
     }
     return URBI_OK;
 }
+
+/* === Host-side List mutators (v0.9.1 Phase 5 / lobby.lobbies) ===========
+ *
+ * The Lobby proto's `lobbies` slot is created by lobby.u as a fresh List
+ * (`var Lobby.lobbies = []`).  The C-side dispatcher (urepl_session_*)
+ * needs to push/remove session global-objects from that List as sessions
+ * come and go.  Reaching directly into the script-side List from urbi_-
+ * repl_eval is too heavyweight for a lifecycle event; instead we expose
+ * two thin C helpers that operate on the UList backing buffer the same
+ * way list_add / list_contains do.
+ *
+ * Both helpers accept a List UObject* and a UValue item; they no-op
+ * (returning URBI_OK) when list_obj is NULL or carries no _storage slot
+ * — the early-call scenario where urbi_lobby_register_session fires
+ * before the .u overlay has populated Lobby.lobbies.  Out-of-memory
+ * surfaces as URBI_ERR_OOM.
+ *
+ * Scope: only the Lobby dispatcher should call these; user-facing List
+ * mutation goes through list_add / list_set / list_contains. */
+
+int
+urbi_stdlib_list_append_value(UVM *vm, UObject *list_obj, UValue item)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+    if (list_obj == NULL) return URBI_OK;
+    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
+    if (l == NULL) return URBI_OK;  /* Lobby.lobbies not yet initialized */
+    if (l->len == l->cap) {
+        if (list_grow(vm, l, l->len + 1U) != 0) return URBI_ERR_OOM;
+    }
+    l->items[l->len++] = item;
+    return URBI_OK;
+}
+
+int
+urbi_stdlib_list_remove_first_equal(UVM *vm, UObject *list_obj, UValue item)
+{
+    if (vm == NULL) return URBI_ERR_INVALID_ARG;
+    if (list_obj == NULL) return URBI_OK;
+    UList *l = (UList *)fetch_storage_ptr(vm, list_obj);
+    if (l == NULL) return URBI_OK;
+    size_t i;
+    for (i = 0U; i < l->len; i++) {
+        if (uvalue_equal(&l->items[i], &item)) {
+            /* Shift tail left by one; len decrements. */
+            size_t j;
+            for (j = i; j + 1U < l->len; j++) {
+                l->items[j] = l->items[j + 1U];
+            }
+            l->len--;
+            return URBI_OK;
+        }
+    }
+    return URBI_OK;  /* not found — silent no-op (mirrors Lobby spec) */
+}

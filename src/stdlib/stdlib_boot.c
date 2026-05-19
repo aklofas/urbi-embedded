@@ -30,6 +30,7 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#include "stdlib/lobby_native.h"
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h"
 #endif
@@ -99,6 +100,19 @@ urbi_stdlib_boot(UVM *vm)
      * register_primitives_globals, again preserving the registry's
      * slot 0..7 layout.  See src/stdlib/primitives.c. */
     rc = urbi_stdlib_register_primitives(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* v0.9.1 Phase 5: Lobby proto + __builtin_lobby_send native primitive.
+     * Allocates vm->lobby_proto chained on root Object and installs the
+     * single native method.  The `lobbies` slot, `echo` / `wall` /
+     * `handleDisconnect` methods, and the `onDisconnect` Event are added
+     * by the lobby.u overlay during the post-loop bake-blob run.  Realm-
+     * global binding for "Lobby" is deferred to urbi_lobby_native_register_-
+     * globals (called by urbi_populate_realm_globals after the registry
+     * loop).  Default-build (not REPL-gated): Lobby is part of the spec
+     * §3.6 readonly cohort, and urbi_vm_write_in_realm — the routing path
+     * — is also default-build. */
+    rc = urbi_lobby_native_register(vm);
     if (rc != URBI_OK) return rc;
 
 #ifdef URBI_ENABLE_REPL

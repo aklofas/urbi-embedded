@@ -189,9 +189,9 @@ urbi_atom_protos_register(UVM *vm)
  * inventory in this codebase:
  *   - "Number"   -> URBI_ATOM_INTEGER (mapped per CHANGELOG entry)
  *   - "Bool"     -> URBI_ATOM_BOOLEAN
- *   - "Function" / "Closure" / "Lobby" — no standalone atom proto exists
- *     at v0.9.1 baseline; Lobby lands in Phase 5; Function/Closure will be
- *     surfaced when the closure inheritance work in v1.0 lands.
+ *   - "Lobby"    -> vm->lobby_proto (v0.9.1 Phase 5)
+ *   - "Function" / "Closure" — no standalone atom proto exists at
+ *     v0.9.1; surfaced when the closure inheritance work in v1.0 lands.
  * Plus the M6 Phase 4-9 runtime-type protos (Mutex/Date) and
  * the Symbol/Void/Duration protos that exist for parity.
  *
@@ -226,12 +226,16 @@ urbi_atom_protos_mark_readonly(UVM *vm)
         }
     }
 
-    /* Runtime-type protos owned by VM singletons (Tag/Event/Mutex/Date). */
+    /* Runtime-type protos owned by VM singletons (Tag/Event/Mutex/Date/
+     * Duration/Lobby).  Lobby joins the cohort at v0.9.1 Phase 5 — spec
+     * §3.6 lists it as one of the 15 readonly protos that anchor the
+     * builtin name surface. */
     if (vm->tag_proto      != NULL) vm->tag_proto->flags      |= URBI_OBJ_FLAG_READONLY;
     if (vm->event_proto    != NULL) vm->event_proto->flags    |= URBI_OBJ_FLAG_READONLY;
     if (vm->mutex_proto    != NULL) vm->mutex_proto->flags    |= URBI_OBJ_FLAG_READONLY;
     if (vm->date_proto     != NULL) vm->date_proto->flags     |= URBI_OBJ_FLAG_READONLY;
     if (vm->duration_proto != NULL) vm->duration_proto->flags |= URBI_OBJ_FLAG_READONLY;
+    if (vm->lobby_proto    != NULL) vm->lobby_proto->flags    |= URBI_OBJ_FLAG_READONLY;
 
     /* Global (vm->global_namespace_proto): intentionally NOT marked
      * readonly per spec §4.1 — it's the designated mutable cross-session

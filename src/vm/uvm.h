@@ -621,6 +621,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *mutex_proto;
     struct UObject *date_proto;
     struct UObject *duration_proto;
+    /* v0.9.1 Phase 5: Lobby proto singleton.  Allocated by
+     * urbi_lobby_native_register (called from urbi_stdlib_boot AFTER
+     * primitives so the proto exists before mark_readonly runs).  Bound
+     * to realm globals by urbi_lobby_native_register_globals — slots
+     * 15+, past the v1.0 packed-flag CONSTANT enforcement range.  The
+     * proto carries the `__builtin_lobby_send` native method + a
+     * `lobbies` list slot populated at lobby.u runtime.  GC
+     * reachability via object_roots_walker. */
+    struct UObject *lobby_proto;
     uint8_t     stdlib_booted;
     /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
      * new allocations and returns NULL.  One-way latch set via the

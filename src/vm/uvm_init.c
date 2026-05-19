@@ -378,6 +378,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->mutex_proto             = NULL;  /* M6 Phase 9 T94 — populated by urbi_stdlib_register_primitives */
     vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
+    vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
     vm->stdlib_booted          = 0U;
     vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
     {

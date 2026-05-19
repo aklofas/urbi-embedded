@@ -321,6 +321,13 @@ object_roots_walker(UVM *vm, UGcRootCallback cb, void *ctx)
     if (vm->date_proto     != NULL) gc_shade_gray(vm, (UCell *)vm->date_proto);
     if (vm->duration_proto != NULL) gc_shade_gray(vm, (UCell *)vm->duration_proto);
 
+    /* v0.9.1 Phase 5: Lobby proto singleton.  Carries the
+     * `__builtin_lobby_send` native method + the `lobbies` List slot
+     * populated at lobby.u runtime.  Shaded directly so the List held
+     * in the `lobbies` slot stays reachable through the proto's slot
+     * walk (transitively reached via the proto's UShape + slots[]). */
+    if (vm->lobby_proto != NULL) gc_shade_gray(vm, (UCell *)vm->lobby_proto);
+
     /* v0.9.1 Debug namespace proto.  Always present when URBI_ENABLE_REPL=1
      * AND urbi_debug_namespace_register has run; NULL on default builds.
      * The void* in UVM keeps this header REPL-condition-free; cast back
