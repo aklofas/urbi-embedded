@@ -102,7 +102,7 @@ hex_digit(char c, uint32_t *out)
 /* Read four hex digits at st->p..st->p+4 into *out.  Does not advance the
  * parser position. */
 static int
-read_4hex(Parser *st, uint32_t *out)
+read_4hex(const Parser *st, uint32_t *out)
 {
     if (st->end - st->p < 4) return -1;
     uint32_t v = 0, d;
@@ -295,7 +295,7 @@ parse_array(Parser *st)
         if (item == NULL) goto bad;
         if (count == cap) {
             size_t new_cap = cap ? cap * 2 : 4;
-            UJsonNode **ni = (UJsonNode **)realloc(items, new_cap * sizeof(*ni));
+            UJsonNode **ni = (UJsonNode **)realloc((void *)items, new_cap * sizeof(UJsonNode *));
             if (ni == NULL) { st->err = UJSON_ERR_OOM; ujson_free_node(item); goto bad; }
             items = ni;
             cap = new_cap;
@@ -315,7 +315,7 @@ bad:
     {
         /* Free anything we've built so far. */
         for (size_t i = 0; i < count; i++) ujson_free_node(items[i]);
-        free(items);
+        free((void *)items);
         node->v.arr.items = NULL;
         node->v.arr.count = 0;
         ujson_free_node(node);
@@ -486,7 +486,7 @@ ujson_free_node(UJsonNode *node)
         for (size_t i = 0; i < node->v.arr.count; i++) {
             ujson_free_node(node->v.arr.items[i]);
         }
-        free(node->v.arr.items);
+        free((void *)node->v.arr.items);
         break;
     }
     case UJSON_OBJECT: {

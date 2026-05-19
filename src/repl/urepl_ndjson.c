@@ -553,6 +553,8 @@ append_lit(char *buf, size_t cap, size_t *off, const char *s)
 {
     size_t n = strlen(s);
     if (*off + n >= cap) { return -1; }
+    /* Appends raw bytes — caller manages NUL-termination at end of envelope.
+     * NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
     memcpy(buf + *off, s, n);
     *off += n;
     return 0;

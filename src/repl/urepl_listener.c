@@ -5,6 +5,11 @@
  * contract and shutdown choreography.
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
+/* _POSIX_C_SOURCE=200809L exposes clock_gettime, CLOCK_MONOTONIC, nanosleep. */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#  undef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 200809L
+#endif
 #include "repl/urepl_listener.h"
 #include "repl/urepl_auth.h"
 #include "repl/urepl_dispatch.h"
@@ -86,7 +91,7 @@ flush_session_output(UReplReader *r)
                  * could re-buffer, but in practice loopback TCP at
                  * v0.9.1 line rates rarely sees this.  Sleep briefly +
                  * retry.  TODO(v1.0-rc): proper POLLOUT-driven retry. */
-                struct timespec ts = { 0, 1 * 1000 * 1000 };  /* 1 ms */
+                struct timespec ts = { 0, (long)1000 * 1000 };  /* 1 ms */
                 nanosleep(&ts, NULL);
                 continue;
             }
@@ -103,7 +108,7 @@ flush_session_output(UReplReader *r)
  * Returns the new "start" index (bytes consumed); the caller compacts
  * the buffer if start > 0 on entry/exit. */
 static size_t
-reader_parse_lines(UReplReader *r, char *buf, size_t fill)
+reader_parse_lines(UReplReader *r, const char *buf, size_t fill)
 {
     size_t start = 0;
     for (size_t i = 0; i < fill; ++i) {
@@ -310,10 +315,10 @@ spawn_reader(UReplServer *server, const UTransport *transport,
             cur = &(*cur)->next;
         }
         pthread_mutex_unlock(&server->sessions_mutex);
-        if (session != NULL) {
-            session->reader = NULL;
-            urepl_session_destroy(server, session);
-        }
+        /* `session` was non-NULL at this point (urepl_session_create
+         * success returned above). */
+        session->reader = NULL;
+        urepl_session_destroy(server, session);
         if (r->wake_eventfd >= 0) close(r->wake_eventfd);
         if (transport->close_fn != NULL) transport->close_fn(client_fd);
         free(r);

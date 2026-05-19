@@ -85,7 +85,7 @@ urepl_auth_limiter_check(UReplAuthLimiter *lim, uint32_t ip, uint64_t now_us)
         /* Limiter disabled — allow. */
         return true;
     }
-    UReplAuthLimiterSlot *s = find_slot(lim, ip);
+    const UReplAuthLimiterSlot *s = find_slot(lim, ip);
     if (s == NULL) {
         return true;
     }

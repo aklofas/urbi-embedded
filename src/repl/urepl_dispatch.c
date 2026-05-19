@@ -1,5 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
+/* _POSIX_C_SOURCE=200809L exposes clock_gettime / CLOCK_MONOTONIC. */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
+#  undef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 200809L
+#endif
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_auth.h"
 #include "repl/urepl_introspect.h"
@@ -16,7 +21,7 @@
 
 /* Default per-session output ringbuf cap (used when cfg.output_ringbuf_cap
  * is 0). */
-#define UREPL_DEFAULT_OUTPUT_CAP (64U * 1024U)
+#define UREPL_DEFAULT_OUTPUT_CAP ((size_t)64U * 1024U)
 
 /* ---- Helpers --------------------------------------------------------- */
 
@@ -424,7 +429,7 @@ dispatch_introspect(UReplServer *server, UReplSession *s, UReplJob *job)
 }
 
 static void
-dispatch_cancel_stub(UReplServer *server, UReplSession *s, UReplJob *job)
+dispatch_cancel_stub(UReplServer *server, UReplSession *s, const UReplJob *job)
 {
     /* Task 26 wires real tag.stop() lookup.  Stub: emit cancelled:0
      * (spec §6.6 "unknown tag is a benign no-op"). */
@@ -438,7 +443,7 @@ dispatch_cancel_stub(UReplServer *server, UReplSession *s, UReplJob *job)
 }
 
 static void
-dispatch_lobby_new(UReplServer *server, UReplSession *s, UReplJob *job)
+dispatch_lobby_new(UReplServer *server, UReplSession *s, const UReplJob *job)
 {
     /* Multi-lobby per connection is deferred to v1.x.  For now, return
      * the existing session's lobby id (treat lobby_new as idempotent on
@@ -456,7 +461,7 @@ dispatch_lobby_new(UReplServer *server, UReplSession *s, UReplJob *job)
 }
 
 static void
-dispatch_lobby_close(UReplServer *server, UReplSession *s, UReplJob *job)
+dispatch_lobby_close(UReplServer *server, UReplSession *s, const UReplJob *job)
 {
     /* lobby_close on the implicit lobby is treated as a benign no-op in
      * v0.9.1 (the lobby is destroyed only when the connection closes).

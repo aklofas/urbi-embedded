@@ -44,7 +44,12 @@ typedef struct UReplQueue {
     bool            inited;
 } UReplQueue;
 
+/* Initialize an MPMC job queue.  Returns 0 on success, non-zero on
+ * pthread setup failure (mutex / cond init). */
 int  urepl_queue_init    (UReplQueue *q);
+
+/* Tear down a queue.  Frees any jobs left in flight via
+ * urepl_ndjson_free_req + free on each node. */
 void urepl_queue_destroy (UReplQueue *q);
 
 /* Push takes ownership of *job (the queue calls urepl_ndjson_free_req
@@ -62,6 +67,9 @@ UReplJob *urepl_queue_wait_drain(UReplQueue *q);
 /* Signal a waiting consumer to wake up (e.g. on server shutdown). */
 void urepl_queue_signal_shutdown(UReplQueue *q);
 
+/* Return the current number of jobs in the queue.  Snapshot — the value
+ * may be stale by the time the caller observes it under multi-producer /
+ * multi-consumer load. */
 size_t urepl_queue_count(UReplQueue *q);
 
 /* ---- SPSC byte ringbuf ------------------------------------------------ */
@@ -76,7 +84,13 @@ typedef struct UReplRingbuf {
     bool            inited;
 } UReplRingbuf;
 
+/* Initialize a single-producer/single-consumer byte ringbuf with the
+ * given capacity.  Returns 0 on success, non-zero on allocation /
+ * pthread_mutex_init failure. */
 int    urepl_ringbuf_init   (UReplRingbuf *rb, size_t cap);
+
+/* Tear down a ringbuf.  Frees the backing buffer and destroys the
+ * mutex.  Safe to call on a partially-initialized ringbuf. */
 void   urepl_ringbuf_destroy(UReplRingbuf *rb);
 
 /* Write n bytes.  Drops oldest bytes if needed.  Returns bytes written

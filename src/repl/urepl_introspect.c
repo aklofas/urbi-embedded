@@ -95,7 +95,6 @@ emit_json_escape(char *buf, size_t cap, size_t *n_inout,
         unsigned char c = (unsigned char)src[i];
         const char *esc = NULL;
         char hex[8];
-        size_t need;
         switch (c) {
         case '"':  esc = "\\\""; break;
         case '\\': esc = "\\\\"; break;
@@ -112,8 +111,10 @@ emit_json_escape(char *buf, size_t cap, size_t *n_inout,
             break;
         }
         if (esc != NULL) {
-            need = strlen(esc);
+            size_t need = strlen(esc);
             if (n + need >= cap) { *n_inout = n + need + 64; return -1; }
+            /* Appends raw bytes — caller manages NUL-termination at end of buffer.
+             * NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
             memcpy(buf + n, esc, need);
             n += need;
         } else {
@@ -243,7 +244,7 @@ urbi_introspect_events(UVM *vm, char *buf, size_t cap, size_t *out_n)
     int first = 1;
     UEventRegistry *reg = &vm->event_registry;
     for (size_t i = 0; i < reg->count; i++) {
-        UEventRegistryEntry *e = &reg->entries[i];
+        const UEventRegistryEntry *e = &reg->entries[i];
         if (e->tombstoned) continue;
         /* Count subscribers: at-watchers + one-shot waiters. */
         uint32_t sub_count = 0;
@@ -278,7 +279,7 @@ urbi_introspect_events(UVM *vm, char *buf, size_t cap, size_t *out_n)
 /* ---- profile (carry-forward stub) ----------------------------------- */
 
 int
-urbi_introspect_profile(UVM *vm, char *buf, size_t cap, size_t *out_n)
+urbi_introspect_profile(const UVM *vm, char *buf, size_t cap, size_t *out_n)
 {
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
@@ -290,7 +291,7 @@ urbi_introspect_profile(UVM *vm, char *buf, size_t cap, size_t *out_n)
 /* ---- gc -------------------------------------------------------------- */
 
 int
-urbi_introspect_gc(UVM *vm, char *buf, size_t cap, size_t *out_n)
+urbi_introspect_gc(const UVM *vm, char *buf, size_t cap, size_t *out_n)
 {
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
@@ -327,16 +328,16 @@ urbi_introspect_lobbies(UVM *vm, char *buf, size_t cap, size_t *out_n)
 /* ---- stack ----------------------------------------------------------- */
 
 int
-urbi_introspect_stack(UVM *vm, uint32_t coro_id,
+urbi_introspect_stack(const UVM *vm, uint32_t coro_id,
                       char *buf, size_t cap, size_t *out_n)
 {
     if (vm == NULL || buf == NULL || out_n == NULL) return URBI_ERR_INVALID_ARG;
     EMIT_INIT();
     /* Find the strand. */
-    UStrand *target = NULL;
-    for (URealm *r = vm->realms_head; r != NULL && target == NULL;
+    const UStrand *target = NULL;
+    for (const URealm *r = vm->realms_head; r != NULL && target == NULL;
          r = r->next_in_vm) {
-        for (UStrand *s = r->strands_head; s != NULL; s = s->next_in_realm) {
+        for (const UStrand *s = r->strands_head; s != NULL; s = s->next_in_realm) {
             if (strand_coro_id(s) == coro_id) { target = s; break; }
         }
     }
@@ -391,10 +392,9 @@ emit_object_slots(UObject *obj, char *buf, size_t cap, size_t *n_inout)
                 *n_inout = n; return -1;
             }
             uint32_t idx = sh->index;
-            UValue v;
             const char *kind_name = "nil";
             if (idx < obj->shape->count && obj->slots != NULL) {
-                v = obj->slots[idx];
+                UValue v = obj->slots[idx];
                 switch (v.kind) {
                 case UVAL_NIL:     kind_name = "nil"; break;
                 case UVAL_INT:     kind_name = "int"; break;
@@ -472,7 +472,7 @@ urbi_introspect_slots(UVM *vm, URealm *realm,
                 if (seg_len >= sizeof(seg)) seg_len = sizeof(seg) - 1;
                 memcpy(seg, p, seg_len);
                 seg[seg_len] = '\0';
-                USymbol *sym = (USymbol *)ustr_intern(vm, seg, seg_len);
+                const USymbol *sym = (const USymbol *)ustr_intern(vm, seg, seg_len);
                 if (sym == NULL) {
                     EMIT_FMT("{\"slots\":[],\"error\":\"oom\"}");
                     EMIT_DONE();

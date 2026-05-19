@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BT_DEFAULT_CAP (64u * 1024u)
+#define BT_DEFAULT_CAP ((size_t)64u * 1024u)
 
 struct UBufferTransportState {
     UReplRingbuf c2s;    /* client → server */

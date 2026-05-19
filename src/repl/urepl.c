@@ -227,6 +227,9 @@ urbi_repl_serve_init(struct UVM *vm, const UReplConfig *cfg, UReplServer **out_s
     return err;
 }
 
+/* Public API — signature pinned by include/urbi/repl.h.  Phase 4+ will
+ * mutate `server` (drive the accept loop), so the non-const pointer is
+ * intentional even though the v0.9.1 body is a no-op. */
 int
 urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
 {
