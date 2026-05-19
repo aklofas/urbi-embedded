@@ -1094,6 +1094,18 @@ dispatch:
                 HALT();
             }
             UObject *recv = (UObject *)s->R[recv_reg].v.p;
+            /* v0.9.1: bytecode-side mutation of a readonly atom proto raises
+             * TypeError per spec §4.2.  The check fires before the IC fast-
+             * path so polymorphic same-shape callers still pay only one
+             * branch.  Host-side C API mutators (urbi_object_set_local_slot,
+             * the stdlib registration helpers) bypass this check entirely —
+             * they populate the proto before the readonly bit is set. */
+            if (recv != NULL && (recv->flags & URBI_OBJ_FLAG_READONLY) != 0U) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm,
+                    "SETSLOT: cannot mutate frozen prototype (UPROTO_READONLY)");
+                HALT();
+            }
             UValue v = s->R[src_reg];
 
             int slow_path = 1;

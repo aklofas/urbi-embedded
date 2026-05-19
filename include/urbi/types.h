@@ -455,7 +455,18 @@ typedef enum {
      * state.  Almost certainly an infinite loop at chunk-top with no
      * yield points.  Host may call urbi_step manually to continue the
      * strand, or destroy the realm/vm to abort it. */
-    URBI_ERR_LOADER_BUDGET              = -20
+    URBI_ERR_LOADER_BUDGET              = -20,
+    /* v0.9.1: OP_SETSLOT denied because the receiver UObject carries the
+     * UPROTO_FLAG_READONLY (= URBI_OBJ_FLAG_READONLY) bit.  Spec §4.2;
+     * raised when urbiscript tries to mutate a frozen builtin atom proto
+     * such as Object / Number / String. */
+    URBI_ERR_FROZEN_PROTO               = -21,
+    /* v0.9.1: per-realm compile-budget triggers.  Reported as the result
+     * of urbi_repl_eval / urbi_compile_source when the corresponding limit
+     * is exceeded.  See <urbi/types.h> UCompileBudget. */
+    URBI_ERR_COMPILE_BUDGET_DEPTH       = -22,
+    URBI_ERR_COMPILE_BUDGET_NODES       = -23,
+    URBI_ERR_COMPILE_BUDGET_SOURCE      = -24
 } UErrCode;
 
 /* URBI_ERR_WATCHER_UNREGISTER: sentinel return code for urbi_watcher_fn
