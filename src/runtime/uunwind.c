@@ -126,9 +126,8 @@ pop_call_frame(UStrand *s)
     /* Restore caller's register window, instruction pointer, and constant pool. */
     s->R       = done->base;
     s->pc      = done->pc + 1;   /* advance past the OP_CALL instruction */
-    /* Restore the caller's pc_base.  Three cases mirror the cur_consts /
-     * origin_nested fallback chain used by ustrand_consts_for_closure +
-     * OP_CLOSURE:
+    /* Restore the caller's pc_base.  Three cases mirror the cur_consts
+     * fallback chain used by ustrand_consts_for_closure:
      *   - frame_count > 0  : returning into an outer call frame; use that
      *                        closure's proto instructions
      *   - module != NULL   : returning to chunk-top of a chunk-top strand
