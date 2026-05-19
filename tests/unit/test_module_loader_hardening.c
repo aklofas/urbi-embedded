@@ -109,8 +109,8 @@ UTEST(deserialize_rejects_unbounded_nupvals_nparams) {
     buf[off++] = 0;                          /* nested.nparams */
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -153,8 +153,8 @@ UTEST(deeply_nested_closure_verifier) {
     off = hard_put_varint(buf, off, 0);      /* nested_count = 0 */
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -163,7 +163,7 @@ UTEST(deeply_nested_closure_verifier) {
  * Build a v1.5 module whose root-chunk ic_count exceeds the count of
  * actual OP_GETSLOT / OP_SETSLOT / OP_GETSLOT_CHANGE_EVENT IC sites
  * in the instruction stream.  decode_verify must reject with
- * ULOAD_CORRUPT.
+ * UCHUNK_LOAD_CORRUPT.
  *
  * Strategy: claim ic_count=2 with ic_name_strs ["a", "b"] but emit
  * zero IC-bearing opcodes (OP_RET only).  The mismatch exposes a
@@ -198,8 +198,8 @@ UTEST(ic_names_with_invalid_indices_rejected) {
     off = hard_put_varint(buf, off, 0);      /* nested_count */
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -228,8 +228,8 @@ UTEST(deserialize_n_const_cap_is_strictly_greater_than) {
     off = hard_put_varint(buf, off, 65537U); /* n_const > cap */
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -256,8 +256,8 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
     off = hard_put_varint(buf, off, 2);      /* n_abs = 2 (> n_instr=1) */
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -271,7 +271,7 @@ UTEST(deserialize_rejects_n_abs_exceeding_instr_count) {
  * (or removed cap) cannot regress.
  *
  * This test exercises the helper indirectly via n_instr=UINT64_MAX-1
- * (rejected at caller-side T74 cap with ULOAD_OVERSIZED — never reaches
+ * (rejected at caller-side T74 cap with UCHUNK_LOAD_OVERSIZED — never reaches
  * the helper) and asserts no crash.  ASan / UBSan in releasetest
  * exercise the helper-level multiply guard directly. */
 UTEST(module_grow_rejects_overflow) {
@@ -286,16 +286,16 @@ UTEST(module_grow_rejects_overflow) {
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
     /* T74 caps the count first; T72 fallback is also acceptable. */
-    UASSERT(rc == ULOAD_OVERSIZED || rc == ULOAD_OOM);
+    UASSERT(rc == UCHUNK_LOAD_OVERSIZED || rc == UCHUNK_LOAD_OOM);
     umodule_destroy(&m, NULL);
 }
 
 /* --- T74 (MOD-017): instr_count uint64 -> size_t demotion guard ---
  *
  * Build a bytecode whose n_instr varint decodes to UINT64_MAX-1.  The
- * loader must reject with ULOAD_OVERSIZED rather than silently truncate
+ * loader must reject with UCHUNK_LOAD_OVERSIZED rather than silently truncate
  * to size_t (a real concern on 32-bit ports). */
 UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     uint8_t buf[256];
@@ -310,16 +310,16 @@ UTEST(deserialize_rejects_oversized_instr_count_on_32bit) {
     off = hard_put_varint(buf, off, (uint64_t)0xFFFFFFFFFFFFFFFEULL);
 
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_OVERSIZED, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, buf, off, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_OVERSIZED, rc);
     umodule_destroy(&m, NULL);
 }
 
-/* --- T73 (MOD-007): deserialize NULL buf returns ULOAD_INVALID_ARG --- */
+/* --- T73 (MOD-007): deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG --- */
 UTEST(deserialize_null_buf_returns_invalid_arg) {
     UModule m = {0};
-    UModuleLoadError rc = umodule_deserialize(&m, NULL, 64, NULL, 0);
-    UASSERT_EQ(ULOAD_INVALID_ARG, rc);
+    UChunkLoadError rc = umodule_deserialize(&m, NULL, 64, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_INVALID_ARG, rc);
     umodule_destroy(&m, NULL);
 }
 
@@ -341,15 +341,15 @@ UTEST(deserialize_partial_failure_destroy_idempotent) {
     size_t i;
     for (i = 1; i < total; i++) {
         UModule m = {0};
-        UModuleLoadError rc = umodule_deserialize(&m, buf, total - i, NULL, 0);
-        UASSERT(rc != ULOAD_OK);
+        UChunkLoadError rc = umodule_deserialize(&m, buf, total - i, NULL, 0);
+        UASSERT(rc != UCHUNK_LOAD_OK);
         umodule_destroy(&m, NULL);   /* must not double-free */
         umodule_destroy(&m, NULL);   /* idempotent on already-destroyed module */
     }
 
     /* Successful deserialize -> destroy -> destroy must also be idempotent. */
     UModule m = {0};
-    UASSERT_EQ(ULOAD_OK, umodule_deserialize(&m, buf, total, NULL, 0));
+    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&m, buf, total, NULL, 0));
     umodule_destroy(&m, NULL);
     umodule_destroy(&m, NULL);
 }
@@ -359,7 +359,7 @@ void test_module_loader_hardening_suite(void);
 void test_module_loader_hardening_suite(void) {
     utest_run("deserialize partial-failure destroy idempotent (T71: MOD-001+002)",
               deserialize_partial_failure_destroy_idempotent);
-    utest_run("deserialize NULL buf returns ULOAD_INVALID_ARG (T73: MOD-007)",
+    utest_run("deserialize NULL buf returns UCHUNK_LOAD_INVALID_ARG (T73: MOD-007)",
               deserialize_null_buf_returns_invalid_arg);
     utest_run("deserialize rejects oversized instr_count (T74: MOD-017)",
               deserialize_rejects_oversized_instr_count_on_32bit);

@@ -56,7 +56,7 @@ UTEST(instance_unlinked_on_module_destroy)
 
     UModule mod = {0};
     char errmsg[128];
-    UASSERT_EQ(ULOAD_OK, umodule_deserialize(&mod, bc, bc_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod, bc, bc_len,
                                               errmsg, sizeof errmsg));
 
     UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
@@ -89,9 +89,9 @@ UTEST(correct_instance_unlinked_multi)
 
     UModule mod_a = {0}, mod_b = {0};
     char errmsg[128];
-    UASSERT_EQ(ULOAD_OK, umodule_deserialize(&mod_a, bc_a, bc_a_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod_a, bc_a, bc_a_len,
                                               errmsg, sizeof errmsg));
-    UASSERT_EQ(ULOAD_OK, umodule_deserialize(&mod_b, bc_b, bc_b_len,
+    UASSERT_EQ(UCHUNK_LOAD_OK, umodule_deserialize(&mod_b, bc_b, bc_b_len,
                                               errmsg, sizeof errmsg));
 
     UChunkInstance *mi_a = urbi_module_instance_create(&vm, &mod_a);

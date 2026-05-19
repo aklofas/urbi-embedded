@@ -156,7 +156,7 @@ static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
         return 1;
     }
     /* First-pass: query required size.  umodule_serialize returns a negative
-       value on failure (-(ptrdiff_t)UModuleLoadError code). */
+       value on failure (-(ptrdiff_t)UChunkLoadError code). */
     ptrdiff_t need = umodule_serialize(&module, NULL, 0);
     if (need < 0) {
         fprintf(stderr, "urbi: serialize size-query failed: %ld\n", (long)-need);

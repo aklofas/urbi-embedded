@@ -217,7 +217,7 @@ size_t uemit_disassemble(const UModule *module, char *buf, size_t cap);
 /* Serialize module to the .urb byte format.
    Returns bytes written on success (including the case where buf == NULL
    and cap == 0 — first-pass size query).
-   Returns a negative value on failure: -(ptrdiff_t)UModuleLoadError code. */
+   Returns a negative value on failure: -(ptrdiff_t)UChunkLoadError code. */
 ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap);
 
 /* --- Test-friend internals ---

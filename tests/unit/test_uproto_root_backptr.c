@@ -162,9 +162,9 @@ UTEST(deserialize_roundtrip_root_proto_invariants)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm2, NULL, NULL));
     UModule m2 = {0};
     char errmsg[128];
-    UModuleLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
+    UChunkLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
                                                    errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, load_rc);
+    UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
 
     /* root_proto must be non-NULL. */
     UASSERT(m2.root_proto != NULL);

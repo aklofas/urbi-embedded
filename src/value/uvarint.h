@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /* Decode outcome. Translate to a caller-specific error domain at the
-   boundary (see umodule.c for the UModuleLoadError mapping). */
+   boundary (see umodule.c for the UChunkLoadError mapping). */
 typedef enum {
     UVARINT_OK = 0,
     UVARINT_TRUNCATED,       /* buffer ended before the varint completed */

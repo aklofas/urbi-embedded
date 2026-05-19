@@ -608,8 +608,8 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
 
     UModule dst = {0};
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
+    UChunkLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
     UASSERT_EQ((size_t)1, dst.root_proto->const_count);
     UASSERT_EQ((int64_t)1000, dst.root_proto->constants[0].v.i);
 
@@ -712,8 +712,8 @@ UTEST(serialize_module_with_float_constant_round_trips) {
 
     UModule dst = {0};
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
+    UChunkLoadError rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
     UASSERT_EQ((size_t)1, dst.root_proto->const_count);
     UASSERT_EQ((uint8_t)UVAL_FLOAT, dst.root_proto->constants[0].kind);
 

@@ -204,7 +204,7 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
 
     /* Size query: buf == NULL means "how many bytes would you write?" */
     if (buf == NULL) return (ptrdiff_t)need;
-    if (cap < need)  return -(ptrdiff_t)ULOAD_TRUNCATED;
+    if (cap < need)  return -(ptrdiff_t)UCHUNK_LOAD_TRUNCATED;
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';

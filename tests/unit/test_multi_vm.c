@@ -183,9 +183,9 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
 
     /* Deserialize into a fresh module. */
     UModule loaded = {0};
-    UModuleLoadError load_rc = umodule_deserialize(&loaded, buf, (size_t)serialized,
+    UChunkLoadError load_rc = umodule_deserialize(&loaded, buf, (size_t)serialized,
                                                     NULL, 0);
-    UASSERT_EQ(ULOAD_OK, load_rc);
+    UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
 
     /* Deserialized module's origin_vm must be NULL. */
     UASSERT(loaded.origin_vm == NULL);

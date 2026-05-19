@@ -549,7 +549,7 @@ urbi_run_script(UVM *vm, URealm *realm, UModule *module)
  * "v1.x: import-table registration for urbi_load_module".
  *
  * Phase 3 / API-005: when this surface eventually deserializes bytecode it
- * must translate the internal UModuleLoadError ULOAD_UNSUPPORTED_VERSION
+ * must translate the internal UChunkLoadError UCHUNK_LOAD_UNSUPPORTED_VERSION
  * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
  * UErrCode enum).  See urbi_load_translate_load_err() below — the helper
  * is in place so any future deserialize-bytes entry point routes through
@@ -557,7 +557,7 @@ urbi_run_script(UVM *vm, URealm *realm, UModule *module)
  * --------------------------------------------------------------------------- */
 
 /* urbi_load_translate_load_err: public-API translation of internal
- * UModuleLoadError → UErrCode.  Closes API-005: ULOAD_UNSUPPORTED_VERSION
+ * UChunkLoadError → UErrCode.  Closes API-005: UCHUNK_LOAD_UNSUPPORTED_VERSION
  * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
  *
  * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
@@ -567,7 +567,7 @@ int
 urbi_load_translate_load_err(int load_err)
 {
     if (load_err == 0) return URBI_OK;
-    if (load_err == (int)ULOAD_UNSUPPORTED_VERSION) {
+    if (load_err == (int)UCHUNK_LOAD_UNSUPPORTED_VERSION) {
         return URBI_ERR_BYTECODE_VERSION_MISMATCH;
     }
     return URBI_ERR_INVALID_ARG;
@@ -622,8 +622,8 @@ urbi_module_from_bytes(const uint8_t *buf, size_t len,
     char local_err[256] = {0};
     char *ebuf = errmsg ? errmsg : local_err;
     size_t ecap = errmsg ? errcap : sizeof(local_err);
-    UModuleLoadError lerr = umodule_deserialize(m, buf, len, ebuf, ecap);
-    if (lerr != ULOAD_OK) {
+    UChunkLoadError lerr = umodule_deserialize(m, buf, len, ebuf, ecap);
+    if (lerr != UCHUNK_LOAD_OK) {
         /* Task 11: root_proto may have been partially allocated by
          * umodule_deserialize before the error.  umodule_destroy frees
          * root_proto and its buffers; then free the UModule shell. */

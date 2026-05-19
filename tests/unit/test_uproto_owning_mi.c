@@ -163,9 +163,9 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     /* Deserialize into a fresh module. */
     UModule m2 = {0};
     char errmsg[128];
-    UModuleLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
+    UChunkLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
                                                    errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, load_rc);
+    UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
     UASSERT(m2.root_proto != NULL);
 
     UChunkInstance *mi = urbi_module_instance_create(&vm, &m2);

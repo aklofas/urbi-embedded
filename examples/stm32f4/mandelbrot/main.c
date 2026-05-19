@@ -21,7 +21,7 @@
  * allocate UVM in BSS must pull the internal header — same pattern
  * as tests/qemu/reactive_smoke/main/reactive_smoke_main.c. */
 #include "vm/uvm.h"
-#include "chunk/uchunk.h"  /* freestanding-safe umodule_deserialize / UModuleLoadError */
+#include "chunk/uchunk.h"  /* freestanding-safe umodule_deserialize / UChunkLoadError */
 #include "mandelbrot_baked.h"   /* mandelbrot_bytecode[] + mandelbrot_bytecode_size */
 
 UART_HandleTypeDef huart1;   /* defined here; port_writer.c uses extern */
@@ -224,15 +224,15 @@ int main(void) {
      *
      * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
      * module_allocator() in freestanding mode returns c->alloc_fn directly (no
-     * malloc fallback); NULL there → immediate ULOAD_OOM at umodule.c:1118. */
+     * malloc fallback); NULL there → immediate UCHUNK_LOAD_OOM at umodule.c:1118. */
     static UModule mod = {0};
     mod.alloc_fn = port_alloc;
     mod.alloc_ud = NULL;
     char errbuf[128] = {0};
-    UModuleLoadError lerr = umodule_deserialize(&mod, mandelbrot_bytecode,
+    UChunkLoadError lerr = umodule_deserialize(&mod, mandelbrot_bytecode,
                                                  mandelbrot_bytecode_size,
                                                  errbuf, sizeof errbuf);
-    if (lerr != ULOAD_OK) {
+    if (lerr != UCHUNK_LOAD_OK) {
         static const char prefix[] = "umodule_deserialize FAILED: ";
         HAL_UART_Transmit(&huart1, (const uint8_t *)prefix, sizeof prefix - 1U, 100);
         const char *name = umodule_load_error_name(lerr);
@@ -243,7 +243,7 @@ int main(void) {
         }
         HAL_UART_Transmit(&huart1, (const uint8_t *)"\r\n", 2U, 100);
 
-        /* Heap diagnostics — only meaningful on ULOAD_OOM but harmless otherwise. */
+        /* Heap diagnostics — only meaningful on UCHUNK_LOAD_OOM but harmless otherwise. */
         extern size_t port_alloc_heap_top(void);
         extern size_t port_alloc_heap_size(void);
         extern const void *port_alloc_heap_base(void);

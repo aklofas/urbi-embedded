@@ -221,9 +221,9 @@ int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_
  * Thread safety: MAIN.  Not ISR-safe. */
 int urbi_unload(struct UVM *vm, struct UModule *module);
 
-/* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
+/* urbi_load_translate_load_err: map an internal UChunkLoadError (passed
  * as int) to the corresponding public UErrCode.  Currently routes
- * ULOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
+ * UCHUNK_LOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
  * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
  * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
  * public-API call site, even though the deserialize-bytes entry point

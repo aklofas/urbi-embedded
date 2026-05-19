@@ -414,7 +414,7 @@ typedef enum {
     URBI_ERR_OOM                        = -3,
     /* URBI_ERR_BYTECODE_VERSION_MISMATCH: returned by the public-API
      * translation helper urbi_load_translate_load_err when the internal
-     * loader reports ULOAD_UNSUPPORTED_VERSION (see src/chunk/uchunk_io.c).
+     * loader reports UCHUNK_LOAD_UNSUPPORTED_VERSION (see src/chunk/uchunk_io.c).
      * The deserialize-bytes entry point itself is still M6 work in
      * progress; the translation helper exists now so any future caller
      * has a single mapping site to route through.  Closes API-005. */

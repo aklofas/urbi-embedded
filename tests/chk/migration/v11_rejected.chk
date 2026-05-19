@@ -6,7 +6,7 @@
 # Reason: the chk runner (tests/integration/run_chk.sh) feeds .u source text
 # into the REPL.  There is no mechanism to inject a pre-baked binary blob and
 # call umodule_deserialize directly.  The runtime behaviour being tested here
-# (ULOAD_UNSUPPORTED_VERSION for version byte 0x11) is already covered by the
+# (UCHUNK_LOAD_UNSUPPORTED_VERSION for version byte 0x11) is already covered by the
 # C unit tests:
 #   - "deserialize rejects v1.1 module (M2 hard break)"  in tests/unit/test_module.c
 #   - "deserialize rejects v1.0 module"                  in tests/unit/test_module.c

@@ -200,9 +200,9 @@ UTEST(verifier_accepts_emitted_module) {
 
     UModule m2 = {0};
     char errmsg[256] = {0};
-    UModuleLoadError lerr = umodule_deserialize(&m2, blob, (size_t)need,
+    UChunkLoadError lerr = umodule_deserialize(&m2, blob, (size_t)need,
                                                 errmsg, sizeof(errmsg));
-    UASSERT_EQ(lerr, ULOAD_OK);
+    UASSERT_EQ(lerr, UCHUNK_LOAD_OK);
     UASSERT(m2.root_proto != NULL);
     UASSERT_EQ(m2.total_proto_count, m.total_proto_count);
 

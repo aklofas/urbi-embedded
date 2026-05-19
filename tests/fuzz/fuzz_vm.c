@@ -24,7 +24,7 @@
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     UModule module = {0};
-    if (umodule_deserialize(&module, data, size, NULL, 0) != ULOAD_OK) {
+    if (umodule_deserialize(&module, data, size, NULL, 0) != UCHUNK_LOAD_OK) {
         return 0;
     }
 

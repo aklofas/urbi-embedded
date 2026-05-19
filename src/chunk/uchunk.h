@@ -35,10 +35,10 @@ extern "C" {
                 instructions, synclines, ic_names, nested_count, nested[]).
                 Non-root UProtos write nested_count = 0 (flat-on-root
                 emitter per spec §4.2).  v1.6 rejected as
-                ULOAD_UNSUPPORTED_VERSION.).
+                UCHUNK_LOAD_UNSUPPORTED_VERSION.).
 
    Version-mismatch policy: exact-match.  Any byte other than VERSION_BYTE is
-   a hard ULOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
+   a hard UCHUNK_LOAD_UNSUPPORTED_VERSION reject — there is no best-effort or
    forward/backward compatibility.  Older modules silently loading would
    produce unknown opcodes, misread GC state, or wrongly-sized IC tables.
    Re-emit from source to migrate. */
@@ -52,7 +52,7 @@ extern "C" {
  * The 6-byte sequence detects FTP/Windows-paste corruption on transfer.
  * `\x19\x93` is binary noise; `\r\n` is munged to `\n` by FTP ASCII
  * mode; `\x1A\n` is the DOS EOF + LF.  Any text-mode mangling of the
- * file produces a canary mismatch, returned as ULOAD_BAD_MAGIC.
+ * file produces a canary mismatch, returned as UCHUNK_LOAD_BAD_MAGIC.
  *
  * Defined as a static-const-array initializer in the header so both
  * the serializer (uemit_serialize.c) and deserializer (uchunk_io.c)
@@ -315,18 +315,18 @@ typedef struct UModule {
 /* --- errors --- */
 
 typedef enum {
-    ULOAD_OK = 0,
-    ULOAD_BAD_MAGIC,              /* magic or canary mismatch */
-    ULOAD_UNSUPPORTED_VERSION,
-    ULOAD_FLAVOR_MISMATCH,        /* any descriptor field incl. endianness */
-    ULOAD_TRUNCATED,
-    ULOAD_CORRUPT_VARINT,
-    ULOAD_CORRUPT_TAG,
-    ULOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
-    ULOAD_OOM,
-    ULOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
-    ULOAD_OVERSIZED               /* count fields exceed compile-time per-proto caps */
-} UModuleLoadError;
+    UCHUNK_LOAD_OK = 0,
+    UCHUNK_LOAD_BAD_MAGIC,              /* magic or canary mismatch */
+    UCHUNK_LOAD_UNSUPPORTED_VERSION,
+    UCHUNK_LOAD_FLAVOR_MISMATCH,        /* any descriptor field incl. endianness */
+    UCHUNK_LOAD_TRUNCATED,
+    UCHUNK_LOAD_CORRUPT_VARINT,
+    UCHUNK_LOAD_CORRUPT_TAG,
+    UCHUNK_LOAD_CORRUPT,                /* bad opcode / out-of-range reg / count mismatch / misaligned */
+    UCHUNK_LOAD_OOM,
+    UCHUNK_LOAD_INVALID_ARG,            /* NULL module / NULL buf etc.; distinct from TRUNCATED */
+    UCHUNK_LOAD_OVERSIZED               /* count fields exceed compile-time per-proto caps */
+} UChunkLoadError;
 
 /* Per-proto cap on instruction count.  Bytecode-encoded as varint;
  * decoded into size_t.  The cap stops a malicious or corrupt module from
@@ -378,8 +378,8 @@ void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
  * is silently treated as suppression.
  *
  * Error semantics:
- *   - On success returns ULOAD_OK; `module` is fully populated.
- *   - NULL `module` or NULL `buf` returns ULOAD_INVALID_ARG (no partial
+ *   - On success returns UCHUNK_LOAD_OK; `module` is fully populated.
+ *   - NULL `module` or NULL `buf` returns UCHUNK_LOAD_INVALID_ARG (no partial
  *     state — there is no module to populate).
  *   - On any other failure returns a non-OK code; `module` may hold
  *     PARTIAL buffers from the section that completed before the
@@ -396,7 +396,7 @@ void umodule_destroy_proto_buffers(UProto *proto, UChunkAllocFn alloc,
  *   - ic_names interning is deferred to urbi_module_instance_create
  *     (see object/umoduleinstance.h); deserialize itself does not need
  *     a VM. */
-UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
+UChunkLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t size,
                                    char *errmsg, size_t errcap);
 
 /* umodule_destroy — release all owned buffers.  If vm is non-NULL and
@@ -412,8 +412,8 @@ UModuleLoadError umodule_deserialize(UModule *module, const uint8_t *buf, size_t
  * failed-compile cleanup where the module was never bound to any vm. */
 void umodule_destroy(UModule *module, struct UVM *vm);
 
-/* Return a static string such as "ULOAD_BAD_MAGIC" for debug. */
-const char *umodule_load_error_name(UModuleLoadError code);
+/* Return a static string such as "UCHUNK_LOAD_BAD_MAGIC" for debug. */
+const char *umodule_load_error_name(UChunkLoadError code);
 
 #ifdef __cplusplus
 }

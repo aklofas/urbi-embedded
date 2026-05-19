@@ -142,13 +142,13 @@ urbi_stdlib_boot(UVM *vm)
         /* Freestanding: umodule_deserialize requires module->alloc_fn for
          * the internal proto + buffer allocations.  Hosted builds fall
          * back to stdlib_alloc inside module_allocator(); freestanding
-         * does not and returns ULOAD_OOM if alloc_fn is NULL.  Inherit
+         * does not and returns UCHUNK_LOAD_OOM if alloc_fn is NULL.  Inherit
          * the VM's allocator so the stdlib module shares the VM heap. */
         m->alloc_fn = vm->alloc_fn;
         m->alloc_ud = vm->alloc_ud;
-        UModuleLoadError lerr = umodule_deserialize(
+        UChunkLoadError lerr = umodule_deserialize(
             m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
-        if (lerr != ULOAD_OK) {
+        if (lerr != UCHUNK_LOAD_OK) {
             umodule_destroy(m, vm);
             vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_STDLIB_BOOT_FAILED;
