@@ -216,7 +216,10 @@ urbi_debug_namespace_register_globals(UVM *vm, URealm *realm)
 
 #else  /* !URBI_ENABLE_REPL */
 
-/* Empty TU when REPL is disabled — the wildcard glob still picks the file
- * up, but the unit translation contains no symbols. */
+/* When REPL is disabled this TU has no symbols.  ISO C forbids a
+ * translation unit with no declarations; emit a typedef so the file
+ * remains pickable by the wildcard glob without tripping -Wpedantic /
+ * clang-diagnostic-empty-translation-unit. */
+typedef int urbi_debug_namespace_disabled_marker_t;
 
 #endif /* URBI_ENABLE_REPL */

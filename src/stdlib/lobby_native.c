@@ -303,7 +303,7 @@ static UObject *
 fetch_lobbies_list(UVM *vm)
 {
     if (vm == NULL || vm->lobby_proto == NULL) return NULL;
-    USymbol *sym = (USymbol *)ustr_intern(vm, "lobbies", 7);
+    const USymbol *sym = (const USymbol *)ustr_intern(vm, "lobbies", 7);
     if (sym == NULL) return NULL;
     UObject *holder = NULL;
     uint32_t idx = 0U;
