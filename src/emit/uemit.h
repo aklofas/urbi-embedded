@@ -78,7 +78,7 @@ struct UFuncState;
 /* --- UEmitter state (caller stack-allocates, emitter fills) --- */
 
 typedef struct UEmitter {
-    UModule       *module;           /* non-owning; caller supplies */
+    UProto        *module;           /* non-owning root UProto; caller supplies (was UModule*; v0.9.2) */
     UArena       *arena;           /* non-owning; currently unused at M1 but reserved */
     struct UVM   *vm;              /* non-owning; set by uemit_init (M2) for intern access */
     uint8_t      next_reg;        /* register allocator cursor */
@@ -104,11 +104,12 @@ typedef struct UEmitter {
 
 /* --- API --- */
 
-/* Initialize.  module, arena, and vm must all outlive the emitter.
+/* Initialize.  root, arena, and vm must all outlive the emitter.
    source_name may be NULL.  vm parameter (added at M2) lets the
    emitter intern identifier lexemes into the per-VM string table and
-   stamps module->origin_vm = vm. */
-void uemit_init(UEmitter *e, UModule *module, UArena *arena,
+   stamps root->origin_vm = vm.
+   v0.9.2: first argument was UModule*; now UProto* (root proto). */
+void uemit_init(UEmitter *e, UProto *root, UArena *arena,
                 struct UVM *vm, const char *source_name);
 
 /* Emit one statement's bytecode into the module.  stmt must be non-NULL.
@@ -207,18 +208,18 @@ void uemit_resume(UEmitter *e, uint8_t reg_state, uint32_t line);
  * walker writes s->catch_value before jumping to the handler PC. */
 void uemit_load_catch_value(UEmitter *e, uint8_t reg, uint32_t line);
 
-/* Write a human-readable disassembly of the module into buf.
+/* Write a human-readable disassembly of the root proto into buf.
    Returns bytes written (excluding null terminator).  Truncates if cap is
    too small; always null-terminates when cap > 0.
    Format: one instruction per line, e.g. "LOADK R0, K0".  Trailing
    constant-pool dump. */
-size_t uemit_disassemble(const UModule *module, char *buf, size_t cap);
+size_t uemit_disassemble(const UProto *root, char *buf, size_t cap);
 
-/* Serialize module to the .urb byte format.
+/* Serialize a root UProto to the .urb byte format.
    Returns bytes written on success (including the case where buf == NULL
    and cap == 0 — first-pass size query).
    Returns a negative value on failure: -(ptrdiff_t)UChunkLoadError code. */
-ptrdiff_t uchunk_serialize(const UModule *module, uint8_t *buf, size_t cap);
+ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap);
 
 /* --- Test-friend internals ---
  * Originally exposed via uemit_internal.h to allow unit tests

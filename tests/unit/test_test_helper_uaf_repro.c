@@ -12,7 +12,7 @@
  * Pre-v0.7.3 + v0.8.0 refcount mechanisms: ASan heap-use-after-free in
  * dispatch_loop_until_yield at the UProto pointer dereference.
  *
- * Post-v0.7.3 (UProto refcount + rescue) + v0.8.0 (UModule refcount +
+ * Post-v0.7.3 (UProto refcount + rescue) + v0.8.0 (UProto refcount +
  * deferred destroy): outcome TBD — this test classifies it.
  * Phase 4 of v0.8.1-uproto-root branches on the outcome. */
 

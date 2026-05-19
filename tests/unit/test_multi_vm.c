@@ -29,7 +29,7 @@ UTEST(uvm_init_zeroes_intern_table_and_topology_gen) {
 }
 
 UTEST(umodule_origin_vm_initially_null) {
-    UModule m = {0};
+    UProto m = {0};
     UASSERT(m.origin_vm == NULL);
     /* deserialize zeros it; serialize never includes it */
     uchunk_destroy(&m, NULL);
@@ -58,7 +58,7 @@ static UVMError eval_on_vm(UVM *vm, const char *src, UValue *out) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
 
@@ -157,7 +157,7 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm_a, NULL);
 
@@ -182,16 +182,16 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
     UASSERT(serialized > 0);
 
     /* Deserialize into a fresh module. */
-    UModule loaded = {0};
+    UProto *loaded = NULL;
     UChunkLoadError load_rc = uchunk_deserialize(&loaded, buf, (size_t)serialized,
-                                                    NULL, 0);
+                                                    NULL, NULL, NULL, 0);
     UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
 
     /* Deserialized module's origin_vm must be NULL. */
-    UASSERT(loaded.origin_vm == NULL);
+    UASSERT(loaded->origin_vm == NULL);
 
     uchunk_destroy(&module, NULL);
-    uchunk_destroy(&loaded, NULL);
+    uchunk_destroy(loaded, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm_a);
 }
@@ -264,7 +264,7 @@ UTEST(closing_vm_a_does_not_invalidate_vm_b_intern) {
 void test_multi_vm_suite(void) {
     utest_run("UVM init zeroes intern_table and topology_gen",
         uvm_init_zeroes_intern_table_and_topology_gen);
-    utest_run("UModule origin_vm initially NULL",
+    utest_run("UProto origin_vm initially NULL",
         umodule_origin_vm_initially_null);
     utest_run("Two VMs have independent allocators",
         two_vms_have_independent_allocators);

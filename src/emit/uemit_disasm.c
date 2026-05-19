@@ -42,42 +42,42 @@ static bool dis_printf(char *buf, const size_t cap, size_t *off,
  * Returns false when the buffer capacity is exhausted. */
 typedef bool (*UDisFormatFn)(char *buf, size_t cap, size_t *off,
                              size_t *ip, uint32_t ins,
-                             const UModule *module);
+                             const UProto *module);
 
 /* --- Per-opcode format helpers --- */
 
 static bool fmt_loadk(char *buf, size_t cap, size_t *off,
-                      size_t *ip, uint32_t ins, const UModule *module) {
+                      size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LOADK R%u, K%u\n",
                       *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_bx(ins));
 }
 
 static bool fmt_ret(char *buf, size_t cap, size_t *off,
-                    size_t *ip, uint32_t ins, const UModule *module) {
+                    size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  RET R%u\n",
                       *ip, (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_neg(char *buf, size_t cap, size_t *off,
-                    size_t *ip, uint32_t ins, const UModule *module) {
+                    size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  NEG R%u, R%u\n",
                       *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins));
 }
 
 static bool fmt_closure(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UModule *module) {
+                        size_t *ip, uint32_t ins, const UProto *module) {
     const uint16_t bx = uinstr_bx(ins);
     bool ok = dis_printf(buf, cap, off, "%04zu  CLOSURE R%u, P%u\n",
                          *ip, (unsigned)uinstr_a(ins), (unsigned)bx);
     if (!ok) return false;
-    if (module->root_proto != NULL
-        && bx < module->root_proto->nested_count
-        && module->root_proto->nested[bx] != NULL) {
-        const UProto *child = module->root_proto->nested[bx];
-        const UProto *rp    = module->root_proto;
+    if (module != NULL
+        && bx < module->nested_count
+        && module->nested[bx] != NULL) {
+        const UProto *child = module->nested[bx];
+        const UProto *rp    = module;
         uint8_t u;
         for (u = 0; u < child->nupvals &&
              (*ip + 1U + (size_t)u) < rp->instr_count; u++) {
@@ -95,21 +95,21 @@ static bool fmt_closure(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_jmp(char *buf, size_t cap, size_t *off,
-                    size_t *ip, uint32_t ins, const UModule *module) {
+                    size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  JMP %d\n",
                       *ip, (int)uinstr_bx(ins) - (int)UEMIT_JMP_BIAS);
 }
 
 static bool fmt_loadnil(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UModule *module) {
+                        size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LOADNIL R%u\n",
                       *ip, (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_loadbool(char *buf, size_t cap, size_t *off,
-                         size_t *ip, uint32_t ins, const UModule *module) {
+                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LOADBOOL R%u, %s%s\n",
                       *ip, (unsigned)uinstr_a(ins),
@@ -118,35 +118,35 @@ static bool fmt_loadbool(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_loadvoid(char *buf, size_t cap, size_t *off,
-                         size_t *ip, uint32_t ins, const UModule *module) {
+                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LOADVOID R%u\n",
                       *ip, (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_getupval(char *buf, size_t cap, size_t *off,
-                         size_t *ip, uint32_t ins, const UModule *module) {
+                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  GETUPVAL R%u, U%u\n",
                       *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins));
 }
 
 static bool fmt_setupval(char *buf, size_t cap, size_t *off,
-                         size_t *ip, uint32_t ins, const UModule *module) {
+                         size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  SETUPVAL U%u, R%u\n",
                       *ip, (unsigned)uinstr_b(ins), (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_close(char *buf, size_t cap, size_t *off,
-                      size_t *ip, uint32_t ins, const UModule *module) {
+                      size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  CLOSE R%u..\n",
                       *ip, (unsigned)uinstr_a(ins));
 }
 
 static bool fmt_call(char *buf, size_t cap, size_t *off,
-                     size_t *ip, uint32_t ins, const UModule *module) {
+                     size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     uint8_t c = uinstr_c(ins);
     bool is_method = (c & 0x80U) != 0U;
@@ -160,7 +160,7 @@ static bool fmt_call(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_test(char *buf, size_t cap, size_t *off,
-                     size_t *ip, uint32_t ins, const UModule *module) {
+                     size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  TEST R%u, %s\n",
                       *ip, (unsigned)uinstr_a(ins),
@@ -168,7 +168,7 @@ static bool fmt_test(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_testset(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UModule *module) {
+                        size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  TESTSET R%u, R%u, %u\n",
                       *ip, (unsigned)uinstr_a(ins), (unsigned)uinstr_b(ins),
@@ -176,7 +176,7 @@ static bool fmt_testset(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_eq(char *buf, size_t cap, size_t *off,
-                   size_t *ip, uint32_t ins, const UModule *module) {
+                   size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  EQ %s R%u, R%u\n",
                       *ip, uinstr_a(ins) ? "==" : "!=",
@@ -185,7 +185,7 @@ static bool fmt_eq(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_neq(char *buf, size_t cap, size_t *off,
-                    size_t *ip, uint32_t ins, const UModule *module) {
+                    size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  NEQ R%u, R%u\n",
                       *ip, (unsigned)uinstr_b(ins),
@@ -193,7 +193,7 @@ static bool fmt_neq(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_lt(char *buf, size_t cap, size_t *off,
-                   size_t *ip, uint32_t ins, const UModule *module) {
+                   size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LT R%u, R%u (%s)\n",
                       *ip, (unsigned)uinstr_b(ins),
@@ -202,7 +202,7 @@ static bool fmt_lt(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_le(char *buf, size_t cap, size_t *off,
-                   size_t *ip, uint32_t ins, const UModule *module) {
+                   size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LE R%u, R%u (%s)\n",
                       *ip, (unsigned)uinstr_b(ins),
@@ -211,37 +211,37 @@ static bool fmt_le(char *buf, size_t cap, size_t *off,
 }
 
 static bool fmt_yield(char *buf, size_t cap, size_t *off,
-                      size_t *ip, uint32_t ins, const UModule *module) {
+                      size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  YIELD\n", *ip);
 }
 
 static bool fmt_fork_detach(char *buf, size_t cap, size_t *off,
-                            size_t *ip, uint32_t ins, const UModule *module) {
+                            size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  FORK_DETACH (reserved)\n", *ip);
 }
 
 static bool fmt_fork_join(char *buf, size_t cap, size_t *off,
-                          size_t *ip, uint32_t ins, const UModule *module) {
+                          size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  FORK_JOIN (reserved)\n", *ip);
 }
 
 static bool fmt_join_wait(char *buf, size_t cap, size_t *off,
-                          size_t *ip, uint32_t ins, const UModule *module) {
+                          size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  JOIN_WAIT (reserved)\n", *ip);
 }
 
 static bool fmt_getslot(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UModule *module) {
+                        size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  GETSLOT (reserved M4)\n", *ip);
 }
 
 static bool fmt_setslot(char *buf, size_t cap, size_t *off,
-                        size_t *ip, uint32_t ins, const UModule *module) {
+                        size_t *ip, uint32_t ins, const UProto *module) {
     (void)ins; (void)module;
     return dis_printf(buf, cap, off, "%04zu  SETSLOT (reserved M4)\n", *ip);
 }
@@ -249,7 +249,7 @@ static bool fmt_setslot(char *buf, size_t cap, size_t *off,
 /* M5 reactive runtime — spec #2: at/whenever/waituntil */
 
 static bool fmt_at_install(char *buf, size_t cap, size_t *off,
-                           size_t *ip, uint32_t ins, const UModule *module) {
+                           size_t *ip, uint32_t ins, const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  AT_INSTALL R%u, R%u, R%u\n",
                       *ip, (unsigned)uinstr_a(ins),
@@ -258,7 +258,7 @@ static bool fmt_at_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_at_sync_install(char *buf, size_t cap, size_t *off,
                                 size_t *ip, uint32_t ins,
-                                const UModule *module) {
+                                const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  AT_SYNC_INSTALL R%u, R%u, R%u\n",
                       *ip, (unsigned)uinstr_a(ins),
@@ -267,7 +267,7 @@ static bool fmt_at_sync_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_whenever_install(char *buf, size_t cap, size_t *off,
                                  size_t *ip, uint32_t ins,
-                                 const UModule *module) {
+                                 const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off,
                       "%04zu  WHENEVER_INSTALL R%u, R%u, R%u\n",
@@ -277,7 +277,7 @@ static bool fmt_whenever_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_waituntil_install(char *buf, size_t cap, size_t *off,
                                   size_t *ip, uint32_t ins,
-                                  const UModule *module) {
+                                  const UProto *module) {
     (void)module;
     /* cond_reg only; B and C are unused (zero). */
     return dis_printf(buf, cap, off, "%04zu  WAITUNTIL_INSTALL R%u\n",
@@ -288,7 +288,7 @@ static bool fmt_waituntil_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_at_event_install(char *buf, size_t cap, size_t *off,
                                  size_t *ip, uint32_t ins,
-                                 const UModule *module) {
+                                 const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off,
                       "%04zu  AT_EVENT_INSTALL R%u, R%u, R%u\n",
@@ -298,7 +298,7 @@ static bool fmt_at_event_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_at_event_sync_install(char *buf, size_t cap, size_t *off,
                                       size_t *ip, uint32_t ins,
-                                      const UModule *module) {
+                                      const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off,
                       "%04zu  AT_EVENT_SYNC_INSTALL R%u, R%u, R%u\n",
@@ -310,7 +310,7 @@ static bool fmt_at_event_sync_install(char *buf, size_t cap, size_t *off,
 
 static bool fmt_getslot_change_event(char *buf, size_t cap, size_t *off,
                                      size_t *ip, uint32_t ins,
-                                     const UModule *module) {
+                                     const UProto *module) {
     (void)module;
     /* C is a symbol-table index (not a register); display as Kn. */
     return dis_printf(buf, cap, off,
@@ -323,7 +323,7 @@ static bool fmt_getslot_change_event(char *buf, size_t cap, size_t *off,
 
 static bool fmt_load_realm_global(char *buf, size_t cap, size_t *off,
                                   size_t *ip, uint32_t ins,
-                                  const UModule *module) {
+                                  const UProto *module) {
     (void)module;
     /* B=sym_id_hi, C=sym_id_lo (16-bit symbol id split into two bytes). */
     return dis_printf(buf, cap, off,
@@ -334,7 +334,7 @@ static bool fmt_load_realm_global(char *buf, size_t cap, size_t *off,
 
 static bool fmt_load_recv(char *buf, size_t cap, size_t *off,
                           size_t *ip, uint32_t ins,
-                          const UModule *module) {
+                          const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off, "%04zu  LOAD_RECV R%u\n",
                       *ip, (unsigned)uinstr_a(ins));
@@ -342,7 +342,7 @@ static bool fmt_load_recv(char *buf, size_t cap, size_t *off,
 
 static bool fmt_self(char *buf, size_t cap, size_t *off,
                      size_t *ip, uint32_t ins,
-                     const UModule *module) {
+                     const UProto *module) {
     (void)module;
     return dis_printf(buf, cap, off,
                       "%04zu  SELF R%u, R%u, ic[%u]   ; R%u := lookup, R%u := R%u\n",
@@ -469,14 +469,14 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 47 OP_SELF               */ fmt_self,
 };
 
-size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
+size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
     size_t off;
     size_t i;
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
     off = 0;
-    /* Task 11: all chunk-top data lives on root_proto. */
-    const UProto *rp = (module != NULL) ? module->root_proto : NULL;
+    /* v0.9.2: module IS the root UProto. */
+    const UProto *rp = module;
     if (rp == NULL || rp->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");
         return off;
@@ -510,7 +510,7 @@ size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
 
 #else  /* freestanding */
 
-size_t uemit_disassemble(const UModule *module, char *buf, const size_t cap) {
+size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
     (void)module;
     if (cap > 0 && buf != NULL) buf[0] = '\0';
     return 0;

@@ -18,7 +18,7 @@
 
 /* Build AST_STR + drive emit_single_statement.  Constants live in the arena;
  * the AST node references arena-owned bytes via str_lit.bytes. */
-static void emit_str_through_pipeline(UVM *vm, UModule *module, UArena *arena,
+static void emit_str_through_pipeline(UVM *vm, UProto *module, UArena *arena,
                                       const char *bytes, int len) {
     char *buf = (char *)uarena_alloc(arena, (size_t)len);
     for (int i = 0; i < len; i++) buf[i] = bytes[i];
@@ -38,7 +38,7 @@ static void emit_str_through_pipeline(UVM *vm, UModule *module, UArena *arena,
 
 UTEST(emit_string_loadk_with_uval_str_constant) {
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
     urbi_vm_init(&vm, NULL, NULL);
@@ -46,16 +46,16 @@ UTEST(emit_string_loadk_with_uval_str_constant) {
     emit_str_through_pipeline(&vm, &module, &arena, "hello", 5);
 
     /* Constant pool: one UVAL_STR slot pointing at the interned bytes. */
-    UASSERT_EQ((size_t)1, module.root_proto->const_count);
-    UASSERT_EQ((uint8_t)UVAL_STR, module.root_proto->constants[0].kind);
-    const char *interned = (const char *)module.root_proto->constants[0].v.p;
+    UASSERT_EQ((size_t)1, module.const_count);
+    UASSERT_EQ((uint8_t)UVAL_STR, module.constants[0].kind);
+    const char *interned = (const char *)module.constants[0].v.p;
     UASSERT(interned != NULL);
     UASSERT(memcmp(interned, "hello", 5) == 0);
     UASSERT_EQ('\0', interned[5]);   /* intern table NUL-terminates */
 
     /* First emitted instruction is OP_LOADK. */
-    UASSERT(module.root_proto->instr_count >= 1);
-    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.root_proto->instructions[0]));
+    UASSERT(module.instr_count >= 1);
+    UASSERT_EQ((int)OP_LOADK, (int)uinstr_op(module.instructions[0]));
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);
@@ -66,7 +66,7 @@ UTEST(emit_string_dedups_repeated_literal) {
     /* Two equal AST_STR literals share a single UVAL_STR pool slot
      * (intern returns the same pointer; add_const_str dedups by pointer). */
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     uarena_init(&arena, 0);
     urbi_vm_init(&vm, NULL, NULL);
@@ -90,8 +90,8 @@ UTEST(emit_string_dedups_repeated_literal) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Single pool slot. */
-    UASSERT_EQ((size_t)1, module.root_proto->const_count);
-    UASSERT_EQ((uint8_t)UVAL_STR, module.root_proto->constants[0].kind);
+    UASSERT_EQ((size_t)1, module.const_count);
+    UASSERT_EQ((uint8_t)UVAL_STR, module.constants[0].kind);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, NULL);

@@ -446,10 +446,20 @@ uclosure_destroy(struct UVM *vm, void *payload)
     UProto *rp = uproto_root_of(cl->proto);
     uproto_refcount_dec(rp);
 
-    /* v0.8.4 Option B Step C-2: sentinel-promotion. */
+    /* v0.8.4 Option B Step C-2: sentinel-promotion.
+     * heap_allocated=true: thread onto vm->rescued_protos so vm_destroy
+     * sweep can free the struct.
+     * heap_allocated=false (stack/static root): free buffers directly and
+     * zero the struct — do NOT add to rescued_protos (stack address). */
     if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
-        rp->next_alloc     = vm->rescued_protos;
-        vm->rescued_protos = rp;
+        if (rp->heap_allocated) {
+            rp->next_alloc     = vm->rescued_protos;
+            vm->rescued_protos = rp;
+        } else {
+            rp->next_alloc = NULL;  /* clear sentinel first */
+            uproto_destroy_buffers(rp, rp->alloc_fn, rp->alloc_ud);
+            /* struct itself is not freed: it is stack/static-allocated */
+        }
     }
 }
 

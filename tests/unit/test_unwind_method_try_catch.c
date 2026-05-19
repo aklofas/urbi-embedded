@@ -85,7 +85,7 @@ UTEST(method_try_catch_in_at_body_absorbs)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -127,7 +127,7 @@ UTEST(chunktop_try_catch_absorbs_control)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -164,7 +164,7 @@ UTEST(method_try_catch_from_chunktop)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -214,7 +214,7 @@ UTEST(catch_variable_receives_thrown_string)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -264,7 +264,7 @@ UTEST(catch_variable_receives_thrown_string_chunktop)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -297,7 +297,7 @@ UTEST(catch_variable_int_vs_str)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -337,7 +337,7 @@ UTEST(realm_slot_assign_from_local_int)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,

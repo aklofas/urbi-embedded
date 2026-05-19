@@ -20,7 +20,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
-#include "chunk/uchunk.h"                        /* UModule, UProto, uinstr_enc_abc */
+#include "chunk/uchunk.h"                        /* UProto, UProto, uinstr_enc_abc */
 #include "value/uintern.h"                        /* ustr_intern */
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
@@ -58,36 +58,32 @@ make_object_with_x_slot(UVM *vm)
     return obj;
 }
 
-/* Set up a UModule with ic_count=1 for the root proto ("x" IC site 0).
- * Caller must uchunk_destroy(&m) when done.
+/* Set up a UProto with ic_count=1 for the root proto ("x" IC site 0).
+ * Caller must uchunk_destroy(m, NULL) when done.
  * Returns 1 on success, 0 on failure. */
 static int
-make_module_with_one_ic_site(UVM *vm, UModule *m, uint32_t *instrs_out,
+make_module_with_one_ic_site(UVM *vm, UProto *m, uint32_t *instrs_out,
                               size_t max_instrs)
 {
     (void)max_instrs;
     memset(m, 0, sizeof(*m));
 
-    /* Task 11: all chunk-top data lives on root_proto. Allocate a UProto. */
-    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
-    if (rp == NULL) return 0;
-    rp->alloc_fn = vm->alloc_fn;
-    rp->alloc_ud = vm->alloc_ud;
-    m->root_proto = rp;
+    m->alloc_fn = vm->alloc_fn;
+    m->alloc_ud = vm->alloc_ud;
 
     /* Root proto ic_count = 1; ic_names points to "x". */
-    rp->ic_count = 1;
-    rp->ic_names = (USymbol **)malloc(sizeof(USymbol *));
-    if (rp->ic_names == NULL) { free(rp); m->root_proto = NULL; return 0; }
-    rp->ic_names[0] = (USymbol *)ustr_intern(vm, "x", 1);
+    m->ic_count = 1;
+    m->ic_names = (USymbol **)malloc(sizeof(USymbol *));
+    if (m->ic_names == NULL) return 0;
+    m->ic_names[0] = (USymbol *)ustr_intern(vm, "x", 1);
 
     /* Bytecode: OP_GETSLOT R[1] = R[0].slot[0]; OP_RET R[0].
      *   A=1 (dst), B=0 (recv_reg), C=0 (ic_index). */
     instrs_out[0] = uinstr_enc_abc(OP_GETSLOT, 1U, 0U, 0U);
     instrs_out[1] = uinstr_enc_abc(OP_RET,     0U, 0U, 0U);
 
-    rp->instructions = instrs_out;
-    rp->instr_count  = 2;
+    m->instructions = instrs_out;
+    m->instr_count  = 2;
     return 1;
 }
 
@@ -114,7 +110,6 @@ strand_setup_for_getslot(UStrand *s, UVM *vm,
     s->R               = reg_stack;
     s->pc              = instrs;
     s->pc_base         = instrs;
-    s->module          = NULL;
     s->module_instance = mi;
     s->frame_count     = 0;
     s->open_upvals     = NULL;
@@ -133,7 +128,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 {
     static uint32_t instrs[2];
     static UValue   reg_stack[8];
-    UModule         m;
+    UProto         m;
     UStrand         s;
 
     memset(reg_stack, 0, sizeof(reg_stack));
@@ -141,7 +136,7 @@ run_one_getslot(UVM *vm, UObject *obj)
     if (!make_module_with_one_ic_site(vm, &m, instrs, 2)) return 0;
 
     UChunkInstance *mi = urbi_get_or_create_module_instance(vm, &m);
-    if (mi == NULL) { free(m.root_proto->ic_names); free(m.root_proto); m.root_proto = NULL; return 0; }
+    if (mi == NULL) { free(m.ic_names); m.ic_names = NULL; return 0; }
 
     /* Wire the IC name so the slow path can resolve it on first miss. */
     UProtoInstance *pi = &mi->proto_instances->entries[0];
@@ -153,12 +148,12 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     uint64_t consumed = dispatch_loop_until_yield(&s, 10000U);
 
-    /* Module IC names are heap-allocated in this helper; uchunk_destroy
-     * would free instructions (stack here), so only free ic_names + root_proto manually. */
-    free(m.root_proto->ic_names);
-    m.root_proto->ic_names = NULL;
-    free(m.root_proto);
-    m.root_proto = NULL;
+    /* Module IC names are heap-allocated in this helper; instructions point to
+     * stack-allocated instrs[], so set to NULL before uchunk_destroy to avoid
+     * freeing stack memory. */
+    free(m.ic_names);
+    m.ic_names = NULL;
+    m.instructions = NULL;  /* stack-allocated; don't free */
 
     return consumed;
 }

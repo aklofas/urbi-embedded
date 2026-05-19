@@ -122,11 +122,22 @@ urbi_compile_source(struct UVM *vm,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module;
-    urbi_zero(&module, sizeof module);
+    /* v0.9.2: UModule deleted; allocate a root UProto directly. */
+    UProto *root = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (root == NULL) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: out of memory", name);
+        }
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
+    urbi_zero(root, sizeof *root);
+    root->heap_allocated = true;
+    root->alloc_fn       = vm->alloc_fn;
+    root->alloc_ud       = vm->alloc_ud;
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, name);
+    uemit_init(&e, root, &arena, vm, name);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -149,7 +160,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -159,19 +170,19 @@ urbi_compile_source(struct UVM *vm,
             snprintf(err_buf, err_cap, "%s: emit error: %s",
                      name, uemit_error_name(e.error));
         }
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
 
     /* First pass: query required size. */
-    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(root, NULL, 0);
     if (need < 0) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize size-query failed",
                      name);
         }
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -180,25 +191,25 @@ urbi_compile_source(struct UVM *vm,
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: out of memory", name);
         }
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_OOM;
     }
-    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(root, buf, (size_t)need);
     if (wrote != need) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize wrote %ld, expected %ld",
                      name, (long)wrote, (long)need);
         }
         free(buf);
-        uchunk_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
 
     *out_buf = buf;
     *out_len = (size_t)need;
-    uchunk_destroy(&module, vm);
+    uchunk_destroy(root, vm);
     uarena_destroy(&arena);
     return URBI_OK;
 #else

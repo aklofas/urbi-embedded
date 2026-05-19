@@ -219,13 +219,13 @@ int main(void) {
      * 50 ms tick rate no longer drains the heap. */
     tim2_init_50ms();
 
-    /* Load baked bytecode (freestanding pattern: static UModule + uchunk_deserialize).
+    /* Load baked bytecode (freestanding pattern: static UProto + uchunk_deserialize).
      * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
      *
      * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
      * module_allocator() in freestanding mode returns c->alloc_fn directly (no
      * malloc fallback); NULL there → immediate UCHUNK_LOAD_OOM at umodule.c:1118. */
-    static UModule mod = {0};
+    static UProto mod = {0};
     mod.alloc_fn = port_alloc;
     mod.alloc_ud = NULL;
     char errbuf[128] = {0};

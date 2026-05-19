@@ -48,7 +48,7 @@ UTEST(realm_assign_closure_minimal)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -75,7 +75,7 @@ UTEST(realm_assign_closure_followed_by_int_assign)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -110,7 +110,7 @@ UTEST(chunktop_var_decl_closure)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,

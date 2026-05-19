@@ -87,7 +87,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
      *              Realm.received.  The chunk's RET value is the
      *              function-literal closure. === */
     UArena   arena;
-    UModule  module = {0};
+    UProto  module = {0};
     uarena_init(&arena, 4096);
 
     UValue closure_val = {0};

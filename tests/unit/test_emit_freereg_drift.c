@@ -31,7 +31,7 @@
  * arena destruction.  vm is also caller-owned.
  * ----------------------------------------------------------------------- */
 
-static UEmitError compile_src(UVM *vm, UArena *arena, UModule *module,
+static UEmitError compile_src(UVM *vm, UArena *arena, UProto *module,
                               const char *src) {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -84,20 +84,20 @@ static int find_loadk_int(const uint32_t *instrs, size_t count,
 UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
                                 "5 | function() { 1 } | 2");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     /* Find the outer LOADK 2 instruction in the chunk-top instructions. */
-    int idx = find_loadk_int(module.root_proto->instructions, module.root_proto->instr_count,
-                             module.root_proto->constants, 2);
+    int idx = find_loadk_int(module.instructions, module.instr_count,
+                             module.constants, 2);
     UASSERT(idx >= 0);
 
     /* Pre-fix: A=1 (clobbers the inner closure at r1).
      * Post-fix: A>=2 (above freereg). */
-    uint8_t a = uinstr_a(module.root_proto->instructions[idx]);
+    uint8_t a = uinstr_a(module.instructions[idx]);
     UASSERT(a >= 2U);
 
     uchunk_destroy(&module, NULL);
@@ -128,7 +128,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
  * free_reg() decrements only next_reg.  At chunk-top, statements are
  * NOT wrapped in an AST_BLOCK that resets freereg between siblings, so
  * uemit_statement's sync (next_reg = freereg) carries the leaked value
- * forward.  module.root_proto->max_reg ends up inflated by the closure depth.
+ * forward.  module.max_reg ends up inflated by the closure depth.
  *
  * Inside a function-body block, the leak is masked by emit_block_arm's
  * `freereg = fs_temp_floor(...)` reset between statements — so these
@@ -137,7 +137,7 @@ UTEST(emit_sep_pipe_does_not_alias_lhs_temp_with_rhs) {
 UTEST(emit_watcher_install_freereg_balanced_at) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var a = 1; var b = 2;"
@@ -145,10 +145,10 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
         "var c = function() { 99 };");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
-    /* Pre-fix: module.root_proto->max_reg leaks 2 slots (one per emit_function_literal
+    /* Pre-fix: module.max_reg leaks 2 slots (one per emit_function_literal
      * call: cond, body).  Post-fix: leak gone.  Use 6 as a strict ceiling
      * post-fix; pre-fix routinely exceeds this. */
-    UASSERT(module.root_proto->max_reg <= 3U);
+    UASSERT(module.max_reg <= 3U);
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -158,14 +158,14 @@ UTEST(emit_watcher_install_freereg_balanced_at) {
 UTEST(emit_watcher_install_freereg_balanced_whenever) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var a = 1; var b = 2;"
         "whenever (Realm.a > Realm.b) Realm.a = Realm.a + 1;"
         "var c = function() { 99 };");
     UASSERT_EQ((int)EMIT_OK, (int)rc);
-    UASSERT(module.root_proto->max_reg <= 3U);
+    UASSERT(module.max_reg <= 3U);
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -183,7 +183,7 @@ UTEST(emit_watcher_install_freereg_balanced_whenever) {
 UTEST(emit_watcher_install_freereg_balanced_at_event) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* at-event leaks event_reg+body_reg+alt_reg slots (alt 0xFF skipped).
      * Stack two at-event installs to amplify the leak above the inner
@@ -197,7 +197,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
     /* Pre-fix: each at-event leaks 1-2 slots; two installs push max_reg
      * past the post-fix ceiling.  Post-fix: max_reg stays at the inner
      * body-closure compilation high water (= 4). */
-    UASSERT(module.root_proto->max_reg <= 4U);
+    UASSERT(module.max_reg <= 4U);
 
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
@@ -224,7 +224,7 @@ UTEST(emit_watcher_install_freereg_balanced_at_event) {
 UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* Inner function body: chained AST_BINARY over integer literals
      * only — AST_INT goes through alloc_reg, which pre-fix did not
@@ -248,7 +248,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
     UProto *p = NULL;
     UProto *stack[8];
     size_t sp = 0;
-    stack[sp++] = module.root_proto;
+    stack[sp++] = &module;
     while (sp > 0 && p == NULL) {
         UProto *node = stack[--sp];
         if (node == NULL) continue;
@@ -297,7 +297,7 @@ UTEST(emit_nested_proto_max_reg_includes_inner_temps) {
 UTEST(emit_free_reg_respects_temp_floor) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* var a = 1; var b = 2; return a + b — three locals (a, b plus
      * r_global pre-reserve).  The AST_BINARY's free_reg call after
@@ -309,8 +309,8 @@ UTEST(emit_free_reg_respects_temp_floor) {
 
     /* Locate f's nested proto (the only one with nparams=0 and an OP_ADD). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         for (size_t j = 0; j < q->instr_count; j++) {
             if (uinstr_op(q->instructions[j]) == OP_ADD) {
@@ -363,7 +363,7 @@ UTEST(emit_free_reg_respects_temp_floor) {
 UTEST(emit_lazy_pass_through_does_not_alias) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var caller = function (lazy x) {"
@@ -374,8 +374,8 @@ UTEST(emit_lazy_pass_through_does_not_alias) {
 
     /* Locate caller's nested proto (1 param, contains OP_CALL). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 1U) continue;
         for (size_t j = 0; j < q->instr_count; j++) {
@@ -461,7 +461,7 @@ UTEST(emit_call_too_many_args_returns_error) {
 
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 16384);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module, src);
     /* Pre-fix: EMIT_OK (the wrap happens silently).
@@ -494,7 +494,7 @@ UTEST(emit_call_too_many_args_returns_error) {
 UTEST(emit_tag_prefix_rejects_high_spill_register) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* Declare a tag identifier "t" plus 16 unrelated locals so the chain
      * `var t = 0; var l1 = 1; ...; var l16 = 16; t: { 1 };` leaves
@@ -545,7 +545,7 @@ UTEST(emit_tag_prefix_rejects_high_spill_register) {
 UTEST(emit_if_arm_pops_nested_var_decl) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var f = function() {"
@@ -558,8 +558,8 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
 
     /* Locate f's nested proto. */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_ret = false;
@@ -619,7 +619,7 @@ UTEST(emit_if_arm_pops_nested_var_decl) {
 UTEST(emit_bare_return_does_not_clobber_local) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var helper = function() { 0 };"
@@ -633,8 +633,8 @@ UTEST(emit_bare_return_does_not_clobber_local) {
     /* Locate f's nested proto (the one with OP_LOADK 42 + OP_LOADNIL +
      * OP_RET; helper has only OP_LOADK 0 + OP_RET). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_42 = false;
@@ -704,7 +704,7 @@ UTEST(emit_bare_return_does_not_clobber_local) {
 UTEST(emit_throw_does_not_clobber_local) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     UEmitError rc = compile_src(&vm, &arena, &module,
         "var helper = function() { 0 };"
@@ -717,8 +717,8 @@ UTEST(emit_throw_does_not_clobber_local) {
 
     /* Locate f's nested proto (the one with OP_THROW + OP_LOADK 42). */
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_42 = false;
@@ -785,7 +785,7 @@ UTEST(emit_throw_does_not_clobber_local) {
 UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* Canonical if/else shape: emits TEST + JMP + then-body + JMP +
      * else-body.  Verify each JMP's encoded Bx, when un-biased,
@@ -799,8 +799,8 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
     UASSERT_EQ((int)EMIT_OK, (int)rc);
 
     UProto *p = NULL;
-    for (size_t i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *q = module.root_proto->nested[i];
+    for (size_t i = 0; i < module.nested_count; i++) {
+        UProto *q = module.nested[i];
         if (q == NULL) continue;
         if (q->nparams != 0U) continue;
         bool has_test = false;
@@ -867,7 +867,7 @@ UTEST(emit_jmp_offset_resilient_to_intervening_instructions) {
 UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UArena arena; uarena_init(&arena, 4096);
-    UModule module; memset(&module, 0, sizeof(module));
+    UProto module; memset(&module, 0, sizeof(module));
 
     /* A 3-arg call mirroring T41's setProperty desugar shape: two leaf
      * args followed by an AST_FUNCTION literal.  `callee` doesn't need
@@ -887,10 +887,10 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
      * sequences land first). */
     int call_idx = -1;
     int call_a   = -1;
-    for (size_t j = 0; j < module.root_proto->instr_count; j++) {
-        if (uinstr_op(module.root_proto->instructions[j]) == OP_CALL) {
+    for (size_t j = 0; j < module.instr_count; j++) {
+        if (uinstr_op(module.instructions[j]) == OP_CALL) {
             call_idx = (int)j;
-            call_a   = (int)uinstr_a(module.root_proto->instructions[j]);
+            call_a   = (int)uinstr_a(module.instructions[j]);
         }
     }
     UASSERT(call_idx >= 0);
@@ -902,7 +902,7 @@ UTEST(emit_call_arm_function_arg_does_not_clobber_leaf_args) {
     int writers[3] = { 0, 0, 0 };  /* count of writers for arg0/1/2 */
     int closure_dst = -1;
     for (int j = 0; j < call_idx; j++) {
-        uint32_t ins = module.root_proto->instructions[j];
+        uint32_t ins = module.instructions[j];
         UOpcode op   = uinstr_op(ins);
         uint8_t a    = uinstr_a(ins);
         bool is_writer = (op == OP_LOADK || op == OP_CLOSURE ||

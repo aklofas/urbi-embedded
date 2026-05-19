@@ -94,15 +94,15 @@ typedef struct USymbol USymbol;
  * on object/ layer types. */
 struct UChunkInstance;
 
-/* Forward declaration — UModule is introduced in uchunk.h (the loader shell).
- * Used here only for UProto.owning_module_instance resolution; uchunk.h
- * includes uproto.h so the forward decl is sufficient. */
-struct UModule;
+/* Forward declaration — URealm is referenced by the absorbed root-only fields
+ * below.  Defined as opaque here to avoid a circular dependency with urealm.h. */
+struct URealm;
 
 /* --- UProto: nested function prototype (used for function definitions). ---
  * A UProto holds the bytecode, constants, and line info for one nested
- * function body.  The root chunk lives directly in UModule; nested
- * functions each get a heap-allocated UProto stored in UModule.nested[]. */
+ * function body.  After v0.9.2 (Task 4.1) UModule is gone; a module IS its
+ * root UProto.  Nested functions get heap-allocated UProtos stored in
+ * root_proto->nested[]. */
 
 typedef struct UProto {
     uint32_t  *instructions;
@@ -215,6 +215,18 @@ typedef struct UProto {
      * creation.  NULL is the "not yet instantiated" state and is detected
      * by the OP_CLOSURE assert when read.  v0.9.0-repl. */
     struct UChunkInstance *owning_module_instance;
+
+    /* === NEW v0.9.2: absorbed from UModule (root-only meaningful) ===
+     * On non-root protos (proto->root != NULL) these are zero-initialized
+     * and never written.  uproto_alloc_nested asserts proto->root != NULL
+     * at allocation time. */
+    char           *source_name;            /* error messages — root only */
+    struct UVM     *origin_vm;              /* debug — root only */
+    uint16_t        next_proto_serial;      /* emit+deserialize bookkeeping — root only */
+    uint16_t        total_proto_count;      /* root only */
+    struct UProto  *next_in_realm;          /* realm-lifecycle linkage — root only */
+    struct URealm  *owning_realm;           /* root only */
+    bool            heap_allocated;         /* renamed from shell_heap_allocated — root only */
 } UProto;
 
 /* --- UClosure: runtime function value (proto + captured upvalues).
@@ -268,6 +280,15 @@ uproto_refcount_dec(UProto *p)
         return;
     }
     p->refcount = (uint16_t)(p->refcount - 1U);
+}
+
+/* Returns the source_name for any proto (root or nested) by routing
+ * through the root-of resolver.  NULL-safe. */
+static inline const char *
+uproto_source_name(const UProto *p)
+{
+    if (!p) return NULL;
+    return p->root ? p->root->source_name : p->source_name;
 }
 
 #ifdef __cplusplus

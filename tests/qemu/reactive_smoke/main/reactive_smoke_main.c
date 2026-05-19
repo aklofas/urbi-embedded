@@ -177,7 +177,7 @@ void app_main(void)
 
     /* 4. Load the baked smoke bytecode. */
     char errbuf[128] = {0};
-    struct UModule *m = urbi_module_from_bytes(reactive_smoke_bytecode,
+    struct UProto *m = urbi_module_from_bytes(reactive_smoke_bytecode,
                                                reactive_smoke_bytecode_size,
                                                errbuf, sizeof errbuf);
     if (m == NULL) {

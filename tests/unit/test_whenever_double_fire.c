@@ -102,7 +102,7 @@ UTEST(whenever_chunktop_write_fires_cond_baseline)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -154,7 +154,7 @@ UTEST(at_handler_body_without_call_does_not_drain_dirty)
     UASSERT(tick != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -211,7 +211,7 @@ UTEST(at_handler_body_with_call_drains_dirty)
     UASSERT(tick != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -279,7 +279,7 @@ UTEST(try_catch_finally_does_not_run_finally_on_caught_throw)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -330,7 +330,7 @@ UTEST(nested_try_finally_in_try_catch_runs_finally)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,

@@ -240,13 +240,13 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * back-pointer to avoid a dangling reference to this (about-to-be-freed)
      * realm. */
     {
-        UModule *m = realm->loaded_protos_head;
-        while (m != NULL) {
-            UModule *next = m->next_in_realm;
-            if (m != vm->stdlib_module) {
-                urbi_unload(vm, m);
+        UProto *p = realm->loaded_protos_head;
+        while (p != NULL) {
+            UProto *next = p->next_in_realm;
+            if (p != vm->stdlib_module) {
+                urbi_unload(vm, p);
             }
-            m = next;
+            p = next;
         }
         /* If stdlib was in the list, clear its back-pointer. */
         if (vm->stdlib_module != NULL &&

@@ -43,34 +43,41 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 0);
-    UModule module = {0};
+    /* Heap-allocate module so rescued_protos sweep in vm_destroy is safe when
+     * closures from this module are still alive on the GC heap. */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) { uarena_destroy(&arena); return URBI_ERR_OOM; }
+    memset(module, 0, sizeof(*module));
+    module->heap_allocated = true;
+    module->alloc_fn       = vm->alloc_fn;
+    module->alloc_ud       = vm->alloc_ud;
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, NULL);
+    uemit_init(&e, module, &arena, vm, NULL);
     UParser p;
     uparse_init(&p, &lex, &arena);
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            uchunk_destroy(&module, NULL);
+            uchunk_destroy(module, vm);
             return URBI_ERR_COMPILE;
         }
         if (uemit_statement(&e, node) != EMIT_OK) {
             uarena_destroy(&arena);
-            uchunk_destroy(&module, NULL);
+            uchunk_destroy(module, vm);
             return URBI_ERR_COMPILE;
         }
         uarena_reset(&arena);
     }
     if (uemit_finish(&e) != EMIT_OK) {
         uarena_destroy(&arena);
-        uchunk_destroy(&module, NULL);
+        uchunk_destroy(module, vm);
         return URBI_ERR_COMPILE;
     }
     UValue out = {0};
-    int rc = urbi_run_chunk(vm, NULL, &module, &out);
+    int rc = urbi_run_chunk(vm, NULL, module, &out);
     uarena_destroy(&arena);
-    uchunk_destroy(&module, NULL);
+    uchunk_destroy(module, vm);
     return rc;
 }
 

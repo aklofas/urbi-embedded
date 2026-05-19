@@ -233,84 +233,14 @@ static inline uint32_t uinstr_enc_abx (UOpcode op, uint8_t a, uint16_t bx) {
          | ((uint32_t)bx << 16);
 }
 
-/* Forward declaration — URealm is introduced in M8 (see runtime/urealm.h).
- * UModule.owning_realm (added v0.9.0) and UModule.next_in_realm thread
- * modules onto the realm's loaded_protos_head list.  Defined as opaque
- * to avoid circular dependency. */
-struct URealm;
-
-/* --- UModule struct ---
+/* v0.9.2 Task 4.1: struct UModule has been deleted.  A "module" is now
+ * simply its root UProto.  The root UProto carries all fields that were
+ * previously on UModule (source_name, origin_vm, next_proto_serial,
+ * total_proto_count, next_in_realm, owning_realm, heap_allocated) in the
+ * "root-only meaningful" section added to UProto in uproto.h.
  *
- * Field-ownership convention: fields above the SERIALIZED/RUNTIME divider are
- * persisted to bytecode on emit and re-populated by uchunk_deserialize.
- * Fields below the divider are runtime/transient — set by the emitter or
- * loader caller, never written to disk.  Emit/deserialize do not touch
- * runtime fields; they are the caller's responsibility to initialize. */
-
-typedef struct UModule {
-    /* Task 11 (v0.8.1-uproto-root): UModule is now a thin loader shell.
-     * All chunk-top data (instructions, constants, nested[], IC tables,
-     * line-info, max_reg, nupvals, nparams) lives on root_proto.
-     * UModule retains only: root_proto, source_name, origin_vm, alloc_fn,
-     * alloc_ud.  refcount + destroy_requested deleted; root_proto->refcount
-     * is the canonical module-grain reference counter. */
-
-    /* root_proto: the root UProto for this module.
-     * Allocated by uemit_init (at compile time) or uchunk_deserialize (at
-     * load time).  Owns instructions, constants, nested[], IC tables, etc.
-     * Freed by uchunk_destroy_internal via uproto_destroy_buffers.
-     * NULL only if uemit_init / uchunk_deserialize failed (OOM). */
-    struct UProto *root_proto;
-
-    /* source_name: allocator-owned NUL-terminated string; NULL if absent.
-     * Stays on the module shell (not owned by root_proto). */
-    char       *source_name;
-
-    /* origin_vm [runtime-only]: set by uemit_init at compile time; NULL on
-     * freshly-deserialized modules.  Never persisted. */
-    struct UVM *origin_vm;
-
-    /* alloc_fn / alloc_ud [runtime-only]: pluggable allocator hook for owned
-     * buffers.  Caller sets these BEFORE uchunk_deserialize / uemit_init.
-     * NULL alloc_fn → stdlib realloc (hosted builds only).  Never persisted;
-     * loader/emitter use them to grow + free struct-internal buffers. */
-    UChunkAllocFn alloc_fn;
-    void         *alloc_ud;
-
-    /* next_proto_serial [runtime-only, NOT serialized]: monotonic counter
-     * holding the LAST ic_index assigned to a non-root UProto in this
-     * module.  Bumped in uproto_alloc_nested (emit path) and
-     * decode_nested_protos_into (deserialize path).  Both paths walk the
-     * tree in DFS pre-order so serial assignment is identical regardless
-     * of load source.  Root proto's ic_index = 0 is set explicitly at
-     * root-proto allocation; the first nested allocation produces
-     * ic_index = 1.  v0.8.5-recursive-emit. */
-    uint16_t       next_proto_serial;
-
-    /* total_proto_count [runtime-only, NOT serialized]: equals
-     * next_proto_serial + 1 (i.e., includes the root).  Stamped at
-     * uemit_finish (emit path) and at successful uchunk_deserialize
-     * (load path).  Used by urbi_get_or_create_module_instance to size
-     * proto_instances->entries[] under recursive nesting.
-     * v0.8.5-recursive-emit. */
-    uint16_t       total_proto_count;
-
-    /* [runtime-only, NOT serialized] Realm-lifecycle linkage.  A UModule is
-     * threaded onto its owning_realm's loaded_protos_head list at every
-     * urbi_run_chunk / urbi_repl_eval / urbi_load_module entry.  Cleared
-     * by urbi_unload when the module leaves a realm.  v0.9.0-repl. */
-    struct UModule *next_in_realm;
-    struct URealm  *owning_realm;
-
-    /* [runtime-only, NOT serialized] True when the UModule shell itself was
-     * heap-allocated by the runtime (e.g. via urbi_repl_eval or
-     * urbi_module_from_bytes).  When set, urbi_unload frees the shell via
-     * vm->alloc_fn after uchunk_destroy.  Caller-allocated (stack or static)
-     * modules leave this false; their shell is freed by the caller.
-     * Fits in natural padding after total_proto_count on 64-bit hosts.
-     * v0.9.0-repl (CHSTR-027). */
-    bool           shell_heap_allocated;
-} UModule;
+ * Public API function names remain urbi_module_* in this milestone;
+ * rename to urbi_chunk_* happens in Task 5.1. */
 
 /* --- errors --- */
 
@@ -337,17 +267,16 @@ typedef enum {
 
 /* --- API --- */
 
-/* v0.8.1 Phase 2: strand-bind release helper.
- * Decrements root_proto->refcount and, when it reaches 0 with
- * module->destroy_requested previously-set, fires uchunk_destroy_internal.
- * Callers must pass the still-valid module pointer; pass NULL for either
- * to no-op safely.  vm may be NULL in test contexts. */
-void uproto_strand_refcount_dec(UModule *m, UProto *root_proto,
-                                 struct UVM *vm);
+/* v0.9.2 Task 4.1: strand-bind release helper.
+ * Decrements root->refcount and, when it reaches 0 with a prior
+ * uchunk_destroy call pending, fires uchunk_destroy_internal.
+ * Pass NULL for root to no-op safely.  vm may be NULL in test contexts.
+ * (The UModule* first argument has been removed — root is the module.) */
+void uproto_strand_refcount_dec(UProto *root, struct UVM *vm);
 
-/* Allocate a new UProto as root_proto->nested[nested_count++].
+/* Allocate a new UProto as parent_proto->nested[nested_count++].
  * Returns pointer to the new proto on success, NULL on OOM.
- * The proto is zero-initialized; alloc_fn/alloc_ud are copied from module.
+ * The proto is zero-initialized; alloc_fn/alloc_ud are copied from root.
  *
  * Watcher-detach interaction: condition/body/onleave protos for installed
  * at/whenever/waituntil watchers are created here, then later detached from
@@ -356,11 +285,11 @@ void uproto_strand_refcount_dec(UModule *m, UProto *root_proto,
  * transfers to the watcher (freed via pool_free on watcher recycle).
  * uchunk_destroy is robust to NULL slots in nested[].  See also MOD-015. */
 /* v0.8.5: parent_proto explicitly selects the nested[] array to grow
- * (module->root_proto for top-level function literals, the enclosing
- * UProto for nested function literals).  Each call increments
- * module->next_proto_serial and assigns the new proto's ic_index from
- * the post-increment value, matching DFS pre-order. */
-UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto);
+ * (root for top-level function literals, the enclosing UProto for nested
+ * function literals).  Each call increments root->next_proto_serial and
+ * assigns the new proto's ic_index from the post-increment value,
+ * matching DFS pre-order. */
+UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto);
 
 /* Free a UProto's owned buffers.  Does NOT free the UProto struct itself
  * (it is owned by the module's nested[] array, or by a watcher pool slot
@@ -368,23 +297,22 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto);
 void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
                                    void *alloc_ud);
 
-/* Populate `module` from `buf`.  `module` MUST be zero-initialized before
- * call.  If `module->alloc_fn` is NULL on entry, the stdlib `realloc` is
- * used (hosted builds only); freestanding callers MUST set `alloc_fn`
- * before calling.
+/* uchunk_deserialize — heap-allocate a new root UProto and populate it from
+ * `buf`.  On success writes the new root through *out_root.
+ *
+ * `alloc_fn` / `alloc_ud` provide the allocator for the new root and all
+ * sub-allocations.  `alloc_fn` == NULL falls back to stdlib realloc on hosted
+ * builds; freestanding callers MUST supply alloc_fn.
  *
  * `errmsg` / `errcap` receive a human-readable diagnostic on failure.
- * Pass `(NULL, 0)` to suppress.  A non-NULL `errmsg` with `errcap == 0`
- * is silently treated as suppression.
+ * Pass `(NULL, 0)` to suppress.
  *
  * Error semantics:
- *   - On success returns UCHUNK_LOAD_OK; `module` is fully populated.
- *   - NULL `module` or NULL `buf` returns UCHUNK_LOAD_INVALID_ARG (no partial
- *     state — there is no module to populate).
- *   - On any other failure returns a non-OK code; `module` may hold
- *     PARTIAL buffers from the section that completed before the
- *     failure.  `uchunk_destroy(module)` is safe in EITHER case and
- *     is the correct cleanup path even after a failed deserialize.
+ *   - On success returns UCHUNK_LOAD_OK; *out_root points to the new root.
+ *   - NULL out_root or NULL buf returns UCHUNK_LOAD_INVALID_ARG.
+ *   - On any other failure returns a non-OK code; *out_root is NULL.
+ *     If a root was partially allocated before the failure, it is cleaned
+ *     up internally — callers do not need to call uchunk_destroy on error.
  *
  * Coverage at v1.7:
  *   - Header (24 bytes), source_name, root_proto block (recursive UProto:
@@ -396,21 +324,25 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
  *   - ic_names interning is deferred to urbi_module_instance_create
  *     (see object/umoduleinstance.h); deserialize itself does not need
  *     a VM. */
-UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t size,
+UChunkLoadError uchunk_deserialize(UProto **out_root,
+                                   const uint8_t *buf, size_t size,
+                                   UChunkAllocFn alloc_fn, void *alloc_ud,
                                    char *errmsg, size_t errcap);
 
-/* uchunk_destroy — release all owned buffers.  If vm is non-NULL and
- * root_proto->refcount > 0, the root_proto is rescued onto vm->rescued_protos
- * (surviving closures still reference it); the module shell is freed.
+/* uchunk_destroy — release all owned buffers on a root UProto.
+ * If vm is non-NULL and root->refcount > 0, the root is rescued onto
+ * vm->rescued_protos (surviving closures still reference it).
+ * If root->heap_allocated is true, the root struct itself is freed via
+ * its stored alloc_fn after buffers are released.
  *
  * vm-NULL contract (caller must guarantee):
- *   - The module has either never been run, OR
- *   - Every UClosure that pointed at any proto in this module has been freed
+ *   - The root has either never been run, OR
+ *   - Every UClosure that pointed at any proto in this root has been freed
  *     BEFORE this call.
  *
  * Live-vm callsites should always pass the vm pointer; reserve NULL for
- * failed-compile cleanup where the module was never bound to any vm. */
-void uchunk_destroy(UModule *module, struct UVM *vm);
+ * failed-compile cleanup where the root was never bound to any vm. */
+void uchunk_destroy(UProto *root, struct UVM *vm);
 
 /* Return a static string such as "UCHUNK_LOAD_BAD_MAGIC" for debug. */
 const char *uchunk_load_error_name(UChunkLoadError code);

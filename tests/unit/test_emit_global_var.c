@@ -30,7 +30,7 @@ typedef struct {
     ULexer   lex;
     UArena   arena;
     UParser  p;
-    UModule  module;
+    UProto  module;
     UVM      vm;
     UEmitter e;
 } GVCtx;
@@ -40,7 +40,7 @@ static void gv_ctx_init(GVCtx *c, const char *src)
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
     urbi_vm_init(&c->vm, NULL, NULL);
-    c->module = (UModule){0};
+    c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
     uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_gv");
 }
@@ -81,8 +81,8 @@ UTEST(emit_top_level_var_decl_emits_setslot) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     bool found_setslot = false;
-    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT) {
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT) {
             found_setslot = true;
             break;
         }
@@ -169,8 +169,8 @@ UTEST(emit_two_top_level_vars_both_emit_setslot) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     int setslot_count = 0;
-    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT)
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT)
             setslot_count++;
     }
     /* Expect exactly 2 OP_SETSLOT instructions (one per var). */
@@ -189,9 +189,9 @@ UTEST(emit_top_level_var_reuse_same_r_global_slot) {
     /* Collect all OP_SETSLOT recv registers (field B). */
     uint8_t recv[2];
     int found = 0;
-    for (size_t i = 0; i < c.module.root_proto->instr_count && found < 2; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_SETSLOT)
-            recv[found++] = uinstr_b(c.module.root_proto->instructions[i]);
+    for (size_t i = 0; i < c.module.instr_count && found < 2; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_SETSLOT)
+            recv[found++] = uinstr_b(c.module.instructions[i]);
     }
     UASSERT_EQ(2, found);
     UASSERT_EQ((int)recv[0], (int)recv[1]);

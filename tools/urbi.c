@@ -76,14 +76,14 @@ static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
    err_buf (up to err_cap bytes, NUL-terminated), destroys internal state,
    and returns false; caller must NOT call uchunk_destroy / uarena_destroy. */
 static bool compile_source(const char *src, size_t len, const char *src_name,
-                           UVM *vm, UModule *out_module, UArena *arena,
+                           UVM *vm, UProto *out_module, UArena *arena,
                            char *err_buf, size_t err_cap) {
     ULexer lex;
     ulex_init(&lex, src, len);
 
     uarena_init(arena, 4096);
 
-    *out_module = (UModule){0};
+    *out_module = (UProto){0};
     UEmitter e;
     uemit_init(&e, out_module, arena, vm, src_name);
 
@@ -123,7 +123,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
    Returns 0 on success, 1 on compile error. */
 static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) {
     UArena arena;
-    UModule module;
+    UProto module;
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
@@ -149,7 +149,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
 static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
                                 const char *src_name) {
     UArena arena;
-    UModule module;
+    UProto module;
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
@@ -245,7 +245,7 @@ static int run_file(UVM *vm, const char *path) {
     if (!src) return 2;
 
     UArena arena;
-    UModule module;
+    UProto module;
     int rc = 1;
     char err[256] = {0};
     if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
@@ -298,7 +298,7 @@ static int run_expression(UVM *vm, const char *expr) {
     }
 
     UArena arena;
-    UModule module;
+    UProto module;
     int rc = 1;
     char err[256] = {0};
     if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {

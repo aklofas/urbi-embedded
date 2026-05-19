@@ -171,7 +171,7 @@ uint8_t emit_function_literal(UEmitter *e,
      * it is consistently a fully-allocated empty proto (uchunk_destroy
      * walks NULL slots cleanly). */
     UProto *parent_proto = parent_fs->target_proto;
-    if (parent_proto == NULL) parent_proto = e->module->root_proto;
+    if (parent_proto == NULL) parent_proto = e->module;  /* v0.9.2: e->module IS root */
     UProto *child_proto = uproto_alloc_nested(e->module, parent_proto);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(parent_proto->nested_count - 1);

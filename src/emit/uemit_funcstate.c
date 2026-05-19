@@ -236,16 +236,14 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     return true;
 }
 
-/* Grow and prepend one instruction into the root chunk (root_proto).
- * Task 11: all chunk-top data lives on root_proto; targets
- * rp->instructions / line_deltas / abs_lines instead of module fields. */
+/* Grow and prepend one instruction into the root chunk (root proto).
+ * v0.9.2: e->module IS the root UProto; rp == e->module. */
 static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
-    UModule *m  = e->module;
-    UProto  *rp = m->root_proto;
+    UProto  *rp = e->module;
     if (rp == NULL) { e->error = EMIT_OOM; return false; }
 
     /* Instructions. */
-    if (!emit_grow(m, (void **)&rp->instructions, &rp->instr_cap,
+    if (!emit_grow(rp, (void **)&rp->instructions, &rp->instr_cap,
                    rp->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
@@ -268,11 +266,11 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 
     /* line_deltas: reallocate to new instr_count bytes, shift, insert. */
     {
-        UChunkAllocFn alloc = emit_alloc_for(m);
+        UChunkAllocFn alloc = emit_alloc_for(rp);
         if (alloc == NULL) { e->error = EMIT_OOM; return false; }
         int8_t *fresh = (int8_t *)alloc(rp->line_deltas,
                                         rp->instr_count * sizeof(int8_t),
-                                        m->alloc_ud);
+                                        rp->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return false; }
         rp->line_deltas = fresh;
     }
@@ -290,7 +288,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     if (rp->abs_line_count > 0U && rp->abs_lines[0].pc == 1U) {
         line0 = rp->abs_lines[0].line;
     }
-    if (!emit_grow(m, (void **)&rp->abs_lines, &rp->abs_line_cap,
+    if (!emit_grow(rp, (void **)&rp->abs_lines, &rp->abs_line_cap,
                    rp->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
@@ -430,11 +428,11 @@ UFuncState *uemit_close_function(UEmitter *e) {
             p->ic_name_strs = NULL;
         }
     }
-    /* Task 11: top-level funcstate (no target_proto) — copy IC names
-     * into root_proto->ic_count / ic_names (root_proto is allocated at
-     * uemit_init; always non-NULL here).  Mirrors the UProto path above. */
+    /* v0.9.2: top-level funcstate (no target_proto) — copy IC names
+     * into root->ic_count / ic_names.  e->module IS the root UProto.
+     * Mirrors the UProto path above. */
     if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
-        UProto *rp = e->module->root_proto;
+        UProto *rp = e->module;
         UChunkAllocFn malloc_fn = emit_alloc_for(e->module);
         if (malloc_fn == NULL || rp == NULL) {
             e->error = EMIT_OOM;
@@ -478,9 +476,9 @@ UFuncState *uemit_close_function(UEmitter *e) {
             }
         }
     }
-    /* Always free the funcstate-side IC array (allocated via the module
+    /* Always free the funcstate-side IC array (allocated via the root
      * allocator).  For nested funcstates the names were copied into UProto
-     * above; for top-level funcstates they were copied into UModule by the
+     * above; for top-level funcstates they were copied into root UProto by the
      * block above.  Either way the funcstate-side buffer is now redundant. */
     if (fs->ic_names != NULL) {
         UChunkAllocFn alloc = emit_alloc_for(e->module);

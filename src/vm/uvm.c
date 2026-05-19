@@ -328,7 +328,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_ADD, b->kind, cc->kind);
                 HALT();
@@ -349,7 +349,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_SUB, b->kind, cc->kind);
                 HALT();
@@ -370,7 +370,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_MUL, b->kind, cc->kind);
                 HALT();
@@ -391,7 +391,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_DIV, b->kind, cc->kind);
                 HALT();
@@ -412,7 +412,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_unary(vm, s->module,
+                vm_format_type_error_unary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_NEG, b->kind);
                 HALT();
@@ -809,7 +809,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
                 HALT();
             }
@@ -831,7 +831,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);
                 HALT();
             }

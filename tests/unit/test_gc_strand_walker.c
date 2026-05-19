@@ -226,7 +226,7 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     /* Compile a trivial module: just a literal "0;" so OP_RET has a value. */
     ULexer  lex;
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     const char *src = "0;";
     ulex_init(&lex, src, strlen(src));
     uarena_init(&arena, 1024);

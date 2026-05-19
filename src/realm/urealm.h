@@ -21,7 +21,7 @@ extern "C" {
 struct UVM;
 struct UTag;
 struct UNamespace;
-struct UModule;
+struct UProto;
 
 /* === Forward declaration of urbi_writer_fn (v0.9.1) ===
  *
@@ -105,16 +105,12 @@ typedef struct URealm {
      * "Strand walker contract" for the full mark+sweep interaction. */
     struct UStrand *strands_head;
 
-    /* [runtime-only, NOT serialized] Singly-linked list of UModule shells
+    /* [runtime-only, NOT serialized] Singly-linked list of root UProtos
      * loaded under this realm via urbi_run_chunk / urbi_repl_eval /
-     * urbi_load_module.  Threaded via UModule.next_in_realm; head-insertion.
+     * urbi_load_module.  Threaded via UProto.next_in_realm; head-insertion.
      * Walked at urbi_realm_destroy time to unload each module (Task 12).
-     *
-     * Not a GC root chain: UModule is host-allocated (not GC-managed).
-     * The UChunkInstance objects referenced by these modules stay
-     * GC-rooted via vm->module_instances_head — no shading needed here.
-     * v0.9.0-repl. */
-    struct UModule *loaded_protos_head;
+     * v0.9.2 Task 4.1: was UModule*; now UProto* (UModule deleted). */
+    struct UProto  *loaded_protos_head;
 } URealm;
 
 /* UGcRootCallback is defined in uvm.h (the canonical location).

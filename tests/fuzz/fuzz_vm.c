@@ -23,8 +23,8 @@
 #include "vm/uvm.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    UModule module = {0};
-    if (uchunk_deserialize(&module, data, size, NULL, 0) != UCHUNK_LOAD_OK) {
+    UProto *module = NULL;
+    if (uchunk_deserialize(&module, data, size, NULL, NULL, NULL, 0) != UCHUNK_LOAD_OK) {
         return 0;
     }
 
@@ -32,13 +32,13 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     urbi_vm_init(&vm, /* alloc_fn = */ NULL, /* alloc_ud = */ NULL);
 
     UValue result;
-    (void)urbi_vm_run(&vm, NULL, &module, &result);
+    (void)urbi_vm_run(&vm, NULL, module, &result);
     /* Touch result so the compiler keeps the run-path live. */
     if ((int)result.kind < 0) {
         /* unreachable; UValKind is unsigned */
     }
 
     urbi_vm_destroy(&vm);
-    uchunk_destroy(&module, NULL);
+    uchunk_destroy(module, NULL);
     return 0;
 }

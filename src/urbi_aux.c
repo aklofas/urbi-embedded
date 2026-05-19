@@ -106,8 +106,8 @@ urbi_aux_load_and_run(struct UVM *vm,
     }
 
     char errmsg[256] = {0};
-    struct UModule *m = urbi_module_from_bytes(bytecode, len,
-                                               errmsg, sizeof errmsg);
+    struct UProto *m = urbi_module_from_bytes(bytecode, len,
+                                              errmsg, sizeof errmsg);
     if (m == NULL) {
         /* Attempt to identify the error kind from the message.  The public
          * urbi_module_from_bytes sets no error ring entry; we synthesise one

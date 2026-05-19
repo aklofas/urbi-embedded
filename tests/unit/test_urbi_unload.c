@@ -21,7 +21,7 @@
 
 /* Compile and load a source string into mod, registering it in realm. */
 static int compile_and_load(const char *src, UVM *vm, URealm *realm,
-                             UModule *mod, UArena *arena)
+                             UProto *mod, UArena *arena)
 {
     ULexer  lex;
     UParser p;
@@ -58,7 +58,7 @@ UTEST(urbi_unload_immediate_destroy)
 
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule mod;
+    UProto mod;
     urbi_zero(&mod, sizeof(mod));
 
     int rc = compile_and_load("1 + 2 |", &vm, r, &mod, &arena);
@@ -70,7 +70,7 @@ UTEST(urbi_unload_immediate_destroy)
     UASSERT(mod.owning_realm == r);
     /* Snapshot next_in_realm: there may be pre-existing modules (e.g.
      * vm->stdlib_module registered when the realm was populated). */
-    UModule *next_behind_mod = mod.next_in_realm;
+    UProto *next_behind_mod = mod.next_in_realm;
 
     /* Unload should succeed and unlink the module. */
     int unload_rc = urbi_unload(&vm, &mod);
@@ -81,7 +81,7 @@ UTEST(urbi_unload_immediate_destroy)
     /* mod fields cleared. */
     UASSERT(mod.owning_realm == NULL);
     /* mod is not reachable anywhere in the realm list. */
-    for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+    for (UProto *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
         UASSERT(p != &mod);
     }
 
@@ -106,7 +106,7 @@ UTEST(urbi_unload_invalid_args)
     UASSERT_EQ(URBI_ERR_INVALID_ARG, urbi_unload(&vm, NULL));
 
     /* Module never bound to a realm (owning_realm == NULL) → URBI_ERR_INVALID_ARG. */
-    UModule mod;
+    UProto mod;
     urbi_zero(&mod, sizeof(mod));
     UASSERT_EQ(URBI_ERR_INVALID_ARG, urbi_unload(&vm, &mod));
 
@@ -127,7 +127,7 @@ UTEST(urbi_unload_double_unload)
 
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule mod;
+    UProto mod;
     urbi_zero(&mod, sizeof(mod));
 
     int rc = compile_and_load("1 + 2 |", &vm, r, &mod, &arena);
@@ -146,7 +146,7 @@ UTEST(urbi_unload_double_unload)
 }
 
 /* -----------------------------------------------------------------------
- * Test 4: CHSTR-027 regression — urbi_repl_eval must heap-alloc UModule
+ * Test 4: CHSTR-027 regression — urbi_repl_eval must heap-alloc UProto
  *         so each REPL line accumulates as a distinct entry in the realm's
  *         loaded_protos_head list.  Pre-v0.9.0 stack-alloc reused the same
  *         address across iterations, causing subsequent lines to collide.
@@ -160,7 +160,7 @@ UTEST(repl_eval_no_alias_across_lines)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    /* 50 REPL lines.  Each should heap-allocate its own UModule.  If the
+    /* 50 REPL lines.  Each should heap-allocate its own UProto.  If the
      * pre-v0.9.0 stack-aliasing pattern reappeared, the realm registry
      * would see fewer entries (subsequent lines reusing the same address). */
     char buf[256];
@@ -178,7 +178,7 @@ UTEST(repl_eval_no_alias_across_lines)
 
     /* Walk registry — count user modules (skip vm->stdlib_module). */
     int user_count = 0;
-    for (UModule *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
+    for (UProto *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
         if (m != vm.stdlib_module) user_count++;
     }
     /* Expect 50 distinct heap-allocated modules, one per REPL line. */

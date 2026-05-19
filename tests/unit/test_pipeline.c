@@ -9,7 +9,7 @@
  * produces Float) or from mixed-type arithmetic where one operand is already
  * Float — neither of which is reachable from source text alone at M1.
  * The spec §11 criterion "1 + 2.0 → Float 3.0" therefore cannot be tested
- * through the lexer; it is covered by hand-fabricated UModule tests in
+ * through the lexer; it is covered by hand-fabricated UProto tests in
  * test_vm.c (vm_add_int_float_promotes).  The three source-text cases
  * exercised here are those achievable with the M1 grammar. */
 
@@ -39,7 +39,7 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
 
@@ -63,9 +63,12 @@ static UVMError pipeline_eval(const char *src, UValue *out) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
 
+    /* Destroy VM first so GC finalizers run (closure refcounts → 0) before
+     * uchunk_destroy.  module is stack-allocated; rescued_protos sweep must
+     * not see it, so refcount must be 0 before uchunk_destroy is called. */
+    urbi_vm_destroy(&vm);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
     return vm_rc;
 }
 

@@ -61,7 +61,7 @@ typedef struct {
     ULexer   lex;
     UArena   arena;
     UParser  p;
-    UModule  module;
+    UProto  module;
     UVM      vm;
     UEmitter e;
     EmitSpy  spy;
@@ -78,7 +78,7 @@ ectx_init(ECtx *c, const char *src, int fail_at)
     c->spy.alloc_calls = 0;
     c->spy.fail_at = fail_at;
     urbi_vm_init(&c->vm, emit_spy_alloc, &c->spy);
-    c->module = (UModule){0};
+    c->module = (UProto){0};
     c->module.alloc_fn = emit_spy_alloc;
     c->module.alloc_ud = &c->spy;
     uparse_init(&c->p, &c->lex, &c->arena);

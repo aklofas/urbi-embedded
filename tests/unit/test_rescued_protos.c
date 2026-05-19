@@ -38,7 +38,7 @@
  * Does NOT run the chunk — caller inspects module fields directly.
  * Owns its own arena so callers need not manage one. */
 static bool
-rp_compile_chunk(UVM *vm, UModule *out_mod, const char *src)
+rp_compile_chunk(UVM *vm, UProto *out_mod, const char *src)
 {
     UArena arena;
     uarena_init(&arena, 4096);
@@ -77,30 +77,33 @@ UTEST(whole_root_proto_rescue_when_refcount_nonzero)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    UModule module = {0};
+    /* Use heap-allocated module (heap_allocated=true) so that vm_destroy's
+     * rescued_protos sweep can safely free it via alloc_fn. */
+    UProto *module = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
+    UASSERT(module != NULL);
+    memset(module, 0, sizeof(*module));
+    module->heap_allocated = true;
+    module->alloc_fn = vm.alloc_fn;
+    module->alloc_ud = vm.alloc_ud;
 
     /* Compile a chunk with a nested proto so the rescue path exercises
      * nested[] ownership transfer. */
-    UASSERT(rp_compile_chunk(&vm, &module, "var f = function () { 1 };"));
-    UASSERT(module.root_proto != NULL);
+    UASSERT(rp_compile_chunk(&vm, module, "var f = function () { 1 };"));
 
-    /* Bind a strand — this bumps root_proto->refcount to 1. */
-    UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
+    /* Bind a strand — this bumps root->refcount to 1. */
+    UStrand *s = urbi_strand_create_for_module(&vm, realm, module);
     UASSERT(s != NULL);
-    UASSERT((unsigned)module.root_proto->refcount > (unsigned)0);
-
-    /* Save root_proto pointer so we can verify it lands on rescued_protos. */
-    UProto *saved_rp = module.root_proto;
+    UASSERT((unsigned)module->refcount > (unsigned)0);
 
     /* Destroy the module while the strand is still alive.
-     * Should rescue root_proto, NOT free it. */
-    uchunk_destroy(&module, &vm);
+     * Should rescue the root UProto, NOT free it. */
+    uchunk_destroy(module, &vm);
 
-    /* rescued_protos must be non-NULL and point to the rescued root_proto. */
+    /* rescued_protos must be non-NULL and point to the rescued root. */
     UASSERT(vm.rescued_protos != NULL);
-    UASSERT(vm.rescued_protos == saved_rp);
+    UASSERT(vm.rescued_protos == module);
 
-    /* Destroy the strand — decrements root_proto->refcount back toward 0. */
+    /* Destroy the strand — decrements root->refcount back toward 0. */
     urbi_strand_destroy(s);
 
     /* vm_destroy must free rescued_protos cleanly (no leaks, no double-free). */
@@ -114,12 +117,11 @@ UTEST(no_rescue_when_refcount_zero)
     UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
-    UModule module = {0};
+    UProto module = {0};
 
     /* Compile but do NOT create a strand → refcount stays at 0. */
     UASSERT(rp_compile_chunk(&vm, &module, "1 + 2;"));
-    UASSERT(module.root_proto != NULL);
-    UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     /* Destroy module — no strand bound, refcount is 0, normal path runs. */
     uchunk_destroy(&module, &vm);
@@ -139,28 +141,31 @@ UTEST(two_modules_one_rescued_one_normal)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Module A — will be rescued (strand alive at destroy time). */
-    UModule ma = {0};
-    UASSERT(rp_compile_chunk(&vm, &ma, "var g = function () { 2 };"));
-    UASSERT(ma.root_proto != NULL);
-    UStrand *sa = urbi_strand_create_for_module(&vm, realm, &ma);
+    /* Module A — will be rescued (strand alive at destroy time).
+     * Must be heap-allocated so vm_destroy's rescued_protos sweep can free it. */
+    UProto *ma = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
+    UASSERT(ma != NULL);
+    memset(ma, 0, sizeof(*ma));
+    ma->heap_allocated = true;
+    ma->alloc_fn = vm.alloc_fn;
+    ma->alloc_ud = vm.alloc_ud;
+    UASSERT(rp_compile_chunk(&vm, ma, "var g = function () { 2 };"));
+    UStrand *sa = urbi_strand_create_for_module(&vm, realm, ma);
     UASSERT(sa != NULL);
-    UProto *saved_rp_a = ma.root_proto;
 
-    /* Module B — will NOT be rescued (no strand). */
-    UModule mb = {0};
+    /* Module B — will NOT be rescued (no strand). Stack-allocated is fine. */
+    UProto mb = {0};
     UASSERT(rp_compile_chunk(&vm, &mb, "3 + 4;"));
-    UASSERT(mb.root_proto != NULL);
-    UASSERT_EQ((unsigned)0, (unsigned)mb.root_proto->refcount);
+    UASSERT_EQ((unsigned)0, (unsigned)mb.refcount);
 
     /* Destroy B first (normal path, no rescue). */
     uchunk_destroy(&mb, &vm);
     UASSERT(vm.rescued_protos == NULL);
 
     /* Destroy A while strand alive (rescue path). */
-    uchunk_destroy(&ma, &vm);
+    uchunk_destroy(ma, &vm);
     UASSERT(vm.rescued_protos != NULL);
-    UASSERT(vm.rescued_protos == saved_rp_a);
+    UASSERT(vm.rescued_protos == ma);
 
     /* Clean up the strand. */
     urbi_strand_destroy(sa);

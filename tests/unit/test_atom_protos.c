@@ -32,7 +32,7 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
     UParser p;

@@ -41,7 +41,7 @@ static void ctx_destroy(ParseCtx *c) {
 
 /* Compile source; return emit error.  On success, *mod_out contains bytecode. */
 static UEmitError at_event_compile(const char *src,
-                                   UModule    *mod_out,
+                                   UProto    *mod_out,
                                    UArena     *arena_out,
                                    UVM        *vm_out,
                                    UEmitter   *e_out) {
@@ -64,19 +64,18 @@ static UEmitError at_event_compile(const char *src,
     return uemit_finish(e_out);
 }
 
-static void at_event_cleanup(UModule *mod, UArena *arena, UVM *vm) {
+static void at_event_cleanup(UProto *mod, UArena *arena, UVM *vm) {
     uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }
 
 /* Return true if any instruction in the module root has opcode == op. */
-static bool bytecode_has_op(const UModule *m, UOpcode op) {
+static bool bytecode_has_op(const UProto *m, UOpcode op) {
     size_t i;
-    const UProto *rp = m->root_proto;
-    if (rp == NULL) return false;
-    for (i = 0; i < rp->instr_count; i++) {
-        if (uinstr_op(rp->instructions[i]) == op) return true;
+    if (m == NULL) return false;
+    for (i = 0; i < m->instr_count; i++) {
+        if (uinstr_op(m->instructions[i]) == op) return true;
     }
     return false;
 }
@@ -170,7 +169,7 @@ UTEST(parse_question_outside_at_standalone) {
 /* at (e?) body  →  bytecode contains OP_AT_EVENT_INSTALL (=42).
  * Pre-declare both ev and body_val to satisfy the v1.0 no-globals rule. */
 UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -186,7 +185,7 @@ UTEST(emit_at_event_produces_OP_AT_EVENT_INSTALL) {
 
 /* at sync (e?) body  →  bytecode contains OP_AT_EVENT_SYNC_INSTALL (=43) */
 UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -215,7 +214,7 @@ UTEST(emit_at_sync_event_produces_OP_AT_EVENT_SYNC_INSTALL) {
  * emitted OP_AT_EVENT_SYNC_INSTALL has distinct event/body registers.
  * Pre-fix: event_reg == body_reg.  Post-fix: event_reg < body_reg. */
 UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -229,8 +228,8 @@ UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
      * A (event_reg) and B (body_reg) operands are different. */
     bool found = false;
     size_t i;
-    for (i = 0; i < module.root_proto->instr_count; i++) {
-        uint32_t inst = module.root_proto->instructions[i];
+    for (i = 0; i < module.instr_count; i++) {
+        uint32_t inst = module.instructions[i];
         if (uinstr_op(inst) == OP_AT_EVENT_SYNC_INSTALL) {
             uint8_t a = uinstr_a(inst);
             uint8_t b = uinstr_b(inst);
@@ -247,7 +246,7 @@ UTEST(emit_at_event_global_member_event_expr_disjoint_regs) {
 /* Sibling check for the async install path (OP_AT_EVENT_INSTALL): same
  * desync risk because the emit handler is symmetric in event_expr. */
 UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -259,8 +258,8 @@ UTEST(emit_at_event_async_global_member_event_expr_disjoint_regs) {
 
     bool found = false;
     size_t i;
-    for (i = 0; i < module.root_proto->instr_count; i++) {
-        uint32_t inst = module.root_proto->instructions[i];
+    for (i = 0; i < module.instr_count; i++) {
+        uint32_t inst = module.instructions[i];
         if (uinstr_op(inst) == OP_AT_EVENT_INSTALL) {
             uint8_t a = uinstr_a(inst);
             uint8_t b = uinstr_b(inst);

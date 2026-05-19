@@ -40,7 +40,7 @@ static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
 
     ULexer   lex;
     UArena   arena;
-    UModule  module = {0};
+    UProto  module = {0};
     UEmitter e;
     UParser  p;
     UAstNode *node;

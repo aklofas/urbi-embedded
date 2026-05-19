@@ -30,7 +30,7 @@
 
 /* Compile `src` into *out_mod.  Returns true on success. */
 static bool
-fused_compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
+fused_compile_chunk(UVM *vm, UArena *arena, UProto *out_mod, const char *src)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -62,25 +62,21 @@ UTEST(strand_bind_bumps_root_proto)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(fused_compile_chunk(&vm, &arena, &module, "1"));
 
-    /* root_proto must be non-NULL after compile. */
-    struct UProto *rp = module.root_proto;
-    UASSERT(rp != NULL);
+    /* Before binding: root->refcount must be 0. */
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
-    /* Before binding: root_proto->refcount must be 0. */
-    UASSERT_EQ((unsigned)0, (unsigned)rp->refcount);
-
-    /* Bind a strand: should bump root_proto->refcount to 1. */
+    /* Bind a strand: should bump root->refcount to 1. */
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
-    UASSERT_EQ((unsigned)1, (unsigned)rp->refcount);
+    UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
-    /* Destroy the strand: should decrement root_proto->refcount back to 0. */
+    /* Destroy the strand: should decrement root->refcount back to 0. */
     urbi_strand_destroy(s);
-    UASSERT_EQ((unsigned)0, (unsigned)rp->refcount);
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, &vm);
@@ -107,12 +103,9 @@ UTEST(op_fork_child_bumps_root_proto)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(fused_compile_chunk(&vm, &arena, &module, "1 & 2"));
-
-    struct UProto *rp = module.root_proto;
-    UASSERT(rp != NULL);
 
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
@@ -142,7 +135,7 @@ UTEST(op_fork_child_bumps_root_proto)
     urbi_vm_destroy(&vm);
 }
 
-/* Case 3: Task 11 — UModule.refcount deleted; refcount lives on root_proto only.
+/* Case 3: Task 11 — UProto.refcount deleted; refcount lives on root_proto only.
  * Verify strand-bind refcount is correctly tracked on root_proto. */
 UTEST(module_refcount_lives_on_root_proto)
 {
@@ -152,20 +145,19 @@ UTEST(module_refcount_lives_on_root_proto)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(fused_compile_chunk(&vm, &arena, &module, "1"));
-    UASSERT(module.root_proto != NULL);
 
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
 
-    /* Strand bind increments root_proto->refcount to 1. */
-    UASSERT_EQ((unsigned)1, (unsigned)module.root_proto->refcount);
+    /* Strand bind increments root->refcount to 1. */
+    UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
     urbi_strand_destroy(s);
     /* After strand destroy, refcount drops back to 0. */
-    UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, &vm);
@@ -191,14 +183,22 @@ UTEST(closure_alloc_bumps_root_via_backptr)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    /* Heap-allocate: only heap_allocated roots may go on rescued_protos.
+     * (Stack roots use the self-link sentinel path; vm_destroy must not
+     *  free a stack address via the rescued_protos sweep.) */
+    UProto *module = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
+    UASSERT(module != NULL);
+    memset(module, 0, sizeof(*module));
+    module->heap_allocated = true;
+    module->alloc_fn       = vm.alloc_fn;
+    module->alloc_ud       = vm.alloc_ud;
     uarena_init(&arena, 4096);
 
     /* Closure alloc: vm_alloc_closure bumps root_proto.refcount via uproto_root_of.
      * UClosure is GC-managed (v0.8.4 Step C-2; vm->stdlib_closures deleted at C-3).
      * uchunk_destroy rescues root_proto; vm_destroy completes the lifecycle
      * per §3.7 ordering. */
-    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
+    int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, module,
         "var f = function () { 1 }; f()",
         NULL);
     UASSERT_EQ(URBI_OK, rc);
@@ -206,28 +206,25 @@ UTEST(closure_alloc_bumps_root_via_backptr)
     /* Drain any lingering strands. */
     utest_e2e_run_to_no_runnable(&vm);
 
-    struct UProto *rp = module.root_proto;
-    UASSERT(rp != NULL);
-
-    /* Verify: nested[0] exists and its ->root back-pointer points at root_proto. */
-    UASSERT(rp->nested != NULL);
-    UASSERT(rp->nested_count > 0U);
-    struct UProto *nested = rp->nested[0];
+    /* Verify: nested[0] exists and its ->root back-pointer points at the root. */
+    UASSERT(module->nested != NULL);
+    UASSERT(module->nested_count > 0U);
+    struct UProto *nested = module->nested[0];
     UASSERT(nested != NULL);
-    UASSERT_EQ((void *)rp, (void *)nested->root);
+    UASSERT_EQ((void *)module, (void *)nested->root);
 
     /* Under Variant B Option (a): nested proto itself has refcount 0.
      * The slot-implicit ref was dropped; no refcount lives on the nested struct. */
     UASSERT_EQ((unsigned)0, (unsigned)nested->refcount);
 
-    /* root_proto.refcount > 0: a GC-managed UClosure holds a ref
+    /* root.refcount > 0: a GC-managed UClosure holds a ref
      * via uproto_root_of.  Strand-bind refs were discharged at strand exit,
      * but the closure's ref keeps root alive until GC collection. */
-    UASSERT((unsigned)rp->refcount > 0U);
+    UASSERT((unsigned)module->refcount > 0U);
 
-    /* Full lifecycle: uchunk_destroy rescues root_proto because refcount > 0. */
-    struct UProto *saved_root = rp;
-    uchunk_destroy(&module, &vm);
+    /* Full lifecycle: uchunk_destroy rescues root because refcount > 0. */
+    struct UProto *saved_root = module;
+    uchunk_destroy(module, &vm);
     UASSERT(vm.rescued_protos != NULL);
     UASSERT_EQ((void *)saved_root, (void *)vm.rescued_protos);
 
@@ -244,11 +241,13 @@ UTEST(escaping_closure_rescues_whole_root_proto)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Use heap UModule so we can free it independently after destroy. */
+    /* Use heap UProto (heap_allocated=true) so vm_destroy frees it via
+     * the rescued_protos sweep after the closure drops its ref. */
     UArena arena;
-    UModule *m = (UModule *)vm.alloc_fn(NULL, sizeof(UModule), vm.alloc_ud);
+    UProto *m = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
     UASSERT(m != NULL);
     memset(m, 0, sizeof(*m));
+    m->heap_allocated = true;
     uarena_init(&arena, 4096);
 
     /* Escaping closure: f stays alive in Realm.f after strand exit. */
@@ -260,19 +259,18 @@ UTEST(escaping_closure_rescues_whole_root_proto)
     /* Drain all strands. */
     utest_e2e_run_to_no_runnable(&vm);
 
-    /* Closure alloc bumped root_proto via uproto_root_of.
-     * Strand released its bind (root_proto dec).  Net: still > 0
+    /* Closure alloc bumped root via uproto_root_of.
+     * Strand released its bind (root dec).  Net: still > 0
      * because a GC-managed UClosure holds a ref via uproto_root_of. */
-    UASSERT((unsigned)m->root_proto->refcount > 0U);
+    UASSERT((unsigned)m->refcount > 0U);
 
-    /* Destroy module shell — rescue path triggers. */
-    struct UProto *saved_root = m->root_proto;
+    /* Destroy module — rescue path triggers (m IS the root). */
+    struct UProto *saved_root = m;
     uchunk_destroy(m, &vm);
     /* rescued_protos must be non-NULL after rescue. */
     UASSERT(vm.rescued_protos != NULL);
     UASSERT_EQ((void *)vm.rescued_protos, (void *)saved_root);
 
-    vm.alloc_fn(m, 0, vm.alloc_ud);
     uarena_destroy(&arena);
 
     /* vm_destroy: GC sweep decs via uproto_root_of (§3.7 ordering invariant)
@@ -293,37 +291,35 @@ UTEST(vm_null_destroy_with_live_closure)
     URealm *realm = urbi_realm_global(&vm);
     UASSERT(realm != NULL);
 
-    /* Allocate module on the heap so we control its lifetime. */
-    UModule *m = (UModule *)vm.alloc_fn(NULL, sizeof(UModule), vm.alloc_ud);
+    /* Allocate module on the heap (heap_allocated=true) so the
+     * deferred-destroy path can free it when the strand finally dies. */
+    UProto *m = (UProto *)vm.alloc_fn(NULL, sizeof(UProto), vm.alloc_ud);
     UASSERT(m != NULL);
     memset(m, 0, sizeof(*m));
+    m->heap_allocated = true;
+    m->alloc_fn = vm.alloc_fn;
+    m->alloc_ud = vm.alloc_ud;
     UArena arena;
     uarena_init(&arena, 4096);
 
     /* Closure escapes to Realm.f — GC-managed UClosure keeps a ref on
-     * root_proto via uproto_root_of.  root_proto.refcount > 0 after draining. */
+     * root via uproto_root_of.  root.refcount > 0 after draining. */
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, m,
         "var f = function () { 1 }; Realm.f = f",
         NULL);
     UASSERT_EQ(URBI_OK, rc);
     utest_e2e_run_to_no_runnable(&vm);
 
-    struct UProto *saved_root = m->root_proto;
-    UASSERT(saved_root != NULL);
-    /* Closure GC-managed; root_proto.refcount > 0 via uproto_root_of. */
-    UASSERT(saved_root->refcount > 0U);
+    /* Closure GC-managed; root.refcount > 0 via uproto_root_of. */
+    UASSERT(m->refcount > 0U);
 
     /* Call destroy WITH NULL vm (defensive contract path).
-     * Must not crash; must set the self-link sentinel. */
+     * m IS the root — must not crash; must set the self-link sentinel. */
     uchunk_destroy(m, NULL);
-    /* Self-link sentinel: root_proto stays attached to the module shell
-     * (module->root_proto is not NULLed on the vm=NULL path) and
-     * next_alloc == root_proto signals pending rescue. */
     /* Self-link sentinel is the sole deferred-destroy signal (Task 11:
      * destroy_requested field deleted; only next_alloc == self matters). */
-    UASSERT_EQ((void *)saved_root->next_alloc, (void *)saved_root);
+    UASSERT_EQ((void *)m->next_alloc, (void *)m);
 
-    vm.alloc_fn(m, 0, vm.alloc_ud);
     uarena_destroy(&arena);
 
     /* vm_destroy: GC sweep dec's via uproto_root_of (§3.7 ordering);

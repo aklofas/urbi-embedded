@@ -42,7 +42,7 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
     UParser p;
@@ -299,7 +299,7 @@ UTEST(atom_clone_zero_allocations) {
     UASSERT_EQ(compile_and_run(&vm, src), URBI_OK);
 
     size_t post = vm.gc_total_allocated;
-    /* The compile-and-run sequence allocates a UModule + UChunkInstance
+    /* The compile-and-run sequence allocates a UProto + UChunkInstance
      * + IC tables for the parse — that's the script overhead, not the
      * loop-body overhead.  But the LOOP itself (1000 iterations) must
      * allocate nothing.  We can't separate "compile cost" from "loop

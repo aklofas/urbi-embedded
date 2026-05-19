@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* Verify UChunkInstance is unlinked from vm->module_instances_head when its
- * UModule is destroyed (immediate-destroy path).  Latent-bug hunt per
+ * UProto is destroyed (immediate-destroy path).  Latent-bug hunt per
  * spec §5.4.
  *
  * Two sub-tests:
@@ -54,18 +54,18 @@ UTEST(instance_unlinked_on_module_destroy)
     unsigned char *bc = NULL; size_t bc_len = 0;
     UASSERT_EQ(URBI_OK, compile_to_bytes(&vm, "1 + 2 |", &bc, &bc_len));
 
-    UModule mod = {0};
+    UProto *mod = NULL;
     char errmsg[128];
     UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod, bc, bc_len,
-                                              errmsg, sizeof errmsg));
+                                              NULL, NULL, errmsg, sizeof errmsg));
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_module_instance_create(&vm, mod);
     UASSERT(mi != NULL);
     /* Precondition: instance is registered. */
     UASSERT(instance_on_vm_list(&vm, mi));
 
     /* Destroy the module — instance must be unlinked. */
-    uchunk_destroy(&mod, &vm);
+    uchunk_destroy(mod, &vm);
 
     UASSERT(!instance_on_vm_list(&vm, mi));
 
@@ -87,28 +87,28 @@ UTEST(correct_instance_unlinked_multi)
     UASSERT_EQ(URBI_OK, compile_to_bytes(&vm, "1 + 2 |", &bc_a, &bc_a_len));
     UASSERT_EQ(URBI_OK, compile_to_bytes(&vm, "3 + 4 |", &bc_b, &bc_b_len));
 
-    UModule mod_a = {0}, mod_b = {0};
+    UProto *mod_a = NULL, *mod_b = NULL;
     char errmsg[128];
     UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod_a, bc_a, bc_a_len,
-                                              errmsg, sizeof errmsg));
+                                              NULL, NULL, errmsg, sizeof errmsg));
     UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod_b, bc_b, bc_b_len,
-                                              errmsg, sizeof errmsg));
+                                              NULL, NULL, errmsg, sizeof errmsg));
 
-    UChunkInstance *mi_a = urbi_module_instance_create(&vm, &mod_a);
-    UChunkInstance *mi_b = urbi_module_instance_create(&vm, &mod_b);
+    UChunkInstance *mi_a = urbi_module_instance_create(&vm, mod_a);
+    UChunkInstance *mi_b = urbi_module_instance_create(&vm, mod_b);
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
     UASSERT(instance_on_vm_list(&vm, mi_a));
     UASSERT(instance_on_vm_list(&vm, mi_b));
 
     /* Destroy only mod_a. */
-    uchunk_destroy(&mod_a, &vm);
+    uchunk_destroy(mod_a, &vm);
 
     /* mi_a must be gone; mi_b must survive. */
     UASSERT(!instance_on_vm_list(&vm, mi_a));
     UASSERT(instance_on_vm_list(&vm, mi_b));
 
-    uchunk_destroy(&mod_b, &vm);
+    uchunk_destroy(mod_b, &vm);
     free(bc_a);
     free(bc_b);
     urbi_vm_destroy(&vm);

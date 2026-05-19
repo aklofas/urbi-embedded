@@ -107,15 +107,12 @@ ustrand_destroy(UStrand *s, struct UVM *vm) {
     /* v0.8.1 Phase 2 (Variant B fusion): drop strand-bind ref on root_proto.
      * Pairs with the bump in urbi_strand_create_for_module (below), uvm_run.c
      * (transient path), and uop_fork.c (child spawn).
-     * Use s->root_proto (fast-path alias set at bind time); pass module so
-     * uproto_strand_refcount_dec can fire the deferred-destroy if this was
-     * the last binding and the host already called uchunk_destroy.
-     * Null both fields after — prevents double-dec on pool recycle paths. */
+     * v0.9.2: s->module deleted; use s->root_proto directly.
+     * Null after — prevents double-dec on pool recycle paths. */
     if (s->root_proto != NULL) {
-        uproto_strand_refcount_dec((UModule *)s->module, s->root_proto, vm);
+        uproto_strand_refcount_dec(s->root_proto, vm);
         s->root_proto = NULL;
     }
-    s->module = NULL;
 
     /* CHSTR-031: cross-strand stop counter management moved to scheduler.
      * sched_strand_account_destroy handles the host_call_pending_count
@@ -399,10 +396,10 @@ urbi_strand_attach_ambient_tags(struct UStrand *new_s,
  * drops refcount if already bumped, and frees all resources). */
 UStrand *
 urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
-                              struct UModule *module)
+                              struct UProto *root)
 {
-    if (!vm || !module) return NULL;
-    if (module->root_proto == NULL || module->root_proto->instr_count == 0) return NULL;
+    if (!vm || !root) return NULL;
+    if (root->instr_count == 0) return NULL;
 
     if (realm == NULL) {
         realm = urbi_realm_global(vm);
@@ -411,20 +408,17 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
 
     /* Pool-allocate a non-transient strand (is_transient_strand stays 0).
      * entry_closure = NULL: chunk-top has no closure; root instructions come
-     * from module->instructions directly.  urbi_strand_create handles:
+     * from root->instructions directly.  urbi_strand_create handles:
      * ustrand_init (cleanup stack alloc), realm link, ambient-tag attach,
      * sched_strand_init.  Leaves strand DORMANT. */
     UStrand *s = urbi_strand_create(realm, NULL);
     if (!s) return NULL;
 
-    /* Bind module and bump root_proto refcount before any teardown path so
+    /* Bind root and bump refcount before any teardown path so
      * urbi_strand_destroy (which calls ustrand_destroy) correctly decrements
      * the count on error.
-     * v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto,
-     * not module->refcount.  ustrand_destroy reads s->root_proto directly so
-     * there is no module dereference at dec time. */
-    s->module     = module;
-    s->root_proto = module->root_proto;
+     * v0.9.2: s->module deleted; root_proto IS the sole chunk identity. */
+    s->root_proto = root;
     uproto_refcount_inc(s->root_proto);
 
     /* Allocate and zero the per-strand register stack.
@@ -434,10 +428,10 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
         return NULL;
     }
 
-    /* Wire frame-0 execution state from the module's root chunk.
+    /* Wire frame-0 execution state from the root chunk.
      * Mirrors uvm_run.c lines 102-129 (without the transient-specific fields
      * is_transient_strand and out_slot, which callers set if needed).
-     * Task 11: all chunk-top data lives on root_proto; s->root_proto was set above. */
+     * v0.9.2: s->root_proto IS the root — no intermediate module. */
     s->R          = s->stack;
     s->pc         = s->root_proto->instructions;
     s->pc_base    = s->root_proto->instructions;
@@ -446,12 +440,10 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     s->open_upvals  = NULL;
     s->out_slot     = NULL;  /* caller may set before first urbi_step */
 
-    /* Create a UChunkInstance for IC wiring (per-(vm, module) cache tier).
+    /* Create a UChunkInstance for IC wiring (per-(vm, root) cache tier).
      * urbi_module_instance_create always allocates fresh — safe here because
-     * this is a new strand owning its own IC entry (matches uvm_run.c §T72
-     * rationale; urbi_get_or_create_module_instance is unsuitable for
-     * strands that may share a module across interleaved runs). */
-    s->module_instance = urbi_module_instance_create(vm, module);
+     * this is a new strand owning its own IC entry. */
+    s->module_instance = urbi_module_instance_create(vm, root);
     if (!s->module_instance) {
         urbi_strand_destroy(s);
         return NULL;
@@ -525,7 +517,7 @@ urbi_strand_arm_init(UStrand *s)
  * Delegates stack alloc+zero to urbi_strand_arm_init (CHSTR-022); wires
  * pc/pc_base/cur_consts and clears exec-state fields from entry.
  *
- * Callers that need s->module set (e.g. fork_spawn_child) must do so
+ * Callers that need s->root_proto set (e.g. fork_spawn_child) must do so
  * explicitly after this call returns 0. */
 int
 urbi_strand_arm_from_closure(UStrand *s, struct UClosure *entry)

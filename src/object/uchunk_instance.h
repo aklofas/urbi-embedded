@@ -60,7 +60,7 @@
 
 #include "gc/ugc.h"           /* UCell, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
 #include "object/uic.h"       /* UIC */
-#include "chunk/uchunk.h"          /* UModule, UProto */
+#include "chunk/uchunk.h"          /* UProto (UModule deleted v0.9.2) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -98,7 +98,7 @@ typedef struct UProtoInstanceArr {
 struct UChunkInstance {
     UCell                    cell;            /* type_tag = UTYPE_MODULE_INSTANCE */
     /* 6 B compiler-inserted padding before module */
-    UModule                 *module;          /* non-owning */
+    UProto                  *module;          /* non-owning root UProto (was UModule*; v0.9.2) */
     struct UVM              *vm;              /* non-owning */
     UProtoInstanceArr       *proto_instances; /* non-owning; separate GC cell */
     /* Per-VM list of all live UChunkInstance cells.  Threaded onto
@@ -114,7 +114,7 @@ struct UChunkInstance {
  * UProtoInstanceArr bulk in a second GC cell, sized for one entry per
  * (root chunk + nested proto) plus the contiguous IC tables.  Returns
  * NULL on OOM (either cell allocation may fail). */
-UChunkInstance *urbi_module_instance_create (struct UVM *vm, UModule *m);
+UChunkInstance *urbi_module_instance_create (struct UVM *vm, UProto *root);
 
 /* No-op: both cells are GC-managed and freed by sweep.  Provided so the
  * public ABI matches the create/destroy pair convention (T22 may grow
@@ -132,7 +132,7 @@ void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi
  * must not invoke from multiple host threads concurrently against the same
  * vm.  Safe today under URBI_SCHED_COOPERATIVE; revisit if parallel realms
  * ship. */
-UChunkInstance *urbi_get_or_create_module_instance(struct UVM *vm, UModule *m);
+UChunkInstance *urbi_get_or_create_module_instance(struct UVM *vm, UProto *root);
 
 #ifdef __cplusplus
 }

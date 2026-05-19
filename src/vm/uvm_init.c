@@ -523,17 +523,18 @@ void urbi_vm_destroy(UVM *vm) {
 
     if (vm->alloc_fn != NULL) {
 
-        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
+        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib root UProto
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
-         * UChunkInstance referencing this module has already been
+         * UChunkInstance referencing this root has already been
          * reaped — no dangling ic_names back-reference can survive.
          *
          * Ordering: BEFORE rescued_protos sweep below.  uchunk_destroy may
-         * rescue a non-zero-refcount root_proto onto vm->rescued_protos; that
-         * rescued proto is freed by the sweep that follows. */
+         * rescue a non-zero-refcount root onto vm->rescued_protos; that
+         * rescued proto is freed by the sweep that follows.
+         * v0.9.2: uchunk_destroy frees heap_allocated roots automatically. */
         if (vm->stdlib_module != NULL) {
             uchunk_destroy(vm->stdlib_module, vm);
-            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
+            /* uchunk_destroy freed the struct (heap_allocated=true); clear ptr. */
             vm->stdlib_module = NULL;
         }
 

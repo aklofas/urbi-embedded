@@ -60,10 +60,10 @@ static void set_errmsg(char *errmsg, size_t errcap, const char *fmt, ...) {
 /* Forward declaration — uchunk_destroy_internal is defined below, after
  * uproto_destroy_buffers.  The public uchunk_destroy shim (v0.8.0
  * deferred-destroy) calls into this. */
-static void uchunk_destroy_internal(UModule *module, struct UVM *vm);
+static void uchunk_destroy_internal(UProto *root, struct UVM *vm);
 
-/* Resolve the effective allocator for a module. */
-static UChunkAllocFn module_allocator(const UModule *c) {
+/* Resolve the effective allocator for a root UProto. */
+static UChunkAllocFn module_allocator(const UProto *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : stdlib_alloc;
 #else
@@ -167,7 +167,14 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
     /* MOD-030: every caller guards proto != NULL; the runtime contract is
      * "non-NULL proto" — assert rather than silently no-op. */
     URBI_INTERNAL_ASSERT(proto != NULL);
+#if __STDC_HOSTED__
+    /* Hosted fallback: if no custom allocator, use stdlib_alloc so that
+     * test modules initialised with {0} (alloc_fn=NULL) can still have their
+     * emit-stdlib-allocated buffers freed.  Freestanding: caller must supply. */
+    if (alloc == NULL) alloc = stdlib_alloc;
+#else
     if (alloc == NULL) return;
+#endif
     /* Task 11: root_proto owns nested[] — free sub-protos first.
      * Nested protos have nested_count == 0 so this walk is a no-op for them. */
     if (proto->nested != NULL) {
@@ -204,11 +211,11 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
     urbi_zero(proto, sizeof(*proto));
 }
 
-UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
-    UChunkAllocFn alloc = module_allocator(module);
+UProto *uproto_alloc_nested(UProto *root, UProto *parent_proto) {
+    UChunkAllocFn alloc = module_allocator(root);
     if (alloc == NULL) return NULL;
     /* v0.8.5: parent_proto is the explicit nested[] target.  For top-level
-     * function literals callers pass module->root_proto; for nested
+     * function literals callers pass root directly; for nested
      * function literals callers pass the enclosing UProto. */
     if (parent_proto == NULL) return NULL;
 
@@ -218,7 +225,7 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
         /* TIDY-005: explicit (void *) cast on UProto ** → void * decay. */
         void *fresh = alloc((void *)parent_proto->nested,
                             new_cap * sizeof(UProto *),
-                            module->alloc_ud);
+                            root->alloc_ud);
         if (fresh == NULL) return NULL;
         parent_proto->nested     = (UProto **)fresh;
         parent_proto->nested_cap = new_cap;
@@ -246,15 +253,15 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
      *     only when nested_count >= nested_cap, which now skips the
      *     realloc and proceeds to UProto alloc.
      * No code path reads beyond [0..nested_count). */
-    UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
+    UProto *proto = (UProto *)alloc(NULL, sizeof(UProto), root->alloc_ud);
     if (proto == NULL) return NULL;
     urbi_zero(proto, sizeof(*proto));
-    proto->alloc_fn = module->alloc_fn;
-    proto->alloc_ud = module->alloc_ud;
+    proto->alloc_fn = root->alloc_fn;
+    proto->alloc_ud = root->alloc_ud;
 
     /* v0.8.1 Variant B Option (a) per spec §3.5: slot-implicit refcount dropped.
-     * The nested[] slot's reachability is structural (root_proto owns nested[]);
-     * no independent refcount needed.  Closures bump root_proto.refcount via
+     * The nested[] slot's reachability is structural (root owns nested[]);
+     * no independent refcount needed.  Closures bump root->refcount via
      * uproto_root_of() at vm_alloc_closure; that is the only accounting needed. */
     proto->refcount = 0U;
 
@@ -262,8 +269,8 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
      * root-proto allocation (uemit_init / uchunk_deserialize); each call
      * here produces the next available serial.  The first nested
      * allocation produces ic_index = 1 because next_proto_serial starts
-     * at 0 via the UModule zero-init. */
-    proto->ic_index = ++module->next_proto_serial;
+     * at 0 via the root zero-init. */
+    proto->ic_index = ++root->next_proto_serial;
 
     parent_proto->nested[parent_proto->nested_count++] = proto;
     return proto;
@@ -272,8 +279,8 @@ UProto *uproto_alloc_nested(UModule *module, UProto *parent_proto) {
 /* --- Per-section decoder context (file-private) --- */
 
 typedef struct {
-    UModule        *module;
-    UProto         *rp;      /* root_proto: allocated before decode; receives chunk-top fields */
+    UProto         *module;  /* root UProto; v0.9.2: UModule deleted, root IS the decode target */
+    UProto         *rp;      /* same as module (root); kept for decode_verify compatibility */
     const uint8_t  *buf;
     size_t          size;
     size_t          off;
@@ -1113,7 +1120,12 @@ static void set_root_backptr_recursive(UProto *node, UProto *root) {
 
 /* --- Public API --- */
 
-UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t size,
+/* v0.9.2: uchunk_deserialize allocates the root UProto via alloc_fn and
+ * decodes bytecode into it.  The caller receives the root via *out_root.
+ * alloc_fn/alloc_ud are stored on the root and used for all sub-allocations.
+ * On failure, *out_root is set to NULL and any partial allocations are freed. */
+UChunkLoadError uchunk_deserialize(UProto **out_root, const uint8_t *buf, size_t size,
+                                   UChunkAllocFn alloc_fn, void *alloc_ud,
                                    char *errmsg, size_t errcap) {
     /* errmsg/errcap contract: the (NULL, 0) pair suppresses diagnostics; any
      * other shape — including (non-NULL, 0) — is silently accepted as
@@ -1121,35 +1133,31 @@ UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t s
      * passing a non-NULL buffer with zero capacity is harmless rather than
      * a contract violation.  Callers that require a populated errmsg must
      * supply errcap >= 1. */
-    if (module == NULL || buf == NULL) {
-        set_errmsg(errmsg, errcap, "null module or buffer");
+    if (out_root == NULL || buf == NULL) {
+        set_errmsg(errmsg, errcap, "null out_root or buffer");
         return UCHUNK_LOAD_INVALID_ARG;
     }
+    *out_root = NULL;
 
-    /* Zero origin_vm for deserialized modules. */
-    module->origin_vm = NULL;
+#if __STDC_HOSTED__
+    UChunkAllocFn effective_alloc = (alloc_fn != NULL) ? alloc_fn : stdlib_alloc;
+#else
+    UChunkAllocFn effective_alloc = alloc_fn;
+    if (effective_alloc == NULL) return UCHUNK_LOAD_OOM;
+#endif
 
-    /* Task 11: allocate root_proto before decoding so decode functions
-     * write chunk-top fields directly into root_proto (no alias-copy).
-     * If re-deserializing into the same module struct, free the old
-     * root_proto (and its buffers) first via uproto_destroy_buffers. */
-    UChunkAllocFn root_alloc = module_allocator(module);
-    if (root_alloc == NULL) return UCHUNK_LOAD_OOM;
-    if (module->root_proto != NULL) {
-        uproto_destroy_buffers(module->root_proto, root_alloc, module->alloc_ud);
-        root_alloc(module->root_proto, 0, module->alloc_ud);
-        module->root_proto = NULL;
-    }
-    UProto *rp = (UProto *)root_alloc(NULL, sizeof(UProto), module->alloc_ud);
+    /* Allocate the root UProto struct via alloc_fn. */
+    UProto *rp = (UProto *)effective_alloc(NULL, sizeof(UProto), alloc_ud);
     if (rp == NULL) return UCHUNK_LOAD_OOM;
     urbi_zero(rp, sizeof(UProto));
-    rp->root     = NULL;  /* root's own back-pointer is NULL */
-    rp->alloc_fn = module->alloc_fn;
-    rp->alloc_ud = module->alloc_ud;
-    module->root_proto = rp;
+    rp->root     = NULL;          /* root's own back-pointer is NULL */
+    rp->alloc_fn = effective_alloc;
+    rp->alloc_ud = alloc_ud;
+    rp->origin_vm = NULL;         /* zero for deserialized chunks */
+    rp->heap_allocated = true;    /* caller frees via uchunk_destroy */
 
     MDecCtx d;
-    d.module = module;
+    d.module = rp;   /* v0.9.2: module == root */
     d.rp     = rp;
     d.buf    = buf;
     d.size   = size;
@@ -1158,12 +1166,12 @@ UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t s
     d.errcap = errcap;
 
     UChunkLoadError rc;
-    if ((rc = decode_header(&d))   != UCHUNK_LOAD_OK) return rc;
-    /* v1.7: body = source_name + root_proto block. */
-    if ((rc = decode_metadata(&d)) != UCHUNK_LOAD_OK) return rc;
-    if ((rc = decode_proto(&d, rp)) != UCHUNK_LOAD_OK) return rc;
-    if ((rc = decode_trailer(&d))  != UCHUNK_LOAD_OK) return rc;
-    if ((rc = decode_verify(&d))   != UCHUNK_LOAD_OK) return rc;
+    if ((rc = decode_header(&d))    != UCHUNK_LOAD_OK) goto fail;
+    /* v1.7: body = source_name + root UProto block. */
+    if ((rc = decode_metadata(&d))  != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_proto(&d, rp)) != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_trailer(&d))   != UCHUNK_LOAD_OK) goto fail;
+    if ((rc = decode_verify(&d))    != UCHUNK_LOAD_OK) goto fail;
 
     /* Back-pointer walk: every UProto's root field points at rp.
      * v0.8.5 made this recursive (was flat-only): walks the full tree
@@ -1175,9 +1183,21 @@ UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t s
     /* v0.8.5: stamp total_proto_count to match the emit path (uemit_finish).
      * next_proto_serial holds the last assigned non-root serial; total
      * includes root (ic_index = 0). */
-    module->total_proto_count = (uint16_t)(module->next_proto_serial + 1U);
+    rp->total_proto_count = (uint16_t)(rp->next_proto_serial + 1U);
 
+    *out_root = rp;
     return UCHUNK_LOAD_OK;
+
+fail:
+    /* Partial allocations: free source_name (may have been set by decode_metadata
+     * before a later stage failed), then all other buffers, then the struct. */
+    if (rp->source_name != NULL) {
+        module_buf_free(effective_alloc, alloc_ud, rp->source_name);
+        rp->source_name = NULL;
+    }
+    uproto_destroy_buffers(rp, effective_alloc, alloc_ud);
+    effective_alloc(rp, 0, alloc_ud);
+    return rc;
 }
 
 /* Destroy ordering (MOD-005):
@@ -1199,45 +1219,39 @@ UChunkLoadError uchunk_deserialize(UModule *module, const uint8_t *buf, size_t s
 
 /* v0.8.1 Phase 2: strand-bind release with deferred-destroy trigger.
  * Called by ustrand_destroy and the fatal-loader early-discharge path
- * (uchunk.c) when we hold the still-valid module pointer.
- * Decrements root_proto->refcount; if it reaches 0 and the self-link
+ * (uchunk.c) when we hold the still-valid root proto pointer.
+ * Decrements root->refcount; if it reaches 0 and the self-link
  * sentinel is set (uchunk_destroy was called with vm=NULL), fires
  * uchunk_destroy_internal immediately.
  *
- * Task 11: UModule.destroy_requested deleted.  The vm=NULL deferred path
- * sets root_proto->next_alloc = root_proto (self-link sentinel) instead.
- * When refcount hits 0 here, the sentinel signals deferred destroy. */
+ * v0.9.2: UModule deleted.  Signature is now (UProto *root, UVM *vm). */
 void
-uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
+uproto_strand_refcount_dec(UProto *root, struct UVM *vm)
 {
-    if (root_proto == NULL) return;
-    uproto_refcount_dec(root_proto);
-    /* Deferred-destroy trigger: self-link sentinel means the module shell
-     * was already freed (vm=NULL destroy path) but root_proto was left with
-     * a non-zero refcount.  Now that the last strand-bind ref is gone and
-     * the sentinel is set, perform the actual internal free.  m may be NULL
-     * if the module shell has already been freed via that path. */
-    if (root_proto->refcount == 0U && root_proto->next_alloc == root_proto) {
-        /* Deferred-destroy triggered: the host already called uchunk_destroy
-         * with vm=NULL (self-link sentinel path) while a strand was alive.
-         * Now that the last strand-bind ref is gone, perform the actual free.
-         * Clear sentinel first so uproto_destroy_buffers can walk
-         * nested[] cleanly (next_alloc is not walked, but zeroing is safe). */
-        root_proto->next_alloc = NULL;
-        uproto_destroy_buffers(root_proto, root_proto->alloc_fn, root_proto->alloc_ud);
-        if (root_proto->alloc_fn != NULL) {
-            root_proto->alloc_fn(root_proto, 0, root_proto->alloc_ud);
+    if (root == NULL) return;
+    uproto_refcount_dec(root);
+    /* Deferred-destroy trigger: self-link sentinel means uchunk_destroy was
+     * called with vm=NULL while a strand was still alive.  Now that the last
+     * strand-bind ref is gone and the sentinel is set, perform the actual
+     * internal free. */
+    if (root->refcount == 0U && root->next_alloc == root) {
+        /* Deferred-destroy triggered: clear sentinel first so
+         * uproto_destroy_buffers can walk nested[] cleanly.
+         * Capture alloc_fn/alloc_ud/heap_allocated BEFORE uproto_destroy_buffers
+         * zeroes the struct (uproto_destroy_buffers calls urbi_zero at the end). */
+        UChunkAllocFn fn    = root->alloc_fn;
+        void          *ud   = root->alloc_ud;
+        bool          heap  = root->heap_allocated;
+        root->next_alloc = NULL;
+        uproto_destroy_buffers(root, fn, ud);
+        if (fn != NULL && heap) {
+            fn(root, 0, ud);
         }
-        (void)m;
         (void)vm;
     }
-    /* When refcount hits 0 and no self-link sentinel: the module shell is still
+    /* When refcount hits 0 and no self-link sentinel: the root is still
      * owned by the host.  Do not auto-destroy — the host is responsible for
-     * calling uchunk_destroy explicitly.  If the host never calls it, the
-     * module buffers are freed at vm_destroy via vm->rescued_protos or simply
-     * left for the host to manage (stack/static storage).  The refcount reaching
-     * zero is only a signal that no strands are currently bound; it does not
-     * transfer ownership. */
+     * calling uchunk_destroy explicitly. */
 }
 
 /* MOD-015 — nested[k] may be NULL by design:
@@ -1256,102 +1270,76 @@ uproto_strand_refcount_dec(UModule *m, UProto *root_proto, struct UVM *vm)
  *   the watcher-ownership design rationale (URBI_WATCHER_OWNS_* flags deleted
  *   at v0.8.4 Step C-3; GC now manages closure lifetime). */
 
-/* v0.8.1 Phase 2 (Variant B fusion): deferred-destroy check reads root_proto->refcount.
- * Strand-bind refs now land on root_proto (not module->refcount), so the "are
- * any strands still alive?" test must check root_proto.  Host's existing pattern
- * (uchunk_destroy after urbi_vm_destroy) still works: vm_destroy kills all strands
- * first → root_proto->refcount drops to 0 → immediate free.
- *
- * module->refcount is always 0 after Phase 2 redirect (nothing bumps it);
- * it is retained in the struct until Task 11 deletes it. */
+/* v0.9.2: uchunk_destroy takes the root UProto directly.
+ * Deferred-destroy: when root->refcount > 0 (a strand is still alive),
+ * rescue root onto vm->rescued_protos (if vm != NULL) or set self-link
+ * sentinel for uproto_strand_refcount_dec to trigger later. */
 void
-uchunk_destroy(UModule *module, struct UVM *vm)
+uchunk_destroy(UProto *root, struct UVM *vm)
 {
-    if (module == NULL) return;
-    /* Variant B coexistence path (Phase 2 Task 9 of v0.8.1-uproto-root):
-     * when root_proto->refcount > 0 (a strand is still alive), rescue the
-     * whole root_proto to vm->rescued_protos.  The root_proto carries ownership
-     * of nested[] and all chunk-top buffers; the module shell fields are
-     * NULLed so uchunk_destroy_internal does not double-free them.
-     *
-     * The per-nested rescue path in uchunk_destroy_internal (vm->stdlib_protos)
-     * still runs for the remaining (NULLed) nested[] and buffers — it is a
-     * no-op since all the pointers are now NULL.  Coexistence is safe because
-     * the two lists are independent; Task 10 removes the per-nested path once
-     * Task 8 (closure-refcount redirect) makes whole-root_proto rescue
-     * self-sufficient. */
-    if (module->root_proto != NULL && module->root_proto->refcount > 0U) {
-        if (vm != NULL) {
-            UProto *rp = module->root_proto;
-            /* Thread rp onto vm->rescued_protos (reuses UProto.next_alloc). */
-            rp->next_alloc    = vm->rescued_protos;
-            vm->rescued_protos = rp;
-            /* Detach root_proto reference from the module shell.
-             * Task 11: all chunk-top data lives on root_proto — no duplicate
-             * module fields to NULL out. */
-            module->root_proto = NULL;
-            /* source_name stays on the module shell (not owned by rp). */
-        } else {
-            /* No vm available — cannot rescue root_proto onto vm->rescued_protos
-             * immediately.  Set self-link sentinel (next_alloc == root_proto)
-             * on root_proto so that uproto_strand_refcount_dec can detect
-             * the deferred-destroy when refcount hits 0.
-             *
-             * Task 11: UModule.destroy_requested deleted.  The sentinel is
-             * the sole signal.  Self-link is unambiguous: while root_proto is
-             * alive inside a UModule, next_alloc is NULL; on rescued_protos,
-             * next_alloc points to the next list entry, never to itself. */
-            module->root_proto->next_alloc = module->root_proto;
-            /* Unlink from realm list before zeroing (v0.9.0-repl Task 12).
-             * owning_realm is available even without a vm pointer. */
-            if (module->owning_realm != NULL) {
-                URealm *r = module->owning_realm;
-                if (r->loaded_protos_head == module) {
-                    r->loaded_protos_head = module->next_in_realm;
+    if (root == NULL) return;
+    /* Variant B: when root->refcount > 0 (a strand is alive), rescue or defer. */
+    if (root->refcount > 0U) {
+        if (vm != NULL && root->heap_allocated) {
+            /* Thread root onto vm->rescued_protos (reuses UProto.next_alloc).
+             * Only heap-allocated roots may go on rescued_protos — stack roots
+             * would be freed by vm_destroy after the stack frame is gone.
+             * Unlink from realm BEFORE threading so realm walk stays clean. */
+            if (root->owning_realm != NULL) {
+                URealm *r = root->owning_realm;
+                if (r->loaded_protos_head == root) {
+                    r->loaded_protos_head = root->next_in_realm;
                 } else {
-                    for (struct UModule *p = r->loaded_protos_head; p != NULL;
+                    for (UProto *p = r->loaded_protos_head; p != NULL;
                          p = p->next_in_realm) {
-                        if (p->next_in_realm == module) {
-                            p->next_in_realm = module->next_in_realm;
+                        if (p->next_in_realm == root) {
+                            p->next_in_realm = root->next_in_realm;
                             break;
                         }
                     }
                 }
-                module->owning_realm  = NULL;
-                module->next_in_realm = NULL;
+                root->owning_realm  = NULL;
+                root->next_in_realm = NULL;
             }
-            /* Free the module shell (source_name + struct) — root_proto
-             * survives with the self-link sentinel. */
-            {
-                UChunkAllocFn alloc = module_allocator(module);
-                if (alloc != NULL) {
-                    module_buf_free(alloc, module->alloc_ud, module->source_name);
+            root->next_alloc    = vm->rescued_protos;
+            vm->rescued_protos  = root;
+            return;
+        } else {
+            /* No vm or stack-allocated root — set self-link sentinel.
+             * uclosure_destroy will free buffers when refcount reaches 0.
+             * Unlink from realm. */
+            if (root->owning_realm != NULL) {
+                URealm *r = root->owning_realm;
+                if (r->loaded_protos_head == root) {
+                    r->loaded_protos_head = root->next_in_realm;
+                } else {
+                    for (UProto *p = r->loaded_protos_head; p != NULL;
+                         p = p->next_in_realm) {
+                        if (p->next_in_realm == root) {
+                            p->next_in_realm = root->next_in_realm;
+                            break;
+                        }
+                    }
                 }
+                root->owning_realm  = NULL;
+                root->next_in_realm = NULL;
             }
-            urbi_zero(module, sizeof(*module));
+            root->next_alloc = root;  /* self-link sentinel */
             return;
         }
     }
-    uchunk_destroy_internal(module, vm);
+    uchunk_destroy_internal(root, vm);
 }
 
-static void uchunk_destroy_internal(UModule *module, struct UVM *vm) {
-    if (module == NULL) return;
+static void uchunk_destroy_internal(UProto *root, struct UVM *vm) {
+    if (root == NULL) return;
 
-    /* §5.4: unlink any UChunkInstances bound to this module from
-     * vm->module_instances_head BEFORE freeing module buffers.  Without this,
-     * instances are left with mi->module pointing to freed memory — a
-     * dormant dangling-pointer bug masked previously because vm_destroy calls
-     * urbi_gc_destroy (which sweeps GC cells) before any uchunk_destroy.
-     * Mid-session module destroy (e.g. urbi_unload) hits this path live.
-     * The instance cell itself is GC-managed; unlinking it here allows the
-     * next GC sweep to reclaim it.  Setting mi->module = NULL is defensive:
-     * any stale pointer reaching the orphaned instance crashes deterministically
-     * rather than reading freed memory. */
+    /* §5.4: unlink any UChunkInstances bound to this root from
+     * vm->module_instances_head BEFORE freeing root buffers. */
     if (vm != NULL) {
         struct UChunkInstance **slot = &vm->module_instances_head;
         while (*slot != NULL) {
-            if ((*slot)->module == module) {
+            if ((*slot)->module == root) {
                 struct UChunkInstance *dead = *slot;
                 *slot = dead->next_in_vm;
                 dead->next_in_vm = NULL;
@@ -1363,47 +1351,45 @@ static void uchunk_destroy_internal(UModule *module, struct UVM *vm) {
     }
 
     /* Unlink from owning_realm's loaded_protos_head list before freeing.
-     * Without this, direct uchunk_destroy calls leave stale pointers in the
-     * realm list, which urbi_realm_destroy's walk would then dereference
-     * (use-after-free).  urbi_unload already does this unlink; doing it here
-     * too makes direct uchunk_destroy callers safe.  Idempotent: if
-     * owning_realm is NULL (already unlinked by urbi_unload), skip.
-     * v0.9.0-repl Task 12. */
-    if (module->owning_realm != NULL) {
-        URealm *r = module->owning_realm;
-        if (r->loaded_protos_head == module) {
-            r->loaded_protos_head = module->next_in_realm;
+     * Idempotent: if owning_realm is NULL (already unlinked), skip. */
+    if (root->owning_realm != NULL) {
+        URealm *r = root->owning_realm;
+        if (r->loaded_protos_head == root) {
+            r->loaded_protos_head = root->next_in_realm;
         } else {
-            for (struct UModule *p = r->loaded_protos_head; p != NULL;
+            for (UProto *p = r->loaded_protos_head; p != NULL;
                  p = p->next_in_realm) {
-                if (p->next_in_realm == module) {
-                    p->next_in_realm = module->next_in_realm;
+                if (p->next_in_realm == root) {
+                    p->next_in_realm = root->next_in_realm;
                     break;
                 }
             }
         }
-        module->owning_realm  = NULL;
-        module->next_in_realm = NULL;
+        root->owning_realm  = NULL;
+        root->next_in_realm = NULL;
     }
 
-    UChunkAllocFn alloc = module_allocator(module);
+    UChunkAllocFn alloc = module_allocator(root);
+    void *alloc_ud = root->alloc_ud;   /* capture before uproto_destroy_buffers zeroes root */
+    bool heap = root->heap_allocated;
     if (alloc != NULL) {
-        /* Task 11: all chunk-top data (nested[], buffers, ic_names) lives on
-         * root_proto.  uproto_destroy_buffers frees everything owned
-         * by root_proto; then free the root_proto struct itself.
-         * The per-nested rescue walk (vm->stdlib_protos) is deleted — under
-         * Variant B Option (a) nested refcounts are always 0 at this point;
-         * whole-root_proto rescue via vm->rescued_protos handles surviving
-         * closures (see uchunk_destroy). */
-        if (module->root_proto != NULL) {
-            uproto_destroy_buffers(module->root_proto, alloc, module->alloc_ud);
-            alloc(module->root_proto, 0, module->alloc_ud);
+        /* Free source_name string. */
+        module_buf_free(alloc, alloc_ud, root->source_name);
+        root->source_name = NULL;
+        /* Free all UProto-owned buffers (nested[], instructions, constants, etc.).
+         * uproto_destroy_buffers zeroes the struct at the end, so alloc_ud must
+         * be captured before this call. */
+        uproto_destroy_buffers(root, alloc, alloc_ud);
+        /* If root was heap-allocated (via uchunk_deserialize), free the struct. */
+        if (heap) {
+            alloc(root, 0, alloc_ud);
+            return;
         }
-        module_buf_free(alloc, module->alloc_ud, module->source_name);
     }
-    /* Zero the entire struct AFTER all frees complete.  No field is read
-     * after this point. */
-    urbi_zero(module, sizeof(*module));
+    /* Stack/static root: zero the struct but don't free it. */
+    if (!heap) {
+        urbi_zero(root, sizeof(*root));
+    }
 }
 
 const char *uchunk_load_error_name(UChunkLoadError code) {

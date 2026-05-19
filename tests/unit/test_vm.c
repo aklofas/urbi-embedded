@@ -21,7 +21,7 @@ static UVMError vm_pipeline_eval(const char *src, UValue *out) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -38,9 +38,12 @@ static UVMError vm_pipeline_eval(const char *src, UValue *out) {
     if (uemit_finish(&e) == EMIT_OK) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
+    /* Destroy VM first so GC finalizers run (closure refcounts → 0) before
+     * uchunk_destroy.  module is stack-allocated; rescued_protos sweep must
+     * not see it, so refcount must be 0 before uchunk_destroy is called. */
+    urbi_vm_destroy(&vm);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
     return vm_rc;
 }
 
@@ -111,38 +114,26 @@ UTEST(vm_destroy_twice_is_safe) {
    for allocation so uchunk_destroy can free them uniformly. */
 
 /* Forward declaration so tests before free_fab_module definition can call it. */
-static void free_fab_module(UModule *c);
+static void free_fab_module(UProto *c);
 
-/* Task 11: allocate a root_proto for hand-built test modules.
- * Each fab_module_* that starts with memset(c, 0) must call this
- * immediately after to create the root_proto. */
-static UProto *fab_alloc_rp(UModule *c) {
-    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
-    if (rp == NULL) return NULL;
-    c->root_proto = rp;
-    return rp;
+static void fab_module_empty(UProto *c) {
+    memset(c, 0, sizeof(*c));
+    /* max_reg defaults to 0; no instructions, no constants. */
 }
 
-static void fab_module_empty(UModule *c) {
+static void fab_module_ret_only(UProto *c, uint8_t reg) {
     memset(c, 0, sizeof(*c));
-    (void)fab_alloc_rp(c);  /* root_proto->max_reg defaults to 0 */
-    /* No instructions, no constants, no synclines. Loader accepts this. */
-}
-
-static void fab_module_ret_only(UModule *c, uint8_t reg) {
-    memset(c, 0, sizeof(*c));
-    fab_alloc_rp(c);
-    c->root_proto->max_reg = reg;
-    c->root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
-    c->root_proto->instr_cap = 1;
-    c->root_proto->instr_count = 1;
-    c->root_proto->instructions[0] = uinstr_enc_abc(OP_RET, reg, 0, 0);
-    c->root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 1);
-    c->root_proto->line_deltas[0] = 1;  /* pc 0 at line 1 */
+    c->max_reg = reg;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    c->instr_cap = 1;
+    c->instr_count = 1;
+    c->instructions[0] = uinstr_enc_abc(OP_RET, reg, 0, 0);
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 1);
+    c->line_deltas[0] = 1;  /* pc 0 at line 1 */
 }
 
 UTEST(vm_run_empty_module_returns_nil) {
-    UModule c; fab_module_empty(&c);
+    UProto c; fab_module_empty(&c);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     memset(&out, 0xAA, sizeof(out));  /* pre-dirty to confirm VM writes it */
@@ -155,7 +146,7 @@ UTEST(vm_run_empty_module_returns_nil) {
 UTEST(vm_run_ret_on_uninitialized_register_returns_nil) {
     /* Frame is zero-initialized to UVAL_NIL, so RET R[0] on a module with
        no LOADK returns Nil. */
-    UModule c; fab_module_ret_only(&c, 0);
+    UProto c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -166,43 +157,40 @@ UTEST(vm_run_ret_on_uninitialized_register_returns_nil) {
 
 /* Build a module with one LOADK A=0 Bx=0 then RET R[0]. The constant is
    Integer `value`. */
-static void fab_module_loadk_int_ret(UModule *c, int64_t value) {
+static void fab_module_loadk_int_ret(UProto *c, int64_t value) {
     memset(c, 0, sizeof(*c));
-    fab_alloc_rp(c);
-    c->root_proto->max_reg = 0;
-    c->root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 2);
-    c->root_proto->instr_cap = 2;
-    c->root_proto->instr_count = 2;
-    c->root_proto->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
-    c->root_proto->instructions[1] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    c->root_proto->constants = (UValue *)malloc(sizeof(UValue) * 1);
-    c->root_proto->const_cap = 1;
-    c->root_proto->const_count = 1;
-    c->root_proto->constants[0].kind = UVAL_INT;
-    c->root_proto->constants[0].v.i  = value;
-    c->root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 2);
-    c->root_proto->line_deltas[0] = 1;
-    c->root_proto->line_deltas[1] = 0;
+    c->max_reg = 0;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 2);
+    c->instr_cap = 2;
+    c->instr_count = 2;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 1);
+    c->const_cap = 1;
+    c->const_count = 1;
+    c->constants[0].kind = UVAL_INT;
+    c->constants[0].v.i  = value;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 2);
+    c->line_deltas[0] = 1;
+    c->line_deltas[1] = 0;
 }
 
-static void fab_module_loadk_float_ret(UModule *c, double value) {
+static void fab_module_loadk_float_ret(UProto *c, double value) {
     fab_module_loadk_int_ret(c, 0);  /* shape is identical */
-    c->root_proto->constants[0].kind = UVAL_FLOAT;
-    c->root_proto->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? value : (float)value;
+    c->constants[0].kind = UVAL_FLOAT;
+    c->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? value : (float)value;
 }
 
-static void free_fab_module(UModule *c) {
-    if (c->root_proto == NULL) return;
-    free(c->root_proto->instructions);
-    free(c->root_proto->constants);
-    free(c->root_proto->line_deltas);
-    free(c->root_proto->abs_lines);
-    free(c->root_proto);
-    c->root_proto = NULL;
+static void free_fab_module(UProto *c) {
+    free(c->instructions);
+    free(c->constants);
+    free(c->line_deltas);
+    free(c->abs_lines);
+    memset(c, 0, sizeof(*c));
 }
 
 UTEST(vm_loadk_int) {
-    UModule c; fab_module_loadk_int_ret(&c, 42);
+    UProto c; fab_module_loadk_int_ret(&c, 42);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -213,7 +201,7 @@ UTEST(vm_loadk_int) {
 }
 
 UTEST(vm_loadk_int_large) {
-    UModule c; fab_module_loadk_int_ret(&c, INT64_MAX);
+    UProto c; fab_module_loadk_int_ret(&c, INT64_MAX);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -224,7 +212,7 @@ UTEST(vm_loadk_int_large) {
 }
 
 UTEST(vm_loadk_float) {
-    UModule c; fab_module_loadk_float_ret(&c, 3.14);
+    UProto c; fab_module_loadk_float_ret(&c, 3.14);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -237,29 +225,28 @@ UTEST(vm_loadk_float) {
 /* --- OP_ADD --- */
 
 /* Build LOADK R[0]=a, LOADK R[1]=b, ADD R[2]=R[0]+R[1], RET R[2]. */
-static void fab_module_int_add_int(UModule *c, int64_t a, int64_t b) {
+static void fab_module_int_add_int(UProto *c, int64_t a, int64_t b) {
     memset(c, 0, sizeof(*c));
-    fab_alloc_rp(c);
-    c->root_proto->max_reg = 2;
-    c->root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
-    c->root_proto->instr_cap = 4; c->root_proto->instr_count = 4;
-    c->root_proto->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
-    c->root_proto->instructions[1] = uinstr_enc_abx(OP_LOADK, 1, 1);
-    c->root_proto->instructions[2] = uinstr_enc_abc(OP_ADD, 2, 0, 1);
-    c->root_proto->instructions[3] = uinstr_enc_abc(OP_RET, 2, 0, 0);
-    c->root_proto->constants = (UValue *)malloc(sizeof(UValue) * 2);
-    c->root_proto->const_cap = 2; c->root_proto->const_count = 2;
-    c->root_proto->constants[0].kind = UVAL_INT; c->root_proto->constants[0].v.i = a;
-    c->root_proto->constants[1].kind = UVAL_INT; c->root_proto->constants[1].v.i = b;
-    c->root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
-    c->root_proto->line_deltas[0] = 1;
-    c->root_proto->line_deltas[1] = 0;
-    c->root_proto->line_deltas[2] = 0;
-    c->root_proto->line_deltas[3] = 0;
+    c->max_reg = 2;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
+    c->instr_cap = 4; c->instr_count = 4;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abx(OP_LOADK, 1, 1);
+    c->instructions[2] = uinstr_enc_abc(OP_ADD, 2, 0, 1);
+    c->instructions[3] = uinstr_enc_abc(OP_RET, 2, 0, 0);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 2);
+    c->const_cap = 2; c->const_count = 2;
+    c->constants[0].kind = UVAL_INT; c->constants[0].v.i = a;
+    c->constants[1].kind = UVAL_INT; c->constants[1].v.i = b;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    c->line_deltas[0] = 1;
+    c->line_deltas[1] = 0;
+    c->line_deltas[2] = 0;
+    c->line_deltas[3] = 0;
 }
 
 UTEST(vm_add_int_int_normal) {
-    UModule c; fab_module_int_add_int(&c, 2, 3);
+    UProto c; fab_module_int_add_int(&c, 2, 3);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -269,7 +256,7 @@ UTEST(vm_add_int_int_normal) {
 }
 
 UTEST(vm_add_int_int_max_plus_one_wraps) {
-    UModule c; fab_module_int_add_int(&c, INT64_MAX, 1);
+    UProto c; fab_module_int_add_int(&c, INT64_MAX, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -279,7 +266,7 @@ UTEST(vm_add_int_int_max_plus_one_wraps) {
 }
 
 UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
-    UModule c; fab_module_int_add_int(&c, INT64_MAX, INT64_MAX);
+    UProto c; fab_module_int_add_int(&c, INT64_MAX, INT64_MAX);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -290,20 +277,20 @@ UTEST(vm_add_int_int_max_plus_max_wraps_to_minus_two) {
 
 /* ADD R[2] = R[0] + R[1] with mixed Int/Float constants. Accepts both
    Int and Float literals via the UValue `kind` parameter. */
-static void fab_module_add_mixed(UModule *c,
+static void fab_module_add_mixed(UProto *c,
                                 UValKind kind_a, int64_t ai, double af,
                                 UValKind kind_b, int64_t bi, double bf) {
     fab_module_int_add_int(c, 0, 0);  /* shape is identical */
-    c->root_proto->constants[0].kind = kind_a;
-    if (kind_a == UVAL_INT) c->root_proto->constants[0].v.i = ai;
-    else c->root_proto->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? af : (float)af;
-    c->root_proto->constants[1].kind = kind_b;
-    if (kind_b == UVAL_INT) c->root_proto->constants[1].v.i = bi;
-    else c->root_proto->constants[1].v.f = (URBI_FLOAT_TYPE == 8) ? bf : (float)bf;
+    c->constants[0].kind = kind_a;
+    if (kind_a == UVAL_INT) c->constants[0].v.i = ai;
+    else c->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? af : (float)af;
+    c->constants[1].kind = kind_b;
+    if (kind_b == UVAL_INT) c->constants[1].v.i = bi;
+    else c->constants[1].v.f = (URBI_FLOAT_TYPE == 8) ? bf : (float)bf;
 }
 
 UTEST(vm_add_int_float_promotes) {
-    UModule c; fab_module_add_mixed(&c, UVAL_INT, 2, 0, UVAL_FLOAT, 0, 1.5);
+    UProto c; fab_module_add_mixed(&c, UVAL_INT, 2, 0, UVAL_FLOAT, 0, 1.5);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -313,7 +300,7 @@ UTEST(vm_add_int_float_promotes) {
 }
 
 UTEST(vm_add_float_int_promotes) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 2.5, UVAL_INT, 3, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 2.5, UVAL_INT, 3, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -323,7 +310,7 @@ UTEST(vm_add_float_int_promotes) {
 }
 
 UTEST(vm_add_float_float) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.25, UVAL_FLOAT, 0, 2.75);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.25, UVAL_FLOAT, 0, 2.75);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -333,7 +320,7 @@ UTEST(vm_add_float_float) {
 }
 
 UTEST(vm_add_bool_int_is_type_error) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -342,7 +329,7 @@ UTEST(vm_add_bool_int_is_type_error) {
 }
 
 UTEST(vm_add_int_nil_is_type_error) {
-    UModule c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_NIL, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -354,13 +341,13 @@ UTEST(vm_add_int_nil_is_type_error) {
 
 /* Build an opcode of form R[2] = R[0] OP R[1]; RET R[2]. Parameterized
    over opcode so we can reuse for SUB / MUL / DIV. */
-static void fab_module_binop_int(UModule *c, UOpcode op, int64_t a, int64_t b) {
+static void fab_module_binop_int(UProto *c, UOpcode op, int64_t a, int64_t b) {
     fab_module_int_add_int(c, a, b);
-    c->root_proto->instructions[2] = uinstr_enc_abc(op, 2, 0, 1);
+    c->instructions[2] = uinstr_enc_abc(op, 2, 0, 1);
 }
 
 UTEST(vm_sub_int_int_normal) {
-    UModule c; fab_module_binop_int(&c, OP_SUB, 5, 3);
+    UProto c; fab_module_binop_int(&c, OP_SUB, 5, 3);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -370,7 +357,7 @@ UTEST(vm_sub_int_int_normal) {
 }
 
 UTEST(vm_sub_int_int_min_minus_one_wraps) {
-    UModule c; fab_module_binop_int(&c, OP_SUB, INT64_MIN, 1);
+    UProto c; fab_module_binop_int(&c, OP_SUB, INT64_MIN, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -380,8 +367,8 @@ UTEST(vm_sub_int_int_min_minus_one_wraps) {
 }
 
 UTEST(vm_sub_float_float) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 5.5, UVAL_FLOAT, 0, 1.25);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 5.5, UVAL_FLOAT, 0, 1.25);
+    c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -391,8 +378,8 @@ UTEST(vm_sub_float_float) {
 }
 
 UTEST(vm_sub_bool_operand_is_type_error) {
-    UModule c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_BOOL, 1, 0);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_BOOL, 1, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_SUB, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -402,7 +389,7 @@ UTEST(vm_sub_bool_operand_is_type_error) {
 /* --- OP_MUL --- */
 
 UTEST(vm_mul_int_int_normal) {
-    UModule c; fab_module_binop_int(&c, OP_MUL, 6, 7);
+    UProto c; fab_module_binop_int(&c, OP_MUL, 6, 7);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -412,7 +399,7 @@ UTEST(vm_mul_int_int_normal) {
 }
 
 UTEST(vm_mul_int_int_min_times_neg_one_wraps_to_min) {
-    UModule c; fab_module_binop_int(&c, OP_MUL, INT64_MIN, -1);
+    UProto c; fab_module_binop_int(&c, OP_MUL, INT64_MIN, -1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -422,8 +409,8 @@ UTEST(vm_mul_int_int_min_times_neg_one_wraps_to_min) {
 }
 
 UTEST(vm_mul_float_int_promotes) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.5, UVAL_INT, 4, 0);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.5, UVAL_INT, 4, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -435,7 +422,7 @@ UTEST(vm_mul_float_int_promotes) {
 /* --- OP_DIV --- */
 
 UTEST(vm_div_int_int_always_float) {
-    UModule c; fab_module_binop_int(&c, OP_DIV, 5, 2);
+    UProto c; fab_module_binop_int(&c, OP_DIV, 5, 2);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -445,7 +432,7 @@ UTEST(vm_div_int_int_always_float) {
 }
 
 UTEST(vm_div_int_int_exact_still_float) {
-    UModule c; fab_module_binop_int(&c, OP_DIV, 10, 2);
+    UProto c; fab_module_binop_int(&c, OP_DIV, 10, 2);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -455,7 +442,7 @@ UTEST(vm_div_int_int_exact_still_float) {
 }
 
 UTEST(vm_div_by_zero_positive_is_inf) {
-    UModule c; fab_module_binop_int(&c, OP_DIV, 5, 0);
+    UProto c; fab_module_binop_int(&c, OP_DIV, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -466,7 +453,7 @@ UTEST(vm_div_by_zero_positive_is_inf) {
 }
 
 UTEST(vm_div_by_zero_negative_is_neg_inf) {
-    UModule c; fab_module_binop_int(&c, OP_DIV, -5, 0);
+    UProto c; fab_module_binop_int(&c, OP_DIV, -5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -476,7 +463,7 @@ UTEST(vm_div_by_zero_negative_is_neg_inf) {
 }
 
 UTEST(vm_div_zero_by_zero_is_nan) {
-    UModule c; fab_module_binop_int(&c, OP_DIV, 0, 0);
+    UProto c; fab_module_binop_int(&c, OP_DIV, 0, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -487,8 +474,8 @@ UTEST(vm_div_zero_by_zero_is_nan) {
 }
 
 UTEST(vm_div_float_float) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 7.5, UVAL_FLOAT, 0, 2.5);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 7.5, UVAL_FLOAT, 0, 2.5);
+    c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -500,29 +487,28 @@ UTEST(vm_div_float_float) {
 /* --- OP_MOVE --- */
 
 /* Build LOADK R[0]=value; MOVE R[1]=R[0]; RET R[1]. */
-static void fab_module_loadk_move_ret(UModule *c, int64_t value) {
+static void fab_module_loadk_move_ret(UProto *c, int64_t value) {
     memset(c, 0, sizeof(*c));
-    fab_alloc_rp(c);
-    c->root_proto->max_reg = 1;
-    c->root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
-    c->root_proto->instr_cap = 3;
-    c->root_proto->instr_count = 3;
-    c->root_proto->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
-    c->root_proto->instructions[1] = uinstr_enc_abc(OP_MOVE, 1, 0, 0);
-    c->root_proto->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
-    c->root_proto->constants = (UValue *)malloc(sizeof(UValue) * 1);
-    c->root_proto->const_cap = 1;
-    c->root_proto->const_count = 1;
-    c->root_proto->constants[0].kind = UVAL_INT;
-    c->root_proto->constants[0].v.i  = value;
-    c->root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
-    c->root_proto->line_deltas[0] = 1;
-    c->root_proto->line_deltas[1] = 0;
-    c->root_proto->line_deltas[2] = 0;
+    c->max_reg = 1;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
+    c->instr_cap = 3;
+    c->instr_count = 3;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abc(OP_MOVE, 1, 0, 0);
+    c->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
+    c->constants = (UValue *)malloc(sizeof(UValue) * 1);
+    c->const_cap = 1;
+    c->const_count = 1;
+    c->constants[0].kind = UVAL_INT;
+    c->constants[0].v.i  = value;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
+    c->line_deltas[0] = 1;
+    c->line_deltas[1] = 0;
+    c->line_deltas[2] = 0;
 }
 
 UTEST(vm_move_copies_register) {
-    UModule c; fab_module_loadk_move_ret(&c, 99);
+    UProto c; fab_module_loadk_move_ret(&c, 99);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -534,20 +520,19 @@ UTEST(vm_move_copies_register) {
 
 UTEST(vm_move_self_copy_is_noop) {
     /* LOADK R[0]=7; MOVE R[0]=R[0]; RET R[0]. */
-    UModule c;
+    UProto c;
     memset(&c, 0, sizeof(c));
-    fab_alloc_rp(&c);
-    c.root_proto->max_reg = 0;
-    c.root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
-    c.root_proto->instr_cap = 3; c.root_proto->instr_count = 3;
-    c.root_proto->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
-    c.root_proto->instructions[1] = uinstr_enc_abc(OP_MOVE, 0, 0, 0);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    c.root_proto->constants = (UValue *)malloc(sizeof(UValue));
-    c.root_proto->const_cap = 1; c.root_proto->const_count = 1;
-    c.root_proto->constants[0].kind = UVAL_INT; c.root_proto->constants[0].v.i = 7;
-    c.root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
-    c.root_proto->line_deltas[0] = 1; c.root_proto->line_deltas[1] = 0; c.root_proto->line_deltas[2] = 0;
+    c.max_reg = 0;
+    c.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
+    c.instr_cap = 3; c.instr_count = 3;
+    c.instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c.instructions[1] = uinstr_enc_abc(OP_MOVE, 0, 0, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    c.constants = (UValue *)malloc(sizeof(UValue));
+    c.const_cap = 1; c.const_count = 1;
+    c.constants[0].kind = UVAL_INT; c.constants[0].v.i = 7;
+    c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
+    c.line_deltas[0] = 1; c.line_deltas[1] = 0; c.line_deltas[2] = 0;
 
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
@@ -561,24 +546,23 @@ UTEST(vm_move_self_copy_is_noop) {
 /* --- OP_NEG --- */
 
 /* LOADK R[0]=value; NEG R[1]=R[0]; RET R[1]. */
-static void fab_module_neg_int(UModule *c, int64_t value) {
+static void fab_module_neg_int(UProto *c, int64_t value) {
     memset(c, 0, sizeof(*c));
-    fab_alloc_rp(c);
-    c->root_proto->max_reg = 1;
-    c->root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
-    c->root_proto->instr_cap = 3; c->root_proto->instr_count = 3;
-    c->root_proto->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
-    c->root_proto->instructions[1] = uinstr_enc_abc(OP_NEG, 1, 0, 0);
-    c->root_proto->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
-    c->root_proto->constants = (UValue *)malloc(sizeof(UValue));
-    c->root_proto->const_cap = 1; c->root_proto->const_count = 1;
-    c->root_proto->constants[0].kind = UVAL_INT; c->root_proto->constants[0].v.i = value;
-    c->root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
-    c->root_proto->line_deltas[0] = 1; c->root_proto->line_deltas[1] = 0; c->root_proto->line_deltas[2] = 0;
+    c->max_reg = 1;
+    c->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 3);
+    c->instr_cap = 3; c->instr_count = 3;
+    c->instructions[0] = uinstr_enc_abx(OP_LOADK, 0, 0);
+    c->instructions[1] = uinstr_enc_abc(OP_NEG, 1, 0, 0);
+    c->instructions[2] = uinstr_enc_abc(OP_RET, 1, 0, 0);
+    c->constants = (UValue *)malloc(sizeof(UValue));
+    c->const_cap = 1; c->const_count = 1;
+    c->constants[0].kind = UVAL_INT; c->constants[0].v.i = value;
+    c->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 3);
+    c->line_deltas[0] = 1; c->line_deltas[1] = 0; c->line_deltas[2] = 0;
 }
 
 UTEST(vm_neg_int_normal) {
-    UModule c; fab_module_neg_int(&c, 5);
+    UProto c; fab_module_neg_int(&c, 5);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -588,7 +572,7 @@ UTEST(vm_neg_int_normal) {
 }
 
 UTEST(vm_neg_int64_min_wraps_to_int64_min) {
-    UModule c; fab_module_neg_int(&c, INT64_MIN);
+    UProto c; fab_module_neg_int(&c, INT64_MIN);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -598,9 +582,9 @@ UTEST(vm_neg_int64_min_wraps_to_int64_min) {
 }
 
 UTEST(vm_neg_float) {
-    UModule c; fab_module_neg_int(&c, 0);
-    c.root_proto->constants[0].kind = UVAL_FLOAT;
-    c.root_proto->constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? 3.25 : (float)3.25;
+    UProto c; fab_module_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_FLOAT;
+    c.constants[0].v.f = (URBI_FLOAT_TYPE == 8) ? 3.25 : (float)3.25;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c, &out));
@@ -610,8 +594,8 @@ UTEST(vm_neg_float) {
 }
 
 UTEST(vm_neg_nil_is_type_error) {
-    UModule c; fab_module_neg_int(&c, 0);
-    c.root_proto->constants[0].kind = UVAL_NIL;
+    UProto c; fab_module_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -621,7 +605,7 @@ UTEST(vm_neg_nil_is_type_error) {
 /* --- Diagnostic format tests --- */
 
 UTEST(vm_type_error_diagnostic_binary_op) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -637,7 +621,7 @@ UTEST(vm_type_error_diagnostic_binary_op) {
 }
 
 UTEST(vm_type_error_diagnostic_with_source_name) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     /* Allocate a source-name string via malloc+memcpy (strdup is POSIX, not
        C99; free_fab_module doesn't know about this field, so free explicitly). */
     const char src[] = "foo.u";
@@ -652,8 +636,8 @@ UTEST(vm_type_error_diagnostic_with_source_name) {
 }
 
 UTEST(vm_type_error_diagnostic_unary_op) {
-    UModule c; fab_module_neg_int(&c, 0);
-    c.root_proto->constants[0].kind = UVAL_NIL;
+    UProto c; fab_module_neg_int(&c, 0);
+    c.constants[0].kind = UVAL_NIL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -666,10 +650,10 @@ UTEST(vm_type_error_diagnostic_unary_op) {
 }
 
 UTEST(vm_type_error_diagnostic_no_synclines_uses_instr_prefix) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     /* Null out line_deltas to simulate a module built without syncline info. */
-    free(c.root_proto->line_deltas);
-    c.root_proto->line_deltas = NULL;
+    free(c.line_deltas);
+    c.line_deltas = NULL;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -702,7 +686,7 @@ static void *uvm_alloc_fail_nth(void *ptr, size_t nbytes, void *ud) {
 }
 
 UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
-    UModule c; fab_module_ret_only(&c, 0);
+    UProto c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, uvm_alloc_always_null, NULL);
     UValue out;
     UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, NULL, &c, &out));
@@ -729,7 +713,7 @@ UTEST(vm_oom_returns_uvm_oom_with_diagnostic) {
 UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
     uvm_alloc_fail_nth_count  = 0;
     uvm_alloc_fail_nth_target = 5;  /* fail the 5th alloc (call-frame stack) */
-    UModule c; fab_module_ret_only(&c, 0);
+    UProto c; fab_module_ret_only(&c, 0);
     UVM vm; urbi_vm_init(&vm, uvm_alloc_fail_nth, NULL);
     UValue out;
     UASSERT_EQ(UVM_OOM, urbi_vm_run(&vm, NULL, &c, &out));
@@ -742,8 +726,8 @@ UTEST(vm_oom_first_alloc_fails_second_would_succeed) {
 
 /* OP_MUL TypeError path (lines 435-439 in uvm.c): Bool*Int is ill-typed. */
 UTEST(vm_mul_bool_int_is_type_error) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_MUL, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -754,8 +738,8 @@ UTEST(vm_mul_bool_int_is_type_error) {
 
 /* OP_DIV TypeError path (lines 450-454 in uvm.c): Bool/Int is ill-typed. */
 UTEST(vm_div_bool_int_is_type_error) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
-    c.root_proto->instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 3, 0);
+    c.instructions[2] = uinstr_enc_abc(OP_DIV, 2, 0, 1);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -766,7 +750,7 @@ UTEST(vm_div_bool_int_is_type_error) {
 /* kind_name "Float" path (line 132): Float operand in a binary TypeError.
    Float+Bool: b=Float (number), c=Bool (not number) → error; b_kind=UVAL_FLOAT. */
 UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
-    UModule c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_FLOAT, 0, 1.0, UVAL_BOOL, 1, 0);
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -777,8 +761,8 @@ UTEST(vm_add_float_bool_diagnostic_shows_float_kind) {
 /* kind_name "String" path (line 134): fabricate a UVAL_STR constant as
    one operand; triggers a TypeError that prints "String". */
 UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
-    UModule c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
-    c.root_proto->constants[0].kind = UVAL_STR;  /* override to String */
+    UProto c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
+    c.constants[0].kind = UVAL_STR;  /* override to String */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -789,8 +773,8 @@ UTEST(vm_add_string_int_diagnostic_shows_string_kind) {
 /* kind_name "unknown" path (line 136): use an out-of-range kind value.
    This exercises the default fallback in kind_name. */
 UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
-    UModule c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
-    c.root_proto->constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
+    UProto c; fab_module_add_mixed(&c, UVAL_INT, 5, 0, UVAL_INT, 3, 0);
+    c.constants[0].kind = 99;  /* out-of-range — unreachable in normal use */
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -803,13 +787,12 @@ UTEST(vm_add_unknown_kind_diagnostic_shows_unknown) {
 UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
     /* Build: LOADK R[0]=Bool, LOADK R[1]=Int not needed — just ADD at pc=0
        directly using a 1-instruction module with Bool in both slots. */
-    UModule c;
+    UProto c;
     memset(&c, 0, sizeof(c));
-    fab_alloc_rp(&c);
-    c.root_proto->max_reg = 2;
-    c.root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
-    c.root_proto->instr_cap = 1; c.root_proto->instr_count = 1;
-    c.root_proto->instructions[0] = uinstr_enc_abc(OP_ADD, 0, 1, 2);
+    c.max_reg = 2;
+    c.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 1);
+    c.instr_cap = 1; c.instr_count = 1;
+    c.instructions[0] = uinstr_enc_abc(OP_ADD, 0, 1, 2);
     /* No constants needed — frame is zero-initialized to Nil, so
        ADD R[0]=R[1]+R[2] where R[1] and R[2] are Nil → TypeError at pc=0. */
     /* No line_deltas (NULL) → prefix falls back to "instr 0:". */
@@ -824,7 +807,7 @@ UTEST(vm_type_error_at_pc_zero_writes_instr_zero) {
 /* UDiagWriter truncation path (lines 176-184): a source_name long enough to
    push past the UVM_ERRMSG_CAP boundary. The message ends with "...". */
 UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     /* 110-character source name exceeds buffer capacity (128 bytes total),
        forcing truncation. malloc+memcpy avoids strdup (POSIX, not C99). */
     const char *long_name =
@@ -851,22 +834,22 @@ UTEST(vm_type_error_diagnostic_truncates_to_ellipsis) {
    abs_lines entry. The resulting diagnostic prefix uses "line N:" from
    the abs checkpoint rather than summing deltas. */
 UTEST(vm_line_for_pc_abs_checkpoint_used_in_diagnostic) {
-    UModule c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c; fab_module_add_mixed(&c, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     /* Override line_deltas: set delta[0..3] = INT8_MIN for all 4 instrs so
        every instruction references an abs checkpoint. */
-    free(c.root_proto->line_deltas);
-    c.root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
-    c.root_proto->line_deltas[0] = INT8_MIN;
-    c.root_proto->line_deltas[1] = INT8_MIN;
-    c.root_proto->line_deltas[2] = INT8_MIN;
-    c.root_proto->line_deltas[3] = INT8_MIN;
+    free(c.line_deltas);
+    c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    c.line_deltas[0] = INT8_MIN;
+    c.line_deltas[1] = INT8_MIN;
+    c.line_deltas[2] = INT8_MIN;
+    c.line_deltas[3] = INT8_MIN;
     /* Allocate abs_lines with 4 entries — one per instruction. */
-    c.root_proto->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 4);
-    c.root_proto->abs_line_count = 4;
-    c.root_proto->abs_lines[0].pc = 0; c.root_proto->abs_lines[0].line = 10;
-    c.root_proto->abs_lines[1].pc = 1; c.root_proto->abs_lines[1].line = 11;
-    c.root_proto->abs_lines[2].pc = 2; c.root_proto->abs_lines[2].line = 12;
-    c.root_proto->abs_lines[3].pc = 3; c.root_proto->abs_lines[3].line = 13;
+    c.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 4);
+    c.abs_line_count = 4;
+    c.abs_lines[0].pc = 0; c.abs_lines[0].line = 10;
+    c.abs_lines[1].pc = 1; c.abs_lines[1].line = 11;
+    c.abs_lines[2].pc = 2; c.abs_lines[2].line = 12;
+    c.abs_lines[3].pc = 3; c.abs_lines[3].line = 13;
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c, &out));
@@ -883,7 +866,7 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
     UVM vm; urbi_vm_init(&vm, NULL, NULL);
 
     /* Run 1 — force TypeError. */
-    UModule c1; fab_module_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
+    UProto c1; fab_module_add_mixed(&c1, UVAL_BOOL, 1, 0, UVAL_INT, 5, 0);
     UValue out;
     UASSERT_EQ(UVM_TYPE_ERROR, urbi_vm_run(&vm, NULL, &c1, &out));
     UASSERT_EQ(UVM_TYPE_ERROR, vm.last_error);
@@ -891,7 +874,7 @@ UTEST(vm_run_resets_last_error_on_successful_run) {
     free_fab_module(&c1);
 
     /* Run 2 — succeeds. last_error and last_errmsg should be reset. */
-    UModule c2; fab_module_loadk_int_ret(&c2, 42);
+    UProto c2; fab_module_loadk_int_ret(&c2, 42);
     UASSERT_EQ(UVM_OK, urbi_vm_run(&vm, NULL, &c2, &out));
     UASSERT_EQ(UVM_OK, vm.last_error);
     UASSERT_EQ('\0', vm.last_errmsg[0]);
@@ -1100,7 +1083,7 @@ UTEST(vm_uclosure_carries_proto_inst_field) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -1123,9 +1106,11 @@ UTEST(vm_uclosure_carries_proto_inst_field) {
      * index).  The proto pointer must match the closure's own proto. */
     UASSERT(cl->proto_inst != NULL);
     UASSERT(cl->proto_inst->proto == cl->proto);
+    /* Destroy VM first so GC runs closure destructors (refcount → 0),
+     * then destroy module buffers safely. */
+    urbi_vm_destroy(&vm);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
 }
 
 UTEST(vm_op_closure_binds_proto_inst) {
@@ -1141,7 +1126,7 @@ UTEST(vm_op_closure_binds_proto_inst) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -1161,9 +1146,11 @@ UTEST(vm_op_closure_binds_proto_inst) {
     UASSERT(cl != NULL);
     UASSERT(cl->proto_inst != NULL);
     UASSERT(cl->proto_inst->proto == cl->proto);
+    /* Destroy VM first so GC runs closure destructors (refcount → 0),
+     * then destroy module buffers safely. */
+    urbi_vm_destroy(&vm);
     uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
-    urbi_vm_destroy(&vm);
 }
 
 UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
@@ -1186,7 +1173,7 @@ UTEST(vm_op_getslot_binds_ic_table_at_top_level) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -1223,7 +1210,7 @@ UTEST(vm_op_setslot_binds_ic_table_at_top_level) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;

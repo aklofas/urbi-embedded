@@ -68,7 +68,7 @@ UTEST(at_event_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Three-statement brace-block at-body — the eye_demo idiom. */
@@ -119,7 +119,7 @@ UTEST(at_cond_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -157,7 +157,7 @@ UTEST(whenever_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -190,7 +190,7 @@ UTEST(at_event_brace_onleave_handler_compiles)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Parse-only smoke test — onleave on event watchers doesn't fire

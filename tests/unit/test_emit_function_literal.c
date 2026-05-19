@@ -34,7 +34,7 @@ static UVMError fn_lit_eval(const char *src, UValue *out) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -65,7 +65,7 @@ static UEmitError fn_lit_emit_error(const char *src) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;

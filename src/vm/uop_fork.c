@@ -116,8 +116,7 @@ fork_spawn_child(UStrand *s, UClosure *child_closure)
         return NULL;
     }
 
-    child->module     = s->module;      /* diagnostics + nested-proto lookup */
-    child->root_proto = s->root_proto;  /* v0.8.1 Phase 1: inherit fast-path alias */
+    child->root_proto = s->root_proto;  /* v0.9.2: sole chunk identity */
     /* v0.8.1 Phase 2 (Variant B fusion): child strand-bind bump goes to
      * root_proto, not module->refcount.  child->root_proto is already set
      * above; ustrand_destroy will dec it at child death. */

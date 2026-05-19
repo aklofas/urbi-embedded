@@ -22,7 +22,7 @@
 #define UTEST(name) static void name(void)
 
 /* Compile source using the standard emit pipeline. */
-static int compile_src(const char *src, UVM *vm, UModule *m, UArena *arena)
+static int compile_src(const char *src, UVM *vm, UProto *m, UArena *arena)
 {
     ULexer  lex;
     UParser p;
@@ -56,7 +56,7 @@ UTEST(run_chunk_registers_module)
     /* Compile a simple expression. */
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule mod;
+    UProto mod;
     urbi_zero(&mod, sizeof(mod));
     int rc = compile_src("1 + 2 |", &vm, &mod, &arena);
     UASSERT_EQ(0, rc);
@@ -91,7 +91,7 @@ UTEST(run_chunk_register_idempotent)
 
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule mod;
+    UProto mod;
     urbi_zero(&mod, sizeof(mod));
     int rc = compile_src("1 + 2 |", &vm, &mod, &arena);
     UASSERT_EQ(0, rc);
@@ -103,7 +103,7 @@ UTEST(run_chunk_register_idempotent)
     UASSERT_EQ(URBI_OK, run_rc);
     UASSERT(realm->loaded_protos_head == &mod);
     /* Snapshot the next_in_realm after first registration. */
-    UModule *next_after_first = mod.next_in_realm;
+    UProto *next_after_first = mod.next_in_realm;
 
     /* Second run — must not double-link (idempotent). */
     urbi_zero(&out, sizeof(out));

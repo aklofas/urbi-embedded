@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "chunk/uchunk.h"  /* UModule, UValue, UValKind, UOpcode */
+#include "chunk/uchunk.h"  /* UProto (UModule deleted v0.9.2), UValue, UValKind, UOpcode */
 #include "value/uvalue.h"   /* UValue — needed for handle_table field */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 #include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
@@ -580,7 +580,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
      * the sole deferred-destroy mechanism. */
     struct UProto      *rescued_protos;
-    struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
+    struct UProto  *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above; v0.9.2: was UModule* */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
      * buffer begins with a (void *next) header that threads onto this
@@ -761,7 +761,7 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    source-compat for existing callers via the matching update in the
    public header. */
 UVMError urbi_vm_run(UVM *vm, struct URealm *realm,
-                     const UModule *module, UValue *out);
+                     const UProto *root, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void urbi_vm_destroy(UVM *vm);

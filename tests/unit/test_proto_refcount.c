@@ -45,7 +45,7 @@ UTEST(proto_refcount_rescue_then_pool_free_no_double_free)
     UASSERT(fire != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,

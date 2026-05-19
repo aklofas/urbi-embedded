@@ -68,7 +68,7 @@ UTEST(waituntil_cascade_three_strands_wake)
     UASSERT(go != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Setup:

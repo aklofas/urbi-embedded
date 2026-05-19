@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "vm/uvm.h"
-#include "chunk/uchunk.h"   /* UModule, UProto */
+#include "chunk/uchunk.h"   /* UProto */
 #include "runtime/uclosure.h" /* UClosure, UUpvalCell */
 #include "sched/ustrand.h"    /* UStrand */
 
@@ -32,15 +32,15 @@ void diag_write_cstr(UDiagWriter *w, const char *s);
 void diag_write_u32(UDiagWriter *w, uint32_t n);
 void diag_write_size(UDiagWriter *w, size_t n);
 void diag_write_kind_name(UDiagWriter *w, uint8_t kind);
-void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc);
+void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc);
 
 const char *kind_name(uint8_t kind);
 const char *op_name(uint8_t op);
-uint32_t    vm_line_for_pc(const UModule *module, size_t pc);
+uint32_t    vm_line_for_pc(const UProto *module, size_t pc);
 
-void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
+void vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
                                  uint8_t op, uint8_t b_kind, uint8_t c_kind);
-void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
+void vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
                                 uint8_t op, uint8_t b_kind);
 void vm_format_type_error_msg(UVM *vm, const char *msg);
 void vm_format_oom(UVM *vm, size_t nbytes);

@@ -181,13 +181,13 @@ static bool init_ic_slices_recursive(struct UVM *vm,
 }
 
 UChunkInstance *
-urbi_module_instance_create(struct UVM *vm, UModule *m)
+urbi_module_instance_create(struct UVM *vm, UProto *m)
 {
     if (vm == NULL || m == NULL) {
         return NULL;
     }
-    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
-    UProto *rp = m->root_proto;
+    /* v0.9.2: m IS the root UProto. */
+    UProto *rp = m;
 
     /* Cell 1: UChunkInstance.  Cast cell pointer to struct (UCell is the
      * first member; addresses coincide).  Caller is responsible for OOM. */
@@ -222,8 +222,9 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * For flat trees total_proto_count == 1 + root_nested_count (identical
      * to the prior formula).  For recursive trees it includes grandchildren.
      * Fall back to the flat formula if total_proto_count is 0 — that
-     * happens only for hand-wired test modules that bypass uemit_finish
-     * and uchunk_deserialize. */
+     * happens only for hand-wired test roots that bypass uemit_finish
+     * and uchunk_deserialize.
+     * v0.9.2: m IS the root UProto; total_proto_count is directly on m. */
     uint16_t n = m->total_proto_count;
     if (n == 0U) {
         n = (uint16_t)(1U + root_nested_count);
@@ -291,7 +292,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
      * UChunkInstance.  DFS pre-order matches ic_index assignment order.
      * The field is currently unread by the runtime; Task 7 will use it. */
-    stamp_owning_mi(m->root_proto, mi);
+    stamp_owning_mi(m, mi);
 
     return mi;
 }
@@ -309,12 +310,12 @@ urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi)
 }
 
 UChunkInstance *
-urbi_get_or_create_module_instance(struct UVM *vm, UModule *m)
+urbi_get_or_create_module_instance(struct UVM *vm, UProto *root)
 {
-    if (vm == NULL || m == NULL) return NULL;
+    if (vm == NULL || root == NULL) return NULL;
     UChunkInstance *mi;
     for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
-        if (mi->module == m) return mi;
+        if (mi->module == root) return mi;
     }
-    return urbi_module_instance_create(vm, m);
+    return urbi_module_instance_create(vm, root);
 }

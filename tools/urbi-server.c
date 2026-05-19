@@ -111,7 +111,7 @@ static int run_boot_script(UVM *vm, const char *path) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module = (UModule){0};
+    UProto module = (UProto){0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, path);
 

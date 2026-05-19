@@ -33,7 +33,7 @@
 /* Compile `src` into *out_mod.  Returns true on success.
  * Mirrors the fork_compile pattern from test_fork.c (file-static helper). */
 static bool
-compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
+compile_chunk(UVM *vm, UArena *arena, UProto *out_mod, const char *src)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -64,7 +64,7 @@ UTEST(loader_drive_completes_trivial_chunk)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(compile_chunk(&vm, &arena, &module, "42"));
 
@@ -101,7 +101,7 @@ UTEST(loader_drive_parks_on_sleep)
     URealm *realm = urbi_realm_global(&vm);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     /* waituntil (false) parks with USTRAND_WAIT_WATCHER; cond starts false
      * so the watcher installs and the strand remains WAITING. */
@@ -119,8 +119,7 @@ UTEST(loader_drive_parks_on_sleep)
     /* Strand state is parked (WAITING upper nibble), not DEAD and not RUNNING. */
     UASSERT(USTRAND_IS_WAITING(s));
     /* root_proto->refcount > 0 — strand-bind still live. */
-    UASSERT(module.root_proto != NULL);
-    UASSERT((unsigned)module.root_proto->refcount > 0);
+    UASSERT((unsigned)module.refcount > 0);
 
     /* Cleanup: explicitly destroy the strand so the realm shutdown
      * isn't holding live work.  This discharges the module refcount. */
@@ -139,7 +138,7 @@ UTEST(run_chunk_chunktop_amp_works)
     URealm *realm = urbi_realm_global(&vm);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "var a = 0; var b = 0; Realm.a = 1 & Realm.b = 2", NULL);
@@ -173,7 +172,7 @@ UTEST(run_chunk_chunktop_comma_works)
     URealm *realm = urbi_realm_global(&vm);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "Realm.a = 99 , Realm.b = 100", NULL);
@@ -204,7 +203,7 @@ UTEST(run_chunk_chain_call_forks)
     URealm *realm = urbi_realm_global(&vm);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
         "var a = 0; var b = 0;"
@@ -240,7 +239,7 @@ UTEST(run_chunk_parks_on_waituntil)
     URealm *realm = urbi_realm_global(&vm);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     /* Set a sentinel before the park to verify side effects up to the
      * park happened, then waituntil(false) parks forever. */
@@ -254,8 +253,7 @@ UTEST(run_chunk_parks_on_waituntil)
     UASSERT_EQ((int64_t)42, x.v.i);
 
     /* root_proto->refcount > 0 (loader strand parked, still bound). */
-    UASSERT(module.root_proto != NULL);
-    UASSERT((unsigned)module.root_proto->refcount > 0);
+    UASSERT((unsigned)module.refcount > 0);
 
     /* Note: we cannot let urbi_vm_destroy run with a parked strand AND
      * a heap-allocated module, because the parked strand keeps the
@@ -279,7 +277,7 @@ UTEST(strand_create_for_module_returns_non_transient)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(compile_chunk(&vm, &arena, &module, "42"));
 
@@ -287,13 +285,12 @@ UTEST(strand_create_for_module_returns_non_transient)
     UASSERT(s != NULL);
     UASSERT_EQ((unsigned)USTRAND_STATE_READY, (unsigned)USTRAND_GET_STATE(s));
     UASSERT_EQ(0U, (unsigned)s->is_transient_strand);  /* NOT transient */
-    UASSERT(s->module == &module);
-    /* v0.8.1 Phase 2: strand-bind refcount is on root_proto, not module. */
-    UASSERT(module.root_proto != NULL);
-    UASSERT_EQ((unsigned)1, (unsigned)module.root_proto->refcount);
+    UASSERT(s->root_proto == &module);
+    /* v0.8.1 Phase 2: strand-bind refcount is on root_proto (now == module). */
+    UASSERT_EQ((unsigned)1, (unsigned)module.refcount);
 
     urbi_strand_destroy(s);  /* tears down + drops root_proto refcount */
-    UASSERT_EQ((unsigned)0, (unsigned)module.root_proto->refcount);
+    UASSERT_EQ((unsigned)0, (unsigned)module.refcount);
 
     uarena_destroy(&arena);
     uchunk_destroy(&module, &vm);

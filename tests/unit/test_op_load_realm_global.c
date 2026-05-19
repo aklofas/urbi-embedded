@@ -30,7 +30,7 @@ typedef struct {
     ULexer   lex;
     UArena   arena;
     UParser  p;
-    UModule  module;
+    UProto  module;
     UVM      vm;
     UEmitter e;
     URealm  *realm;
@@ -42,7 +42,7 @@ static void rg_ctx_init(RGCtx *c, const char *src)
     uarena_init(&c->arena, 0);
     urbi_vm_init(&c->vm, NULL, NULL);
     c->realm  = urbi_realm_create(&c->vm);
-    c->module = (UModule){0};
+    c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
     uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_rg");
 }
@@ -103,8 +103,8 @@ UTEST(function_referencing_global_emits_load_realm_global_prologue) {
 
     /* Scan module instructions for OP_LOAD_REALM_GLOBAL. */
     bool found = false;
-    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_LOAD_REALM_GLOBAL) {
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_LOAD_REALM_GLOBAL) {
             found = true;
             /* It must be the first instruction (prologue). */
             UASSERT_EQ((size_t)0, i);
@@ -129,8 +129,8 @@ UTEST(function_without_global_ref_skips_prologue) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     /* Find the first UProto in the module (the inner function). */
-    UASSERT(c.module.root_proto->nested_count > 0U);
-    UProto *inner = c.module.root_proto->nested[0];
+    UASSERT(c.module.nested_count > 0U);
+    UProto *inner = c.module.nested[0];
     UASSERT(inner != NULL);
     UASSERT(inner->instr_count > 0U);
 

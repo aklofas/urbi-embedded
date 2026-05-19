@@ -57,7 +57,7 @@ UTEST(dangling_cl_at_event_from_function_body)
     UASSERT(fire != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Install the at-handler from inside a function body.  After install()

@@ -12,7 +12,7 @@
  *   3. liburbi.a re-links with the populated .gen.c
  *
  * Why concatenate-then-compile-once instead of one-module-per-file:
- * urbi_stdlib_boot deserializes a single UModule from the blob (see
+ * urbi_stdlib_boot deserializes a single UProto from the blob (see
  * src/stdlib/stdlib_boot.c §M6 Phase 4).  Multi-module loading would
  * need a length-prefixed framing format and a boot-side loop; the
  * one-module-shared-scope form keeps the boot path simple and matches

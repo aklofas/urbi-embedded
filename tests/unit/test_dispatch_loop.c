@@ -119,7 +119,6 @@ static int strand_setup(UStrand *s, UVM *vm,
     s->pc         = instructions;
     s->pc_base    = instructions;
     s->cur_consts = constants;
-    s->module     = NULL;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->out_slot     = NULL;
@@ -474,23 +473,18 @@ UTEST(dispatch_loop_throw_absorbed_by_catch) {
 
     static UValue no_consts[1];
 
-    /* urbi_unwind catch-absorption path does s->pc = s->module->instructions + handler_pc.
-       We must provide a minimal module so the pointer arithmetic is valid.
-       instrs is static so it outlives this call. */
-    static UModule fake_mod;
-    static UProto  fake_rp;
-    memset(&fake_mod, 0, sizeof(fake_mod));
+    /* urbi_unwind catch-absorption path does s->pc = s->root_proto->instructions
+       + handler_pc.  We must provide a minimal proto so the pointer arithmetic
+       is valid.  fake_rp is static so it outlives this call. */
+    static UProto fake_rp;
     memset(&fake_rp,  0, sizeof(fake_rp));
-    /* Task 11: all chunk-top data lives on root_proto. */
     fake_rp.instructions = instrs;
     fake_rp.instr_count  = 5U;
     fake_rp.constants    = no_consts;
-    fake_mod.root_proto  = &fake_rp;
 
     UStrand s;
     strand_setup(&s, &vm, instrs, no_consts, reg_stack);
     strand_setup_cleanup(&s, &vm);
-    s.module     = &fake_mod;  /* required by urbi_unwind catch-absorption */
     s.root_proto = &fake_rp;
     uproto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Give sufficient budget so the safepoint after THROW doesn't soft-yield
@@ -700,22 +694,17 @@ UTEST(dispatch_loop_nested_call_and_ret) {
     reg_stack[0].kind = (uint8_t)UVAL_CLOSURE;
     reg_stack[0].v.p  = &callee_closure;
 
-    /* urbi_unwind pop_call_frame does s->pc_base = s->module->instructions.
-       A minimal fake module pointing at caller_instrs is required. */
-    static UModule fake_caller_mod;
-    static UProto  fake_caller_rp;
-    memset(&fake_caller_mod, 0, sizeof(fake_caller_mod));
+    /* urbi_unwind pop_call_frame does s->pc_base = s->root_proto->instructions.
+       A minimal fake proto pointing at caller_instrs is required. */
+    static UProto fake_caller_rp;
     memset(&fake_caller_rp,  0, sizeof(fake_caller_rp));
-    /* Task 11: all chunk-top data lives on root_proto. */
     fake_caller_rp.instructions = caller_instrs;
     fake_caller_rp.instr_count  = 2U;
     fake_caller_rp.constants    = no_consts;
-    fake_caller_mod.root_proto  = &fake_caller_rp;
 
     UStrand s;
     strand_setup(&s, &vm, caller_instrs, no_consts, reg_stack);
     strand_setup_cleanup(&s, &vm);
-    s.module     = &fake_caller_mod;
     s.root_proto = &fake_caller_rp;
     uproto_refcount_inc(s.root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     /* Need non-zero budget so safepoints at CALL and non-top RET don't soft-yield. */

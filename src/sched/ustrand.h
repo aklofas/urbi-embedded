@@ -98,8 +98,7 @@ struct UTag;             /* T29 */
 struct UEvent;           /* reactive runtime */
 struct UVM;              /* uvm.h — forward-decl to avoid circular include */
 struct URealm;           /* urealm.h — forward-decl for strand lifecycle context */
-struct UModule;          /* umodule.h — forward-decl for strand execution context */
-struct UProto;           /* module/umodule.h — forward-decl for root_proto fast-path (v0.8.1) */
+struct UProto;           /* uproto.h — forward-decl for root_proto (v0.8.1+) */
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
 struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
@@ -247,12 +246,12 @@ struct UStrand {
     const uint32_t         *pc;             /* current instruction pointer */
     const uint32_t         *pc_base;        /* base of current frame's instruction array */
     const UValue           *cur_consts;     /* current frame's constant pool */
-    const struct UModule   *module;         /* top-level module (diagnostics + nested protos) */
-    struct UProto          *root_proto;     /* fast-path chunk bytecode access (v0.8.1 Phase 1).
-                                             * Aliases module->root_proto at strand creation.
-                                             * Phase 1: cohabits with s->module; readers still use
-                                             * s->module->X.  Task 4 migrates ~27 hot-path sites to
-                                             * s->root_proto->X.  NULL if module is NULL. */
+    struct UProto          *root_proto;     /* root UProto of the chunk being executed.
+                                             * Replaces the deleted s->module field (v0.9.2 Task 4.1).
+                                             * Set at strand creation (strand_create_for_module) and
+                                             * cleared in ustrand_destroy after refcount dec.
+                                             * NULL for closure-based strands (set by arm_from_closure
+                                             * callers via uproto_root_of on the closure's proto). */
     /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
      * Bound by urbi_vm_run / urbi_run_chunk via
      * urbi_get_or_create_module_instance.  May be NULL if not yet wired
@@ -282,9 +281,9 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3896,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3888,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
-               /* v0.8.4 Step C-3: -16 B from deleting closure_list + closed_cells (3912 → 3896) */);
+               /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888) */);
 #endif
 
 /* === Lifecycle functions ===
@@ -382,8 +381,8 @@ int urbi_strand_arm_init(struct UStrand *s);
  * Asserted in -DURBI_DEBUG builds via URBI_INTERNAL_ASSERT inside the inner
  * urbi_strand_arm_init helper.
  *
- * NOTE: does NOT set s->module — callers that need module for diagnostics or
- * nested-proto lookup must set it explicitly after this call returns 0.
+ * NOTE: does NOT set s->root_proto — callers that need root_proto for
+ * diagnostics or nested-proto lookup must set it explicitly after this call returns 0.
  *
  * NOTE (CHSTR-014, CHSTR-037 / T102 + T105): does NOT set s->module_instance
  * either.  The M4-follow-up per-(vm, module) IC RAM tier requires each spawn
@@ -399,31 +398,27 @@ int urbi_strand_arm_from_closure(struct UStrand *s, struct UClosure *entry);
 
 /* === v0.8.0: urbi_strand_create_for_module ===
  *
- * Allocates a non-transient scheduler-managed strand bound to module's root
- * chunk.  Bumps module.refcount.  Arms register stack (via urbi_strand_arm_init)
- * and wires instruction pointers, constant pool, module pointer, and
+ * Allocates a non-transient scheduler-managed strand bound to a root UProto.
+ * Bumps root->refcount.  Arms register stack (via urbi_strand_arm_init)
+ * and wires instruction pointers, constant pool, root_proto, and
  * UChunkInstance.  Transitions DORMANT → READY via urbi_strand_start so the
  * host's main urbi_step loop picks it up.
  *
- * Distinct from urbi_strand_create(realm, closure): chunk-top has no closure
- * — root instructions live in module->instructions directly per the v0.8.0
- * architecture spec §5.1.  The pre-M8 UModule thin-shell + root UProto
- * extraction refactor collapses this asymmetry; today the helper wraps the
- * asymmetric setup.
+ * v0.9.2 Task 4.1: takes UProto* (root proto) instead of UModule*.
  *
  * Strand lifecycle: persists in realm->strands_head until it reaches DEAD
  * naturally (OP_RET / fatal); the host's urbi_step loop drives it.
- * urbi_strand_destroy unbinds the module (drops refcount) and frees backing
- * storage.
+ * urbi_strand_destroy unbinds the root proto (drops refcount) and frees
+ * backing storage.
  *
  * Returns the READY strand on success, NULL on OOM (any allocation failure
  * during setup tears down the partially-armed strand before returning NULL).
  *
- * Preconditions: module->instr_count > 0; realm non-NULL (pass
+ * Preconditions: root->instr_count > 0; realm non-NULL (pass
  * urbi_realm_global(vm) if in doubt); vm non-NULL. */
 struct UStrand *urbi_strand_create_for_module(struct UVM *vm,
                                               struct URealm *realm,
-                                              struct UModule *module);
+                                              struct UProto *root);
 
 #ifdef __cplusplus
 }

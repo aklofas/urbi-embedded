@@ -14,7 +14,7 @@
 #include "object/uobject.h"
 #include "object/uic.h"        /* UIC, urbi_slot_set_slow — T23 cleanup absorption */
 #include "object/ushape.h"     /* urbi_shape_find_slot, URBI_SHAPE_SLOT_INVALID */
-#include "chunk/uchunk.h"   /* UValue, UModule */
+#include "chunk/uchunk.h"   /* UValue, UProto */
 #include "value/uintern.h"    /* ustr_intern — T20/T21 set local slots on atom protos */
 #include "value/uarena.h"
 #include "lex/ulex.h"
@@ -36,7 +36,7 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
     UParser p;

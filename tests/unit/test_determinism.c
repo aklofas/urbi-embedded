@@ -172,13 +172,13 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
+    UProto m = {0};
     USymbol *xsym = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(xsym != NULL);
 
     /* Allocate root_proto for the hand-constructed module fabric.
      * Task 11 of v0.8.1-uproto-root moved all chunk-top data (ic_count,
-     * ic_names, nested[]) from UModule onto UModule.root_proto.
+     * ic_names, nested[]) from UProto onto UProto.root_proto.
      * uchunk_destroy with alloc_fn==NULL falls back to stdlib_alloc,
      * which will call uproto_destroy_buffers (frees ic_names[])
      * then free(root_proto). */
@@ -186,10 +186,10 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UASSERT(m.root_proto != NULL);
 
     /* Populate the root-chunk IC side table (root chunk). */
-    m.root_proto->ic_count = 1;
-    m.root_proto->ic_names = (USymbol **)malloc(1 * sizeof(USymbol *));
-    UASSERT(m.root_proto->ic_names != NULL);
-    m.root_proto->ic_names[0] = xsym;
+    m.ic_count = 1;
+    m.ic_names = (USymbol **)malloc(1 * sizeof(USymbol *));
+    UASSERT(m.ic_names != NULL);
+    m.ic_names[0] = xsym;
 
     UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
     UASSERT(mi != NULL);
@@ -213,7 +213,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
 
     urbi_module_instance_destroy(&vm, mi);
     /* uchunk_destroy: alloc_fn==NULL → stdlib_alloc fallback.
-     * uproto_destroy_buffers frees m.root_proto->ic_names[],
+     * uproto_destroy_buffers frees m.ic_names[],
      * then free(root_proto) is called by uchunk_destroy_internal. */
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);

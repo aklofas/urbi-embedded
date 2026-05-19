@@ -5,12 +5,12 @@
  * Root cause (audit 2026-05-10): closures stored as realm-globals via
  * setSlot / var-decl at chunk-top were migrated to vm->stdlib_closures at
  * run-end (pre-v0.8.4), but their UProto objects were owned by the stack-local
- * UModule in urbi_repl_eval and freed by uchunk_destroy immediately after.
+ * UProto in urbi_repl_eval and freed by uchunk_destroy immediately after.
  * The next REPL session that called the closure dereferenced proto->instructions
  * — a dangling pointer — producing a segfault.
  *
  * The fix (v0.8.1): urbi_repl_eval calls rescued_protos mechanism so root
- * protos outlive the UModule.  UClosure and UUpvalCell are GC-managed since
+ * protos outlive the UProto.  UClosure and UUpvalCell are GC-managed since
  * v0.8.4 Step C-2; vm->stdlib_closures was deleted at Step C-3.
  *
  * Tests in this file exercise:

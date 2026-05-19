@@ -53,7 +53,7 @@ UTEST(amp_inside_function_called_from_at_handler)
     UASSERT(tick != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -101,7 +101,7 @@ UTEST(amp_at_chunktop_works_v0_8_0)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* v0.8.0: persistent loader strand enables OP_FORK_JOIN at chunk-top.

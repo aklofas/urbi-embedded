@@ -35,7 +35,9 @@ static UVMError lazy_eval(const char *src, UValue *out) {
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    UProto module = {0};
+    module.alloc_fn = vm.alloc_fn;
+    module.alloc_ud = vm.alloc_ud;
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
 
@@ -90,7 +92,7 @@ static UEmitError lazy_emit_error(const char *src) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;

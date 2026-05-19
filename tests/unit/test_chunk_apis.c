@@ -23,7 +23,7 @@
    Returns true on success; the caller owns the module and must call
    uchunk_destroy() when done. */
 static bool
-compile_src(UVM *vm, const char *src, UModule *out_module)
+compile_src(UVM *vm, const char *src, UProto *out_module)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -31,7 +31,7 @@ compile_src(UVM *vm, const char *src, UModule *out_module)
     UArena arena;
     uarena_init(&arena, 4096);
 
-    *out_module = (UModule){0};
+    *out_module = (UProto){0};
 
     UEmitter e;
     uemit_init(&e, out_module, &arena, vm, NULL);
@@ -67,7 +67,7 @@ UTEST(run_chunk_round_trip_with_realm)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "1 + 2", &module));
 
     UValue result = {0};
@@ -89,7 +89,7 @@ UTEST(run_chunk_null_realm_uses_global)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m1, m2;
+    UProto m1, m2;
     UASSERT(compile_src(&vm, "2 + 2", &m1));
     UASSERT(compile_src(&vm, "10 - 3", &m2));
 
@@ -121,7 +121,7 @@ UTEST(run_chunk_null_out_result_no_crash)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "42", &module));
 
     int rc = urbi_run_chunk(&vm, NULL, &module, NULL);
@@ -156,7 +156,7 @@ UTEST(run_chunk_honors_supplied_realm)
         (UErrCode)urbi_realm_set_global_const(&vm, r1, "K", 1, v);
     UASSERT_EQ((int)set_rc, (int)URBI_OK);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "K", &module));
 
     UValue result = {0};
@@ -306,7 +306,7 @@ UTEST(run_script_returns_ok_discards_result)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "7 * 6", &module));
 
     int rc = urbi_run_script(&vm, NULL, &module);
@@ -330,7 +330,7 @@ UTEST(load_module_null_args_rejected)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "42", &module));
 
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
@@ -363,7 +363,7 @@ UTEST(load_module_installs_top_level_var)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "var x = 42", &module));
 
     int rc = urbi_load_module(&vm, &module, "test_module");

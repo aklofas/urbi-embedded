@@ -65,7 +65,7 @@ count_alloc(void *ptr, size_t nbytes, void *ud)
      * Earlier malloc-only implementation worked by accident pre-e6e7c24
      * (the stdlib module's alloc_fn was NULL and module_allocator() fell
      * back to stdlib_alloc/realloc); once vm->alloc_fn was propagated into
-     * the stdlib UModule, the missing realloc surfaced as a segfault during
+     * the stdlib UProto, the missing realloc surfaced as a segfault during
      * uchunk_destroy walking uninitialised nested-slot tails. */
     return realloc(ptr, nbytes);
 }

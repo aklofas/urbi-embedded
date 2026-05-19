@@ -50,7 +50,7 @@
 
 typedef struct {
     UVM     vm;
-    UModule module;
+    UProto module;
     UArena  arena;
 } PipeCtx;
 
@@ -60,6 +60,8 @@ compile_source(PipeCtx *ctx, const char *src)
     urbi_vm_init(&ctx->vm, NULL, NULL);
     uarena_init(&ctx->arena, 4096);
     memset(&ctx->module, 0, sizeof(ctx->module));
+    ctx->module.alloc_fn = ctx->vm.alloc_fn;
+    ctx->module.alloc_ud = ctx->vm.alloc_ud;
 
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -300,7 +302,6 @@ setup_strand_for_install(UStrand *s, UVM *vm,
     s->pc           = instrs;
     s->pc_base      = instrs;
     s->cur_consts   = NULL;
-    s->module       = NULL;
     s->frame_count  = 0;
     s->cleanup_base = cleanup_base;
     s->cleanup_cap  = 64;

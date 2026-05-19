@@ -66,7 +66,7 @@ struct UVM;
 struct UStrand;
 struct UTag;
 struct URealm;
-struct UModule;
+struct UProto;    /* v0.9.2: replaced UModule — a "module" IS its root UProto */
 struct UClosure;
 struct UObject;
 struct UEvent;

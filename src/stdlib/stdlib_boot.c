@@ -133,29 +133,17 @@ urbi_stdlib_boot(UVM *vm)
         if (vm->alloc_fn == NULL) {
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
-        UModule *m = vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
-        if (m == NULL) return URBI_ERR_OOM;
-        /* Zero-init: uchunk_destroy on a zero UModule is safe (header
-         * §470).  urbi_zero used (not memset) per freestanding
-         * discipline. */
-        urbi_zero(m, sizeof(UModule));
-        /* Freestanding: uchunk_deserialize requires module->alloc_fn for
-         * the internal proto + buffer allocations.  Hosted builds fall
-         * back to stdlib_alloc inside module_allocator(); freestanding
-         * does not and returns UCHUNK_LOAD_OOM if alloc_fn is NULL.  Inherit
-         * the VM's allocator so the stdlib module shares the VM heap. */
-        m->alloc_fn = vm->alloc_fn;
-        m->alloc_ud = vm->alloc_ud;
+        /* v0.9.2: uchunk_deserialize allocates root UProto via alloc_fn. */
+        UProto *m = NULL;
         UChunkLoadError lerr = uchunk_deserialize(
-            m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
+            &m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len,
+            vm->alloc_fn, vm->alloc_ud, NULL, 0);
         if (lerr != UCHUNK_LOAD_OK) {
-            uchunk_destroy(m, vm);
-            vm->alloc_fn(m, 0, vm->alloc_ud);
+            /* uchunk_deserialize cleaned up partial allocations on failure. */
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
         if (urbi_get_or_create_module_instance(vm, m) == NULL) {
             uchunk_destroy(m, vm);
-            vm->alloc_fn(m, 0, vm->alloc_ud);
             return URBI_ERR_OOM;
         }
         vm->stdlib_module = m;

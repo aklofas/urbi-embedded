@@ -33,7 +33,7 @@
  * EMIT_OK on success.  Caller owns module (must destroy) and arena. */
 static UEmitError compile_src(const char *src,
                               UVM *vm,
-                              UModule *module,
+                              UProto *module,
                               UArena *arena) {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -59,12 +59,12 @@ UTEST(ic_index_root_is_zero) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
     UEmitter e;
     uemit_init(&e, &m, &arena, &vm, NULL);
 
-    UASSERT(m.root_proto != NULL);
-    UASSERT_EQ(m.root_proto->ic_index, 0);
+    
+    UASSERT_EQ(m.ic_index, 0);
     UASSERT_EQ(m.next_proto_serial, 0);
 
     uchunk_destroy(&m, &vm);
@@ -77,16 +77,16 @@ UTEST(ic_index_nested_increments_in_alloc_order) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
     UEmitter e;
     uemit_init(&e, &m, &arena, &vm, NULL);
-    UASSERT(m.root_proto != NULL);
+    
 
     /* Allocate three protos under root.  Even with the post-Task-5
      * recursive emitter, this direct-allocation pattern still allocates
      * under the explicit parent — so all three are flat siblings. */
-    UProto *p1 = uproto_alloc_nested(&m, m.root_proto);
-    UProto *p2 = uproto_alloc_nested(&m, m.root_proto);
+    UProto *p1 = uproto_alloc_nested(&m, &m);
+    UProto *p2 = uproto_alloc_nested(&m, &m);
     UProto *p3 = uproto_alloc_nested(&m, p1);
 
     UASSERT(p1 != NULL);
@@ -100,9 +100,9 @@ UTEST(ic_index_nested_increments_in_alloc_order) {
     UASSERT_EQ(m.next_proto_serial, 3);
 
     /* Tree shape: root has [p1, p2]; p1 has [p3]; p2 has nothing. */
-    UASSERT_EQ(m.root_proto->nested_count, 2);
-    UASSERT(m.root_proto->nested[0] == p1);
-    UASSERT(m.root_proto->nested[1] == p2);
+    UASSERT_EQ(m.nested_count, 2);
+    UASSERT(m.nested[0] == p1);
+    UASSERT(m.nested[1] == p2);
     UASSERT_EQ(p1->nested_count, 1);
     UASSERT(p1->nested[0] == p3);
     UASSERT_EQ(p2->nested_count, 0);
@@ -117,7 +117,7 @@ UTEST(total_proto_count_set_at_uemit_finish) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
 
     /* Three top-level function literals; pre-Task-5 flat siblings under root.
      * total_proto_count = 1 (root) + 3 = 4. */
@@ -126,8 +126,8 @@ UTEST(total_proto_count_set_at_uemit_finish) {
         "var b = function() { 2 };"
         "var c = function() { 3 };", &vm, &m, &arena);
     UASSERT_EQ(rc, EMIT_OK);
-    UASSERT(m.root_proto != NULL);
-    UASSERT_EQ(m.root_proto->nested_count, 3);
+    
+    UASSERT_EQ(m.nested_count, 3);
     UASSERT_EQ(m.total_proto_count, 4);
 
     uchunk_destroy(&m, &vm);
@@ -144,7 +144,7 @@ UTEST(proto_instances_n_equals_total_proto_count) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
 
     UEmitError rc = compile_src(
         "var a = function() { 1 };"
@@ -160,7 +160,7 @@ UTEST(proto_instances_n_equals_total_proto_count) {
     UChunkInstance *mi = vm.module_instances_head;
     UASSERT(mi != NULL);
     UASSERT(mi->proto_instances != NULL);
-    UASSERT_EQ(m.root_proto->nested_count, 3);
+    UASSERT_EQ(m.nested_count, 3);
     UASSERT_EQ(m.total_proto_count, 4);
     /* proto_instances->n must equal total_proto_count (was 1 + nested_count
      * — identical for flat trees, diverges for recursive). */
@@ -183,7 +183,7 @@ UTEST(verifier_accepts_emitted_module) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
 
     UEmitError rc = compile_src(
         "function() { function() { 0 } }", &vm, &m, &arena);
@@ -198,16 +198,16 @@ UTEST(verifier_accepts_emitted_module) {
     ptrdiff_t written = uchunk_serialize(&m, blob, (size_t)need);
     UASSERT_EQ(written, need);
 
-    UModule m2 = {0};
+    UProto *m2 = NULL;
     char errmsg[256] = {0};
     UChunkLoadError lerr = uchunk_deserialize(&m2, blob, (size_t)need,
-                                                errmsg, sizeof(errmsg));
+                                                NULL, NULL, errmsg, sizeof(errmsg));
     UASSERT_EQ(lerr, UCHUNK_LOAD_OK);
-    UASSERT(m2.root_proto != NULL);
-    UASSERT_EQ(m2.total_proto_count, m.total_proto_count);
+    UASSERT(m2 != NULL);
+    UASSERT_EQ(m2->total_proto_count, m.total_proto_count);
 
     free(blob);
-    uchunk_destroy(&m2, &vm);
+    uchunk_destroy(m2, &vm);
     uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
@@ -222,7 +222,7 @@ UTEST(emitter_produces_recursive_tree) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
 
     /* outer contains middle, middle contains inner.  Pre-Task-5: all three
      * are flat siblings under root, so root.nested_count == 3.
@@ -231,10 +231,10 @@ UTEST(emitter_produces_recursive_tree) {
     UEmitError rc = compile_src(
         "function() { function() { function() { 0 } } }", &vm, &m, &arena);
     UASSERT_EQ(rc, EMIT_OK);
-    UASSERT(m.root_proto != NULL);
+    
 
-    UASSERT_EQ(m.root_proto->nested_count, 1);
-    UProto *outer = m.root_proto->nested[0];
+    UASSERT_EQ(m.nested_count, 1);
+    UProto *outer = m.nested[0];
     UASSERT(outer != NULL);
     UASSERT_EQ(outer->nested_count, 1);
     UProto *middle = outer->nested[0];
@@ -248,9 +248,9 @@ UTEST(emitter_produces_recursive_tree) {
     UASSERT_EQ(m.total_proto_count, 4);
 
     /* root_proto-back-pointer walk reached every depth. */
-    UASSERT(outer->root  == m.root_proto);
-    UASSERT(middle->root == m.root_proto);
-    UASSERT(inner->root  == m.root_proto);
+    UASSERT(outer->root  == &m);
+    UASSERT(middle->root == &m);
+    UASSERT(inner->root  == &m);
 
     uchunk_destroy(&m, &vm);
     uarena_destroy(&arena);
@@ -266,7 +266,7 @@ UTEST(sibling_density_at_depth) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 16384);
-    UModule m = {0};
+    UProto m = {0};
 
     /* outer function contains 50 sibling function literals.  Pre-v0.8.5
      * all 50 would be flat siblings under root with root.nested_count = 51.
@@ -282,10 +282,10 @@ UTEST(sibling_density_at_depth) {
 
     UEmitError rc = compile_src(src, &vm, &m, &arena);
     UASSERT_EQ(rc, EMIT_OK);
-    UASSERT(m.root_proto != NULL);
+    
 
-    UASSERT_EQ(m.root_proto->nested_count, 1);
-    UProto *outer = m.root_proto->nested[0];
+    UASSERT_EQ(m.nested_count, 1);
+    UProto *outer = m.nested[0];
     UASSERT(outer != NULL);
     UASSERT_EQ(outer->nested_count, 50);
     UASSERT_EQ(m.total_proto_count, 52);  /* root + outer + 50 */
@@ -300,7 +300,7 @@ UTEST(mixed_tree_3x3) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 8192);
-    UModule m = {0};
+    UProto m = {0};
 
     /* 3 top-level functions, each with 3 nested. */
     const char *src =
@@ -317,9 +317,9 @@ UTEST(mixed_tree_3x3) {
     UEmitError rc = compile_src(src, &vm, &m, &arena);
     UASSERT_EQ(rc, EMIT_OK);
 
-    UASSERT_EQ(m.root_proto->nested_count, 3);
+    UASSERT_EQ(m.nested_count, 3);
     for (size_t i = 0; i < 3; i++) {
-        UProto *p = m.root_proto->nested[i];
+        UProto *p = m.nested[i];
         UASSERT(p != NULL);
         UASSERT_EQ(p->nested_count, 3);
         for (size_t j = 0; j < 3; j++) {
@@ -339,7 +339,7 @@ UTEST(ic_index_dense_and_dfs_preorder) {
     urbi_vm_init(&vm, NULL, NULL);
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule m = {0};
+    UProto m = {0};
 
     /* Tree:                            ic_index
      *   root                              0
@@ -355,11 +355,11 @@ UTEST(ic_index_dense_and_dfs_preorder) {
     UEmitError rc = compile_src(src, &vm, &m, &arena);
     UASSERT_EQ(rc, EMIT_OK);
 
-    UASSERT_EQ(m.root_proto->ic_index, 0);
-    UASSERT_EQ(m.root_proto->nested[0]->ic_index, 1);
-    UASSERT_EQ(m.root_proto->nested[0]->nested[0]->ic_index, 2);
-    UASSERT_EQ(m.root_proto->nested[1]->ic_index, 3);
-    UASSERT_EQ(m.root_proto->nested[1]->nested[0]->ic_index, 4);
+    UASSERT_EQ(m.ic_index, 0);
+    UASSERT_EQ(m.nested[0]->ic_index, 1);
+    UASSERT_EQ(m.nested[0]->nested[0]->ic_index, 2);
+    UASSERT_EQ(m.nested[1]->ic_index, 3);
+    UASSERT_EQ(m.nested[1]->nested[0]->ic_index, 4);
     UASSERT_EQ(m.total_proto_count, 5);
 
     uchunk_destroy(&m, &vm);

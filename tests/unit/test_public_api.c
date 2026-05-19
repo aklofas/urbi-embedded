@@ -221,7 +221,7 @@ UTEST(run_chunk_threads_realm_argument_through_vm_run)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module;
+    UProto module;
     memset(&module, 0, sizeof(module));
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);

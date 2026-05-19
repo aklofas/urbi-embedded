@@ -4,7 +4,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"   /* UDiagWriter typedef + forward decls */
-#include "chunk/uchunk.h"    /* UModule, UOpcode */
+#include "chunk/uchunk.h"    /* UProto, UOpcode */
 #include "value/uvalue.h"      /* UValKind, UVAL_* */
 #include <stddef.h>
 #include <stdint.h>
@@ -144,9 +144,9 @@ void diag_write_kind_name(UDiagWriter *w, uint8_t kind) {
    index 0, summing deltas; abs_lines entries (triggered by INT8_MIN
    sentinel) replace the accumulator. Returns 0 on absent syncline
    data or out-of-range pc. */
-uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
-    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
-    const UProto *rp = module->root_proto;
+uint32_t vm_line_for_pc(const UProto *module, size_t pc) {
+    /* v0.9.2: module IS the root UProto. */
+    const UProto *rp = module;
     if (rp == NULL) return 0;
     const int8_t       *line_deltas  = rp->line_deltas;
     const UAbsLine     *abs_lines    = rp->abs_lines;
@@ -179,7 +179,7 @@ uint32_t vm_line_for_pc(const UModule *module, size_t pc) {
 }
 
 /* Format the prefix "source:line:" / "line N:" / "instr N:" into w. */
-void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
+void diag_write_prefix(UDiagWriter *w, const UProto *module, size_t pc) {
     uint32_t line = vm_line_for_pc(module, pc);
     if (line == 0) {
         diag_write_cstr(w, "instr ");
@@ -199,7 +199,7 @@ void diag_write_prefix(UDiagWriter *w, const UModule *module, size_t pc) {
 
 /* Binary-op TypeError: two operand kinds reported.
    Format: "<prefix>TypeError: <OP_NAME> operands must be Integer or Float (got <Kind>, <Kind>)" */
-void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
+void vm_format_type_error_binary(UVM *vm, const UProto *module, size_t pc,
                                  uint8_t op, uint8_t b_kind, uint8_t c_kind) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);
@@ -214,7 +214,7 @@ void vm_format_type_error_binary(UVM *vm, const UModule *module, size_t pc,
 }
 
 /* Unary-op TypeError: one operand kind reported. */
-void vm_format_type_error_unary(UVM *vm, const UModule *module, size_t pc,
+void vm_format_type_error_unary(UVM *vm, const UProto *module, size_t pc,
                                 uint8_t op, uint8_t b_kind) {
     UDiagWriter w;
     diag_init(&w, vm->last_errmsg, UVM_ERRMSG_CAP);

@@ -119,7 +119,7 @@ void urbi_aux_set_error(struct UVM *vm, int code,
 /* === Composite bytecode load + run ===
  *
  * urbi_aux_load_and_run: deserialize a wire-format bytecode buffer into a
- * UModule, run its root chunk under the VM's global realm, and return the
+ * root UProto, run its root chunk under the VM's global realm, and return the
  * chunk result.
  *
  * vm         — initialized VM; must not be NULL.
@@ -130,7 +130,7 @@ void urbi_aux_set_error(struct UVM *vm, int code,
  *              if the caller does not need the result.
  *
  * Internally calls urbi_module_from_bytes + urbi_run_chunk + urbi_module_free.
- * The temporary UModule is freed before returning.
+ * The temporary root UProto is freed before returning.
  *
  * Returns:
  *   URBI_OK                            — success
