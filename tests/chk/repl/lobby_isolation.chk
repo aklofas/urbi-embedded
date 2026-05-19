@@ -1,0 +1,18 @@
+# v0.9.1 Phase 8 Task 32 — session realm isolation.
+#
+# Spec §3.3 / §9.1: each REPL session gets its own realm; per-realm
+# writes do NOT leak to Global.  Validates by setting a realm-local var
+# then confirming it's invisible from Global.  Multi-client cross-
+# session isolation is exercised by tests/unit/test_repl_multi_client.c
+# (Task 33) over real TCP loopback.
+
+# Set a realm-local var (Realm.x is per-session by construction).
+> {"id":4,"op":"eval","code":"var localcell = 7; localcell"}
+< "id":4 | "kind":"result" | "value":"7"
+< "id":4 | "kind":"done"
+
+# Confirm it's NOT visible on Global (Global is a VM singleton).
+# Accessing an undefined slot raises a runtime error.
+> {"id":5,"op":"eval","code":"Global.localcell"}
+< "id":5 | "kind":"error"
+< "id":5 | "kind":"done"

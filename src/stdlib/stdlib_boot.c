@@ -30,6 +30,10 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
+#include "stdlib/lobby_native.h"
+#ifdef URBI_ENABLE_REPL
+#  include "stdlib/debug_namespace.h"
+#endif
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
@@ -98,6 +102,30 @@ urbi_stdlib_boot(UVM *vm)
     rc = urbi_stdlib_register_primitives(vm);
     if (rc != URBI_OK) return rc;
 
+    /* v0.9.1 Phase 5: Lobby proto + __builtin_lobby_send native primitive.
+     * Allocates vm->lobby_proto chained on root Object and installs the
+     * single native method.  The `lobbies` slot, `echo` / `wall` /
+     * `handleDisconnect` methods, and the `onDisconnect` Event are added
+     * by the lobby.u overlay during the post-loop bake-blob run.  Realm-
+     * global binding for "Lobby" is deferred to urbi_lobby_native_register_-
+     * globals (called by urbi_populate_realm_globals after the registry
+     * loop).  Default-build (not REPL-gated): Lobby is part of the spec
+     * §3.6 readonly cohort, and urbi_vm_write_in_realm — the routing path
+     * — is also default-build. */
+    rc = urbi_lobby_native_register(vm);
+    if (rc != URBI_OK) return rc;
+
+#ifdef URBI_ENABLE_REPL
+    /* v0.9.1 Task 22: Debug namespace.  Allocates the singleton proto +
+     * binds 9 native-method slots.  The realm-global "Debug" binding is
+     * deferred to urbi_debug_namespace_register_globals (called from
+     * urbi_populate_realm_globals AFTER the mark_readonly pass).  The
+     * proto itself is NOT marked readonly — symmetry with Global, the
+     * other reflective namespace. */
+    rc = urbi_debug_namespace_register(vm);
+    if (rc != URBI_OK) return rc;
+#endif
+
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
      * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
@@ -137,6 +165,15 @@ urbi_stdlib_boot(UVM *vm)
          * urbi_run_chunk would re-enter the realm-create path.  Phase
          * 10 will arrange the run via a deferred-execution hook once
          * the global Realm is fully populated. */
+    }
+
+    /* v0.9.1 Task 4: mark every builtin atom + runtime-type proto readonly
+     * AFTER all population phases (1-9) so the method-install passes are not
+     * blocked by their own readonly bits.  Spec §4.2.  The Global namespace
+     * proto (vm->global_namespace_proto) is left mutable by design. */
+    {
+        int rc_ro = urbi_atom_protos_mark_readonly(vm);
+        if (rc_ro != URBI_OK) return rc_ro;
     }
 
     vm->stdlib_booted = 1U;

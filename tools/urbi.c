@@ -4,6 +4,8 @@
 /* Enable POSIX interfaces: clock_gettime, struct timespec, fileno, isatty. */
 #define _POSIX_C_SOURCE 200809L
 
+#include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -24,6 +26,11 @@
 #include "vm/uvm.h"
 
 #include "linenoise.h"
+
+#if defined(URBI_ENABLE_REPL)
+#  include "urbi/repl.h"
+#  include "repl/urepl_transport_tcp.h"
+#endif
 
 /* --- helpers --- */
 
@@ -46,6 +53,12 @@ static void print_usage(FILE *out) {
         "Options:\n"
         "  --version, -V        print version and exit\n"
         "  --help, -h           print this help and exit\n"
+#if defined(URBI_ENABLE_REPL)
+        "  --listen [ADDR:]PORT also serve NDJSON REPL on the given TCP\n"
+        "                       socket (interactive mode only)\n"
+        "  --token TOK          bearer token for --listen\n"
+        "                       (env URBI_REPL_TOKEN also consulted)\n"
+#endif
         "\n"
         "Exit status:\n"
         "  0   success\n"
@@ -344,7 +357,14 @@ static char *history_path(void) {
     return path;
 }
 
-static int run_interactive(UVM *vm) {
+/* listen_addr_port: "[ADDR:]PORT" or "PORT".  NULL = no network listener.
+ * listen_token:    NULL = no auth (loopback only).
+ *
+ * The local linenoise REPL realm and the network listener's per-session
+ * lobby realms are independent — this is the simple v0.9.1 split. */
+static int run_interactive(UVM *vm,
+                           const char *listen_addr_port,
+                           const char *listen_token) {
     clock_gettime(CLOCK_MONOTONIC, &g_start_time);
     signal(SIGINT, sigint_handler);
 
@@ -354,10 +374,166 @@ static int run_interactive(UVM *vm) {
         return 1;
     }
 
+#if defined(URBI_ENABLE_REPL)
+    UReplServer  *listen_server   = NULL;
+    UTcpListener *listen_listener = NULL;
+    if (listen_addr_port != NULL) {
+        UReplConfig cfg;
+        memset(&cfg, 0, sizeof cfg);
+        cfg.bind_addr          = "127.0.0.1";
+        cfg.tcp_port           = 54000;
+        cfg.max_clients        = 16;
+        cfg.output_ringbuf_cap = 64 * 1024;
+        cfg.auth_token         = listen_token;
+
+        /* Accept ":PORT", "ADDR:PORT", or bare "PORT". */
+        const char *colon = strrchr(listen_addr_port, ':');
+        static char host_buf[128];
+        if (colon != NULL) {
+            size_t hn = (size_t)(colon - listen_addr_port);
+            if (hn > 0) {
+                if (hn >= sizeof host_buf) hn = sizeof host_buf - 1;
+                memcpy(host_buf, listen_addr_port, hn);
+                host_buf[hn] = '\0';
+                cfg.bind_addr = host_buf;
+            }
+            cfg.tcp_port = atoi(colon + 1);
+        } else {
+            cfg.tcp_port = atoi(listen_addr_port);
+        }
+        if (cfg.tcp_port <= 0) {
+            fprintf(stderr, "urbi: --listen: bad port: %s\n", listen_addr_port);
+            urbi_realm_destroy(vm, repl_realm);
+            return 2;
+        }
+
+        int err = 0;
+        listen_server = urbi_repl_serve(vm, &cfg, &err);
+        if (listen_server == NULL) {
+            if (err == URBI_ERR_INSECURE_CONFIG) {
+                fprintf(stderr,
+                        "urbi: --listen %s refused (non-loopback bind "
+                        "without --token / URBI_REPL_TOKEN)\n", cfg.bind_addr);
+            } else {
+                fprintf(stderr, "urbi: --listen: urbi_repl_serve failed: %d\n", err);
+            }
+            urbi_realm_destroy(vm, repl_realm);
+            return 1;
+        }
+        listen_listener = urepl_tcp_listener_create(cfg.bind_addr, cfg.tcp_port);
+        if (listen_listener == NULL) {
+            fprintf(stderr, "urbi: --listen: failed to bind %s:%d\n",
+                    cfg.bind_addr, cfg.tcp_port);
+            urbi_repl_stop(listen_server);
+            urbi_realm_destroy(vm, repl_realm);
+            return 1;
+        }
+        int rrc = urbi_repl_register_transport(listen_server,
+                                               &UREPL_TCP_TRANSPORT,
+                                               listen_listener);
+        if (rrc != URBI_OK) {
+            fprintf(stderr, "urbi: --listen: register_transport failed: %d\n", rrc);
+            urepl_tcp_listener_destroy(listen_listener);
+            urbi_repl_stop(listen_server);
+            urbi_realm_destroy(vm, repl_realm);
+            return 1;
+        }
+        fprintf(stderr, "urbi: --listen %s:%u%s\n",
+                cfg.bind_addr, (unsigned)listen_listener->port,
+                (cfg.auth_token && cfg.auth_token[0]) ? " (auth required)" : " (no auth)");
+        fflush(stderr);
+    }
+#else
+    (void)listen_addr_port; (void)listen_token;
+#endif
+
     char *histpath = history_path();
     linenoiseHistorySetMaxLen(1000);
     if (histpath) linenoiseHistoryLoad(histpath);
 
+#if defined(URBI_ENABLE_REPL)
+    /* Listen-mode loop: use the multiplexed linenoise API so we can
+     * interleave urbi_step() calls.  The dispatch drain hook is wired
+     * into urbi_step, so periodic stepping is what lets a remote
+     * urbi-send client get a response even while the local user has
+     * not yet hit enter. */
+    if (listen_server != NULL) {
+        struct linenoiseState ls;
+        char editbuf[2048];
+        if (linenoiseEditStart(&ls, -1, -1, editbuf, sizeof editbuf, "") < 0) {
+            fprintf(stderr, "urbi: linenoiseEditStart failed\n");
+            urbi_repl_stop(listen_server);
+            urepl_tcp_listener_destroy(listen_listener);
+            urbi_realm_destroy(vm, repl_realm);
+            free(histpath);
+            return 1;
+        }
+        for (;;) {
+            if (g_interrupted) { g_interrupted = 0; continue; }
+
+            struct pollfd pfd = { .fd = ls.ifd, .events = POLLIN };
+            int pr = poll(&pfd, 1, 25 /* ms */);
+            /* Drive the VM on every poll wake so queued NDJSON jobs from
+             * network clients dispatch even while the local user types. */
+            (void)urbi_step(vm, 1024, NULL);
+            if (pr < 0) {
+                if (errno == EINTR) continue;
+                break;
+            }
+            if (pr == 0) continue;  /* idle tick — keep polling */
+
+            char *line = linenoiseEditFeed(&ls);
+            if (line == linenoiseEditMore) continue;
+            linenoiseEditStop(&ls);
+            if (line == NULL) break;   /* Ctrl-D / Ctrl-C / I/O error */
+
+            if (line[0] != '\0') {
+                linenoiseHistoryAdd(line);
+                if (histpath) linenoiseHistorySave(histpath);
+
+                size_t ll = strlen(line);
+                size_t t  = ll;
+                while (t > 0 && (line[t - 1] == ' ' || line[t - 1] == '\t' ||
+                                 line[t - 1] == '\r' || line[t - 1] == '\n')) {
+                    t--;
+                }
+                size_t bufcap = ll + 3;
+                char *buf = malloc(bufcap);
+                if (buf != NULL) {
+                    memcpy(buf, line, ll);
+                    size_t final_len;
+                    if (t > 0 && line[t - 1] == '|') {
+                        buf[ll] = '\0';
+                        final_len = ll;
+                    } else {
+                        buf[ll]     = ' ';
+                        buf[ll + 1] = '|';
+                        buf[ll + 2] = '\0';
+                        final_len   = ll + 2;
+                    }
+                    char result_buf[512] = {0};
+                    int eval_rc = urbi_repl_eval(vm, repl_realm, buf, final_len,
+                                                 result_buf, sizeof result_buf);
+                    if (eval_rc == URBI_OK) {
+                        printf("[%08u] %s\n", ms_since_start(), result_buf);
+                    } else {
+                        const char *msg = result_buf[0] ? result_buf
+                                        : (vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
+                        printf("[%08u] !!! %s\n", ms_since_start(), msg);
+                    }
+                    fflush(stdout);
+                    free(buf);
+                }
+            }
+            linenoiseFree(line);
+
+            /* Re-arm linenoise for the next line. */
+            if (linenoiseEditStart(&ls, -1, -1, editbuf, sizeof editbuf, "") < 0) {
+                break;
+            }
+        }
+    } else
+#endif
     for (;;) {
         if (g_interrupted) { g_interrupted = 0; continue; }
 
@@ -413,6 +589,14 @@ static int run_interactive(UVM *vm) {
 
     if (histpath) linenoiseHistorySave(histpath);
     free(histpath);
+#if defined(URBI_ENABLE_REPL)
+    if (listen_server != NULL) {
+        urbi_repl_stop(listen_server);
+    }
+    if (listen_listener != NULL) {
+        urepl_tcp_listener_destroy(listen_listener);
+    }
+#endif
     urbi_realm_destroy(vm, repl_realm);
     return 0;
 }
@@ -452,6 +636,35 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
+    /* Scan for --listen [addr:]port and --token TOK (v0.9.1).  Both are
+     * interactive-mode-only — they're ignored by -e/-f/dump modes (which
+     * exit before reaching the local REPL loop).  Token precedence:
+     *   --token flag > URBI_REPL_TOKEN env > NULL (no auth, loopback only).
+     *
+     * Outside URBI_ENABLE_REPL=1 builds the flags are accepted and rejected
+     * with a clear error rather than treated as unknown-option. */
+    const char *listen_addr_port = NULL;
+    const char *listen_token     = getenv("URBI_REPL_TOKEN");
+    for (int i = 1; i < argc; i++) {
+        if (eq(argv[i], "--listen") && i + 1 < argc) {
+            listen_addr_port = argv[++i];
+        } else if (eq(argv[i], "--token") && i + 1 < argc) {
+            listen_token = argv[++i];
+        }
+    }
+#if !defined(URBI_ENABLE_REPL)
+    if (listen_addr_port != NULL) {
+        fprintf(stderr, "urbi: --listen requires URBI_ENABLE_REPL=1 at build time\n");
+        return 2;
+    }
+#endif
+    /* --listen implies interactive — the listener thread needs the main
+     * thread to drive urbi_step (via urbi_repl_eval inside the linenoise
+     * loop). */
+    if (listen_addr_port != NULL) {
+        want_interactive = true;
+    }
+
     /* Scan for -e. */
     const char *expr = NULL;
     for (int i = 1; i < argc; i++) {
@@ -478,14 +691,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Positional file: first non-flag argument that isn't an -e/-f value.
-       Note: this loop does NOT skip -e/-f argument values — it's safe at
-       M1 because the -e branch above already returns before reaching
-       here, and a positional file with a leading '-' is unsupported. If
-       new flags with non-returning handlers land in M2+, this scan must
-       skip their argument values explicitly. */
+    /* Positional file: first non-flag argument that isn't an -e/-f value
+       nor a --listen/--token value (v0.9.1).  Skips known multi-arg flag
+       values so e.g. `urbi --listen :14242` doesn't treat ":14242" as a
+       script path. */
     if (!file_arg) {
         for (int i = 1; i < argc; i++) {
+            if (eq(argv[i], "--listen") || eq(argv[i], "--token") ||
+                eq(argv[i], "-e") || eq(argv[i], "-f")) {
+                i++;  /* skip the flag's value */
+                continue;
+            }
             if (argv[i][0] != '-') {
                 file_arg = argv[i];
                 break;
@@ -613,7 +829,7 @@ int main(int argc, char *argv[]) {
         (argc == 1 && isatty(fileno(stdin)))) {
         UVM vm;
         urbi_vm_init(&vm, NULL, NULL);
-        int rc = run_interactive(&vm);
+        int rc = run_interactive(&vm, listen_addr_port, listen_token);
         urbi_vm_destroy(&vm);
         return rc;
     }

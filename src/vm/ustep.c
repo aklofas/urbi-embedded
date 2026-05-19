@@ -11,10 +11,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* v0.9.1 — REPL service step-driver hook.  Defined in src/repl/
+ * urepl_dispatch.c when URBI_ENABLE_REPL=1, weak/no-op otherwise so
+ * the default build links cleanly without the REPL TUs.  The hook
+ * reads vm->repl_server: if non-NULL, drains the per-server job queue
+ * and signals reader subthreads to flush output.  Called BEFORE any
+ * other step work so REPL commands submitted between steps are
+ * visible to bytecode that runs this tick. */
+__attribute__((weak)) void urepl_dispatch_drain_if_active(struct UVM *vm);
+__attribute__((weak)) void
+urepl_dispatch_drain_if_active(struct UVM *vm) { (void)vm; }
+
 UStepResult
 urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
 {
     URBI_ASSERT_NOT_ISR(vm);
+
+    /* v0.9.1 REPL drain hook (weak symbol; no-op outside URBI_ENABLE_REPL). */
+    urepl_dispatch_drain_if_active(vm);
 
     /* Fast-path: previous call left a fatal strand wired; caller must inspect
      * and reset (via urbi_strand_reset) or shut down before calling again. */

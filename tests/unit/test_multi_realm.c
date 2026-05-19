@@ -12,19 +12,21 @@
  *      (slot not found on B's global_object → URBI_ERR_STRAND_FATAL).
  *
  *   2. cross_session_shared_proto
- *      Realm A sets `Object.foo = 42`.  Object is a VM-level singleton
- *      (vm->atom_object), shared across realms, so Realm B reading
- *      `Object.foo` must return 42.
+ *      Realm A sets `Global.foo = 42`.  Global is a VM-level singleton
+ *      (vm->global_namespace_proto), shared across realms, so Realm B
+ *      reading `Global.foo` must return 42.  (v0.9.1: migrated from
+ *      `Object.foo` — Object became readonly per spec §4.2.)
  *
  *   3. cross_session_closure_call
- *      Realm A defines `Object.f = function() { 7 }`.  Realm B calls
- *      `Object.f()` — must return 7.
+ *      Realm A defines `Global.f = function() { 7 }`.  Realm B calls
+ *      `Global.f()` — must return 7.  (v0.9.1: Global vs. Object.)
  *
  *   4. cross_session_closure_survives_realm_destroy
- *      Realm A defines `Object.g = function() { 11 }`.  Realm A is then
- *      destroyed.  Realm B calls `Object.g()` — must still return 11.
+ *      Realm A defines `Global.g = function() { 11 }`.  Realm A is then
+ *      destroyed.  Realm B calls `Global.g()` — must still return 11.
  *      The root_proto refcount rescue keeps A's protos alive on
  *      vm->rescued_protos even after the realm is gone.
+ *      (v0.9.1: Global vs. Object.)
  */
 
 #include "utest.h"
@@ -109,13 +111,15 @@ UTEST(cross_session_shared_proto)
 
     char buf[256];
 
-    /* Realm A: set Object.foo = 42. */
-    int rc_a = eval_under(&vm, a, "Object.foo = 42", buf, sizeof(buf));
+    /* Realm A: set Global.foo = 42.  v0.9.1 migration: Object (and the
+     * other 14 builtin atom protos) became readonly at v0.9.1; Global is
+     * the new designated mutable shared atom per spec §4.1. */
+    int rc_a = eval_under(&vm, a, "Global.foo = 42", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_a);
 
-    /* Realm B: read Object.foo — must be 42. */
+    /* Realm B: read Global.foo — must be 42. */
     buf[0] = '\0';
-    int rc_b = eval_under(&vm, b, "Object.foo", buf, sizeof(buf));
+    int rc_b = eval_under(&vm, b, "Global.foo", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_b);
     UASSERT_EQ((int64_t)42, parse_int_result(buf));
 
@@ -145,13 +149,13 @@ UTEST(cross_session_closure_call)
 
     char buf[256];
 
-    /* Realm A: define Object.f. */
-    int rc_a = eval_under(&vm, a, "Object.f = function() { 7 }", buf, sizeof(buf));
+    /* Realm A: define Global.f.  v0.9.1: migrated from Object.f (frozen). */
+    int rc_a = eval_under(&vm, a, "Global.f = function() { 7 }", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_a);
 
-    /* Realm B: call Object.f() — must return 7. */
+    /* Realm B: call Global.f() — must return 7. */
     buf[0] = '\0';
-    int rc_b = eval_under(&vm, b, "Object.f()", buf, sizeof(buf));
+    int rc_b = eval_under(&vm, b, "Global.f()", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_b);
     UASSERT_EQ((int64_t)7, parse_int_result(buf));
 
@@ -179,17 +183,17 @@ UTEST(cross_session_closure_survives_realm_destroy)
 
     char buf[256];
 
-    /* Realm A: define Object.g. */
-    int rc_a = eval_under(&vm, a, "Object.g = function() { 11 }", buf, sizeof(buf));
+    /* Realm A: define Global.g.  v0.9.1: migrated from Object.g (frozen). */
+    int rc_a = eval_under(&vm, a, "Global.g = function() { 11 }", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_a);
 
-    /* Destroy realm A BEFORE realm B reads Object.g.
+    /* Destroy realm A BEFORE realm B reads Global.g.
      * The root_proto refcount rescue must keep A's protos alive. */
     urbi_realm_destroy(&vm, a);
 
-    /* Realm B: call Object.g() — must still return 11. */
+    /* Realm B: call Global.g() — must still return 11. */
     buf[0] = '\0';
-    int rc_b = eval_under(&vm, b, "Object.g()", buf, sizeof(buf));
+    int rc_b = eval_under(&vm, b, "Global.g()", buf, sizeof(buf));
     UASSERT_EQ(URBI_OK, rc_b);
     UASSERT_EQ((int64_t)11, parse_int_result(buf));
 

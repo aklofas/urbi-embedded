@@ -165,11 +165,23 @@ UToken consume(UParser *p) {
 /* --- AST constructors.  Return NULL on arena OOM. --- */
 
 UAstNode *make_node(UParser *p, UAstKind k, int line, int col) {
+    /* v0.9.1 compile-budget guard: every AST allocation is counted.  Once a
+     * limit is tripped, the budget_exceeded latch is sticky and subsequent
+     * make_node calls fail-fast — the parse cleanly unwinds with NULL
+     * propagation (same shape as the existing arena OOM path). */
+    if (p->budget_exceeded) return NULL;
+    if (p->budget != NULL && p->budget->max_ast_nodes > 0U
+            && p->node_count >= p->budget->max_ast_nodes) {
+        p->budget_exceeded = true;
+        p->budget_err      = URBI_ERR_COMPILE_BUDGET_NODES;
+        return NULL;
+    }
     UAstNode *n = uarena_alloc(p->arena, sizeof *n);
     if (!n) return NULL;
     n->kind = k;
     n->line = line;
     n->col = col;
+    p->node_count++;
     return n;
 }
 

@@ -97,15 +97,62 @@ fail_tag:
     return NULL;
 }
 
-/* === urbi_realm_create_repl === (v0.9.0-repl) */
+/* === urbi_realm_create_repl === (v0.9.0-repl)
+ *
+ * v0.9.1 update: auto-applies URBI_DEFAULT_REPL_BUDGET so REPL realms
+ * are protected from untrusted-source compile bombs by default.  Embedders
+ * may override post-create via urbi_realm_set_compile_budget. */
 URealm *
 urbi_realm_create_repl(struct UVM *vm)
 {
     URealm *r = urbi_realm_create(vm);
     if (r != NULL) {
         r->flags |= REALM_REPL;
+        r->compile_budget = URBI_DEFAULT_REPL_BUDGET;
+        r->has_compile_budget = true;
     }
     return r;
+}
+
+/* === v0.9.1: per-realm writer + compile-budget setters ===
+ *
+ * URBI_DEFAULT_REPL_BUDGET: 256 / 100000 / 1 MiB per spec §3.4.
+ * Defined here (not in a header) so external consumers link against the
+ * canonical instance.  Embedders may copy + tweak per-realm. */
+const UCompileBudget URBI_DEFAULT_REPL_BUDGET = {
+    256U,                  /* max_parser_depth  — Lua-grade default */
+    100000U,               /* max_ast_nodes     — comfortably above any sane REPL line */
+    1U << 20               /* max_source_bytes  — 1 MiB hard cap on submitted source */
+};
+
+void
+urbi_realm_set_writer(struct UVM *vm, URealm *realm,
+                      urbi_writer_fn fn, void *ud)
+{
+    (void)vm;
+    if (realm == NULL) return;
+    realm->writer_fn = fn;
+    realm->writer_ud = ud;
+}
+
+void
+urbi_realm_set_compile_budget(URealm *realm, const UCompileBudget *budget)
+{
+    if (realm == NULL) return;
+    if (budget == NULL) {
+        realm->has_compile_budget = false;
+        /* compile_budget contents intentionally left as-is; gated by flag. */
+        return;
+    }
+    realm->compile_budget = *budget;
+    realm->has_compile_budget = true;
+}
+
+const UCompileBudget *
+urbi_realm_get_compile_budget(const URealm *realm)
+{
+    if (realm == NULL || !realm->has_compile_budget) return NULL;
+    return &realm->compile_budget;
 }
 
 /* === urbi_realm_destroy ===

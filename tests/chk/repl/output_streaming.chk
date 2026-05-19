@@ -1,0 +1,16 @@
+# v0.9.1 Phase 8 Task 32 — streaming output envelopes during an eval.
+#
+# Spec §6.3: streaming output written inside an eval frame carries the
+# eval id; the dispatcher emits one "output" envelope per write via the
+# per-realm session_writer.  3 sequential writes via the host primitive
+# = 3 output envelopes + 1 result + 1 done.
+#
+# Uses Lobby.__builtin_lobby_send directly; see echo_routes_to_session.chk
+# for the rationale (v0.9.1 closure-name-resolution follow-up).
+
+> {"id":6,"op":"eval","code":"Lobby.__builtin_lobby_send(\"t1\", \"\", \"***\") ; Lobby.__builtin_lobby_send(\"t2\", \"\", \"***\") ; Lobby.__builtin_lobby_send(\"t3\", \"\", \"***\") ; 0"}
+< "id":6 | "kind":"output" | *** t1
+< "id":6 | "kind":"output" | *** t2
+< "id":6 | "kind":"output" | *** t3
+< "id":6 | "kind":"result" | "value":"0"
+< "id":6 | "kind":"done"

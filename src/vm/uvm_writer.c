@@ -12,6 +12,7 @@
  */
 
 #include "vm/uvm.h"
+#include "realm/urealm.h"    /* URealm + per-realm writer fields (v0.9.1) */
 #include "urbi/urbi.h"
 
 #include <stddef.h>
@@ -134,6 +135,19 @@ urbi_vm_write(struct UVM *vm,
               const char *channel, size_t channel_len,
               const char *msg,     size_t msg_len)
 {
+    urbi_vm_write_in_realm(vm, NULL, channel, channel_len, msg, msg_len);
+}
+
+/* urbi_vm_write_in_realm: same as urbi_vm_write, but prefers `realm`'s
+ * per-realm writer (set via urbi_realm_set_writer) when one is installed.
+ * The fallback chain is: realm-writer -> VM writer -> built-in default.
+ * Used by the v0.9.1 REPL service to route per-session output back to the
+ * originating client. */
+void
+urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
+                       const char *channel, size_t channel_len,
+                       const char *msg,     size_t msg_len)
+{
     if (!vm) return;
 
     uint64_t ts = 0U;
@@ -141,11 +155,17 @@ urbi_vm_write(struct UVM *vm,
         ts = vm->host_time_us();
     }
 
-    /* Resolve the active writer: installed hook or built-in default. */
+    /* Resolve the active writer: realm-installed -> VM-installed -> default. */
     void (*wfn)(void *, const char *, size_t, const char *, size_t, uint64_t)
-        = vm->writer_fn;
-    void *wud = vm->writer_ud;
-    if (wfn == NULL) {
+        = NULL;
+    void *wud = NULL;
+    if (realm != NULL && realm->writer_fn != NULL) {
+        wfn = realm->writer_fn;
+        wud = realm->writer_ud;
+    } else if (vm->writer_fn != NULL) {
+        wfn = vm->writer_fn;
+        wud = vm->writer_ud;
+    } else {
         wfn = default_writer;
         wud = NULL;
     }

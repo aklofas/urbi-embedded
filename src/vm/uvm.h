@@ -621,6 +621,15 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *mutex_proto;
     struct UObject *date_proto;
     struct UObject *duration_proto;
+    /* v0.9.1 Phase 5: Lobby proto singleton.  Allocated by
+     * urbi_lobby_native_register (called from urbi_stdlib_boot AFTER
+     * primitives so the proto exists before mark_readonly runs).  Bound
+     * to realm globals by urbi_lobby_native_register_globals — slots
+     * 15+, past the v1.0 packed-flag CONSTANT enforcement range.  The
+     * proto carries the `__builtin_lobby_send` native method + a
+     * `lobbies` list slot populated at lobby.u runtime.  GC
+     * reachability via object_roots_walker. */
+    struct UObject *lobby_proto;
     uint8_t     stdlib_booted;
     /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
      * new allocations and returns NULL.  One-way latch set via the
@@ -696,6 +705,23 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * Freed at urbi_vm_destroy.  GC roots walked by ref_table_walk_roots
      * (registered at urbi_vm_init). */
     URefTable ref_table;
+
+    /* --- v0.9.1 REPL service back-pointer ---
+     * Set by urbi_repl_serve when a server is started against this VM;
+     * cleared by urbi_repl_stop.  Read by urepl_dispatch_drain_if_active
+     * (weakly linked from src/vm/ustep.c) to find the queue/sessions
+     * during each urbi_step boundary.  void* keeps the core VM header
+     * free of an URBI_ENABLE_REPL conditional include cascade; the REPL
+     * TUs cast back to UReplServer*. */
+    void *repl_server;
+
+    /* --- v0.9.1 Debug namespace proto (Task 22) ---
+     * Lazily allocated by urbi_debug_namespace_register on first call;
+     * stashed here so subsequent realm-global binds see the same singleton
+     * and the GC root walker shades it once.  void* keeps the core VM
+     * header free of an URBI_ENABLE_REPL conditional include cascade; the
+     * debug_namespace TU casts back to UObject*. */
+    void *debug_proto;
 } UVM;
 
 /* --- API --- */

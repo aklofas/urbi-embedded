@@ -91,7 +91,19 @@ typedef struct USlotArray {
                                                   bump in urbi_object_set_local_slot per topology spec §4.1 row 4
                                                   (slot install on a prototype must invalidate IC entries that
                                                   cached lookups walking through this object). */
-/* bits 7..31 spare */
+#define URBI_OBJ_FLAG_READONLY     (1U << 7)   /* v0.9.1: bytecode-side mutation (OP_SETSLOT) raises
+                                                  URBI_ERR_FROZEN_PROTO when this bit is set.  Host-side
+                                                  C API calls (urbi_object_set_local_slot, the stdlib
+                                                  registration helpers, urbi_realm_set_global) are not
+                                                  gated; this is intentional per spec §4.2 — host code
+                                                  populates the readonly proto, urbiscript cannot. */
+/* bits 8..31 spare */
+
+/* Public spelling for the readonly flag (spec terminology — atom protos
+ * in the spec are referred to as "uprotos" although the storage struct is
+ * UObject in this codebase).  Alias kept for tests / external consumers
+ * that follow the spec's nomenclature. */
+#define UPROTO_FLAG_READONLY  URBI_OBJ_FLAG_READONLY
 
 /* === forward decls (real definitions land at later M4 tasks) ===
  * UShape + UObject are also typedef'd in include/urbi/object.h (the public

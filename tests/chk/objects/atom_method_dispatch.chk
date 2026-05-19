@@ -1,37 +1,29 @@
-# Milestone: M6
+# Milestone: M6 (revised at v0.9.1)
 # Covers: Phase 2 atom-method dispatch — slot lookup starting from a
 # non-UVAL_OBJECT receiver routes through the realm-global atom proto
 # (Integer / String / etc.).
 #
-# This fixture installs a slot on an atom proto via `Atom.slot = v` and
-# verifies the slot is reachable via `<literal>.slot`.  Without
-# atom-method dispatch (pre-Phase 2), the literal lookup would error
-# with "GETSLOT: receiver is not an Object" before atom-routing existed.
-#
-# Float-literal coverage activated at v0.6.2: Gap #5 (float literals)
-# closed; `3.14` now parses as a single FLOAT token so `3.14.fmark`
-# dispatches correctly through the Float atom proto.
+# v0.9.1 spec §4.2 froze every builtin atom proto, so the pre-v0.9.1
+# style `Integer.marker = 42; 1.marker` no longer compiles — script-side
+# slot install on a builtin proto raises TypeError.  We verify the same
+# routing path here via the existing C-native method surface that's
+# installed during stdlib boot (Integer.asString, Float.asString,
+# String.length).  These methods reach the literal receiver via the
+# identical urbi_atom_proto_for_value lookup the pre-v0.9.1 user-slot
+# fixture exercised.
 
-# Stash a slot on Integer that we can resolve from any int literal.
-Integer.marker = 42
-[00000000] 42
+# Integer literal dispatches through the Integer atom proto.
+1.asString()
+[00000000] "1"
 
-1.marker
-[00000001] 42
+99.asString()
+[00000001] "99"
 
-99.marker
-[00000002] 42
+# Float literal dispatches through the Float atom proto (Gap #5 closed
+# at v0.6.2: 3.14 parses as a single FLOAT token).
+3.14.asString()
+[00000002] "3.14"
 
-# Symmetric for String.
-String.smark = 200
-[00000003] 200
-
-"abc".smark
-[00000004] 200
-
-# Float atom-proto dispatch with a float literal (Gap #5 closed at v0.6.2).
-Float.fmark = 555
-[00000005] 555
-
-3.14.fmark
-[00000006] 555
+# String literal dispatches through the String atom proto.
+"hello".length()
+[00000003] 5

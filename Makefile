@@ -18,6 +18,22 @@ ifeq ($(URBI_BYTECODE_ONLY),1)
   COMPILER_FRONTEND_DIRS_EXCLUDED := 1
 endif
 
+# v0.9.1 — opt-in REPL service over TCP/Unix/UART.  Requires the
+# compiler frontend (URBI_BYTECODE_ONLY=0); the combination is rejected
+# at the Makefile level because urbi_repl_eval cannot exist without
+# src/lex/, src/parse/, src/emit/ linked in.  Adds src/repl/*.c to the
+# core archive.
+ifeq ($(URBI_ENABLE_REPL),1)
+  ifeq ($(URBI_BYTECODE_ONLY),1)
+    $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
+  endif
+  CFLAGS += -DURBI_ENABLE_REPL=1
+  CPPFLAGS += -DURBI_ENABLE_REPL=1
+  REPL_SRCS := $(wildcard src/repl/*.c)
+else
+  REPL_SRCS :=
+endif
+
 SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/*.c)) \
        $(if $(COMPILER_FRONTEND_DIRS_EXCLUDED),,$(wildcard src/lex/*.c)) \
@@ -35,7 +51,8 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c))
+       $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(wildcard src/stdlib/*.c)) \
+       $(REPL_SRCS)
 TEST_SRC := $(wildcard tests/unit/test_*.c) tests/unit/runner.c \
             tests/unit/twatcher_install_helper.c \
             tests/unit/utest_e2e_helpers.c
@@ -144,6 +161,38 @@ $(BUILDDIR)/urbi: $(BUILDDIR)/tools/urbi.o $(BUILDDIR)/tools/linenoise.o $(LIB)
 
 urbi-bin: $(BUILDDIR)/urbi
 
+# --- v0.9.1 REPL CLIs (URBI_ENABLE_REPL=1 only) ------------------------
+#
+# urbi-server: headless network REPL daemon — boots a UVM, optionally
+#   runs a boot script, registers the TCP transport, drives urbi_step()
+#   until SIGINT/SIGTERM.  Links against liburbi.a + libm.
+#
+# urbi-send: NDJSON client utility — pure POSIX sockets + libc.  Does
+#   NOT link against liburbi.  Gated behind URBI_ENABLE_REPL=1 only to
+#   avoid maintaining a binary nobody can talk to (server side disabled).
+
+ifeq ($(URBI_ENABLE_REPL),1)
+URBI_SERVER := $(BUILDDIR)/urbi-server
+URBI_SEND   := $(BUILDDIR)/urbi-send
+
+$(BUILDDIR)/tools/urbi-server.o: tools/urbi-server.c | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Itools -c -o $@ $<
+
+$(URBI_SERVER): $(BUILDDIR)/tools/urbi-server.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-server.o $(LIB) -lm
+
+$(BUILDDIR)/tools/urbi-send.o: tools/urbi-send.c | $(BUILDDIR)/tools
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(URBI_SEND): $(BUILDDIR)/tools/urbi-send.o
+	$(CC) $(CFLAGS) -o $@ $(BUILDDIR)/tools/urbi-send.o
+
+urbi-server-bin: $(URBI_SERVER)
+urbi-send-bin:   $(URBI_SEND)
+
+all: $(URBI_SERVER) $(URBI_SEND)
+endif
+
 # --- Stdlib bake tool (host-only) ---------------------------------------
 #
 # tools/urbi-compile-stdlib is the Wave-2 build-time bake tool.  It
@@ -215,7 +264,8 @@ HOST_BAKE_SRC := \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
        $(wildcard src/object/*.c) \
-       $(wildcard src/stdlib/*.c)
+       $(wildcard src/stdlib/*.c) \
+       $(REPL_SRCS)
 HOST_BAKE_OBJ := $(filter-out build/host/src/stdlib/urbi_stdlib_bytecode.gen.o, \
                               $(patsubst src/%.c,build/host/src/%.o,$(HOST_BAKE_SRC)))
 BAKE_STUB_O   := build/host/tools/stub_stdlib_bytecode.o
@@ -312,6 +362,18 @@ endif
 test-integration: $(BUILDDIR)/urbi
 	tests/integration/repl_smoke.sh $(BUILDDIR)/urbi
 
+# v0.9.1: urbi-server end-to-end smoke (URBI_ENABLE_REPL=1 only).  Spins
+# up the daemon on a high port, runs `1+2` via NDJSON, expects the
+# `"value":"3"` envelope back, then SIGTERMs the daemon.  Uses python3
+# as the TCP client; skips cleanly if python3 is missing.
+ifeq ($(URBI_ENABLE_REPL),1)
+test-urbi-server-smoke: $(URBI_SERVER)
+	BUILD=$(BUILDDIR) tests/integration/urbi_server_smoke.sh
+else
+test-urbi-server-smoke:
+	@echo "test-urbi-server-smoke: URBI_ENABLE_REPL=0; skipping"
+endif
+
 # --- .chk conformance fixtures -----------------------------------------
 #
 # test-chk iterates all tests/chk/**/*.chk against the built urbi binary
@@ -321,16 +383,19 @@ test-integration: $(BUILDDIR)/urbi
 # as test-integration — urbi itself is memory-clean, and wrapping the
 # sh+awk+sed pipeline adds noise, not signal).
 
+# tests/chk/repl/*.chk are NDJSON fixtures (v0.9.1 Phase 8) driven in-
+# process by tests/unit/test_repl_chk_corpus.c, not by run_chk.sh which
+# expects urbiscript input.  Excluded here.
 test-chk: $(BUILDDIR)/urbi
 	@set -e; \
 	count=0; \
-	for f in $$(find tests/chk -name '*.chk' 2>/dev/null | sort); do \
+	for f in $$(find tests/chk -path tests/chk/repl -prune -o -name '*.chk' -print 2>/dev/null | sort); do \
 	    count=$$((count + 1)); \
 	    URBI_BUILD_PRESET=default tests/integration/run_chk.sh $(BUILDDIR)/urbi "$$f"; \
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4 test-urbi-server-smoke
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
 
@@ -1223,4 +1288,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin test-integration test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4

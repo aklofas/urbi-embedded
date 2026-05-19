@@ -9,6 +9,7 @@
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "lex/ulex.h"
+#include "urbi/types.h"   /* UCompileBudget (v0.9.1) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,10 +41,59 @@ typedef struct {
      * at parse time when this is zero — the implicit-receiver form has no
      * v1.0 resolver outside a class body (deferred to v1.x implicit-this). */
     int class_body_depth;
+
+    /* === v0.9.1 compile-budget guard ===
+     *
+     * budget — borrowed pointer to a UCompileBudget supplied by the caller
+     *   (typically realm->compile_budget when urbi_repl_eval drives the
+     *   parser under a REPL realm).  NULL = unlimited (default).
+     *
+     * cur_depth — current recursive-descent depth.  Bumped by
+     *   uparse_budget_enter on every entry into a recursive parser entry
+     *   point; decremented by uparse_budget_leave.  Compared against
+     *   budget->max_parser_depth.
+     *
+     * node_count — running tally of every make_node() success.  Compared
+     *   against budget->max_ast_nodes.
+     *
+     * budget_exceeded — sticky latch set when any limit is first crossed.
+     *   Once set, make_node() and uparse_budget_enter return failure for
+     *   every subsequent call, so the parse cleanly aborts.  The specific
+     *   error is recorded in budget_err for the caller (urbi_repl_eval)
+     *   to translate into the right UErrCode.
+     *
+     * budget_err — one of URBI_ERR_COMPILE_BUDGET_{DEPTH,NODES,SOURCE}.
+     *   URBI_OK while no limit is exceeded. */
+    const UCompileBudget *budget;
+    uint32_t cur_depth;
+    uint32_t node_count;
+    bool     budget_exceeded;
+    int      budget_err;
 } UParser;
 
-/* Initialize.  No allocation.  Both lex and arena must outlive p. */
+/* Initialize.  No allocation.  Both lex and arena must outlive p.
+ * Initializes budget to NULL (unlimited); caller may set it after init. */
 void uparse_init(UParser *p, ULexer *lex, UArena *arena);
+
+/* === v0.9.1 budget helpers ============================================
+ *
+ * uparse_set_budget — install a borrowed UCompileBudget pointer (NULL =
+ *   unlimited).  Must be called BEFORE the first uparse_next_statement
+ *   call.  Caller owns the budget storage; UParser does not copy.
+ *
+ * uparse_budget_enter — recursive-descent depth check.  Returns true if
+ *   the caller may proceed (depth was bumped); false if the limit is
+ *   exceeded (budget_err set; subsequent calls also return false).
+ *
+ * uparse_budget_leave — pop one level of depth.  Always safe; ignored if
+ *   no budget is installed.
+ *
+ * uparse_budget_err — return URBI_OK if no limit was exceeded, else the
+ *   sticky URBI_ERR_COMPILE_BUDGET_* code recorded at first trip. */
+void uparse_set_budget(UParser *p, const UCompileBudget *budget);
+bool uparse_budget_enter(UParser *p);
+void uparse_budget_leave(UParser *p);
+int  uparse_budget_err(const UParser *p);
 
 /*
  * Parse the next statement.

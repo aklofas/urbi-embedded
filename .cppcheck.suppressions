@@ -110,6 +110,19 @@ constParameterPointer:src/stdlib/runtime_types.c
 // as Phase 7 — the function-pointer signature is pinned.
 constParameterPointer:src/stdlib/primitives.c
 
+// audit:CPPCHK-Phase-v091 — src/stdlib/debug_namespace.c native-method
+// callbacks (Debug.stack / Debug.slots / etc.) expose UValue *args via the
+// urbi_native_method_fn typedef.  Same rationale as Phase 5/6/7/9 above —
+// the function-pointer signature is pinned.
+constParameterPointer:src/stdlib/debug_namespace.c
+
+// audit:CPPCHK-Phase-v091 — urbi_repl_serve_step's `server` parameter is
+// the public C API signature pinned by include/urbi/repl.h.  Phase 4+ will
+// mutate `server` to drive the accept/read/dispatch loop; the v0.9.1 body
+// is a no-op, so cppcheck flags it.  Const-qualifying here would diverge
+// from the header and break the public ABI; suppress at the call site.
+constParameterPointer:src/repl/urepl.c
+
 // audit:S44-followup — src/runtime/uunwind.c pattern_matches() at TRY_FRAME
 // catch absorption is a documented M3 / FOUND-026 stub returning 1.  Wave 2
 // will refine to class-pattern dispatch and the condition will become

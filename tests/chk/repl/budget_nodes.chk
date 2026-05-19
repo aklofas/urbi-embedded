@@ -1,0 +1,13 @@
+# v0.9.1 Phase 8 Task 32 — compile-budget node limit.
+#
+# Spec §3.4: max_ast_nodes caps AST node count post-parse.
+# Triggers URBI_ERR_COMPILE_BUDGET_NODES, surfaced as
+# "code":"budget_nodes" in the dispatcher.
+#
+# A tight @budget-nodes=3 override fails on `1+2+3` (4-5 nodes).
+
+@budget-nodes=3
+
+> {"id":13,"op":"eval","code":"1+2+3+4+5"}
+< "id":13 | "kind":"error" | "code":"budget_nodes"
+< "id":13 | "kind":"done"

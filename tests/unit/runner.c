@@ -257,6 +257,21 @@ extern void test_umodule_instance_lifetime_suite(void);
 extern void test_urbi_unload_suite(void);
 extern void test_realm_destroy_with_parked_loader_suite(void);
 extern void test_lexer_syncline_suite(void);
+extern void test_repl_per_realm_writer_suite(void);
+extern void test_repl_uproto_readonly_suite(void);
+extern void test_repl_global_atom_suite(void);
+extern void test_compile_budget_suite(void);
+extern void test_repl_ndjson_parse_suite(void);
+extern void test_repl_ndjson_emit_suite(void);
+extern void test_repl_dispatcher_suite(void);
+extern void test_repl_buffer_transport_suite(void);
+extern void test_repl_tcp_loopback_suite(void);
+extern void test_repl_uart_pty_suite(void);
+extern void test_repl_auth_flow_suite(void);
+extern void test_repl_chk_corpus_suite(void);
+extern void test_repl_multi_client_suite(void);
+extern void test_introspect_each_suite(void);
+extern void test_json_parse_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -490,6 +505,21 @@ static const struct suite_entry suites[] = {
     {"urbi_unload",                  test_urbi_unload_suite},
     {"realm_destroy_with_parked_loader", test_realm_destroy_with_parked_loader_suite},
     {"lexer_syncline",                   test_lexer_syncline_suite},
+    {"repl_per_realm_writer",            test_repl_per_realm_writer_suite},
+    {"repl_uproto_readonly",             test_repl_uproto_readonly_suite},
+    {"repl_global_atom",                 test_repl_global_atom_suite},
+    {"compile_budget",                   test_compile_budget_suite},
+    {"repl_ndjson_parse",                test_repl_ndjson_parse_suite},
+    {"repl_ndjson_emit",                 test_repl_ndjson_emit_suite},
+    {"repl_dispatcher",                  test_repl_dispatcher_suite},
+    {"repl_buffer_transport",            test_repl_buffer_transport_suite},
+    {"repl_tcp_loopback",                test_repl_tcp_loopback_suite},
+    {"repl_uart_pty",                    test_repl_uart_pty_suite},
+    {"repl_auth_flow",                   test_repl_auth_flow_suite},
+    {"repl_chk_corpus",                  test_repl_chk_corpus_suite},
+    {"repl_multi_client",                test_repl_multi_client_suite},
+    {"introspect_each",                  test_introspect_each_suite},
+    {"json_parse",                       test_json_parse_suite},
     /* Add new suites here as test files are added. */
 };
 

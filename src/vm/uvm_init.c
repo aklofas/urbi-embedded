@@ -101,6 +101,19 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
      * partial init.  urbi_vm_destroy stays safe on any partial-init state
      * reached before the bailout. */
     int oom_seen = 0;
+
+    /* v0.9.1 — must be NULLed BEFORE any subsystem init that drives
+     * bytecode (urbi_run_chunk → urbi_step → urepl_dispatch_drain_if_active
+     * reads this field).  Initialized first so partial-init bailout paths
+     * never leave it as stack garbage. */
+    vm->repl_server = NULL;
+    /* v0.9.1 Task 22 — must be NULLed BEFORE object_roots_walker runs.
+     * Tests that don't call urbi_stdlib_boot still trigger GC slices via
+     * realm creation, and the walker dereferences vm->debug_proto if
+     * non-NULL.  Stack-allocated UVMs would otherwise leak stack garbage
+     * into the shade-gray path and segfault. */
+    vm->debug_proto = NULL;
+
     vm->alloc_fn = alloc_fn;
     vm->alloc_ud = alloc_ud;
 #if __STDC_HOSTED__
@@ -365,6 +378,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->mutex_proto             = NULL;  /* M6 Phase 9 T94 — populated by urbi_stdlib_register_primitives */
     vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
+    vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
     vm->stdlib_booted          = 0U;
     vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
     {
@@ -407,6 +421,10 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->ref_table.used           = 0U;
     vm->ref_table.free_list_head = (size_t)-1;  /* SIZE_MAX: no free slots */
     urbi_gc_register_root_provider(vm, ref_table_walk_roots);
+
+    /* vm->repl_server already cleared at the top of urbi_vm_init (the
+     * step-driver hook reads it on every urbi_step call, including those
+     * issued by partial-init paths). */
 
     /* Gap #4 (M6 Wave 3): heap-allocate the operator-overload IC table.
      * Keeps UVM stack-allocation safe (tests that do `UVM vm;` on the C

@@ -1,0 +1,13 @@
+# v0.9.1 Phase 8 Task 32 — compile-budget source-bytes limit.
+#
+# Spec §3.4: max_source_bytes caps incoming source size before parsing.
+# Triggers URBI_ERR_COMPILE_BUDGET_SOURCE, surfaced as
+# "code":"budget_source" in the dispatcher.
+#
+# A tight @budget-source=5 override rejects any code longer than 5 bytes.
+
+@budget-source=5
+
+> {"id":14,"op":"eval","code":"1+2+3+4"}
+< "id":14 | "kind":"error" | "code":"budget_source"
+< "id":14 | "kind":"done"

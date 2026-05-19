@@ -347,15 +347,27 @@ else
 fi
 
 # --- REPL realm: cross-line shared-proto access ---
-# Object is a VM singleton (atom proto), so a slot set on line 1 must be
-# visible when read back on line 2 of the same -i session.
+# v0.9.1 breaking change: Object (and the other 14 builtin atom protos)
+# became read-only.  The mutable cross-session shared proto is now Global
+# per spec §4.1.  This test was the canonical v0.9.0 demonstration of the
+# Object.x = ... idiom; migrated to Global.x = ... at v0.9.1.
 test_case
-out=$(printf 'Object.foo = 42\nObject.foo\n' | "$URBI" -i)
+out=$(printf 'Global.foo = 42\nGlobal.foo\n' | "$URBI" -i)
 rc=$?
 if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE '^\[[0-9]{8}\] 42$'; then
-    ok 'Object.foo shared across REPL lines (REPL realm end-to-end)'
+    ok 'Global.foo shared across REPL lines (REPL realm end-to-end)'
 else
-    fail "Object.foo not visible across REPL lines: rc=$rc, out='$out'"
+    fail "Global.foo not visible across REPL lines: rc=$rc, out='$out'"
+fi
+
+# --- REPL realm: Object is frozen at v0.9.1 (spec §4.2 breaking change) ---
+test_case
+out=$(printf 'Object.foo = 42\n' | "$URBI" -i)
+rc=$?
+if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -qE 'frozen prototype|UPROTO_READONLY|TypeError'; then
+    ok 'Object.x = ... raises TypeError (frozen prototype, v0.9.1)'
+else
+    fail "Object.foo mutation not denied: rc=$rc, out='$out'"
 fi
 
 printf '\n%d/%d tests passed\n' "$((TOTAL - FAIL))" "$TOTAL"

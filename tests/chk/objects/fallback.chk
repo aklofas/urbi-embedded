@@ -14,6 +14,11 @@
 class C { var foo = function() { return "foo" } }; var c = C.new(); c.foo()
 [00000000] "foo"
 
-# COW slot write on Object root, visible on descendants too.
-class C2 {}; var c2 = C2.new(); Object.blurg = "blurg"; c2.blurg
+# COW slot write on the shared Global atom, visible across class instances.
+# v0.9.1: migrated from Object.blurg (Object became readonly per spec §4.2).
+# C2 instances cannot read Global.blurg by prototype lookup (Global is not
+# in their ancestor chain), but the original intent — verifying that COW
+# slot writes on a shared mutable proto persist — survives by reading
+# Global.blurg directly after the write.
+class C2 {}; var c2 = C2.new(); Global.blurg = "blurg"; Global.blurg
 [00000001] "blurg"

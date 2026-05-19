@@ -30,12 +30,15 @@
 #ifndef URBI_STDLIB_CONTAINERS_H
 #define URBI_STDLIB_CONTAINERS_H
 
+#include "urbi/types.h"   /* UValue (needed by v0.9.1 host-side List mutators) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct UVM;
 struct URealm;
+struct UObject;
 
 /* Allocate the Pair / Triplet / Tuple atom protos and install C-native
  * method slots on List / Dict atom protos (URBI_ATOM_LIST /
@@ -64,6 +67,31 @@ int urbi_stdlib_register_container_globals(struct UVM *vm, struct URealm *realm)
 /* Free every backing buffer threaded onto vm->stdlib_containers.
  * Called by urbi_vm_destroy. */
 void urbi_stdlib_containers_destroy(struct UVM *vm);
+
+/* === v0.9.1 Phase 5: host-side List mutators for Lobby.lobbies ==========
+ *
+ * Append / remove a UValue from the UList backing a List UObject.  Intended
+ * for the REPL dispatcher's session-lifecycle hooks (urbi_lobby_register_-
+ * session / urbi_lobby_unregister_session) — NOT for general user-facing
+ * mutation, which should go through the urbiscript .add / .set methods.
+ *
+ * Both functions are no-ops returning URBI_OK if list_obj is NULL or
+ * carries no `_storage` slot (e.g. called before lobby.u has populated
+ * Lobby.lobbies).  remove finds the first item that uvalue_equal-matches
+ * and shifts the tail; missing items are also no-ops.
+ *
+ * Returns URBI_OK / URBI_ERR_INVALID_ARG / URBI_ERR_OOM. */
+int urbi_stdlib_list_append_value(struct UVM *vm, struct UObject *list_obj,
+                                  UValue item);
+int urbi_stdlib_list_remove_first_equal(struct UVM *vm,
+                                        struct UObject *list_obj,
+                                        UValue item);
+
+/* Create an empty List UObject (clone of the List atom proto, fresh
+ * UList backing).  Used by lobby_native to install Lobby.lobbies as a
+ * VM-singleton slot at boot.  Returns the new List UObject or NULL on
+ * OOM. */
+struct UObject *urbi_stdlib_list_new_empty(struct UVM *vm);
 
 #ifdef __cplusplus
 }

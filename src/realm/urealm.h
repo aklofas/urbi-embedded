@@ -10,6 +10,7 @@
 
 #include "value/uvalue.h"   /* UValue, UValKind */
 #include "vm/uvm.h"      /* UVM, UGcRootCallback */
+#include "urbi/types.h"  /* UCompileBudget (v0.9.1) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,20 @@ struct UVM;
 struct UTag;
 struct UNamespace;
 struct UModule;
+
+/* === Forward declaration of urbi_writer_fn (v0.9.1) ===
+ *
+ * Defined in <urbi/urbi.h>.  Mirrored here as a typedef so URealm can store
+ * the per-realm writer hook without urealm.h pulling in the whole public
+ * API surface (which would create an include cycle: urbi.h includes
+ * urbi/types.h, which is consumed by urealm.h's UCompileBudget storage). */
+#ifndef URBI_WRITER_FN_TYPEDEF_DEFINED
+#define URBI_WRITER_FN_TYPEDEF_DEFINED
+typedef void (*urbi_writer_fn)(void *ud,
+                               const char *channel, size_t channel_len,
+                               const char *msg,     size_t msg_len,
+                               uint64_t ts_us);
+#endif
 
 /* === Realm flag bits (stored in URealm.flags) === */
 
@@ -41,7 +56,22 @@ typedef struct URealm {
     struct UVM  *vm;            /* owning VM (NULL if destroyed) */
     uint32_t     id;            /* unique per VM, monotonic, never reused (starts at 1) */
     uint8_t      flags;         /* REALM_GLOBAL / REALM_REPL / REALM_MODULE */
-    uint8_t      _pad[3];
+    bool         has_compile_budget;  /* v0.9.1: gates compile_budget below */
+    uint8_t      _pad[2];
+
+    /* === v0.9.1: per-realm compile-budget + per-realm writer ===
+     *
+     * compile_budget — parser-depth / AST-node / source-byte limits applied
+     *   while compiling source under this realm.  Valid iff
+     *   has_compile_budget is true.  See <urbi/types.h> UCompileBudget.
+     *
+     * writer_fn / writer_ud — per-realm output writer.  When non-NULL, the
+     *   writer dispatch in urbi_vm_write_in_realm prefers this over the
+     *   VM-wide writer; the REPL service uses this to route per-session
+     *   output to the originating client. */
+    UCompileBudget compile_budget;
+    urbi_writer_fn writer_fn;
+    void          *writer_ud;
 
     /* Tag-ownership: implicit watcher/coroutine cleanup boundary.
      * UTag is created at realm-creation time and host-managed via vm->alloc_fn.

@@ -1,0 +1,9 @@
+# v0.9.1 Phase 8 Task 32 — error envelope on parse failure.
+#
+# Spec §6.6: error envelope shape.
+# A truncated parenthesis triggers URBI_ERR_COMPILE (mapped to
+# "code":"parse" in the dispatcher's eval handler).
+
+> {"id":2,"op":"eval","code":"1+("}
+< "id":2 | "kind":"error" | "code":"parse"
+< "id":2 | "kind":"done"

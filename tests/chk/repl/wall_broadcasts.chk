@@ -1,0 +1,25 @@
+# v0.9.1 Phase 8 Task 32 — Lobby.lobbies as the wall target list.
+#
+# Spec §9.1 / §14 exit-criterion 5: A's `wall "hi"` reaches B/C/D but
+# not A.  The wall body (in lobby.u) iterates Lobby.lobbies skipping
+# `this`.  This fixture verifies the substrate: Lobby.lobbies contains
+# exactly one entry per active session (the session realm's global
+# object), and that List indexing returns a non-nil lobby reference.
+#
+# The cross-session broadcast aspect (A's wall actually reaching B/C/D
+# via per-realm writer routing) is verified end-to-end by
+# tests/unit/test_repl_multi_client.c (Task 33) over real TCP loopback.
+# The Lobby.wall closure body itself uses the same unqualified-name
+# resolution as Lobby.echo (which doesn't yet resolve __builtin_lobby_send
+# from inside the closure — v1.x emit follow-up).
+
+> {"id":17,"op":"eval","code":"Lobby.lobbies.length()"}
+< "id":17 | "kind":"result" | "value":"1"
+< "id":17 | "kind":"done"
+
+# Lobby.lobbies.get(0) returns a non-nil Object (the session lobby).
+# Use `!=` against nil to coerce to a Bool result without depending
+# on closure-name-resolution.
+> {"id":18,"op":"eval","code":"Lobby.lobbies.get(0) != nil"}
+< "id":18 | "kind":"result" | "value":"true"
+< "id":18 | "kind":"done"
