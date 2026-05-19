@@ -5,6 +5,7 @@
  * registration.  The listener thread + per-connection reader thread come
  * online in Phase 3 (Task 16). */
 #include "repl/urepl.h"
+#include "repl/urepl_auth.h"
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_queue.h"
@@ -100,6 +101,28 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
             *out_err = URBI_ERR_OOM;
         }
         return NULL;
+    }
+
+    /* Task 18: spin up per-IP rate limiter iff auth is enabled.  Loop-
+     * back no-auth deployments skip it (no wrong-token attempts to
+     * count).  Default tunables: 5 fails / 30 s window / 60 s lockout
+     * (spec §7.4). */
+    if (cfg->auth_token != NULL && cfg->auth_token[0] != '\0') {
+        UReplAuthLimiter *lim =
+            (UReplAuthLimiter *)calloc(1, sizeof(*lim));
+        if (lim == NULL) {
+            urepl_queue_destroy(server->job_queue);
+            free(server->job_queue);
+            pthread_mutex_destroy(&server->auth_limiter_mutex);
+            pthread_mutex_destroy(&server->sessions_mutex);
+            free(server);
+            if (out_err != NULL) {
+                *out_err = URBI_ERR_OOM;
+            }
+            return NULL;
+        }
+        urepl_auth_limiter_init(lim);
+        server->auth_limiter = lim;
     }
 
     /* Register the server on the VM so urepl_dispatch_drain_if_active

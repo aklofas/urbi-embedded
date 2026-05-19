@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* Default per-session output ringbuf cap (used when cfg.output_ringbuf_cap
  * is 0). */
@@ -292,8 +293,28 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
      * with a volatile accumulator (spec §7.3). */
     size_t token_len = (job->req.token != NULL) ? strlen(job->req.token) : 0U;
     size_t expected_len = strlen(expected);
-    if (urepl_auth_token_match(job->req.token, token_len,
-                               expected, expected_len)) {
+    bool matched = urepl_auth_token_match(job->req.token, token_len,
+                                          expected, expected_len);
+    /* Task 18: bump the per-source rate-limiter on each result.  On a
+     * successful auth the slot is cleared so a future legitimate
+     * client doesn't inherit prior fail-count state. */
+    if (server->auth_limiter != NULL) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                          + (uint64_t)ts.tv_nsec / 1000ULL;
+        pthread_mutex_lock(&server->auth_limiter_mutex);
+        if (matched) {
+            urepl_auth_limiter_record_success(
+                (UReplAuthLimiter *)server->auth_limiter, s->peer_id);
+        } else {
+            urepl_auth_limiter_record_fail(
+                (UReplAuthLimiter *)server->auth_limiter,
+                s->peer_id, now_us);
+        }
+        pthread_mutex_unlock(&server->auth_limiter_mutex);
+    }
+    if (matched) {
         s->authed = true;
         if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
             push_env(s, env, n);

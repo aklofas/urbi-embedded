@@ -40,6 +40,12 @@ struct UReplSession {
      * session's socket I/O.  NULL for sessions created outside the
      * listener path (e.g. unit-test sessions; buffer transport). */
     struct UReplReader   *reader;
+    /* Task 18: peer identifier captured at accept() time.  For TCP this
+     * is sockaddr_in.sin_addr.s_addr (network byte order); for Unix
+     * sockets the listener stores the peer's pid (cast).  0 = unknown
+     * (unit-test sessions; buffer transport).  Used by dispatch_auth
+     * to bump the per-source rate-limiter on each auth_failed. */
+    uint32_t              peer_id;
     struct UReplSession  *next;
 };
 

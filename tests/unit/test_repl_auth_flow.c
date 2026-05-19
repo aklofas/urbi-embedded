@@ -211,6 +211,112 @@ UTEST(post_auth_eval_runs)
     free_server(server, vm);
 }
 
+/* ---- Per-IP rate-limiter (Task 18) ---------------------------------- */
+
+UTEST(limiter_init_defaults)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    UASSERT_EQ(lim.max_attempts, 5);
+    UASSERT_EQ(lim.window_secs, 30);
+    UASSERT_EQ(lim.lockout_secs, 60);
+    /* Fresh limiter accepts everything. */
+    UASSERT(urepl_auth_limiter_check(&lim, 0x0100007fU, 1000));
+}
+
+UTEST(limiter_locks_after_max_attempts)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    uint32_t ip = 0x0100007fU;  /* 127.0.0.1 in network byte order */
+    uint64_t now = 1000000ULL;
+    /* 5 fails inside the 30 s window flip the slot to locked. */
+    for (int i = 0; i < 5; ++i) {
+        urepl_auth_limiter_record_fail(&lim, ip, now + (uint64_t)i * 1000ULL);
+    }
+    UASSERT(!urepl_auth_limiter_check(&lim, ip, now + 10000ULL));
+}
+
+UTEST(limiter_other_ips_still_allowed)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    uint32_t bad = 0x0100007fU;
+    uint32_t good = 0x0a00000aU;
+    uint64_t now = 1000000ULL;
+    for (int i = 0; i < 5; ++i) {
+        urepl_auth_limiter_record_fail(&lim, bad, now + (uint64_t)i * 1000ULL);
+    }
+    UASSERT(!urepl_auth_limiter_check(&lim, bad, now + 10000ULL));
+    UASSERT(urepl_auth_limiter_check(&lim, good, now + 10000ULL));
+}
+
+UTEST(limiter_unlocks_after_lockout_window)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    uint32_t ip = 0x0100007fU;
+    uint64_t now = 1000000ULL;
+    for (int i = 0; i < 5; ++i) {
+        urepl_auth_limiter_record_fail(&lim, ip, now + (uint64_t)i * 1000ULL);
+    }
+    /* Still locked at lockout - 1us. */
+    UASSERT(!urepl_auth_limiter_check(&lim, ip, now + 59 * 1000000ULL));
+    /* Unlocked at lockout + 1s past the 60 s gate. */
+    UASSERT(urepl_auth_limiter_check(&lim, ip, now + 61 * 1000000ULL));
+}
+
+UTEST(limiter_success_clears_slot)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    uint32_t ip = 0x0100007fU;
+    uint64_t now = 1000000ULL;
+    /* Three fails (not enough to lock). */
+    for (int i = 0; i < 3; ++i) {
+        urepl_auth_limiter_record_fail(&lim, ip, now + (uint64_t)i * 1000ULL);
+    }
+    urepl_auth_limiter_record_success(&lim, ip);
+    /* Slot reset — next 4 fails should NOT lock (one more needed). */
+    for (int i = 0; i < 4; ++i) {
+        urepl_auth_limiter_record_fail(&lim,
+                                        ip, now + (uint64_t)(i + 100) * 1000ULL);
+    }
+    UASSERT(urepl_auth_limiter_check(&lim, ip, now + 1000000ULL));
+}
+
+UTEST(limiter_lru_eviction_under_table_pressure)
+{
+    /* 8 distinct IPs each get one fail; a ninth lands and evicts the
+     * oldest (LRU).  Check that the first ip's record was rotated out
+     * by verifying it is permitted again (no in_use slot left for it). */
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    uint64_t now = 1000ULL;
+    for (uint32_t i = 0; i < 8; ++i) {
+        urepl_auth_limiter_record_fail(&lim, 0xAA000000U | i,
+                                        now + (uint64_t)i * 100ULL);
+    }
+    /* Evict the oldest with one fail at higher time. */
+    urepl_auth_limiter_record_fail(&lim, 0xBB000000U,
+                                    now + 100000ULL);
+    /* The oldest IP (the first one entered) should be evicted —
+     * check returns true. */
+    UASSERT(urepl_auth_limiter_check(&lim, 0xAA000000U, now + 1000000ULL));
+}
+
+UTEST(limiter_disabled_when_max_attempts_zero)
+{
+    UReplAuthLimiter lim;
+    urepl_auth_limiter_init(&lim);
+    lim.max_attempts = 0;  /* disable */
+    /* Even 100 fails don't lock. */
+    for (int i = 0; i < 100; ++i) {
+        urepl_auth_limiter_record_fail(&lim, 1, 1000 + i);
+    }
+    UASSERT(urepl_auth_limiter_check(&lim, 1, 1000000));
+}
+
 void
 test_repl_auth_flow_suite(void)
 {
@@ -228,6 +334,17 @@ test_repl_auth_flow_suite(void)
     utest_run("preauth_eval_rejected_when_token_required",
               preauth_eval_rejected_when_token_required);
     utest_run("post_auth_eval_runs",               post_auth_eval_runs);
+    /* Task 18 — rate limiter */
+    utest_run("limiter_init_defaults",             limiter_init_defaults);
+    utest_run("limiter_locks_after_max_attempts",  limiter_locks_after_max_attempts);
+    utest_run("limiter_other_ips_still_allowed",   limiter_other_ips_still_allowed);
+    utest_run("limiter_unlocks_after_lockout_window",
+              limiter_unlocks_after_lockout_window);
+    utest_run("limiter_success_clears_slot",       limiter_success_clears_slot);
+    utest_run("limiter_lru_eviction_under_table_pressure",
+              limiter_lru_eviction_under_table_pressure);
+    utest_run("limiter_disabled_when_max_attempts_zero",
+              limiter_disabled_when_max_attempts_zero);
 }
 
 #else  /* !URBI_ENABLE_REPL */

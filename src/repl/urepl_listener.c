@@ -6,6 +6,7 @@
  *
  * Only compiled when URBI_ENABLE_REPL=1. */
 #include "repl/urepl_listener.h"
+#include "repl/urepl_auth.h"
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_ndjson.h"
 #include "repl/urepl_queue.h"
@@ -248,7 +249,7 @@ reader_main(void *arg)
 /* Allocate + spawn a reader subthread for an accepted client. */
 static int
 spawn_reader(UReplServer *server, const UTransport *transport,
-             int client_fd)
+             int client_fd, uint32_t peer_id)
 {
     UReplReader *r = (UReplReader *)calloc(1, sizeof(*r));
     if (r == NULL) {
@@ -273,6 +274,7 @@ spawn_reader(UReplServer *server, const UTransport *transport,
     }
     r->session       = session;
     session->reader  = r;
+    session->peer_id = peer_id;
 
     /* Link into the server's reader list under sessions_mutex. */
     pthread_mutex_lock(&server->sessions_mutex);
@@ -403,8 +405,43 @@ listener_main(void *arg)
                 if (ar == -1) break;            /* EAGAIN */
                 if (ar != 0) break;             /* hard error */
 
-                /* Task 18 will plug an auth-limiter check here. */
-                (void)spawn_reader(server, te->transport, client_fd);
+                /* Task 18: extract peer id from accepted socket.  TCP
+                 * → IPv4 in_addr_t in network byte order; non-TCP
+                 * (Unix-socket / buffer) leaves it as 0. */
+                uint32_t peer_id = 0;
+                if (te->transport == &UREPL_TCP_TRANSPORT) {
+                    struct sockaddr_in sa;
+                    socklen_t slen = (socklen_t)sizeof(sa);
+                    if (getpeername(client_fd,
+                                    (struct sockaddr *)&sa, &slen) == 0
+                        && sa.sin_family == AF_INET) {
+                        peer_id = sa.sin_addr.s_addr;
+                    }
+                }
+
+                /* Task 18: per-IP rate-limit check.  Locked-out peers
+                 * get the connection closed immediately, without ever
+                 * seeing a hello envelope. */
+                if (server->auth_limiter != NULL) {
+                    struct timespec ts;
+                    clock_gettime(CLOCK_MONOTONIC, &ts);
+                    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                                      + (uint64_t)ts.tv_nsec / 1000ULL;
+                    pthread_mutex_lock(&server->auth_limiter_mutex);
+                    bool allowed = urepl_auth_limiter_check(
+                        (UReplAuthLimiter *)server->auth_limiter,
+                        peer_id, now_us);
+                    pthread_mutex_unlock(&server->auth_limiter_mutex);
+                    if (!allowed) {
+                        if (te->transport->close_fn != NULL) {
+                            te->transport->close_fn(client_fd);
+                        }
+                        continue;
+                    }
+                }
+
+                (void)spawn_reader(server, te->transport, client_fd,
+                                   peer_id);
             }
         }
     }
