@@ -527,6 +527,73 @@ UTEST(dispatcher_eval_id_tracking_round_trip)
     free_server(server, vm);
 }
 
+UTEST(dispatcher_handles_introspect_coros)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    s->authed = true;
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 99;
+    job->req.op = UREPL_OP_INTROSPECT;
+    job->req.what = strdup("coros");
+    urepl_dispatch_job(server, job);
+
+    char out[4096];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(n > 0);
+    UASSERT(strstr(out, "\"id\":99") != NULL);
+    UASSERT(strstr(out, "\"kind\":\"result\"") != NULL);
+    UASSERT(strstr(out, "\"coros\":") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_handles_introspect_gc)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    s->authed = true;
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 100;
+    job->req.op = UREPL_OP_INTROSPECT;
+    job->req.what = strdup("gc");
+    urepl_dispatch_job(server, job);
+
+    char out[4096];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"id\":100") != NULL);
+    UASSERT(strstr(out, "alive_bytes") != NULL);
+    free_server(server, vm);
+}
+
+UTEST(dispatcher_introspect_unknown_what_emits_error)
+{
+    UVM *vm = NULL;
+    UReplServer *server = mk_server(&vm);
+    UReplSession *s = urepl_session_create(server);
+    s->authed = true;
+
+    UReplJob *job = (UReplJob *)calloc(1, sizeof(*job));
+    job->session_id = s->session_id;
+    job->req.id = 101;
+    job->req.op = UREPL_OP_INTROSPECT;
+    job->req.what = strdup("nonsense");
+    urepl_dispatch_job(server, job);
+
+    char out[1024];
+    size_t n = urepl_ringbuf_read(&s->output, out, sizeof(out) - 1);
+    out[n] = '\0';
+    UASSERT(strstr(out, "\"code\":\"unknown_introspect\"") != NULL);
+    free_server(server, vm);
+}
+
 void
 test_repl_dispatcher_suite(void)
 {
@@ -562,6 +629,12 @@ test_repl_dispatcher_suite(void)
               dispatcher_unknown_session_dropped);
     utest_run("dispatcher_eval_id_tracking_round_trip",
               dispatcher_eval_id_tracking_round_trip);
+    utest_run("dispatcher_handles_introspect_coros",
+              dispatcher_handles_introspect_coros);
+    utest_run("dispatcher_handles_introspect_gc",
+              dispatcher_handles_introspect_gc);
+    utest_run("dispatcher_introspect_unknown_what_emits_error",
+              dispatcher_introspect_unknown_what_emits_error);
 }
 
 #else  /* !URBI_ENABLE_REPL */

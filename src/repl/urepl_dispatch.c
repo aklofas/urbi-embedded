@@ -2,6 +2,7 @@
 /* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_auth.h"
+#include "repl/urepl_introspect.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
 #include "realm/urealm.h"
@@ -328,17 +329,60 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
 }
 
 static void
-dispatch_introspect_stub(UReplServer *server, UReplSession *s, UReplJob *job)
+dispatch_introspect(UReplServer *server, UReplSession *s, UReplJob *job)
 {
-    /* Task 20 wires real introspection.  For now emit an error envelope
-     * so the protocol round-trip is exercised without a no-op. */
-    (void)server;
-    char env[256];
+    /* Each introspect_* primitive emits a structured JSON object into a
+     * scratch buffer; we wrap it in a {kind:result,value:<inner>} envelope.
+     *
+     * Inner cap of 8 KiB matches the per-primitive expected ceiling for
+     * idle / small VMs.  Buffer overflow returns an error envelope rather
+     * than silently truncating the JSON. */
+    char inner[8192];
+    size_t inner_n = 0;
+    const char *what = (job->req.what != NULL) ? job->req.what : "";
+    int rc = -1;
+
+    if      (strcmp(what, "coros")    == 0) rc = urbi_introspect_coros   (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "tags")     == 0) rc = urbi_introspect_tags    (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "watchers") == 0) rc = urbi_introspect_watchers(server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "events")   == 0) rc = urbi_introspect_events  (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "profile")  == 0) rc = urbi_introspect_profile (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "gc")       == 0) rc = urbi_introspect_gc      (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "lobbies")  == 0) rc = urbi_introspect_lobbies (server->vm, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "stack")    == 0) rc = urbi_introspect_stack   (server->vm, job->req.coro_id, inner, sizeof(inner), &inner_n);
+    else if (strcmp(what, "slots")    == 0) {
+        const char *obj = (job->req.obj != NULL) ? job->req.obj : "";
+        rc = urbi_introspect_slots(server->vm, s->realm,
+                                   obj, strlen(obj),
+                                   inner, sizeof(inner), &inner_n);
+    } else {
+        char env[256];
+        size_t n = 0;
+        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
+                                    "unknown_introspect", what, &n) == 0) {
+            push_env(s, env, n);
+        }
+        return;
+    }
+
+    if (rc != URBI_OK) {
+        char env[256];
+        size_t n = 0;
+        if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
+                                    "introspect_failed", what, &n) == 0) {
+            push_env(s, env, n);
+        }
+        return;
+    }
+
+    /* Wrap inner JSON in the result envelope.  inner is NOT NUL-terminated
+     * by the introspect primitives, so we temporarily terminate it for
+     * urepl_ndjson_emit_result (which expects a C string). */
+    inner[inner_n] = '\0';
+    char env[10240];
     size_t n = 0;
-    if (urepl_ndjson_emit_error(env, sizeof(env), job->req.id,
-                                "not_implemented",
-                                "introspect lands in v0.9.1 Phase 4",
-                                &n) == 0) {
+    if (urepl_ndjson_emit_result(env, sizeof(env), job->req.id,
+                                 inner, 0, &n) == 0) {
         push_env(s, env, n);
     }
 }
@@ -429,7 +473,7 @@ urepl_dispatch_job(UReplServer *server, UReplJob *job)
     case UREPL_OP_AUTH:        dispatch_auth(server, s, job); break;
     case UREPL_OP_EVAL:        dispatch_eval(server, s, job); break;
     case UREPL_OP_CANCEL:      dispatch_cancel_stub(server, s, job); break;
-    case UREPL_OP_INTROSPECT:  dispatch_introspect_stub(server, s, job); break;
+    case UREPL_OP_INTROSPECT:  dispatch_introspect(server, s, job); break;
     case UREPL_OP_LOBBY_NEW:   dispatch_lobby_new(server, s, job); break;
     case UREPL_OP_LOBBY_CLOSE: dispatch_lobby_close(server, s, job); break;
     case UREPL_OP_NONE:
