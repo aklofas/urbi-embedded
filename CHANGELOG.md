@@ -27,6 +27,20 @@
 
 - All three modes preserved: bytecode-only / default / (REPL service introduced in v0.9.1).  `urbi_unload` + `urbi_realm_create_repl` are always available; synclines ride with the lexer (off in bytecode-only builds).
 
+### Footprint
+
+`size --total liburbi.a` at v0.9.0-repl-foundation (host x86-64 gcc -Os):
+
+- host: 215,581 B text + 5,016 B data = 220,597 B total (~55% of 400 KB cap)
+- arm Cortex-M7 bytecode-only (`URBI_BYTECODE_ONLY=1`): 75,895 B text (~95% of 80 KB cap)
+- riscv rv32imc bytecode-only: 93,382 B text (~98% of 95 KB cap)
+
+`cross-arm` / `cross-riscv` full-library targets fail on this machine due to the
+ARM/RISC-V bare-metal toolchain missing hosted-C sysroot headers (`string.h` etc.
+under `-ffreestanding`).  This is a pre-existing toolchain environment gap
+(confirmed present on v0.8.5 baseline); the bytecode-only variants compile clean.
+CI remains authoritative for full-library cross-target verification.
+
 ---
 
 ## v0.8.5-recursive-emit — 2026-05-18 (Truly-recursive emitter)
