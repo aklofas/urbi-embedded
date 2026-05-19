@@ -599,11 +599,11 @@ UTEST(serialize_with_large_constant_exercises_multibyte_varint) {
     UASSERT_EQ(EMIT_OK, emit_single_statement(&module, &arena, &vm, &n));
 
     /* Serialize and round-trip to confirm multi-byte varint path works. */
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     UModule dst = {0};
@@ -667,7 +667,7 @@ urbi_vm_destroy(&vm);
 
 UTEST(serialize_module_with_float_constant_round_trips) {
     /* Manually build a module with a UVAL_FLOAT constant and serialize/deserialize
-       it to exercise the UVAL_FLOAT branches in module_wire_size and umodule_serialize. */
+       it to exercise the UVAL_FLOAT branches in module_wire_size and uchunk_serialize. */
     UModule module = {0};
     /* Task 11: allocate root_proto before accessing its fields. */
     module.root_proto = (UProto *)calloc(1, sizeof(UProto));
@@ -703,11 +703,11 @@ UTEST(serialize_module_with_float_constant_round_trips) {
     module.root_proto->abs_lines[0].line = 1;
     module.root_proto->max_reg = 0;
 
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     UModule dst = {0};

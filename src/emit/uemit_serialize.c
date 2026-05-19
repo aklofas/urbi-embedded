@@ -177,7 +177,7 @@ static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
 }
 
 /* Compute total serialized byte count.  Must match the write path
-   in umodule_serialize byte-for-byte.
+   in uchunk_serialize byte-for-byte.
    v1.7: UModule body = header + source_name + root_proto block. */
 static size_t module_wire_size(const UModule *c) {
     size_t n = 24U;                                   /* fixed header */
@@ -197,7 +197,7 @@ static size_t module_wire_size(const UModule *c) {
 }
 
 /* v1.7: UModule body = header + source_name + root_proto block. */
-ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
+ptrdiff_t uchunk_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     size_t off;
     size_t src_len;
     const size_t need = module_wire_size(module);

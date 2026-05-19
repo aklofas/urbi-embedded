@@ -165,7 +165,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     /* First pass: query required size. */
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
     if (need < 0) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize size-query failed",
@@ -184,7 +184,7 @@ urbi_compile_source(struct UVM *vm,
         uarena_destroy(&arena);
         return URBI_ERR_OOM;
     }
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
     if (wrote != need) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize wrote %ld, expected %ld",

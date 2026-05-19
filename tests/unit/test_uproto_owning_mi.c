@@ -152,12 +152,12 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     UASSERT_EQ(0, rc);
 
     /* Serialize. */
-    ptrdiff_t need = umodule_serialize(&m1, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&m1, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t buf[8192];
     UASSERT((size_t)need <= sizeof(buf));
-    ptrdiff_t wrote = umodule_serialize(&m1, buf, sizeof(buf));
+    ptrdiff_t wrote = uchunk_serialize(&m1, buf, sizeof(buf));
     UASSERT_EQ(need, wrote);
 
     /* Deserialize into a fresh module. */

@@ -178,7 +178,7 @@ UTEST(module_compiled_for_vm_a_has_origin_vm_a) {
 
     /* Serialize the module. */
     uint8_t buf[8192];
-    ptrdiff_t serialized = umodule_serialize(&module, buf, sizeof(buf));
+    ptrdiff_t serialized = uchunk_serialize(&module, buf, sizeof(buf));
     UASSERT(serialized > 0);
 
     /* Deserialize into a fresh module. */

@@ -45,7 +45,7 @@ UTEST(destroy_module_with_buffers_frees_them) {
     c.root_proto = rp;
 
     /* Simulate allocation by directly using stdlib and letting destroy free.
-       This is the same path uchunk_deserialize / umodule_serialize use via
+       This is the same path uchunk_deserialize / uchunk_serialize use via
        the alloc_fn hook — when alloc_fn is NULL, destroy uses stdlib free. */
     rp->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
     rp->instr_cap = 4;
@@ -965,11 +965,11 @@ static void roundtrip_ast(UAstNode *ast, const char *source_name) {
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, ast));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
-    need = umodule_serialize(&src, NULL, 0);
+    need = uchunk_serialize(&src, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     buf = (uint8_t *)malloc((size_t)need);
-    wrote = umodule_serialize(&src, buf, (size_t)need);
+    wrote = uchunk_serialize(&src, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     errmsg[0] = '\0';
@@ -1058,11 +1058,11 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
 
     /* Two-pass serialize: query size, then write.  The contract is
      * that the wrote count equals the queried size (C1 violates this). */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     /* Deserialize buf -> b and verify shape preservation (C2 makes
@@ -1130,11 +1130,11 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UASSERT(a.root_proto->ic_name_strs[0] != NULL);
 
     /* Round-trip. */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     UModule b = {0};
@@ -1255,11 +1255,11 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     a.root_proto->max_reg = 0;
 
     /* Round-trip. */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     UModule b = {0};
@@ -1302,14 +1302,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     (void)uemit_finish(&e);
 
     /* Size query (buf == NULL) */
-    ptrdiff_t n = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t n = uchunk_serialize(&module, NULL, 0);
     UASSERT_EQ((ptrdiff_t)36, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
-    ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
+    ptrdiff_t written = uchunk_serialize(&module, buf, sizeof buf);
     UASSERT_EQ((ptrdiff_t)36, written);
 
     /* Header field checks */
@@ -1349,7 +1349,7 @@ UTEST(serialize_cap_0_returns_required_size_without_writing) {
     uemit_init(&e, &module, &arena, NULL, NULL);
     (void)uemit_finish(&e);
 
-    ptrdiff_t needed = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t needed = uchunk_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < needed);
 
     uarena_destroy(&arena);
@@ -1365,7 +1365,7 @@ UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     (void)uemit_finish(&e);
 
     uint8_t buf[10];
-    ptrdiff_t rc = umodule_serialize(&module, buf, sizeof buf);
+    ptrdiff_t rc = uchunk_serialize(&module, buf, sizeof buf);
     UASSERT_EQ(-(ptrdiff_t)UCHUNK_LOAD_TRUNCATED, rc);
 
     uarena_destroy(&arena);

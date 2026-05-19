@@ -155,9 +155,9 @@ static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
-    /* First-pass: query required size.  umodule_serialize returns a negative
+    /* First-pass: query required size.  uchunk_serialize returns a negative
        value on failure (-(ptrdiff_t)UChunkLoadError code). */
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
     if (need < 0) {
         fprintf(stderr, "urbi: serialize size-query failed: %ld\n", (long)-need);
         uchunk_destroy(&module, vm);
@@ -171,7 +171,7 @@ static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
         uarena_destroy(&arena);
         return 1;
     }
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
     if (wrote != need) {
         fprintf(stderr, "urbi: serialize wrote %ld, expected %ld\n",
                 (long)wrote, (long)need);

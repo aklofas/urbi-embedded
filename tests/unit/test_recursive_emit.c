@@ -191,11 +191,11 @@ UTEST(verifier_accepts_emitted_module) {
 
     /* Serialize, then deserialize into a fresh module — exercises
      * decode_verify against the emitted shape. */
-    ptrdiff_t need = umodule_serialize(&m, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&m, NULL, 0);
     UASSERT(need > 0);
     uint8_t *blob = (uint8_t *)malloc((size_t)need);
     UASSERT(blob != NULL);
-    ptrdiff_t written = umodule_serialize(&m, blob, (size_t)need);
+    ptrdiff_t written = uchunk_serialize(&m, blob, (size_t)need);
     UASSERT_EQ(written, need);
 
     UModule m2 = {0};
