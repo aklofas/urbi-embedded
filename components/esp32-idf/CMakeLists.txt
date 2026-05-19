@@ -68,7 +68,7 @@ idf_component_register(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_module_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
+    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_chunk_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
     # -Wpedantic is intentionally OFF for the urbi component on ESP-IDF.  Three
     # sources of unfixable noise flood the build log otherwise (hundreds of
     # lines, drowning serial output during on-device debugging):

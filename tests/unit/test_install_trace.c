@@ -25,7 +25,7 @@
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */
 #include "object/uic.h"                     /* UIC */
-#include "object/uchunk_instance.h"         /* urbi_module_instance_create,
+#include "object/uchunk_instance.h"         /* urbi_chunk_instance_create,
                                                UChunkInstance, UProtoInstance */
 #include "sched/usched_cooperative.h"       /* sched_init */
 #include "watcher/uwatcher.h"               /* UWATCHER_AT */
@@ -135,7 +135,7 @@ run_one_getslot(UVM *vm, UObject *obj)
 
     if (!make_module_with_one_ic_site(vm, &m, instrs, 2)) return 0;
 
-    UChunkInstance *mi = urbi_get_or_create_module_instance(vm, &m);
+    UChunkInstance *mi = urbi_get_or_create_chunk_instance(vm, &m);
     if (mi == NULL) { free(m.ic_names); m.ic_names = NULL; return 0; }
 
     /* Wire the IC name so the slow path can resolve it on first miss. */

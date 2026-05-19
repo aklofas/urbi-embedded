@@ -87,7 +87,7 @@ budget_arm_strand(UVM *vm, UProto *module, UStrand *s, UValue *out_result)
     s->pc_base    = module->instructions;
     s->cur_consts = module->constants;
     uproto_refcount_inc(module);
-    s->module_instance = urbi_module_instance_create(vm, module);
+    s->module_instance = urbi_chunk_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;
     if (out_result) s->out_slot = out_result;

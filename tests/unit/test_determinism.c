@@ -191,7 +191,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     UASSERT(m.ic_names != NULL);
     m.ic_names[0] = xsym;
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     /* entries[0] must now have a real ic_table (T3 guarantee). */
@@ -211,7 +211,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     uint64_t h_after = urbi_get_determinism_checksum(&vm);
     UASSERT(h_before != h_after);
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     /* uchunk_destroy: alloc_fn==NULL → stdlib_alloc fallback.
      * uproto_destroy_buffers frees m.ic_names[],
      * then free(root_proto) is called by uchunk_destroy_internal. */

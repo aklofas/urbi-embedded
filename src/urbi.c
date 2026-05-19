@@ -214,7 +214,7 @@ urbi_compile_source(struct UVM *vm,
     return URBI_OK;
 #else
     /* Freestanding: compile-from-source is not part of the embedded surface.
-     * Pre-compiled bytecode comes in via urbi_load_module instead. */
+     * Pre-compiled bytecode comes in via urbi_load_chunk instead. */
     (void)vm; (void)src; (void)src_len; (void)src_name;
     (void)out_buf; (void)out_len; (void)err_buf; (void)err_cap;
     return URBI_ERR_INVALID_ARG;

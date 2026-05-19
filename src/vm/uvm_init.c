@@ -150,7 +150,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->tag_proto   = NULL;
 
     /* M4 T30 — UChunkInstance registry head: empty until first
-     * urbi_module_instance_create. */
+     * urbi_chunk_instance_create. */
     vm->module_instances_head = NULL;
 
     vm->last_return_closure  = NULL;

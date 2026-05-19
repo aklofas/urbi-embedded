@@ -169,7 +169,7 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  *
  * urbi_run_script: thin wrapper around urbi_run_chunk that discards the result.
  *
- * urbi_load_module: bind a pre-compiled module into the VM and run its root
+ * urbi_load_chunk: bind a pre-compiled module into the VM and run its root
  * chunk under the global Realm so top-level bindings install into realm
  * globals.  module_name is currently advisory (no import-table lookup yet —
  * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
@@ -205,7 +205,7 @@ int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
 
 int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UProto *root);
 
-int urbi_load_module(struct UVM *vm, struct UProto *root, const char *module_name);
+int urbi_load_chunk(struct UVM *vm, struct UProto *root, const char *module_name);
 
 /* === v0.9.0-repl: urbi_unload ===
  *
@@ -222,14 +222,14 @@ int urbi_load_module(struct UVM *vm, struct UProto *root, const char *module_nam
  * Thread safety: MAIN.  Not ISR-safe. */
 int urbi_unload(struct UVM *vm, struct UProto *root);
 
-/* urbi_load_translate_load_err: map an internal UChunkLoadError (passed
+/* urbi_chunk_translate_load_err: map an internal UChunkLoadError (passed
  * as int) to the corresponding public UErrCode.  Currently routes
  * UCHUNK_LOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
  * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
  * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
  * public-API call site, even though the deserialize-bytes entry point
  * itself remains M6 work in progress. */
-int urbi_load_translate_load_err(int load_err);
+int urbi_chunk_translate_load_err(int load_err);
 
 /* === Phase 10 stdlib bake (M6 Wave 2) ===
  *
@@ -260,7 +260,7 @@ int urbi_load_translate_load_err(int load_err);
 /* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
  * compiler frontend (src/lex, src/parse, src/emit) is not linked in
  * bytecode-only builds.  Pre-baked bytecode is loaded through
- * urbi_load_module / urbi_run_chunk instead. */
+ * urbi_load_chunk / urbi_run_chunk instead. */
 #if !defined(URBI_BYTECODE_ONLY)
 int urbi_compile_source(struct UVM *vm,
                         const char *src, size_t src_len,
@@ -293,7 +293,7 @@ int urbi_compile_source(struct UVM *vm,
  * urbi_strand_cancel / urbi_strand_panic / urbi_strand_reset are declared
  * in the row 7 control-transfer section above (T12). */
 
-struct UClosure;   /* forward decl — definition in umodule.h */
+struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
 
 /* urbi_native_method_fn: signature for host C functions that back a
  * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
@@ -977,10 +977,10 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
  *
- * urbi_module_instance_create allocates the UChunkInstance + its
+ * urbi_chunk_instance_create allocates the UChunkInstance + its
  * UProtoInstanceArr bulk in two GC cells.  Returns NULL on OOM.
  *
- * urbi_module_instance_destroy is a no-op at v1.0 — both cells are
+ * urbi_chunk_instance_destroy is a no-op at v1.0 — both cells are
  * GC-managed and reaped by sweep when no roots reach the instance.
  * (AUDIT: OBJ-027 — function body is dead at v1.0; symbol kept for
  * public-API stability.  M7 module-instance lifecycle work may give
@@ -995,8 +995,8 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 typedef struct UChunkInstance UChunkInstance;
 #endif
 
-UChunkInstance *urbi_module_instance_create (struct UVM *vm, struct UProto *root);
-void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi);
+UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
+void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
  *
@@ -1175,12 +1175,12 @@ void urbi_set_error(struct UVM *vm, int code,
 
 /* === Public bytecode deserialization (v0.7.1 spec amendment) ===
  *
- * urbi_module_from_bytes: deserialize a wire-format bytecode buffer into a
+ * urbi_chunk_from_bytes: deserialize a wire-format bytecode buffer into a
  * heap-allocated root UProto.  (v0.9.2: was UModule*; UModule deleted.)
  *
  * On success: returns a non-NULL pointer that must be freed with
- * urbi_module_free when no longer needed.  The caller must ensure no live VM
- * is executing inside the module when urbi_module_free is called.
+ * urbi_chunk_free when no longer needed.  The caller must ensure no live VM
+ * is executing inside the module when urbi_chunk_free is called.
  *
  * On error: returns NULL; if errmsg is non-NULL, writes a diagnostic into
  * errmsg[0..errcap) (NUL-terminated).
@@ -1191,16 +1191,16 @@ void urbi_set_error(struct UVM *vm, int code,
  *   any other deserialize or OOM error  → returns NULL
  *
  * Thread safety: MAIN (calls the heap allocator). */
-struct UProto *urbi_module_from_bytes(const uint8_t *buf, size_t len,
+struct UProto *urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
                                       char *errmsg, size_t errcap);
 
-/* urbi_module_free: free a root UProto returned by urbi_module_from_bytes.
+/* urbi_chunk_free: free a root UProto returned by urbi_chunk_from_bytes.
  *
  * Calls uchunk_destroy (frees all owned buffers + the root struct).
  * NULL is a no-op.
  *
  * Thread safety: MAIN. */
-void urbi_module_free(struct UProto *root);
+void urbi_chunk_free(struct UProto *root);
 
 #ifdef __cplusplus
 }

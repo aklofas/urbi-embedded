@@ -59,7 +59,7 @@ UTEST(instance_unlinked_on_module_destroy)
     UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod, bc, bc_len,
                                               NULL, NULL, errmsg, sizeof errmsg));
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, mod);
     UASSERT(mi != NULL);
     /* Precondition: instance is registered. */
     UASSERT(instance_on_vm_list(&vm, mi));
@@ -94,8 +94,8 @@ UTEST(correct_instance_unlinked_multi)
     UASSERT_EQ(UCHUNK_LOAD_OK, uchunk_deserialize(&mod_b, bc_b, bc_b_len,
                                               NULL, NULL, errmsg, sizeof errmsg));
 
-    UChunkInstance *mi_a = urbi_module_instance_create(&vm, mod_a);
-    UChunkInstance *mi_b = urbi_module_instance_create(&vm, mod_b);
+    UChunkInstance *mi_a = urbi_chunk_instance_create(&vm, mod_a);
+    UChunkInstance *mi_b = urbi_chunk_instance_create(&vm, mod_b);
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
     UASSERT(instance_on_vm_list(&vm, mi_a));

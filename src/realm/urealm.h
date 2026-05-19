@@ -107,7 +107,7 @@ typedef struct URealm {
 
     /* [runtime-only, NOT serialized] Singly-linked list of root UProtos
      * loaded under this realm via urbi_run_chunk / urbi_repl_eval /
-     * urbi_load_module.  Threaded via UProto.next_in_realm; head-insertion.
+     * urbi_load_chunk.  Threaded via UProto.next_in_realm; head-insertion.
      * Walked at urbi_realm_destroy time to unload each module (Task 12).
      * v0.9.2 Task 4.1: was UModule*; now UProto* (UModule deleted). */
     struct UProto  *loaded_protos_head;

@@ -106,11 +106,11 @@ urbi_aux_load_and_run(struct UVM *vm,
     }
 
     char errmsg[256] = {0};
-    struct UProto *m = urbi_module_from_bytes(bytecode, len,
+    struct UProto *m = urbi_chunk_from_bytes(bytecode, len,
                                               errmsg, sizeof errmsg);
     if (m == NULL) {
         /* Attempt to identify the error kind from the message.  The public
-         * urbi_module_from_bytes sets no error ring entry; we synthesise one
+         * urbi_chunk_from_bytes sets no error ring entry; we synthesise one
          * here via urbi_aux_set_error for callers using urbi_last_error. */
         urbi_aux_set_error(vm, URBI_ERR_INVALID_ARG,
                            NULL, 0,
@@ -131,7 +131,7 @@ urbi_aux_load_and_run(struct UVM *vm,
     UValue result;
     int rc = urbi_run_chunk(vm, realm, m, &result);
 
-    urbi_module_free(m);
+    urbi_chunk_free(m);
 
     if (rc == URBI_OK && out_result != NULL) {
         *out_result = result;

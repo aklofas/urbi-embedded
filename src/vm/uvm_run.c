@@ -9,7 +9,7 @@
 #include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
-#include "object/uchunk_instance.h" /* urbi_module_instance_create */
+#include "object/uchunk_instance.h" /* urbi_chunk_instance_create */
 #include "chunk/uchunk.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
@@ -105,7 +105,7 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * Decrement fires in ustrand_destroy at the end of this function. */
     uproto_refcount_inc(strand.root_proto);
     /* M4 follow-up / T72 fix: always create a fresh UChunkInstance for each
-     * urbi_vm_run call.  urbi_get_or_create_module_instance is unsuitable here
+     * urbi_vm_run call.  urbi_get_or_create_chunk_instance is unsuitable here
      * because urbi_repl_eval heap-allocates UProto per line and reuses the same
      * address across calls; the cache lookup would return a stale instance
      * with old (freed) ic_names.  Forcing fresh creation ensures ic->name is
@@ -114,7 +114,7 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
      * urbi_run_chunk pre-creates an instance via get_or_create before calling
      * urbi_vm_run; that cached instance is shadowed by this fresh one (prepended to
      * vm->module_instances_head) but both are functionally correct. */
-    strand.module_instance = urbi_module_instance_create(vm, (UProto *)root);
+    strand.module_instance = urbi_chunk_instance_create(vm, (UProto *)root);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */

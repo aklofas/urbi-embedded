@@ -306,7 +306,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 /* T73: Prepend one instruction to the current function's instruction buffer.
  *
  * Routes to UProto (nested function) via proto_grow_for_prologue or to
- * UModule (chunk root) via module_grow_for_prologue.
+ * root UProto (chunk root) via module_grow_for_prologue.
  *
  * All abs_lines entries' pc values are bumped by 1 because every existing
  * instruction is now at pc+1.  The prepended instruction itself gets a

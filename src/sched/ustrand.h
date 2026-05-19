@@ -254,7 +254,7 @@ struct UStrand {
                                              * callers via uproto_root_of on the closure's proto). */
     /* module_instance: per-(vm, module) IC RAM tier (M4 follow-up).
      * Bound by urbi_vm_run / urbi_run_chunk via
-     * urbi_get_or_create_module_instance.  May be NULL if not yet wired
+     * urbi_get_or_create_chunk_instance.  May be NULL if not yet wired
      * (defensive).
      *
      * CHSTR-043: GC-managed, NOT freed by ustrand_destroy.  The

@@ -181,7 +181,7 @@ static bool init_ic_slices_recursive(struct UVM *vm,
 }
 
 UChunkInstance *
-urbi_module_instance_create(struct UVM *vm, UProto *m)
+urbi_chunk_instance_create(struct UVM *vm, UProto *m)
 {
     if (vm == NULL || m == NULL) {
         return NULL;
@@ -298,7 +298,7 @@ urbi_module_instance_create(struct UVM *vm, UProto *m)
 }
 
 void
-urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi)
+urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi)
 {
     /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
      * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
@@ -310,12 +310,12 @@ urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi)
 }
 
 UChunkInstance *
-urbi_get_or_create_module_instance(struct UVM *vm, UProto *root)
+urbi_get_or_create_chunk_instance(struct UVM *vm, UProto *root)
 {
     if (vm == NULL || root == NULL) return NULL;
     UChunkInstance *mi;
     for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
         if (mi->module == root) return mi;
     }
-    return urbi_module_instance_create(vm, root);
+    return urbi_chunk_instance_create(vm, root);
 }

@@ -94,7 +94,7 @@ UTEST(module_instance_basic_create) {
     p->ic_names[1] = bar;
     p->ic_names[2] = baz;
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT(mi->module == &m);
     UASSERT(mi->vm == &vm);
@@ -130,7 +130,7 @@ UTEST(module_instance_basic_create) {
         }
     }
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
@@ -153,8 +153,8 @@ UTEST(module_instance_two_instances_independent) {
     p->ic_names[0] = alpha;
     p->ic_names[1] = beta;
 
-    UChunkInstance *mi_a = urbi_module_instance_create(&vm, &m);
-    UChunkInstance *mi_b = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi_a = urbi_chunk_instance_create(&vm, &m);
+    UChunkInstance *mi_b = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
 
@@ -183,8 +183,8 @@ UTEST(module_instance_two_instances_independent) {
     UASSERT_EQ((int)pi_b->ic_table[0].n,              0);
     UASSERT_EQ((int)pi_b->ic_table[0].replace_cursor, 0);
 
-    urbi_module_instance_destroy(&vm, mi_b);
-    urbi_module_instance_destroy(&vm, mi_a);
+    urbi_chunk_instance_destroy(&vm, mi_b);
+    urbi_chunk_instance_destroy(&vm, mi_a);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
@@ -198,14 +198,14 @@ UTEST(module_instance_zero_nested_protos) {
 
     UProto m = {0};
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT(mi->proto_instances != NULL);
     UASSERT_EQ((int)mi->proto_instances->n, 1);
     UASSERT(mi->proto_instances->entries[0].proto    == NULL);
     UASSERT(mi->proto_instances->entries[0].ic_table == NULL);
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
@@ -225,13 +225,13 @@ UTEST(module_instance_proto_with_zero_ic_count) {
     /* Leave p->ic_count = 0, p->ic_names = NULL (zero-init from
      * uproto_alloc_nested). */
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT_EQ((int)mi->proto_instances->n, 2);
     UASSERT(mi->proto_instances->entries[1].proto    == p);
     UASSERT(mi->proto_instances->entries[1].ic_table == NULL);
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
@@ -240,8 +240,8 @@ UTEST(module_instance_invalid_args_return_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
     UProto m = {0};
-    UASSERT(urbi_module_instance_create(NULL, &m) == NULL);
-    UASSERT(urbi_module_instance_create(&vm, NULL) == NULL);
+    UASSERT(urbi_chunk_instance_create(NULL, &m) == NULL);
+    UASSERT(urbi_chunk_instance_create(&vm, NULL) == NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -498,7 +498,7 @@ UTEST(resolve_slot_finds_via_protos) {
 
 /* === T3 follow-up: entries[0] populated from UProto.ic_count ===
  *
- * Verifies that urbi_module_instance_create wires up entries[0].ic_table
+ * Verifies that urbi_chunk_instance_create wires up entries[0].ic_table
  * from UProto.ic_count / ic_names (root-chunk IC sites added by T2). */
 
 UTEST(module_instance_populates_root_chunk_ic_table) {
@@ -519,7 +519,7 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     names[1] = sy;
     m.ic_names = names;
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     /* entries[0] must carry a real ic_table (not NULL). */
@@ -535,7 +535,7 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].n, 0);
     UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].replace_cursor, 0);
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     /* Prevent uchunk_destroy from freeing the static names[] array. */
     m.ic_names = NULL;
     m.ic_count = 0;
@@ -580,8 +580,8 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
      * is per-VM IC mutation isolation, not interned-symbol isolation. */
     p->ic_names[0] = foo_a;
 
-    UChunkInstance *mi_a = urbi_module_instance_create(&vm_a, &m);
-    UChunkInstance *mi_b = urbi_module_instance_create(&vm_b, &m);
+    UChunkInstance *mi_a = urbi_chunk_instance_create(&vm_a, &m);
+    UChunkInstance *mi_b = urbi_chunk_instance_create(&vm_b, &m);
     UASSERT(mi_a != NULL); UASSERT(mi_b != NULL);
 
     /* Each VM's registry head points at its own instance. */
@@ -612,14 +612,14 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
      * per se but useful pin against future regressions.) */
     UASSERT(foo_a != foo_b);
 
-    urbi_module_instance_destroy(&vm_b, mi_b);
-    urbi_module_instance_destroy(&vm_a, mi_a);
+    urbi_chunk_instance_destroy(&vm_b, mi_b);
+    urbi_chunk_instance_destroy(&vm_a, mi_a);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm_b);
     urbi_vm_destroy(&vm_a);
 }
 
-/* === T5: urbi_get_or_create_module_instance cache helper ===
+/* === T5: urbi_get_or_create_chunk_instance cache helper ===
  *
  * Same (vm, module) pair must return the same UChunkInstance on repeated
  * calls; a different module must yield a different instance. */
@@ -631,9 +631,9 @@ UTEST(get_or_create_module_instance_caches_per_module) {
     UProto m1 = {0};
     UProto m2 = {0};
 
-    UChunkInstance *a1 = urbi_get_or_create_module_instance(&vm, &m1);
-    UChunkInstance *a2 = urbi_get_or_create_module_instance(&vm, &m1);
-    UChunkInstance *b1 = urbi_get_or_create_module_instance(&vm, &m2);
+    UChunkInstance *a1 = urbi_get_or_create_chunk_instance(&vm, &m1);
+    UChunkInstance *a2 = urbi_get_or_create_chunk_instance(&vm, &m1);
+    UChunkInstance *b1 = urbi_get_or_create_chunk_instance(&vm, &m2);
 
     UASSERT(a1 != NULL);
     UASSERT(a1 == a2);   /* same module → same instance */
@@ -653,8 +653,8 @@ UTEST(get_or_create_module_instance_isolated_per_vm) {
 
     UProto m = {0};
 
-    UChunkInstance *mi_a = urbi_get_or_create_module_instance(&vm_a, &m);
-    UChunkInstance *mi_b = urbi_get_or_create_module_instance(&vm_b, &m);
+    UChunkInstance *mi_a = urbi_get_or_create_chunk_instance(&vm_a, &m);
+    UChunkInstance *mi_b = urbi_get_or_create_chunk_instance(&vm_b, &m);
 
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
@@ -686,7 +686,7 @@ UTEST(determinism_checksum_includes_ic_state) {
     p->ic_names = (USymbol **)malloc(sizeof(USymbol *));
     p->ic_names[0] = foo;
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     uint64_t h_before = urbi_get_determinism_checksum(&vm);
@@ -701,7 +701,7 @@ UTEST(determinism_checksum_includes_ic_state) {
 
     UASSERT(h_before != h_after);
 
-    urbi_module_instance_destroy(&vm, mi);
+    urbi_chunk_instance_destroy(&vm, mi);
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }

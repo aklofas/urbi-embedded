@@ -202,7 +202,7 @@ typedef struct UProto {
 
     /* [runtime-only, NOT serialized] Back-pointer to the UChunkInstance
      * this UProto was first instantiated under.  Populated once at
-     * urbi_module_instance_create time (tree walk over every proto).  Used
+     * urbi_chunk_instance_create time (tree walk over every proto).  Used
      * by OP_CLOSURE to bind cl->proto_inst without a fallback chain:
      * cl->proto_inst = &owning_module_instance->proto_instances->entries[ic_index].
      *

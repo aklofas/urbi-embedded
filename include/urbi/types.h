@@ -413,7 +413,7 @@ typedef enum {
     URBI_ERR_STRAND_FATAL               = -2,
     URBI_ERR_OOM                        = -3,
     /* URBI_ERR_BYTECODE_VERSION_MISMATCH: returned by the public-API
-     * translation helper urbi_load_translate_load_err when the internal
+     * translation helper urbi_chunk_translate_load_err when the internal
      * loader reports UCHUNK_LOAD_UNSUPPORTED_VERSION (see src/chunk/uchunk_io.c).
      * The deserialize-bytes entry point itself is still M6 work in
      * progress; the translation helper exists now so any future caller
@@ -434,7 +434,7 @@ typedef enum {
      * fails to deserialize or bind during VM/realm bootstrap.  Distinct
      * from URBI_ERR_OOM (which signals allocation failure during boot)
      * and URBI_ERR_BYTECODE_VERSION_MISMATCH (which is reachable through
-     * urbi_load_translate_load_err for the file-load surface).  M6
+     * urbi_chunk_translate_load_err for the file-load surface).  M6
      * Phase 4 reserves this code; the empty-blob path never reaches it. */
     URBI_ERR_STDLIB_BOOT_FAILED         = -15,
     /* URBI_ERR_API_VERSION_MISMATCH: returned by urbi_aux_check_version

@@ -44,13 +44,13 @@
  *   slots[e], and uprops[e].
  *
  * Lifecycle:
- *   urbi_module_instance_create allocates both cells and zero-fills every
+ *   urbi_chunk_instance_create allocates both cells and zero-fills every
  *   IC entry (recv_shapes=NULL, topology_gen=0, slots=NULL, uprops=NULL,
  *   flags=0, n=0, replace_cursor=0).  topology_gen=0 is the unfilled
  *   sentinel per pre-M4 topology-generation spec §3.1 (vm->topology_gen
  *   init=1 — no live shape ever has gen 0).
  *
- *   urbi_module_instance_destroy is a no-op; both cells are GC-managed
+ *   urbi_chunk_instance_destroy is a no-op; both cells are GC-managed
  *   and reaped by sweep when no roots reach the UChunkInstance. */
 
 #ifndef UCHUNK_INSTANCE_H
@@ -114,15 +114,15 @@ struct UChunkInstance {
  * UProtoInstanceArr bulk in a second GC cell, sized for one entry per
  * (root chunk + nested proto) plus the contiguous IC tables.  Returns
  * NULL on OOM (either cell allocation may fail). */
-UChunkInstance *urbi_module_instance_create (struct UVM *vm, UProto *root);
+UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, UProto *root);
 
 /* No-op: both cells are GC-managed and freed by sweep.  Provided so the
  * public ABI matches the create/destroy pair convention (T22 may grow
  * an explicit teardown for IC entries that pin host resources). */
-void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi);
+void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
 /* Look up a UChunkInstance for (vm, m) on vm->module_instances_head; if
- * absent, create it via urbi_module_instance_create and thread on.  Used by
+ * absent, create it via urbi_chunk_instance_create and thread on.  Used by
  * the chunk-run path so OP_GETSLOT / OP_SETSLOT find a real IC table on
  * first execution of a module.  Returns NULL only on OOM during create.
  * O(N) in the size of the per-VM instance list — acceptable since N is
@@ -132,7 +132,7 @@ void             urbi_module_instance_destroy(struct UVM *vm, UChunkInstance *mi
  * must not invoke from multiple host threads concurrently against the same
  * vm.  Safe today under URBI_SCHED_COOPERATIVE; revisit if parallel realms
  * ship. */
-UChunkInstance *urbi_get_or_create_module_instance(struct UVM *vm, UProto *root);
+UChunkInstance *urbi_get_or_create_chunk_instance(struct UVM *vm, UProto *root);
 
 #ifdef __cplusplus
 }

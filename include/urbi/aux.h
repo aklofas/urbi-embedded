@@ -129,7 +129,7 @@ void urbi_aux_set_error(struct UVM *vm, int code,
  * out_result — receives the result UValue of the root chunk; may be NULL
  *              if the caller does not need the result.
  *
- * Internally calls urbi_module_from_bytes + urbi_run_chunk + urbi_module_free.
+ * Internally calls urbi_chunk_from_bytes + urbi_run_chunk + urbi_chunk_free.
  * The temporary root UProto is freed before returning.
  *
  * Returns:

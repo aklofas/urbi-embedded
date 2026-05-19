@@ -4,7 +4,7 @@
  *
  * Path under test:
  *   urbi_vm_init -> port hooks -> urbi_event_register (with destructure)
- *   -> urbi_register (host fn) -> urbi_module_from_bytes + urbi_load_module
+ *   -> urbi_register (host fn) -> urbi_chunk_from_bytes + urbi_load_chunk
  *   -> urbi_inject_event x3 -> urbi_step pump -> writer hook -> UART
  *
  * The smoke app deliberately avoids peripherals (no camera / display / GPIO)
@@ -177,16 +177,16 @@ void app_main(void)
 
     /* 4. Load the baked smoke bytecode. */
     char errbuf[128] = {0};
-    struct UProto *m = urbi_module_from_bytes(reactive_smoke_bytecode,
+    struct UProto *m = urbi_chunk_from_bytes(reactive_smoke_bytecode,
                                                reactive_smoke_bytecode_size,
                                                errbuf, sizeof errbuf);
     if (m == NULL) {
-        ESP_LOGE(TAG, "urbi_module_from_bytes failed: %s", errbuf);
+        ESP_LOGE(TAG, "urbi_chunk_from_bytes failed: %s", errbuf);
         ESP_ERROR_CHECK(ESP_FAIL);
     }
-    ESP_ERROR_CHECK(urbi_load_module(&vm, m, "reactive_smoke") == URBI_OK ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(urbi_load_chunk(&vm, m, "reactive_smoke") == URBI_OK ? ESP_OK : ESP_FAIL);
 
-    /* 5. Run the module body to install the at-watcher (urbi_load_module
+    /* 5. Run the module body to install the at-watcher (urbi_load_chunk
      * binds the module but does NOT execute its root chunk; we need to
      * pump urbi_step for that).  Drain through QUIESCENT first so the
      * watcher is live before we inject. */

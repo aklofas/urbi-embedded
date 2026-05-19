@@ -37,7 +37,7 @@
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
 #include "chunk/uchunk.h"          /* UModule, uchunk_deserialize, uchunk_destroy */
-#include "object/uchunk_instance.h" /* urbi_get_or_create_module_instance */
+#include "object/uchunk_instance.h" /* urbi_get_or_create_chunk_instance */
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
@@ -142,7 +142,7 @@ urbi_stdlib_boot(UVM *vm)
             /* uchunk_deserialize cleaned up partial allocations on failure. */
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
-        if (urbi_get_or_create_module_instance(vm, m) == NULL) {
+        if (urbi_get_or_create_chunk_instance(vm, m) == NULL) {
             uchunk_destroy(m, vm);
             return URBI_ERR_OOM;
         }

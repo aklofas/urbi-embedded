@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: urbi_run_chunk, urbi_repl_eval, urbi_run_script, urbi_load_module
+/* Unit tests: urbi_run_chunk, urbi_repl_eval, urbi_run_script, urbi_load_chunk
    (row 8 §5 + §8.4 / T16). */
 
 #include "utest.h"
@@ -317,7 +317,7 @@ UTEST(run_script_returns_ok_discards_result)
 }
 
 /* -------------------------------------------------------------------------
- * urbi_load_module tests
+ * urbi_load_chunk tests
  * ------------------------------------------------------------------------- */
 
 /* Case 9: load_module rejects NULL arguments (vm / module / module_name).
@@ -334,11 +334,11 @@ UTEST(load_module_null_args_rejected)
     UASSERT(compile_src(&vm, "42", &module));
 
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(NULL, &module, "test_module"));
+               urbi_load_chunk(NULL, &module, "test_module"));
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(&vm, NULL, "test_module"));
+               urbi_load_chunk(&vm, NULL, "test_module"));
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(&vm, &module, NULL));
+               urbi_load_chunk(&vm, &module, NULL));
 
     uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
@@ -348,7 +348,7 @@ UTEST(load_module_null_args_rejected)
  * (API-021 v0.6.0 regression; also closes CHSTR-009).
  *
  * Compile a tiny module with a top-level `var x = 42` binding, hand it to
- * urbi_load_module, then read back via urbi_realm_get_global.  The original
+ * urbi_load_chunk, then read back via urbi_realm_get_global.  The original
  * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
  * binds a UChunkInstance and runs the root chunk under the global Realm
  * so top-level bindings install.  module_name is advisory at v0.6.0
@@ -366,7 +366,7 @@ UTEST(load_module_installs_top_level_var)
     UProto module;
     UASSERT(compile_src(&vm, "var x = 42", &module));
 
-    int rc = urbi_load_module(&vm, &module, "test_module");
+    int rc = urbi_load_chunk(&vm, &module, "test_module");
     UASSERT_EQ(URBI_OK, rc);
 
     URealm *gr = urbi_realm_global(&vm);

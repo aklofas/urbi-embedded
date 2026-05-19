@@ -321,7 +321,7 @@ void uproto_destroy_buffers(UProto *proto, UChunkAllocFn alloc,
  *   - Verifier walks every instruction against the opcode-shape table
  *     (urbi_opcode_shapes[]); register operands < max_reg+1, Bx fields
  *     range-checked per UBxKind, last instruction must be OP_RET.
- *   - ic_names interning is deferred to urbi_module_instance_create
+ *   - ic_names interning is deferred to urbi_chunk_instance_create
  *     (see object/umoduleinstance.h); deserialize itself does not need
  *     a VM. */
 UChunkLoadError uchunk_deserialize(UProto **out_root,

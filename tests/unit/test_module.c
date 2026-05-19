@@ -1074,7 +1074,7 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
 /* T15 (a): Round-trip a module that emits an IC site (OP_GETSLOT) and
  * verify the v1.5 ic_name_strs survive serialize+deserialize, then
  * exercise the T14 lazy-intern path by calling
- * urbi_module_instance_create on the deserialized module — which on
+ * urbi_chunk_instance_create on the deserialized module — which on
  * input has ic_name_strs populated but ic_names == NULL.  After
  * instance create, ic_names must be a fully populated USymbol** array
  * that resolves to the same canonical pointer as a direct
@@ -1142,7 +1142,7 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UVM vm_b;
     urbi_vm_init(&vm_b, NULL, NULL);
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm_b, b);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm_b, b);
     UASSERT(mi != NULL);
 
     /* Post-condition: ic_names is now populated; each entry equals the
@@ -1158,7 +1158,7 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     /* Idempotency: a second call must not re-allocate.  The helper's
      * fast path returns immediately when ic_names is already populated. */
     USymbol **before = b->ic_names;
-    UChunkInstance *mi2 = urbi_module_instance_create(&vm_b, b);
+    UChunkInstance *mi2 = urbi_chunk_instance_create(&vm_b, b);
     UASSERT(mi2 != NULL);
     UASSERT_EQ((void *)before, (void *)b->ic_names);
 

@@ -220,7 +220,7 @@ int main(void) {
     tim2_init_50ms();
 
     /* Load baked bytecode (freestanding pattern: static UProto + uchunk_deserialize).
-     * urbi_module_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
+     * urbi_chunk_from_bytes is __STDC_HOSTED__-gated and returns NULL on bare-metal.
      *
      * IMPORTANT: caller MUST set module->alloc_fn / alloc_ud before deserialize.
      * module_allocator() in freestanding mode returns c->alloc_fn directly (no

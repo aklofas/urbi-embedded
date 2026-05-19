@@ -102,9 +102,9 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UProto *module,
 
     /* v0.9.0: stamp owning_module_instance on every nested UProto so that
      * OP_CLOSURE can read child_proto->owning_module_instance directly.
-     * urbi_module_instance_create calls stamp_owning_mi(root_proto, mi)
+     * urbi_chunk_instance_create calls stamp_owning_mi(root_proto, mi)
      * internally — the same stamp urbi_strand_create_for_module performs. */
-    s->module_instance = urbi_module_instance_create(vm, module);
+    s->module_instance = urbi_chunk_instance_create(vm, module);
     if (!s->module_instance) { urbi_strand_destroy(s); return -1; }
 
     urbi_strand_start(s);  /* DORMANT → READY */

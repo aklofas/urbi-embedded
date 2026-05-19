@@ -16,7 +16,7 @@
 #include "realm/urealm.h"
 #include "vm/uvm.h"
 #include "chunk/uchunk.h"
-#include "object/uchunk_instance.h"  /* urbi_get_or_create_module_instance */
+#include "object/uchunk_instance.h"  /* urbi_get_or_create_chunk_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for closure type usage */
@@ -501,7 +501,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 #else
     /* Freestanding: the REPL is not part of the embedded surface.  Mirrors
      * urbi_compile_source's freestanding stub in src/urbi.c — embedders
-     * deliver pre-compiled bytecode via urbi_load_module + urbi_run_chunk
+     * deliver pre-compiled bytecode via urbi_load_chunk + urbi_run_chunk
      * instead.  uarena_init (the hosted entry point) isn't declared in
      * freestanding mode, so this branch returns early without touching
      * any compiler front-end primitives. */
@@ -527,17 +527,17 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
 }
 
 /* ---------------------------------------------------------------------------
- * urbi_load_module
+ * urbi_load_chunk
  *
- * Bind a pre-compiled UModule into the VM and run its root chunk under the
- * global Realm so any top-level bindings install into realm globals.
+ * Bind a pre-compiled UProto chunk into the VM and run its root chunk under
+ * the global Realm so any top-level bindings install into realm globals.
  *
  * v0.6.0 (API-021): the body was previously a stub that returned a fixed
  * URBI_ERR_INVALID_ARG.  It now performs the minimum useful work that a
  * "load" semantic permits without an import table:
  *
  *   1. Validate (vm, module, module_name) all non-NULL.
- *   2. Bind a UChunkInstance via urbi_get_or_create_module_instance — this
+ *   2. Bind a UChunkInstance via urbi_get_or_create_chunk_instance — this
  *      lazy-interns the IC name strings and prepares the per-(vm, module)
  *      runtime IC backing.  Subsequent urbi_run_chunk / urbi_run_script
  *      calls reuse the same instance.
@@ -548,17 +548,17 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  * cannot be looked up via urbiscript `import "name"`.  v1.x adds the
  * import-registry surface and threads module_name through the registration
  * step; the existing public API stays compatible.  See backlog entry
- * "v1.x: import-table registration for urbi_load_module".
+ * "v1.x: import-table registration for urbi_load_chunk".
  *
  * Phase 3 / API-005: when this surface eventually deserializes bytecode it
  * must translate the internal UChunkLoadError UCHUNK_LOAD_UNSUPPORTED_VERSION
  * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
- * UErrCode enum).  See urbi_load_translate_load_err() below — the helper
+ * UErrCode enum).  See urbi_chunk_translate_load_err() below — the helper
  * is in place so any future deserialize-bytes entry point routes through
  * a single mapping site.
  * --------------------------------------------------------------------------- */
 
-/* urbi_load_translate_load_err: public-API translation of internal
+/* urbi_chunk_translate_load_err: public-API translation of internal
  * UChunkLoadError → UErrCode.  Closes API-005: UCHUNK_LOAD_UNSUPPORTED_VERSION
  * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
  *
@@ -566,7 +566,7 @@ urbi_run_script(UVM *vm, URealm *realm, UProto *root)
  * surface does not yet differentiate them; M6 may grow per-code mappings
  * as the loader API matures. */
 int
-urbi_load_translate_load_err(int load_err)
+urbi_chunk_translate_load_err(int load_err)
 {
     if (load_err == 0) return URBI_OK;
     if (load_err == (int)UCHUNK_LOAD_UNSUPPORTED_VERSION) {
@@ -576,31 +576,31 @@ urbi_load_translate_load_err(int load_err)
 }
 
 /* ---------------------------------------------------------------------------
- * urbi_module_from_bytes / urbi_module_free  (v0.7.1 spec amendment)
+ * urbi_chunk_from_bytes / urbi_chunk_free  (v0.7.1 spec amendment)
  *
  * Public thin wrappers around uchunk_deserialize / uchunk_destroy.
  * These exist so the aux layer (urbi_aux_load_and_run) can deserialize
  * bytecode without including internal headers — aux governance requires
  * that aux functions use only the public <urbi/urbi.h> surface.
  *
- * urbi_module_from_bytes:
- *   Heap-allocates a UModule, calls uchunk_deserialize on buf[0..len),
- *   and returns the pointer on success.  On failure returns NULL and
- *   writes a diagnostic into errmsg if non-NULL.
+ * urbi_chunk_from_bytes:
+ *   Deserializes buf[0..len) into a heap-allocated root UProto and returns
+ *   it on success.  On failure returns NULL and writes a diagnostic into
+ *   errmsg if non-NULL.
  *
- * urbi_module_free:
- *   Calls uchunk_destroy (frees all owned allocations) then frees the
- *   UModule itself.  NULL is a no-op.
+ * urbi_chunk_free:
+ *   Calls uchunk_destroy (frees all owned allocations) then frees the root
+ *   UProto itself.  NULL is a no-op.
  * --------------------------------------------------------------------------- */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>   /* malloc, free */
 #endif
 
-/* v0.9.2: urbi_module_from_bytes allocates root UProto via uchunk_deserialize
+/* v0.9.2: urbi_chunk_from_bytes allocates root UProto via uchunk_deserialize
  * (which uses stdlib_alloc on hosted builds).  Returns root UProto on success. */
 struct UProto *
-urbi_module_from_bytes(const uint8_t *buf, size_t len,
+urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
                        char *errmsg, size_t errcap)
 {
 #if __STDC_HOSTED__
@@ -628,14 +628,14 @@ urbi_module_from_bytes(const uint8_t *buf, size_t len,
 }
 
 void
-urbi_module_free(struct UProto *root)
+urbi_chunk_free(struct UProto *root)
 {
 #if __STDC_HOSTED__
     if (root == NULL) return;
     /* Assert no live strand bindings remain — a nonzero refcount means the caller
      * freed the root while strands still hold it (UAF). */
     URBI_INTERNAL_ASSERT(root->refcount == 0 &&
-        "urbi_module_free called with live strand bindings — let strands drop refs first");
+        "urbi_chunk_free called with live strand bindings — let strands drop refs first");
     /* Public API: no vm in scope.  Pass NULL — no proto rescue path.
      * If a closure has captured a proto from this root, the caller has
      * a lifetime bug regardless of what uchunk_destroy does. */
@@ -647,7 +647,7 @@ urbi_module_free(struct UProto *root)
 }
 
 int
-urbi_load_module(UVM *vm, UProto *root, const char *module_name)
+urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -660,7 +660,7 @@ urbi_load_module(UVM *vm, UProto *root, const char *module_name)
      * conflate it with a runtime-side STRAND_FATAL.  module_name is not
      * stored on the instance at v0.6.0 — it is reserved for v1.x's
      * import-table registration step. */
-    if (urbi_get_or_create_module_instance(vm, root) == NULL) {
+    if (urbi_get_or_create_chunk_instance(vm, root) == NULL) {
         return URBI_ERR_OOM;
     }
 

@@ -299,7 +299,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
 
     /* === M4 T30 — UChunkInstance registry ===
      * Linked list head of every live UChunkInstance threaded via
-     * UChunkInstance.next_in_vm.  Created at urbi_module_instance_create
+     * UChunkInstance.next_in_vm.  Created at urbi_chunk_instance_create
      * time (no removal at v1.0 — the GC reaps both the cell and any chain
      * dangling references when the instance becomes unreachable; this
      * registry is consulted only by the determinism checksum which itself
@@ -746,7 +746,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
    - step_budget_in opcodes have been consumed (state remains RUNNING)
    Returns the number of opcodes consumed.  s->vm must be non-NULL.
    Caller must have initialised s->stack, s->R, s->pc, s->pc_base,
-   s->cur_consts, s->module, and s->state = USTRAND_STATE_RUNNING. */
+   s->cur_consts, s->root_proto, and s->state = USTRAND_STATE_RUNNING. */
 uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
 
 /* Run module to completion. On UVM_OK, *out receives the RET value. On

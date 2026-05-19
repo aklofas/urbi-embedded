@@ -46,7 +46,7 @@
  *
  * Format is the canonical embedder pre-bake form: the embedder #includes this
  * header and passes <symbol> / <symbol>_size to urbi_aux_load_and_run (or the
- * lower-level urbi_module_from_bytes). */
+ * lower-level urbi_chunk_from_bytes). */
 static void
 emit_header(FILE *out, const unsigned char *blob, size_t blob_len,
             const char *symbol)
@@ -210,7 +210,7 @@ main(int argc, char **argv)
      * Compiles a single .u source file and emits a C header with a
      * `const uint8_t <NAME>[]` array + `const size_t <NAME>_size`.
      * Intended for embedder pre-bake: include the generated header in
-     * your firmware and pass it to urbi_aux_load_and_run / urbi_module_from_bytes.
+     * your firmware and pass it to urbi_aux_load_and_run / urbi_chunk_from_bytes.
      */
     int to_header = 0;
     const char *input_path  = NULL;

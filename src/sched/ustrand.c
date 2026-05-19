@@ -441,9 +441,9 @@ urbi_strand_create_for_module(struct UVM *vm, struct URealm *realm,
     s->out_slot     = NULL;  /* caller may set before first urbi_step */
 
     /* Create a UChunkInstance for IC wiring (per-(vm, root) cache tier).
-     * urbi_module_instance_create always allocates fresh — safe here because
+     * urbi_chunk_instance_create always allocates fresh — safe here because
      * this is a new strand owning its own IC entry. */
-    s->module_instance = urbi_module_instance_create(vm, root);
+    s->module_instance = urbi_chunk_instance_create(vm, root);
     if (!s->module_instance) {
         urbi_strand_destroy(s);
         return NULL;

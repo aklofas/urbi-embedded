@@ -66,7 +66,7 @@ UTEST(root_proto_owning_mi_populated)
     UASSERT_EQ(0, rc);
     
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     UASSERT(mod.owning_module_instance == mi);
@@ -94,7 +94,7 @@ UTEST(nested_proto_owning_mi_populated)
     
     UASSERT(mod.nested_count >= 1);
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     verify_proto_owns(&mod, mi);
@@ -124,7 +124,7 @@ UTEST(recursive_nested_owning_mi_populated)
     UASSERT_EQ(0, rc);
     
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     /* Verify the full tree recursively — root + outer + inner. */
@@ -168,7 +168,7 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
     UASSERT(m2 != NULL);
 
-    UChunkInstance *mi = urbi_module_instance_create(&vm, m2);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, m2);
     UASSERT(mi != NULL);
 
     verify_proto_owns(m2, mi);

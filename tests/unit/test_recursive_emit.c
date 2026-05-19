@@ -153,7 +153,7 @@ UTEST(proto_instances_n_equals_total_proto_count) {
     UASSERT_EQ(rc, EMIT_OK);
 
     /* Trigger module-instance creation by running.  urbi_vm_run binds the
-     * VM to the module via urbi_get_or_create_module_instance internally. */
+     * VM to the module via urbi_get_or_create_chunk_instance internally. */
     UValue out = {0};
     (void)urbi_vm_run(&vm, NULL, &m, &out);
 
