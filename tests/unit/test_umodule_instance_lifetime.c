@@ -17,7 +17,7 @@
 #include <stdint.h>
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "object/umodule_instance.h"
 #include "vm/uvm.h"
 

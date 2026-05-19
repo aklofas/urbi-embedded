@@ -23,7 +23,7 @@
 #include "urbi/urbi.h"
 #include "urbi/gc.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "realm/urealm.h"
 
 #include <stddef.h>

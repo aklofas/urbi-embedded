@@ -9,7 +9,7 @@
 #include "utest_e2e_helpers.h"
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
 

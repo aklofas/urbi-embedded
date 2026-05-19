@@ -9,7 +9,7 @@
 
 #include "utest.h"
 
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 
 #include <stdint.h>
 #include <stdlib.h>

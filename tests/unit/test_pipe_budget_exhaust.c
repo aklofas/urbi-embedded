@@ -25,7 +25,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"

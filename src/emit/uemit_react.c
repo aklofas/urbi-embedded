@@ -20,7 +20,7 @@
 #include "value/uintern.h"        /* ustr_intern */
 #include "watcher/uwatcher.h"     /* UWATCHER_AT / _AT_SYNC / _WHENEVER */
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "parse/uast.h"
 #include "runtime/umacros.h"
 #include <stddef.h>

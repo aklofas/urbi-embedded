@@ -13,7 +13,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "runtime/uclosure.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "urbi/urbi.h"
 
 #include <stdint.h>

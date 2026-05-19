@@ -12,7 +12,7 @@
  *   Called at every safepoint BEFORE watcher_eval_dirty per spec §5.4. */
 
 #include "changed/uchanged_node.h"      /* UChangedNode, urbi_emit_slot_change_slow,
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include <stddef.h>
 #include <stdint.h>
                                    urbi_drain_deferred_slot_changes */

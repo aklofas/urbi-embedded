@@ -17,7 +17,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 

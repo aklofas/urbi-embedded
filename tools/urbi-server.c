@@ -39,7 +39,7 @@
 #include "parse/uparse.h"
 #include "lex/ulex.h"
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 
 static volatile sig_atomic_t g_stop = 0;

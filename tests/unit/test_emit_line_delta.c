@@ -24,7 +24,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 
 #include <stdint.h>

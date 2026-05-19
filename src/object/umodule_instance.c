@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "gc/ugc.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "object/uic.h"
 #include "runtime/umacros.h"  /* urbi_strlen */
 #include "value/uintern.h"    /* ustr_intern */
@@ -49,7 +49,7 @@ init_ic_slice(UProtoInstance *pi, UProto *proto,
 }
 
 /* Resolve the effective allocator for a module / nested proto.  Mirrors
- * module_allocator() in src/module/umodule.c (file-static there).  Hosted
+ * module_allocator() in src/chunk/uchunk_io.c (file-static there).  Hosted
  * builds fall back to stdlib realloc when alloc_fn is NULL; freestanding
  * builds require the caller to supply alloc_fn explicitly. */
 #if __STDC_HOSTED__

@@ -46,7 +46,7 @@
 
 #include "event/uevent.h"             /* urbi_event_create */
 #include "event/uevent_native.h"      /* uvalue_from_event */
-#include "module/umodule.h"           /* UValue / UVAL_* */
+#include "chunk/umodule.h"           /* UValue / UVAL_* */
 #include "object/uobject.h"           /* urbi_object_alloc / set_protos_single / set_local_slot / resolve_slot */
 #include "realm/urealm.h"             /* URealm + global_object */
 #include "runtime/uclosure.h"         /* urbi_native_method_fn */

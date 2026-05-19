@@ -2,7 +2,7 @@
 
 #include "utest.h"
 
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
 #include "value/uintern.h"

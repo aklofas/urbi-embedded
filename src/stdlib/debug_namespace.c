@@ -20,7 +20,7 @@
 #include "stdlib/debug_namespace.h"
 #include "stdlib/object_root.h"   /* urbi_native_closure_create + raise helpers */
 
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "object/uobject.h"
 #include "realm/urealm.h"
 #include "repl/ujson.h"

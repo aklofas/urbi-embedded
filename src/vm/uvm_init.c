@@ -32,7 +32,7 @@
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
-#include "module/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
+#include "chunk/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 
 #if __STDC_HOSTED__

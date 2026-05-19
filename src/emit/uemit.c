@@ -9,7 +9,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "parse/uast.h"
 #include "value/uarena.h"
 #include <stdint.h>

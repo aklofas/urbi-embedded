@@ -18,7 +18,7 @@
 
 #include "object/uobject.h"
 #include "object/uic.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"

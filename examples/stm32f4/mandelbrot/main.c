@@ -21,7 +21,7 @@
  * allocate UVM in BSS must pull the internal header — same pattern
  * as tests/qemu/reactive_smoke/main/reactive_smoke_main.c. */
 #include "vm/uvm.h"
-#include "module/umodule.h"  /* freestanding-safe umodule_deserialize / UModuleLoadError */
+#include "chunk/umodule.h"  /* freestanding-safe umodule_deserialize / UModuleLoadError */
 #include "mandelbrot_baked.h"   /* mandelbrot_bytecode[] + mandelbrot_bytecode_size */
 
 UART_HandleTypeDef huart1;   /* defined here; port_writer.c uses extern */

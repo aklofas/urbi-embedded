@@ -23,7 +23,7 @@
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "runtime/uclosure.h"
 
 #include <stddef.h>

@@ -4,7 +4,7 @@
 
 #include "vm/uvm.h"
 #include "vm/uvm_internal.h"   /* UDiagWriter typedef + forward decls */
-#include "module/umodule.h"    /* UModule, UOpcode */
+#include "chunk/umodule.h"    /* UModule, UOpcode */
 #include "value/uvalue.h"      /* UValKind, UVAL_* */
 #include <stddef.h>
 #include <stdint.h>

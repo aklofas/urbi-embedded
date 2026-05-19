@@ -4,7 +4,7 @@
  * EMIT-035: 30-arm switch replaced with static op_disasm[] table. */
 
 #include "uemit_internal.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include <stdint.h>
 
 #if __STDC_HOSTED__

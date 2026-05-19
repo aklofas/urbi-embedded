@@ -20,7 +20,7 @@
 #include "utest.h"
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
-#include "module/umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
+#include "chunk/umodule.h"                        /* UModule, UProto, uinstr_enc_abc */
 #include "value/uintern.h"                        /* ustr_intern */
 #include "object/uobject.h"                 /* UObject, urbi_object_alloc,
                                                urbi_object_set_local_slot */

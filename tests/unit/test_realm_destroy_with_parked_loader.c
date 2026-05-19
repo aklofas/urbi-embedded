@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"

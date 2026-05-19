@@ -7,7 +7,7 @@
 
 #include "realm/urealm_globals.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 
 #define UTEST(name) static void name(void)
 

@@ -9,7 +9,7 @@
 #include "value/uarena.h"
 #include "value/uintern.h"
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 #include "parse/uast.h"
 #include <string.h>

@@ -4,7 +4,7 @@
 #include "urbi/version.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
 #include "runtime/umacros.h"

@@ -2,7 +2,7 @@
 
 #include "utest.h"
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 
 static void version_is_nonempty(void) {
     const char *v = urbi_version();

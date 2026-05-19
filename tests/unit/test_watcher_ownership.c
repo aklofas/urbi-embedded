@@ -18,7 +18,7 @@
 #include "twatcher_install_helper.h"
 #include "watcher/uwatcher_install.h"
 #include "runtime/uclosure.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "event/uevent.h"
 #include "event/uevent_subscribe.h"
 #include "sched/ustrand.h"

@@ -12,7 +12,7 @@
 
 #include "sched/ustrand.h"        /* UStrand */
 #include "runtime/uclosure.h"     /* UClosure */
-#include "module/umodule.h"       /* UModule, UValue */
+#include "chunk/umodule.h"       /* UModule, UValue */
 
 #ifdef __cplusplus
 extern "C" {

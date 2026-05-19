@@ -24,7 +24,7 @@
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
-#include "module/umodule.h"       /* UClosure, UProto */
+#include "chunk/umodule.h"       /* UClosure, UProto */
 #include "runtime/uclosure.h"
 #include "runtime/uframe.h"        /* UVM_STACK_CAP */
 #include "watcher/uwatcher.h"

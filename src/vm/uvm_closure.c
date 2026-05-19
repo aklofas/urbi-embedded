@@ -9,7 +9,7 @@
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
 #include "value/uvalue.h"      /* UValue */
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 #include <stdint.h>

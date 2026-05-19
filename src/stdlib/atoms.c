@@ -27,7 +27,7 @@
 #include "stdlib/atoms.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
-#include "module/umodule.h"            /* UValue / UVAL_* */
+#include "chunk/umodule.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_atom, set_local_slot */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */
 #include "runtime/umacros.h"           /* urbi_strlen, urbi_zero */

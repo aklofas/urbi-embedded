@@ -12,10 +12,10 @@
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
 
 #include "urbi/urbi.h"
-#include "module/uchunk.h"
+#include "chunk/uchunk_strand.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */

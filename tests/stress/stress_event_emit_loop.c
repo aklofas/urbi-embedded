@@ -21,7 +21,7 @@
 #include "runtime/uclosure.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "vm/uvm.h"
 
 #include <stdio.h>

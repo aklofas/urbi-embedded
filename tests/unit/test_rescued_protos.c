@@ -16,8 +16,8 @@
 #include "utest.h"
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
-#include "module/uchunk.h"
+#include "chunk/umodule.h"
+#include "chunk/uchunk_strand.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "vm/uvm.h"

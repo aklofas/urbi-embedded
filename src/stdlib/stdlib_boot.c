@@ -36,7 +36,7 @@
 #endif
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
-#include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
+#include "chunk/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
 #include "object/umodule_instance.h" /* urbi_get_or_create_module_instance */
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"

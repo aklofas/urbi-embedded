@@ -25,7 +25,7 @@
 #include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "object/umodule_instance.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"

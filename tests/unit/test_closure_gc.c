@@ -38,7 +38,7 @@
 #include "twatcher_install_helper.h"
 #include "urbi/urbi.h"            /* urbi_vm_init/destroy, urbi_make_* etc. */
 #include "urbi/gc.h"              /* urbi_gc_alloc, urbi_gc_force_full */
-#include "module/umodule.h"       /* UVAL_CLOSURE, UValue */
+#include "chunk/umodule.h"       /* UVAL_CLOSURE, UValue */
 
 #include <stddef.h>
 #include <stdint.h>

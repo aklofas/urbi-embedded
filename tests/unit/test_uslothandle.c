@@ -20,7 +20,7 @@
 #include "object/uslothandle.h"
 #include "object/ushape.h"
 #include "value/uintern.h"      /* ustr_intern → USymbol* */
-#include "module/umodule.h"      /* UValue */
+#include "chunk/umodule.h"      /* UValue */
 #include "vm/uvm.h"
 #include "urbi/object.h"
 

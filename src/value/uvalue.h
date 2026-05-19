@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "module/umodule.h"  /* UValue, UValKind */
+#include "chunk/umodule.h"  /* UValue, UValKind */
 
 #ifdef __cplusplus
 extern "C" {

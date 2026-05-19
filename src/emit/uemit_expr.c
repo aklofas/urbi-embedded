@@ -25,7 +25,7 @@
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/umodule.h"
 #include "parse/uast.h"
 #include "runtime/umacros.h"
 #include <stddef.h>
@@ -106,7 +106,7 @@ uint8_t emit_nil_arm(UEmitter *e, const UAstNode *n) {
  * current constant pool.  OP_LOADK loads the slot into a fresh register.
  *
  * Closes the v0.5.6 MOD-008 reservation of the UVAL_STR constant-pool kind
- * (see src/module/umodule.c constant-pool decoder for the symmetric load
+ * (see src/chunk/uchunk_io.c constant-pool decoder for the symmetric load
  * arm). */
 
 uint8_t emit_string_arm(UEmitter *e, const UAstNode *n) {

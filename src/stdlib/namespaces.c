@@ -16,7 +16,7 @@
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
 #include "gc/ugc.h"                    /* urbi_gc_collect */
-#include "module/umodule.h"            /* UValue / UVAL_* */
+#include "chunk/umodule.h"            /* UValue / UVAL_* */
 #include "object/uobject.h"            /* urbi_object_alloc + set_local_slot */
 #include "object/ushape.h"             /* UShape.count for Global.length */
 #include "realm/urealm.h"              /* URealm */
