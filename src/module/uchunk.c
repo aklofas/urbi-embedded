@@ -58,6 +58,30 @@ urealm_register_module(URealm *realm, UModule *m)
 }
 
 /* ---------------------------------------------------------------------------
+ * urealm_unlink_module
+ *
+ * Undo a transient stack-allocated module's registration before destroy.
+ * Task 13 will replace all callers with heap-alloc; delete helper then.
+ * v0.9.0-repl. */
+static void
+urealm_unlink_module(URealm *r, UModule *m)
+{
+    if (r == NULL || m == NULL || m->owning_realm != r) return;
+    if (r->loaded_protos_head == m) {
+        r->loaded_protos_head = m->next_in_realm;
+    } else {
+        for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+            if (p->next_in_realm == m) {
+                p->next_in_realm = m->next_in_realm;
+                break;
+            }
+        }
+    }
+    m->owning_realm  = NULL;
+    m->next_in_realm = NULL;
+}
+
+/* ---------------------------------------------------------------------------
  * uchunk_loader_drive
  *
  * v0.8.0: driver-loop budget for urbi_run_chunk's internal urbi_step
@@ -419,24 +443,8 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         if (run_rc == URBI_ERR_STRAND_FATAL && vm->last_error == UVM_OK) {
             if (out_buf && out_buf_size > 0)
                 uvalue_format(&result, out_buf, out_buf_size);
-            /* Unlink the transient stack-allocated module before destroy.
-             * Task 13 will replace this transient register/unlink with a
-             * heap allocation that stays in the registry past return. */
-            if (module.owning_realm != NULL) {
-                URealm *r = module.owning_realm;
-                if (r->loaded_protos_head == &module) {
-                    r->loaded_protos_head = module.next_in_realm;
-                } else {
-                    for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
-                        if (p->next_in_realm == &module) {
-                            p->next_in_realm = module.next_in_realm;
-                            break;
-                        }
-                    }
-                }
-                module.owning_realm = NULL;
-                module.next_in_realm = NULL;
-            }
+            /* Unlink transient stack-allocated module before destroy. */
+            urealm_unlink_module(module.owning_realm, &module);
             umodule_destroy(&module, vm);
             uarena_destroy(&arena);
             return URBI_OK;
@@ -446,21 +454,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
             urbi_strncpy_truncating(out_buf, out_buf_size, vm->last_errmsg);
         }
         /* Unlink transient stack-allocated module before destroy. */
-        if (module.owning_realm != NULL) {
-            URealm *r = module.owning_realm;
-            if (r->loaded_protos_head == &module) {
-                r->loaded_protos_head = module.next_in_realm;
-            } else {
-                for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
-                    if (p->next_in_realm == &module) {
-                        p->next_in_realm = module.next_in_realm;
-                        break;
-                    }
-                }
-            }
-            module.owning_realm = NULL;
-            module.next_in_realm = NULL;
-        }
+        urealm_unlink_module(module.owning_realm, &module);
         umodule_destroy(&module, vm);
         uarena_destroy(&arena);
         return run_rc;
@@ -472,21 +466,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         uvalue_format(&result, out_buf, out_buf_size);
 
     /* Unlink transient stack-allocated module before destroy. */
-    if (module.owning_realm != NULL) {
-        URealm *r = module.owning_realm;
-        if (r->loaded_protos_head == &module) {
-            r->loaded_protos_head = module.next_in_realm;
-        } else {
-            for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
-                if (p->next_in_realm == &module) {
-                    p->next_in_realm = module.next_in_realm;
-                    break;
-                }
-            }
-        }
-        module.owning_realm = NULL;
-        module.next_in_realm = NULL;
-    }
+    urealm_unlink_module(module.owning_realm, &module);
     umodule_destroy(&module, vm);
     uarena_destroy(&arena);
     return URBI_OK;
