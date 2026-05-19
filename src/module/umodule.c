@@ -1070,40 +1070,31 @@ static UModuleLoadError verify_walk_block(MDecCtx *d,
     return ULOAD_OK;
 }
 
-static UModuleLoadError decode_verify(MDecCtx *d) {
-    /* Task 11: root chunk fields now live on root_proto. */
-    UProto *rp = d->rp;
-    /* Verify the root chunk. */
+/* v0.8.5: recursive verifier walk.  Each UProto is verified against its
+ * OWN nested_count (per-parent OP_CLOSURE Bx index space), matching the
+ * truly-recursive emitter contract.  Pre-v0.8.5 the verifier passed
+ * the root-level nested_count for every nested proto because the flat
+ * emitter routed every OP_CLOSURE to root's nested[] regardless of
+ * lexical scope. */
+static UModuleLoadError verify_proto_recursive(MDecCtx *d, const UProto *p) {
+    if (p == NULL) return ULOAD_OK;
     UModuleLoadError rc = verify_walk_block(d,
-                                            rp->max_reg,
-                                            rp->const_count,
-                                            rp->instr_count,
-                                            rp->nested_count,
-                                            rp->ic_count,
-                                            rp->instructions);
+                                            p->max_reg,
+                                            p->const_count,
+                                            p->instr_count,
+                                            p->nested_count,
+                                            p->ic_count,
+                                            p->instructions);
     if (rc != ULOAD_OK) return rc;
-
-    /* Verify each nested proto's instruction stream against its own
-       bounds.  v1.5 in-tree emitter allocates all function literals as
-       flat siblings under the root UModule's nested[]; an OP_CLOSURE
-       inside a nested proto refers to a sibling slot in the same
-       root nested[] array.  Per-proto nested_count for verify purposes
-       is therefore the root-level nested_count.  v1.x deeply-nested
-       closures may need a per-proto nested_count if/when the emitter
-       starts allocating child arrays. */
-    for (size_t pi = 0; pi < rp->nested_count; pi++) {
-        const UProto *p = rp->nested[pi];
-        if (p == NULL) continue;  /* watcher-detached slot or stub */
-        rc = verify_walk_block(d,
-                               p->max_reg,
-                               p->const_count,
-                               p->instr_count,
-                               rp->nested_count,
-                               p->ic_count,
-                               p->instructions);
+    for (size_t i = 0; i < p->nested_count; i++) {
+        rc = verify_proto_recursive(d, p->nested[i]);
         if (rc != ULOAD_OK) return rc;
     }
     return ULOAD_OK;
+}
+
+static UModuleLoadError decode_verify(MDecCtx *d) {
+    return verify_proto_recursive(d, d->rp);
 }
 
 /* v0.8.5: recursively set every UProto's root back-pointer.  The module's
