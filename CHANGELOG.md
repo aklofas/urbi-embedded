@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.9.1-repl-service — unreleased (M8 part 2 of 2)
+## v0.9.1-repl-service — 2026-05-19 (M8 part 2 of 2)
 
 **Theme:** Network/protocol layer on top of the v0.9.0 realm-per-session
 lobby foundation. NDJSON line-protocol REPL service over pluggable
