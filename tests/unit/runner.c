@@ -257,6 +257,7 @@ extern void test_umodule_instance_lifetime_suite(void);
 extern void test_urbi_unload_suite(void);
 extern void test_realm_destroy_with_parked_loader_suite(void);
 extern void test_lexer_syncline_suite(void);
+extern void test_repl_per_realm_writer_suite(void);
 
 struct suite_entry {
     const char *name;
@@ -490,6 +491,7 @@ static const struct suite_entry suites[] = {
     {"urbi_unload",                  test_urbi_unload_suite},
     {"realm_destroy_with_parked_loader", test_realm_destroy_with_parked_loader_suite},
     {"lexer_syncline",                   test_lexer_syncline_suite},
+    {"repl_per_realm_writer",            test_repl_per_realm_writer_suite},
     /* Add new suites here as test files are added. */
 };
 

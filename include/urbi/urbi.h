@@ -596,6 +596,48 @@ typedef void (*urbi_writer_fn)(void *ud,
 
 void urbi_set_writer(struct UVM *vm, urbi_writer_fn writer, void *ud);
 
+/* === Per-realm writer (v0.9.1) ===
+ *
+ * Each URealm may install its own writer.  The runtime dispatch
+ * (urbi_vm_write_in_realm) consults realm->writer_fn first; if NULL,
+ * it falls back to vm->writer_fn (the VM-wide writer installed via
+ * urbi_set_writer).
+ *
+ * The REPL service uses this to route per-session output back to the
+ * originating client.  Same callback signature as the VM-wide writer.
+ *
+ * Pass fn=NULL to clear (revert to fallback chain).
+ * NULL vm or NULL realm is a no-op.
+ * Thread safety: MAIN. */
+void urbi_realm_set_writer(struct UVM *vm, struct URealm *realm,
+                           urbi_writer_fn fn, void *ud);
+
+/* === Per-realm compile-budget guard (v0.9.1) ===
+ *
+ * Install (or clear) the compile-budget that the parser will honour for
+ * any source compiled under `realm` via urbi_repl_eval / urbi_compile_source.
+ *
+ * urbi_realm_set_compile_budget(realm, &budget) — apply a copy of *budget
+ *   (zero in any field = unlimited for that limit).
+ * urbi_realm_set_compile_budget(realm, NULL)    — clear (unlimited).
+ *
+ * urbi_realm_get_compile_budget returns NULL if no budget is set, else a
+ * pointer to the realm's stored budget (valid until the realm is destroyed
+ * or the budget is cleared).  Read-only — callers must NOT mutate.
+ *
+ * urbi_realm_create_repl auto-applies URBI_DEFAULT_REPL_BUDGET; the global
+ * realm (urbi_realm_global) has no budget by default (trusted host code).
+ *
+ * Thread safety: MAIN. */
+void urbi_realm_set_compile_budget(struct URealm *realm,
+                                   const UCompileBudget *budget);
+const UCompileBudget *urbi_realm_get_compile_budget(const struct URealm *realm);
+
+/* Default budget applied by urbi_realm_create_repl.  Defined in urealm.c;
+ * exported so embedders + tests can read the canonical values
+ * (256 / 100000 / 1 MiB). */
+extern const UCompileBudget URBI_DEFAULT_REPL_BUDGET;
+
 /* === Runtime diagnostic channel (v0.7.3 / S41) ===
  *
  * urbi_diag_fn: callback invoked by the runtime itself for internal
@@ -641,6 +683,22 @@ void urbi_set_diag_fn(struct UVM *vm, urbi_diag_fn fn);
  * through the same channel as urbiscript's cout / cerr.
  *
  * Thread safety: MAIN. */
+/* === urbi_vm_write_in_realm (v0.9.1) ===
+ *
+ * Emit msg to channel through the writer chain, consulting `realm`'s
+ * per-realm writer first.  If realm is non-NULL and realm->writer_fn is
+ * set, that writer receives the call; otherwise falls back to the VM-wide
+ * writer (vm->writer_fn) or the default writer.  Passing realm == NULL is
+ * equivalent to calling urbi_vm_write (VM-wide writer / default only).
+ *
+ * Both ts_us and writer/ud resolution are identical to urbi_vm_write apart
+ * from the realm-first lookup.
+ *
+ * NULL vm is a no-op.  Thread safety: MAIN. */
+void urbi_vm_write_in_realm(struct UVM *vm, struct URealm *realm,
+                            const char *channel, size_t channel_len,
+                            const char *msg,     size_t msg_len);
+
 void urbi_vm_write(struct UVM *vm,
                    const char *channel, size_t channel_len,
                    const char *msg,     size_t msg_len);
