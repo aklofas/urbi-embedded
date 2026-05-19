@@ -1,59 +1,368 @@
 # Changelog
 
-## v0.9.1-repl-service — unreleased
+## v0.9.1-repl-service — unreleased (M8 part 2 of 2)
 
-### Phase 1: Foundations (per-realm writer / compile-budget / readonly atoms / Global)
+**Theme:** Network/protocol layer on top of the v0.9.0 realm-per-session
+lobby foundation. NDJSON line-protocol REPL service over pluggable
+transports (TCP / Unix socket / UART / pty / in-process buffer), 9
+introspection C primitives + `Debug` urbiscript namespace, bearer-token
+auth with per-source rate-limiting, per-realm output writer +
+compile-budget guard, `Global` mutable shared atom (with 15 builtin
+atom protos marked readonly), `share/urbi/lobby.u` overlay (`echo` /
+`wall` / `handleDisconnect` / `Lobby.lobbies`), and three host binaries
+(`urbi --listen`, `urbi-server`, `urbi-send`). Opt-in via
+`URBI_ENABLE_REPL=1`.
 
-#### Added
-- **`urbi_realm_set_writer(vm, realm, fn, ud)`** — per-realm output writer.  Strands hosted under `realm` route channel writes through this callback first; if unset, the runtime falls back to the VM-wide writer installed via `urbi_set_writer`.  Used by the REPL service to route per-session output to the originating client.
-- **`urbi_realm_set_compile_budget(realm, &budget)` + `urbi_realm_get_compile_budget(realm)`** — install / inspect per-realm parser limits.  `budget == NULL` clears (unlimited).  Three limits per `UCompileBudget`:
-  - `max_parser_depth` — recursive-descent stack ceiling (raises `URBI_ERR_COMPILE_BUDGET_DEPTH`).
-  - `max_ast_nodes` — total `make_node` allocations per compile (`URBI_ERR_COMPILE_BUDGET_NODES`).
-  - `max_source_bytes` — checked once at `urbi_repl_eval` entry (`URBI_ERR_COMPILE_BUDGET_SOURCE`).
-- **`URBI_DEFAULT_REPL_BUDGET`** — exported constant (256 / 100000 / 1 MiB) auto-applied by `urbi_realm_create_repl`.  Global realm has no budget by default (trusted host code).
-- **`urbi_vm_write_in_realm(vm, realm, channel, ...)`** — new dispatch entry; consults the realm writer first, then the VM writer, then the built-in default.  `urbi_vm_write` becomes a thin wrapper (realm=NULL).
-- **`URBI_OBJ_FLAG_READONLY`** — new bit (bit 7) on `UObject.flags`.  Public spelling `UPROTO_FLAG_READONLY` (the spec calls atom protos "uprotos" even though the storage struct is UObject).  `OP_SETSLOT` raises `TypeError: cannot mutate frozen prototype` when the receiver carries this bit.  Host-side C API mutators are not gated — they populate protos before the bit is set.
+**ABI:** `0/11/0` → `0/12/0` (8th pre-v1.0 escape-clause use — URealm
+grows by ~24 B for the compile_budget + writer fields; new public
+symbols; new error codes; UObject.flags gains `URBI_OBJ_FLAG_READONLY`).
+
+**Wire format:** v1.7 / 0x17 unchanged.
+
+**NDJSON protocol:** v0.9.1 schema (see `docs/internals/repl-service.md`);
+locked forward to v1.0 (additive only).
+
+**Corpus:** 1821 / 13342 → 1981 / 14011 (default URBI_ENABLE_REPL=0
+build) / 1981 / 14011 (URBI_ENABLE_REPL=1 build); +15 `.chk` fixtures
+under `tests/chk/repl/`.
+
+### Added — Public C API
+
+- **`urbi_repl_serve(vm, &cfg, *out_err)`** + **`urbi_repl_stop(server)`**
+  — threaded mode lifecycle. Spawns the listener pthread + per-client
+  reader subthreads on Linux; defaults to TCP loopback. Returns NULL
+  with `URBI_ERR_INSECURE_CONFIG` for non-loopback binds without
+  `auth_token`.
+- **`urbi_repl_serve_init` / `_step(timeout_us)` / `_shutdown`** —
+  step-driven mode for bare-metal / no-pthread hosts. One
+  `serve_step` performs at most one accept + read + dispatch + write
+  cycle across all registered transports.
+- **`urbi_repl_register_transport(server, vtable, listener_state)`** —
+  attach a `UTransport` (TCP / Unix / UART / pty / in-process) to the
+  server. Multiple transports per server supported.
+- **`UReplConfig` struct** + **`UReplServer` opaque handle** +
+  **`UTransport` vtable** in `<urbi/repl.h>` (new public header).
+- **`urbi_realm_set_writer(vm, realm, fn, ud)`** — per-realm output
+  writer. Strands under `realm` route channel writes here first; if
+  unset, falls back to the VM-wide writer installed via
+  `urbi_set_writer`. Used by the REPL service to route per-session
+  output to the originating client.
+- **`urbi_realm_set_compile_budget(realm, &budget)` +
+  `urbi_realm_get_compile_budget(realm)`** — install / inspect
+  per-realm parser limits. `budget == NULL` clears (unlimited). Three
+  limits per `UCompileBudget`:
+  - `max_parser_depth` — recursive-descent stack ceiling (raises
+    `URBI_ERR_COMPILE_BUDGET_DEPTH`).
+  - `max_ast_nodes` — total `make_node` allocations per compile
+    (`URBI_ERR_COMPILE_BUDGET_NODES`).
+  - `max_source_bytes` — checked once at `urbi_repl_eval` entry
+    (`URBI_ERR_COMPILE_BUDGET_SOURCE`).
+- **`URBI_DEFAULT_REPL_BUDGET`** — exported constant
+  (256 / 100000 / 1 MiB) auto-applied by `urbi_realm_create_repl`. The
+  global realm has no budget by default (trusted host code).
+- **`urbi_vm_write_in_realm(vm, realm, channel, ...)`** — new dispatch
+  entry; consults the realm writer first, then the VM writer, then the
+  built-in default. `urbi_vm_write` becomes a thin wrapper (realm=NULL).
 - **`UCompileBudget` struct** in `<urbi/types.h>` (3× `uint32_t`).
-- New `UErrCode` values: `URBI_ERR_FROZEN_PROTO` (-21), `URBI_ERR_COMPILE_BUDGET_DEPTH` (-22), `URBI_ERR_COMPILE_BUDGET_NODES` (-23), `URBI_ERR_COMPILE_BUDGET_SOURCE` (-24).
+- **`URBI_OBJ_FLAG_READONLY`** — new bit (bit 7) on `UObject.flags`.
+  Public spelling `UPROTO_FLAG_READONLY`. `OP_SETSLOT` raises
+  `TypeError: cannot mutate frozen prototype` when the receiver
+  carries this bit. Host-side C API mutators are not gated — they
+  populate protos before the bit is set.
 
-#### Runtime
-- **URealm grows by ~24 B** (`has_compile_budget` bool + `compile_budget` struct + `writer_fn` + `writer_ud`).  No reorder of existing fields.
-- **15 builtin atom protos** marked readonly at `urbi_stdlib_boot`: Object, Integer, Float, String, Boolean, Nil, Void, List, Dict, Symbol, Tag, Event, Mutex, Date, Duration.  Symbol/Void/Duration are codebase-only extras not in the spec's 15-list but covered here for parity.  Function / Closure / Lobby don't exist as standalone atom protos at v0.9.1 baseline (Lobby lands in Phase 5; the others are v1.x).
-- **Global stays mutable** by design — it's the designated cross-session shared atom per spec §4.1.  The proto already existed since M6 Phase 8 as `vm->global_namespace_proto`; v0.9.1 adopts it as the spec's "Global" without a separate allocation.
-- **Compile-budget enforcement** threaded through `UParser`: new fields `budget`, `cur_depth`, `node_count`, `budget_exceeded` (sticky), `budget_err`.  Depth checked at `parse_expression` entry; node count checked in `make_node`; source bytes checked at `urbi_repl_eval` entry before any alloc.
+### Added — Introspection primitives (`<urbi/repl.h>`)
 
-#### Tests migrated to the Global idiom
-- `tests/integration/repl_smoke.sh` — cross-line shared-proto smoke now uses `Global.foo`; added regression that confirms `Object.x = ...` raises TypeError.
-- `tests/unit/test_multi_realm.c` — three cross-realm sharing scenarios (foo/f/g) ported from `Object.*` to `Global.*`.
-- `tests/chk/objects/fallback.chk` — COW slot-write fixture migrated from `Object.blurg` to `Global.blurg`.
-- `tests/chk/objects/atom_method_dispatch.chk` — rewritten to verify atom-method dispatch via the existing C-native methods (`asString` / `length`) instead of the now-rejected script-installed `Integer.marker = 42` style.
+- **9 introspection C primitives** in `src/repl/urepl_introspect.{c,h}`:
+  `urbi_introspect_coros`, `_tags`, `_watchers`, `_events`, `_profile`,
+  `_gc`, `_lobbies`, `_stack(coro_id)`, `_slots(realm, obj_path)`. Each
+  walks VM linked lists on the MAIN thread and emits a single JSON
+  object into a caller-provided buffer. Used by the NDJSON `introspect`
+  op (dispatcher) and the urbiscript `Debug` namespace. Wire JSON
+  shape locked forward to v1.0 (additive only).
+- **`Debug` urbiscript namespace** — 9 C-native methods
+  (`Debug.coros()`, `Debug.tags()`, ..., `Debug.stack(id)`,
+  `Debug.slots(path)`) bound on each realm's `Global.Debug` slot. Each
+  method calls the corresponding introspect primitive, validates the
+  JSON via `ujson_parse`, and returns the JSON as a urbi `String`.
+- **`vm->debug_proto`** (void\* in UVM, REPL-condition-free header).
+  Single per-VM singleton; GC reachability via `object_roots_walker`.
 
-#### Changed
-- **ABI 0/11/0 → 0/12/0** (8th pre-v1.0 escape-clause use).
+### Added — Error codes (`<urbi/types.h>`)
 
-#### Breaking
-- `Object.x = 5` and other mutation of builtin atom protos now raises `TypeError: cannot mutate frozen prototype`.  Use `Global.x = 5` for cross-session mutable shared state.  Host-side C API (`urbi_object_set_local_slot`, `urbi_realm_set_global`, stdlib registration helpers) is unaffected.
+- `URBI_ERR_FROZEN_PROTO` (-21) — `OP_SETSLOT` on a readonly atom proto.
+- `URBI_ERR_COMPILE_BUDGET_DEPTH` (-22) — parser depth exceeded.
+- `URBI_ERR_COMPILE_BUDGET_NODES` (-23) — AST-node allocation cap
+  exceeded.
+- `URBI_ERR_COMPILE_BUDGET_SOURCE` (-24) — source-byte cap exceeded.
+- `URBI_ERR_INSECURE_CONFIG` (-25) — `urbi_repl_serve` refusing
+  non-loopback bind without an `auth_token`.
 
-### Build switch
-- `URBI_ENABLE_REPL=1` opts in to `src/repl/` (TCP/Unix/UART REPL service). Default 0.
+### Added — NDJSON protocol (`src/repl/urepl_ndjson.{c,h}`)
 
-### Phase 4: Introspection + Debug namespace + JSON parse-back
+- **Request parser** for client ops: `auth`, `eval`, `cancel`,
+  `introspect`, `lobby_new`, `lobby_close`. Field extraction via the
+  in-tree tiny JSON parser; bounded depth + node count to resist DoS.
+- **Response emitter** for server kinds: `hello`, `auth_ok`, `result`,
+  `output`, `done`, `error`, `event`, `goodbye`. Field-by-field escape
+  coverage for all control characters + `\uXXXX` for non-ASCII bytes.
+- **Framing:** one JSON document per line, `\n` terminator (`\r\n`
+  accepted from client). 1 MiB max line length matches default
+  `max_source_bytes`; longer lines trigger
+  `{kind:"error", code:"frame_too_large"}` and connection close.
+- **Synclines:** server wraps multi-line eval text with v0.9.0
+  `//#push N "FILE"` / `//#pop` synclines so runtime errors report
+  the client-supplied file:line rather than `<stdin>:N`.
+- **Id correlation rules:** correlated responses echo the originating
+  op's `id`. `output` from strands outliving an `eval` carries
+  `lobby` + `channel` but no `id`.
 
-#### Added
-- **9 introspection C primitives** in `src/repl/urepl_introspect.{c,h}`: `urbi_introspect_coros`, `_tags`, `_watchers`, `_events`, `_profile`, `_gc`, `_lobbies`, `_stack(coro_id)`, `_slots(realm, obj_path)`.  Each walks VM linked lists on the MAIN thread and emits a single JSON object into a caller-provided buffer.  Used by the NDJSON `introspect` op (dispatcher) and the urbiscript `Debug` namespace.
-- **NDJSON `introspect` op dispatch** — `dispatch_introspect` in `urepl_dispatch.c` switches on `req.what` to one of the 9 primitives, wraps inner JSON in `{kind:"result",value:<inner>}`.  Unknown `what` emits `{kind:"error",code:"unknown_introspect"}`.
-- **`src/repl/ujson.{c,h}`** — tiny recursive-descent JSON parser.  Supports object, array, string (with `\uXXXX` and surrogate pairs), int / double, bool, null.  DoS-bounded: `UJSON_MAX_DEPTH=32`, `UJSON_MAX_NODES=10000`, `UJSON_MAX_LEN=1 MiB`.  Returns a `UJsonNode` tree freed via `ujson_free_node`.
-- **`Debug` urbiscript namespace** — 9 C-native methods (`Debug.coros()`, `Debug.tags()`, …, `Debug.stack(id)`, `Debug.slots(path)`) bound on each realm's `Global.Debug` slot.  Each method calls the corresponding introspect primitive, validates the JSON via `ujson_parse`, and returns the JSON as a urbi `String`.
-- **`vm->debug_proto`** (void* in UVM, REPL-condition-free header).  Single per-VM singleton; GC reachability via `object_roots_walker`.
+### Added — Dispatcher + queues (`src/repl/urepl_dispatch.{c,h}`)
 
-#### Carry-forward to v1.x
-- **`Debug.*()` returns a String** rather than a structured Dict/List.  v1.0 has no `UVAL_LIST`/`UVAL_DICT` — lists/dicts are UObjects in the `URBI_ATOM_LIST`/`URBI_ATOM_DICT` families.  Building a List/Dict from C requires walking `containers.c` internals; out of v0.9.1 scope.  Wire JSON shape is locked so an upgrade to first-class structured returns is transparent to existing clients that already parse the string.
-- **Profile primitive is a stub** — `urbi_introspect_profile` emits empty `per_function` / `per_opcode` / `per_watcher` arrays plus `note:"profiling deferred to v1.x"`.  No profiling infrastructure exists in v0.9.1; the wire shape is locked for forward compatibility.
-- **Tag enumeration is per-realm-root** — `urbi_introspect_tags` walks `vm->realms_head` and emits one entry per realm root tag.  Host-created child tags (via `urbi_tag_create`) are not centrally enumerated at v0.9.1; a central tag registry is in the v1.x design-risks register.
-- **`coro_id` is the strand pointer's low 32 bits** — `UStrand` has no explicit id field at v0.9.1.  Identity is stable per VM run (no strand recycling).  v1.x may upgrade to a monotonic counter when multi-host introspection requires cross-process stability.
+- **MPSC eval queue** in `src/repl/urepl_queue.{c,h}` — intrusive
+  singly-linked list; mutex + condvar; pushed by reader subthreads,
+  drained on the VM thread at every `urbi_step` boundary.
+- **SPSC output ringbuf** — one per session, 64 KiB default (tunable
+  via `UReplConfig.output_ringbuf_cap`). Lock-free; writer = VM thread,
+  reader = reader subthread. Overflow drops oldest bytes and emits
+  `{kind:"error", code:"output_overflow"}`.
+- **Job dispatcher** routes each popped `UReplJob` to its handler
+  (`dispatch_eval` / `dispatch_introspect` / `dispatch_cancel` /
+  `dispatch_auth` / `dispatch_lobby_new` / `dispatch_lobby_close`).
+  Output produced by the dispatched op flows through the session's
+  per-realm writer back to the session's ringbuf.
 
-#### Build
-- `tools/urbi-compile-stdlib` (bake tool) now picks up `$(REPL_SRCS)` in its link list when `URBI_ENABLE_REPL=1`.  Required because `stdlib_boot.o` references `urbi_debug_namespace_register` which itself references the introspect / JSON primitives in `src/repl/`.
+### Added — Auth + transports
+
+- **TCP transport** (`src/repl/urepl_transport_tcp.c`) — POSIX
+  sockets, IPv4, non-blocking accept. Default port 54000.
+- **In-process buffer transport** (`src/repl/urepl_buffer_transport.c`)
+  — pure-memory loopback for unit tests.
+- **Linux pty pair transport** (`src/repl/urepl_transport_pty.c`) —
+  `openpty()`-backed; eager-accept pass on the listener; used by the
+  CI UART harness.
+- **Embedded UART transport stubs** — `urepl_transport_uart_freertos.c`
+  / `_esp_idf.c` / `_pico.c` / `_linux.c` — each `#ifdef`-gated, thin
+  pass-through to platform UART primitives. Single-client by design
+  (no auth required — physical access is auth).
+- **Listener pthread** (`src/repl/urepl_listener.{c,h}`) — accept loop
+  on each registered transport; spawns per-client reader subthreads.
+- **Bearer-token auth** (`src/repl/urepl_auth.{c,h}`) — constant-time
+  token compare (`urepl_auth_constant_time_compare`); per-source IP /
+  pid rate-limit (5 failed attempts within 30 s → 60 s lockout, LRU
+  table of 8 entries).
+- **Atomic shutdown flag** + session-create-on-VM-thread refactor
+  (closes the embedded ABA between listener pthread create + VM-thread
+  realm destroy).
+
+### Added — Lobby stdlib (`src/stdlib/lobby.u`)
+
+- **`Lobby` atom proto** with C-native `__builtin_lobby_send(msg, tag,
+  prefix)` registered on `Object`. Formats
+  `[%08u:%s] %s %s\n` (no `:tag` segment when tag is empty) and writes
+  through `strand->realm->writer` → `vm->writer` → default-writer
+  fallback. The existing `echo` global re-routes through this primitive
+  so per-realm routing applies; backward-compat preserved for hosts
+  using `urbi_set_writer`.
+- **`Lobby.echo(msg, tag, prefix)`** — formatted output via the lobby's
+  writer.
+- **`Lobby.wall(msg, tag)`** — broadcast to every other lobby.
+- **`Lobby.handleDisconnect()`** — hook called by the C dispatcher on
+  session disconnect. Default fires the per-lobby `onDisconnect` event;
+  user code may override.
+- **`Lobby.onDisconnect`** — per-lobby `Event.new()`; fires once at
+  disconnect.
+- **`Lobby.lobbies`** — list of active lobbies maintained by the C
+  dispatcher (mutated at session-create / destroy via
+  `urbi_lobby_lobbies_push` / `_remove`). urbiscript can read but not
+  reassign (slot protected by the `Lobby` proto's readonly bit).
+
+### Added — Tiny JSON parser (`src/repl/ujson.{c,h}`)
+
+- Recursive-descent JSON parser. Supports object, array, string (with
+  `\uXXXX` and surrogate pairs), int / double, bool, null. DoS-bounded:
+  `UJSON_MAX_DEPTH=32`, `UJSON_MAX_NODES=10000`, `UJSON_MAX_LEN=1 MiB`.
+  Returns a `UJsonNode` tree freed via `ujson_free_node`. No external
+  dependencies; not part of the public API.
+
+### Added — Host binaries (`tools/`)
+
+- **`urbi-server`** (`tools/urbi-server.c`) — headless network REPL
+  server. Flags: `--bind ADDR` (default 127.0.0.1), `--port N` (default
+  54000; 0 = kernel-assigned), `--token TOK` (or `URBI_REPL_TOKEN`
+  env), `--max-clients N` (default 16), `--script FILE.u` (optional
+  boot script run under the global realm with compile-budget off),
+  `--quiet`. Refuses to start with `URBI_ERR_INSECURE_CONFIG` for
+  non-loopback `--bind` without `--token`.
+- **`urbi-send`** (`tools/urbi-send.c`) — one-shot NDJSON client. Ops:
+  `eval CODE`, `introspect WHAT`, `cancel TAG`, `lobby-new`,
+  `lobby-close ID`, `tail`. Flags: `--host HOST[:PORT]` (default
+  127.0.0.1:54000), `--token TOK` (or `URBI_REPL_TOKEN`), `--lobby ID`,
+  `--tail`. Exit codes: 0 = ok, 1 = eval/server error,
+  2 = usage/network/auth error.
+- **`urbi --listen [ADDR:]PORT`** — existing `urbi` REPL gains a
+  network listener flag. Local linenoise REPL on stdin/stdout + network
+  service in one process. `--token TOK` accepted alongside `--listen`.
+
+### Added — Tests + corpus
+
+- **`tests/chk/repl/` corpus** (15 fixtures):
+  `eval_arithmetic.chk`, `eval_throws.chk`, `output_streaming.chk`,
+  `hot_reload.chk`, `lobby_isolation.chk`, `wall_broadcasts.chk`,
+  `echo_routes_to_session.chk`, `handleDisconnect_override.chk`,
+  `global_cross_session.chk`, `object_readonly.chk`,
+  `introspect_coros.chk`, `debug_coros.chk`, `budget_depth.chk`,
+  `budget_nodes.chk`, `budget_source.chk`. Driven by an in-process
+  runner that pipes NDJSON in via the buffer transport and diffs
+  envelopes against a golden stream with normalization for ts /
+  addresses / volatile ids.
+- **Unit tests** (`tests/unit/test_repl_*.c`):
+  `test_repl_ndjson_parse.c`, `test_repl_ndjson_emit.c`,
+  `test_repl_dispatcher.c`, `test_repl_auth_flow.c`,
+  `test_repl_per_realm_writer.c`, `test_repl_buffer_transport.c`,
+  `test_repl_uproto_readonly.c`, `test_repl_global_atom.c`,
+  `test_repl_tcp_loopback.c`, `test_repl_uart_pty.c`,
+  `test_repl_chk_corpus.c` (the in-process .chk runner harness),
+  `test_repl_multi_client.c` (4-client integration, opt-in via
+  `URBI_TEST_MULTI_CLIENT=1` — see Known issues below).
+- **Tests migrated to the Global idiom** in support of the breaking
+  readonly change:
+  `tests/integration/repl_smoke.sh` (cross-line shared-proto smoke now
+  uses `Global.foo`; adds `Object.x = ...` → TypeError regression),
+  `tests/unit/test_multi_realm.c` (three cross-realm sharing scenarios
+  ported from `Object.*` to `Global.*`),
+  `tests/chk/objects/fallback.chk` (COW slot-write fixture migrated to
+  `Global.blurg`), `tests/chk/objects/atom_method_dispatch.chk`
+  (rewritten to verify atom-method dispatch via the existing C-native
+  methods rather than script-installed `Integer.marker = 42`).
+
+### Changed
+
+- **ABI 0/11/0 → 0/12/0** (8th pre-v1.0 escape-clause use). URealm
+  grows by ~24 B (`has_compile_budget` bool + `compile_budget` struct +
+  `writer_fn` + `writer_ud`); no reorder of existing fields. Public
+  API additions enumerated above. `<urbi/repl.h>` is a new public
+  header.
+- **`urbi_vm_write` is now a thin wrapper** around
+  `urbi_vm_write_in_realm` with `realm == NULL`. Source compatibility
+  preserved; the underlying dispatch now consults the per-realm writer
+  chain when called from a strand with a non-NULL realm.
+- **`echo` re-routed** through `__builtin_lobby_send` so per-realm
+  writer routing applies. Hosts using `urbi_set_writer` continue to
+  see all output via the VM-writer fallback.
+- **Compile-budget enforcement** threaded through `UParser`: new
+  fields `budget`, `cur_depth`, `node_count`, `budget_exceeded`
+  (sticky), `budget_err`. Depth checked at `parse_expression` entry;
+  node count checked in `make_node`; source bytes checked at
+  `urbi_repl_eval` entry before any alloc.
+
+### Breaking
+
+- **`Object.x = 5`** and other mutation of the 15 builtin atom protos
+  (Object, Integer, Float, String, Boolean, Nil, Void, List, Dict,
+  Symbol, Tag, Event, Mutex, Date, Duration) now raises `TypeError:
+  cannot mutate frozen prototype` at runtime. Migration: use
+  `Global.x = 5` for cross-session mutable shared state. The v0.9.0
+  `Object.x = 5` idiom was explicitly noted as temporary; this is the
+  clean cutover. Host-side C API (`urbi_object_set_local_slot`,
+  `urbi_realm_set_global`, stdlib registration helpers) is unaffected.
+
+### Runtime
+
+- **URealm fields:** `has_compile_budget` bool + `compile_budget`
+  (`UCompileBudget`) + `writer_fn` + `writer_ud` (~24 B with
+  alignment). No reorder.
+- **`vm->debug_proto`** — new per-VM singleton (void\*) for the
+  `Debug` namespace.
+- **15 builtin atom protos** marked readonly at `urbi_stdlib_boot`:
+  Object, Integer, Float, String, Boolean, Nil, Void, List, Dict,
+  Symbol, Tag, Event, Mutex, Date, Duration. Symbol/Void/Duration are
+  codebase extras not in the spec's 15-list but covered for parity.
+  Function / Closure / Lobby don't exist as standalone atom protos at
+  v0.9.1 baseline (Lobby itself is added in this release as a single
+  proto; the others remain v1.x).
+- **`Global` stays mutable** by design — the designated cross-session
+  shared atom (spec §4.1). The proto already existed since M6 Phase 8
+  as `vm->global_namespace_proto`; v0.9.1 adopts it as the spec's
+  "Global" without a separate allocation.
+
+### Build
+
+- **`URBI_ENABLE_REPL=1`** opts in to the REPL service. Default 0.
+  Compiles `src/repl/`, `src/repl/ujson.{c,h}`, baked
+  `src/stdlib/lobby.u`, the `Debug` namespace registration, and the
+  `__builtin_lobby_send` primitive. Implies the compiler frontend
+  (incompatible with `URBI_BYTECODE_ONLY=1` — `<urbi/repl.h>` carries
+  a `#error` guard).
+- `tools/urbi-compile-stdlib` (bake tool) now picks up `$(REPL_SRCS)`
+  in its link list when `URBI_ENABLE_REPL=1`. Required because
+  `stdlib_boot.o` references `urbi_debug_namespace_register` which
+  itself references the introspect / JSON primitives in `src/repl/`.
+- New build targets: `make urbi-server-bin URBI_ENABLE_REPL=1` and
+  `make urbi-send-bin URBI_ENABLE_REPL=1`.
+
+### Tests
+
+Corpus growth under default build (`URBI_ENABLE_REPL=0`):
+
+- 1821 cases / 13342 checks → 1847 cases / 13513 checks
+  (+26 cases / +171 checks). The default-build delta comes from the
+  Phase 1 foundations: per-realm writer + compile-budget unit tests,
+  Global-idiom migrations, readonly-bit fixtures, multi-realm
+  scenarios.
+
+Corpus growth under `URBI_ENABLE_REPL=1` build:
+
+- 1821 / 13342 → 1981 / 14011 (+160 cases / +669 checks). The
+  REPL=1 delta absorbs every Phase 2–8 contribution: NDJSON parse /
+  emit, dispatcher / auth / per-realm writer, buffer / TCP / pty /
+  multi-client transport, 15 `.chk/repl/` fixtures via the in-process
+  NDJSON runner, introspect-each suite, JSON-validity suite.
+
+### Known issues / Carry-forward to v1.x
+
+- **`Debug.*()` returns a `String`** rather than a structured Dict /
+  List. v1.0 has no `UVAL_LIST` / `UVAL_DICT` — lists and dicts are
+  UObjects in the `URBI_ATOM_LIST` / `URBI_ATOM_DICT` families.
+  Building one from C requires walking `containers.c` internals; out
+  of v0.9.1 scope. Wire JSON shape is locked, so any v1.x upgrade to
+  first-class structured returns is transparent to clients that
+  already parse the string.
+- **Profile primitive is a stub** — `urbi_introspect_profile` emits
+  empty `per_function` / `per_opcode` / `per_watcher` arrays plus
+  `note:"profiling deferred to v1.x"`. No profiling infrastructure
+  exists in v0.9.1; the wire shape is locked for forward
+  compatibility.
+- **Tag enumeration is per-realm-root** — `urbi_introspect_tags`
+  walks `vm->realms_head` and emits one entry per realm root tag.
+  Host-created child tags (via `urbi_tag_create`) are not centrally
+  enumerated at v0.9.1; a central tag registry is in the v1.x
+  design-risks register.
+- **`coro_id` is the strand pointer's low 32 bits** — `UStrand` has
+  no explicit id field at v0.9.1. Identity is stable per VM run (no
+  strand recycling within one run). v1.x may upgrade to a monotonic
+  counter when multi-host introspection requires cross-process
+  stability.
+- **Closure-body bare-name resolution doesn't walk `this`** — filed
+  in `docs/urbi-embedded-design-risks.md`. Unqualified identifier
+  references inside a closure body resolve through the realm-global
+  fallback in v0.9.1 — they do NOT walk the closure's `this` proto
+  chain. This makes `Lobby.echo` / `Lobby.wall` non-functional from
+  urbiscript because the body references `__builtin_lobby_send`
+  unqualified. Workaround in the v0.9.1 `.chk` corpus +
+  multi-client integration test: call
+  `Lobby.__builtin_lobby_send(...)` directly. Disposition: v1.x
+  emit follow-up (implicit-`this` fallback in `emit_ident_arm`).
+- **Listener-teardown race under multi-client stress** — filed in
+  `docs/urbi-embedded-design-risks.md`. The 4-client multi-client
+  integration test (`tests/unit/test_repl_multi_client.c`)
+  intermittently segfaults (~50% rate) during harness teardown —
+  race between `urepl_session_destroy` running on the listener
+  pthread (on EOF) and `urbi_repl_stop` running on the test thread.
+  Mitigation: the suite is opt-in via `URBI_TEST_MULTI_CLIENT=1`;
+  default `make test URBI_ENABLE_REPL=1` stays green and the
+  scenarios' semantic coverage overlaps green unit-test coverage.
+  Disposition: v0.9.x or v1.0-rc — investigate under
+  `--tool=helgrind`.
 
 ---
 
