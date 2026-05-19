@@ -23,7 +23,7 @@
 #include <stdint.h>
 
 /* UValue is required by this header.  See include-cycle note in the file
-   banner above; includers must pull it in via src/module/umodule.h. */
+   banner above; includers must pull it in via src/chunk/umodule.h. */
 
 #ifdef __cplusplus
 extern "C" {

@@ -10,7 +10,7 @@
  * That made the public header non-self-contained — external consumers
  * using only -Iinclude could not resolve sibling internal includes.
  *
- * Internal headers (src/module/umodule.h, src/sched/ustrand.h, src/vm/uvm.h)
+ * Internal headers (src/chunk/umodule.h, src/sched/ustrand.h, src/vm/uvm.h)
  * include this file rather than redefining the types, ensuring single
  * source of truth.
  *
@@ -52,7 +52,7 @@ extern "C" {
  *   8 → double (f64)  -- default for hosted builds
  *   4 → float  (f32)  -- typically set on 32-bit cross-targets via
  *                        -DURBI_FLOAT_TYPE=4 in build flags.
- * The canonical definition lives in src/module/umodule.h; this header
+ * The canonical definition lives in src/chunk/umodule.h; this header
  * supplies the same default so external consumers see the same layout. */
 #ifndef URBI_FLOAT_TYPE
 #define URBI_FLOAT_TYPE 8
@@ -93,7 +93,7 @@ typedef enum {
 /* === UValue: 16-byte tagged union ===
  *
  * 1 byte kind + 7 byte pad + 8 byte payload.  Layout mirrored exactly by
- * src/module/umodule.h. */
+ * src/chunk/umodule.h. */
 typedef struct {
     uint8_t  kind;       /* UValKind */
     uint8_t  _pad[7];
@@ -414,7 +414,7 @@ typedef enum {
     URBI_ERR_OOM                        = -3,
     /* URBI_ERR_BYTECODE_VERSION_MISMATCH: returned by the public-API
      * translation helper urbi_load_translate_load_err when the internal
-     * loader reports ULOAD_UNSUPPORTED_VERSION (see src/module/uchunk.c).
+     * loader reports ULOAD_UNSUPPORTED_VERSION (see src/chunk/uchunk_io.c).
      * The deserialize-bytes entry point itself is still M6 work in
      * progress; the translation helper exists now so any future caller
      * has a single mapping site to route through.  Closes API-005. */
