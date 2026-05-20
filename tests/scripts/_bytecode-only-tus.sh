@@ -4,12 +4,16 @@
 # Sourced by build-bytecode-only.sh (architecture smoke) and
 # build-freestanding-host.sh (per-TU freestanding-symbol check).
 #
-# Keep-out list — these TUs are parser/emitter-coupled and elided
-# by the real URBI_BYTECODE_ONLY build flag:
-#   - src/lex/*.c          (lexer)
+# Keep-out list — these TUs are elided from the freestanding /
+# URBI_BYTECODE_ONLY build:
+#   - src/lex/*.c          (lexer; parser-coupled)
 #   - src/parse/*.c        (parser + AST builder)
 #   - src/emit/*.c         (bytecode emitter + disasm)
 #   - src/urbi.c           (urbi_compile_source — parses + emits)
+#   - src/urbi_aux.c       (optional liburbi_aux.a convenience layer;
+#                           uses <stdio.h>/snprintf by design;
+#                           skipped by cross-build freestanding targets
+#                           per commit 3a9e939)
 #   - src/chunk/uchunk_strand.c  (urbi_repl_eval — parses + emits)
 #
 # Sourced — not executable.  Leading underscore marks the convention.
@@ -19,11 +23,14 @@ list_kept_tus() {
                      src/changed src/chunk src/value src/runtime src/realm \
                      src/object src/stdlib"
 
-    # Sources at src/ root: keep everything except urbi.c (parser-coupled).
+    # Sources at src/ root: keep everything except urbi.c (parser-coupled)
+    # and urbi_aux.c (optional liburbi_aux.a layer; uses <stdio.h>/snprintf
+    # by design; already skipped by cross-build freestanding targets per
+    # commit 3a9e939).
     for f in src/*.c; do
         [ -f "$f" ] || continue
         case "$(basename "$f")" in
-            urbi.c) ;;
+            urbi.c|urbi_aux.c) ;;
             *) echo "$f" ;;
         esac
     done
