@@ -121,6 +121,17 @@ typedef struct UReplReader {
     int                wake_eventfd;       /* -1 = none */
     bool               started;
     bool               stop_requested;     /* set by shutdown path */
+    /* v0.9.4: true when the reader has NO pthread — spawned for a
+     * non-pollable transport (Pico USB CDC + UART, ESP-IDF UART,
+     * FreeRTOS UART, in-process buffer).  The cooperative
+     * urbi_repl_serve_step sweep drives accept/read/write/close
+     * for these sessions instead of a per-connection reader thread.
+     * Reap paths (urepl_listener_stop_and_join, close-sweep) gate
+     * pthread_join on `started`, so cooperative readers are skipped
+     * naturally.  The flag exists for documentation + to gate the
+     * shutdown(client_fd, SHUT_RDWR) force-EOF path which is a
+     * socket-only operation. */
+    bool               cooperative;
     const UTransport  *transport;
     UReplSession      *session;
     UReplServer       *server;

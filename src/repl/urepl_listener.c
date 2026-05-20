@@ -352,7 +352,16 @@ spawn_reader(UReplServer *server, const UTransport *transport,
     r->client_fd      = client_fd;
     r->transport      = transport;
     r->server         = server;
-    r->wake_eventfd   = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+    /* v0.9.4: detect non-pollable transports up front.  Cooperative
+     * sessions don't need a wake_eventfd (no reader pthread waiting
+     * on poll) and don't get a pthread_create call — see below. */
+    bool is_pollable = (transport->pollable_fd_fn != NULL
+                        && transport->pollable_fd_fn(client_fd) >= 0);
+    r->cooperative    = !is_pollable;
+    r->wake_eventfd   = is_pollable
+                        ? eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
+                        : -1;
 
     /* Create the per-connection session.  urepl_session_create grabs
      * sessions_mutex internally; safe to call from any thread. */
@@ -387,6 +396,22 @@ spawn_reader(UReplServer *server, const UTransport *transport,
                                 auth_required,
                                 &hello_n) == 0) {
         urepl_ringbuf_write(&session->output, hello_env, hello_n);
+    }
+
+    if (r->cooperative) {
+        /* v0.9.4: non-pollable transports (Pi Pico USB CDC + UART,
+         * ESP-IDF UART, FreeRTOS UART, in-process buffer) don't get a
+         * per-session reader pthread.  urbi_repl_serve_step drives
+         * accept/read/write/close cooperatively from the embedder's
+         * main loop.  Skipping pthread_create here saves a thread per
+         * session on Linux and is a hard requirement on the Pico
+         * where pthread doesn't exist.
+         *
+         * No wake signal is needed — the cooperative sweep already
+         * polls the output ringbuf each call.  `r->started` stays
+         * false, so the reap paths (urepl_listener_stop_and_join +
+         * close-sweep) skip pthread_join naturally. */
+        return URBI_OK;
     }
 
     if (pthread_create(&r->thread, NULL, reader_main, r) != 0) {
@@ -656,22 +681,28 @@ urepl_listener_stop_and_join(UReplServer *server)
 
     /* Force-close every reader's client_fd so any blocked recv()
      * returns 0/EOF and the reader exits its loop.  Then signal the
-     * wake_eventfd in case the reader was sleeping in poll. */
+     * wake_eventfd in case the reader was sleeping in poll.
+     *
+     * Cooperative readers (v0.9.4: non-pollable transports) have no
+     * pthread to wake and the client_fd is not a kernel socket — skip
+     * both the shutdown() and the eventfd_signal. */
     pthread_mutex_lock(&server->sessions_mutex);
     UReplReader *r = server->readers_head;
     while (r != NULL) {
         UREPL_ATOMIC_STORE_BOOL(&r->stop_requested, true);
-        if (r->client_fd >= 0 && r->transport != NULL
-            && r->transport->close_fn != NULL) {
-            /* Half-close the socket so the reader's recv() returns 0
-             * promptly without us also closing the fd (the reader's
-             * own teardown calls close_fn after the loop).  Use
-             * shutdown(SHUT_RDWR) on POSIX sockets.  For non-socket
-             * fds (UART; v0.9.1 Phase 7) the equivalent is fd close
-             * from this side. */
-            shutdown(r->client_fd, SHUT_RDWR);
+        if (!r->cooperative) {
+            if (r->client_fd >= 0 && r->transport != NULL
+                && r->transport->close_fn != NULL) {
+                /* Half-close the socket so the reader's recv() returns 0
+                 * promptly without us also closing the fd (the reader's
+                 * own teardown calls close_fn after the loop).  Use
+                 * shutdown(SHUT_RDWR) on POSIX sockets.  For non-socket
+                 * fds (UART; v0.9.1 Phase 7) the equivalent is fd close
+                 * from this side. */
+                shutdown(r->client_fd, SHUT_RDWR);
+            }
+            eventfd_signal(r->wake_eventfd);
         }
-        eventfd_signal(r->wake_eventfd);
         r = r->next;
     }
     pthread_mutex_unlock(&server->sessions_mutex);
@@ -693,6 +724,18 @@ urepl_listener_stop_and_join(UReplServer *server)
         if (head->wake_eventfd >= 0) {
             close(head->wake_eventfd);
             head->wake_eventfd = -1;
+        }
+        /* For pollable readers client_fd was already closed by
+         * reader_main on its way out + session was destroyed there.
+         * Cooperative readers (v0.9.4) never ran reader_main — close
+         * the client_fd here so the transport sees a clean teardown,
+         * then fall through to the defensive session-destroy below. */
+        if (head->cooperative
+            && head->client_fd >= 0
+            && head->transport != NULL
+            && head->transport->close_fn != NULL) {
+            head->transport->close_fn(head->client_fd);
+            head->client_fd = -1;
         }
         /* client_fd already closed by reader_main + session destroyed
          * (by reader_main's exit path).  Defensive: if reader_main

@@ -94,11 +94,14 @@ int  urepl_write_sweep_nonpollable(UReplServer *server);
  * transport error on read_fn / write_fn).  For each reaped session:
  *
  *   - Calls the transport's close_fn(client_fd) exactly once.
- *   - Unlinks + pthread_joins the paired UReplReader.  (Even on a non-
- *     pollable transport spawn_reader unconditionally pthread_creates
- *     a reader; reader_main returns immediately at the pollable_fd<0
- *     short-circuit so the join is near-instantaneous.)
- *   - Closes the reader's wake_eventfd and frees the reader struct.
+ *   - Unlinks the paired UReplReader.  On pollable transports
+ *     spawn_reader created a pthread; the close sweep pthread_joins
+ *     it.  On non-pollable transports (v0.9.4) spawn_reader skipped
+ *     the pthread_create entirely (cooperative readers are driven by
+ *     urbi_repl_serve_step), and the close sweep skips the join via
+ *     the reader->started guard.
+ *   - Closes the reader's wake_eventfd (only allocated for pollable
+ *     readers) and frees the reader struct.
  *   - Calls urepl_session_destroy, which fires the v0.9.1 disconnect-
  *     cleanup sequence (handleDisconnect / unregister / realm destroy /
  *     ringbuf + coop_inbuf/coop_outbuf free).
