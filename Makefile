@@ -1031,6 +1031,30 @@ cross-stm32f4:
 		AR=arm-none-eabi-ar \
 		core
 
+# v0.9.4: cross-compile for Raspberry Pi Pico (RP2040 / Cortex-M0+ / armv6-m).
+# Same arm-none-eabi toolchain as cross-arm; differs in -mcpu (no FPU,
+# no integer divide, libgcc soft-float helpers in play).
+#
+# UVM_STACK_CAP=512 mirrors cross-stm32f4 — Pico's 264 KB SRAM is even
+# tighter, so the same 8 KB register-stack-per-strand cap applies.
+cross-pico:
+	$(MAKE) TARGET=arm-cortex-m0plus \
+		URBI_STDLIB_FLAVOR=4 \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
+		        -ffreestanding \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DUVM_STACK_CAP=512" \
+		AR=arm-none-eabi-ar \
+		core
+
 # T19 / Wave 1: URBI_BYTECODE_ONLY=1 variants of the cross-arch builds.
 # Used by `make test-freestanding` (T18) to verify the freestanding subset
 # contract on the embedded targets (no hosted libc fallthrough).
