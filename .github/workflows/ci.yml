@@ -52,28 +52,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install cross toolchain
+      - name: Install cross toolchain (xpack riscv-none-elf-gcc)
         run: |
-          sudo apt-get update
-          # Try multiple package names; succeed if any works.
-          sudo apt-get install -y gcc-riscv64-unknown-elf \
-            || sudo apt-get install -y gcc-riscv-none-elf \
-            || (echo "RISC-V bare-metal toolchain unavailable; skipping cross-compile"; exit 0)
+          # Ubuntu's gcc-riscv64-unknown-elf package ships the compiler
+          # without a newlib sysroot, so `#include <string.h>` fails.
+          # xpack's riscv-none-elf-gcc bundles newlib headers + libs.
+          # The Makefile's `cross-riscv` target hardcodes the
+          # `riscv64-unknown-elf-*` tool prefix; symlink xpack's tools
+          # so the Makefile stays unchanged.
+          XPACK_VER=15.2.0-1
+          XPACK_URL="https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_VER}/xpack-riscv-none-elf-gcc-${XPACK_VER}-linux-x64.tar.gz"
+          curl -fsSL "$XPACK_URL" -o /tmp/riscv-xpack.tar.gz
+          sudo mkdir -p /opt/riscv-xpack
+          sudo tar xf /tmp/riscv-xpack.tar.gz -C /opt/riscv-xpack --strip-components=1
+          # Expose the xpack bin dir and create the riscv64-unknown-elf-* aliases.
+          echo "/opt/riscv-xpack/bin" >> "$GITHUB_PATH"
+          for tool in gcc ar nm objcopy objdump size strip; do
+            sudo ln -sf "/opt/riscv-xpack/bin/riscv-none-elf-${tool}" \
+                        "/opt/riscv-xpack/bin/riscv64-unknown-elf-${tool}"
+          done
       - name: Cross-compile
-        run: |
-          if command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
-            make cross-riscv
-          else
-            echo "RISC-V bare-metal toolchain unavailable; skipping cross-compile"
-            exit 0
-          fi
+        run: make cross-riscv
       - name: Inspect archive
-        run: |
-          if [ -f build/riscv-rv32imc/liburbi.a ]; then
-            riscv64-unknown-elf-ar t build/riscv-rv32imc/liburbi.a
-          else
-            echo "No archive produced; skipped"
-          fi
+        run: riscv64-unknown-elf-ar t build/riscv-rv32imc/liburbi.a
 
   cross-esp32s3:
     name: cross-compile (ESP32-S3, Xtensa LX7)
