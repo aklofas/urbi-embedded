@@ -25,6 +25,7 @@
 #include "gc/ugc_incremental.h"  /* gc_shade_gray — shade realm->tag */
 #include "object/uobject.h"    /* urbi_object_alloc, URBI_ATOM_OBJECT */
 #include "realm/urealm_globals.h"    /* urbi_populate_realm_globals */
+#include "stdlib/temporal.h"         /* urbi_periodic_destroy_for_realm — v0.9.4 */
 
 /* === urbi_realm_create ===
  *
@@ -184,6 +185,15 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
 
     nil.kind = UVAL_NIL;
     nil.v.i  = 0;
+
+    /* v0.9.4 Step 0: mark periodics owned by this realm for unregister
+     * BEFORE the strand sweep frees their body strands.  Clears each
+     * periodic's current_strand back-pointer + each body strand's
+     * periodic_owner back-pointer so urbi_strand_destroy (called below)
+     * does not leave any dangling references.  Periodic records are
+     * freed at the end of this function (Step 4b) once all bodies are
+     * gone and no further pump pass touches the list. */
+    urbi_periodic_destroy_for_realm(vm, realm);
 
     /* Step 1: Free all heap-allocated strands registered in this realm.
      * Must happen BEFORE utag_destroy because each strand's cleanup stack

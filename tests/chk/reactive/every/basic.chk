@@ -1,0 +1,25 @@
+# Milestone: v0.9.4
+# Covers: every (period) body — periodic-spawn smoke test.
+# Verifies the body fires at least once when the chunk is driven enough
+# cooperative steps between REPL lines for the timer wake to fire.
+#
+# Mechanism: every(1us, body_fn) registers a UPeriodic with the runtime.
+# urbi_step's per-call sleep-queue drain wakes the body strand whose
+# next_fire_us has elapsed; the body then runs, increments fired, and
+# the periodic re-arms for the next period.
+#
+# REPL drives urbi_step via the URBI_REPL_DRAIN_BUDGET loop after each
+# line is evaluated.  The trailing reads after the every() install
+# cumulatively pump enough urbi_step calls that fired transitions from
+# 0 to at-least-1 before the inspect line executes.
+
+var fired = 0;
+every (1us) Realm.fired = Realm.fired + 1;
+0;
+0;
+Realm.fired > 0
+[00000000] 0
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] true

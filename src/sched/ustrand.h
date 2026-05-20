@@ -102,6 +102,7 @@ struct UProto;           /* uproto.h — forward-decl for root_proto (v0.8.1+) *
 struct UClosure;         /* umodule.h — forward-decl for closure list threading */
 struct UChunkInstance;  /* object/uchunk_instance.h — M4 follow-up: per-(vm,module) IC tier */
 struct UWatcher;         /* watcher/uwatcher.h — spec #1 §4.2 back-pointer */
+struct UPeriodic;        /* stdlib/temporal.h — v0.9.4 every() back-pointer */
 
 /* === UStrand struct ===
    The strand is the unit of cooperative concurrency.  Each instance owns
@@ -214,6 +215,13 @@ struct UStrand {
      * with O(1) lookup via this back-pointer. NULL for all other strands. */
     struct UWatcher        *watcher_body_owner;
 
+    /* --- Periodic body ownership (v0.9.4 every() spec §11.4) ---
+     * Non-NULL iff this strand was spawned as a UPeriodic body strand.
+     * uvm.c::exit_strand calls urbi_periodic_body_completed when this
+     * field is non-NULL to clear the back-pointer and either re-arm the
+     * periodic or mark it for unregister.  Mirrors watcher_body_owner. */
+    struct UPeriodic       *periodic_owner;
+
     /* --- Event-waiter fields (spec #3 §3.3) ---
      * Populated when strand is in USTRAND_WAIT_EVENT state.
      * next_event_waiter: intrusive singly-linked waiters_head chain on UEvent.
@@ -281,9 +289,10 @@ struct UStrand {
  * Guarded on pointer width to avoid a hard failure on 32-bit cross
  * targets, matching the UEvent / UObject pattern. */
 #if defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8
-URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3888,
+URBI_STATIC_ASSERT(sizeof(struct UStrand) == 3896,
                "UStrand size pin (CHSTR-041) on 64-bit — update deliberately when UCallFrame or surrounding fields change"
-               /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888) */);
+               /* v0.9.2 Task 4.1: -8 B from deleting s->module pointer (3896 → 3888).
+                * v0.9.4: +8 B for periodic_owner back-pointer (3888 → 3896). */);
 #endif
 
 /* === Lifecycle functions ===

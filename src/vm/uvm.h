@@ -26,6 +26,8 @@ struct UStrand;
 struct UEvent;
 struct URealm;
 struct UWatcher;
+struct UPeriodic;    /* v0.9.4 — defined in src/stdlib/temporal.h */
+struct UClosure;     /* v0.9.4 — defined in src/runtime/uclosure.h */
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
 struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h */
@@ -630,6 +632,20 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * `lobbies` list slot populated at lobby.u runtime.  GC
      * reachability via object_roots_walker. */
     struct UObject *lobby_proto;
+    /* v0.9.4 Phase 5: every() periodic-spawn primitive.
+     * - every_native_closure: the C-native UClosure that script-side `every`
+     *   resolves to.  Allocated by urbi_temporal_native_register (called
+     *   from urbi_stdlib_boot); bound as a realm-global by
+     *   urbi_temporal_native_register_globals.  GC reachability: the
+     *   realm-global slot keeps it alive; periodic_table_walk_roots also
+     *   yields it explicitly so it survives realms that haven't yet
+     *   registered the global (defensive).
+     * - periodics_head: singly-linked list of UPeriodic records (one per
+     *   live every() call).  Walked by urbi_periodic_pump in urbi_step
+     *   and urbi_periodic_table_walk_roots at GC mark.  See
+     *   src/stdlib/temporal.h for record shape and lifecycle. */
+    struct UClosure  *every_native_closure;
+    struct UPeriodic *periodics_head;
     uint8_t     stdlib_booted;
     /* heap_locked (Phase 13 / T145): non-zero → urbi_gc_alloc declines
      * new allocations and returns NULL.  One-way latch set via the

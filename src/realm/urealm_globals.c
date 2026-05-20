@@ -27,6 +27,7 @@
 #include "stdlib/namespaces.h"     /* urbi_stdlib_register_namespace_globals — M6 Phase 8 */
 #include "stdlib/primitives.h"     /* urbi_stdlib_register_primitives_globals — M6 Phase 9 */
 #include "stdlib/lobby_native.h"   /* urbi_lobby_native_register_globals — v0.9.1 Phase 5 */
+#include "stdlib/temporal.h"       /* urbi_temporal_native_register_globals — v0.9.4 Phase 5 */
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h" /* urbi_debug_namespace_register_globals — v0.9.1 */
 #endif
@@ -453,6 +454,15 @@ urbi_populate_realm_globals(UVM *vm, URealm *realm)
      * deferred urbi_run_chunk step below. */
     {
         int rc = urbi_lobby_native_register_globals(vm, realm);
+        if (rc != URBI_OK) {
+            return (UErrCode)rc;
+        }
+    }
+
+    /* v0.9.4 Phase 5: bind "every" as a realm global pointing at
+     * vm->every_native_closure.  Same post-loop pattern. */
+    {
+        int rc = urbi_temporal_native_register_globals(vm, realm);
         if (rc != URBI_OK) {
             return (UErrCode)rc;
         }

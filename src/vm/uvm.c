@@ -14,6 +14,7 @@
 #include "tag/utag.h"    /* UTag, utag_create/destroy (T30) */
 #include "watcher/uwatcher.h"          /* UWatcher — watcher dispatch (T32) */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, install_at_event_runtime (T41-T47) */
+#include "stdlib/temporal.h"           /* v0.9.4: urbi_periodic_body_completed */
 #include "event/uevent.h"                    /* UEvent — cast target for OP_AT_EVENT_INSTALL (T47) */
 #include "event/uevent_emit.h"               /* c_event_emit_sync — tier-2 tag enter/leave hooks (T55) */
 #include "event/uevent_native.h"             /* uvalue_from_event — OP_GETSLOT_CHANGE_EVENT (T61) */
@@ -1919,6 +1920,11 @@ exit_strand:
      * w->body_strand atomically and handles PENDING_REFIRE / PENDING_UNREGISTER. */
     if (s->state == USTRAND_STATE_DEAD && s->watcher_body_owner != NULL) {
         urbi_watcher_body_completed(vm, s);
+    }
+
+    /* v0.9.4 every() periodic-spawn: re-arm or unregister on body death. */
+    if (s->state == USTRAND_STATE_DEAD && s->periodic_owner != NULL) {
+        urbi_periodic_body_completed(vm, s);
     }
 
     /* Wake any JOIN-blocked parents if this strand just reached DEAD. */

@@ -31,6 +31,7 @@
 #include "stdlib/namespaces.h"
 #include "stdlib/primitives.h"
 #include "stdlib/lobby_native.h"
+#include "stdlib/temporal.h"
 #ifdef URBI_ENABLE_REPL
 #  include "stdlib/debug_namespace.h"
 #endif
@@ -113,6 +114,14 @@ urbi_stdlib_boot(UVM *vm)
      * §3.6 readonly cohort, and urbi_vm_write_in_realm — the routing path
      * — is also default-build. */
     rc = urbi_lobby_native_register(vm);
+    if (rc != URBI_OK) return rc;
+
+    /* v0.9.4 Phase 5: every() periodic-spawn primitive.  Allocates the
+     * C-native UClosure stored on vm->every_native_closure.  Realm-global
+     * binding for "every" is deferred to urbi_temporal_native_register_-
+     * globals (post-loop hook in urbi_populate_realm_globals).  No proto
+     * to mark readonly — the closure itself is the binding. */
+    rc = urbi_temporal_native_register(vm);
     if (rc != URBI_OK) return rc;
 
 #ifdef URBI_ENABLE_REPL

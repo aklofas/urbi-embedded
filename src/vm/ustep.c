@@ -7,6 +7,7 @@
 #include "sched/ustrand.h"
 #include "sched/usched_cooperative.h"
 #include "event/uevent_ring.h"
+#include "stdlib/temporal.h"   /* v0.9.4: urbi_periodic_pump / earliest_wake_us */
 #include "runtime/umacros.h"   /* URBI_INTERNAL_ASSERT (CHSTR-025 wait_payload arm guard) */
 #include <stddef.h>
 #include <stdint.h>
@@ -51,6 +52,15 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
     /* Drain any ISR-injected events before running bytecode. */
     if (vm->event_ring && uevent_ring_has_pending(vm->event_ring))
         uevent_ring_drain(vm);
+
+    /* v0.9.4: pump periodics before the dispatch loop so newly-due fires
+     * become READY strands BEFORE we test strand_runnable_count.  Without
+     * this pre-pump, a `every(P) body` call followed by a quiescent VM
+     * would never see the first body spawn (the outer loop only runs
+     * when strand_runnable_count > 0, but the loader strand that just
+     * ran every_native has already finished and the periodic's first
+     * fire happens lazily). */
+    (void)urbi_periodic_pump(vm);
 
     vm->step_budget_remaining = budget_instructions;
 
@@ -153,6 +163,12 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
                 sched_strand_unblock(waker);
             }
         }
+
+        /* v0.9.4: pump periodics inside the loop too so a body strand
+         * that just completed can re-arm and the next fire becomes a
+         * READY strand within this urbi_step call (no need to wait for
+         * the next host-level step). */
+        (void)urbi_periodic_pump(vm);
     }
 
     /* If any strand is still READY or RUNNING, the budget ran out. */
@@ -166,10 +182,20 @@ urbi_step(UVM *vm, uint64_t budget_instructions, uint64_t *out_next_wake_us)
         return URBI_STEP_RUNNING;
     }
 
+    /* v0.9.4: live periodics keep the VM non-quiescent.  Pump again here
+     * because a body strand may have died during this step and re-armed
+     * the periodic; the next fire becomes the earliest_wake gate. */
+    uint64_t periodic_next = urbi_periodic_earliest_wake_us(vm);
+
     /* Only sleeping strands remain — nothing can run until the earliest wake. */
-    if (vm->wakeup_pending_count > 0) {
-        if (out_next_wake_us)
-            *out_next_wake_us = sched_earliest_wake_us(vm);
+    if (vm->wakeup_pending_count > 0 || periodic_next != UINT64_MAX) {
+        if (out_next_wake_us) {
+            uint64_t earliest = (vm->wakeup_pending_count > 0)
+                              ? sched_earliest_wake_us(vm)
+                              : UINT64_MAX;
+            if (periodic_next < earliest) earliest = periodic_next;
+            *out_next_wake_us = earliest;
+        }
         return URBI_STEP_WAKE_AT;
     }
 

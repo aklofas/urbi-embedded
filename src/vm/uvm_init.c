@@ -25,6 +25,7 @@
 #include "event/uevent_ring.h"    /* UEventRing, uevent_ring_init */
 #include "runtime/uhandle.h"      /* host_handle_walk_roots */
 #include "watcher/uwatcher.h"     /* uwatcher_pool_init/destroy, watcher_table_walk_roots */
+#include "stdlib/temporal.h"      /* urbi_periodic_table_walk_roots, urbi_periodic_destroy_all */
 #include "stdlib/containers.h"    /* M6 Phase 6: urbi_stdlib_containers_destroy */
 #include "event/uevent_native.h"  /* event_native_register */
 #include "event/uevent_registry.h" /* uevent_registry_init, uevent_registry_destroy */
@@ -241,6 +242,9 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_gc_register_root_provider(vm, host_handle_walk_roots);
     urbi_gc_register_root_provider(vm, vm_misc_walk_roots);   /* Step C-1 */
     urbi_gc_register_root_provider(vm, watcher_table_walk_roots);
+    /* v0.9.4 Phase 5: every() periodic-spawn primitive — yields each
+     * UPeriodic.body closure + vm->every_native_closure to the GC mark. */
+    urbi_gc_register_root_provider(vm, urbi_periodic_table_walk_roots);
 
     /* Type table + host-handle table. */
     {
@@ -379,6 +383,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->date_proto              = NULL;  /* M6 Phase 9 T95 */
     vm->duration_proto          = NULL;  /* M6 Phase 9 T96 */
     vm->lobby_proto             = NULL;  /* v0.9.1 Phase 5 — populated by urbi_lobby_native_register */
+    vm->every_native_closure    = NULL;  /* v0.9.4 Phase 5 — populated by urbi_temporal_native_register */
+    vm->periodics_head          = NULL;  /* v0.9.4 Phase 5 — every() periodic registry head */
     vm->stdlib_booted          = 0U;
     vm->heap_locked            = 0U;  /* Phase 13 / T145: one-way urbi_lock_heap latch */
     {
@@ -458,6 +464,12 @@ void urbi_vm_destroy(UVM *vm) {
      * Subsystem-owned teardowns are deferred to their landing tasks. */
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
+    /* v0.9.4: free any periodics left dangling after realm teardown.
+     * urbi_realm_destroy marks per-realm periodics for unregister but
+     * (intentionally) doesn't unlink-and-free them — that work is the
+     * pump sweep's job, and if no urbi_step ran between realm-destroy
+     * and vm-destroy the records would leak.  Drain explicitly here. */
+    urbi_periodic_destroy_all(vm);
     /* Clear module_instances_head before GC destroy so that:
      *   (a) object_roots_walker stops shading now-unreachable UChunkInstance
      *       cells (harmless but tidy), and
