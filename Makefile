@@ -537,6 +537,16 @@ test-bake-smoke: tools/urbi-compile-stdlib
 test-bytecode-only:
 	@./tests/scripts/build-bytecode-only.sh
 
+# v0.9.3-ci-hardening: host-side freestanding gate.  Compiles each
+# URBI_BYTECODE_ONLY-eligible TU under host cc with -ffreestanding
+# -DURBI_BYTECODE_ONLY=1 + nm-greps each .o against the forbidden-
+# libc regex (printf/snprintf/malloc/free/…).  Catches the leak
+# class that masked v0.9.1 + v0.9.2 from CI without requiring any
+# cross toolchain.  See tests/scripts/build-freestanding-host.sh.
+.PHONY: test-freestanding-host
+test-freestanding-host:
+	@./tests/scripts/build-freestanding-host.sh
+
 # v0.6.2 Wave 3 oracle-diff — third-party sanity check against urbiforge
 # 3.x (CMake-built, installed at $(URBI_ORACLE_ROOT)).  Diffs our urbi
 # binary's stdout against the urbiforge engine (`urbi-launch -s --`)
@@ -742,8 +752,8 @@ RELEASETEST_PHASE1 := \
     lint docs-check coverage test-stress test-gc-none-build \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
-    test-bake-smoke test-bytecode-only test-gc-roots-coverage \
-    test-aux-symbols test-embedding-guide
+    test-bake-smoke test-bytecode-only test-freestanding-host \
+    test-gc-roots-coverage test-aux-symbols test-embedding-guide
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
@@ -1288,4 +1298,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
