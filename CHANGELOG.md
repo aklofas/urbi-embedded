@@ -6,11 +6,11 @@
 
 - **Raspberry Pi Pico bring-up** on RP2040 (Cortex-M0+ / ARMv6-M /
   264 KB SRAM / no FPU / no integer divide). Cross-build target
-  `cross-pico` + bytecode-only variant `cross-pico-bytecode-only` +
-  freestanding signature golden gate `test-cross-pico-freestanding-golden`
-  + GHA job `cross-pico`. `releasetest` auto-detects cross-pico when
-  `arm-none-eabi-gcc` probe-compile passes. Hardware validation
-  pending Phase 8 of
+  `cross-pico` plus bytecode-only variant `cross-pico-bytecode-only`,
+  freestanding signature golden gate
+  `test-cross-pico-freestanding-golden`, and GHA job `cross-pico`.
+  `releasetest` auto-detects cross-pico when `arm-none-eabi-gcc`
+  probe-compile passes. Hardware validation pending Phase 8 of
   `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`.
 - **USB CDC REPL transport** for Pi Pico
   (`src/repl/urepl_transport_usb_cdc_pico.c`,
@@ -24,8 +24,8 @@
   process. `spawn_reader` skips `pthread_create` for non-pollable
   transports (Pico has no pthread).
 - **`every (period) body` language feature.** Lexer keyword
-  `TOK_KW_EVERY` + parser sugar (body wrapped to zero-argument lambda)
-  + stdlib C-native `every()` driven by the scheduler sleep-queue
+  `TOK_KW_EVERY`, parser sugar (body wrapped to zero-argument lambda),
+  and stdlib C-native `every()` driven by the scheduler sleep-queue
   directly. No new opcodes; no wire-format change. Two new `.chk`
   fixtures (`tests/chk/reactive/every/basic.chk`,
   `tests/chk/reactive/every/nested.chk` — the nested case is a pinned

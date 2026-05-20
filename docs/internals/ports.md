@@ -34,8 +34,8 @@ development target. Ports below cover bare-metal + RTOS silicon.
   - ESP-IDF's newlib is hosted, so the `urbi` component does NOT pass
     `-ffreestanding` (latent landmine fixed during v0.7.2 ship).
   - PSRAM read/write latency is ~5× internal SRAM — keep the bytecode
-    + interned-string pool in internal SRAM; large blob buffers can
-    spill to PSRAM.
+    and interned-string pool in internal SRAM; large blob buffers
+    can spill to PSRAM.
   - `vm->last_recv` was retired pre-ship (S42); methods receive the
     receiver through `OP_SELF` instead. Wire format bumped v1.5→v1.6.
   - Eye demo as a bug-detector caught 10 latent runtime issues during
@@ -73,8 +73,9 @@ development target. Ports below cover bare-metal + RTOS silicon.
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
 - **Status:** Designed at `v0.9.4-pico-example` (2026-05-20). Hardware
-  bring-up pending Phase 8 of
-  [`../superpowers/plans/2026-05-19-v0.9.4-pico-example.md`](../superpowers/plans/2026-05-19-v0.9.4-pico-example.md).
+  bring-up pending Phase 8 of the workspace-root
+  `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`
+  execution plan (workspace-root tree, not tracked in this repo).
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
   (`-mcpu=cortex-m0plus`); soft-float + libgcc helpers
   (`__divsf3`, `__mulsf3`, `__addsf3`, `__udivdi3`, `__divdi3`,
