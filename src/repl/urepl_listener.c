@@ -981,11 +981,9 @@ urepl_read_sweep_nonpollable(UReplServer *server)
                                                     r->client_fd);
         if (n > 0) {
             total_bytes += n;
-        } else if (n == 0) {
-            /* Clean EOF — Task 4.5 close sweep reaps. */
-            s->needs_teardown = true;
-        } else if (n == -2) {
-            /* Hard transport error — also defer teardown to Task 4.5. */
+        } else if (n == 0 || n == -2) {
+            /* n == 0: clean EOF; n == -2: hard transport error.
+             * Both defer teardown to Task 4.5's close sweep. */
             s->needs_teardown = true;
         }
         /* n == -1: would-block, normal. */

@@ -439,7 +439,7 @@ urbi_periodic_body_completed(UVM *vm, UStrand *s)
  * Also walk the realm's strands and clear any periodic_owner back-pointer
  * (defensive against double-free if the same strand were touched twice). */
 void
-urbi_periodic_destroy_for_realm(UVM *vm, URealm *r)
+urbi_periodic_destroy_for_realm(UVM *vm, const URealm *r)
 {
     if (vm == NULL || r == NULL) return;
     UPeriodic *p;

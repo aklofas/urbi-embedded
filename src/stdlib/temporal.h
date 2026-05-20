@@ -144,7 +144,7 @@ void urbi_periodic_body_completed(struct UVM *vm, struct UStrand *s);
  * installed under a destroyed realm stop firing.  Does not free records
  * here (in-flight body strands may still be on the realm's strands_head
  * and the ustep sweep handles teardown once they reach DEAD). */
-void urbi_periodic_destroy_for_realm(struct UVM *vm, struct URealm *r);
+void urbi_periodic_destroy_for_realm(struct UVM *vm, const struct URealm *r);
 
 /* urbi_periodic_destroy_all
  *
