@@ -1190,6 +1190,27 @@ test-cross-esp32s3-freestanding-golden: cross-esp32s3-bytecode-only
 	       echo "        cp /tmp/v0.7.2-esp32-nm-bytecode-only.actual.txt tests/golden/v0.7.2-esp32-nm-bytecode-only.txt" ; \
 	       exit 1 ; }
 
+# v0.9.4: cross-pico freestanding signature golden — mirror of the
+# esp32s3 gate above.  Locks the symbol surface of the cortex-m0plus
+# bytecode-only archive against drift.  Not wired into releasetest by
+# default (the existing v0.9.3 probe-compile dispatcher includes it
+# conditionally — Task 2.2 wires that).  On FAIL, the recipe prints
+# the regeneration command.
+.PHONY: test-cross-pico-freestanding-golden
+test-cross-pico-freestanding-golden: cross-pico-bytecode-only
+	@arm-none-eabi-nm build/cross-pico-bytecode-only/liburbi.a 2>/dev/null \
+	  | awk 'NF >= 3 && $$3 !~ /:$$/ && $$1 != "U" {defined[$$3]=1} \
+	         NF >= 2 && $$1 == "U" {undefined[$$2]=1} \
+	         END {for (s in undefined) if (!(s in defined)) print s}' \
+	  | sort -u > /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt
+	@diff -u tests/golden/v0.9.4-pico-nm-bytecode-only.txt \
+	         /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt \
+	  && echo "PASS: cross-pico-bytecode-only freestanding signature matches golden" \
+	  || { echo "FAIL: cross-pico-bytecode-only freestanding signature drifted from golden." ; \
+	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
+	       echo "        cp /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt tests/golden/v0.9.4-pico-nm-bytecode-only.txt" ; \
+	       exit 1 ; }
+
 # T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
 # liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
 # fopen, etc.).  Depends on cross-arm-bytecode-only and cross-riscv-bytecode-only
@@ -1389,4 +1410,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
