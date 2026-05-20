@@ -54,6 +54,18 @@ struct UReplSession {
     char                 *coop_inbuf;
     size_t                coop_inbuf_cap;
     size_t                coop_inbuf_fill;
+    /* v0.9.4 cooperative write staging.  urepl_ringbuf_read is
+     * destructive — once bytes leave session->output the ringbuf no
+     * longer owns them.  For non-pollable transports the cooperative
+     * write sweep cannot busy-loop on EAGAIN like flush_session_output
+     * does, so it pulls a chunk into this staging buffer and advances
+     * coop_outbuf_off on each (possibly partial) write_fn call.  When
+     * off == fill the staging is drained and the next sweep refills
+     * from the ringbuf. */
+    char                 *coop_outbuf;
+    size_t                coop_outbuf_cap;
+    size_t                coop_outbuf_fill;
+    size_t                coop_outbuf_off;
     /* v0.9.4: set by the cooperative read sweep on a clean EOF (peer
      * disconnect, read_fn == 0).  Task 4.5's close sweep reaps these. */
     bool                  needs_teardown;

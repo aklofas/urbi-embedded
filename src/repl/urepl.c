@@ -250,7 +250,11 @@ urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
      * cooperative counterpart of urepl_dispatch_drain_if_active's
      * step-hook invocation. */
     urepl_dispatch_drain(server);
-    /* Phases C (write) and D (close) land in Tasks 4.4 + 4.5. */
+    /* Phase C: drain pending output from each non-pollable session's
+     * ringbuf via one non-blocking write_fn call per session.  Partial
+     * writes stage in per-session coop_outbuf for the next sweep. */
+    (void)urepl_write_sweep_nonpollable(server);
+    /* Phase D (close) lands in Task 4.5. */
     return URBI_OK;
 }
 

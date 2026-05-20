@@ -238,6 +238,12 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
         free(session->coop_inbuf);
         session->coop_inbuf = NULL;
     }
+    /* v0.9.4: free the cooperative outbound staging buffer if one was
+     * lazily allocated by urepl_session_write_drain_one. */
+    if (session->coop_outbuf != NULL) {
+        free(session->coop_outbuf);
+        session->coop_outbuf = NULL;
+    }
     free(session);
 }
 

@@ -74,6 +74,20 @@ int  urepl_accept_sweep_nonpollable(UReplServer *server);
  * listener / reader pthread. */
 int  urepl_read_sweep_nonpollable(UReplServer *server);
 
+/* v0.9.4: cooperative write sweep.  For every non-pollable session
+ * with pending output (either staged from a prior partial write, or
+ * fresh bytes in session->output), attempts one non-blocking write_fn
+ * call against the transport.  Bytes that the write_fn cannot accept
+ * (EAGAIN / short write) stay in the per-session staging buffer for
+ * the next sweep — order is preserved.  Sessions that observe a hard
+ * transport error are marked needs_teardown for Task 4.5's close
+ * sweep to reap.
+ *
+ * Returns the total bytes written across all sessions (informational;
+ * zero is normal when there's nothing pending).  Pollable sessions
+ * are skipped — owned by the reader pthread's flush_session_output. */
+int  urepl_write_sweep_nonpollable(UReplServer *server);
+
 #ifdef __cplusplus
 }
 #endif

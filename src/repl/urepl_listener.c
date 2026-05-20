@@ -751,6 +751,111 @@ urepl_listener_drain_accepts(UReplServer *server)
     }
 }
 
+/* v0.9.4: drain pending session output via one non-blocking write_fn
+ * call.  Returns bytes written (>= 0), or negative on a hard transport
+ * error (caller sets s->needs_teardown).  Partial writes leave the
+ * unwritten bytes in the session's coop_outbuf staging buffer for the
+ * next sweep — order is preserved because we never re-enter the
+ * ringbuf until staging is fully drained.
+ *
+ * Staging is needed because urepl_ringbuf_read is destructive (no peek
+ * + advance API): if we pulled bytes from session->output and write_fn
+ * returned EAGAIN or a short count, the unwritten tail would be lost
+ * unless we hold it somewhere.
+ *
+ * NOT thread-safe with the per-session reader pthread.  Pollable
+ * sessions are filtered out by the sweep — same constraint as the read
+ * sweep. */
+static int
+urepl_session_write_drain_one(UReplSession *s, const UTransport *t,
+                              int client_fd)
+{
+    if (s == NULL || t == NULL || t->write_fn == NULL) {
+        return 0;
+    }
+
+    /* Lazily allocate the staging buffer.  4 KiB matches the pump
+     * buffer flush_session_output uses for the listener path. */
+    if (s->coop_outbuf == NULL) {
+        size_t cap = 4096U;
+        s->coop_outbuf = (char *)malloc(cap);
+        if (s->coop_outbuf == NULL) {
+            return 0;  /* fail-quiet; retry next sweep */
+        }
+        s->coop_outbuf_cap  = cap;
+        s->coop_outbuf_fill = 0U;
+        s->coop_outbuf_off  = 0U;
+    }
+
+    /* Refill staging from the ringbuf when previous chunk fully drained. */
+    if (s->coop_outbuf_off >= s->coop_outbuf_fill) {
+        s->coop_outbuf_fill = urepl_ringbuf_read(&s->output,
+                                                 s->coop_outbuf,
+                                                 s->coop_outbuf_cap);
+        s->coop_outbuf_off  = 0U;
+        if (s->coop_outbuf_fill == 0U) {
+            return 0;  /* nothing pending */
+        }
+    }
+
+    size_t pending = s->coop_outbuf_fill - s->coop_outbuf_off;
+    int w = t->write_fn(client_fd,
+                        s->coop_outbuf + s->coop_outbuf_off,
+                        pending);
+    if (w > 0) {
+        s->coop_outbuf_off += (size_t)w;
+        return w;
+    }
+    if (w == -1) {
+        /* would-block — retry next sweep with the same staged bytes. */
+        return 0;
+    }
+    /* hard error — caller marks the session for teardown. */
+    return -1;
+}
+
+/* v0.9.4: walk server->sessions; for each non-pollable session attempt
+ * one non-blocking write drain.  Returns the total bytes written across
+ * all sessions (informational).  Pollable sessions are owned by the
+ * per-connection reader pthread's flush_session_output path. */
+int
+urepl_write_sweep_nonpollable(UReplServer *server)
+{
+    if (server == NULL) {
+        return 0;
+    }
+    int total = 0;
+    pthread_mutex_lock(&server->sessions_mutex);
+    for (UReplSession *s = server->sessions_head;
+         s != NULL; s = s->next) {
+        UReplReader *r = s->reader;
+        if (r == NULL) {
+            continue;
+        }
+        const UTransport *t = r->transport;
+        if (t == NULL || t->write_fn == NULL) {
+            continue;
+        }
+        /* Skip pollable transports — owned by the reader pthread. */
+        if (t->pollable_fd_fn != NULL
+            && t->pollable_fd_fn(r->client_fd) >= 0) {
+            continue;
+        }
+        if (s->needs_teardown) {
+            continue;  /* close sweep (Task 4.5) will reap */
+        }
+        int n = urepl_session_write_drain_one(s, t, r->client_fd);
+        if (n > 0) {
+            total += n;
+        } else if (n < 0) {
+            s->needs_teardown = true;
+        }
+        /* n == 0: nothing pending or would-block — fine. */
+    }
+    pthread_mutex_unlock(&server->sessions_mutex);
+    return total;
+}
+
 int
 urepl_accept_sweep_nonpollable(UReplServer *server)
 {

@@ -208,6 +208,77 @@ UTEST(repl_serve_step_cooperative_read_dispatch)
     coop_state = NULL;
 }
 
+/* v0.9.4 Task 4.4: cooperative write sweep — full read → dispatch →
+ * write roundtrip.  Inject an eval request, drive several sweeps, and
+ * verify that the dispatcher's NDJSON response envelopes land in
+ * ts.write_buf via the write sweep draining session->output.
+ *
+ * `1+2` is the simplest expression whose result substring ("3") is
+ * easy to find in the envelope and that doesn't depend on the v0.9.1
+ * closure-body bare-name resolution gap that affects Lobby.echo. */
+UTEST(repl_serve_step_cooperative_full_roundtrip)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    UASSERT(vm != NULL);
+    UASSERT_EQ(urbi_vm_init(vm, NULL, NULL), URBI_OK);
+
+    static CoopTestState ts;
+    memset(&ts, 0, sizeof(ts));
+    coop_state = &ts;
+
+    const char *line = "{\"id\":7,\"op\":\"eval\",\"code\":\"1+2\"}\n";
+    size_t llen = strlen(line);
+    UASSERT(llen < sizeof(ts.read_buf));
+    memcpy(ts.read_buf, line, llen);
+    ts.read_len = llen;
+
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr   = "127.0.0.1";
+    cfg.tcp_port    = -1;
+    cfg.unix_path   = NULL;
+    cfg.max_clients = 4;
+
+    UReplServer *server = NULL;
+    UASSERT_EQ(urbi_repl_serve_init(vm, &cfg, &server), URBI_OK);
+    UASSERT(server != NULL);
+
+    UASSERT_EQ(urbi_repl_register_transport(server,
+                                            &COOP_TEST_TRANSPORT, &ts),
+               URBI_OK);
+
+    /* 32 sweeps is plenty for accept + read + dispatch + write to
+     * complete; the dispatcher may emit several envelopes (hello,
+     * output, result, done) so we want enough iterations to drain. */
+    for (int i = 0; i < 32; ++i) {
+        UASSERT_EQ(urbi_repl_serve_step(server, 0), URBI_OK);
+    }
+
+    UASSERT(ts.accepted);
+    UASSERT_EQ(ts.read_pos, ts.read_len);
+    /* Write sweep delivered response bytes through to the transport. */
+    UASSERT(ts.write_len > 0);
+
+    /* The eval response envelope must contain "value":"3" — the literal
+     * "3" appears as a JSON string value for the result envelope.  We
+     * search loosely for the byte pair "3\"" (3 followed by a closing
+     * double-quote) to avoid false positives on the session_id or eval
+     * id (which is 7, not 3). */
+    bool found_three = false;
+    for (size_t i = 0; i + 1 < ts.write_len; ++i) {
+        if (ts.write_buf[i] == '3' && ts.write_buf[i + 1] == '"') {
+            found_three = true;
+            break;
+        }
+    }
+    UASSERT(found_three);
+
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+    coop_state = NULL;
+}
+
 void
 test_repl_serve_step_cooperative_suite(void)
 {
@@ -216,6 +287,8 @@ test_repl_serve_step_cooperative_suite(void)
               repl_serve_step_cooperative_accept_only);
     utest_run("repl_serve_step_cooperative_read_dispatch",
               repl_serve_step_cooperative_read_dispatch);
+    utest_run("repl_serve_step_cooperative_full_roundtrip",
+              repl_serve_step_cooperative_full_roundtrip);
 }
 
 #else  /* !URBI_ENABLE_REPL */
