@@ -48,6 +48,7 @@ oom-*
 # Build-time tool binaries (host-only; built next to their source).
 /tools/urbi-compile-stdlib
 /tools/urbi-compile-stdlib-f*
+/tools/urbi-compile-stdlib-pico
 
 # Editor
 .vscode/

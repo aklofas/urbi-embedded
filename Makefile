@@ -303,6 +303,14 @@ tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_FLOAT_TYPE=$* \
 	    -Iinclude -Isrc -o $@ $^ -lm
 
+# v0.9.4: tools/urbi-compile-stdlib-pico is a symlink to the f4 variant.
+# Cortex-M0+ Pico uses URBI_FLOAT_TYPE=4 (float32), functionally identical
+# to STM32F4.  The target-named symlink keeps the Pico example's CMakeLists
+# invoking a target-named binary for clarity (and avoids hard-coding the
+# floats convention into the example's build script).
+tools/urbi-compile-stdlib-pico: tools/urbi-compile-stdlib-f4
+	ln -sf urbi-compile-stdlib-f4 $@
+
 # Two-pass stdlib bake (per delta §3.1):
 # 1. liburbi.a builds with the placeholder .gen.c (committed in repo)
 # 2. tools/urbi-compile-stdlib runs against intermediate liburbi.a
