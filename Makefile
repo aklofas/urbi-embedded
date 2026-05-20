@@ -790,11 +790,42 @@ releasetest:
 	 riscv=$$(detect riscv-none-elf-gcc); \
 	 esp=$$(detect xtensa-esp-elf-gcc); \
 	 echo "=== releasetest: cross-toolchain detection ==="; \
-	 echo "  arm-none-eabi-gcc    : $$arm"; \
-	 echo "  riscv-none-elf-gcc   : $$riscv"; \
-	 echo "  xtensa-esp-elf-gcc   : $$esp"; \
-	 echo "(Phase 0 cross-gate wiring lands in the next commit; banner-only this commit.)"; \
-	 echo "For full local parity install xpack toolchains - see docs/cross-toolchain-setup.md."
+	 phase0=""; \
+	 if [ "$$arm" = present ]; then \
+	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + test-freestanding(arm,stm32f4) included"; \
+	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only"; \
+	 elif [ "$$arm" = broken ]; then \
+	     echo "  arm-none-eabi-gcc    : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
+	 else \
+	     echo "  arm-none-eabi-gcc    : absent   -> cross-arm + cross-stm32f4 skipped (GHA CI authoritative)"; \
+	 fi; \
+	 if [ "$$riscv" = present ]; then \
+	     echo "  riscv-none-elf-gcc   : present  -> cross-riscv + test-freestanding(riscv) included"; \
+	     phase0="$$phase0 cross-riscv-bytecode-only"; \
+	 elif [ "$$riscv" = broken ]; then \
+	     echo "  riscv-none-elf-gcc   : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
+	 else \
+	     echo "  riscv-none-elf-gcc   : absent   -> cross-riscv skipped (GHA CI authoritative)"; \
+	 fi; \
+	 if [ "$$esp" = present ]; then \
+	     echo "  xtensa-esp-elf-gcc   : present  -> cross-esp32s3-bytecode-only + freestanding-golden included"; \
+	     phase0="$$phase0 cross-esp32s3-bytecode-only test-cross-esp32s3-freestanding-golden"; \
+	 elif [ "$$esp" = broken ]; then \
+	     echo "  xtensa-esp-elf-gcc   : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
+	 else \
+	     echo "  xtensa-esp-elf-gcc   : absent   -> cross-esp32s3 + freestanding-golden skipped (GHA CI authoritative)"; \
+	 fi; \
+	 echo "For full local parity install xpack toolchains - see docs/cross-toolchain-setup.md."; \
+	 if [ -n "$$phase0" ]; then \
+	     echo "=== releasetest: Phase 0 (cross, sequential):$$phase0 ==="; \
+	     phase0_start=$$(date +%s); \
+	     $(MAKE) --no-print-directory $$phase0 || exit $$?; \
+	     for tc_archive in $$(echo "$$phase0" | tr ' ' '\n' | grep -E 'cross-(arm|stm32f4|riscv)-bytecode-only' | awk '{print "build/" $$0 "/liburbi.a"}'); do \
+	         sh tests/scripts/test-freestanding.sh "$$tc_archive" || exit $$?; \
+	     done; \
+	     phase0_end=$$(date +%s); \
+	     echo "=== releasetest: Phase 0 passed ($$((phase0_end - phase0_start)) s) ==="; \
+	 fi
 	@echo "=== releasetest: 2-phase sweep ==="
 	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
 	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"
