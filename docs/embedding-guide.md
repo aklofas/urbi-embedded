@@ -347,6 +347,26 @@ at (sensor?(x, y, z)) {
 };
 ```
 
+### `every (period) body`
+
+Periodic-spawn construct (v0.9.4). `every (100) X` is sugar for spawning a strand that runs `X` every 100 milliseconds until tag-cancelled. The period is a millisecond float; the body is any statement, wrapped automatically by the parser into a zero-argument function literal.
+
+```urbiscript
+heartbeat: { every (500) led_toggle() };
+// ...later...
+heartbeat.stop();
+```
+
+The strand inherits the caller's ambient tag scope; `tag.stop()` cancels via the existing cleanup cascade. Body execution time delays subsequent fires (body+sleep model — the period is the minimum interval between fires, not a guaranteed cadence). The scheduler's sleep-queue drives re-arming directly from C; there is no urbiscript-side `sleep()`.
+
+See `tests/chk/reactive/every/*.chk` for canonical behaviour.
+
+**v0.9.4 limitations** (filed against v1.x):
+
+- A label-prefix on `every()` must use the brace-block form (`tag: { every(P) X }`); bare-prefix `tag: every(P) X` is a parse error per `src/parse/uparse_react.c:87`.
+- Closure-creation inside the body fails with `TypeError: CLOSURE: proto index out of range` (the body strand's `executing_proto.nested[]` does not include child protos). Pinned as a regression target in `tests/chk/reactive/every/nested.chk`.
+- The label-bound tag identifier itself is `nil` because `Tag.new()` is v1.x-deferred; the `.stop()` half of the canonical legacy idiom needs that constructor to actually cancel via the tag.
+
 ### Watcher-body-done callback (telemetry)
 
 Install a callback to observe every watcher-body completion — useful for latency profiling or watchdog integration:
@@ -1094,6 +1114,24 @@ urbi_repl_serve_shutdown(server);
 ```
 
 One `serve_step` performs at most one accept + read + dispatch + write cycle across all registered transports, returns when no transport has progress to make or `timeout_us` elapses.
+
+### USB CDC (Raspberry Pi Pico, TinyUSB)
+
+Defined in `src/repl/urepl_transport_usb_cdc_pico.c` when `URBI_PICO_USB_CDC + PICO_BOARD + URBI_ENABLE_REPL` are all set. Single-host (CDC has one attached host); `pollable_fd_fn` returns `-1` so the embedder drives `urbi_repl_serve_step` from the main loop.
+
+Embedder setup (extern declarations — the Pico transports follow the same header-less pattern as the v0.9.1 UART Pico stub):
+
+```c
+/* FRAGMENT — Pico USB CDC REPL transport */
+struct UUsbCdcPicoState;
+extern struct UUsbCdcPicoState *urepl_usb_cdc_pico_state_create(void);
+extern const UTransport UREPL_USB_CDC_PICO_TRANSPORT;
+
+UUsbCdcPicoState *st = urepl_usb_cdc_pico_state_create();
+urbi_repl_register_transport(server, &UREPL_USB_CDC_PICO_TRANSPORT, st);
+```
+
+See `examples/pico/repl_demo/main/main.c` for a complete embedder.
 
 ### See also
 
