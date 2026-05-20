@@ -38,45 +38,10 @@ rm -f "$LIB"
 
 # Build the kept subset of sources directly (bypass the main Makefile
 # wildcard).  Compile each .c into the per-target build dir.
-KEEP_DIRS=(
-    src/vm
-    src/gc
-    src/sched
-    src/watcher
-    src/event
-    src/tag
-    src/changed
-    src/chunk
-    src/value
-    src/runtime
-    src/realm
-    src/object
-    src/stdlib
-)
-
-# Sources at src/ root: keep everything except urbi.c (parser-coupled).
-ROOT_KEEP=()
-for f in src/*.c; do
-    [ -f "$f" ] || continue
-    case "$(basename "$f")" in
-        urbi.c) ;;            # excluded — parser-coupled
-        *) ROOT_KEEP+=("$f") ;;
-    esac
-done
-
-# Subdir sources: keep all except chunk/uchunk_strand.c (parser-coupled).
-SUBDIR_KEEP=()
-for d in "${KEEP_DIRS[@]}"; do
-    for f in "$d"/*.c; do
-        [ -f "$f" ] || continue
-        case "$f" in
-            src/chunk/uchunk_strand.c) ;;   # excluded — parser-coupled
-            *) SUBDIR_KEEP+=("$f") ;;
-        esac
-    done
-done
-
-ALL_KEEP=("${ROOT_KEEP[@]}" "${SUBDIR_KEEP[@]}")
+# Keep-list source of truth: tests/scripts/_bytecode-only-tus.sh
+. "$(dirname "$0")/_bytecode-only-tus.sh"
+# shellcheck disable=SC2207
+ALL_KEEP=( $(list_kept_tus) )
 
 CFLAGS_BASE="-std=c99 -Wall -Wextra -Wpedantic -Os"
 CPPFLAGS_BASE="-Iinclude -Isrc -Itests/unit"
