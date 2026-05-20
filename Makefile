@@ -792,8 +792,8 @@ releasetest:
 	 echo "=== releasetest: cross-toolchain detection ==="; \
 	 phase0=""; \
 	 if [ "$$arm" = present ]; then \
-	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + test-freestanding(arm,stm32f4) included"; \
-	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only"; \
+	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + cross-pico + test-freestanding(arm,stm32f4,pico) included"; \
+	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only test-cross-pico-freestanding-golden"; \
 	 elif [ "$$arm" = broken ]; then \
 	     echo "  arm-none-eabi-gcc    : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
 	 else \
