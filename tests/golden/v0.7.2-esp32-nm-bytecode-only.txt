@@ -20,6 +20,9 @@ __nedf2
 __nesf2
 __subdf3
 __truncdfsf2
+__udivdi3
+__umoddi3
 __umulsidi3
 memcpy
 memset
+strlen
