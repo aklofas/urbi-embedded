@@ -164,7 +164,8 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     /* T4 regression: entries[0] (root chunk) uses proto==NULL, so the old
      * ic_count derivation `(pi->proto != NULL) ? pi->proto->ic_count : 0`
      * always returned 0 — silently skipping root-chunk IC state from the
-     * checksum.  The fix reads ic_count from mi->module->root_proto->ic_count.
+     * checksum.  The fix reads ic_count from mi->module->ic_count directly
+     * (v0.9.2: mi->module IS the root UProto).
      *
      * Build a module with ic_count == 1 at the root level (no nested protos).
      * Create a UChunkInstance, verify the checksum changes after mutating
@@ -176,14 +177,10 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
     USymbol *xsym = (USymbol *)ustr_intern(&vm, "x", 1);
     UASSERT(xsym != NULL);
 
-    /* Allocate root_proto for the hand-constructed module fabric.
-     * Task 11 of v0.8.1-uproto-root moved all chunk-top data (ic_count,
-     * ic_names, nested[]) from UProto onto UProto.root_proto.
-     * uchunk_destroy with alloc_fn==NULL falls back to stdlib_alloc,
-     * which will call uproto_destroy_buffers (frees ic_names[])
-     * then free(root_proto). */
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
+    /* v0.9.2: m IS the root UProto (UModule deleted by Approach C / Task 4.1).
+     * ic_count and ic_names live directly on m; no separate root_proto to
+     * allocate.  uchunk_destroy with alloc_fn==NULL falls back to stdlib_alloc,
+     * which calls uproto_destroy_buffers (frees ic_names[]). */
 
     /* Populate the root-chunk IC side table (root chunk). */
     m.ic_count = 1;
@@ -213,8 +210,7 @@ UTEST(determinism_checksum_folds_root_chunk_ic_state)
 
     urbi_chunk_instance_destroy(&vm, mi);
     /* uchunk_destroy: alloc_fn==NULL → stdlib_alloc fallback.
-     * uproto_destroy_buffers frees m.ic_names[],
-     * then free(root_proto) is called by uchunk_destroy_internal. */
+     * uproto_destroy_buffers frees m.ic_names[] (v0.9.2: m is the root UProto). */
     uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }

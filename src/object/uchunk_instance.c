@@ -181,13 +181,13 @@ static bool init_ic_slices_recursive(struct UVM *vm,
 }
 
 UChunkInstance *
-urbi_chunk_instance_create(struct UVM *vm, UProto *m)
+urbi_chunk_instance_create(struct UVM *vm, UProto *root)
 {
-    if (vm == NULL || m == NULL) {
+    if (vm == NULL || root == NULL) {
         return NULL;
     }
-    /* v0.9.2: m IS the root UProto. */
-    UProto *rp = m;
+    /* v0.9.2: root IS the root UProto. */
+    UProto *rp = root;
 
     /* Cell 1: UChunkInstance.  Cast cell pointer to struct (UCell is the
      * first member; addresses coincide).  Caller is responsible for OOM. */
@@ -197,7 +197,7 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *m)
         return NULL;
     }
     UChunkInstance *mi = (UChunkInstance *)mi_cell;
-    mi->module          = m;
+    mi->module          = root;
     mi->vm              = vm;
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
@@ -206,9 +206,9 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *m)
      * root_proto fields (ic_name_strs, alloc_fn, alloc_ud, nested[]) are
      * now consumed inside init_ic_slices_recursive / ic_bytes_recursive
      * which read them off `rp` directly (v0.8.5). */
-    uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : 0U;
-    USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : NULL;
-    size_t     root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
+    uint16_t   root_ic_count    = rp->ic_count;
+    USymbol  **root_ic_names    = rp->ic_names;
+    size_t     root_nested_count = rp->nested_count;
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for root chunk + every nested proto's ic_count.
@@ -224,8 +224,8 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *m)
      * Fall back to the flat formula if total_proto_count is 0 — that
      * happens only for hand-wired test roots that bypass uemit_finish
      * and uchunk_deserialize.
-     * v0.9.2: m IS the root UProto; total_proto_count is directly on m. */
-    uint16_t n = m->total_proto_count;
+     * v0.9.2: root IS the root UProto; total_proto_count is directly on root. */
+    uint16_t n = root->total_proto_count;
     if (n == 0U) {
         n = (uint16_t)(1U + root_nested_count);
     }
@@ -234,8 +234,7 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *m)
 
     /* v0.8.5: ic_bytes folds in root's own ic_count via the recursive walk;
      * no separate `root_ic_count * sizeof(UIC)` add. */
-    size_t ic_bytes = (rp != NULL) ? ic_bytes_recursive(rp)
-                                   : ((size_t)root_ic_count * sizeof(UIC));
+    size_t ic_bytes = ic_bytes_recursive(rp);
 
     size_t arr_size = sizeof(UProtoInstanceArr) + entries_bytes + ic_bytes;
 
@@ -292,7 +291,7 @@ urbi_chunk_instance_create(struct UVM *vm, UProto *m)
     /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
      * UChunkInstance.  DFS pre-order matches ic_index assignment order.
      * The field is currently unread by the runtime; Task 7 will use it. */
-    stamp_owning_mi(m, mi);
+    stamp_owning_mi(root, mi);
 
     return mi;
 }

@@ -469,14 +469,14 @@ static const UDisFormatFn op_disasm[OP_MAX] = {
     /* 47 OP_SELF               */ fmt_self,
 };
 
-size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
+size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
     size_t off;
     size_t i;
     if (cap == 0 || buf == NULL) return 0;
     buf[0] = '\0';
     off = 0;
-    /* v0.9.2: module IS the root UProto. */
-    const UProto *rp = module;
+    /* v0.9.2: root IS the root UProto. */
+    const UProto *rp = root;
     if (rp == NULL || rp->instr_count == 0) {
         dis_printf(buf, cap, &off, "(empty)\n");
         return off;
@@ -486,7 +486,7 @@ size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
         const UOpcode  op  = uinstr_op(ins);
         bool ok;
         if ((unsigned)op < (unsigned)OP_MAX && op_disasm[op] != NULL) {
-            ok = op_disasm[op](buf, cap, &off, &i, ins, module);
+            ok = op_disasm[op](buf, cap, &off, &i, ins, root);
         } else {
             ok = dis_printf(buf, cap, &off, "%04zu  %s R%u, R%u, R%u\n",
                             i, opname(op), (unsigned)uinstr_a(ins),
@@ -510,8 +510,8 @@ size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
 
 #else  /* freestanding */
 
-size_t uemit_disassemble(const UProto *module, char *buf, const size_t cap) {
-    (void)module;
+size_t uemit_disassemble(const UProto *root, char *buf, const size_t cap) {
+    (void)root;
     if (cap > 0 && buf != NULL) buf[0] = '\0';
     return 0;
 }

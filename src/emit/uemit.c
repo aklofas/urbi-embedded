@@ -58,14 +58,14 @@ static void emit_copy_source_name(UEmitter *e, const char *src) {
    Mirror of module_grow in umodule.c; used by constant-pool and instruction
    array in the emitter.
    Promoted from static so uemit_funcstate.c can call it cross-TU. */
-bool emit_grow(UProto *c, void **data, size_t *cap,
+bool emit_grow(UProto *root, void **data, size_t *cap,
                size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
-    UChunkAllocFn alloc = emit_alloc_for(c);
+    UChunkAllocFn alloc = emit_alloc_for(root);
     if (alloc == NULL) return false;
     size_t target = *cap == 0U ? 8U : *cap;
     while (target < new_cap) target *= 2U;
-    void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
+    void *fresh = alloc(*data, target * elem_size, root->alloc_ud);
     if (fresh == NULL) return false;
     *data  = fresh;
     *cap   = target;
