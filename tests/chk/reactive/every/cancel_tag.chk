@@ -1,0 +1,51 @@
+# Milestone: v0.9.4
+# Covers: every() under an explicit tag-prefix scope (`mytag: { every (P) X }`).
+#         Documents the canonical legacy "cancel-via-tag" install half:
+#         the tag prefix is the cancellation target, even though the
+#         .stop() side is v1.x-deferred.
+#
+# Companion fixtures:
+#   tests/chk/reactive/every/basic.chk            — unscoped install + fire.
+#   tests/chk/chunk_lifecycle/script_explicit_tag.chk
+#                                                 — tag-scoped install +
+#                                                   chunk-lifecycle survival.
+# This fixture's distinct angle: documents the install-side of the
+# cancel-via-tag idiom + names the v1.x gaps blocking the .stop() side.
+#
+# Reduced scope vs. the original M3 draft.  The canonical legacy form is:
+#     mytag: every(P) X
+#     mytag.stop()                # cancels the periodic
+# Two gaps block that today:
+#   1) The bare-prefix form `mytag: stmt` (no brace block) is a parse error
+#      at v0.9.4 — src/parse/uparse_react.c parse_tag_prefix calls
+#      parse_block(), so the prefix idiom REQUIRES a `{ ... }` body.  The
+#      original urbi 2.x grammar accepted a bare statement; restoring that
+#      is a v1.x emit/parse follow-up.
+#   2) Even with the brace form, the identifier `mytag` must be pre-bound
+#      because Tag.new() (scripted UTag constructor) is v1.x-deferred (see
+#      tests/chk/reactive/tag/{tag_enter,tag_leave}.chk).  The prefix
+#      scope-allocates an anonymous UTag on the cleanup stack, but
+#      `mytag.stop()` has no urbiscript handle to call.
+#
+# Reduced behavioural assertion: the tag-prefix scope around every()
+# installs cleanly and the periodic fires at least once.  The .stop()
+# half is the v1.x activation target.
+#
+# When both gaps close, restore the canonical form:
+#   var mytag = Tag.new("p");
+#   mytag: every(P) Realm.fired = Realm.fired + 1;
+#   mytag.stop();
+#   # assert Realm.fired stops advancing across further urbi_step pumps.
+
+var fired = 0
+var mytag = nil
+mytag: { every (1us) Realm.fired = Realm.fired + 1 }
+0
+0
+Realm.fired > 0
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] true

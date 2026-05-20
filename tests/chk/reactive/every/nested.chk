@@ -1,0 +1,53 @@
+# Milestone: v0.9.4
+# Covers: nested `every (P1) { every (P2) X }` — outer periodic whose body
+#         installs an inner periodic each fire.  PINS current v0.9.4 broken
+#         behaviour: the inner every() install fails with
+#         `CLOSURE: proto index out of range` from src/vm/uvm.c OP_CLOSURE.
+#         Filed as a v1.x activation target.
+#
+# Root cause (provisional): OP_CLOSURE looks up child_proto via
+#     executing_proto = cur_cl->proto (or s->root_proto at chunk-top)
+#     child_proto    = executing_proto->nested[bx]
+# An every() body strand executes as a synthesized closure whose proto's
+# nested[] is empty / doesn't contain the inner every()'s body proto.
+# The inner every() compiles to an OP_CLOSURE+install pair where the
+# CLOSURE op then can't find its child proto in the body strand's
+# executing_proto.nested[].  Manifests for ANY OP_CLOSURE-emitting
+# construct inside an every() body, not just nested every():
+#     every (P) { var g = function() { 1 } }       # same error
+#     every (P) { every (Q) X }                    # same error
+# See controller dialog 2026-05-20 Task 5.5 — confirmed via REPL repro
+# `printf '... every (10us) { every (1us) ... }' | urbi -i`.
+#
+# Reduced scope rationale: per the task brief ("just verify nesting
+# compiles, runs, and the body fires at least once"), the runtime-fire
+# path is blocked by this bug.  What IS true and worth pinning:
+#   - The source parses (no compile error).
+#   - The outer every() installs and fires (no install-time error).
+#   - The inner every() install raises TypeError per OP_CLOSURE check.
+# This fixture captures that exact shape so any regression flips a
+# diff: either the parse breaks, the outer install breaks, or v1.x
+# fixes the inner-CLOSURE bug (in which case rewrite this fixture
+# to assert `Realm.inner_count > 0` per the original intent).
+#
+# Open semantic questions deferred to v1.x activation (once the
+# OP_CLOSURE-in-every-body bug is fixed):
+#   - Outer-fire accumulation: each outer fire spawns a FRESH inner
+#     UPeriodic.  Legacy urbi 2.x presumably scopes the inner periodic
+#     to the outer body-strand's tag chain so completion unhooks it.
+#     Confirm.
+#   - Tag-chain inheritance: when an inner every() is installed from
+#     inside an outer every() body strand, does the inner inherit the
+#     outer's user-tag (if any)?  Spec #3 §3.1 — innermost_user_tag at
+#     install time.  Confirm.
+
+var inner_count = 0
+every (10us) { every (1us) Realm.inner_count = Realm.inner_count + 1 }
+0
+0
+Realm.inner_count > 0
+[00000000] 0
+[00000000] nil
+[00000000] !!! TypeError: CLOSURE: proto index out of range
+[00000000] !!! TypeError: CLOSURE: proto index out of range
+[00000000] !!! TypeError: CLOSURE: proto index out of range
