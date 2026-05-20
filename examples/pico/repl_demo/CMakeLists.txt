@@ -49,9 +49,10 @@ set_target_properties(liburbi PROPERTIES
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/repl_demo_baked.h
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/urbi-compile-stdlib-pico
-            ${CMAKE_CURRENT_SOURCE_DIR}/repl_demo.u
-            ${CMAKE_CURRENT_BINARY_DIR}/repl_demo_baked.h
-            repl_demo
+            --to-header
+            -i ${CMAKE_CURRENT_SOURCE_DIR}/repl_demo.u
+            -o ${CMAKE_CURRENT_BINARY_DIR}/repl_demo_baked.h
+            --symbol repl_demo
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/repl_demo.u
             ${CMAKE_CURRENT_SOURCE_DIR}/../../../tools/urbi-compile-stdlib-pico
     COMMENT "Baking repl_demo.u into repl_demo_baked.h"

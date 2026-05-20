@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// examples/pico/repl_demo/repl_demo.u
+//
+// Interactive REPL workload for the v0.9.4 Pi Pico demo.  Baked into
+// C via tools/urbi-compile-stdlib-pico; the resulting array is loaded
+// by main.c at boot and exposed on the Lobby.
+//
+// Connect via USB CDC (/dev/ttyACM0) or UART0 (GP0/GP1 @ 115200 8N1).
+// See README.md for sample sessions.
+//
+// BSP surface (FLAT — v0.7.1 embedding API limit, no sub-object
+// installer; that's a v1.x property API gap):
+//   led_on()      led_off()     led_toggle()    led_pwm(duty)
+//   temp_celsius() => float
+//   button_pressed() => bool
+//   tick event    pressed event
+
+// Default-installed greeter — toggles LED + echoes on button press.
+// Brace-blocks required: `parse_tag_prefix` (uparse_react.c:87) calls
+// `parse_block` after the ':', so bare-prefix labels need `{ ... }`.
+greet: {
+    whenever (pressed) {
+        led_toggle();
+        echo("button pressed")
+    }
+};
+
+// Default-installed temperature threshold pair (complementary at/at).
+temp_watch_hot:  { at (temp_celsius() >  28.0) led_on()  };
+temp_watch_cool: { at (temp_celsius() <= 28.0) led_off() };
+
+// Banner — first thing visible on connect.
+echo("urbi-embedded v0.9.4 on Raspberry Pi Pico");
+echo("verbs: led_on/off/toggle, led_pwm(d), temp_celsius(), button_pressed()");
+echo("events: tick / pressed");
+echo("idiom: heartbeat: { every (P) X }; heartbeat.stop()  (Tag.new deferred v1.x)");
+echo("type 'greet.stop()' / 'temp_watch_hot.stop()' to disable defaults")
