@@ -1113,6 +1113,21 @@ cross-stm32f4-bytecode-only:
 		core
 	@sh tests/scripts/test-freestanding.sh build/cross-stm32f4-bytecode-only/liburbi.a
 
+# v0.9.4: bytecode-only variant of cross-pico — freestanding-clean
+# archive check ensures no libc symbols leak when URBI_BYTECODE_ONLY=1.
+cross-pico-bytecode-only:
+	$(MAKE) URBI_BYTECODE_ONLY=1 \
+		TARGET=cross-pico-bytecode-only \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
+		        -ffreestanding \
+		        -DURBI_BYTECODE_ONLY=1 \
+		        -DURBI_FLOAT_TYPE=4" \
+		AR=arm-none-eabi-ar \
+		core
+	@sh tests/scripts/test-freestanding.sh build/cross-pico-bytecode-only/liburbi.a
+
 # T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
 # Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
 # target ISA selection happens via `-mlongcalls` (the ESP32 Xtensa marker).
