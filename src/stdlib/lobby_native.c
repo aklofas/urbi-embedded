@@ -60,8 +60,49 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>                    /* snprintf */
 #include <string.h>                   /* strlen */
+
+/* Append helpers for the lobby_send framer.  Each writes into buf[*off..cap)
+ * if room remains and advances *off by the number of bytes the full value
+ * would occupy (mirrors snprintf's "would-be length" return semantics).
+ * Hand-rolled so the freestanding liburbi.a doesn't link against stdio.
+ *
+ * cap is the buffer capacity including the slot reserved for the NUL
+ * terminator; callers terminate at min(*off, cap - 1) after the format. */
+
+static void
+append_cstr(char *buf, size_t cap, size_t *off, const char *s)
+{
+    while (*s != '\0') {
+        if (*off < cap) buf[*off] = *s;
+        (*off)++;
+        s++;
+    }
+}
+
+static void
+append_char(char *buf, size_t cap, size_t *off, char c)
+{
+    if (*off < cap) buf[*off] = c;
+    (*off)++;
+}
+
+/* Width-8 zero-padded decimal for uint64.  Matches "%08llu":  the 8 is a
+ * MINIMUM width, not a truncation cap — values >= 10^8 emit all digits. */
+static void
+append_u64_pad8(char *buf, size_t cap, size_t *off, uint64_t v)
+{
+    char tmp[20];                            /* max uint64 = 20 digits */
+    size_t n = 0;
+    do {
+        tmp[n++] = (char)('0' + (unsigned)(v % 10U));
+        v /= 10U;
+    } while (v > 0U);
+    while (n < 8U) tmp[n++] = '0';           /* zero-pad to min width 8 */
+    for (size_t i = n; i > 0; i--) {
+        append_char(buf, cap, off, tmp[i - 1]);
+    }
+}
 
 /* === UValue construction helpers (private; mirror primitives.c) ========= */
 
@@ -131,28 +172,26 @@ builtin_lobby_send(UVM *vm, UValue self, UValue *args, uint8_t nargs,
 
     /* Format the framed line into a stack-bounded buffer.  v0.9.1 wire-
      * line cap is 1 MiB per spec §6, but typical script-side echo writes
-     * are O(100 B).  Truncate any oversize message with a "[truncated]"
-     * marker rather than emitting a partial line. */
+     * are O(100 B).  Truncate any oversize message — the consumer ringbuf
+     * line discipline splits on bytes, not on \n. */
     char framed[1024];
     size_t tag_len = strlen(tag);
-    int n;
+    size_t off = 0;
+    append_char(framed, sizeof framed, &off, '[');
+    append_u64_pad8(framed, sizeof framed, &off, ms);
     if (tag_len > 0U) {
-        n = snprintf(framed, sizeof(framed),
-                     "[%08llu:%s] %s %s\n",
-                     (unsigned long long)ms, tag, prefix, msg);
-    } else {
-        n = snprintf(framed, sizeof(framed),
-                     "[%08llu] %s %s\n",
-                     (unsigned long long)ms, prefix, msg);
+        append_char(framed, sizeof framed, &off, ':');
+        append_cstr(framed, sizeof framed, &off, tag);
     }
-    /* snprintf returns the would-be length on overflow; clamp to the
-     * buffer (minus the NUL).  The truncated form drops the trailing
-     * newline which is acceptable — the consumer ringbuf line discipline
-     * splits on bytes, not on \n. */
-    if (n < 0) {
-        return urbi_raise_oom(vm, out);
-    }
-    size_t out_len = (size_t)n;
+    append_cstr(framed, sizeof framed, &off, "] ");
+    append_cstr(framed, sizeof framed, &off, prefix);
+    append_char(framed, sizeof framed, &off, ' ');
+    append_cstr(framed, sizeof framed, &off, msg);
+    append_char(framed, sizeof framed, &off, '\n');
+
+    /* Clamp the writable length to the buffer (minus the NUL slot).
+     * `off` is the would-be length, mirroring snprintf semantics. */
+    size_t out_len = off;
     if (out_len >= sizeof(framed)) {
         out_len = sizeof(framed) - 1U;
     }
