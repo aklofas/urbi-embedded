@@ -319,6 +319,82 @@ UAstNode *parse_whenever(UParser *p) {
     return node;
 }
 
+/* --- parse_every: `every` `(` period `)` body
+ *
+ * Pure parser-level desugar (no new AST node kind, no new opcode):
+ *
+ *   every (E) S   =>   every(E, function () { S })
+ *
+ * The desugared call resolves at runtime to the stdlib C-native function
+ * `every` registered by urbi_stdlib_boot.  Wrapping the body in a
+ * zero-parameter function literal gives it the closure semantics the
+ * runtime helper expects (re-invoked each tick; captures enclosing
+ * lexical scope via the existing upvalue mechanism).  The body is
+ * parsed with parse_statement_or_expr — same shape as the at/whenever
+ * body — so any legal statement form, including a brace block, works.
+ *
+ * The original urbi v2 surface used the retired `closure { ... }` form
+ * here; v1.0 substitutes `function () { ... }` (see REVIVAL §14 L14).
+ * The difference is at-call `this` binding vs. lexical, which doesn't
+ * affect the body shape `every` runs (the helper invokes the closure
+ * with no explicit receiver).
+ */
+UAstNode *parse_every(UParser *p) {
+    UToken kw = consume(p);  /* consume TOK_KW_EVERY */
+
+    UToken lp = peek(p);
+    if (lp.type != TOK_LPAREN) {
+        return make_error(p, PARSE_EXPECTED_LPAREN,
+                          kErrorMessages[PARSE_EXPECTED_LPAREN],
+                          lp.line, lp.col);
+    }
+    consume(p);
+
+    UAstNode *period = parse_inner_tier(p);
+    if (!period) return (UAstNode *)&uparser_oom_sentinel;
+    if (period->kind == AST_ERROR) return period;
+
+    UToken rp = peek(p);
+    if (rp.type != TOK_RPAREN) {
+        return make_error(p, PARSE_EXPECTED_RPAREN,
+                          kErrorMessages[PARSE_EXPECTED_RPAREN],
+                          rp.line, rp.col);
+    }
+    consume(p);
+
+    UAstNode *body = parse_statement_or_expr(p);
+    if (!body) return (UAstNode *)&uparser_oom_sentinel;
+    if (body->kind == AST_ERROR) return body;
+
+    /* Wrap the body in a zero-parameter function literal — params=NULL,
+     * param_count=0.  emit_function_literal accepts any node shape for
+     * the body (it routes through emit_expr internally), so single-
+     * statement bodies need no AST_BLOCK wrapping. */
+    UAstNode *body_fn = make_node(p, AST_FUNCTION, kw.line, kw.col);
+    if (!body_fn) return (UAstNode *)&uparser_oom_sentinel;
+    body_fn->u.func.params      = NULL;
+    body_fn->u.func.param_count = 0;
+    body_fn->u.func.body        = body;
+
+    /* Build the 2-arg call `every(period, body_fn)`.  Callee is a bare
+     * IDENT — runtime resolution finds the stdlib C-native function. */
+    UAstNode *callee = make_ident(p, "every", 5, kw.line, kw.col);
+    if (!callee) return (UAstNode *)&uparser_oom_sentinel;
+
+    UAstNode **args = (UAstNode **)uarena_alloc(p->arena,
+                                                 2U * sizeof(UAstNode *));
+    if (!args) return (UAstNode *)&uparser_oom_sentinel;
+    args[0] = period;
+    args[1] = body_fn;
+
+    UAstNode *call = make_node(p, AST_CALL, kw.line, kw.col);
+    if (!call) return (UAstNode *)&uparser_oom_sentinel;
+    call->u.call.callee    = callee;
+    call->u.call.args      = args;
+    call->u.call.arg_count = 2;
+    return call;
+}
+
 /* --- parse_waituntil: `waituntil` `(` cond `)` --- */
 UAstNode *parse_waituntil(UParser *p) {
     UToken kw = consume(p);  /* consume TOK_KW_WAITUNTIL */

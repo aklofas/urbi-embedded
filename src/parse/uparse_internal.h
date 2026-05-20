@@ -114,6 +114,7 @@ UAstNode *desugar_postfix_emit(UParser *p, UAstNode *recv, UToken bang_tok);
 UAstNode *parse_at(UParser *p);
 UAstNode *parse_whenever(UParser *p);
 UAstNode *parse_waituntil(UParser *p);
+UAstNode *parse_every(UParser *p);
 UAstNode *parse_tag_prefix(UParser *p, UToken name_tok);
 
 /* --- Entry points + recovery (defined in uparse_top.c). --- */

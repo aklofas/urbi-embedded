@@ -267,6 +267,7 @@ UAstNode *parse_statement_or_expr(UParser *p) {
     case TOK_KW_AT:       return parse_at(p);
     case TOK_KW_WHENEVER: return parse_whenever(p);
     case TOK_KW_WAITUNTIL: return parse_waituntil(p);
+    case TOK_KW_EVERY:    return parse_every(p);
     case TOK_KW_CLASS:    return parse_class_declaration(p);
     /* S47 (2026-05-16): allow `{ stmts }` as a statement-or-expression.
      * Original urbi spec supports brace blocks in at-bodies, onleave
