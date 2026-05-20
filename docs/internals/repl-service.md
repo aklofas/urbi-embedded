@@ -93,6 +93,52 @@ or `timeout_us` elapses. On RTOS targets, `xTaskCreate` (FreeRTOS) /
 threaded model still applies — the MPSC queue is implemented over the
 RTOS primitive (`QueueHandle_t`) instead of pthread mutex + cond.
 
+## Cooperative drive via `urbi_repl_serve_step`
+
+The threaded model above assumes a kernel-pollable listener fd per
+transport. Pi Pico USB CDC, UART (Pico SDK / ESP-IDF / FreeRTOS), and
+the in-process buffer test transport all have `pollable_fd_fn == NULL`
+or `pollable_fd_fn(fd) < 0` — they do not surface a kernel fd that
+`poll()` understands. v0.9.4 added a fully functional cooperative data
+plane so these transports work without any pthread at all.
+
+`urepl_listener_start` short-circuits when no registered transport has
+a pollable listener fd (`src/repl/urepl_listener.c:634-648`): the
+listener pthread is never created, no `eventfd` is allocated, and
+`urbi_repl_serve_step` becomes the sole data-plane driver. The
+embedder calls it from its own loop.
+
+`urbi_repl_serve_step` runs four non-blocking sweeps in order
+(`src/repl/urepl.c:235`):
+
+1. `urepl_accept_sweep_nonpollable` — one `accept_fn` attempt per
+   non-pollable transport; queued onto the existing accept queue so
+   the dispatch drain creates the session on the VM thread.
+2. `urepl_read_sweep_nonpollable` — one `read_fn` per session; bytes
+   feed the NDJSON line parser, and complete lines push `UReplJob`
+   onto the MPSC queue. `urepl_dispatch_drain` runs inline so the
+   embedder doesn't have to also drive `urbi_step` just to get
+   dispatch.
+3. `urepl_write_sweep_nonpollable` — one `write_fn` per session
+   draining `session->output_ringbuf`; partial writes stage in a
+   per-session `coop_outbuf` and retry on the next sweep.
+4. `urepl_disconnect_sweep` — reaps sessions whose `needs_teardown`
+   flag was set by the read or write sweep (clean EOF, hard transport
+   error); fires the v0.9.1 disconnect-cleanup sequence.
+
+Mixed-mode is supported: a single `UReplServer` can have TCP (driven
+by the listener pthread) AND USB CDC (driven by `serve_step`)
+registered, and both work in the same process.
+
+`spawn_reader` (`src/repl/urepl_listener.c:342`) skips
+`pthread_create` for non-pollable transports — it sets
+`reader->cooperative = true` instead. `urepl_listener_stop_and_join`
+skips `pthread_join`, `shutdown(client_fd)`, and the `wake_eventfd`
+signal for cooperative readers.
+
+Source of truth: commits `4aa2bfa..fd1619f` (accept / read / write /
+close sweeps + cooperative documentation + pthread-skip).
+
 ## MPSC eval queue
 
 Source: `src/repl/urepl_queue.{c,h}`.
