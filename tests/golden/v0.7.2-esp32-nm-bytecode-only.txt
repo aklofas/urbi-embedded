@@ -7,6 +7,7 @@ __eqsf2
 __extendsfdf2
 __fixdfdi
 __fixsfdi
+__fixunssfdi
 __floatdidf
 __floatundidf
 __gesf2
