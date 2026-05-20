@@ -88,6 +88,27 @@ int  urepl_read_sweep_nonpollable(UReplServer *server);
  * are skipped — owned by the reader pthread's flush_session_output. */
 int  urepl_write_sweep_nonpollable(UReplServer *server);
 
+/* v0.9.4: cooperative disconnect / teardown sweep (Phase D).  Walks
+ * server->sessions_head and tears down any session whose needs_teardown
+ * flag was set by the read or write sweeps (clean EOF on read_fn, hard
+ * transport error on read_fn / write_fn).  For each reaped session:
+ *
+ *   - Calls the transport's close_fn(client_fd) exactly once.
+ *   - Unlinks + pthread_joins the paired UReplReader.  (Even on a non-
+ *     pollable transport spawn_reader unconditionally pthread_creates
+ *     a reader; reader_main returns immediately at the pollable_fd<0
+ *     short-circuit so the join is near-instantaneous.)
+ *   - Closes the reader's wake_eventfd and frees the reader struct.
+ *   - Calls urepl_session_destroy, which fires the v0.9.1 disconnect-
+ *     cleanup sequence (handleDisconnect / unregister / realm destroy /
+ *     ringbuf + coop_inbuf/coop_outbuf free).
+ *
+ * Returns the count of teardowns (informational).  Pollable sessions
+ * with needs_teardown set would be unusual (the reader pthread owns
+ * their teardown via reader_main's exit path) but are handled the same
+ * way for safety. */
+int  urepl_disconnect_sweep(UReplServer *server);
+
 #ifdef __cplusplus
 }
 #endif

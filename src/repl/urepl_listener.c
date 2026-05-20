@@ -951,3 +951,122 @@ urepl_read_sweep_nonpollable(UReplServer *server)
     pthread_mutex_unlock(&server->sessions_mutex);
     return total_bytes;
 }
+
+/* v0.9.4 Task 4.5: reap sessions whose needs_teardown flag was set by
+ * the read or write sweeps.  Mirrors the urbi_repl_stop reap loop but
+ * targets a single session per iteration (the one being walked) rather
+ * than draining the whole list.
+ *
+ * Locking pattern: we drop sessions_mutex around the actual destroy.
+ * Rationale:
+ *
+ *   - pthread_join on the reader thread may run for non-zero time
+ *     (cooperative readers exit immediately at the pollable_fd<0
+ *     short-circuit; pollable readers — should one ever get reaped here
+ *     — could be in the middle of a 1s poll() timeout).  Holding
+ *     sessions_mutex across the join would block any other sweep
+ *     (accept/read/write) on a concurrent VM-thread caller.
+ *
+ *   - urepl_session_destroy fires handleDisconnect on the lobby realm,
+ *     which can execute arbitrary urbiscript.  That urbiscript MUST NOT
+ *     reach back into the session list under sessions_mutex (e.g. a
+ *     `Lobby.lobbies` read currently goes through a slot-based registry,
+ *     not sessions_head), but defensively we drop the lock to avoid
+ *     trapping a future hook that does.
+ *
+ * Pre-unlinking the session from sessions_head before dropping the lock
+ * keeps the walk consistent: `next` was cached on entry, and any
+ * concurrent finder (urepl_session_find from another thread) won't see
+ * the mid-teardown entry.  urepl_session_destroy's own unlink pass
+ * becomes a no-op (the list-walk-and-remove inside it doesn't find the
+ * session and returns cleanly). */
+int
+urepl_disconnect_sweep(UReplServer *server)
+{
+    if (server == NULL) {
+        return 0;
+    }
+    int torn = 0;
+    pthread_mutex_lock(&server->sessions_mutex);
+    UReplSession *s = server->sessions_head;
+    UReplSession *prev = NULL;
+    while (s != NULL) {
+        UReplSession *next = s->next;
+        if (!s->needs_teardown) {
+            prev = s;
+            s = next;
+            continue;
+        }
+
+        /* Unlink session from sessions_head while we still hold the
+         * lock.  Concurrent finders will skip it after this point. */
+        if (prev == NULL) {
+            server->sessions_head = next;
+        } else {
+            prev->next = next;
+        }
+
+        /* Capture + unlink the paired reader (if any) under the lock.
+         * Most cooperative sessions have a reader spawned by
+         * spawn_reader; sessions created outside the listener path
+         * (unit-test buffer transport) may not. */
+        UReplReader *reader = s->reader;
+        if (reader != NULL) {
+            UReplReader **cur = &server->readers_head;
+            while (*cur != NULL) {
+                if (*cur == reader) {
+                    *cur = reader->next;
+                    break;
+                }
+                cur = &(*cur)->next;
+            }
+            /* Break the back-pointer before unlock so any late wake-all
+             * walk (urepl_listener_wake_all_readers) on another thread
+             * doesn't dereference a struct we're about to free. */
+            s->reader      = NULL;
+            reader->session = NULL;
+        }
+
+        pthread_mutex_unlock(&server->sessions_mutex);
+
+        /* Close the client fd exactly once.  Cooperative readers never
+         * call close_fn themselves (reader_main bails at the pollable
+         * short-circuit before reaching its close_fn call site), so the
+         * sweep owns this for non-pollable transports.  For pollable
+         * sessions that somehow ended up here, reader_main has already
+         * called close_fn and set client_fd = -1 — most transport
+         * close_fn implementations tolerate fd == -1 as a no-op, and
+         * the dup-close window is narrow because we just unlinked. */
+        if (reader != NULL && reader->transport != NULL
+            && reader->transport->close_fn != NULL
+            && reader->client_fd >= 0) {
+            reader->transport->close_fn(reader->client_fd);
+            reader->client_fd = -1;
+        }
+
+        /* Join the reader thread + reclaim its eventfd.  Mirrors the
+         * urbi_repl_stop reap loop. */
+        if (reader != NULL) {
+            if (reader->started) {
+                pthread_join(reader->thread, NULL);
+            }
+            if (reader->wake_eventfd >= 0) {
+                close(reader->wake_eventfd);
+                reader->wake_eventfd = -1;
+            }
+            free(reader);
+        }
+
+        urepl_session_destroy(server, s);
+        torn++;
+
+        pthread_mutex_lock(&server->sessions_mutex);
+        /* Resume from `next` (cached before unlink + unlock).  `prev`
+         * still points at the predecessor of the torn-down session, so
+         * the linkage prev->next == next remains correct if another
+         * thread inserted at the head while we were unlocked. */
+        s = next;
+    }
+    pthread_mutex_unlock(&server->sessions_mutex);
+    return torn;
+}

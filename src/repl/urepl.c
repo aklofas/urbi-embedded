@@ -254,7 +254,11 @@ urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
      * ringbuf via one non-blocking write_fn call per session.  Partial
      * writes stage in per-session coop_outbuf for the next sweep. */
     (void)urepl_write_sweep_nonpollable(server);
-    /* Phase D (close) lands in Task 4.5. */
+    /* Phase D: reap sessions whose read or write sweep set
+     * needs_teardown (clean EOF, hard transport error).  Calls close_fn,
+     * pthread_joins + frees the paired reader, fires the v0.9.1
+     * disconnect-cleanup sequence, and unlinks from sessions_head. */
+    (void)urepl_disconnect_sweep(server);
     return URBI_OK;
 }
 

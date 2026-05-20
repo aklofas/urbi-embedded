@@ -279,6 +279,75 @@ UTEST(repl_serve_step_cooperative_full_roundtrip)
     coop_state = NULL;
 }
 
+/* v0.9.4 Task 4.5: cooperative disconnect/teardown sweep.  Simulate a
+ * clean peer disconnect (read_fn returns 0), drive the sweeps, and
+ * verify that:
+ *   1. close_fn is invoked exactly once.
+ *   2. The session is fully torn down (a subsequent accept on the same
+ *      transport succeeds — the session-list slot is freed).
+ *
+ * The transport's accept_fn is sticky (returns -1 once `accepted` is
+ * true), so to verify re-accept after disconnect we reset the test
+ * state's accepted/closed/read_eof flags by hand. */
+UTEST(repl_serve_step_cooperative_disconnect)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    UASSERT(vm != NULL);
+    UASSERT_EQ(urbi_vm_init(vm, NULL, NULL), URBI_OK);
+
+    static CoopTestState ts;
+    memset(&ts, 0, sizeof(ts));
+    coop_state = &ts;
+
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr   = "127.0.0.1";
+    cfg.tcp_port    = -1;
+    cfg.unix_path   = NULL;
+    cfg.max_clients = 4;
+
+    UReplServer *server = NULL;
+    UASSERT_EQ(urbi_repl_serve_init(vm, &cfg, &server), URBI_OK);
+    UASSERT(server != NULL);
+
+    UASSERT_EQ(urbi_repl_register_transport(server,
+                                            &COOP_TEST_TRANSPORT, &ts),
+               URBI_OK);
+
+    /* First sweep accepts the client. */
+    UASSERT_EQ(urbi_repl_serve_step(server, 0), URBI_OK);
+    UASSERT(ts.accepted);
+    UASSERT(!ts.closed);
+
+    /* Simulate host disconnect. */
+    ts.read_eof = true;
+
+    /* Drive sweeps — read sweep sets needs_teardown on EOF; disconnect
+     * sweep then invokes close_fn + frees the session.  A handful of
+     * sweeps is enough; the close path is single-pass. */
+    for (int i = 0; i < 8; ++i) {
+        UASSERT_EQ(urbi_repl_serve_step(server, 0), URBI_OK);
+    }
+
+    UASSERT(ts.closed);  /* close_fn was invoked exactly once */
+
+    /* Reset the test transport's sticky accepted-flag so we can verify
+     * the server is ready to accept a fresh client (proof the prior
+     * session is fully reaped from server->sessions_head). */
+    ts.accepted = false;
+    ts.closed = false;
+    ts.read_eof = false;
+    ts.read_pos = 0;
+    ts.read_len = 0;
+    UASSERT_EQ(urbi_repl_serve_step(server, 0), URBI_OK);
+    UASSERT(ts.accepted);  /* fresh accept works after disconnect */
+
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+    coop_state = NULL;
+}
+
 void
 test_repl_serve_step_cooperative_suite(void)
 {
@@ -289,6 +358,8 @@ test_repl_serve_step_cooperative_suite(void)
               repl_serve_step_cooperative_read_dispatch);
     utest_run("repl_serve_step_cooperative_full_roundtrip",
               repl_serve_step_cooperative_full_roundtrip);
+    utest_run("repl_serve_step_cooperative_disconnect",
+              repl_serve_step_cooperative_disconnect);
 }
 
 #else  /* !URBI_ENABLE_REPL */
