@@ -666,3 +666,45 @@ urepl_listener_drain_accepts(UReplServer *server)
         head = next;
     }
 }
+
+int
+urepl_accept_sweep_nonpollable(UReplServer *server)
+{
+    if (server == NULL) {
+        return 0;
+    }
+    /* Snapshot sessions count to compute the new-session delta after
+     * drain.  Spawn_reader pushes onto readers_head + sessions_head
+     * under sessions_mutex; we use sessions_head as the observable. */
+    int before = 0;
+    pthread_mutex_lock(&server->sessions_mutex);
+    for (UReplReader *r = server->readers_head; r != NULL; r = r->next) {
+        before++;
+    }
+    pthread_mutex_unlock(&server->sessions_mutex);
+
+    /* Iterate transports; for each non-pollable one, drain its accept
+     * queue.  Pollable transports are owned by the listener pthread
+     * (when running) and skipped here to avoid double-accept races. */
+    for (UReplTransportEntry *e = server->transports;
+         e != NULL; e = e->next) {
+        if (listener_pollable_fd(e) >= 0) {
+            continue;
+        }
+        drain_transport_accepts(server, e);
+    }
+
+    /* Drain the pending-accept queue on the calling (VM) thread.  This
+     * runs the VM-touching session-create + spawn_reader path that the
+     * listener pthread normally defers to urepl_listener_drain_accepts
+     * via the dispatch hook. */
+    urepl_listener_drain_accepts(server);
+
+    int after = 0;
+    pthread_mutex_lock(&server->sessions_mutex);
+    for (UReplReader *r = server->readers_head; r != NULL; r = r->next) {
+        after++;
+    }
+    pthread_mutex_unlock(&server->sessions_mutex);
+    return after - before;
+}

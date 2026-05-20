@@ -51,6 +51,15 @@ void urepl_listener_wake_all_readers(UReplServer *server);
  * urepl_dispatch_drain_if_active. */
 void urepl_listener_drain_accepts(UReplServer *server);
 
+/* v0.9.4: cooperative accept sweep for non-pollable transports
+ * (Pico USB CDC, UART).  Iterates server->transports and on each
+ * entry whose pollable_fd_fn returns -1 attempts one non-blocking
+ * accept_fn drain; accepted clients are enqueued + immediately drained
+ * via spawn_reader on the calling (VM) thread.  Pollable transports
+ * are owned by the listener pthread and skipped here.  Returns the
+ * number of new sessions accepted (informational; zero is normal). */
+int  urepl_accept_sweep_nonpollable(UReplServer *server);
+
 #ifdef __cplusplus
 }
 #endif

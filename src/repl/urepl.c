@@ -227,18 +227,22 @@ urbi_repl_serve_init(struct UVM *vm, const UReplConfig *cfg, UReplServer **out_s
     return err;
 }
 
-/* Public API — signature pinned by include/urbi/repl.h.  Phase 4+ will
- * mutate `server` (drive the accept loop), so the non-const pointer is
- * intentional even though the v0.9.1 body is a no-op. */
+/* Public API — signature pinned by include/urbi/repl.h.  Cooperative
+ * data plane for non-pollable transports (Pico USB CDC, UART).  The
+ * embedder is expected to call this periodically (e.g. between
+ * urbi_step iterations) and to __wfi() / sleep when idle. */
 int
 urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
 {
-    (void)timeout_us;
+    (void)timeout_us;  /* Best-effort non-blocking sweep; no internal
+                          wait — caller paces idle. */
     if (server == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
-    /* Phase 3 connects this to the accept/read/dispatch/write cycle.
-     * In Phase 2 it is a no-op success. */
+    /* Phase A: accept new clients on non-pollable transports.  Pollable
+     * transports stay on the listener pthread (when running).  Phases
+     * B–D (read / write / close) land in subsequent tasks. */
+    (void)urepl_accept_sweep_nonpollable(server);
     return URBI_OK;
 }
 
