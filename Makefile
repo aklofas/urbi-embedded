@@ -774,6 +774,27 @@ RELEASETEST_JOBS   ?= $(shell nproc)
 RELEASETEST_OUTPUT ?= target
 
 releasetest:
+	@detect() { \
+	     cc="$$1"; \
+	     command -v "$$cc" >/dev/null 2>&1 || { echo absent; return; }; \
+	     tmpc=$$(mktemp --suffix=.c); \
+	     tmpo=$$(mktemp --suffix=.o); \
+	     printf '#include <string.h>\nint main(void){return 0;}\n' > "$$tmpc"; \
+	     if "$$cc" -c -o "$$tmpo" "$$tmpc" 2>/dev/null; then \
+	         rm -f "$$tmpc" "$$tmpo"; echo present; \
+	     else \
+	         rm -f "$$tmpc" "$$tmpo"; echo broken; \
+	     fi; \
+	 }; \
+	 arm=$$(detect arm-none-eabi-gcc); \
+	 riscv=$$(detect riscv-none-elf-gcc); \
+	 esp=$$(detect xtensa-esp-elf-gcc); \
+	 echo "=== releasetest: cross-toolchain detection ==="; \
+	 echo "  arm-none-eabi-gcc    : $$arm"; \
+	 echo "  riscv-none-elf-gcc   : $$riscv"; \
+	 echo "  xtensa-esp-elf-gcc   : $$esp"; \
+	 echo "(Phase 0 cross-gate wiring lands in the next commit; banner-only this commit.)"; \
+	 echo "For full local parity install xpack toolchains - see docs/cross-toolchain-setup.md."
 	@echo "=== releasetest: 2-phase sweep ==="
 	@echo "Phase 1 ($(words $(RELEASETEST_PHASE1)) gates, -j$(RELEASETEST_JOBS) -O$(RELEASETEST_OUTPUT)): $(RELEASETEST_PHASE1)"
 	@echo "Phase 2 ($(words $(RELEASETEST_PHASE2)) gate, sequential): $(RELEASETEST_PHASE2)"
