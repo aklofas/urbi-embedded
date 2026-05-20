@@ -1,20 +1,31 @@
-# Milestone: M3
-# Covers: destroying a Realm cancels all watchers registered in that Realm;
-#         pending watcher callbacks do not fire after destruction.
+# Milestone: v0.9.4 (visit; original draft M3)
+# Covers: destroying a Realm cancels all periodics/watchers registered in
+#         that Realm; pending bodies do not fire after destruction.
 #
-# defer-to: M5
+# Status at v0.9.4: SKIPPED — no urbiscript surface for the action.
 #
-# Reason: watcher subsystem lands at M5 (reactive-runtime). At M3, Realm
-# destroy hook is in place (URealm record created at T14) but there are no
-# watchers to cancel yet. Realm-side cancel-on-destroy semantics are already
-# verified by tests/unit/test_realm.c (T14).
+# urbi_realm_destroy is a C-API entry only.  A urbiscript chunk running
+# inside realm R cannot legally destroy R (would yank the rug out from
+# under itself).  The chk runner (tests/integration/run_chk.sh) drives one
+# REPL session against build/host/urbi and does not provide a C host-
+# driver hook to instantiate or destroy realms out-of-band.
 #
-# When M5 lands, implement this fixture by setting up a Realm with an every()
-# watcher, destroying the Realm, and verifying the watcher does not fire.
+# The realm-side cancel-on-periodic semantics ARE covered:
+#   - C-level coverage: tests/unit/test_realm.c (realm destroy strand
+#     teardown) + tests/unit/test_temporal.c (urbi_periodic_destroy_for_realm
+#     marks every periodic owned by the realm with unregister_pending=1,
+#     and urbi_periodic_pump frees them on the next sweep).
+#   - The relevant source is src/stdlib/temporal.c::urbi_periodic_destroy_for_realm
+#     which urbi_realm_destroy calls before sweeping the realm's strands.
 #
-# Urbyscript source (activate at M5):
-#   [Would require host-driver to instantiate Realm, see realm_isolation.chk.]
-#   var called = 0;
-#   every(100ms) { called = called + 1 };
-#   [Destroy realm here]
-#   [Advance time; verify called == 0]
+# To activate this fixture a host-driver tunable would have to be added to
+# the chk runner (parallels tests/chk/chunk_lifecycle/realm_isolation.chk —
+# both fixtures need T39 chk-runner-host-driver-extension to land).  Until
+# then this file stays as a comment-only stub documenting the gap.
+#
+# Urbyscript sketch (pseudo, activate when T39 + host driver land):
+#   [host: create realm R, drive script in R]
+#   var called = 0
+#   every (1ms) Realm.called = Realm.called + 1
+#   [host: urbi_realm_destroy(R)]
+#   [host: drive urbi_step a few times; assert no further increment]

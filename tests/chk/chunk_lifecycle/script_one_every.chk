@@ -1,18 +1,29 @@
-# Milestone: M3
-# Covers: chunk that registers a watcher via every() reaches quiescence only after
-#         the watcher fires and settles.
+# Milestone: v0.9.4 (originally drafted at M3; reactivated at Phase 5 Task 5.4)
+# Covers: chunk that registers a periodic via every() keeps the periodic alive
+#         across subsequent REPL lines; the body fires repeatedly so a
+#         later-sampled count strictly exceeds an earlier one.
 #
-# defer-to: M5
+# Original M3 intent was "chunk does not quiesce until the watcher fires and
+# settles".  Under the current REPL harness each input line is driven to
+# quiescence before the next is read, so the multi-fire angle is asserted
+# indirectly: Realm.fired sampled later is strictly greater than the snapshot
+# taken between two pump-driving reads.  Counter approach (vs. echo) keeps
+# the expected output deterministic — only nil / 0 / true appear.
 #
-# Reason: every() syntax and watcher pool land at M5 (reactive-runtime).
-# At M3, OP_EVERY is emitted as a stub that returns URBI_ERR_NOTIMP.
-#
-# When M5 lands, implement this fixture by uncommenting the urbiscript source
-# below. Expected behaviour: the chunk executes every(500ms) { echo("tick") }
-# which registers a watcher. The chunk does not reach quiescence until the
-# watcher fires and settles.
-#
-# Urbiscript source (activate at M5):
-#   every(100ms) { echo("tick") }
-#   --- expected output (with timing guarantees from deterministic clock) ---
-#   [00000001] "tick"
+# Mechanism: every(1us, body) registers a UPeriodic; urbi_step's sleep-queue
+# drain wakes the body strand whose next_fire_us has elapsed.  The trailing
+# 0; 0; reads pump enough urbi_step calls that Realm.fired grows past the
+# captured snapshot before the comparison runs.
+
+var fired = 0
+every (1us) Realm.fired = Realm.fired + 1
+var s = 0 ; s = Realm.fired ; nil
+0
+0
+Realm.fired > s
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] true

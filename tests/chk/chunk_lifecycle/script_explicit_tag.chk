@@ -1,23 +1,34 @@
-# Milestone: M3
-# Covers: chunk that registers a watcher under an explicit tag can be cancelled
-#         by calling tag.stop(); cancellation causes quiescence.
+# Milestone: v0.9.4 (originally drafted at M3; reactivated at Phase 5 Task 5.4)
+# Covers: every() installed inside an ambient tag scope (mytag: { ... })
+#         survives the scope unwind and continues firing.  The tag prefix
+#         pushes a UTag onto the cleanup stack at OP_PUSH_TAG and pops it at
+#         OP_POP_TAG; the every() call captures the innermost user-tag at
+#         install time via periodic_alloc -> innermost_user_tag.
 #
-# defer-to: T29-T31
+# Reduced scope vs. the original M3 draft: the original intent was
+# `t: every(P) X; t.stop()` — assert that t.stop() cancels the periodic.
+# That requires Tag.new() (scripted UTag constructor) so the identifier `t`
+# resolves to a real UTag with a .stop() method.  Tag.new() is still v1.x-
+# deferred (see tests/chk/reactive/tag/{tag_enter,tag_leave}.chk).
 #
-# Reason: tag.stop() method-call syntax and cross-strand TAG_STOP propagation
-# land at T29 (UTag + ambient-tag inheritance), T30 (OP_PUSH_TAG/OP_POP_TAG
-# runtime), and T31 (urbi_tag_stop synchronous deposit + cross-strand path).
-# At M3, tag scope syntax is emitted (mytag: { ... }) but UTag is not yet a
-# runtime type and TAG_STOP escalates to fatal.
+# Today the tag identifier resolves to nil and the tag-scope creates an
+# anonymous UTag bound only to the cleanup stack — no urbiscript handle.
+# Cancellation by user-tag from urbiscript is therefore still blocked.
+# What IS testable now: that wrapping every() in a tag scope does not
+# disturb periodic install or firing.  Asserted below by counter check.
 #
-# When T31 lands, implement this fixture by uncommenting the urbiscript source
-# below. Expected behaviour: the chunk registers a watcher under tag t, then
-# immediately calls t.stop() to cancel it. The watcher never fires.
-#
-# Urbiscript source (activate at T31):
-#   var t = Tag.new;
-#   t: every(100ms) { echo("never fires") };
-#   t.stop();
-#   echo("done")
-#   --- expected output ---
-#   [00000001] "done"
+# When Tag.new() lands (v1.x), restore the original `t: every(P) X; t.stop()`
+# form and assert the periodic stops firing after .stop().
+
+var fired = 0
+var heartbeat = nil
+heartbeat: { every (1us) Realm.fired = Realm.fired + 1 }
+0
+0
+Realm.fired > 0
+[00000000] 0
+[00000000] nil
+[00000000] nil
+[00000000] 0
+[00000000] 0
+[00000000] true
