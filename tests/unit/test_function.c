@@ -2,7 +2,7 @@
 /* T14: function definition + nested proto tests.
  *
  * Covers: parse_function(), AST_FUNCTION emit (OP_CLOSURE in root chunk,
- * UProto in module->nested[]), umodule_alloc_nested_proto(), VM OP_CLOSURE
+ * UProto in module->nested[]), uproto_alloc_nested(), VM OP_CLOSURE
  * producing a UVAL_CLOSURE value.  Call dispatch (OP_CALL) is deferred to T15;
  * these tests only verify that function *definitions* are well-formed and
  * execute to a closure value without crashing or error. */
@@ -11,7 +11,7 @@
 
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
@@ -37,7 +37,9 @@ static UVMError fn_eval(const char *src, UValue *out) {
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
 
-    UModule module = {0};
+    UProto module = {0};
+    module.alloc_fn = vm.alloc_fn;
+    module.alloc_ud = vm.alloc_ud;
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
 
@@ -59,7 +61,7 @@ static UVMError fn_eval(const char *src, UValue *out) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return vm_rc;
@@ -94,7 +96,7 @@ static UEmitError fn_emit_error(const char *src) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -108,66 +110,58 @@ static UEmitError fn_emit_error(const char *src) {
     }
 
     UEmitError rc = uemit_finish(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return rc;
 }
 
 /* -----------------------------------------------------------------------
- * umodule_alloc_nested_proto API
+ * uproto_alloc_nested API
  * ----------------------------------------------------------------------- */
 
 UTEST(nested_proto_alloc_creates_first_entry) {
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));  /* Task 11: needed for alloc_nested */
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
-    UASSERT_EQ((size_t)1, m.root_proto->nested_count);
-    UASSERT(p == m.root_proto->nested[0]);
-    umodule_destroy(&m, NULL);
+    UASSERT_EQ((size_t)1, m.nested_count);
+    UASSERT(p == m.nested[0]);
+    uchunk_destroy(&m, NULL);
 }
 
 UTEST(nested_proto_alloc_multiple_grows_array) {
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));  /* Task 11: needed for alloc_nested */
-    UASSERT(m.root_proto != NULL);
-    UProto *p0 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p1 = umodule_alloc_nested_proto(&m, m.root_proto);
-    UProto *p2 = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p0 = uproto_alloc_nested(&m, &m);
+    UProto *p1 = uproto_alloc_nested(&m, &m);
+    UProto *p2 = uproto_alloc_nested(&m, &m);
     UASSERT(p0 != NULL);
     UASSERT(p1 != NULL);
     UASSERT(p2 != NULL);
-    UASSERT_EQ((size_t)3, m.root_proto->nested_count);
-    UASSERT(p0 == m.root_proto->nested[0]);
-    UASSERT(p1 == m.root_proto->nested[1]);
-    UASSERT(p2 == m.root_proto->nested[2]);
-    umodule_destroy(&m, NULL);
+    UASSERT_EQ((size_t)3, m.nested_count);
+    UASSERT(p0 == m.nested[0]);
+    UASSERT(p1 == m.nested[1]);
+    UASSERT(p2 == m.nested[2]);
+    uchunk_destroy(&m, NULL);
 }
 
 UTEST(nested_proto_zero_initialized) {
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
     UASSERT_EQ((size_t)0, p->instr_count);
     UASSERT_EQ((size_t)0, p->const_count);
     UASSERT_EQ(0, (int)p->nparams);
     UASSERT_EQ(0, (int)p->nupvals);
     UASSERT_EQ(0, (int)p->max_reg);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 UTEST(nested_proto_destroy_frees_buffers) {
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
     /* Destroy should not crash even when the proto has no buffers. */
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     /* If we reach here, no crash => pass. */
     UASSERT_EQ(1, 1);
 }
@@ -222,7 +216,7 @@ UTEST(parse_closure_keyword_rejected) {
  * ----------------------------------------------------------------------- */
 
 UTEST(emit_function_creates_nested_proto) {
-    /* After emitting a function definition, module.root_proto->nested_count == 1. */
+    /* After emitting a function definition, module.nested_count == 1. */
     UVM vm;
     ULexer lex;
     const char *src = "function(x) { x + 1 }";
@@ -230,7 +224,7 @@ UTEST(emit_function_creates_nested_proto) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -244,11 +238,11 @@ UTEST(emit_function_creates_nested_proto) {
     }
     UEmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT_EQ((size_t)1, module.root_proto->nested_count);
+    UASSERT_EQ((size_t)1, module.nested_count);
     /* Root chunk should have OP_CLOSURE as first instruction */
-    UASSERT(module.root_proto->instr_count >= 1);
+    UASSERT(module.instr_count >= 1);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -261,7 +255,7 @@ UTEST(emit_function_nested_proto_has_nparams) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -275,10 +269,10 @@ UTEST(emit_function_nested_proto_has_nparams) {
     }
     UEmitError rc = uemit_finish(&e);
     UASSERT_EQ(EMIT_OK, rc);
-    UASSERT_EQ((size_t)1, module.root_proto->nested_count);
-    UASSERT_EQ(2, (int)module.root_proto->nested[0]->nparams);
+    UASSERT_EQ((size_t)1, module.nested_count);
+    UASSERT_EQ(2, (int)module.nested[0]->nparams);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -317,7 +311,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -339,7 +333,7 @@ UTEST(vm_function_captures_nothing_nupvals_zero) {
     /* nupvals == 0 on the closure's proto */
     UASSERT_EQ(0, (int)((UClosure *)out.v.p)->proto->nupvals);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -362,7 +356,7 @@ UTEST(vm_function_body_has_instructions) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -382,7 +376,7 @@ UTEST(vm_function_body_has_instructions) {
     /* Body should have at least: LOADK(1), GETLOCAL/MOVE(x), ADD, RET */
     UASSERT(((UClosure *)out.v.p)->proto->instr_count >= 2);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

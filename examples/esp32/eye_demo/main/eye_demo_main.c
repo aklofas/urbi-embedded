@@ -551,18 +551,18 @@ void app_main(void)
     /* 5: load baked bytecode.  Panic on failure -> clean coredump
      * rather than a silent boot loop. */
     char errbuf[128] = {0};
-    struct UModule *m = urbi_module_from_bytes(eye_demo_bytecode,
+    struct UProto *m = urbi_chunk_from_bytes(eye_demo_bytecode,
                                                eye_demo_bytecode_size,
                                                errbuf, sizeof errbuf);
     if (m == NULL) {
-        ESP_LOGE(TAG, "urbi_module_from_bytes failed: %s", errbuf);
+        ESP_LOGE(TAG, "urbi_chunk_from_bytes failed: %s", errbuf);
         ESP_ERROR_CHECK(ESP_FAIL);
     }
-    int load_rc = urbi_load_module(&vm, m, "eye_demo");
+    int load_rc = urbi_load_chunk(&vm, m, "eye_demo");
     if (load_rc != URBI_OK) {
         urbi_error_info_t info = {0};
         urbi_last_error(&vm, &info);
-        ESP_LOGE(TAG, "urbi_load_module failed: rc=%d code=%d line=%d ctx=%s msg=%s",
+        ESP_LOGE(TAG, "urbi_load_chunk failed: rc=%d code=%d line=%d ctx=%s msg=%s",
                  load_rc, info.code, info.source_line,
                  (info.context && info.context[0]) ? info.context : "(none)",
                  (info.message && info.message[0]) ? info.message : "(none)");

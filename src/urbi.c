@@ -4,12 +4,12 @@
 #include "urbi/version.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
 #include "runtime/umacros.h"
 #include "object/uic.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #if !defined(URBI_BYTECODE_ONLY)
 #  include "lex/ulex.h"
 #  include "parse/uparse.h"
@@ -122,11 +122,22 @@ urbi_compile_source(struct UVM *vm,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module;
-    urbi_zero(&module, sizeof module);
+    /* v0.9.2: UModule deleted; allocate a root UProto directly. */
+    UProto *root = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (root == NULL) {
+        if (err_buf && err_cap) {
+            snprintf(err_buf, err_cap, "%s: out of memory", name);
+        }
+        uarena_destroy(&arena);
+        return URBI_ERR_OOM;
+    }
+    urbi_zero(root, sizeof *root);
+    root->heap_allocated = true;
+    root->alloc_fn       = vm->alloc_fn;
+    root->alloc_ud       = vm->alloc_ud;
 
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, name);
+    uemit_init(&e, root, &arena, vm, name);
 
     UParser p;
     uparse_init(&p, &lex, &arena);
@@ -149,7 +160,7 @@ urbi_compile_source(struct UVM *vm,
     }
 
     if (had_error) {
-        umodule_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -159,19 +170,19 @@ urbi_compile_source(struct UVM *vm,
             snprintf(err_buf, err_cap, "%s: emit error: %s",
                      name, uemit_error_name(e.error));
         }
-        umodule_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
 
     /* First pass: query required size. */
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(root, NULL, 0);
     if (need < 0) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize size-query failed",
                      name);
         }
-        umodule_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
@@ -180,30 +191,30 @@ urbi_compile_source(struct UVM *vm,
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: out of memory", name);
         }
-        umodule_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_OOM;
     }
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(root, buf, (size_t)need);
     if (wrote != need) {
         if (err_buf && err_cap) {
             snprintf(err_buf, err_cap, "%s: serialize wrote %ld, expected %ld",
                      name, (long)wrote, (long)need);
         }
         free(buf);
-        umodule_destroy(&module, vm);
+        uchunk_destroy(root, vm);
         uarena_destroy(&arena);
         return URBI_ERR_INVALID_ARG;
     }
 
     *out_buf = buf;
     *out_len = (size_t)need;
-    umodule_destroy(&module, vm);
+    uchunk_destroy(root, vm);
     uarena_destroy(&arena);
     return URBI_OK;
 #else
     /* Freestanding: compile-from-source is not part of the embedded surface.
-     * Pre-compiled bytecode comes in via urbi_load_module instead. */
+     * Pre-compiled bytecode comes in via urbi_load_chunk instead. */
     (void)vm; (void)src; (void)src_len; (void)src_name;
     (void)out_buf; (void)out_len; (void)err_buf; (void)err_cap;
     return URBI_ERR_INVALID_ARG;
@@ -368,7 +379,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
     FNV1A_MIX(ctx.h, vm->lookup_id);
     FNV1A_MIX(ctx.h, (uint64_t)vm->next_object_id);
 
-    /* 6. M4 T30 — per-IC observable state.  Walk every live UModuleInstance
+    /* 6. M4 T30 — per-IC observable state.  Walk every live UChunkInstance
      *    on the per-VM registry (insertion-order; deterministic in any
      *    well-formed test harness) and, for each UIC site in each
      *    UProtoInstance's IC table, fold in:
@@ -383,7 +394,7 @@ urbi_get_determinism_checksum(struct UVM *vm)
      *    detect ordering divergences across runs because IC fill ordering
      *    is itself driven by topology_gen ticks. */
     {
-        const struct UModuleInstance *mi;
+        const struct UChunkInstance *mi;
         for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
             const UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL) continue;
@@ -395,10 +406,9 @@ urbi_get_determinism_checksum(struct UVM *vm)
                 if (pi->proto != NULL) {
                     ic_count = pi->proto->ic_count;
                 } else if (i == 0U) {
-                    /* Root chunk — ic_count lives on root_proto (Task 11). */
-                    ic_count = (mi->module->root_proto != NULL)
-                               ? mi->module->root_proto->ic_count
-                               : 0U;
+                    /* Root chunk — ic_count lives directly on the root UProto.
+                     * v0.9.2: mi->module IS the root UProto (UModule deleted). */
+                    ic_count = (mi->module != NULL) ? mi->module->ic_count : 0U;
                 } else {
                     ic_count = 0U;  /* entries[i>0] always have a proto */
                 }

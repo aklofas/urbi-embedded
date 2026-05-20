@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "module/umodule.h"  /* UModule, UValue, UValKind, UOpcode */
+#include "chunk/uchunk.h"  /* UProto (UModule deleted v0.9.2), UValue, UValKind, UOpcode */
 #include "value/uvalue.h"   /* UValue — needed for handle_table field */
 #include "runtime/uframe.h"   /* UCallFrame, UUpvalCell, UVM_MAX_FRAMES, UVM_STACK_CAP */
 #include "urbi/gc.h" /* UCell, UType, UGcRootCallback/ProviderFn, inline barriers */
@@ -28,7 +28,7 @@ struct URealm;
 struct UWatcher;
 struct UEventRing;   /* T18 lands the definition; event_ring is a pointer */
 struct UShape;       /* M4 — defined in src/object/ushape.h */
-struct UModuleInstance;   /* M4 T30 — defined in src/object/umodule_instance.h */
+struct UChunkInstance;   /* M4 T30 — defined in src/object/uchunk_instance.h */
 
 /* Gap B (v0.7.1): named-event registry — full type needed in UVM struct. */
 #include "event/uevent_registry.h"
@@ -297,14 +297,14 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     struct UObject *event_proto;
     struct UObject *tag_proto;
 
-    /* === M4 T30 — UModuleInstance registry ===
-     * Linked list head of every live UModuleInstance threaded via
-     * UModuleInstance.next_in_vm.  Created at urbi_module_instance_create
+    /* === M4 T30 — UChunkInstance registry ===
+     * Linked list head of every live UChunkInstance threaded via
+     * UChunkInstance.next_in_vm.  Created at urbi_chunk_instance_create
      * time (no removal at v1.0 — the GC reaps both the cell and any chain
      * dangling references when the instance becomes unreachable; this
      * registry is consulted only by the determinism checksum which itself
      * runs at quiescent points where instance removal isn't observed). */
-    struct UModuleInstance *module_instances_head;
+    struct UChunkInstance *module_instances_head;
 
     /* Pre-GC closure ownership: the closure (if any) returned by the most
      * recent urbi_vm_run() call.  Freed at the start of the next urbi_vm_run() or
@@ -558,7 +558,7 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
      * stdlib_module: heap-allocated UModule deserialized from the baked
      *   urbi_stdlib_bytecode blob during urbi_stdlib_boot.  NULL when the
      *   blob is empty (Phase 4 baseline) or boot has not run.  Owned by
-     *   the VM; freed via umodule_destroy + alloc_fn at urbi_vm_destroy.
+     *   the VM; freed via uchunk_destroy + alloc_fn at urbi_vm_destroy.
      * stdlib_booted: idempotency guard for urbi_stdlib_boot.  Set on first
      *   successful boot; subsequent calls are no-ops.
      * (last_recv removed at v1.6 S42 — method receivers are now passed
@@ -566,21 +566,21 @@ typedef struct UVM {  /* NOLINT(clang-analyzer-optin.performance.Padding) — fi
     /* stdlib_protos and stdlib_nested_arrays deleted at Task 11 (v0.8.1-uproto-root).
      * The whole-root_proto rescue path (vm->rescued_protos) is the sole mechanism. */
     /* rescued_protos: intrusive list (via UProto.next_alloc) of whole root_proto
-     * objects rescued from umodule_destroy when root_proto->refcount > 0 at
+     * objects rescued from uchunk_destroy when root_proto->refcount > 0 at
      * destroy time (Phase 2 Task 9 of v0.8.1-uproto-root).
      *
      * When a module is destroyed while a strand still holds a reference to its
-     * root_proto, umodule_destroy detaches the root_proto (with all nested[]
+     * root_proto, uchunk_destroy detaches the root_proto (with all nested[]
      * and chunk-top buffer ownership) and threads it onto this list.  The
      * module shell (source_name and the UModule struct itself) is freed normally.
      *
      * At urbi_vm_destroy, each rescued root_proto is freed via
-     * umodule_destroy_proto_buffers (walks nested[], frees all owned buffers),
+     * uproto_destroy_buffers (walks nested[], frees all owned buffers),
      * then the root_proto struct itself is freed via its stored allocator.
      * Task 11: stdlib_protos (per-nested rescue) deleted; rescued_protos is
      * the sole deferred-destroy mechanism. */
     struct UProto      *rescued_protos;
-    struct UModule *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above */
+    struct UProto  *stdlib_module;      /* M6 Phase 4 (Wave 2) — see field doc above; v0.9.2: was UModule* */
     /* M6 Phase 6 (containers): VM-lifetime backing buffers for List/Dict
      * instances allocated via urbi_stdlib_register_containers.  Each
      * buffer begins with a (void *next) header that threads onto this
@@ -746,7 +746,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
    - step_budget_in opcodes have been consumed (state remains RUNNING)
    Returns the number of opcodes consumed.  s->vm must be non-NULL.
    Caller must have initialised s->stack, s->R, s->pc, s->pc_base,
-   s->cur_consts, s->module, and s->state = USTRAND_STATE_RUNNING. */
+   s->cur_consts, s->root_proto, and s->state = USTRAND_STATE_RUNNING. */
 uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
 
 /* Run module to completion. On UVM_OK, *out receives the RET value. On
@@ -761,7 +761,7 @@ uint64_t dispatch_loop_until_yield(struct UStrand *s, uint64_t step_budget_in);
    source-compat for existing callers via the matching update in the
    public header. */
 UVMError urbi_vm_run(UVM *vm, struct URealm *realm,
-                     const UModule *module, UValue *out);
+                     const UProto *root, UValue *out);
 
 /* Free any VM-owned resources. Safe to call on a zero-initialized UVM. */
 void urbi_vm_destroy(UVM *vm);

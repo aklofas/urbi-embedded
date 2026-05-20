@@ -30,7 +30,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -48,7 +48,7 @@ UTEST(realm_assign_closure_minimal)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -62,7 +62,7 @@ UTEST(realm_assign_closure_minimal)
     UASSERT_EQ((int)UVAL_CLOSURE, (int)fn.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -75,7 +75,7 @@ UTEST(realm_assign_closure_followed_by_int_assign)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -94,7 +94,7 @@ UTEST(realm_assign_closure_followed_by_int_assign)
     UASSERT_EQ(0LL, x.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -110,7 +110,7 @@ UTEST(chunktop_var_decl_closure)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -128,7 +128,7 @@ UTEST(chunktop_var_decl_closure)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

@@ -483,15 +483,15 @@ strand state. Pause budget is ≤2.1 µs measured against a 1 ms target.
 See [GC](gc.md) for the cell-type inventory, gc_byte bit layout, and
 the realm-hierarchy walker contract.
 
-### Realm and module instances
+### Realm and chunk instances
 
-A realm holds the top-level globals plus the (vm, module) → instance
+A realm holds the top-level globals plus the (vm, root proto) → instance
 cache. `urbi_run_chunk` and `urbi_vm_run` automatically bind a
-`UModuleInstance` for the realm at first invocation, lazily interning
+`UChunkInstance` for the realm at first invocation, lazily interning
 the IC name table and threading `proto_instances` through the call
 frame for `UClosure.proto_inst` access. The walk-then-prepend protocol
 on the cache is correct under the single-threaded-VM assumption that
-defines the `v1.0` baseline. See [Realm and modules](realm-and-modules.md)
+defines the `v1.0` baseline. See [Realm and chunks](realm-and-chunks.md)
 for the load contract, the lazy-intern protocol, and the multi-threaded
 deferrals.
 

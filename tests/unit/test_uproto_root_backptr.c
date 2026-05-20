@@ -4,7 +4,7 @@
  * on every nested proto.
  *
  * Phase 1 of v0.8.1-uproto-root: root_proto allocated and fields aliased
- * to UModule buffers.  No behavioral change; this test pins the new
+ * to UProto buffers.  No behavioral change; this test pins the new
  * structural invariants.
  */
 
@@ -12,7 +12,7 @@
 
 #include "urbi/urbi.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
@@ -25,7 +25,7 @@
  * Returns 0 on success, non-zero on lex/parse/emit failure.
  * Does NOT run the chunk — caller inspects module fields directly. */
 static int
-compile_only(struct UVM *vm, UArena *arena, UModule *module, const char *src)
+compile_only(struct UVM *vm, UArena *arena, UProto *module, const char *src)
 {
     ULexer   lex;
     UEmitter e;
@@ -53,7 +53,7 @@ UTEST(root_proto_allocated_after_finish)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* A chunk with no function literals: root_proto still allocated. */
@@ -61,18 +61,18 @@ UTEST(root_proto_allocated_after_finish)
     UASSERT_EQ(0, rc);
 
     /* root_proto must be non-NULL after uemit_finish. */
-    UASSERT(module.root_proto != NULL);
+    
 
     /* root_proto->root must be NULL (it IS the root). */
-    UASSERT(module.root_proto->root == NULL);
+    UASSERT(module.root == NULL);
 
     /* Alias invariant: root_proto->instructions must point to the same
-     * buffer as module.root_proto->instructions. */
-    UASSERT(module.root_proto->instructions == module.root_proto->instructions);
-    UASSERT_EQ(module.root_proto->instr_count, module.root_proto->instr_count);
+     * buffer as module.instructions. */
+    UASSERT(module.instructions == module.instructions);
+    UASSERT_EQ(module.instr_count, module.instr_count);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -82,7 +82,7 @@ UTEST(nested_proto_root_backptr_set)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* A chunk with one function literal: emitter allocates one nested proto. */
@@ -90,22 +90,22 @@ UTEST(nested_proto_root_backptr_set)
     UASSERT_EQ(0, rc);
 
     /* root_proto allocated. */
-    UASSERT(module.root_proto != NULL);
-    UASSERT(module.root_proto->root == NULL);
+    
+    UASSERT(module.root == NULL);
 
     /* At least one nested proto for the function body. */
-    UASSERT(module.root_proto->nested_count >= 1);
+    UASSERT(module.nested_count >= 1);
 
     /* Every nested proto must have root pointing to module.root_proto. */
     size_t i;
-    for (i = 0; i < module.root_proto->nested_count; i++) {
-        UProto *p = module.root_proto->nested[i];
+    for (i = 0; i < module.nested_count; i++) {
+        UProto *p = module.nested[i];
         if (p == NULL) continue;  /* skip detached slots */
-        UASSERT_EQ(module.root_proto, p->root);
+        UASSERT_EQ(&module, p->root);
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -115,79 +115,73 @@ UTEST(root_proto_nested_alias_matches_module)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = compile_only(&vm, &arena, &module, "var f = function () { 1 };");
     UASSERT_EQ(0, rc);
-    UASSERT(module.root_proto != NULL);
+    
 
-    /* nested[] alias: root_proto->nested points to same array as module.root_proto->nested. */
-    UASSERT(module.root_proto->nested == module.root_proto->nested);
-    UASSERT_EQ(module.root_proto->nested_count, module.root_proto->nested_count);
+    /* nested[] alias: root_proto->nested points to same array as module.nested. */
+    UASSERT(module.nested == module.nested);
+    UASSERT_EQ(module.nested_count, module.nested_count);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
 UTEST(deserialize_roundtrip_root_proto_invariants)
 {
     /* Round-trip a compiled module through serialize → deserialize and verify
-     * that umodule_deserialize correctly populates root_proto and its aliases.
+     * that uchunk_deserialize correctly populates root_proto and its aliases.
      * Exercises the deserialize aliasing block independently of uemit_finish. */
     struct UVM vm;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena  arena;
-    UModule m1 = {0};
+    UProto m1 = {0};
     uarena_init(&arena, 4096);
 
     /* Compile a chunk with a nested proto so nested[] aliasing is exercised. */
     int rc = compile_only(&vm, &arena, &m1, "var f = function () { 1 };");
     UASSERT_EQ(0, rc);
-    UASSERT(m1.root_proto != NULL);
+    
 
     /* Serialize to a stack buffer (measure first, then write). */
-    ptrdiff_t need = umodule_serialize(&m1, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&m1, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t buf[8192];
     UASSERT((size_t)need <= sizeof(buf));
-    ptrdiff_t wrote = umodule_serialize(&m1, buf, sizeof(buf));
+    ptrdiff_t wrote = uchunk_serialize(&m1, buf, sizeof(buf));
     UASSERT_EQ(need, wrote);
 
     /* Deserialize into a fresh module backed by a fresh vm. */
     struct UVM vm2;
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm2, NULL, NULL));
-    UModule m2 = {0};
+    UProto *m2 = NULL;
     char errmsg[128];
-    UModuleLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
-                                                   errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, load_rc);
+    UChunkLoadError load_rc = uchunk_deserialize(&m2, buf, (size_t)wrote,
+                                                   NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
+    UASSERT(m2 != NULL);
 
-    /* root_proto must be non-NULL. */
-    UASSERT(m2.root_proto != NULL);
+    /* m2->root must be NULL (m2 IS the root). */
+    UASSERT(m2->root == NULL);
 
-    /* root_proto->root must be NULL (it IS the root). */
-    UASSERT(m2.root_proto->root == NULL);
-
-    /* Task 11: nested[] and nested_count live exclusively on root_proto;
-     * UModule no longer has alias fields. Verify root_proto carries them. */
-    UASSERT(m2.root_proto->nested_count > 0U || m2.root_proto->nested_count == 0U);
-
-    /* Every non-NULL nested proto must back-point to root_proto. */
+    /* Every non-NULL nested proto must back-point to m2 (the root). */
     size_t k;
-    for (k = 0; k < m2.root_proto->nested_count; k++) {
-        UProto *p = m2.root_proto->nested[k];
+    for (k = 0; k < m2->nested_count; k++) {
+        UProto *p = m2->nested[k];
         if (p == NULL) continue;
-        UASSERT_EQ(m2.root_proto, p->root);
+        UASSERT_EQ((void *)m2, (void *)p->root);
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&m1, &vm);
+    uchunk_destroy(&m1, &vm);
     urbi_vm_destroy(&vm);
-    umodule_destroy(&m2, &vm2);
+    uchunk_destroy(m2, &vm2);
     urbi_vm_destroy(&vm2);
 }
 
@@ -198,7 +192,7 @@ test_uproto_root_backptr_suite(void)
               root_proto_allocated_after_finish);
     utest_run("uproto_root_backptr: nested proto back-pointer set",
               nested_proto_root_backptr_set);
-    utest_run("uproto_root_backptr: root_proto nested[] aliases module.root_proto->nested",
+    utest_run("uproto_root_backptr: root_proto nested[] aliases module.nested",
               root_proto_nested_alias_matches_module);
     utest_run("uproto_root_backptr: deserialize round-trip root_proto invariants",
               deserialize_roundtrip_root_proto_invariants);

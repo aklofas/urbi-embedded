@@ -28,7 +28,7 @@
 
 #include "urbi/urbi.h"
 #include "value/uarena.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 /* utest_e2e_compile_and_run: lex + parse + emit + run `src` under the
@@ -55,7 +55,7 @@ int utest_e2e_compile_and_run(UVM *vm, const char *src, UValue *out_result);
  */
 int utest_e2e_compile_and_run_with_module(UVM *vm,
                                           UArena *arena,
-                                          UModule *module,
+                                          UProto *module,
                                           const char *src,
                                           UValue *out_result);
 

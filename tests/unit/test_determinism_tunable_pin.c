@@ -20,14 +20,14 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "sched/usched_cooperative.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -37,14 +37,14 @@
 /* ---- Compile helper ---- */
 
 static bool
-tunable_compile(UVM *vm, const char *src, UModule *out_mod)
+tunable_compile(UVM *vm, const char *src, UProto *out_mod)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
 
     UArena arena;
     uarena_init(&arena, 4096);
-    *out_mod = (UModule){0};
+    *out_mod = (UProto){0};
 
     UEmitter e;
     uemit_init(&e, out_mod, &arena, vm, NULL);
@@ -66,7 +66,7 @@ tunable_compile(UVM *vm, const char *src, UModule *out_mod)
 
 /* Arm a strand from a module. */
 static bool
-tunable_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
+tunable_arm_strand(UVM *vm, UProto *module, UStrand *s, UValue *out_result)
 {
     const size_t stack_bytes = UVM_STACK_CAP * sizeof(UValue);
     s->stack = (UValue *)vm->alloc_fn(NULL, stack_bytes, vm->alloc_ud);
@@ -77,14 +77,12 @@ tunable_arm_strand(UVM *vm, UModule *module, UStrand *s, UValue *out_result)
         for (i = 0; i < stack_bytes; i++) p[i] = 0;
     }
     s->R           = s->stack;
-    s->module      = module;
-    s->root_proto  = module->root_proto;
-    /* Task 11: all chunk-top data lives on root_proto. */
-    s->pc          = s->root_proto->instructions;
-    s->pc_base     = s->root_proto->instructions;
-    s->cur_consts  = s->root_proto->constants;
-    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
-    s->module_instance = urbi_module_instance_create(vm, module);
+    s->root_proto  = module;
+    s->pc          = module->instructions;
+    s->pc_base     = module->instructions;
+    s->cur_consts  = module->constants;
+    uproto_refcount_inc(module);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    s->module_instance = urbi_chunk_instance_create(vm, module);
     s->frame_count = 0;
     s->open_upvals = NULL;
     if (out_result) s->out_slot = out_result;
@@ -125,7 +123,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         URealm *realm = urbi_realm_create(&vm);
         UASSERT(realm != NULL);
 
-        UModule module;
+        UProto module;
         UASSERT(tunable_compile(&vm, "var i = 0; while (i < 20) { i = i + 1 }", &module));
 
         UStrand *s = urbi_strand_create(realm, NULL);
@@ -138,7 +136,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         tight_count = run_to_quiescent(&vm, 1);
         UASSERT(tight_count > 0);
 
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);
     }
@@ -152,7 +150,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         URealm *realm = urbi_realm_create(&vm);
         UASSERT(realm != NULL);
 
-        UModule module;
+        UProto module;
         UASSERT(tunable_compile(&vm, "var i = 0; while (i < 20) { i = i + 1 }", &module));
 
         UStrand *s = urbi_strand_create(realm, NULL);
@@ -165,7 +163,7 @@ UTEST(tight_budget_requires_more_step_calls_than_loose)
         loose_count = run_to_quiescent(&vm, 10000);
         UASSERT(loose_count > 0);
 
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_realm_destroy(&vm, realm);
         urbi_vm_destroy(&vm);
     }
@@ -189,7 +187,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     /* Short program: just a single computation. */
     UASSERT(tunable_compile(&vm, "1 + 1", &module));
 
@@ -217,7 +215,7 @@ UTEST(zero_strand_budget_forces_mid_step_yield)
     }
     UASSERT(reached);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

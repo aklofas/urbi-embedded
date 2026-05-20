@@ -23,7 +23,7 @@
 #include "stdlib/runtime_types.h"
 #include "stdlib/object_root.h"        /* urbi_native_closure_create + raise helpers */
 
-#include "module/umodule.h"            /* UValue, UVAL_* */
+#include "chunk/uchunk.h"            /* UValue, UVAL_* */
 #include "object/uobject.h"            /* urbi_object_alloc / clone / set_local_slot */
 #include "realm/urealm.h"              /* URealm */
 #include "runtime/uclosure.h"          /* urbi_native_method_fn */

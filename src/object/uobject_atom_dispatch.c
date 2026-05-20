@@ -19,7 +19,7 @@
 
 #include "object/uobject.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"   /* UValue + UVAL_* enumerators */
+#include "chunk/uchunk.h"   /* UValue + UVAL_* enumerators */
 #include "urbi/object.h"      /* URBIAtomFamily */
 
 #ifdef URBI_DEBUG

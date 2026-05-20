@@ -9,7 +9,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uast.h"
 #include "value/uarena.h"
 #include <stdint.h>
@@ -17,12 +17,12 @@
 /* Resolve which proto to write instructions/constants/synclines into.
  * When the current FuncState has a non-NULL target_proto, we are inside a
  * nested function body — write to the child proto.  Otherwise return
- * module->root_proto (the root chunk, allocated at uemit_init). */
+ * e->module (the root UProto, allocated at uemit_init). */
 static UProto *current_proto(const UEmitter *e) {
     if (e->current_fs != NULL && e->current_fs->target_proto != NULL) {
         return (UProto *)e->current_fs->target_proto;
     }
-    return e->module->root_proto;  /* root chunk: always non-NULL after uemit_init */
+    return e->module;  /* root UProto: always non-NULL after uemit_init */
 }
 
 #if __STDC_HOSTED__
@@ -34,7 +34,7 @@ static UProto *current_proto(const UEmitter *e) {
 static void emit_copy_source_name(UEmitter *e, const char *src) {
     if (src == NULL) return;
     size_t len = urbi_strlen(src);
-    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    UChunkAllocFn alloc = emit_alloc_for(e->module);
     char *copy = (char *)alloc(NULL, len + 1U, e->module->alloc_ud);
     if (copy == NULL) { e->error = EMIT_OOM; return; }
     emit_memcpy(copy, src, len + 1U);
@@ -58,14 +58,14 @@ static void emit_copy_source_name(UEmitter *e, const char *src) {
    Mirror of module_grow in umodule.c; used by constant-pool and instruction
    array in the emitter.
    Promoted from static so uemit_funcstate.c can call it cross-TU. */
-bool emit_grow(UModule *c, void **data, size_t *cap,
+bool emit_grow(UProto *root, void **data, size_t *cap,
                size_t new_cap, size_t elem_size) {
     if (*cap >= new_cap) return true;
-    UModuleAllocFn alloc = emit_alloc_for(c);
+    UChunkAllocFn alloc = emit_alloc_for(root);
     if (alloc == NULL) return false;
     size_t target = *cap == 0U ? 8U : *cap;
     while (target < new_cap) target *= 2U;
-    void *fresh = alloc(*data, target * elem_size, c->alloc_ud);
+    void *fresh = alloc(*data, target * elem_size, root->alloc_ud);
     if (fresh == NULL) return false;
     *data  = fresh;
     *cap   = target;
@@ -75,11 +75,11 @@ bool emit_grow(UModule *c, void **data, size_t *cap,
 /* Grow a buffer owned by either the module root or a nested UProto.
  * When `proto` is NULL, delegates to emit_grow (module root path).
  * Promoted from static so uemit_funcstate.c can call it cross-TU. */
-bool proto_grow(UModule *module, UProto *proto,
+bool proto_grow(UProto *root, UProto *proto,
                 void **data, size_t *cap,
                 size_t new_cap, size_t elem_size) {
     if (proto != NULL) {
-        UModuleAllocFn alloc = proto->alloc_fn;
+        UChunkAllocFn alloc = proto->alloc_fn;
         if (alloc == NULL) {
 #if __STDC_HOSTED__
             alloc = emit_stdlib_alloc;
@@ -96,7 +96,7 @@ bool proto_grow(UModule *module, UProto *proto,
         *cap  = target;
         return true;
     }
-    return emit_grow(module, data, cap, new_cap, elem_size);
+    return emit_grow(root, data, cap, new_cap, elem_size);
 }
 
 
@@ -273,7 +273,7 @@ static void emit_push_line_delta(UEmitter *e, const int8_t delta) {
     UProto *p = current_proto(e);
     URBI_INTERNAL_ASSERT(p->instr_count > 0U);
     if (p->instr_count == 0U) return;
-    UModuleAllocFn alloc = emit_alloc_for(e->module);
+    UChunkAllocFn alloc = emit_alloc_for(e->module);
     if (alloc == NULL) { e->error = EMIT_OOM; return; }
     void *fresh = alloc(p->line_deltas,
                         p->instr_count * sizeof(int8_t),
@@ -480,36 +480,19 @@ uint8_t emit_expr(UEmitter *e, UAstNode *n) {
 }
 
 
-void uemit_init(UEmitter *e, UModule *module, UArena *arena,
+void uemit_init(UEmitter *e, UProto *root, UArena *arena,
                 struct UVM *vm, const char *source_name) {
     urbi_zero(e, sizeof(*e));
-    e->module = module;
+    e->module = root;
     e->arena = arena;
     e->vm = vm;
     if (vm != NULL) {
-        module->origin_vm = vm;
+        root->origin_vm = vm;
     }
+    /* root->alloc_fn/alloc_ud must already be set by caller before uemit_init.
+     * root->root = NULL (it is the root; set by zero-fill or caller).
+     * v0.9.2: root IS the root UProto — no separate allocation needed here. */
     emit_copy_source_name(e, source_name);
-    /* Task 11 v0.8.1-uproto-root: allocate root_proto at init time so
-     * current_proto() can return it immediately, and the emitter writes
-     * directly into root_proto buffers (no alias-copy at finish). */
-    {
-        UModuleAllocFn alloc = emit_alloc_for(module);
-        if (alloc != NULL) {
-            UProto *rp = (UProto *)alloc(NULL, sizeof(UProto), module->alloc_ud);
-            if (rp != NULL) {
-                urbi_zero(rp, sizeof(UProto));
-                rp->root     = NULL;  /* root's own back-pointer is NULL */
-                rp->alloc_fn = module->alloc_fn;
-                rp->alloc_ud = module->alloc_ud;
-                module->root_proto = rp;
-            } else {
-                e->error = EMIT_OOM;
-            }
-        } else {
-            e->error = EMIT_OOM;
-        }
-    }
 }
 
 UEmitError uemit_statement(UEmitter *e, UAstNode *stmt) {
@@ -565,10 +548,10 @@ UEmitError uemit_finish(UEmitter *e) {
         uemit_close_function(e);
     }
     e->finished = true;
-    /* Task 11: root_proto was allocated at uemit_init and the emitter wrote
-     * directly into it.  Just stamp max_reg and set the nested back-pointers. */
-    if (e->module->root_proto != NULL) {
-        UProto *rp = e->module->root_proto;
+    /* v0.9.2: e->module IS the root UProto.  Stamp max_reg and set the
+     * nested back-pointers. */
+    if (e->module != NULL) {
+        UProto *rp = e->module;
         rp->max_reg = e->max_reg_seen;
         /* Back-pointer walk: every nested proto's root field points at rp.
          * v0.8.5 made this recursive (was flat-only): walks the full tree
@@ -581,7 +564,7 @@ UEmitError uemit_finish(UEmitter *e) {
     /* v0.8.5: stamp total_proto_count for module-instance sizing.
      * next_proto_serial is the LAST assigned serial (root = 0 not counted);
      * total includes root. */
-    if (e->module->root_proto != NULL) {
+    if (e->module != NULL) {
         e->module->total_proto_count = (uint16_t)(e->module->next_proto_serial + 1U);
     }
 

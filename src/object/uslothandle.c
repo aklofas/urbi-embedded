@@ -14,7 +14,7 @@
 #include "gc/ugc_incremental.h"    /* urbi_gc_slot_write */
 #include "changed/uchanged_node.h"         /* urbi_emit_slot_change_if_subscribed (T65) */
 #include "gc/ugc.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include <stddef.h>
 
 /* === urbi_object_get_slot ===

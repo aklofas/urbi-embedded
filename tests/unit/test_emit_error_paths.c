@@ -27,7 +27,7 @@
 #include "lex/ulex.h"
 #include "parse/uparse.h"
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 #define UTEST(name) static void name(void)
@@ -61,7 +61,7 @@ typedef struct {
     ULexer   lex;
     UArena   arena;
     UParser  p;
-    UModule  module;
+    UProto  module;
     UVM      vm;
     UEmitter e;
     EmitSpy  spy;
@@ -78,7 +78,7 @@ ectx_init(ECtx *c, const char *src, int fail_at)
     c->spy.alloc_calls = 0;
     c->spy.fail_at = fail_at;
     urbi_vm_init(&c->vm, emit_spy_alloc, &c->spy);
-    c->module = (UModule){0};
+    c->module = (UProto){0};
     c->module.alloc_fn = emit_spy_alloc;
     c->module.alloc_ud = &c->spy;
     uparse_init(&c->p, &c->lex, &c->arena);
@@ -102,7 +102,7 @@ ectx_destroy(ECtx *c)
     /* Disable failure injection during teardown so destruction can free. */
     c->spy.fail_at = -1;
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module, NULL);
+    uchunk_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 

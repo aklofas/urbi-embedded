@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* uopcode_shape.h — file-private opcode-shape table for the bytecode
  * verifier.  Replaces the M1-shaped hardcoded operand checks
- * (MOD-009 + MOD-010) in src/module/umodule.c::decode_verify.
+ * (MOD-009 + MOD-010) in src/chunk/uchunk_io.c::decode_verify.
  *
  * Add a new entry per opcode rather than extending an inline switch.
  *
@@ -39,7 +39,7 @@
 #ifndef URBI_UOPCODE_SHAPE_H
 #define URBI_UOPCODE_SHAPE_H
 
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include <stdbool.h>
 #include <stdint.h>
 

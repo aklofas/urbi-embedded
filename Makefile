@@ -46,7 +46,7 @@ SRC := $(filter-out $(AUX_SRCS), \
        $(wildcard src/event/*.c) \
        $(wildcard src/tag/*.c) \
        $(wildcard src/changed/*.c) \
-       $(wildcard src/module/*.c) \
+       $(wildcard src/chunk/*.c) \
        $(wildcard src/value/*.c) \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \
@@ -259,7 +259,7 @@ HOST_BAKE_SRC := \
        $(wildcard src/event/*.c) \
        $(wildcard src/tag/*.c) \
        $(wildcard src/changed/*.c) \
-       $(wildcard src/module/*.c) \
+       $(wildcard src/chunk/*.c) \
        $(wildcard src/value/*.c) \
        $(wildcard src/runtime/*.c) \
        $(wildcard src/realm/*.c) \

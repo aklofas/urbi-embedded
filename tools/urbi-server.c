@@ -39,7 +39,7 @@
 #include "parse/uparse.h"
 #include "lex/ulex.h"
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 static volatile sig_atomic_t g_stop = 0;
@@ -111,7 +111,7 @@ static int run_boot_script(UVM *vm, const char *path) {
     UArena arena;
     uarena_init(&arena, 4096);
 
-    UModule module = (UModule){0};
+    UProto module = (UProto){0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, path);
 
@@ -144,7 +144,7 @@ static int run_boot_script(UVM *vm, const char *path) {
             rc = 1;
         }
     }
-    umodule_destroy(&module, vm);
+    uchunk_destroy(&module, vm);
     uarena_destroy(&arena);
     free(src);
     return rc;

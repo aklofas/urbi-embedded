@@ -10,8 +10,8 @@
 #include "utest.h"
 
 #include "urbi/urbi.h"
-#include "module/uchunk.h"
-#include "module/umodule.h"
+#include "chunk/uchunk_strand.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "vm/uvm.h"
@@ -28,7 +28,7 @@
 
 /* Compile `src` into *out_mod.  Returns true on success. */
 static bool
-compile_chunk(UVM *vm, UArena *arena, UModule *out_mod, const char *src)
+compile_chunk(UVM *vm, UArena *arena, UProto *out_mod, const char *src)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -63,29 +63,23 @@ UTEST(ustrand_has_root_proto_field)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     UASSERT(compile_chunk(&vm, &arena, &module, "1 + 2"));
-
-    /* module.root_proto must be non-NULL after a successful compile. */
-    struct UProto *rp = module.root_proto;
-    UASSERT(rp != NULL);
 
     /* Create a live strand via the real binding path. */
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
 
-    /* Phase 1 invariant: root_proto aliases module.root_proto exactly. */
-    UASSERT(s->root_proto == rp);
-    UASSERT(s->root_proto == module.root_proto);
-    UASSERT(s->module == &module);
+    /* Phase 1 invariant: root_proto points directly at module (module IS the root). */
+    UASSERT(s->root_proto == &module);
 
     /* Drive to completion so the strand dies cleanly. */
     UValue result = {0};
     uchunk_loader_drive(&vm, s, &result);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -102,13 +96,10 @@ UTEST(root_proto_aliases_module_root_proto)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     /* waituntil(false) parks the strand in WAITING state without dying. */
     UASSERT(compile_chunk(&vm, &arena, &module, "waituntil (false)"));
-
-    struct UProto *expected = module.root_proto;
-    UASSERT(expected != NULL);
 
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
@@ -118,16 +109,15 @@ UTEST(root_proto_aliases_module_root_proto)
     uchunk_loader_drive(&vm, s, &result);
 
     /* Strand is now WAITING (parked on the watcher); root_proto must still
-     * alias module.root_proto with the same pointer value. */
+     * point at module (module IS the root). */
     UASSERT(USTRAND_IS_WAITING(s));
-    UASSERT(s->root_proto == expected);
-    UASSERT(s->root_proto == module.root_proto);
+    UASSERT(s->root_proto == &module);
 
     /* Explicit destroy discharges the module refcount. */
     urbi_strand_destroy(s);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -147,7 +137,7 @@ UTEST(fork_child_inherits_root_proto)
     UASSERT(realm != NULL);
 
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
     /* `1 & 2`: parent executes `1`, fork child executes `2`.
      * Object.clone() inside the fork child would dereference root_proto;
@@ -155,14 +145,11 @@ UTEST(fork_child_inherits_root_proto)
      * verifying the child strand is wired correctly. */
     UASSERT(compile_chunk(&vm, &arena, &module, "1 & 2"));
 
-    struct UProto *rp = module.root_proto;
-    UASSERT(rp != NULL);
-
     UStrand *s = urbi_strand_create_for_module(&vm, realm, &module);
     UASSERT(s != NULL);
 
-    /* Parent must have root_proto set before OP_FORK runs. */
-    UASSERT(s->root_proto == rp);
+    /* Parent must have root_proto == &module before OP_FORK runs. */
+    UASSERT(s->root_proto == &module);
 
     /* Drive until quiescent — both parent and fork child must complete
      * without a crash.  A NULL root_proto in the parent would propagate
@@ -181,7 +168,7 @@ UTEST(fork_child_inherits_root_proto)
     }
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

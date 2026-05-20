@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* umodule_instance.c — UModuleInstance + UProtoInstanceArr lifecycle.
+/* uchunk_instance.c — UChunkInstance + UProtoInstanceArr lifecycle.
  *
- * See umodule_instance.h for the design contract and layout invariants. */
+ * See uchunk_instance.h for the design contract and layout invariants. */
 
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 
 #include "urbi/gc.h"          /* urbi_gc_alloc, UTYPE_MODULE_INSTANCE, UTYPE_PROTO_INSTANCE */
 #include "vm/uvm.h"              /* UVM (for the typed pointer) */
@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "gc/ugc.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "object/uic.h"
 #include "runtime/umacros.h"  /* urbi_strlen */
 #include "value/uintern.h"    /* ustr_intern */
@@ -49,7 +49,7 @@ init_ic_slice(UProtoInstance *pi, UProto *proto,
 }
 
 /* Resolve the effective allocator for a module / nested proto.  Mirrors
- * module_allocator() in src/module/umodule.c (file-static there).  Hosted
+ * module_allocator() in src/chunk/uchunk_io.c (file-static there).  Hosted
  * builds fall back to stdlib realloc when alloc_fn is NULL; freestanding
  * builds require the caller to supply alloc_fn explicitly. */
 #if __STDC_HOSTED__
@@ -61,7 +61,7 @@ static void *intern_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
 }
 #endif
 
-static UModuleAllocFn intern_alloc_for(UModuleAllocFn fn) {
+static UChunkAllocFn intern_alloc_for(UChunkAllocFn fn) {
 #if __STDC_HOSTED__
     return fn != NULL ? fn : intern_stdlib_alloc;
 #else
@@ -73,7 +73,7 @@ static UModuleAllocFn intern_alloc_for(UModuleAllocFn fn) {
  * UTF-8 strings.  Walk the strings, intern each into the VM, and populate
  * ic_names so the existing init_ic_slice fill site sees a fully populated
  * USymbol** array.  Returns true on success, false on OOM (which the
- * caller surfaces as a NULL UModuleInstance return).
+ * caller surfaces as a NULL UChunkInstance return).
  *
  * Idempotent: if ic_names is already populated, returns true with no
  * work.  Subsequent instance-create calls on the same module skip the
@@ -86,13 +86,13 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
                                       uint16_t ic_count,
                                       USymbol ***ic_names_inout,
                                       char *const *ic_name_strs,
-                                      UModuleAllocFn alloc_fn,
+                                      UChunkAllocFn alloc_fn,
                                       void *alloc_ud)
 {
     if (ic_count == 0U) return true;
     if (*ic_names_inout != NULL) return true;
     if (ic_name_strs == NULL) return false;
-    UModuleAllocFn alloc = intern_alloc_for(alloc_fn);
+    UChunkAllocFn alloc = intern_alloc_for(alloc_fn);
     if (alloc == NULL) return false;
     USymbol **fresh = (USymbol **)alloc(NULL,
                                         (size_t)ic_count * sizeof(USymbol *),
@@ -117,7 +117,7 @@ static bool intern_ic_names_from_strs(struct UVM *vm,
  * DFS pre-order; idempotent (re-running on the same tree overwrites with
  * the same value).  Added v0.9.0-repl (Task 2). */
 static void
-stamp_owning_mi(UProto *p, UModuleInstance *mi)
+stamp_owning_mi(UProto *p, UChunkInstance *mi)
 {
     if (p == NULL) return;
     p->owning_module_instance = mi;
@@ -146,7 +146,7 @@ static size_t ic_bytes_recursive(const UProto *proto) {
  * doesn't carry a proto back-pointer).  Nested protos get proto = node.
  *
  * Returns false on OOM during string-to-symbol intern (caller surfaces as
- * NULL UModuleInstance). */
+ * NULL UChunkInstance). */
 static bool init_ic_slices_recursive(struct UVM *vm,
                                      UProto *node,
                                      UProtoInstanceArr *arr,
@@ -180,24 +180,24 @@ static bool init_ic_slices_recursive(struct UVM *vm,
     return true;
 }
 
-UModuleInstance *
-urbi_module_instance_create(struct UVM *vm, UModule *m)
+UChunkInstance *
+urbi_chunk_instance_create(struct UVM *vm, UProto *root)
 {
-    if (vm == NULL || m == NULL) {
+    if (vm == NULL || root == NULL) {
         return NULL;
     }
-    /* Task 11: all chunk-top data lives on root_proto; no module fallback. */
-    UProto *rp = m->root_proto;
+    /* v0.9.2: root IS the root UProto. */
+    UProto *rp = root;
 
-    /* Cell 1: UModuleInstance.  Cast cell pointer to struct (UCell is the
+    /* Cell 1: UChunkInstance.  Cast cell pointer to struct (UCell is the
      * first member; addresses coincide).  Caller is responsible for OOM. */
-    UCell *mi_cell = urbi_gc_alloc(vm, sizeof(UModuleInstance),
+    UCell *mi_cell = urbi_gc_alloc(vm, sizeof(UChunkInstance),
                                    UTYPE_MODULE_INSTANCE);
     if (mi_cell == NULL) {
         return NULL;
     }
-    UModuleInstance *mi = (UModuleInstance *)mi_cell;
-    mi->module          = m;
+    UChunkInstance *mi = (UChunkInstance *)mi_cell;
+    mi->module          = root;
     mi->vm              = vm;
     mi->proto_instances = NULL;   /* publish only after the second cell is wired */
     mi->next_in_vm      = NULL;   /* T30: thread onto vm->module_instances_head below */
@@ -206,9 +206,9 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * root_proto fields (ic_name_strs, alloc_fn, alloc_ud, nested[]) are
      * now consumed inside init_ic_slices_recursive / ic_bytes_recursive
      * which read them off `rp` directly (v0.8.5). */
-    uint16_t   root_ic_count    = (rp != NULL) ? rp->ic_count     : 0U;
-    USymbol  **root_ic_names    = (rp != NULL) ? rp->ic_names     : NULL;
-    size_t     root_nested_count = (rp != NULL) ? rp->nested_count : 0U;
+    uint16_t   root_ic_count    = rp->ic_count;
+    USymbol  **root_ic_names    = rp->ic_names;
+    size_t     root_nested_count = rp->nested_count;
 
     /* Cell 2: UProtoInstanceArr bulk.  Layout = [header pad] + entries[n] +
      * IC tables for root chunk + every nested proto's ic_count.
@@ -222,9 +222,10 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
      * For flat trees total_proto_count == 1 + root_nested_count (identical
      * to the prior formula).  For recursive trees it includes grandchildren.
      * Fall back to the flat formula if total_proto_count is 0 — that
-     * happens only for hand-wired test modules that bypass uemit_finish
-     * and umodule_deserialize. */
-    uint16_t n = m->total_proto_count;
+     * happens only for hand-wired test roots that bypass uemit_finish
+     * and uchunk_deserialize.
+     * v0.9.2: root IS the root UProto; total_proto_count is directly on root. */
+    uint16_t n = root->total_proto_count;
     if (n == 0U) {
         n = (uint16_t)(1U + root_nested_count);
     }
@@ -233,8 +234,7 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
 
     /* v0.8.5: ic_bytes folds in root's own ic_count via the recursive walk;
      * no separate `root_ic_count * sizeof(UIC)` add. */
-    size_t ic_bytes = (rp != NULL) ? ic_bytes_recursive(rp)
-                                   : ((size_t)root_ic_count * sizeof(UIC));
+    size_t ic_bytes = ic_bytes_recursive(rp);
 
     size_t arr_size = sizeof(UProtoInstanceArr) + entries_bytes + ic_bytes;
 
@@ -289,15 +289,15 @@ urbi_module_instance_create(struct UVM *vm, UModule *m)
     vm->module_instances_head = mi;
 
     /* v0.9.0-repl Task 2: stamp every UProto in the tree with its owning
-     * UModuleInstance.  DFS pre-order matches ic_index assignment order.
+     * UChunkInstance.  DFS pre-order matches ic_index assignment order.
      * The field is currently unread by the runtime; Task 7 will use it. */
-    stamp_owning_mi(m->root_proto, mi);
+    stamp_owning_mi(root, mi);
 
     return mi;
 }
 
 void
-urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
+urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi)
 {
     /* AUDIT: OBJ-027 — body intentionally empty at v1.0.  Both cells are
      * GC-managed; sweep reaps them when no roots reach mi.  Symbol kept
@@ -308,13 +308,13 @@ urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi)
     (void)mi;
 }
 
-UModuleInstance *
-urbi_get_or_create_module_instance(struct UVM *vm, UModule *m)
+UChunkInstance *
+urbi_get_or_create_chunk_instance(struct UVM *vm, UProto *root)
 {
-    if (vm == NULL || m == NULL) return NULL;
-    UModuleInstance *mi;
+    if (vm == NULL || root == NULL) return NULL;
+    UChunkInstance *mi;
     for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
-        if (mi->module == m) return mi;
+        if (mi->module == root) return mi;
     }
-    return urbi_module_instance_create(vm, m);
+    return urbi_chunk_instance_create(vm, root);
 }

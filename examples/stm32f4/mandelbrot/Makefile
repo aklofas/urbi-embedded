@@ -161,7 +161,7 @@ $(foreach s,$(ALL_S),$(eval $(call _s_rule,$(s))))
 
 # f4 = URBI_FLOAT_TYPE=4 (f32) bake tool — required because cross-stm32f4
 # uses f32, and the default tools/urbi-compile-stdlib bakes f64 (would
-# trigger ULOAD_FLAVOR_MISMATCH on byte 13 at runtime).
+# trigger UCHUNK_LOAD_FLAVOR_MISMATCH on byte 13 at runtime).
 BAKE_TOOL := $(URBI_ROOT)/tools/urbi-compile-stdlib-f4
 
 mandelbrot_baked.h: mandelbrot.u $(BAKE_TOOL)

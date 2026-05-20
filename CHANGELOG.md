@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.9.2-uproto-only — 2026-05-19 (Approach C: UModule removed)
+
+### Changed
+
+- **Type model.** `UModule` struct removed entirely. `UProto` absorbs the root-only metadata fields (`source_name`, `origin_vm`, `next_proto_serial`, `total_proto_count`, `next_in_realm`, `owning_realm`, `heap_allocated`). Every chunk submitted to the runtime is now a `UProto*` (root proto). Closes REVIVAL §11 canonical trajectory step N+3.
+- **Public API.** 7 functions renamed: `urbi_load_module` → `urbi_load_chunk`, `urbi_module_from_bytes` → `urbi_chunk_from_bytes`, `urbi_module_free` → `urbi_chunk_free`, `urbi_module_instance_{create,destroy}` → `urbi_chunk_instance_{create,destroy}`, `urbi_get_or_create_module_instance` → `urbi_get_or_create_chunk_instance`, `urbi_load_translate_load_err` → `urbi_chunk_translate_load_err`. Argument types: any `UModule*` parameter is now `UProto*`. Six functions keep their names (`urbi_run_chunk`, `urbi_run_script`, `urbi_unload`) but change argument type.
+- **Wire format v1.7 → v1.8.** Semantic bump only — byte layout unchanged (Task 4.1's cliff preserved v1.7 byte ordering; the spec §4.1 description of a separate UModule-header section was imprecise). v1.7 bytecode rejected with `UCHUNK_LOAD_UNSUPPORTED_VERSION`. Re-emit from source to migrate.
+- **ABI 0/12/0 → 0/13/0** (9th use of pre-v1.0 escape clause).
+- **Vocabulary.** Runtime nomenclature uses chunk + proto exclusively. "Module" retired as a runtime noun. See `docs/embedding-guide.md` "Vocabulary" section.
+
+### Renamed (internal)
+
+- `UModuleInstance` → `UChunkInstance`.
+- `UModuleAllocFn` → `UChunkAllocFn` (note: spec originally proposed `UAllocFn` but that name was already taken by `src/value/uarena.h`).
+- `UModuleLoadError` → `UChunkLoadError`; enum values `ULOAD_*` → `UCHUNK_LOAD_*`.
+- `umodule_*` functions → `uproto_*` / `uchunk_*` per `docs/superpowers/specs/2026-05-19-v0.9.2-uproto-only-design.md` §5.3.
+- `src/module/` → `src/chunk/`. `umodule.h` split into `uproto.h` (type + per-proto ops) + `uchunk.h` (loader/IO API). Strand-driver files renamed `uchunk_strand.{c,h}` to disambiguate.
+- `urbi-embedded/docs/internals/realm-and-modules.md` → `realm-and-chunks.md`.
+
+### Removed
+
+- `struct UModule` definition. The forward declaration `struct UModule;` in `include/urbi/types.h` and `include/urbi/urbi.h` is gone.
+- `UStrand.module` field deleted; `s->root_proto` carries chunk identity.
+- Embedder code that allocates `UModule` on the stack must switch to `urbi_chunk_from_bytes` (heap path) returning `UProto*`.
+
+### Deferred
+
+- `URootMeta` side-struct optimization (consolidate root-only fields, save ~1.5 KB per 50-nested module). v1.x; documented in `docs/urbi-embedded-design-risks.md`.
+- Defensive assert in `uchunk_destroy_internal` for the unreachable `alloc==NULL && heap_allocated==true` state. v1.x latent footgun.
+
 ## v0.9.1-repl-service — 2026-05-19 (M8 part 2 of 2)
 
 **Theme:** Network/protocol layer on top of the v0.9.0 realm-per-session

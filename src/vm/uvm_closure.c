@@ -9,7 +9,7 @@
 #include "sched/ustrand.h"     /* UStrand */
 #include "gc/ugc.h"            /* UTYPE_CLOSURE */
 #include "value/uvalue.h"      /* UValue */
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -42,7 +42,7 @@ UClosure *vm_alloc_closure(UVM *vm, UProto *proto) {
      * For a nested proto this lands on proto->root (the module's root_proto);
      * for a root proto (native stdlib closures) it lands on proto itself.
      * Paired with the dec in uclosure_destroy (the finalizer). */
-    umodule_proto_refcount_inc(uproto_root_of(proto));
+    uproto_refcount_inc(uproto_root_of(proto));
     cl->nupvals    = nup;
     return cl;
 }

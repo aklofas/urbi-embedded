@@ -17,7 +17,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"   /* UEmitter, UFuncState, uinstr_op, uinstr_a, etc. */
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 
@@ -28,7 +28,7 @@ typedef struct {
     ULexer   lex;
     UArena   arena;
     UParser  p;
-    UModule  module;
+    UProto  module;
     UVM      vm;
     UEmitter e;
 } GlCtx;
@@ -38,7 +38,7 @@ static void gl_ctx_init(GlCtx *c, const char *src)
     ulex_init(&c->lex, src, strlen(src));
     uarena_init(&c->arena, 0);
     urbi_vm_init(&c->vm, NULL, NULL);
-    c->module = (UModule){0};
+    c->module = (UProto){0};
     uparse_init(&c->p, &c->lex, &c->arena);
     uemit_init(&c->e, &c->module, &c->arena, &c->vm, "test_gl");
 }
@@ -56,7 +56,7 @@ static UEmitError gl_ctx_run(GlCtx *c)
 static void gl_ctx_destroy(GlCtx *c)
 {
     uarena_destroy(&c->arena);
-    umodule_destroy(&c->module, NULL);
+    uchunk_destroy(&c->module, NULL);
     urbi_vm_destroy(&c->vm);
 }
 
@@ -80,8 +80,8 @@ UTEST(emit_bare_ident_emits_getslot) {
     UASSERT_EQ(EMIT_OK, (int)rc);
 
     bool found_getslot = false;
-    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_GETSLOT) {
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_GETSLOT) {
             found_getslot = true;
             break;
         }
@@ -274,8 +274,8 @@ UTEST(emit_global_pure_local_chunk_no_prologue) {
 
     /* Scan: must NOT contain OP_LOAD_REALM_GLOBAL. */
     bool found_load_global = false;
-    for (size_t i = 0; i < c.module.root_proto->instr_count; i++) {
-        if (uinstr_op(c.module.root_proto->instructions[i]) == OP_LOAD_REALM_GLOBAL) {
+    for (size_t i = 0; i < c.module.instr_count; i++) {
+        if (uinstr_op(c.module.instructions[i]) == OP_LOAD_REALM_GLOBAL) {
             found_load_global = true;
             break;
         }

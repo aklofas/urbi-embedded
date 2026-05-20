@@ -36,7 +36,7 @@ UTEST(two_runs_smoke)
 #ifdef URBI_DEBUG
 
 #include "realm/urealm.h"
-#include "module/umodule.h"  /* UValue, UVAL_INT */
+#include "chunk/uchunk.h"  /* UValue, UVAL_INT */
 
 /* Helper: bind one integer and return checksum. */
 static uint64_t

@@ -26,7 +26,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -68,7 +68,7 @@ UTEST(at_event_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Three-statement brace-block at-body — the eye_demo idiom. */
@@ -101,7 +101,7 @@ UTEST(at_event_brace_block_body_compiles)
     UASSERT_EQ(100LL, c.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -119,7 +119,7 @@ UTEST(at_cond_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -139,7 +139,7 @@ UTEST(at_cond_brace_block_body_compiles)
     UASSERT_EQ(1LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -157,7 +157,7 @@ UTEST(whenever_brace_block_body_compiles)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -177,7 +177,7 @@ UTEST(whenever_brace_block_body_compiles)
     UASSERT(fired.v.i >= 1);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -190,7 +190,7 @@ UTEST(at_event_brace_onleave_handler_compiles)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Parse-only smoke test — onleave on event watchers doesn't fire
@@ -207,7 +207,7 @@ UTEST(at_event_brace_onleave_handler_compiles)
     UASSERT_EQ(URBI_OK, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

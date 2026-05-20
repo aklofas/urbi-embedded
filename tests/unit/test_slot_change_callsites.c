@@ -32,7 +32,7 @@
 #include "watcher/uwatcher.h"          /* UWatcher, UWATCHER_AT_EVENT */
 #include "watcher/uwatcher_install.h"  /* install_at_event_runtime */
 #include "value/uintern.h"                   /* ustr_intern */
-#include "module/umodule.h"                   /* USymbol, UClosure, UProto */
+#include "chunk/uchunk.h"                   /* USymbol, UClosure, UProto */
 #include "runtime/uclosure.h"                  /* UClosure layout */
 #include "urbi/object.h"               /* URBI_ATOM_OBJECT */
 #include "gc/ugc_incremental.h"        /* UGC_HAS_SLOT_CHANGE_EVENT */

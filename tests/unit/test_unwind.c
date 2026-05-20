@@ -21,7 +21,7 @@
 #include "sched/ustrand.h"
 #include "runtime/ucleanup.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -34,12 +34,8 @@
    run_cleanup_with_replace is not exercised in a test. */
 static uint32_t s_dummy_instr[4];
 
-/* Task 11: root_proto carries chunk-top data; module is a thin 5-field shell. */
-static UProto   s_dummy_rp;
-
-/* A real UModule pointing at dummy_rp so s->module->root_proto is valid.
-   Shared across tests; filled in by setup_module(). */
-static UModule s_dummy_module;
+/* Root UProto carrying chunk-top data; s->root_proto points here. */
+static UProto s_dummy_module;
 
 static void
 setup_module(void)
@@ -50,11 +46,8 @@ setup_module(void)
     s_dummy_instr[2] = uinstr_enc_abc(OP_RET, 0, 0, 0);
     s_dummy_instr[3] = uinstr_enc_abc(OP_RET, 0, 0, 0);
 
-    memset(&s_dummy_rp, 0, sizeof(s_dummy_rp));
-    s_dummy_rp.instructions = s_dummy_instr;
-
     memset(&s_dummy_module, 0, sizeof(s_dummy_module));
-    s_dummy_module.root_proto = &s_dummy_rp;
+    s_dummy_module.instructions = s_dummy_instr;
 }
 
 /* Zero-init a UStrand for testing.  Wires vm, module, stack and cleanup-stack.
@@ -71,12 +64,11 @@ strand_setup_minimal(UStrand *s, UVM *vm)
     s->state      = USTRAND_STATE_RUNNING;
     s->stack      = reg_stack;
     s->R          = reg_stack;
-    s->module     = &s_dummy_module;
-    s->root_proto = s_dummy_module.root_proto;  /* Task 11: chunk-top on root_proto */
+    s->root_proto = &s_dummy_module;
     s->pc         = s->root_proto->instructions;
     s->pc_base    = s->root_proto->instructions;
     s->cur_consts = NULL;
-    umodule_proto_refcount_inc(s->root_proto);
+    uproto_refcount_inc(s->root_proto);
     s->frame_count   = 0;
     s->open_upvals   = NULL;
     s->out_slot      = NULL;
@@ -204,7 +196,7 @@ UTEST(unwind_throw_caught_at_try_frame)
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
     /* pc should point at handler_pc (instr[1]). */
-    UASSERT(s.pc == s_dummy_module.root_proto->instructions + 1);
+    UASSERT(s.pc == s_dummy_module.instructions + 1);
     /* Cleanup stack empty. */
     UASSERT_EQ((unsigned)s.cleanup_depth, 0U);
 
@@ -732,7 +724,7 @@ UTEST(unwind_nested_try_frames_innermost_catches)
     /* Inner TRY_FRAME absorbs: pc at instr[1], pending_unwind=OK. */
     UASSERT_EQ((int)s.pending_unwind, (int)UEXEC_OK);
     UASSERT_EQ((int)s.state, (int)USTRAND_STATE_RUNNING);
-    UASSERT(s.pc == s_dummy_module.root_proto->instructions + 1);
+    UASSERT(s.pc == s_dummy_module.instructions + 1);
     /* Inner frame popped; outer frame remains (depth=1). */
     UASSERT_EQ((unsigned)s.cleanup_depth, 1U);
 

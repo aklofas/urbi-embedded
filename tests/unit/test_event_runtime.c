@@ -35,7 +35,7 @@
 #include "object/uobject.h"
 #include "value/uintern.h"
 #include "sched/ustrand.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"   /* Phase 7: UClosure->native_fn dispatch shape */
 #include "urbi/urbi.h"
 #include "urbi/types.h"         /* urbi_make_nil */

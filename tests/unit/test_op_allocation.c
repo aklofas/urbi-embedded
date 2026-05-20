@@ -6,7 +6,7 @@
  * updating the bytecode version or the disassembler — fix those first. */
 
 #include "utest.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 
 static void op_at_install_allocated(void) {
     UASSERT_EQ((int)OP_AT_INSTALL, 38);

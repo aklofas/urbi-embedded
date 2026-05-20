@@ -231,7 +231,7 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * non-stdlib module.  Strands were stopped in step 1, so strand-bind
      * refcounts have dropped; closures from other realms that reference these
      * modules' protos survive via the root_proto-refcount rescue mechanism
-     * (umodule_destroy stashes them onto vm->rescued_protos).
+     * (uchunk_destroy stashes them onto vm->rescued_protos).
      *
      * Stdlib exclusion: vm->stdlib_module is VM-owned (freed by
      * urbi_vm_destroy) and must NEVER be unloaded here.  It only appears in
@@ -240,13 +240,13 @@ urbi_realm_destroy(struct UVM *vm, URealm *realm)
      * back-pointer to avoid a dangling reference to this (about-to-be-freed)
      * realm. */
     {
-        UModule *m = realm->loaded_protos_head;
-        while (m != NULL) {
-            UModule *next = m->next_in_realm;
-            if (m != vm->stdlib_module) {
-                urbi_unload(vm, m);
+        UProto *p = realm->loaded_protos_head;
+        while (p != NULL) {
+            UProto *next = p->next_in_realm;
+            if (p != vm->stdlib_module) {
+                urbi_unload(vm, p);
             }
-            m = next;
+            p = next;
         }
         /* If stdlib was in the list, clear its back-pointer. */
         if (vm->stdlib_module != NULL &&

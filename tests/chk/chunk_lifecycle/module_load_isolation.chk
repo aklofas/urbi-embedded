@@ -5,7 +5,7 @@
 # defer-to: M6
 #
 # Reason: import-table registration and module-loading surface via
-# urbi_vm_import_register land at M6 (stdlib). At M3, urbi_load_module
+# urbi_vm_import_register land at M6 (stdlib). At M3, urbi_load_chunk
 # is a stub that returns URBI_ERR_NOTIMP.
 #
 # When M6 lands, implement this fixture by setting up two Realms, loading a

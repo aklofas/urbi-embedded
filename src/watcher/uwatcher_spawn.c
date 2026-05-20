@@ -31,7 +31,7 @@
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"              /* UClosure full definition — proto_inst field access */
 #include "realm/urealm.h"          /* URealm — needed for w->realm->tag comparison */
-#include "object/umodule_instance.h" /* UModuleInstance / UProtoInstanceArr — module_instance wiring */
+#include "object/uchunk_instance.h" /* UChunkInstance / UProtoInstanceArr — module_instance wiring */
 #include "urbi/urbi.h"             /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"               /* URBI_INTERNAL_ASSERT */
 #include <stddef.h>
@@ -130,8 +130,8 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
      * The body closure was created by OP_CLOSURE during the watcher-install
      * script run, at which point OP_CLOSURE set cl->proto_inst to point at
      * an entry inside the installing script's UProtoInstanceArr.  That array
-     * lives in a UModuleInstance on vm->module_instances_head (permanent for
-     * the VM's lifetime).  Walk the list to find the owning UModuleInstance
+     * lives in a UChunkInstance on vm->module_instances_head (permanent for
+     * the VM's lifetime).  Walk the list to find the owning UChunkInstance
      * by pointer-range comparison, then set body->module_instance to it.
      *
      * OP_GETSLOT at frame_count==0 reads
@@ -139,7 +139,7 @@ do_spawn_body_coroutine(struct UVM *vm, struct UWatcher *w, void *fire_context)
      * which is the root-chunk IC table for the body's module — correct for
      * any body closure that uses globals (Realm.x, Realm.fired, etc.). */
     if (w->body->proto_inst != NULL) {
-        UModuleInstance *mi;
+        UChunkInstance *mi;
         for (mi = vm->module_instances_head; mi != NULL; mi = mi->next_in_vm) {
             UProtoInstanceArr *arr = mi->proto_instances;
             if (arr == NULL || arr->n == 0) continue;

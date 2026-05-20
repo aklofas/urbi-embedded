@@ -6,8 +6,8 @@
  * use — embedders use the public urbi_step + urbi_strand_create API from
  * <urbi/urbi.h> instead. */
 
-#ifndef UCHUNK_H
-#define UCHUNK_H
+#ifndef UCHUNK_STRAND_H
+#define UCHUNK_STRAND_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,4 +41,4 @@ int uchunk_loader_drive(struct UVM *vm, struct UStrand *loader,
 }
 #endif
 
-#endif /* UCHUNK_H */
+#endif /* UCHUNK_STRAND_H */

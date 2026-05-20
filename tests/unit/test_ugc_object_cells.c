@@ -2,7 +2,7 @@
 /* Unit tests: GC integration for the M4 object-model cell types.
  *
  * Verifies that allocations of UObject / UProtos / UShape / UProps /
- * USlotHandle / UModuleInstance / UProtoInstance via urbi_gc_alloc are
+ * USlotHandle / UChunkInstance / UProtoInstance via urbi_gc_alloc are
  * fully integrated with the incremental mark + sweep cycle:
  *   - Each UTYPE_* tag has a registered UType in vm->type_table[].
  *   - Allocations succeed and zero-initialize the cell.
@@ -11,7 +11,7 @@
  *   - Unreferenced cells are reclaimed (sweep returns to IDLE with
  *     the all-cells list empty when no roots are live).
  *
- * USlotHandle / UModuleInstance / UProtoInstance get no-op walkers at
+ * USlotHandle / UChunkInstance / UProtoInstance get no-op walkers at
  * this task; later M4 tasks fill them in once their owning data lands. */
 
 #include "utest.h"

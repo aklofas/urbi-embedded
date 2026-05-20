@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Unit tests: urbi_run_chunk, urbi_repl_eval, urbi_run_script, urbi_load_module
+/* Unit tests: urbi_run_chunk, urbi_repl_eval, urbi_run_script, urbi_load_chunk
    (row 8 §5 + §8.4 / T16). */
 
 #include "utest.h"
@@ -7,7 +7,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
@@ -21,9 +21,9 @@
 
 /* Helper: compile `src` into *out_module using `vm`.
    Returns true on success; the caller owns the module and must call
-   umodule_destroy() when done. */
+   uchunk_destroy() when done. */
 static bool
-compile_src(UVM *vm, const char *src, UModule *out_module)
+compile_src(UVM *vm, const char *src, UProto *out_module)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -31,7 +31,7 @@ compile_src(UVM *vm, const char *src, UModule *out_module)
     UArena arena;
     uarena_init(&arena, 4096);
 
-    *out_module = (UModule){0};
+    *out_module = (UProto){0};
 
     UEmitter e;
     uemit_init(&e, out_module, &arena, vm, NULL);
@@ -67,7 +67,7 @@ UTEST(run_chunk_round_trip_with_realm)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "1 + 2", &module));
 
     UValue result = {0};
@@ -77,7 +77,7 @@ UTEST(run_chunk_round_trip_with_realm)
     UASSERT_EQ(result.kind, (uint8_t)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)3);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -89,7 +89,7 @@ UTEST(run_chunk_null_realm_uses_global)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m1, m2;
+    UProto m1, m2;
     UASSERT(compile_src(&vm, "2 + 2", &m1));
     UASSERT(compile_src(&vm, "10 - 3", &m2));
 
@@ -109,8 +109,8 @@ UTEST(run_chunk_null_realm_uses_global)
     UASSERT(g1 != NULL);
     UASSERT(g1 == g2);
 
-    umodule_destroy(&m1, NULL);
-    umodule_destroy(&m2, NULL);
+    uchunk_destroy(&m1, NULL);
+    uchunk_destroy(&m2, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -121,13 +121,13 @@ UTEST(run_chunk_null_out_result_no_crash)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "42", &module));
 
     int rc = urbi_run_chunk(&vm, NULL, &module, NULL);
     UASSERT_EQ(rc, URBI_OK);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -156,7 +156,7 @@ UTEST(run_chunk_honors_supplied_realm)
         (UErrCode)urbi_realm_set_global_const(&vm, r1, "K", 1, v);
     UASSERT_EQ((int)set_rc, (int)URBI_OK);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "K", &module));
 
     UValue result = {0};
@@ -166,7 +166,7 @@ UTEST(run_chunk_honors_supplied_realm)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ((long long)result.v.i, (long long)1234);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, r1);
     urbi_vm_destroy(&vm);
 }
@@ -306,18 +306,18 @@ UTEST(run_script_returns_ok_discards_result)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "7 * 6", &module));
 
     int rc = urbi_run_script(&vm, NULL, &module);
     UASSERT_EQ(rc, URBI_OK);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
 /* -------------------------------------------------------------------------
- * urbi_load_module tests
+ * urbi_load_chunk tests
  * ------------------------------------------------------------------------- */
 
 /* Case 9: load_module rejects NULL arguments (vm / module / module_name).
@@ -330,17 +330,17 @@ UTEST(load_module_null_args_rejected)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "42", &module));
 
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(NULL, &module, "test_module"));
+               urbi_load_chunk(NULL, &module, "test_module"));
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(&vm, NULL, "test_module"));
+               urbi_load_chunk(&vm, NULL, "test_module"));
     UASSERT_EQ(URBI_ERR_INVALID_ARG,
-               urbi_load_module(&vm, &module, NULL));
+               urbi_load_chunk(&vm, &module, NULL));
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -348,9 +348,9 @@ UTEST(load_module_null_args_rejected)
  * (API-021 v0.6.0 regression; also closes CHSTR-009).
  *
  * Compile a tiny module with a top-level `var x = 42` binding, hand it to
- * urbi_load_module, then read back via urbi_realm_get_global.  The original
+ * urbi_load_chunk, then read back via urbi_realm_get_global.  The original
  * stub returned URBI_ERR_INVALID_ARG without doing any work; the new body
- * binds a UModuleInstance and runs the root chunk under the global Realm
+ * binds a UChunkInstance and runs the root chunk under the global Realm
  * so top-level bindings install.  module_name is advisory at v0.6.0
  * (no import-table lookup yet — v1.x backlog).
  *
@@ -363,10 +363,10 @@ UTEST(load_module_installs_top_level_var)
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(compile_src(&vm, "var x = 42", &module));
 
-    int rc = urbi_load_module(&vm, &module, "test_module");
+    int rc = urbi_load_chunk(&vm, &module, "test_module");
     UASSERT_EQ(URBI_OK, rc);
 
     URealm *gr = urbi_realm_global(&vm);
@@ -378,7 +378,7 @@ UTEST(load_module_installs_top_level_var)
     UASSERT_EQ((int)UVAL_INT, (int)x.kind);
     UASSERT_EQ(42, (int)x.v.i);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

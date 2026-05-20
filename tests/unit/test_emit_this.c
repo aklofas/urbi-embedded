@@ -26,7 +26,7 @@
 #include "parse/uast.h"
 #include "parse/uparse.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #define UTEST(name) static void name(void)
@@ -39,7 +39,7 @@ static UEmitError compile_only(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 0);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
     UParser p;
@@ -48,20 +48,20 @@ static UEmitError compile_only(UVM *vm, const char *src)
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return EMIT_AST_ERROR;
         }
         UEmitError err = uemit_statement(&e, node);
         if (err != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return err;
         }
         uarena_reset(&arena);
     }
     UEmitError final_err = uemit_finish(&e);
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     return final_err;
 }
 
@@ -72,34 +72,41 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 0);
-    UModule module = {0};
+    /* Heap-allocate module: closures from function literals may survive this
+     * helper's return and be GC-finalized only when urbi_vm_destroy is called. */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) { uarena_destroy(&arena); return URBI_ERR_OOM; }
+    memset(module, 0, sizeof(*module));
+    module->heap_allocated = true;
+    module->alloc_fn       = vm->alloc_fn;
+    module->alloc_ud       = vm->alloc_ud;
     UEmitter e;
-    uemit_init(&e, &module, &arena, vm, NULL);
+    uemit_init(&e, module, &arena, vm, NULL);
     UParser p;
     uparse_init(&p, &lex, &arena);
     UAstNode *node;
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(module, vm);
             return URBI_ERR_COMPILE;
         }
         if (uemit_statement(&e, node) != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(module, vm);
             return URBI_ERR_COMPILE;
         }
         uarena_reset(&arena);
     }
     if (uemit_finish(&e) != EMIT_OK) {
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(module, vm);
         return URBI_ERR_COMPILE;
     }
     UValue out = {0};
-    int rc = urbi_run_chunk(vm, NULL, &module, &out);
+    int rc = urbi_run_chunk(vm, NULL, module, &out);
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(module, vm);
     return rc;
 }
 

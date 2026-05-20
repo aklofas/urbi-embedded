@@ -19,7 +19,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "urbi/urbi.h"
 #include "value/uvalue.h"
@@ -71,19 +71,19 @@ static int eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 /* Compile src (length len) into *out_module.
    Returns true on success; caller owns the module and must call
-   umodule_destroy + uarena_destroy when done.
+   uchunk_destroy + uarena_destroy when done.
    On failure, writes the formatted error message (no trailing newline) into
    err_buf (up to err_cap bytes, NUL-terminated), destroys internal state,
-   and returns false; caller must NOT call umodule_destroy / uarena_destroy. */
+   and returns false; caller must NOT call uchunk_destroy / uarena_destroy. */
 static bool compile_source(const char *src, size_t len, const char *src_name,
-                           UVM *vm, UModule *out_module, UArena *arena,
+                           UVM *vm, UProto *out_module, UArena *arena,
                            char *err_buf, size_t err_cap) {
     ULexer lex;
     ulex_init(&lex, src, len);
 
     uarena_init(arena, 4096);
 
-    *out_module = (UModule){0};
+    *out_module = (UProto){0};
     UEmitter e;
     uemit_init(&e, out_module, arena, vm, src_name);
 
@@ -104,14 +104,14 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
     }
 
     if (had_error) {
-        umodule_destroy(out_module, vm);
+        uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
         return false;
     }
 
     if (uemit_finish(&e) != EMIT_OK) {
         snprintf(err_buf, err_cap, "%s: emit error: %s", src_name, uemit_error_name(e.error));
-        umodule_destroy(out_module, vm);
+        uchunk_destroy(out_module, vm);
         uarena_destroy(arena);
         return false;
     }
@@ -123,7 +123,7 @@ static bool compile_source(const char *src, size_t len, const char *src_name,
    Returns 0 on success, 1 on compile error. */
 static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) {
     UArena arena;
-    UModule module;
+    UProto module;
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
@@ -136,7 +136,7 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
     size_t n = uemit_disassemble(&module, buf, sizeof buf);
     fwrite(buf, 1, n, stdout);
     if (n > 0 && buf[n - 1] != '\n') fputc('\n', stdout);
-    umodule_destroy(&module, vm);
+    uchunk_destroy(&module, vm);
     uarena_destroy(&arena);
     return 0;
 }
@@ -149,40 +149,40 @@ static int run_dump(UVM *vm, const char *src, size_t len, const char *src_name) 
 static int run_dump_wire_format(UVM *vm, const char *src, size_t len,
                                 const char *src_name) {
     UArena arena;
-    UModule module;
+    UProto module;
     char err[256] = {0};
     if (!compile_source(src, len, src_name, vm, &module, &arena, err, sizeof err)) {
         fprintf(stderr, "urbi: %s\n", err);
         return 1;
     }
-    /* First-pass: query required size.  umodule_serialize returns a negative
-       value on failure (-(ptrdiff_t)UModuleLoadError code). */
-    ptrdiff_t need = umodule_serialize(&module, NULL, 0);
+    /* First-pass: query required size.  uchunk_serialize returns a negative
+       value on failure (-(ptrdiff_t)UChunkLoadError code). */
+    ptrdiff_t need = uchunk_serialize(&module, NULL, 0);
     if (need < 0) {
         fprintf(stderr, "urbi: serialize size-query failed: %ld\n", (long)-need);
-        umodule_destroy(&module, vm);
+        uchunk_destroy(&module, vm);
         uarena_destroy(&arena);
         return 1;
     }
     uint8_t *buf = malloc((size_t)need);
     if (!buf) {
         fprintf(stderr, "urbi: out of memory\n");
-        umodule_destroy(&module, vm);
+        uchunk_destroy(&module, vm);
         uarena_destroy(&arena);
         return 1;
     }
-    ptrdiff_t wrote = umodule_serialize(&module, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&module, buf, (size_t)need);
     if (wrote != need) {
         fprintf(stderr, "urbi: serialize wrote %ld, expected %ld\n",
                 (long)wrote, (long)need);
         free(buf);
-        umodule_destroy(&module, vm);
+        uchunk_destroy(&module, vm);
         uarena_destroy(&arena);
         return 1;
     }
     fwrite(buf, 1, (size_t)need, stdout);
     free(buf);
-    umodule_destroy(&module, vm);
+    uchunk_destroy(&module, vm);
     uarena_destroy(&arena);
     return 0;
 }
@@ -245,7 +245,7 @@ static int run_file(UVM *vm, const char *path) {
     if (!src) return 2;
 
     UArena arena;
-    UModule module;
+    UProto module;
     int rc = 1;
     char err[256] = {0};
     if (compile_source(src, len, path, vm, &module, &arena, err, sizeof err)) {
@@ -258,7 +258,7 @@ static int run_file(UVM *vm, const char *path) {
                     vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
-        umodule_destroy(&module, vm);
+        uchunk_destroy(&module, vm);
         uarena_destroy(&arena);
     } else {
         fprintf(stderr, "urbi: %s\n", err);
@@ -298,7 +298,7 @@ static int run_expression(UVM *vm, const char *expr) {
     }
 
     UArena arena;
-    UModule module;
+    UProto module;
     int rc = 1;
     char err[256] = {0};
     if (compile_source(buf, final_len, "<expr>", vm, &module, &arena, err, sizeof err)) {
@@ -317,7 +317,7 @@ static int run_expression(UVM *vm, const char *expr) {
                     vm->last_errmsg[0] ? vm->last_errmsg : "(vm error)");
             rc = 1;
         }
-        umodule_destroy(&module, vm);
+        uchunk_destroy(&module, vm);
         uarena_destroy(&arena);
     } else {
         fprintf(stderr, "urbi: %s\n", err);

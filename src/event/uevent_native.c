@@ -49,7 +49,7 @@
 #include "runtime/umacros.h"   /* urbi_zero, urbi_strlen */
 
 #include <stddef.h>  /* size_t */
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include <stdint.h>
 
 /* === uvalue_from_event / uvalue_as_event / uvalue_is_event ===

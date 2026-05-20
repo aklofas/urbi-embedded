@@ -21,7 +21,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -57,7 +57,7 @@ UTEST(dangling_cl_at_event_from_function_body)
     UASSERT(fire != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Install the at-handler from inside a function body.  After install()
@@ -85,7 +85,7 @@ UTEST(dangling_cl_at_event_from_function_body)
     UASSERT_EQ(1LL, fired.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

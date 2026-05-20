@@ -12,7 +12,7 @@
 #include "value/uvalue.h"
 #include "value/uintern.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 #include "utest_e2e_helpers.h"
 #include <string.h>

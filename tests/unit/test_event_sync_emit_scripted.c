@@ -41,7 +41,7 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "value/uarena.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"
 #include "watcher/uwatcher_install.h"
@@ -87,7 +87,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
      *              Realm.received.  The chunk's RET value is the
      *              function-literal closure. === */
     UArena   arena;
-    UModule  module = {0};
+    UProto  module = {0};
     uarena_init(&arena, 4096);
 
     UValue closure_val = {0};
@@ -97,7 +97,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UASSERT_EQ(URBI_OK, rc);
     UASSERT_EQ((int)UVAL_CLOSURE, (int)closure_val.kind);
     if (rc != URBI_OK || closure_val.kind != UVAL_CLOSURE) {
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         uarena_destroy(&arena);
         urbi_vm_destroy(&vm);
         return;
@@ -110,7 +110,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     UEvent *e = urbi_event_create(&vm);
     UASSERT(e != NULL);
     if (e == NULL) {
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         uarena_destroy(&arena);
         urbi_vm_destroy(&vm);
         return;
@@ -156,7 +156,7 @@ UTEST(scripted_event_sync_emit_delivers_payload)
     while (e->at_watchers_head != NULL)
         urbi_watcher_unregister_internal(&vm, e->at_watchers_head);
     ustrand_destroy(&inst_strand, &vm);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

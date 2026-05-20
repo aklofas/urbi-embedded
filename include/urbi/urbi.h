@@ -15,9 +15,10 @@
 #include <stdint.h>   /* uint64_t */
 
 /* UValue, UExecStatus, UErrCode, UVMError, UVMAllocFn, opaque struct
- * fwd-decls (UVM, UStrand, UTag, URealm, UModule, UClosure).  Replaces
- * the pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal
- * header into the public surface; closes API-012 / INC-003 structurally. */
+ * fwd-decls (UVM, UStrand, UTag, URealm, UClosure).  Replaces the
+ * pre-v0.5.5 `#include "sched/ustrand.h"` that pulled an internal header
+ * into the public surface; closes API-012 / INC-003 structurally.
+ * v0.9.2: UModule removed (struct deleted; a module IS its root UProto). */
 #include "urbi/types.h"
 
 #ifdef __cplusplus
@@ -168,14 +169,14 @@ int urbi_realm_get_global(struct UVM *vm, struct URealm *realm,
  *
  * urbi_run_script: thin wrapper around urbi_run_chunk that discards the result.
  *
- * urbi_load_module: bind a pre-compiled module into the VM and run its root
+ * urbi_load_chunk: bind a pre-compiled module into the VM and run its root
  * chunk under the global Realm so top-level bindings install into realm
  * globals.  module_name is currently advisory (no import-table lookup yet —
  * v1.x backlog).  Returns URBI_OK on success, URBI_ERR_INVALID_ARG if any
- * argument is NULL, URBI_ERR_OOM on UModuleInstance allocation failure, or
+ * argument is NULL, URBI_ERR_OOM on UChunkInstance allocation failure, or
  * a UVMError-derived code if root-chunk execution fails. */
 
-struct UModule;       /* forward decl — definition in umodule.h */
+struct UProto;        /* forward decl — v0.9.2: UModule deleted; a module IS its root UProto */
 
 typedef enum {
     URBI_STEP_RUNNING   = 0,  /* budget exhausted or yield; call again */
@@ -189,7 +190,7 @@ UStepResult urbi_step(struct UVM *vm,
                       uint64_t *out_next_wake_us);
 
 int urbi_run_chunk(struct UVM *vm, struct URealm *realm,
-                   struct UModule *module, UValue *out_result);
+                   struct UProto *root, UValue *out_result);
 
 /* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
  * compiler frontend (src/lex, src/parse, src/emit) is not linked in
@@ -202,33 +203,33 @@ int urbi_repl_eval(struct UVM *vm, struct URealm *realm,
                    char *out_buf, size_t out_buf_size);
 #endif
 
-int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UModule *module);
+int urbi_run_script(struct UVM *vm, struct URealm *realm, struct UProto *root);
 
-int urbi_load_module(struct UVM *vm, struct UModule *module, const char *module_name);
+int urbi_load_chunk(struct UVM *vm, struct UProto *root, const char *module_name);
 
 /* === v0.9.0-repl: urbi_unload ===
  *
- * Unload `module` from its owning realm's loaded_protos_head list.  If the
- * module's root_proto refcount is > 0 (a strand is parked on the loader, or
- * closures hold UProtos), the rescue mechanism transfers the root_proto to
- * vm->rescued_protos and final cleanup completes when the last refcount-
- * holder releases.  Otherwise the module is destroyed immediately.
+ * Unload root from its owning realm's loaded_protos_head list.  If the
+ * root's refcount is > 0 (a strand is parked on the loader, or closures hold
+ * UProtos), the rescue mechanism transfers the root to vm->rescued_protos and
+ * final cleanup completes when the last refcount-holder releases.  Otherwise
+ * the root is destroyed immediately.
  *
  * Returns URBI_OK on success (whether immediate or deferred).
- * Returns URBI_ERR_INVALID_ARG if vm or module is NULL, or if module is not
+ * Returns URBI_ERR_INVALID_ARG if vm or root is NULL, or if root is not
  *   bound to any realm (already unloaded).
  *
  * Thread safety: MAIN.  Not ISR-safe. */
-int urbi_unload(struct UVM *vm, struct UModule *module);
+int urbi_unload(struct UVM *vm, struct UProto *root);
 
-/* urbi_load_translate_load_err: map an internal UModuleLoadError (passed
+/* urbi_chunk_translate_load_err: map an internal UChunkLoadError (passed
  * as int) to the corresponding public UErrCode.  Currently routes
- * ULOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
+ * UCHUNK_LOAD_UNSUPPORTED_VERSION → URBI_ERR_BYTECODE_VERSION_MISMATCH and
  * collapses every other internal code to URBI_ERR_INVALID_ARG.  Closes
  * API-005: URBI_ERR_BYTECODE_VERSION_MISMATCH is now reachable from a
  * public-API call site, even though the deserialize-bytes entry point
  * itself remains M6 work in progress. */
-int urbi_load_translate_load_err(int load_err);
+int urbi_chunk_translate_load_err(int load_err);
 
 /* === Phase 10 stdlib bake (M6 Wave 2) ===
  *
@@ -259,7 +260,7 @@ int urbi_load_translate_load_err(int load_err);
 /* Compile-error gated when URBI_BYTECODE_ONLY=1 (M7 Wave 1 T16): the
  * compiler frontend (src/lex, src/parse, src/emit) is not linked in
  * bytecode-only builds.  Pre-baked bytecode is loaded through
- * urbi_load_module / urbi_run_chunk instead. */
+ * urbi_load_chunk / urbi_run_chunk instead. */
 #if !defined(URBI_BYTECODE_ONLY)
 int urbi_compile_source(struct UVM *vm,
                         const char *src, size_t src_len,
@@ -292,7 +293,7 @@ int urbi_compile_source(struct UVM *vm,
  * urbi_strand_cancel / urbi_strand_panic / urbi_strand_reset are declared
  * in the row 7 control-transfer section above (T12). */
 
-struct UClosure;   /* forward decl — definition in umodule.h */
+struct UClosure;   /* forward decl — definition in src/chunk/uproto.h */
 
 /* urbi_native_method_fn: signature for host C functions that back a
  * UClosure slot.  Called by OP_CALL when the closure's native_fn field is
@@ -970,16 +971,16 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
 
 /* === M4 module-instance C API (T16) ===
  *
- * UModule is read-only (flash-resident on freestanding targets).  The
- * mutable IC state lives in a per-VM UModuleInstance.  Two instances of
- * the same UModule (one per VM, or two per VM for redundant chunks) hold
+ * The root UProto is read-only (flash-resident on freestanding targets).
+ * The mutable IC state lives in a per-VM UChunkInstance.  Two instances of
+ * the same root UProto (one per VM, or two per VM for redundant chunks) hold
  * independent IC tables — IC fill in one instance does not bleed into the
  * other.
  *
- * urbi_module_instance_create allocates the UModuleInstance + its
+ * urbi_chunk_instance_create allocates the UChunkInstance + its
  * UProtoInstanceArr bulk in two GC cells.  Returns NULL on OOM.
  *
- * urbi_module_instance_destroy is a no-op at v1.0 — both cells are
+ * urbi_chunk_instance_destroy is a no-op at v1.0 — both cells are
  * GC-managed and reaped by sweep when no roots reach the instance.
  * (AUDIT: OBJ-027 — function body is dead at v1.0; symbol kept for
  * public-API stability.  M7 module-instance lifecycle work may give
@@ -991,11 +992,11 @@ void urbi_set_callback_watchdog_mode(struct UVM *vm, UWatchdogMode mode);
  * of the v1.0 API. */
 #ifndef URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
 #define URBI_MODULE_INSTANCE_TYPEDEF_DEFINED
-typedef struct UModuleInstance UModuleInstance;
+typedef struct UChunkInstance UChunkInstance;
 #endif
 
-UModuleInstance *urbi_module_instance_create (struct UVM *vm, struct UModule *m);
-void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *mi);
+UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
+void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
  *
@@ -1020,7 +1021,7 @@ void             urbi_module_instance_destroy(struct UVM *vm, UModuleInstance *m
 int      urbi_vm_init   (struct UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud);
 void     urbi_vm_destroy(struct UVM *vm);
 UVMError urbi_vm_run    (struct UVM *vm, struct URealm *realm,
-                         const struct UModule *module, UValue *out);
+                         const struct UProto *root, UValue *out);
 
 /* === urbi_lock_heap (Phase 13 / T145) ===
  *
@@ -1052,7 +1053,7 @@ void urbi_lock_heap(struct UVM *vm);
  *   3. gc_total_allocated counter
  *   4. intern table entry count
  *   5. topology_gen, lookup_id, next_object_id (M4 object-model counters)
- *   6. per-IC observable state across every live UModuleInstance (M4 T30):
+ *   6. per-IC observable state across every live UChunkInstance (M4 T30):
  *      ic->n, ic->replace_cursor, and ic->topology_gen[0..n) for each
  *      UIC site in each UProtoInstance's IC table.  Heap pointers
  *      (recv_shapes, slots, uprops) are deliberately NOT folded —
@@ -1174,12 +1175,12 @@ void urbi_set_error(struct UVM *vm, int code,
 
 /* === Public bytecode deserialization (v0.7.1 spec amendment) ===
  *
- * urbi_module_from_bytes: deserialize a wire-format bytecode buffer into a
- * caller-owned UModule on the heap.
+ * urbi_chunk_from_bytes: deserialize a wire-format bytecode buffer into a
+ * heap-allocated root UProto.  (v0.9.2: was UModule*; UModule deleted.)
  *
  * On success: returns a non-NULL pointer that must be freed with
- * urbi_module_free when no longer needed.  The caller must ensure no live VM
- * is executing inside the module when urbi_module_free is called.
+ * urbi_chunk_free when no longer needed.  The caller must ensure no live VM
+ * is executing inside the module when urbi_chunk_free is called.
  *
  * On error: returns NULL; if errmsg is non-NULL, writes a diagnostic into
  * errmsg[0..errcap) (NUL-terminated).
@@ -1190,16 +1191,16 @@ void urbi_set_error(struct UVM *vm, int code,
  *   any other deserialize or OOM error  → returns NULL
  *
  * Thread safety: MAIN (calls the heap allocator). */
-struct UModule *urbi_module_from_bytes(const uint8_t *buf, size_t len,
-                                       char *errmsg, size_t errcap);
+struct UProto *urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
+                                      char *errmsg, size_t errcap);
 
-/* urbi_module_free: free a UModule returned by urbi_module_from_bytes.
+/* urbi_chunk_free: free a root UProto returned by urbi_chunk_from_bytes.
  *
- * Calls the internal destructor (frees all owned buffers), then frees the
- * UModule allocation itself.  NULL is a no-op.
+ * Calls uchunk_destroy (frees all owned buffers + the root struct).
+ * NULL is a no-op.
  *
  * Thread safety: MAIN. */
-void urbi_module_free(struct UModule *module);
+void urbi_chunk_free(struct UProto *root);
 
 #ifdef __cplusplus
 }

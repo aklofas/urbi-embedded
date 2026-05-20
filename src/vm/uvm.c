@@ -25,8 +25,8 @@
 #include "changed/uchanged_node.h"          /* urbi_object_get_or_create_change_event (T60) */
 #include "gc/ugc.h"
 #include "gc/ugc_incremental.h"
-#include "module/umodule.h"
-#include "object/umodule_instance.h"
+#include "chunk/uchunk.h"
+#include "object/uchunk_instance.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
 #include "vm/uvm_op_overload.h"  /* vm_arith_method_fallback / _unary / _cmp (Gap #4) */
@@ -328,7 +328,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_ADD, b->kind, cc->kind);
                 HALT();
@@ -349,7 +349,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_SUB, b->kind, cc->kind);
                 HALT();
@@ -370,7 +370,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_MUL, b->kind, cc->kind);
                 HALT();
@@ -391,7 +391,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_DIV, b->kind, cc->kind);
                 HALT();
@@ -412,7 +412,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = rc;
-                vm_format_type_error_unary(vm, s->module,
+                vm_format_type_error_unary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base),
                     OP_NEG, b->kind);
                 HALT();
@@ -557,7 +557,7 @@ dispatch:
              * s->module_instance first, then the parent closure's
              * origin_module_instance.  Eliminates both the two-branch
              * proto_inst binding AND the origin_module_instance propagation. */
-            struct UModuleInstance *omi = child_proto->owning_module_instance;
+            struct UChunkInstance *omi = child_proto->owning_module_instance;
             URBI_DISPATCH_ASSERT(omi != NULL);
             URBI_DISPATCH_ASSERT(omi->proto_instances != NULL);
             URBI_DISPATCH_ASSERT((size_t)child_proto->ic_index <
@@ -809,7 +809,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base), OP_LT, b->kind, c->kind);
                 HALT();
             }
@@ -831,7 +831,7 @@ dispatch:
                     NEXT();
                 }
                 vm->last_error = UVM_TYPE_ERROR;
-                vm_format_type_error_binary(vm, s->module,
+                vm_format_type_error_binary(vm, s->root_proto,
                     (size_t)(s->pc - s->pc_base), OP_LE, b->kind, c->kind);
                 HALT();
             }

@@ -24,7 +24,7 @@
 #define UHANDLE_H
 
 #include <stdint.h>
-#include "module/umodule.h"   /* UValue */
+#include "chunk/uchunk.h"   /* UValue */
 #include "gc/ugc.h"       /* UGcRootCallback */
 
 struct UVM;

@@ -30,7 +30,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -68,7 +68,7 @@ UTEST(waituntil_cascade_three_strands_wake)
     UASSERT(go != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Setup:
@@ -115,7 +115,7 @@ UTEST(waituntil_cascade_three_strands_wake)
     UASSERT_EQ(3LL, woke.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, &vm);
+    uchunk_destroy(&module, &vm);
     urbi_vm_destroy(&vm);
 }
 

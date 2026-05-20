@@ -12,7 +12,7 @@
 
 #include "sched/ustrand.h"        /* UStrand */
 #include "runtime/uclosure.h"     /* UClosure */
-#include "module/umodule.h"       /* UModule, UValue */
+#include "chunk/uchunk.h"       /* UProto, UValue */
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,7 +35,7 @@ ustrand_consts_for_closure(const UStrand *s, const UClosure *cl)
         return cl->proto->constants;
     }
     /* Chunk-top strands: constants live on s->root_proto.  Body strands (no
-     * UModule — task #23 fix) fall through to entry_closure->proto. */
+     * UProto — task #23 fix) fall through to entry_closure->proto. */
     if (s->root_proto != NULL) {
         return s->root_proto->constants;
     }

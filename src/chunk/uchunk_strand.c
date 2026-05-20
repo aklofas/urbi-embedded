@@ -12,11 +12,11 @@
  * urbi_strncpy_truncating (runtime/umacros.h) is the shared bounded-copy helper. */
 
 #include "urbi/urbi.h"
-#include "module/uchunk.h"
+#include "chunk/uchunk_strand.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
-#include "object/umodule_instance.h"  /* urbi_get_or_create_module_instance */
+#include "chunk/uchunk.h"
+#include "object/uchunk_instance.h"  /* urbi_get_or_create_chunk_instance */
 #include "value/uvalue.h"
 #include "runtime/umacros.h"   /* urbi_strncpy_truncating, urbi_zero */
 #include "runtime/uclosure.h"  /* UClosure — full struct for closure type usage */
@@ -47,14 +47,14 @@
  * in and are NOT re-registered for subsequent realms.  The unload path
  * (Task 12 / 13) handles per-realm teardown independently.  v0.9.0-repl. */
 static void
-urealm_register_module(URealm *realm, UModule *m)
+urealm_register_module(URealm *realm, UProto *p)
 {
-    if (realm == NULL || m == NULL) return;
+    if (realm == NULL || p == NULL) return;
     /* Already registered (in some realm) — skip to avoid double-linking. */
-    if (m->owning_realm != NULL) return;
-    m->next_in_realm = realm->loaded_protos_head;
-    m->owning_realm  = realm;
-    realm->loaded_protos_head = m;
+    if (p->owning_realm != NULL) return;
+    p->next_in_realm = realm->loaded_protos_head;
+    p->owning_realm  = realm;
+    realm->loaded_protos_head = p;
 }
 
 /* ---------------------------------------------------------------------------
@@ -166,14 +166,13 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
             }
             /* v0.8.1 Phase 2: strand-bind ref is on root_proto.
              * Discharge early here via the deferred-destroy-aware helper;
-             * null both fields so ustrand_destroy (via urealm_teardown_all)
-             * does not double-dec. */
+             * null root_proto so ustrand_destroy (via urealm_teardown_all)
+             * does not double-dec.
+             * v0.9.2: loader->module deleted; root_proto is the sole identity. */
             if (loader->root_proto != NULL) {
-                umodule_strand_refcount_dec((UModule *)loader->module,
-                                           loader->root_proto, vm);
+                uproto_strand_refcount_dec(loader->root_proto, vm);
                 loader->root_proto = NULL;
             }
-            loader->module = NULL;
             vm->fatal_strand = NULL;
             return URBI_ERR_STRAND_FATAL;
         }
@@ -239,7 +238,7 @@ uchunk_loader_drive(UVM *vm, UStrand *loader, UValue *out_result)
  * module->refcount (a mutating operation).
  * --------------------------------------------------------------------------- */
 int
-urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
+urbi_run_chunk(UVM *vm, URealm *realm, UProto *root, UValue *out_result)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
@@ -248,15 +247,15 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
         if (!realm) return URBI_ERR_OOM;
     }
 
-    /* Register module onto realm->loaded_protos_head (idempotent). */
-    urealm_register_module(realm, module);
+    /* Register root onto realm->loaded_protos_head (idempotent). */
+    urealm_register_module(realm, root);
 
-    /* Empty module (instr_count == 0): nothing to dispatch.  Mirrors the
+    /* Empty root (instr_count == 0): nothing to dispatch.  Mirrors the
      * urbi_vm_run fast-path (uvm_run.c:44-47) so callers that compile an
      * empty REPL line still get URBI_OK + nil result.  Without this guard,
      * urbi_strand_create_for_module would return NULL (per its precondition)
      * and be misreported as OOM. */
-    if (!module || module->root_proto == NULL || module->root_proto->instr_count == 0) {
+    if (!root || root->instr_count == 0) {
         if (out_result) {
             urbi_zero(out_result, sizeof(*out_result));
             out_result->kind = UVAL_NIL;
@@ -267,7 +266,7 @@ urbi_run_chunk(UVM *vm, URealm *realm, UModule *module, UValue *out_result)
     UValue local_out;
     UValue *out = out_result ? out_result : &local_out;
 
-    UStrand *loader = urbi_strand_create_for_module(vm, realm, module);
+    UStrand *loader = urbi_strand_create_for_module(vm, realm, root);
     if (!loader) {
         vm->last_error = UVM_OOM;
         return URBI_ERR_OOM;
@@ -327,21 +326,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
     UArena arena;
     uarena_init(&arena, 4096);
 
-    /* v0.9.0-repl (CHSTR-027): heap-allocate UModule per REPL line so each
-     * module persists in realm->loaded_protos_head past return.  The old
+    /* v0.9.0-repl (CHSTR-027): heap-allocate root UProto per REPL line so each
+     * root persists in realm->loaded_protos_head past return.  The old
      * stack-alloc reused the same address across REPL lines, causing the
      * realm registry to alias.  Freed by urbi_realm_destroy (session-end)
-     * or the root_proto-refcount rescue mechanism (if a strand parks). */
-    UModule *module = (UModule *)vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
+     * or the root_proto-refcount rescue mechanism (if a strand parks).
+     * v0.9.2: root IS the UProto; no UModule shell. */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
     if (module == NULL) {
         if (out_buf && out_buf_size > 0) {
-            urbi_strncpy_truncating(out_buf, out_buf_size, "OOM allocating module");
+            urbi_strncpy_truncating(out_buf, out_buf_size, "OOM allocating root proto");
         }
         uarena_destroy(&arena);
         return URBI_ERR_OOM;
     }
     urbi_zero(module, sizeof *module);
-    module->shell_heap_allocated = true;
+    module->alloc_fn = vm->alloc_fn;
+    module->alloc_ud = vm->alloc_ud;
+    module->heap_allocated = true;
 
     UEmitter e;
     uemit_init(&e, module, &arena, vm, NULL);
@@ -423,9 +425,9 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
         }
         /* Compile-error path: module was never registered in the realm
          * (urbi_run_chunk was not reached), so it is not realm-owned.
-         * Destroy its internals then free the heap allocation directly. */
-        umodule_destroy(module, vm);
-        vm->alloc_fn(module, 0, vm->alloc_ud);
+         * uchunk_destroy frees struct internals and, since heap_allocated=true,
+         * frees the UProto itself too. */
+        uchunk_destroy(module, vm);
         uarena_destroy(&arena);
         if (budget_err != URBI_OK) return budget_err;
         return (finish_rc == EMIT_OOM) ? URBI_ERR_OOM : URBI_ERR_COMPILE;
@@ -452,7 +454,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 
     /* v0.8.1 Variant B Phase 2: urbi_steal_repl_protos deleted.
      * Closures escaping into realm globals bump root_proto.refcount via
-     * uproto_root_of at vm_alloc_closure time; umodule_destroy rescues the
+     * uproto_root_of at vm_alloc_closure time; uchunk_destroy rescues the
      * entire root_proto when refcount > 0.  No per-nested stealing needed. */
 
     if (run_rc != URBI_OK) {
@@ -499,7 +501,7 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
 #else
     /* Freestanding: the REPL is not part of the embedded surface.  Mirrors
      * urbi_compile_source's freestanding stub in src/urbi.c — embedders
-     * deliver pre-compiled bytecode via urbi_load_module + urbi_run_chunk
+     * deliver pre-compiled bytecode via urbi_load_chunk + urbi_run_chunk
      * instead.  uarena_init (the hosted entry point) isn't declared in
      * freestanding mode, so this branch returns early without touching
      * any compiler front-end primitives. */
@@ -518,24 +520,24 @@ urbi_repl_eval(UVM *vm, URealm *realm, const char *line, size_t line_len,
  * driving urbi_step() afterwards if the script registered watchers/coroutines.
  * --------------------------------------------------------------------------- */
 int
-urbi_run_script(UVM *vm, URealm *realm, UModule *module)
+urbi_run_script(UVM *vm, URealm *realm, UProto *root)
 {
     URBI_ASSERT_NOT_ISR(vm);
-    return urbi_run_chunk(vm, realm, module, NULL);
+    return urbi_run_chunk(vm, realm, root, NULL);
 }
 
 /* ---------------------------------------------------------------------------
- * urbi_load_module
+ * urbi_load_chunk
  *
- * Bind a pre-compiled UModule into the VM and run its root chunk under the
- * global Realm so any top-level bindings install into realm globals.
+ * Bind a pre-compiled UProto chunk into the VM and run its root chunk under
+ * the global Realm so any top-level bindings install into realm globals.
  *
  * v0.6.0 (API-021): the body was previously a stub that returned a fixed
  * URBI_ERR_INVALID_ARG.  It now performs the minimum useful work that a
  * "load" semantic permits without an import table:
  *
  *   1. Validate (vm, module, module_name) all non-NULL.
- *   2. Bind a UModuleInstance via urbi_get_or_create_module_instance — this
+ *   2. Bind a UChunkInstance via urbi_get_or_create_chunk_instance — this
  *      lazy-interns the IC name strings and prepares the per-(vm, module)
  *      runtime IC backing.  Subsequent urbi_run_chunk / urbi_run_script
  *      calls reuse the same instance.
@@ -546,195 +548,169 @@ urbi_run_script(UVM *vm, URealm *realm, UModule *module)
  * cannot be looked up via urbiscript `import "name"`.  v1.x adds the
  * import-registry surface and threads module_name through the registration
  * step; the existing public API stays compatible.  See backlog entry
- * "v1.x: import-table registration for urbi_load_module".
+ * "v1.x: import-table registration for urbi_load_chunk".
  *
  * Phase 3 / API-005: when this surface eventually deserializes bytecode it
- * must translate the internal UModuleLoadError ULOAD_UNSUPPORTED_VERSION
+ * must translate the internal UChunkLoadError UCHUNK_LOAD_UNSUPPORTED_VERSION
  * into the public URBI_ERR_BYTECODE_VERSION_MISMATCH (slot -4 in the
- * UErrCode enum).  See urbi_load_translate_load_err() below — the helper
+ * UErrCode enum).  See urbi_chunk_translate_load_err() below — the helper
  * is in place so any future deserialize-bytes entry point routes through
  * a single mapping site.
  * --------------------------------------------------------------------------- */
 
-/* urbi_load_translate_load_err: public-API translation of internal
- * UModuleLoadError → UErrCode.  Closes API-005: ULOAD_UNSUPPORTED_VERSION
+/* urbi_chunk_translate_load_err: public-API translation of internal
+ * UChunkLoadError → UErrCode.  Closes API-005: UCHUNK_LOAD_UNSUPPORTED_VERSION
  * is now reachable from public callers as URBI_ERR_BYTECODE_VERSION_MISMATCH.
  *
  * Other internal codes collapse to URBI_ERR_INVALID_ARG since the public
  * surface does not yet differentiate them; M6 may grow per-code mappings
  * as the loader API matures. */
 int
-urbi_load_translate_load_err(int load_err)
+urbi_chunk_translate_load_err(int load_err)
 {
     if (load_err == 0) return URBI_OK;
-    if (load_err == (int)ULOAD_UNSUPPORTED_VERSION) {
+    if (load_err == (int)UCHUNK_LOAD_UNSUPPORTED_VERSION) {
         return URBI_ERR_BYTECODE_VERSION_MISMATCH;
     }
     return URBI_ERR_INVALID_ARG;
 }
 
 /* ---------------------------------------------------------------------------
- * urbi_module_from_bytes / urbi_module_free  (v0.7.1 spec amendment)
+ * urbi_chunk_from_bytes / urbi_chunk_free  (v0.7.1 spec amendment)
  *
- * Public thin wrappers around umodule_deserialize / umodule_destroy.
+ * Public thin wrappers around uchunk_deserialize / uchunk_destroy.
  * These exist so the aux layer (urbi_aux_load_and_run) can deserialize
  * bytecode without including internal headers — aux governance requires
  * that aux functions use only the public <urbi/urbi.h> surface.
  *
- * urbi_module_from_bytes:
- *   Heap-allocates a UModule, calls umodule_deserialize on buf[0..len),
- *   and returns the pointer on success.  On failure returns NULL and
- *   writes a diagnostic into errmsg if non-NULL.
+ * urbi_chunk_from_bytes:
+ *   Deserializes buf[0..len) into a heap-allocated root UProto and returns
+ *   it on success.  On failure returns NULL and writes a diagnostic into
+ *   errmsg if non-NULL.
  *
- * urbi_module_free:
- *   Calls umodule_destroy (frees all owned allocations) then frees the
- *   UModule itself.  NULL is a no-op.
+ * urbi_chunk_free:
+ *   Calls uchunk_destroy (frees all owned allocations) then frees the root
+ *   UProto itself.  NULL is a no-op.
  * --------------------------------------------------------------------------- */
 
 #if __STDC_HOSTED__
 #  include <stdlib.h>   /* malloc, free */
 #endif
 
-struct UModule *
-urbi_module_from_bytes(const uint8_t *buf, size_t len,
+/* v0.9.2: urbi_chunk_from_bytes allocates root UProto via uchunk_deserialize
+ * (which uses stdlib_alloc on hosted builds).  Returns root UProto on success. */
+struct UProto *
+urbi_chunk_from_bytes(const uint8_t *buf, size_t len,
                        char *errmsg, size_t errcap)
 {
 #if __STDC_HOSTED__
     if (buf == NULL || len == 0) {
-        if (errmsg && errcap > 0) {
-            errmsg[0] = '\0';
-        }
+        if (errmsg && errcap > 0) errmsg[0] = '\0';
         return NULL;
-    }
-    UModule *m = (UModule *)malloc(sizeof(UModule));
-    if (m == NULL) {
-        if (errmsg && errcap > 0) {
-            errmsg[0] = '\0';
-        }
-        return NULL;
-    }
-    /* zero-init: umodule_deserialize requires a clean UModule */
-    {
-        size_t i;
-        unsigned char *p = (unsigned char *)m;
-        for (i = 0; i < sizeof(UModule); i++) p[i] = 0;
     }
     char local_err[256] = {0};
     char *ebuf = errmsg ? errmsg : local_err;
     size_t ecap = errmsg ? errcap : sizeof(local_err);
-    UModuleLoadError lerr = umodule_deserialize(m, buf, len, ebuf, ecap);
-    if (lerr != ULOAD_OK) {
-        /* Task 11: root_proto may have been partially allocated by
-         * umodule_deserialize before the error.  umodule_destroy frees
-         * root_proto and its buffers; then free the UModule shell. */
-        umodule_destroy(m, NULL);
-        free(m);
+    UProto *root = NULL;
+    /* Pass NULL alloc_fn — uchunk_deserialize uses stdlib_alloc on hosted. */
+    UChunkLoadError lerr = uchunk_deserialize(&root, buf, len, NULL, NULL, ebuf, ecap);
+    if (lerr != UCHUNK_LOAD_OK) {
+        /* uchunk_deserialize frees partial allocations on failure. */
         return NULL;
     }
-    return m;
+    return root;
 #else
-    /* Freestanding: not available — callers on bare-metal manage UModule
-     * lifetime themselves (static allocation + umodule_deserialize). */
+    /* Freestanding: not available — callers on bare-metal use uchunk_deserialize
+     * directly with an explicit alloc_fn. */
     (void)buf; (void)len; (void)errmsg; (void)errcap;
     return NULL;
 #endif
 }
 
 void
-urbi_module_free(struct UModule *module)
+urbi_chunk_free(struct UProto *root)
 {
 #if __STDC_HOSTED__
-    if (module == NULL) return;
-    /* v0.8.1 Phase 2: strand-bind refcount is on root_proto.  Assert no live
-     * strand binding remains — a nonzero root_proto->refcount means the caller
-     * freed the module while strands still hold it (UAF). */
-    URBI_INTERNAL_ASSERT((module->root_proto == NULL ||
-                          module->root_proto->refcount == 0) &&
-        "urbi_module_free called with live strand bindings — call umodule_destroy"
-        " + let strands drop refs first");
+    if (root == NULL) return;
+    /* Assert no live strand bindings remain — a nonzero refcount means the caller
+     * freed the root while strands still hold it (UAF). */
+    URBI_INTERNAL_ASSERT(root->refcount == 0 &&
+        "urbi_chunk_free called with live strand bindings — let strands drop refs first");
     /* Public API: no vm in scope.  Pass NULL — no proto rescue path.
-     * If a closure has captured a proto from this module, the caller has
-     * a lifetime bug regardless of what umodule_destroy does. */
-    umodule_destroy(module, NULL);
-    free(module);
+     * If a closure has captured a proto from this root, the caller has
+     * a lifetime bug regardless of what uchunk_destroy does. */
+    uchunk_destroy(root, NULL);
+    /* uchunk_destroy frees the struct when heap_allocated; no separate free needed. */
 #else
-    (void)module;
+    (void)root;
 #endif
 }
 
 int
-urbi_load_module(UVM *vm, UModule *module, const char *module_name)
+urbi_load_chunk(UVM *vm, UProto *root, const char *module_name)
 {
     URBI_ASSERT_NOT_ISR(vm);
 
-    if (vm == NULL || module == NULL || module_name == NULL) {
+    if (vm == NULL || root == NULL || module_name == NULL) {
         return URBI_ERR_INVALID_ARG;
     }
 
-    /* Bind a UModuleInstance.  urbi_run_chunk would do this anyway; doing
+    /* Bind a UChunkInstance.  urbi_run_chunk would do this anyway; doing
      * it explicitly here lets us surface OOM as URBI_ERR_OOM rather than
      * conflate it with a runtime-side STRAND_FATAL.  module_name is not
      * stored on the instance at v0.6.0 — it is reserved for v1.x's
      * import-table registration step. */
-    if (urbi_get_or_create_module_instance(vm, module) == NULL) {
+    if (urbi_get_or_create_chunk_instance(vm, root) == NULL) {
         return URBI_ERR_OOM;
     }
 
     /* Registration happens transitively via urbi_run_chunk (called from
      * urbi_run_script).  Call explicitly here against the global realm so
-     * the module is registered even if urbi_run_script short-circuits on an
+     * the root is registered even if urbi_run_script short-circuits on an
      * empty root chunk.  Idempotent — second call from run_chunk is a no-op. */
     URealm *global_realm = urbi_realm_global(vm);
     if (global_realm != NULL) {
-        urealm_register_module(global_realm, module);
+        urealm_register_module(global_realm, root);
     }
 
-    return urbi_run_script(vm, NULL, module);
+    return urbi_run_script(vm, NULL, root);
 }
 
 /* ---------------------------------------------------------------------------
  * urbi_unload  (v0.9.0-repl Task 11)
  *
  * Unlink module from its owning realm's loaded_protos_head list and route
- * through umodule_destroy.  If root_proto->refcount > 0 the rescue mechanism
+ * through uchunk_destroy.  If root_proto->refcount > 0 the rescue mechanism
  * defers final cleanup; this call returns URBI_OK either way.
  * --------------------------------------------------------------------------- */
 int
-urbi_unload(UVM *vm, UModule *module)
+urbi_unload(UVM *vm, UProto *root)
 {
-    if (vm == NULL || module == NULL)   return URBI_ERR_INVALID_ARG;
-    if (module->owning_realm == NULL)   return URBI_ERR_INVALID_ARG;
+    if (vm == NULL || root == NULL)        return URBI_ERR_INVALID_ARG;
+    if (root->owning_realm == NULL)        return URBI_ERR_INVALID_ARG;
     URBI_ASSERT_NOT_ISR(vm);
 
-    URealm *r = module->owning_realm;
+    URealm *r = root->owning_realm;
 
     /* Unlink from the realm's loaded_protos_head list. */
-    if (r->loaded_protos_head == module) {
-        r->loaded_protos_head = module->next_in_realm;
+    if (r->loaded_protos_head == root) {
+        r->loaded_protos_head = root->next_in_realm;
     } else {
-        for (UModule *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
-            if (p->next_in_realm == module) {
-                p->next_in_realm = module->next_in_realm;
+        for (UProto *p = r->loaded_protos_head; p != NULL; p = p->next_in_realm) {
+            if (p->next_in_realm == root) {
+                p->next_in_realm = root->next_in_realm;
                 break;
             }
         }
     }
-    module->owning_realm  = NULL;
-    module->next_in_realm = NULL;
+    root->owning_realm  = NULL;
+    root->next_in_realm = NULL;
 
-    /* Route through umodule_destroy.  If refcount > 0, rescue mechanism
-     * defers final cleanup; this call always returns success.  After
-     * Task 10's fix, umodule_destroy also unlinks any UModuleInstance
-     * from vm->module_instances_head, so no dangling cells survive. */
-    bool heap = module->shell_heap_allocated;
-    umodule_destroy(module, vm);
-
-    /* v0.9.0-repl (CHSTR-027): free the module shell if it was heap-allocated
-     * by urbi_repl_eval or urbi_module_from_bytes.  Caller-allocated (stack /
-     * static) modules are freed by their owner; do NOT free them here.
-     * vm != NULL is guaranteed by the early-return guard at function entry. */
-    if (heap) {
-        vm->alloc_fn(module, 0, vm->alloc_ud);
-    }
+    /* Route through uchunk_destroy.  If refcount > 0, rescue mechanism
+     * defers final cleanup; this call always returns success.
+     * uchunk_destroy also unlinks any UChunkInstance from
+     * vm->module_instances_head, so no dangling cells survive.
+     * v0.9.2: uchunk_destroy frees heap_allocated roots automatically. */
+    uchunk_destroy(root, vm);
     return URBI_OK;
 }

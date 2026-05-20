@@ -4,7 +4,7 @@
 #ifndef TAG_NATIVE_H
 #define TAG_NATIVE_H
 
-#include "module/umodule.h"    /* UValue */
+#include "chunk/uchunk.h"    /* UValue */
 #include "vm/uvm.h"            /* UVMError */
 
 #ifdef __cplusplus

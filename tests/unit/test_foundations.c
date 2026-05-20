@@ -7,7 +7,7 @@
 
 #include "utest.h"
 
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uvalue.h"
 #include "value/uvarint.h"
 #include "value/uarena.h"

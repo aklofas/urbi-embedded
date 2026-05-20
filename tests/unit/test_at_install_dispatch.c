@@ -23,7 +23,7 @@
 #include "utest.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
@@ -41,7 +41,7 @@
 
 typedef struct {
     UVM     vm;
-    UModule module;
+    UProto module;
     UArena  arena;
 } PipeCtx;
 
@@ -53,6 +53,8 @@ compile_source(PipeCtx *ctx, const char *src)
     urbi_vm_init(&ctx->vm, NULL, NULL);
     uarena_init(&ctx->arena, 4096);
     memset(&ctx->module, 0, sizeof(ctx->module));
+    ctx->module.alloc_fn = ctx->vm.alloc_fn;
+    ctx->module.alloc_ud = ctx->vm.alloc_ud;
 
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -80,7 +82,7 @@ pipeline_ctx_destroy(PipeCtx *ctx)
     while (ctx->vm.active_watchers_head != NULL)
         urbi_watcher_unregister_internal(&ctx->vm,
                                          ctx->vm.active_watchers_head);
-    umodule_destroy(&ctx->module, NULL);
+    uchunk_destroy(&ctx->module, NULL);
     uarena_destroy(&ctx->arena);
     urbi_vm_destroy(&ctx->vm);
 }

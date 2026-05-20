@@ -4,7 +4,7 @@
 
 #include "uemit_internal.h"
 #include "value/uvarint.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -177,9 +177,9 @@ static size_t write_proto(uint8_t *buf, size_t off, const UProto *p) {
 }
 
 /* Compute total serialized byte count.  Must match the write path
-   in umodule_serialize byte-for-byte.
-   v1.7: UModule body = header + source_name + root_proto block. */
-static size_t module_wire_size(const UModule *c) {
+   in uchunk_serialize byte-for-byte.
+   v1.7: chunk body = header + source_name + root UProto block. */
+static size_t module_wire_size(const UProto *c) {
     size_t n = 24U;                                   /* fixed header */
     size_t src_len;
 
@@ -187,24 +187,23 @@ static size_t module_wire_size(const UModule *c) {
     n += uvarint_size_u((uint64_t)src_len);
     n += src_len;
 
-    if (c->root_proto == NULL) return n;  /* empty module (pre-finish) */
-
-    /* root_proto block: recursive UProto serialization.
+    /* root UProto block: recursive UProto serialization.
      * proto_wire_size includes nested_count + recursive nested[]. */
-    n += proto_wire_size(c->root_proto, n);
+    n += proto_wire_size(c, n);
 
     return n;
 }
 
-/* v1.7: UModule body = header + source_name + root_proto block. */
-ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
+/* v1.7: chunk body = header + source_name + root UProto block.
+ * v0.9.2: root parameter is the root UProto (was UModule*). */
+ptrdiff_t uchunk_serialize(const UProto *root, uint8_t *buf, size_t cap) {
     size_t off;
     size_t src_len;
-    const size_t need = module_wire_size(module);
+    const size_t need = module_wire_size(root);
 
     /* Size query: buf == NULL means "how many bytes would you write?" */
     if (buf == NULL) return (ptrdiff_t)need;
-    if (cap < need)  return -(ptrdiff_t)ULOAD_TRUNCATED;
+    if (cap < need)  return -(ptrdiff_t)UCHUNK_LOAD_TRUNCATED;
 
     /* --- 24-byte header --- */
     buf[0] = 'U'; buf[1] = 'R'; buf[2] = 'B'; buf[3] = 'I';
@@ -221,17 +220,15 @@ ptrdiff_t umodule_serialize(const UModule *module, uint8_t *buf, size_t cap) {
     off = 24U;
 
     /* --- source_name --- */
-    src_len = (module->source_name != NULL) ? urbi_strlen(module->source_name) : 0U;
+    src_len = (root->source_name != NULL) ? urbi_strlen(root->source_name) : 0U;
     off = uvarint_write_u(buf, off, (uint64_t)src_len);
     if (src_len > 0U) {
-        emit_memcpy(buf + off, module->source_name, src_len);
+        emit_memcpy(buf + off, root->source_name, src_len);
         off += src_len;
     }
 
-    if (module->root_proto == NULL) return (ptrdiff_t)off;  /* empty module */
-
-    /* --- root_proto block (recursive UProto serialization) --- */
-    off = write_proto(buf, off, module->root_proto);
+    /* --- root UProto block (recursive UProto serialization) --- */
+    off = write_proto(buf, off, root);
 
     return (ptrdiff_t)off;
 }

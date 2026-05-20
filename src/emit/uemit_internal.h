@@ -46,11 +46,11 @@ static inline void *emit_stdlib_alloc(void *ptr, size_t nbytes, void *ud) {
 
 #endif  /* __STDC_HOSTED__ */
 
-/* Return the allocator to use for module c.  Available in both hosted and
-   freestanding builds so that emit_grow can call it unconditionally.
+/* Return the allocator to use for root UProto c.  Available in both hosted
+   and freestanding builds so that emit_grow can call it unconditionally.
    In freestanding builds the stdlib fallback is absent; the caller must have
    supplied alloc_fn, and emit_grow will return false if it is NULL. */
-static inline UModuleAllocFn emit_alloc_for(const UModule *c) {
+static inline UChunkAllocFn emit_alloc_for(const UProto *c) {
 #if __STDC_HOSTED__
     return c->alloc_fn != NULL ? c->alloc_fn : emit_stdlib_alloc;
 #else
@@ -70,9 +70,9 @@ uint8_t fs_temp_floor(const UFuncState *fs);
 
 /* Buffer-growth helpers (defined in uemit.c).
  * Promoted from static so uemit_funcstate.c can call them cross-TU. */
-bool emit_grow(UModule *c, void **data, size_t *cap,
+bool emit_grow(UProto *root, void **data, size_t *cap,
                size_t new_cap, size_t elem_size);
-bool proto_grow(UModule *module, UProto *proto,
+bool proto_grow(UProto *root, UProto *proto,
                 void **data, size_t *cap,
                 size_t new_cap, size_t elem_size);
 

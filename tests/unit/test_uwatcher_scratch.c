@@ -11,7 +11,7 @@
 
 #include "utest.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/uclosure.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"
@@ -27,9 +27,9 @@
 /* Compile urbiscript source into `module` (caller-provided, zero-init).
  * Uses the standard lex/parse/emit pipeline.
  * Returns 1 on success, 0 on failure.
- * Caller must call umodule_destroy(&module) when done. */
+ * Caller must call uchunk_destroy(&module) when done. */
 static int
-compile_source(UVM *vm, UArena *arena, UModule *module, const char *src)
+compile_source(UVM *vm, UArena *arena, UProto *module, const char *src)
 {
     ULexer   lex;
     UEmitter e;
@@ -61,7 +61,7 @@ UTEST(scratch_runner_returns_integer_value)
 {
     UVM    vm;
     UArena arena;
-    UModule module;
+    UProto module;
 
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -74,12 +74,12 @@ UTEST(scratch_runner_returns_integer_value)
      * The module's instruction/constant arrays stay owned by the module. */
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.root_proto->instructions;
-    proto.instr_count  = module.root_proto->instr_count;
-    proto.constants    = module.root_proto->constants;
-    proto.const_count  = module.root_proto->const_count;
-    proto.ic_count     = module.root_proto->ic_count;
-    proto.ic_names     = module.root_proto->ic_names;
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -95,7 +95,7 @@ UTEST(scratch_runner_returns_integer_value)
     UASSERT_EQ((int)UVAL_INT, (int)out.kind);
     UASSERT_EQ(42, (int)out.v.i);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -121,7 +121,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 {
     UVM    vm;
     UArena arena;
-    UModule module;
+    UProto module;
 
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -132,12 +132,12 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.root_proto->instructions;
-    proto.instr_count  = module.root_proto->instr_count;
-    proto.constants    = module.root_proto->constants;
-    proto.const_count  = module.root_proto->const_count;
-    proto.ic_count     = module.root_proto->ic_count;
-    proto.ic_names     = module.root_proto->ic_names;
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -156,7 +156,7 @@ UTEST(scratch_runner_sets_threw_on_unhandled_throw)
      * does not see the cond's stale error state. */
     UASSERT_EQ((int)UVM_OK, (int)vm.last_error);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -194,7 +194,7 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 {
     UVM    vm;
     UArena arena;
-    UModule module;
+    UProto module;
 
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -205,12 +205,12 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.root_proto->instructions;
-    proto.instr_count  = module.root_proto->instr_count;
-    proto.constants    = module.root_proto->constants;
-    proto.const_count  = module.root_proto->const_count;
-    proto.ic_count     = module.root_proto->ic_count;
-    proto.ic_names     = module.root_proto->ic_names;
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -225,7 +225,7 @@ UTEST(scratch_runner_returns_nil_for_nil_literal)
     UASSERT_EQ(0, threw);
     UASSERT_EQ((int)UVAL_NIL, (int)out.kind);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -239,7 +239,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 {
     UVM    vm;
     UArena arena;
-    UModule module;
+    UProto module;
 
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -250,12 +250,12 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.root_proto->instructions;
-    proto.instr_count  = module.root_proto->instr_count;
-    proto.constants    = module.root_proto->constants;
-    proto.const_count  = module.root_proto->const_count;
-    proto.ic_count     = module.root_proto->ic_count;
-    proto.ic_names     = module.root_proto->ic_names;
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -271,7 +271,7 @@ UTEST(scratch_runner_returns_true_for_truthy_comparison)
     UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
     UASSERT_EQ(1, (int)out.v.i);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -285,7 +285,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 {
     UVM    vm;
     UArena arena;
-    UModule module;
+    UProto module;
 
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -296,12 +296,12 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
 
     UProto proto;
     memset(&proto, 0, sizeof(proto));
-    proto.instructions = module.root_proto->instructions;
-    proto.instr_count  = module.root_proto->instr_count;
-    proto.constants    = module.root_proto->constants;
-    proto.const_count  = module.root_proto->const_count;
-    proto.ic_count     = module.root_proto->ic_count;
-    proto.ic_names     = module.root_proto->ic_names;
+    proto.instructions = module.instructions;
+    proto.instr_count  = module.instr_count;
+    proto.constants    = module.constants;
+    proto.const_count  = module.const_count;
+    proto.ic_count     = module.ic_count;
+    proto.ic_names     = module.ic_names;
 
     UClosure cl;
     memset(&cl, 0, sizeof(cl));
@@ -317,7 +317,7 @@ UTEST(scratch_runner_returns_false_for_falsy_comparison)
     UASSERT_EQ((int)UVAL_BOOL, (int)out.kind);
     UASSERT_EQ(0, (int)out.v.i);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

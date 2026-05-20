@@ -9,7 +9,7 @@
  *   1. C-native Object root methods (urbi_object_root_register)
  *   2. C-native atom proto stubs (urbi_atom_protos_register)
  *   3. Deserialize the baked .u stdlib bytecode blob into
- *      vm->stdlib_module + bind a per-VM UModuleInstance
+ *      vm->stdlib_module + bind a per-VM UChunkInstance
  *
  * Step 3 only runs when urbi_stdlib_bytecode_len > 0.  At Phase 4
  * baseline the blob is empty (STDLIB_ORDER.txt empty), so this branch
@@ -36,8 +36,8 @@
 #endif
 
 #include "urbi/urbi.h"               /* URBI_OK, URBI_ERR_* */
-#include "module/umodule.h"          /* UModule, umodule_deserialize, umodule_destroy */
-#include "object/umodule_instance.h" /* urbi_get_or_create_module_instance */
+#include "chunk/uchunk.h"          /* UModule, uchunk_deserialize, uchunk_destroy */
+#include "object/uchunk_instance.h" /* urbi_get_or_create_chunk_instance */
 #include "runtime/umacros.h"         /* urbi_zero */
 #include "vm/uvm.h"
 
@@ -127,35 +127,23 @@ urbi_stdlib_boot(UVM *vm)
 #endif
 
     /* M6 Phase 4 (Wave 2): deserialize the baked stdlib bytecode blob
-     * and bind a per-VM UModuleInstance.  Empty blob (Phase 4 baseline)
+     * and bind a per-VM UChunkInstance.  Empty blob (Phase 4 baseline)
      * skips this entirely. */
     if (urbi_stdlib_bytecode_len > 0) {
         if (vm->alloc_fn == NULL) {
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
-        UModule *m = vm->alloc_fn(NULL, sizeof(UModule), vm->alloc_ud);
-        if (m == NULL) return URBI_ERR_OOM;
-        /* Zero-init: umodule_destroy on a zero UModule is safe (header
-         * §470).  urbi_zero used (not memset) per freestanding
-         * discipline. */
-        urbi_zero(m, sizeof(UModule));
-        /* Freestanding: umodule_deserialize requires module->alloc_fn for
-         * the internal proto + buffer allocations.  Hosted builds fall
-         * back to stdlib_alloc inside module_allocator(); freestanding
-         * does not and returns ULOAD_OOM if alloc_fn is NULL.  Inherit
-         * the VM's allocator so the stdlib module shares the VM heap. */
-        m->alloc_fn = vm->alloc_fn;
-        m->alloc_ud = vm->alloc_ud;
-        UModuleLoadError lerr = umodule_deserialize(
-            m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len, NULL, 0);
-        if (lerr != ULOAD_OK) {
-            umodule_destroy(m, vm);
-            vm->alloc_fn(m, 0, vm->alloc_ud);
+        /* v0.9.2: uchunk_deserialize allocates root UProto via alloc_fn. */
+        UProto *m = NULL;
+        UChunkLoadError lerr = uchunk_deserialize(
+            &m, urbi_stdlib_bytecode, urbi_stdlib_bytecode_len,
+            vm->alloc_fn, vm->alloc_ud, NULL, 0);
+        if (lerr != UCHUNK_LOAD_OK) {
+            /* uchunk_deserialize cleaned up partial allocations on failure. */
             return URBI_ERR_STDLIB_BOOT_FAILED;
         }
-        if (urbi_get_or_create_module_instance(vm, m) == NULL) {
-            umodule_destroy(m, vm);
-            vm->alloc_fn(m, 0, vm->alloc_ud);
+        if (urbi_get_or_create_chunk_instance(vm, m) == NULL) {
+            uchunk_destroy(m, vm);
             return URBI_ERR_OOM;
         }
         vm->stdlib_module = m;

@@ -15,7 +15,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 
@@ -27,7 +27,7 @@
 
 /* Emit source through the full pipeline.  Returns emit error. */
 static UEmitError diag_emit(const char *src, UEmitter *e_out,
-                            UModule *mod_out, UArena *arena_out,
+                            UProto *mod_out, UArena *arena_out,
                             UVM *vm_out) {
     urbi_vm_init(vm_out, NULL, NULL);
     uarena_init(arena_out, 4096);
@@ -49,8 +49,8 @@ static UEmitError diag_emit(const char *src, UEmitter *e_out,
     return uemit_finish(e_out);
 }
 
-static void diag_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+static void diag_cleanup(UProto *mod, UArena *arena, UVM *vm) {
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }
@@ -62,7 +62,7 @@ static void diag_cleanup(UModule *mod, UArena *arena, UVM *vm) {
 /* emit_diag_warn records line, col, level, and message substring. */
 UTEST(emit_diag_warn_records_message) {
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -86,7 +86,7 @@ UTEST(emit_diag_warn_records_message) {
     UASSERT(strstr(e.diag_buf[0].message, "test warning 42") != NULL);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -94,7 +94,7 @@ UTEST(emit_diag_warn_records_message) {
 /* emit_diag_warn is non-fatal — bytecode is still produced after a warn. */
 UTEST(emit_diag_warn_does_not_block_emit) {
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     UEmitter e;
 
@@ -111,7 +111,7 @@ UTEST(emit_diag_warn_does_not_block_emit) {
     UASSERT_EQ(EMIT_OK, rc);
     UASSERT_EQ(1, e.diag_count);
     /* Bytecode was emitted (at least one instruction). */
-    UASSERT(module.root_proto->instr_count >= 1U);
+    UASSERT(module.instr_count >= 1U);
 
     emit_diag_free_all(&e);
     diag_cleanup(&module, &arena, &vm);
@@ -120,7 +120,7 @@ UTEST(emit_diag_warn_does_not_block_emit) {
 /* Multiple warns accumulate in order. */
 UTEST(emit_diag_warn_accumulates_multiple) {
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -145,7 +145,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
     UASSERT_EQ(3, e.diag_buf[2].line);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -153,7 +153,7 @@ UTEST(emit_diag_warn_accumulates_multiple) {
 /* NULL ast node — position defaults to 0,0; no crash. */
 UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UVM vm;
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
@@ -168,7 +168,7 @@ UTEST(emit_diag_warn_null_node_uses_zero_position) {
     UASSERT_EQ(0, e.diag_buf[0].col);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

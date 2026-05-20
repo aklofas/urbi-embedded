@@ -7,7 +7,7 @@
 #include "value/uarena.h"
 #include "emit/uemit.h"
 #include "value/uintern.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 
 /* Expose find_or_install_upvalue for cascade tests. */
@@ -17,20 +17,20 @@ int find_or_install_upvalue(struct UEmitter *e, struct UFuncState *fs,
 #define UTEST(name) static void name(void)
 
 /* --- helpers --- */
-static void setup(UEmitter *e, UModule *m, UArena *a, UVM *v) {
-    *m = (UModule){0};
+static void setup(UEmitter *e, UProto *m, UArena *a, UVM *v) {
+    *m = (UProto){0};
     uarena_init(a, 0);
     urbi_vm_init(v, NULL, NULL);
     uemit_init(e, m, a, v, "test");
 }
-static void teardown(UModule *m, UArena *a, UVM *v) {
+static void teardown(UProto *m, UArena *a, UVM *v) {
     uarena_destroy(a);
-    umodule_destroy(m, NULL);
+    uchunk_destroy(m, NULL);
     urbi_vm_destroy(v);
 }
 
 UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *fs = uemit_open_function(&e, NULL);
@@ -47,7 +47,7 @@ UTEST(funcstate_open_zeroes_freereg_and_nactvar) {
 }
 
 UTEST(funcstate_declare_local_pushes_actvar_and_advances_freereg) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -66,7 +66,7 @@ UTEST(funcstate_declare_local_pushes_actvar_and_advances_freereg) {
 }
 
 UTEST(funcstate_declare_three_locals) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -85,7 +85,7 @@ UTEST(funcstate_declare_three_locals) {
 }
 
 UTEST(funcstate_redeclare_in_same_scope_errors) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
 
@@ -99,7 +99,7 @@ UTEST(funcstate_redeclare_in_same_scope_errors) {
 }
 
 UTEST(funcstate_max_locals_exhausts_with_proper_error) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
 
@@ -120,7 +120,7 @@ UTEST(funcstate_max_locals_exhausts_with_proper_error) {
 }
 
 UTEST(funcstate_close_function_pops_to_parent) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
@@ -133,7 +133,7 @@ UTEST(funcstate_close_function_pops_to_parent) {
 }
 
 UTEST(block_open_pushes_ctx_with_snapshot) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -152,7 +152,7 @@ UTEST(block_open_pushes_ctx_with_snapshot) {
 }
 
 UTEST(block_close_restores_nactvar_and_freereg) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -173,7 +173,7 @@ UTEST(block_close_restores_nactvar_and_freereg) {
 }
 
 UTEST(block_nested_three_levels) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -190,7 +190,7 @@ UTEST(block_nested_three_levels) {
 }
 
 UTEST(block_exhaust_with_proper_error) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
 
@@ -208,7 +208,7 @@ UTEST(block_exhaust_with_proper_error) {
 }
 
 UTEST(block_close_with_captured_emits_op_close) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -218,11 +218,11 @@ UTEST(block_close_with_captured_emits_op_close) {
     fs->blocks[0].has_captured = true;
 
     /* Capture instr_count before block close. */
-    size_t pre_count = m.root_proto->instr_count;
+    size_t pre_count = m.instr_count;
     uemit_close_block(&e);
-    UASSERT_EQ(pre_count + 1, m.root_proto->instr_count);
+    UASSERT_EQ(pre_count + 1, m.instr_count);
 
-    uint32_t last = m.root_proto->instructions[m.root_proto->instr_count - 1];
+    uint32_t last = m.instructions[m.instr_count - 1];
     UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_function(&e);
@@ -230,7 +230,7 @@ UTEST(block_close_with_captured_emits_op_close) {
 }
 
 UTEST(block_close_on_empty_stack_sets_error) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
 
@@ -244,7 +244,7 @@ UTEST(block_close_on_empty_stack_sets_error) {
 }
 
 UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
@@ -265,7 +265,7 @@ UTEST(upvalue_capture_immediate_parent_marks_in_stack) {
 }
 
 UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
@@ -292,7 +292,7 @@ UTEST(upvalue_two_level_cascade_intermediate_in_stack_false) {
 }
 
 UTEST(upvalue_repeated_lookup_returns_same_idx) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
@@ -311,7 +311,7 @@ UTEST(upvalue_repeated_lookup_returns_same_idx) {
 }
 
 UTEST(upvalue_unresolved_returns_negative) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *outer = uemit_open_function(&e, NULL);
     UFuncState *inner = uemit_open_function(&e, outer);
@@ -327,7 +327,7 @@ UTEST(upvalue_unresolved_returns_negative) {
 }
 
 UTEST(upvalue_exhaustion_errors) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *outer = uemit_open_function(&e, NULL);
@@ -359,7 +359,7 @@ UTEST(upvalue_exhaustion_errors) {
 }
 
 UTEST(loop_back_emit_close_when_captured) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
     uemit_open_block(&e, /*is_loop=*/true);
@@ -367,11 +367,11 @@ UTEST(loop_back_emit_close_when_captured) {
     fs->actvars[0].is_captured = true;               /* cppcheck-suppress nullPointerRedundantCheck */
     fs->blocks[0].has_captured = true;
 
-    size_t pre = m.root_proto->instr_count;
+    size_t pre = m.instr_count;
     uemit_emit_loop_back_close(&e);
-    UASSERT_EQ(pre + 1, m.root_proto->instr_count);
+    UASSERT_EQ(pre + 1, m.instr_count);
 
-    uint32_t last = m.root_proto->instructions[m.root_proto->instr_count - 1];
+    uint32_t last = m.instructions[m.instr_count - 1];
     UASSERT_EQ((uint32_t)OP_CLOSE, (uint32_t)(last & 0xFFU));
 
     uemit_close_block(&e);
@@ -380,15 +380,15 @@ UTEST(loop_back_emit_close_when_captured) {
 }
 
 UTEST(loop_back_emit_close_no_op_when_not_captured) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
     uemit_open_block(&e, /*is_loop=*/true);
     /* has_captured stays false */
 
-    size_t pre = m.root_proto->instr_count;
+    size_t pre = m.instr_count;
     uemit_emit_loop_back_close(&e);
-    UASSERT_EQ(pre, m.root_proto->instr_count);   /* no instruction emitted */
+    UASSERT_EQ(pre, m.instr_count);   /* no instruction emitted */
 
     uemit_close_block(&e);
     uemit_close_function(&e);
@@ -398,7 +398,7 @@ UTEST(loop_back_emit_close_no_op_when_not_captured) {
 /* --- M4 T15: per-function IC counter + ic_names side table --- */
 
 UTEST(funcstate_ic_counter_increments_per_emitted_getslot) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     UFuncState *fs = uemit_open_function(&e, NULL);
 
@@ -427,7 +427,7 @@ UTEST(funcstate_ic_counter_increments_per_emitted_getslot) {
 }
 
 UTEST(funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
     uemit_open_function(&e, NULL);
 
@@ -449,14 +449,14 @@ UTEST(funcstate_ic_counter_caps_at_256_with_emit_too_many_ic_sites) {
 }
 
 UTEST(funcstate_ic_close_copies_into_target_proto) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     /* Top-level funcstate plus a nested proto + child funcstate — that's
      * the only path where ic_count/ic_names actually land somewhere
-     * (UProto has these fields, UModule does not). */
+     * (UProto has these fields, UProto does not). */
     UFuncState *parent = uemit_open_function(&e, NULL);
-    UProto *child_proto = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *child_proto = uproto_alloc_nested(&m, &m);
     UASSERT(child_proto != NULL);
     UFuncState *child = uemit_open_function(&e, parent);
     UASSERT(child != NULL);
@@ -479,15 +479,15 @@ UTEST(funcstate_ic_close_copies_into_target_proto) {
     UASSERT_EQ((uint16_t)0, child->ic_names_cap);
 
     uemit_close_function(&e);                   /* close parent */
-    teardown(&m, &a, &v);                       /* umodule_destroy frees child_proto->ic_names */
+    teardown(&m, &a, &v);                       /* uchunk_destroy frees child_proto->ic_names */
 }
 
 UTEST(funcstate_ic_close_with_zero_sites_leaves_proto_null) {
-    UEmitter e; UModule m; UArena a; UVM v;
+    UEmitter e; UProto m; UArena a; UVM v;
     setup(&e, &m, &a, &v);
 
     UFuncState *parent = uemit_open_function(&e, NULL);
-    UProto *child_proto = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto *child_proto = uproto_alloc_nested(&m, &m);
     UASSERT(child_proto != NULL);
     UFuncState *child = uemit_open_function(&e, parent);
     UASSERT(child != NULL);

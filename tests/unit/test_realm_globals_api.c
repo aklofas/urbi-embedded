@@ -22,7 +22,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 #include "urbi/urbi.h"
@@ -40,7 +40,7 @@ static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
 
     ULexer   lex;
     UArena   arena;
-    UModule  module = {0};
+    UProto  module = {0};
     UEmitter e;
     UParser  p;
     UAstNode *node;
@@ -53,19 +53,19 @@ static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         if (uemit_statement(&e, node) != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         uarena_reset(&arena);
     }
     if (uemit_finish(&e) != EMIT_OK) {
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         return URBI_ERR_COMPILE;
     }
 
@@ -75,7 +75,7 @@ static int compile_and_run(UVM *vm, const char *src, UValue *out_result)
         *out_result = result;
     }
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     return rc;
 }
 

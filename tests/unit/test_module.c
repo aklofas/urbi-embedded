@@ -2,78 +2,66 @@
 
 #include "utest.h"
 
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 #include "value/uarena.h"
 #include "value/uintern.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define UTEST(name) static void name(void)
 
 UTEST(module_error_name_ok) {
-    UASSERT_EQ(0, strcmp("ULOAD_OK", umodule_load_error_name(ULOAD_OK)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_OK", uchunk_load_error_name(UCHUNK_LOAD_OK)));
 }
 
 UTEST(destroy_empty_module_is_noop) {
-    /* Task 11: UModule is a thin 5-field shell; all chunk data is on root_proto.
-     * A zero-initialised module (root_proto == NULL) must destroy safely. */
-    UModule c = {0};
-    umodule_destroy(&c, NULL);
-    UASSERT_EQ((void *)NULL, (void *)c.root_proto);
+    /* A zero-initialised root UProto must destroy safely (no buffers to free). */
+    UProto c = {0};
+    uchunk_destroy(&c, NULL);
+    /* source_name was NULL, stays NULL. */
     UASSERT_EQ((void *)NULL, (void *)c.source_name);
 }
 
 UTEST(destroy_module_with_buffers_frees_them) {
-    /* Task 11: All chunk-top buffers live on root_proto.
-     * Simulate allocation via stdlib calloc; umodule_destroy frees root_proto
-     * buffers via umodule_destroy_proto_buffers then the proto itself via alloc_fn.
-     * alloc_fn == NULL means the proto struct was NOT heap-allocated separately
-     * (caller-owned stack object), so we skip the root_proto free and only verify
-     * the sub-buffers are cleared.
-     *
-     * To exercise the full free path, allocate root_proto on the heap with
-     * alloc_fn == NULL (signals stdlib ownership).  umodule_destroy_proto_buffers
-     * uses proto->alloc_fn; with NULL it uses stdlib free. */
-    UModule c = {0};
-    UProto *rp = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(rp != NULL);
-    c.root_proto = rp;
+    /* All chunk-top buffers live directly on the root UProto (c).
+     * heap_allocated=false: struct is stack-owned; uchunk_destroy frees
+     * sub-buffers only (instructions, constants, line_deltas, abs_lines). */
+    UProto c = {0};
 
     /* Simulate allocation by directly using stdlib and letting destroy free.
-       This is the same path umodule_deserialize / umodule_serialize use via
+       This is the same path uchunk_deserialize / uchunk_serialize use via
        the alloc_fn hook — when alloc_fn is NULL, destroy uses stdlib free. */
-    rp->instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
-    rp->instr_cap = 4;
-    rp->instr_count = 2;
-    rp->instructions[0] = 0x11223344;
-    rp->instructions[1] = 0x55667788;
+    c.instructions = (uint32_t *)malloc(sizeof(uint32_t) * 4);
+    c.instr_cap = 4;
+    c.instr_count = 2;
+    c.instructions[0] = 0x11223344;
+    c.instructions[1] = 0x55667788;
 
-    /* calloc, not malloc: umodule_destroy walks `const_count` slots through
+    /* calloc, not malloc: uchunk_destroy walks `const_count` slots through
      * free_owned_str_constants, which inspects each UValue's kind + _pad[0]
      * (the deserializer-set ownership marker for UVAL_STR; emit-time slots
      * carry _pad[0] == 0).  malloc'd uninitialised bytes trip valgrind on
      * the kind/_pad reads even when no slot is actually a marked string;
      * calloc gives a valgrind-clean baseline that matches the deserializer
      * (which zero-fills before decoding). */
-    rp->constants = (UValue *)calloc(2, sizeof(UValue));
-    rp->const_cap = 2;
-    rp->const_count = 1;
+    c.constants = (UValue *)calloc(2, sizeof(UValue));
+    c.const_cap = 2;
+    c.const_count = 1;
 
-    rp->line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
+    c.line_deltas = (int8_t *)malloc(sizeof(int8_t) * 4);
 
-    rp->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 2);
-    rp->abs_line_cap = 2;
-    rp->abs_line_count = 1;
+    c.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine) * 2);
+    c.abs_line_cap = 2;
+    c.abs_line_count = 1;
 
-    umodule_destroy(&c, NULL);
-
-    /* After destroy, root_proto is detached (either freed or cleared). */
-    UASSERT_EQ((void *)NULL, (void *)c.root_proto);
+    uchunk_destroy(&c, NULL);
+    /* If we reach here without crashing, buffers were freed cleanly. */
+    UASSERT_EQ(1, 1);
 }
 
 /* --- Header parse tests --- */
@@ -117,51 +105,51 @@ UTEST(deserialize_accepts_good_header_with_empty_body_sections) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_buffer_shorter_than_header) {
     uint8_t buf[10];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_TRUNCATED, umodule_deserialize(&c, buf, sizeof buf, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_TRUNCATED, uchunk_deserialize(&c, buf, sizeof buf, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_bad_magic) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[0] = 'X';  /* corrupt first magic byte */
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_BAD_MAGIC, umodule_deserialize(&c, hdr, sizeof hdr, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_BAD_MAGIC, uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_corrupted_canary_simulated_ftp_ascii) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[8] = 0x20;  /* \r replaced by space — ASCII-mode munge */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_BAD_MAGIC, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_BAD_MAGIC, rc);
     UASSERT(strstr(errmsg, "canary") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_unsupported_version) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[4] = 0x20;  /* would be v2.0 */
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, hdr, sizeof hdr, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_0_module) {
@@ -181,9 +169,9 @@ UTEST(deserialize_rejects_v1_0_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, umodule_deserialize(&c, buf, offset, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, uchunk_deserialize(&c, buf, offset, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_1_module) {
@@ -204,14 +192,14 @@ UTEST(deserialize_rejects_v1_1_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
     /* errmsg should name the rejected version so users know what they have */
     UASSERT(strstr(errmsg, "0x11") != NULL || strstr(errmsg, "1.1") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_2_module) {
@@ -232,14 +220,14 @@ UTEST(deserialize_rejects_v1_2_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
     /* errmsg should name the rejected version so users know what they have */
     UASSERT(strstr(errmsg, "0x12") != NULL || strstr(errmsg, "1.2") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_3_module) {
@@ -261,13 +249,13 @@ UTEST(deserialize_rejects_v1_3_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
     UASSERT(strstr(errmsg, "0x13") != NULL || strstr(errmsg, "1.3") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_4_module) {
@@ -290,25 +278,26 @@ UTEST(deserialize_rejects_v1_4_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 (v1.5) */
     buf[offset++] = 0;  /* varint nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
     UASSERT(strstr(errmsg, "0x14") != NULL || strstr(errmsg, "1.4") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_v1_6_module) {
-    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.7 loader.
-     * v1.7 changed the UModule body layout (header + source_name + recursive
-     * root_proto block; per-field duplication removed).  Loading v1.6
-     * silently would parse the body as the wrong structure. */
+    /* Version byte 0x16 (v0.7.2) must be rejected by the v1.8 loader.
+     * v1.7 changed the UProto body layout (header + source_name + recursive
+     * root_proto block; per-field duplication removed).  v1.8 retains that
+     * layout but bumps the version byte semantically (UModule struct deleted).
+     * Loading v1.6 silently would parse the body as the wrong structure. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.7 loader) */
+    buf[4] = 0x16;  /* version byte (v1.6 — should be rejected by v1.8 loader) */
     size_t offset = 24;
     buf[offset++] = 0;  /* max_reg (v1.6 metadata) */
     buf[offset++] = 0;  /* varint source_name_len = 0 */
@@ -318,26 +307,25 @@ UTEST(deserialize_rejects_v1_6_module) {
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 */
     buf[offset++] = 0;  /* varint nested_count = 0 */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_UNSUPPORTED_VERSION, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
     UASSERT(strstr(errmsg, "0x16") != NULL || strstr(errmsg, "1.6") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
-UTEST(deserialize_accepts_current_version_module) {
-    /* A minimal well-formed module at the current bytecode version
-     * (URBI_BYTECODE_VERSION_BYTE = 0x17) must be accepted.  This is the
-     * positive-control twin of the deserialize_rejects_v1_X tests. */
+UTEST(deserialize_rejects_v1_7_module) {
+    /* Version byte 0x17 (v0.8.1) must be rejected by the v1.8 loader.
+     * v1.8 (v0.9.2-uproto-only Approach C) deletes UModule entirely;
+     * wire-byte layout is unchanged but the semantic bump means v1.7
+     * bytecode is rejected with UCHUNK_LOAD_UNSUPPORTED_VERSION. */
     uint8_t buf[64];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    buf[4] = URBI_BYTECODE_VERSION_BYTE;
-    /* v1.7 body: source_name + root_proto block (same as the accepts_good_header
-     * test above; repeated here for clarity as a version-specific positive ctrl). */
+    buf[4] = 0x17;  /* version byte (v1.7 — should be rejected by v1.8 loader) */
     size_t offset = 24;
     buf[offset++] = 0;  /* varint source_name_len = 0 */
     buf[offset++] = 0;  /* max_reg */
@@ -350,38 +338,65 @@ UTEST(deserialize_accepts_current_version_module) {
     buf[offset++] = 0;  /* varint n_deltas = 0 */
     buf[offset++] = 0;  /* varint n_abs_lines = 0 */
     buf[offset++] = 0;  /* varint ic_count = 0 */
-    buf[offset++] = 0;  /* varint nested_count = 0 (v1.7) */
-    UModule c = {0};
+    buf[offset++] = 0;  /* varint nested_count = 0 */
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, offset, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_UNSUPPORTED_VERSION, rc);
+    UASSERT(strstr(errmsg, "0x17") != NULL || strstr(errmsg, "1.7") != NULL);
+    uchunk_destroy(c, NULL);
+}
+
+UTEST(deserialize_accepts_current_version_module) {
+    /* A minimal well-formed module at the current bytecode version
+     * (URBI_BYTECODE_VERSION_BYTE = 0x18) must be accepted.  This is the
+     * positive-control twin of the deserialize_rejects_v1_X tests. */
+    uint8_t buf[64];
+    size_t i;
+    for (i = 0; i < sizeof buf; i++) buf[i] = 0;
+    build_good_header(buf);
+    buf[4] = URBI_BYTECODE_VERSION_BYTE;
+    /* v1.8 body: source_name + root_proto block (same byte layout as v1.7;
+     * repeated here for clarity as a version-specific positive ctrl). */
+    size_t offset = 24;
+    buf[offset++] = 0;  /* varint source_name_len = 0 */
+    buf[offset++] = 0;  /* max_reg */
+    buf[offset++] = 0;  /* nupvals */
+    buf[offset++] = 0;  /* nparams */
+    buf[offset++] = 0;  /* varint n_constants = 0 */
+    buf[offset++] = 0;  /* varint n_instructions = 0 */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* align pad */
+    buf[offset++] = 0;  /* varint n_deltas = 0 */
+    buf[offset++] = 0;  /* varint n_abs_lines = 0 */
+    buf[offset++] = 0;  /* varint ic_count = 0 */
+    buf[offset++] = 0;  /* varint nested_count = 0 (v1.8) */
+    UProto *c = NULL;
+    char errmsg[128];
+    errmsg[0] = '\0';
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, offset, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(uproto_alloc_zero_inits_ic_count_and_ic_names) {
-    /* M4 v1.3: umodule_alloc_nested_proto must zero ic_count and ic_names
+    /* M4 v1.3: uproto_alloc_nested must zero ic_count and ic_names
        (encoding spec §5.1).  Subsequent M4 tasks rely on this so freshly
        allocated protos start with no IC sites. */
-    UModule m = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
     UASSERT_EQ((unsigned)p->ic_count, 0U);
     UASSERT_EQ((void *)p->ic_names, (void *)NULL);
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
 }
 
 UTEST(uproto_destroy_frees_ic_names) {
-    /* M4 v1.3: umodule_destroy_proto_buffers must free the ic_names array.
+    /* M4 v1.3: uproto_destroy_buffers must free the ic_names array.
        Allocate via stdlib so destroy (alloc_fn == NULL → stdlib_alloc) frees it. */
-    UModule m = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto. */
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
     /* Pretend the emitter populated ic_count + ic_names with two opaque slots. */
     p->ic_count = 2;
@@ -389,8 +404,8 @@ UTEST(uproto_destroy_frees_ic_names) {
     UASSERT(p->ic_names != NULL);
     p->ic_names[0] = NULL;
     p->ic_names[1] = NULL;
-    /* umodule_destroy frees nested protos via umodule_destroy_proto_buffers. */
-    umodule_destroy(&m, NULL);
+    /* uchunk_destroy frees nested protos via uproto_destroy_buffers. */
+    uchunk_destroy(&m, NULL);
     /* If we reach here without leaking under ASan, ic_names was freed. */
 }
 
@@ -398,52 +413,52 @@ UTEST(deserialize_rejects_wrong_int_width) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[12] = 4;  /* claims i32 */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "int_width") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_float_type) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[13] = (URBI_FLOAT_TYPE == 8) ? 4 : 8;  /* flip to the other flavor */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "float_type") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_instr_width) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[14] = 8;  /* claims 8-byte instructions */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "instr_width") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_wrong_endianness) {
     uint8_t hdr[24];
     build_good_header(hdr);
     hdr[15] = 1;  /* big-endian on LE host */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, hdr, sizeof hdr, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_FLAVOR_MISMATCH, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, hdr, sizeof hdr, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_FLAVOR_MISMATCH, rc);
     UASSERT(strstr(errmsg, "endianness") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_nonzero_reserved_byte) {
@@ -459,13 +474,13 @@ UTEST(deserialize_rejects_nonzero_reserved_byte) {
     buf[off++] = 0;  /* n_abs_lines = 0 */
     buf[off++] = 0;  /* ic_count = 0 (v1.5) */
     buf[off++] = 0;  /* nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     /* errmsg should mention 'reserved' */
     UASSERT(strstr(errmsg, "reserved") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 /* --- Varint write helpers for building test blobs --- */
@@ -514,14 +529,14 @@ UTEST(deserialize_loads_metadata_max_reg_and_source_name) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((uint8_t)5, c.root_proto->max_reg);
-    UASSERT(c.source_name != NULL);
-    UASSERT_EQ(0, strcmp(c.source_name, "repl"));
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((uint8_t)5, c->max_reg);
+    UASSERT(c->source_name != NULL);
+    UASSERT_EQ(0, strcmp(c->source_name, "repl"));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_loads_integer_constant_pool) {
@@ -552,16 +567,16 @@ UTEST(deserialize_loads_integer_constant_pool) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.root_proto->const_count);
-    UASSERT_EQ((uint8_t)UVAL_INT, c.root_proto->constants[0].kind);
-    UASSERT_EQ((int64_t)1,   c.root_proto->constants[0].v.i);
-    UASSERT_EQ((uint8_t)UVAL_INT, c.root_proto->constants[1].kind);
-    UASSERT_EQ((int64_t)-42, c.root_proto->constants[1].v.i);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c->const_count);
+    UASSERT_EQ((uint8_t)UVAL_INT, c->constants[0].kind);
+    UASSERT_EQ((int64_t)1,   c->constants[0].v.i);
+    UASSERT_EQ((uint8_t)UVAL_INT, c->constants[1].kind);
+    UASSERT_EQ((int64_t)-42, c->constants[1].v.i);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
@@ -577,9 +592,9 @@ UTEST(deserialize_rejects_out_of_range_uvalue_tag) {
     off = put_varint(buf, off, 1);          /* 1 constant */
     buf[off++] = 99;                        /* invalid kind */
     off = put_varint_zz(buf, off, 0);       /* payload (ignored, rejected first) */
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT_TAG, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT_TAG, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 /* --- Instruction-stream + syncline tests (Task 5 deferred + Task 6) --- */
@@ -617,13 +632,13 @@ UTEST(deserialize_loads_instruction_stream_with_4_byte_alignment) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, c.root_proto->instr_count);
-    UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c.root_proto->instructions[0]));
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)1, c->instr_count);
+    UASSERT_EQ((UOpcode)OP_RET, uinstr_op(c->instructions[0]));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_non_zero_alignment_padding) {
@@ -659,12 +674,12 @@ UTEST(deserialize_rejects_non_zero_alignment_padding) {
     buf[off++] = 0;
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "align") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
@@ -706,18 +721,18 @@ UTEST(deserialize_loads_delta_synclines_and_abs_checkpoints) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)3, c.root_proto->instr_count);
-    UASSERT_EQ((int8_t)-128, c.root_proto->line_deltas[0]);
-    UASSERT_EQ((int8_t)2,    c.root_proto->line_deltas[1]);
-    UASSERT_EQ((int8_t)-1,   c.root_proto->line_deltas[2]);
-    UASSERT_EQ((size_t)1, c.root_proto->abs_line_count);
-    UASSERT_EQ((uint32_t)0,  c.root_proto->abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)10, c.root_proto->abs_lines[0].line);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)3, c->instr_count);
+    UASSERT_EQ((int8_t)-128, c->line_deltas[0]);
+    UASSERT_EQ((int8_t)2,    c->line_deltas[1]);
+    UASSERT_EQ((int8_t)-1,   c->line_deltas[2]);
+    UASSERT_EQ((size_t)1, c->abs_line_count);
+    UASSERT_EQ((uint32_t)0,  c->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)10, c->abs_lines[0].line);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
@@ -747,12 +762,12 @@ UTEST(deserialize_rejects_n_deltas_not_equal_n_instructions) {
     buf[off++] = 0;
     off = put_varint(buf, off, 0);
 
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "n_deltas") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 /* --- build_module_bytes: constructs a well-formed module byte blob ---
@@ -801,11 +816,11 @@ UTEST(verifier_accepts_minimal_ret_only_module) {
     uint8_t buf[256];
     const uint32_t instrs[] = { uinstr_enc_abc(OP_RET, 0, 0, 0) };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 1);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_opcode_ge_op_max) {
@@ -815,12 +830,12 @@ UTEST(verifier_rejects_opcode_ge_op_max) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "opcode") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_register_gt_max_reg) {
@@ -831,12 +846,12 @@ UTEST(verifier_rejects_register_gt_max_reg) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
@@ -847,12 +862,12 @@ UTEST(verifier_rejects_loadk_bx_out_of_constant_range) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, consts, 1, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "LOADK") != NULL || strstr(errmsg, "Bx") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_last_instruction_not_ret) {
@@ -861,12 +876,12 @@ UTEST(verifier_rejects_last_instruction_not_ret) {
         uinstr_enc_abc(OP_ADD, 0, 0, 0)         /* no terminating RET */
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 1);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "RET") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
@@ -879,11 +894,11 @@ UTEST(verifier_accepts_unused_operand_arbitrary_bytes) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, consts, 1, instrs, 3);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);                   /* MUST accept */
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);                   /* MUST accept */
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_accepts_ret_with_arbitrary_b_and_c) {
@@ -895,11 +910,11 @@ UTEST(verifier_accepts_ret_with_arbitrary_b_and_c) {
         uinstr_enc_abc(OP_RET, 0, 99, 88)
     };
     size_t total = build_module_bytes(buf, 0, consts, 1, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_accepts_hand_crafted_op_move_module) {
@@ -911,35 +926,35 @@ UTEST(verifier_accepts_hand_crafted_op_move_module) {
         uinstr_enc_abc(OP_RET, 1, 0, 0)         /* return R1 */
     };
     size_t total = build_module_bytes(buf, 1, consts, 1, instrs, 3);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c.root_proto->instructions[1]));
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((uint8_t)OP_MOVE, (uint8_t)uinstr_op(c->instructions[1]));
+    uchunk_destroy(c, NULL);
 }
 
 /* --- Round-trip integration tests (Task 15) --- */
 
 /* Returns true if two modules are semantically equivalent. */
-static bool modules_equivalent(const UModule *a, const UModule *b) {
+static bool modules_equivalent(const UProto *a, const UProto *b) {
     size_t i;
-    if (a->root_proto->instr_count     != b->root_proto->instr_count)     return false;
-    if (a->root_proto->const_count     != b->root_proto->const_count)     return false;
-    if (a->root_proto->abs_line_count  != b->root_proto->abs_line_count)  return false;
-    if (a->root_proto->max_reg         != b->root_proto->max_reg)         return false;
-    for (i = 0; i < a->root_proto->instr_count; i++) {
-        if (a->root_proto->instructions[i] != b->root_proto->instructions[i]) return false;
-        if (a->root_proto->line_deltas[i]  != b->root_proto->line_deltas[i])  return false;
+    if (a->instr_count     != b->instr_count)     return false;
+    if (a->const_count     != b->const_count)     return false;
+    if (a->abs_line_count  != b->abs_line_count)  return false;
+    if (a->max_reg         != b->max_reg)         return false;
+    for (i = 0; i < a->instr_count; i++) {
+        if (a->instructions[i] != b->instructions[i]) return false;
+        if (a->line_deltas[i]  != b->line_deltas[i])  return false;
     }
-    for (i = 0; i < a->root_proto->const_count; i++) {
-        if (a->root_proto->constants[i].kind != b->root_proto->constants[i].kind) return false;
-        if (a->root_proto->constants[i].kind == UVAL_INT
-         && a->root_proto->constants[i].v.i  != b->root_proto->constants[i].v.i)  return false;
+    for (i = 0; i < a->const_count; i++) {
+        if (a->constants[i].kind != b->constants[i].kind) return false;
+        if (a->constants[i].kind == UVAL_INT
+         && a->constants[i].v.i  != b->constants[i].v.i)  return false;
     }
-    for (i = 0; i < a->root_proto->abs_line_count; i++) {
-        if (a->root_proto->abs_lines[i].pc   != b->root_proto->abs_lines[i].pc)   return false;
-        if (a->root_proto->abs_lines[i].line != b->root_proto->abs_lines[i].line) return false;
+    for (i = 0; i < a->abs_line_count; i++) {
+        if (a->abs_lines[i].pc   != b->abs_lines[i].pc)   return false;
+        if (a->abs_lines[i].line != b->abs_lines[i].line) return false;
     }
     /* source_name: both NULL, or strcmp == 0 */
     if ((a->source_name == NULL) != (b->source_name == NULL)) return false;
@@ -950,37 +965,38 @@ static bool modules_equivalent(const UModule *a, const UModule *b) {
 /* Emit ast, serialize to a heap buffer, deserialize into a second module,
    assert round-trip equivalence, then clean up both modules and the arena. */
 static void roundtrip_ast(UAstNode *ast, const char *source_name) {
-    UModule src = {0};
+    UProto src = {0};
     UArena arena;
     UEmitter e;
     char errmsg[256];
     uint8_t *buf;
-    UModule dst = {0};
+    UProto *dst = NULL;
     ptrdiff_t need;
     ptrdiff_t wrote;
-    UModuleLoadError rc;
+    UChunkLoadError rc;
 
     uarena_init(&arena, 0);
     uemit_init(&e, &src, &arena, NULL, source_name);
     UASSERT_EQ(EMIT_OK, uemit_statement(&e, ast));
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
-    need = umodule_serialize(&src, NULL, 0);
+    need = uchunk_serialize(&src, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     buf = (uint8_t *)malloc((size_t)need);
-    wrote = umodule_serialize(&src, buf, (size_t)need);
+    wrote = uchunk_serialize(&src, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     errmsg[0] = '\0';
-    rc = umodule_deserialize(&dst, buf, (size_t)need, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT(modules_equivalent(&src, &dst));
+    rc = uchunk_deserialize(&dst, buf, (size_t)need, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT(dst != NULL);
+    UASSERT(modules_equivalent(&src, dst));
 
     free(buf);
     uarena_destroy(&arena);
-    umodule_destroy(&src, NULL);
-    umodule_destroy(&dst, NULL);
+    uchunk_destroy(&src, NULL);
+    uchunk_destroy(dst, NULL);
 }
 
 UTEST(roundtrip_ast_int_literal) {
@@ -1036,7 +1052,7 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     UArena arena;
     uarena_init(&arena, 0);
 
-    UModule a = {0};
+    UProto a = {0};
     UEmitter e;
     uemit_init(&e, &a, &arena, &vm, "test");
 
@@ -1051,38 +1067,39 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
     /* v0.8.5 recursive shape: root has 1 child (outer); outer has 1
      * child (inner). */
-    UASSERT_EQ(a.root_proto->nested_count, (size_t)1);
-    UASSERT(a.root_proto->nested[0] != NULL);
-    UASSERT_EQ(a.root_proto->nested[0]->nested_count, (size_t)1);
-    UASSERT(a.root_proto->nested[0]->nested[0] != NULL);
+    UASSERT_EQ(a.nested_count, (size_t)1);
+    UASSERT(a.nested[0] != NULL);
+    UASSERT_EQ(a.nested[0]->nested_count, (size_t)1);
+    UASSERT(a.nested[0]->nested[0] != NULL);
 
     /* Two-pass serialize: query size, then write.  The contract is
      * that the wrote count equals the queried size (C1 violates this). */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
     /* Deserialize buf -> b and verify shape preservation (C2 makes
      * decode_verify reject the bytecode). */
-    UModule b = {0};
+    UProto *b = NULL;
     char errmsg[256];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
-                                              errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ(a.root_proto->nested_count, b.root_proto->nested_count);
-    UASSERT(b.root_proto->nested[0] != NULL);
-    UASSERT_EQ(b.root_proto->nested[0]->nested_count, (size_t)1);
-    UASSERT(b.root_proto->nested[0]->nested[0] != NULL);
-    UASSERT(b.root_proto->nested[0]->instr_count > (size_t)0);
-    UASSERT(b.root_proto->nested[0]->nested[0]->instr_count > (size_t)0);
+    UChunkLoadError rc = uchunk_deserialize(&b, buf, (size_t)need,
+                                              NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT(b != NULL);
+    UASSERT_EQ(a.nested_count, b->nested_count);
+    UASSERT(b->nested[0] != NULL);
+    UASSERT_EQ(b->nested[0]->nested_count, (size_t)1);
+    UASSERT(b->nested[0]->nested[0] != NULL);
+    UASSERT(b->nested[0]->instr_count > (size_t)0);
+    UASSERT(b->nested[0]->nested[0]->instr_count > (size_t)0);
 
     free(buf);
-    umodule_destroy(&a, NULL);
-    umodule_destroy(&b, NULL);
+    uchunk_destroy(&a, NULL);
+    uchunk_destroy(b, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }
@@ -1090,7 +1107,7 @@ UTEST(roundtrip_module_with_nested_closure_proto) {
 /* T15 (a): Round-trip a module that emits an IC site (OP_GETSLOT) and
  * verify the v1.5 ic_name_strs survive serialize+deserialize, then
  * exercise the T14 lazy-intern path by calling
- * urbi_module_instance_create on the deserialized module — which on
+ * urbi_chunk_instance_create on the deserialized module — which on
  * input has ic_name_strs populated but ic_names == NULL.  After
  * instance create, ic_names must be a fully populated USymbol** array
  * that resolves to the same canonical pointer as a direct
@@ -1110,7 +1127,7 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UArena arena;
     uarena_init(&arena, 0);
 
-    UModule a = {0};
+    UProto a = {0};
     UEmitter e;
     uemit_init(&e, &a, &arena, &vm_a, "test_ic");
 
@@ -1125,62 +1142,62 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
     UASSERT_EQ(EMIT_OK, uemit_finish(&e));
 
     /* Sanity: emitter populated the root-chunk ic_count + ic_name_strs. */
-    UASSERT(a.root_proto->ic_count >= (uint16_t)1U);
-    UASSERT(a.root_proto->ic_name_strs != NULL);
-    UASSERT(a.root_proto->ic_name_strs[0] != NULL);
+    UASSERT(a.ic_count >= (uint16_t)1U);
+    UASSERT(a.ic_name_strs != NULL);
+    UASSERT(a.ic_name_strs[0] != NULL);
 
     /* Round-trip. */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
-    UModule b = {0};
+    UProto *b = NULL;
     char errmsg[256];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
-                                              errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((unsigned)a.root_proto->ic_count, (unsigned)b.root_proto->ic_count);
-    UASSERT(b.root_proto->ic_name_strs != NULL);
-    UASSERT_EQ(0, strcmp(a.root_proto->ic_name_strs[0], b.root_proto->ic_name_strs[0]));
+    UChunkLoadError rc = uchunk_deserialize(&b, buf, (size_t)need,
+                                              NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT(b != NULL);
+    UASSERT_EQ((unsigned)a.ic_count, (unsigned)b->ic_count);
+    UASSERT(b->ic_name_strs != NULL);
+    UASSERT_EQ(0, strcmp(a.ic_name_strs[0], b->ic_name_strs[0]));
 
     /* Pre-condition for the T14 lazy-intern path: the deserialized
      * module has no ic_names yet.  Loader cannot intern (no VM in
      * scope at decode time). */
-    UASSERT_EQ((void *)NULL, (void *)b.root_proto->ic_names);
+    UASSERT_EQ((void *)NULL, (void *)b->ic_names);
 
     /* Drive the lazy-intern.  Use a fresh VM to confirm the helper
      * interns into the receiving VM, not the originating one. */
     UVM vm_b;
     urbi_vm_init(&vm_b, NULL, NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm_b, &b);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm_b, b);
     UASSERT(mi != NULL);
 
-    /* Post-condition: ic_names is now populated on root_proto (v0.8.1 Phase 1:
-     * intern writes via &rp->ic_names rather than &module->ic_names); each
-     * entry equals the canonical interned pointer for the matching entry. */
-    UASSERT(b.root_proto->ic_names != NULL);
-    for (uint16_t k = 0; k < b.root_proto->ic_count; k++) {
-        const char *name = b.root_proto->ic_name_strs[k];
+    /* Post-condition: ic_names is now populated; each entry equals the
+     * canonical interned pointer for the matching entry. */
+    UASSERT(b->ic_names != NULL);
+    for (uint16_t k = 0; k < b->ic_count; k++) {
+        const char *name = b->ic_name_strs[k];
         size_t nlen = strlen(name);
         const char *canon = ustr_intern(&vm_b, name, nlen);
-        UASSERT_EQ((const void *)canon, (const void *)b.root_proto->ic_names[k]);
+        UASSERT_EQ((const void *)canon, (const void *)b->ic_names[k]);
     }
 
     /* Idempotency: a second call must not re-allocate.  The helper's
      * fast path returns immediately when ic_names is already populated. */
-    USymbol **before = b.root_proto->ic_names;
-    UModuleInstance *mi2 = urbi_module_instance_create(&vm_b, &b);
+    USymbol **before = b->ic_names;
+    UChunkInstance *mi2 = urbi_chunk_instance_create(&vm_b, b);
     UASSERT(mi2 != NULL);
-    UASSERT_EQ((void *)before, (void *)b.root_proto->ic_names);
+    UASSERT_EQ((void *)before, (void *)b->ic_names);
 
     free(buf);
-    umodule_destroy(&a, NULL);
-    umodule_destroy(&b, NULL);
+    uchunk_destroy(&a, NULL);
+    uchunk_destroy(b, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm_a);
     urbi_vm_destroy(&vm_b);
@@ -1194,12 +1211,8 @@ UTEST(roundtrip_module_with_ic_sites_lazy_interns) {
  * a module with one nested proto whose constant pool holds a single
  * UVAL_FLOAT, round-trip, and assert the FLOAT survives. */
 UTEST(roundtrip_preserves_nested_proto_float_constant) {
-    UModule a = {0};
-    /* Task 11: root_proto must exist before umodule_alloc_nested_proto
-     * (nested[] lives on root_proto).  Allocate with stdlib_alloc (hosted). */
-    a.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(a.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&a, a.root_proto);
+    UProto a = {0};
+    UProto *p = uproto_alloc_nested(&a, &a);
     UASSERT(p != NULL);
 
     /* One UVAL_FLOAT in the nested proto's constant pool. */
@@ -1238,49 +1251,50 @@ UTEST(roundtrip_preserves_nested_proto_float_constant) {
     p->max_reg = 0;
 
     /* Likewise, the root chunk needs at least one OP_RET. */
-    a.root_proto->instructions = (uint32_t *)malloc(sizeof(uint32_t));
-    UASSERT(a.root_proto->instructions != NULL);
-    a.root_proto->instr_cap = 1;
-    a.root_proto->instr_count = 1;
-    a.root_proto->instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
-    a.root_proto->line_deltas = (int8_t *)malloc(sizeof(int8_t));
-    UASSERT(a.root_proto->line_deltas != NULL);
-    a.root_proto->line_deltas[0] = (int8_t)-128;
-    a.root_proto->abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
-    UASSERT(a.root_proto->abs_lines != NULL);
-    a.root_proto->abs_line_cap   = 1;
-    a.root_proto->abs_line_count = 1;
-    a.root_proto->abs_lines[0].pc   = 0;
-    a.root_proto->abs_lines[0].line = 1;
-    a.root_proto->max_reg = 0;
+    a.instructions = (uint32_t *)malloc(sizeof(uint32_t));
+    UASSERT(a.instructions != NULL);
+    a.instr_cap = 1;
+    a.instr_count = 1;
+    a.instructions[0] = uinstr_enc_abc(OP_RET, 0, 0, 0);
+    a.line_deltas = (int8_t *)malloc(sizeof(int8_t));
+    UASSERT(a.line_deltas != NULL);
+    a.line_deltas[0] = (int8_t)-128;
+    a.abs_lines = (UAbsLine *)malloc(sizeof(UAbsLine));
+    UASSERT(a.abs_lines != NULL);
+    a.abs_line_cap   = 1;
+    a.abs_line_count = 1;
+    a.abs_lines[0].pc   = 0;
+    a.abs_lines[0].line = 1;
+    a.max_reg = 0;
 
     /* Round-trip. */
-    ptrdiff_t need = umodule_serialize(&a, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&a, NULL, 0);
     UASSERT(need > (ptrdiff_t)0);
     uint8_t *buf = (uint8_t *)malloc((size_t)need);
     UASSERT(buf != NULL);
-    ptrdiff_t wrote = umodule_serialize(&a, buf, (size_t)need);
+    ptrdiff_t wrote = uchunk_serialize(&a, buf, (size_t)need);
     UASSERT_EQ(need, wrote);
 
-    UModule b = {0};
+    UProto *b = NULL;
     char errmsg[256];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&b, buf, (size_t)need,
-                                              errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ(a.root_proto->nested_count, b.root_proto->nested_count);
-    UASSERT(b.root_proto->nested[0] != NULL);
-    UASSERT_EQ(p->const_count, b.root_proto->nested[0]->const_count);
-    UASSERT_EQ((uint8_t)UVAL_FLOAT, b.root_proto->nested[0]->constants[0].kind);
+    UChunkLoadError rc = uchunk_deserialize(&b, buf, (size_t)need,
+                                              NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT(b != NULL);
+    UASSERT_EQ(a.nested_count, b->nested_count);
+    UASSERT(b->nested[0] != NULL);
+    UASSERT_EQ(p->const_count, b->nested[0]->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, b->nested[0]->constants[0].kind);
 #if URBI_FLOAT_TYPE == 8
-    UASSERT(b.root_proto->nested[0]->constants[0].v.f == 2.718281828);
+    UASSERT(b->nested[0]->constants[0].v.f == 2.718281828);
 #else
-    UASSERT(b.root_proto->nested[0]->constants[0].v.f == 2.718f);
+    UASSERT(b->nested[0]->constants[0].v.f == 2.718f);
 #endif
 
     free(buf);
-    umodule_destroy(&a, NULL);
-    umodule_destroy(&b, NULL);
+    uchunk_destroy(&a, NULL);
+    uchunk_destroy(b, NULL);
 }
 
 /* --- Serializer tests (Task 14) --- */
@@ -1294,7 +1308,7 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
             + n_deltas varint 0(1) + n_abs varint 0(1)
             + ic_count varint 0(1) + nested_count varint 0(1) = 11 bytes.
        Total = 24 + 1 + 11 = 36. */
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
@@ -1302,14 +1316,14 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     (void)uemit_finish(&e);
 
     /* Size query (buf == NULL) */
-    ptrdiff_t n = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t n = uchunk_serialize(&module, NULL, 0);
     UASSERT_EQ((ptrdiff_t)36, n);
 
     /* Write pass */
     uint8_t buf[128];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0xAA;  /* poison */
-    ptrdiff_t written = umodule_serialize(&module, buf, sizeof buf);
+    ptrdiff_t written = uchunk_serialize(&module, buf, sizeof buf);
     UASSERT_EQ((ptrdiff_t)36, written);
 
     /* Header field checks */
@@ -1331,33 +1345,33 @@ UTEST(serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections) {
     UASSERT_EQ((uint8_t)URBI_ENDIANNESS,  buf[15]);
 
     /* Verify the output round-trips cleanly */
-    UModule c2 = {0};
+    UProto *c2 = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c2, buf, (size_t)written, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c2, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c2, buf, (size_t)written, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c2, NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 UTEST(serialize_cap_0_returns_required_size_without_writing) {
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
     uemit_init(&e, &module, &arena, NULL, NULL);
     (void)uemit_finish(&e);
 
-    ptrdiff_t needed = umodule_serialize(&module, NULL, 0);
+    ptrdiff_t needed = uchunk_serialize(&module, NULL, 0);
     UASSERT((ptrdiff_t)0 < needed);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
-    UModule module = {0};
+    UProto module = {0};
     UArena arena;
     UEmitter e;
     uarena_init(&arena, 0);
@@ -1365,11 +1379,11 @@ UTEST(serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative) {
     (void)uemit_finish(&e);
 
     uint8_t buf[10];
-    ptrdiff_t rc = umodule_serialize(&module, buf, sizeof buf);
-    UASSERT_EQ(-(ptrdiff_t)ULOAD_TRUNCATED, rc);
+    ptrdiff_t rc = uchunk_serialize(&module, buf, sizeof buf);
+    UASSERT_EQ(-(ptrdiff_t)UCHUNK_LOAD_TRUNCATED, rc);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
 }
 
 /* Custom allocator that fails after `fails_after` successful calls.
@@ -1387,41 +1401,41 @@ static void *module_limit_alloc(void *ptr, size_t nbytes, void *ud) {
 /* --- Additional coverage tests --- */
 
 UTEST(destroy_null_module_is_noop) {
-    /* umodule_destroy(NULL) must not crash — guards the null branch. */
-    umodule_destroy(NULL, NULL);
+    /* uchunk_destroy(NULL) must not crash — guards the null branch. */
+    uchunk_destroy(NULL, NULL);
     UASSERT(true);
 }
 
 UTEST(module_load_error_name_all_codes) {
-    /* Exercise every UModuleLoadError case in umodule_load_error_name. */
-    UASSERT_EQ(0, strcmp("ULOAD_OK",                  umodule_load_error_name(ULOAD_OK)));
-    UASSERT_EQ(0, strcmp("ULOAD_BAD_MAGIC",           umodule_load_error_name(ULOAD_BAD_MAGIC)));
-    UASSERT_EQ(0, strcmp("ULOAD_UNSUPPORTED_VERSION", umodule_load_error_name(ULOAD_UNSUPPORTED_VERSION)));
-    UASSERT_EQ(0, strcmp("ULOAD_FLAVOR_MISMATCH",     umodule_load_error_name(ULOAD_FLAVOR_MISMATCH)));
-    UASSERT_EQ(0, strcmp("ULOAD_TRUNCATED",           umodule_load_error_name(ULOAD_TRUNCATED)));
-    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT_VARINT",      umodule_load_error_name(ULOAD_CORRUPT_VARINT)));
-    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT_TAG",         umodule_load_error_name(ULOAD_CORRUPT_TAG)));
-    UASSERT_EQ(0, strcmp("ULOAD_CORRUPT",             umodule_load_error_name(ULOAD_CORRUPT)));
-    UASSERT_EQ(0, strcmp("ULOAD_OOM",                 umodule_load_error_name(ULOAD_OOM)));
-    UASSERT_EQ(0, strcmp("ULOAD_INVALID_ARG",         umodule_load_error_name(ULOAD_INVALID_ARG)));
-    UASSERT_EQ(0, strcmp("ULOAD_OVERSIZED",           umodule_load_error_name(ULOAD_OVERSIZED)));
-    /* Out-of-range code falls through to ULOAD_UNKNOWN sentinel. */
-    UASSERT(umodule_load_error_name((UModuleLoadError)99) != NULL);
+    /* Exercise every UChunkLoadError case in uchunk_load_error_name. */
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_OK",                  uchunk_load_error_name(UCHUNK_LOAD_OK)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_BAD_MAGIC",           uchunk_load_error_name(UCHUNK_LOAD_BAD_MAGIC)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_UNSUPPORTED_VERSION", uchunk_load_error_name(UCHUNK_LOAD_UNSUPPORTED_VERSION)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_FLAVOR_MISMATCH",     uchunk_load_error_name(UCHUNK_LOAD_FLAVOR_MISMATCH)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_TRUNCATED",           uchunk_load_error_name(UCHUNK_LOAD_TRUNCATED)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_CORRUPT_VARINT",      uchunk_load_error_name(UCHUNK_LOAD_CORRUPT_VARINT)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_CORRUPT_TAG",         uchunk_load_error_name(UCHUNK_LOAD_CORRUPT_TAG)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_CORRUPT",             uchunk_load_error_name(UCHUNK_LOAD_CORRUPT)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_OOM",                 uchunk_load_error_name(UCHUNK_LOAD_OOM)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_INVALID_ARG",         uchunk_load_error_name(UCHUNK_LOAD_INVALID_ARG)));
+    UASSERT_EQ(0, strcmp("UCHUNK_LOAD_OVERSIZED",           uchunk_load_error_name(UCHUNK_LOAD_OVERSIZED)));
+    /* Out-of-range code falls through to UCHUNK_LOAD_UNKNOWN sentinel. */
+    UASSERT(uchunk_load_error_name((UChunkLoadError)99) != NULL);
 }
 
 UTEST(deserialize_null_module_returns_truncated) {
-    /* umodule_deserialize(NULL, ...) must not crash — covers the null guard.
-     * v0.5.7 T73: NULL module / NULL buf now returns ULOAD_INVALID_ARG; the
+    /* uchunk_deserialize(NULL, ...) must not crash — covers the null guard.
+     * v0.5.7 T73: NULL module / NULL buf now returns UCHUNK_LOAD_INVALID_ARG; the
      * test name is preserved for git-blame continuity. */
     uint8_t buf[24];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
-    UModuleLoadError rc = umodule_deserialize(NULL, buf, sizeof buf, NULL, 0);
-    UASSERT_EQ(ULOAD_INVALID_ARG, rc);
+    UChunkLoadError rc = uchunk_deserialize(NULL, buf, sizeof buf, NULL, NULL, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_INVALID_ARG, rc);
 }
 
 UTEST(deserialize_oom_on_constants_allocation) {
-    /* Cause ULOAD_OOM during the constants module_grow by failing after the
+    /* Cause UCHUNK_LOAD_OOM during the constants module_grow by failing after the
        initial source_name allocation succeeds (first alloc for source_name)
        but failing on the next call (constants buffer). */
     uint8_t buf[128];
@@ -1444,17 +1458,15 @@ UTEST(deserialize_oom_on_constants_allocation) {
 
     UModuleLimitAlloc la;
     la.ok_calls = 0;
-    la.fails_after = 0;                         /* fail on first alloc (constants grow) */
-    UModule c = {0};
-    c.alloc_fn = module_limit_alloc;
-    c.alloc_ud = &la;
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c, NULL);
+    la.fails_after = 0;                         /* fail on first alloc (root UProto alloc) */
+    UProto *c = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, module_limit_alloc, &la, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_OOM, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_oom_on_instructions_allocation) {
-    /* Cause ULOAD_OOM during the instructions module_grow by allowing the
+    /* Cause UCHUNK_LOAD_OOM during the instructions module_grow by allowing the
        constants allocation to succeed (1 call) but failing the next. */
     uint8_t buf[128];
     size_t i;
@@ -1484,16 +1496,14 @@ UTEST(deserialize_oom_on_instructions_allocation) {
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 1);
 
-    /* Allow only the first allocation (constants), fail the second (instructions). */
+    /* Allow only the first allocation (root UProto), fail the second (constants). */
     UModuleLimitAlloc la;
     la.ok_calls = 0;
     la.fails_after = 1;
-    UModule c = {0};
-    c.alloc_fn = module_limit_alloc;
-    c.alloc_ud = &la;
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, module_limit_alloc, &la, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_OOM, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_loads_float_constant) {
@@ -1528,18 +1538,18 @@ UTEST(deserialize_loads_float_constant) {
     off = put_varint(buf, off, 0);              /* n_abs_lines = 0 */
     off = put_varint(buf, off, 0);              /* ic_count = 0 (v1.5) */
     off = put_varint(buf, off, 0);              /* nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)1, c.root_proto->const_count);
-    UASSERT_EQ((uint8_t)UVAL_FLOAT, c.root_proto->constants[0].kind);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)1, c->const_count);
+    UASSERT_EQ((uint8_t)UVAL_FLOAT, c->constants[0].kind);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
     /* UVAL_NIL/UVAL_BOOL/UVAL_STR constants have no payload at M1.
-       The deserializer rejects them with ULOAD_CORRUPT_TAG via the else branch
+       The deserializer rejects them with UCHUNK_LOAD_CORRUPT_TAG via the else branch
        (they pass the > UVAL_STR range check but are neither INT nor FLOAT). */
     uint8_t buf[128];
     size_t i;
@@ -1555,15 +1565,15 @@ UTEST(deserialize_rejects_nil_bool_str_constant_tag) {
     off = put_varint(buf, off, 0);              /* padding */
     off = put_varint(buf, off, 0);
     off = put_varint(buf, off, 0);
-    UModule c = {0};
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_CORRUPT_TAG, rc);
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT_TAG, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_truncated_at_line_deltas) {
     /* Build a valid module with 1 instruction but truncate the buffer before
-       the line_deltas data — should return ULOAD_TRUNCATED. */
+       the line_deltas data — should return UCHUNK_LOAD_TRUNCATED. */
     uint8_t buf[256];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1587,15 +1597,15 @@ UTEST(deserialize_truncated_at_line_deltas) {
     /* Write n_deltas=1 but truncate before writing the actual delta byte. */
     off = put_varint(buf, off, 1);              /* n_deltas = 1 */
     /* Do NOT write the delta byte; pass off as size so buffer ends here. */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_TRUNCATED, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_TRUNCATED, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_oom_on_abs_lines_allocation) {
-    /* Cause ULOAD_OOM during the abs_lines module_grow by allowing constants and
+    /* Cause UCHUNK_LOAD_OOM during the abs_lines module_grow by allowing constants and
        instructions and line_deltas allocations to succeed but failing abs_lines. */
     uint8_t buf[256];
     size_t i;
@@ -1622,21 +1632,19 @@ UTEST(deserialize_oom_on_abs_lines_allocation) {
     off = put_varint(buf, off, 0);              /* abs_line[0].pc = 0 */
     off = put_varint(buf, off, 1);              /* abs_line[0].line = 1 */
 
-    /* Allocation order: (1) instructions grow, (2) line_deltas fresh alloc,
-       (3) abs_lines module_grow — fail the 3rd. */
+    /* Allocation order: (1) root UProto, (2) instructions grow, (3) line_deltas,
+       (4) abs_lines module_grow — fail the 4th. */
     UModuleLimitAlloc la;
     la.ok_calls = 0;
-    la.fails_after = 2;
-    UModule c = {0};
-    c.alloc_fn = module_limit_alloc;
-    c.alloc_ud = &la;
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, NULL, 0);
-    UASSERT_EQ(ULOAD_OOM, rc);
-    umodule_destroy(&c, NULL);
+    la.fails_after = 3;
+    UProto *c = NULL;
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, module_limit_alloc, &la, NULL, 0);
+    UASSERT_EQ(UCHUNK_LOAD_OOM, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
-    /* abs_line pc >= instr_count should return ULOAD_CORRUPT. */
+    /* abs_line pc >= instr_count should return UCHUNK_LOAD_CORRUPT. */
     uint8_t buf[256];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1660,12 +1668,12 @@ UTEST(deserialize_rejects_abs_line_pc_out_of_range) {
     off = put_varint(buf, off, 1);              /* 1 abs_line */
     off = put_varint(buf, off, 99);             /* pc=99, out of range (instr_count=1) */
     off = put_varint(buf, off, 5);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "out of range") != NULL || strstr(errmsg, "pc") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_truncated_at_metadata_max_reg) {
@@ -1676,58 +1684,43 @@ UTEST(deserialize_truncated_at_metadata_max_reg) {
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
     build_good_header(buf);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
     errmsg[0] = '\0';
-    UModuleLoadError rc = umodule_deserialize(&c, buf, sizeof buf, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_TRUNCATED, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, sizeof buf, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_TRUNCATED, rc);
     UASSERT(strstr(errmsg, "source_name") != NULL || strstr(errmsg, "varint") != NULL
             || strstr(errmsg, "truncated") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_module_grow_reuses_existing_cap) {
-    /* Deserialize two modules from the same buffer back-to-back, reusing
-       the existing constants buffer — triggers the module_grow "cap >= new_cap"
-       early-return branch (when cap is already large enough). */
+    /* Deserialize the same buffer twice into independent roots and verify
+       both round-trips succeed with identical constant counts. */
     uint8_t buf[256];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
-    /* Build a module with 2 constants. */
     int64_t cv[] = {1, 2};
     const uint32_t instrs[] = { uinstr_enc_abc(OP_RET, 0, 0, 0) };
     size_t total = build_module_bytes(buf, 0, cv, 2, instrs, 1);
 
-    /* First deserialize. */
-    UModule c = {0};
+    UProto *c1 = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.root_proto->const_count);
-    /* c now has const_cap >= 8 (first grow starts at 8). */
+    UChunkLoadError rc = uchunk_deserialize(&c1, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c1->const_count);
 
-    /* Reset counts but keep the buffers allocated. */
-    c.root_proto->const_count = 0;
-    c.root_proto->instr_count = 0;
-    c.root_proto->abs_line_count = 0;
-    if (c.root_proto->line_deltas != NULL) {
-        UModuleAllocFn alloc = c.alloc_fn != NULL ? c.alloc_fn
-                            : (UModuleAllocFn)NULL; /* stdlib handled by destroy later */
-        (void)alloc; /* just keep the pointer, don't free now */
-        free(c.root_proto->line_deltas); c.root_proto->line_deltas = NULL;
-    }
+    UProto *c2 = NULL;
+    rc = uchunk_deserialize(&c2, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c2->const_count);
 
-    /* Second deserialize into the same module — module_grow for constants will
-       see const_cap >= 2, triggering the "already large enough" branch. */
-    rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.root_proto->const_count);
-
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c1, NULL);
+    uchunk_destroy(c2, NULL);
 }
 
 UTEST(deserialize_rejects_trailing_bytes) {
-    /* A valid module followed by extra bytes should return ULOAD_CORRUPT. */
+    /* A valid module followed by extra bytes should return UCHUNK_LOAD_CORRUPT. */
     uint8_t buf[256];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1735,16 +1728,16 @@ UTEST(deserialize_rejects_trailing_bytes) {
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 1);
     /* Append extra garbage byte. */
     buf[total] = 0xAB;
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total + 1, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total + 1, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "trailing") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_register_b_gt_max_reg) {
-    /* OP_ADD with B > max_reg should return ULOAD_CORRUPT. */
+    /* OP_ADD with B > max_reg should return UCHUNK_LOAD_CORRUPT. */
     uint8_t buf[256];
     /* max_reg=0, ADD with B=5 > max_reg */
     const uint32_t instrs[] = {
@@ -1752,16 +1745,16 @@ UTEST(verifier_rejects_register_b_gt_max_reg) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "B=") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verifier_rejects_register_c_gt_max_reg) {
-    /* OP_ADD with C > max_reg should return ULOAD_CORRUPT. */
+    /* OP_ADD with C > max_reg should return UCHUNK_LOAD_CORRUPT. */
     uint8_t buf[256];
     /* max_reg=0, ADD with B=0 ok, C=5 > max_reg */
     const uint32_t instrs[] = {
@@ -1769,17 +1762,17 @@ UTEST(verifier_rejects_register_c_gt_max_reg) {
         uinstr_enc_abc(OP_RET, 0, 0, 0)
     };
     size_t total = build_module_bytes(buf, 0, NULL, 0, instrs, 2);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, total, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, total, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "register") != NULL || strstr(errmsg, "C=") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     /* Build a module with two abs_line checkpoints where the second has a
-       lower pc than the first — should return ULOAD_CORRUPT. */
+       lower pc than the first — should return UCHUNK_LOAD_CORRUPT. */
     uint8_t buf[256];
     size_t i;
     for (i = 0; i < sizeof buf; i++) buf[i] = 0;
@@ -1814,12 +1807,12 @@ UTEST(deserialize_rejects_non_monotonic_abs_lines) {
     off = put_varint(buf, off, 10);
     off = put_varint(buf, off, 0);              /* abs_line[1].pc = 0 <= prev=1: corrupt */
     off = put_varint(buf, off, 20);
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
     UASSERT(strstr(errmsg, "monotonic") != NULL);
-    umodule_destroy(&c, NULL);
+    uchunk_destroy(c, NULL);
 }
 
 /* MOD-014: simplification regression — the abs_lines monotonic check must
@@ -1864,22 +1857,22 @@ UTEST(deserialize_accepts_first_abs_line_pc_zero) {
     off = put_varint(buf, off, 10);
     off = put_varint(buf, off, 0);              /* ic_count = 0 (v1.5) */
     off = put_varint(buf, off, 0);              /* nested_count = 0 (v1.5) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[128];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    UASSERT_EQ((size_t)2, c.root_proto->abs_line_count);
-    UASSERT_EQ((uint32_t)0, c.root_proto->abs_lines[0].pc);
-    UASSERT_EQ((uint32_t)1, c.root_proto->abs_lines[1].pc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    UASSERT_EQ((size_t)2, c->abs_line_count);
+    UASSERT_EQ((uint32_t)0, c->abs_lines[0].pc);
+    UASSERT_EQ((uint32_t)1, c->abs_lines[1].pc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(umodule_init_zeroes_ic_count_and_ic_names) {
-    /* Task 11: ic_count and ic_names live on root_proto.
-     * A zero-init module has root_proto == NULL; ic fields are implicitly zero. */
-    UModule m = {0};
-    UASSERT(m.root_proto == NULL);
-    umodule_destroy(&m, NULL);
+    /* A zero-init root UProto has ic_count==0 and ic_names==NULL. */
+    UProto m = {0};
+    UASSERT_EQ(0U, (unsigned)m.ic_count);
+    UASSERT_EQ((void *)NULL, (void *)m.ic_names);
+    uchunk_destroy(&m, NULL);
 }
 
 /* --- T4 verifier resync regression tests (MOD-009) --- */
@@ -1937,11 +1930,11 @@ UTEST(verify_accepts_loadbool_b_as_immediate) {
     buf[off++] = 0;          /* n_abs_lines = 0 */
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
@@ -1966,11 +1959,11 @@ UTEST(verify_accepts_push_tag_a_packs_flags_and_reg_nibble) {
     buf[off++] = 0;
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
@@ -1992,11 +1985,11 @@ UTEST(verify_rejects_op_loadbool_b_greater_than_one) {
     buf[off++] = 0;
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_op_getupval_a_above_max_reg) {
@@ -2019,11 +2012,11 @@ UTEST(verify_rejects_op_getupval_a_above_max_reg) {
     buf[off++] = 0;
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
@@ -2046,17 +2039,17 @@ UTEST(verify_accepts_at_install_with_no_onleave_sentinel) {
     buf[off++] = 0;          /* n_abs_lines */
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     /* OP_CLOSURE Bx must be < nested_count.  At v0.5.5 nested_count is 0
      * (root-only modules); a hand-rolled OP_CLOSURE with Bx=0 should
-     * therefore reject with ULOAD_CORRUPT.  Pre-T4/T5 verifier accepted
+     * therefore reject with UCHUNK_LOAD_CORRUPT.  Pre-T4/T5 verifier accepted
      * this silently; runtime would index past nested[] and read garbage. */
     uint8_t buf[64] = {0};
     size_t off = write_good_header_to(buf);
@@ -2074,11 +2067,11 @@ UTEST(verify_rejects_op_closure_bx_above_nested_count) {
     buf[off++] = 0;          /* n_abs_lines = 0 */
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_CORRUPT, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, rc);
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
@@ -2103,11 +2096,11 @@ UTEST(verify_accepts_op_jmp_with_arbitrary_bx) {
     buf[off++] = 0;
     buf[off++] = 0;          /* ic_count = 0 */
     buf[off++] = 0;          /* nested_count = 0 (v1.7) */
-    UModule c = {0};
+    UProto *c = NULL;
     char errmsg[256];
-    UModuleLoadError rc = umodule_deserialize(&c, buf, off, errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, rc);
-    umodule_destroy(&c, NULL);
+    UChunkLoadError rc = uchunk_deserialize(&c, buf, off, NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, rc);
+    uchunk_destroy(c, NULL);
 }
 
 /* Helper: build a serialized 2-instruction module with the given test
@@ -2147,27 +2140,27 @@ UTEST(verify_rejects_arith_c_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, /*max_reg=*/0,
                                         ENC_ABC(OP_ADD, 0, 0, 99));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_neg_b_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABC(OP_NEG, 0, 99, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_test_a_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABC(OP_TEST, 99, 0, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_eq_b_above_max_reg) {
@@ -2175,18 +2168,18 @@ UTEST(verify_rejects_eq_b_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABC(OP_EQ, 0, 99, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_setupval_a_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABC(OP_SETUPVAL, 99, 0, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
@@ -2194,9 +2187,9 @@ UTEST(verify_rejects_push_frame_guard_base_plus_count_overflow) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABC(OP_PUSH_FRAME_GUARD, 0, 2, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
@@ -2204,9 +2197,9 @@ UTEST(verify_rejects_try_begin_handler_pc_above_instr_count) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABX(OP_TRY_BEGIN, 0, 99));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
@@ -2214,9 +2207,9 @@ UTEST(verify_rejects_push_tag_low_nibble_above_max_reg) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABX(OP_PUSH_TAG, 0x01, 0));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
@@ -2224,9 +2217,9 @@ UTEST(verify_rejects_push_tag_handler_pc_above_instr_count) {
     uint8_t buf[80] = {0};
     size_t off = build_two_instr_module(buf, sizeof buf, 0,
                                         ENC_ABX(OP_PUSH_TAG, 0x00, 99));
-    UModule c = {0};
-    UASSERT_EQ(ULOAD_CORRUPT, umodule_deserialize(&c, buf, off, NULL, 0));
-    umodule_destroy(&c, NULL);
+    UProto *c = NULL;
+    UASSERT_EQ(UCHUNK_LOAD_CORRUPT, uchunk_deserialize(&c, buf, off, NULL, NULL, NULL, 0));
+    uchunk_destroy(c, NULL);
 }
 
 void test_module_suite(void);
@@ -2258,6 +2251,8 @@ void test_module_suite(void) {
               deserialize_rejects_v1_4_module);
     utest_run("deserialize rejects v1.6 module (v0.8.1 root_proto layout break)",
               deserialize_rejects_v1_6_module);
+    utest_run("deserialize rejects v1.7 module (v0.9.2 Approach C semantic bump)",
+              deserialize_rejects_v1_7_module);
     utest_run("deserialize accepts current-version module",
               deserialize_accepts_current_version_module);
     utest_run("uproto alloc zero-inits ic_count and ic_names",
@@ -2308,7 +2303,7 @@ void test_module_suite(void) {
               serialize_empty_module_produces_24_byte_header_plus_zero_sized_sections);
     utest_run("serialize cap=0 returns required size without writing",
               serialize_cap_0_returns_required_size_without_writing);
-    utest_run("serialize cap too small returns ULOAD_TRUNCATED negative",
+    utest_run("serialize cap too small returns UCHUNK_LOAD_TRUNCATED negative",
               serialize_cap_too_small_returns_ULOAD_TRUNCATED_negative);
     utest_run("roundtrip AST_INT literal emit-serialize-deserialize",
               roundtrip_ast_int_literal);
@@ -2326,11 +2321,11 @@ void test_module_suite(void) {
               destroy_null_module_is_noop);
     utest_run("module load error name covers all codes",
               module_load_error_name_all_codes);
-    utest_run("deserialize NULL module returns ULOAD_TRUNCATED",
+    utest_run("deserialize NULL module returns UCHUNK_LOAD_TRUNCATED",
               deserialize_null_module_returns_truncated);
-    utest_run("deserialize OOM on constants allocation returns ULOAD_OOM",
+    utest_run("deserialize OOM on constants allocation returns UCHUNK_LOAD_OOM",
               deserialize_oom_on_constants_allocation);
-    utest_run("deserialize OOM on instructions allocation returns ULOAD_OOM",
+    utest_run("deserialize OOM on instructions allocation returns UCHUNK_LOAD_OOM",
               deserialize_oom_on_instructions_allocation);
     utest_run("deserialize loads UVAL_FLOAT constant",
               deserialize_loads_float_constant);
@@ -2340,9 +2335,9 @@ void test_module_suite(void) {
               deserialize_accepts_first_abs_line_pc_zero);
     utest_run("deserialize rejects NIL/BOOL/STR constant tag as corrupt",
               deserialize_rejects_nil_bool_str_constant_tag);
-    utest_run("deserialize truncated at line_deltas returns ULOAD_TRUNCATED",
+    utest_run("deserialize truncated at line_deltas returns UCHUNK_LOAD_TRUNCATED",
               deserialize_truncated_at_line_deltas);
-    utest_run("deserialize OOM on abs_lines allocation returns ULOAD_OOM",
+    utest_run("deserialize OOM on abs_lines allocation returns UCHUNK_LOAD_OOM",
               deserialize_oom_on_abs_lines_allocation);
     utest_run("deserialize rejects abs_line pc out of range",
               deserialize_rejects_abs_line_pc_out_of_range);
@@ -2352,7 +2347,7 @@ void test_module_suite(void) {
               verifier_rejects_register_b_gt_max_reg);
     utest_run("verifier rejects register C > max_reg",
               verifier_rejects_register_c_gt_max_reg);
-    utest_run("deserialize truncated at metadata max_reg returns ULOAD_TRUNCATED",
+    utest_run("deserialize truncated at metadata max_reg returns UCHUNK_LOAD_TRUNCATED",
               deserialize_truncated_at_metadata_max_reg);
     utest_run("deserialize module grow reuses existing buffer cap",
               deserialize_module_grow_reuses_existing_cap);

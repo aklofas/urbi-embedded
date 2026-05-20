@@ -6,7 +6,7 @@ ringbuf, the pluggable `UTransport` adapter, and the `Debug` urbiscript
 namespace. The subsystem is opt-in via `URBI_ENABLE_REPL=1`; default
 builds omit `src/repl/` entirely.
 
-Read [`realm-and-modules.md`](./realm-and-modules.md) first — the REPL
+Read [`realm-and-chunks.md`](./realm-and-chunks.md) first — the REPL
 service builds on `urbi_realm_create_repl` and the per-realm writer
 plumbing introduced in v0.9.0 / Phase 1 of v0.9.1.
 
@@ -504,7 +504,7 @@ Two known issues filed in `docs/urbi-embedded-design-risks.md`:
 ## See also
 
 - `docs/embedding-guide.md` §12 — public-facing how-to for embedders.
-- `docs/internals/realm-and-modules.md` — URealm, the per-realm writer,
+- `docs/internals/realm-and-chunks.md` — URealm, the per-realm writer,
   and `urbi_realm_create_repl` (v0.9.0 foundation).
 - `<urbi/repl.h>` — public API surface.
 - REVIVAL.md §11 — protocol design rationale (NDJSON, transport

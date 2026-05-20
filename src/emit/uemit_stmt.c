@@ -19,7 +19,7 @@
 #include "emit/uemit_internal.h"  /* uemit_internal.h pulls in umacros.h (urbi_zero) */
 #include "value/uintern.h"        /* ustr_intern */
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uast.h"
 #include "runtime/umacros.h"
 #include <stddef.h>
@@ -156,7 +156,7 @@ uint8_t emit_function_literal(UEmitter *e,
     /* 1. Allocate a new UProto under the module's nested[] list.  All
      * parameter interns have already succeeded; from here on, any failure
      * leaves child_proto in nested[] but at least it is consistently a
-     * fully-allocated empty proto (umodule_destroy walks NULL slots
+     * fully-allocated empty proto (uchunk_destroy walks NULL slots
      * cleanly). */
     /* v0.8.5 Task 5: allocate child_proto under the ENCLOSING parent's
      * nested[] (parent_fs->target_proto), not flat under root_proto.  For
@@ -168,11 +168,11 @@ uint8_t emit_function_literal(UEmitter *e,
      *
      * All parameter interns have already succeeded; from here on, any
      * failure leaves child_proto in parent_proto->nested[] but at least
-     * it is consistently a fully-allocated empty proto (umodule_destroy
+     * it is consistently a fully-allocated empty proto (uchunk_destroy
      * walks NULL slots cleanly). */
     UProto *parent_proto = parent_fs->target_proto;
-    if (parent_proto == NULL) parent_proto = e->module->root_proto;
-    UProto *child_proto = umodule_alloc_nested_proto(e->module, parent_proto);
+    if (parent_proto == NULL) parent_proto = e->module;  /* v0.9.2: e->module IS root */
+    UProto *child_proto = uproto_alloc_nested(e->module, parent_proto);
     if (child_proto == NULL) { e->error = EMIT_OOM; return 0U; }
     int proto_idx = (int)(parent_proto->nested_count - 1);
 

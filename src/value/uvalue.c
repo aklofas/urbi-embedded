@@ -6,7 +6,7 @@
 #include "vm/uvm.h"
 #include "urbi/urbi.h"          /* URBI_ASSERT_NOT_ISR */
 #include "runtime/umacros.h"    /* URBI_INTERNAL_ASSERT */
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 
 /* --- Value semantic helpers (freestanding-safe). --- */
 

@@ -7,7 +7,7 @@
 #include "utest.h"
 
 #include "object/uobject.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uintern.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
@@ -32,7 +32,7 @@ static int compile_and_run(UVM *vm, const char *src)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, vm, NULL);
     UParser p;
@@ -41,25 +41,25 @@ static int compile_and_run(UVM *vm, const char *src)
     while ((node = uparse_next_statement(&p)) != NULL) {
         if (node->kind == AST_ERROR) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         if (uemit_statement(&e, node) != EMIT_OK) {
             uarena_destroy(&arena);
-            umodule_destroy(&module, NULL);
+            uchunk_destroy(&module, NULL);
             return URBI_ERR_COMPILE;
         }
         uarena_reset(&arena);
     }
     if (uemit_finish(&e) != EMIT_OK) {
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         return URBI_ERR_COMPILE;
     }
     UValue out = urbi_make_nil();
     int rc = urbi_run_chunk(vm, NULL, &module, &out);
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     return rc;
 }
 

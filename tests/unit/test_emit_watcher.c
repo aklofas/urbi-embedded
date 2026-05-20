@@ -20,7 +20,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 #include "watcher/uwatcher.h"  /* UWATCHER_AT */
@@ -34,7 +34,7 @@
 /* Compile source; return emit error (EMIT_OK if none).
  * On success, *mod_out is populated with bytecode (caller destroys). */
 static UEmitError watcher_compile(const char *src,
-                                  UModule    *mod_out,
+                                  UProto    *mod_out,
                                   UArena     *arena_out,
                                   UVM        *vm_out,
                                   UEmitter   *e_out) {
@@ -58,19 +58,18 @@ static UEmitError watcher_compile(const char *src,
     return uemit_finish(e_out);
 }
 
-static void watcher_cleanup(UModule *mod, UArena *arena, UVM *vm) {
-    umodule_destroy(mod, NULL);
+static void watcher_cleanup(UProto *mod, UArena *arena, UVM *vm) {
+    uchunk_destroy(mod, NULL);
     uarena_destroy(arena);
     urbi_vm_destroy(vm);
 }
 
 /* Return true if any instruction in module (root chunk) has opcode == op. */
-static bool bytecode_contains_op(const UModule *m, UOpcode op) {
+static bool bytecode_contains_op(const UProto *m, UOpcode op) {
     size_t i;
-    const UProto *rp = m->root_proto;
-    if (rp == NULL) return false;
-    for (i = 0; i < rp->instr_count; i++) {
-        if (uinstr_op(rp->instructions[i]) == op) return true;
+    if (m == NULL) return false;
+    for (i = 0; i < m->instr_count; i++) {
+        if (uinstr_op(m->instructions[i]) == op) return true;
     }
     return false;
 }
@@ -82,7 +81,7 @@ static bool bytecode_contains_op(const UModule *m, UOpcode op) {
 /* at (x > 5) x  →  bytecode must contain OP_AT_INSTALL (=38).
  * Pre-declare x with `var` to satisfy the v1.0 no-globals constraint. */
 UTEST(emit_at_produces_OP_AT_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -97,7 +96,7 @@ UTEST(emit_at_produces_OP_AT_INSTALL) {
 
 /* at sync (cond) body  →  bytecode must contain OP_AT_SYNC_INSTALL (=39). */
 UTEST(emit_at_sync_produces_OP_AT_SYNC_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -113,7 +112,7 @@ UTEST(emit_at_sync_produces_OP_AT_SYNC_INSTALL) {
 
 /* whenever (cond) body  →  bytecode must contain OP_WHENEVER_INSTALL (=40). */
 UTEST(emit_whenever_produces_OP_WHENEVER_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -129,7 +128,7 @@ UTEST(emit_whenever_produces_OP_WHENEVER_INSTALL) {
 
 /* waituntil (cond)  →  bytecode must contain OP_WAITUNTIL_INSTALL (=41). */
 UTEST(emit_waituntil_produces_OP_WAITUNTIL_INSTALL) {
-    UModule  module = {0};
+    UProto  module = {0};
     UArena   arena;
     UVM      vm;
     UEmitter e;
@@ -150,7 +149,7 @@ UTEST(emit_waituntil_produces_OP_WAITUNTIL_INSTALL) {
 UTEST(emit_at_with_assign_in_cond_warns) {
     UVM    vm;
     UArena arena;
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
 
     urbi_vm_init(&vm, NULL, NULL);
@@ -202,7 +201,7 @@ UTEST(emit_at_with_assign_in_cond_warns) {
             strstr(e.diag_buf[0].message, "feedback loop") != NULL);
 
     emit_diag_free_all(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

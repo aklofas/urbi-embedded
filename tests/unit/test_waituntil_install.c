@@ -19,7 +19,7 @@
 #include "watcher/uwatcher.h"   /* UWATCHER_WAITUNTIL, urbi_watcher_unregister_internal */
 #include "watcher/uwatcher_install.h"  /* install_watcher_runtime, UWatcherInstallResult */
 #include "urbi/urbi.h"          /* URBI_LOG_WARN */
-#include "module/umodule.h"            /* UValue, UVAL_BOOL, UVAL_NIL */
+#include "chunk/uchunk.h"            /* UValue, UVAL_BOOL, UVAL_NIL */
 
 #include <string.h>
 #include <stdlib.h>

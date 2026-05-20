@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
@@ -26,7 +26,7 @@
  * is ~16 KB; default chunk_size is 4 KB) are freed on return and never
  * orphaned by a subsequent compile that reuses the same arena. */
 static int compile_and_load(const char *src, UVM *vm, URealm *realm,
-                             UModule *mod)
+                             UProto *mod)
 {
     UArena  arena;
     ULexer  lex;
@@ -67,8 +67,8 @@ UTEST(realm_destroy_unloads_modules)
     URealm *r = urbi_realm_create(&vm);
     UASSERT(r != NULL);
 
-    UModule mod1;
-    UModule mod2;
+    UProto mod1;
+    UProto mod2;
     urbi_zero(&mod1, sizeof(mod1));
     urbi_zero(&mod2, sizeof(mod2));
 
@@ -83,7 +83,7 @@ UTEST(realm_destroy_unloads_modules)
     /* Both user modules are registered in this realm. */
     {
         int found1 = 0, found2 = 0;
-        for (UModule *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
+        for (UProto *m = r->loaded_protos_head; m != NULL; m = m->next_in_realm) {
             if (m == &mod1) found1 = 1;
             if (m == &mod2) found2 = 1;
         }
@@ -92,7 +92,7 @@ UTEST(realm_destroy_unloads_modules)
     }
 
     /* Snapshot stdlib pointer before destroy. */
-    UModule *stdlib = vm.stdlib_module;
+    UProto *stdlib = vm.stdlib_module;
 
     /* Destroy the realm — should unload both user modules, skipping stdlib. */
     urbi_realm_destroy(&vm, r);
@@ -131,13 +131,13 @@ UTEST(realm_destroy_stdlib_exclusion)
     UASSERT(b != NULL);
 
     /* Run a trivial module under realm A. */
-    UModule mod_a;
+    UProto mod_a;
     urbi_zero(&mod_a, sizeof(mod_a));
     int rca = compile_and_load("3 |", &vm, a, &mod_a);
     UASSERT_EQ(URBI_OK, rca);
     UASSERT(mod_a.owning_realm == a);
 
-    UModule *stdlib = vm.stdlib_module;
+    UProto *stdlib = vm.stdlib_module;
 
     /* Destroy realm A.  Stdlib exclusion must prevent a double-free of
      * vm->stdlib_module.  The VM should not crash. */

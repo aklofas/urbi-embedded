@@ -20,7 +20,7 @@
 #   - src/parse/*.c        (parser + AST builder)
 #   - src/emit/*.c         (bytecode emitter + disasm)
 #   - src/urbi.c           (urbi_compile_source — parses + emits)
-#   - src/module/uchunk.c  (urbi_repl_eval — parses + emits)
+#   - src/chunk/uchunk_strand.c  (urbi_repl_eval — parses + emits)
 #
 # Hard-fail if:
 #   - any kept source FAILS to compile after the above are pulled out
@@ -46,7 +46,7 @@ KEEP_DIRS=(
     src/event
     src/tag
     src/changed
-    src/module
+    src/chunk
     src/value
     src/runtime
     src/realm
@@ -64,13 +64,13 @@ for f in src/*.c; do
     esac
 done
 
-# Subdir sources: keep all except module/uchunk.c (parser-coupled).
+# Subdir sources: keep all except chunk/uchunk_strand.c (parser-coupled).
 SUBDIR_KEEP=()
 for d in "${KEEP_DIRS[@]}"; do
     for f in "$d"/*.c; do
         [ -f "$f" ] || continue
         case "$f" in
-            src/module/uchunk.c) ;;   # excluded — parser-coupled
+            src/chunk/uchunk_strand.c) ;;   # excluded — parser-coupled
             *) SUBDIR_KEEP+=("$f") ;;
         esac
     done

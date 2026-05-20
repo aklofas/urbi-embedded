@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "runtime/umacros.h"
 #include "value/uarena.h"
 
@@ -129,7 +129,7 @@ UFuncState *uemit_open_function(UEmitter *e, UFuncState *parent) {
  * allocator (matches the rest of the emitter — funcstate itself is
  * arena-allocated, but variable-sized side tables go through the module
  * allocator so they survive into the proto and are freed via
- * umodule_destroy_proto_buffers). */
+ * uproto_destroy_buffers). */
 int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     if (e == NULL || e->current_fs == NULL) return -1;
     UFuncState *fs = e->current_fs;
@@ -140,14 +140,16 @@ int uemit_assign_ic_index(UEmitter *e, USymbol *name) {
     if (fs->ic_next >= fs->ic_names_cap) {
         uint16_t new_cap = (fs->ic_names_cap == 0U) ? 16U
             : (fs->ic_names_cap < 128U ? (uint16_t)(fs->ic_names_cap * 2U) : 256U);
-        UModuleAllocFn alloc = emit_alloc_for(e->module);
+        UProto *ic_rp = e->module;
+        if (ic_rp == NULL) { e->error = EMIT_OOM; return -1; }
+        UChunkAllocFn alloc = emit_alloc_for(ic_rp);
         if (alloc == NULL) { e->error = EMIT_OOM; return -1; }
         /* TIDY-005: explicit (void *) cast on the inout pointer prevents
          * bugprone-multi-level-implicit-pointer-conversion from firing on
          * USymbol ** → void * decay through alloc's first argument. */
         USymbol **fresh = (USymbol **)alloc((void *)fs->ic_names,
                                             (size_t)new_cap * sizeof(USymbol *),
-                                            e->module->alloc_ud);
+                                            ic_rp->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return -1; }
         fs->ic_names = fresh;
         fs->ic_names_cap = new_cap;
@@ -192,7 +194,7 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     /* line_deltas: resize to new instr_count, shift right, insert at [0].
      * line_deltas uses no separate cap — allocate exactly instr_count bytes. */
     {
-        UModuleAllocFn alloc = p->alloc_fn;
+        UChunkAllocFn alloc = p->alloc_fn;
 #if __STDC_HOSTED__
         if (alloc == NULL) alloc = emit_stdlib_alloc;
 #else
@@ -236,16 +238,14 @@ static bool proto_grow_for_prologue(UEmitter *e, UProto *p, uint32_t instr) {
     return true;
 }
 
-/* Grow and prepend one instruction into the root chunk (root_proto).
- * Task 11: all chunk-top data lives on root_proto; targets
- * rp->instructions / line_deltas / abs_lines instead of module fields. */
+/* Grow and prepend one instruction into the root chunk (root proto).
+ * v0.9.2: e->module IS the root UProto; rp == e->module. */
 static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
-    UModule *m  = e->module;
-    UProto  *rp = m->root_proto;
+    UProto  *rp = e->module;
     if (rp == NULL) { e->error = EMIT_OOM; return false; }
 
     /* Instructions. */
-    if (!emit_grow(m, (void **)&rp->instructions, &rp->instr_cap,
+    if (!emit_grow(rp, (void **)&rp->instructions, &rp->instr_cap,
                    rp->instr_count + 1U, sizeof(uint32_t))) {
         e->error = EMIT_OOM; return false;
     }
@@ -268,11 +268,11 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 
     /* line_deltas: reallocate to new instr_count bytes, shift, insert. */
     {
-        UModuleAllocFn alloc = emit_alloc_for(m);
+        UChunkAllocFn alloc = emit_alloc_for(rp);
         if (alloc == NULL) { e->error = EMIT_OOM; return false; }
         int8_t *fresh = (int8_t *)alloc(rp->line_deltas,
                                         rp->instr_count * sizeof(int8_t),
-                                        m->alloc_ud);
+                                        rp->alloc_ud);
         if (fresh == NULL) { e->error = EMIT_OOM; return false; }
         rp->line_deltas = fresh;
     }
@@ -290,7 +290,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
     if (rp->abs_line_count > 0U && rp->abs_lines[0].pc == 1U) {
         line0 = rp->abs_lines[0].line;
     }
-    if (!emit_grow(m, (void **)&rp->abs_lines, &rp->abs_line_cap,
+    if (!emit_grow(rp, (void **)&rp->abs_lines, &rp->abs_line_cap,
                    rp->abs_line_count + 1U, sizeof(UAbsLine))) {
         e->error = EMIT_OOM; return false;
     }
@@ -308,7 +308,7 @@ static bool module_grow_for_prologue(UEmitter *e, uint32_t instr) {
 /* T73: Prepend one instruction to the current function's instruction buffer.
  *
  * Routes to UProto (nested function) via proto_grow_for_prologue or to
- * UModule (chunk root) via module_grow_for_prologue.
+ * root UProto (chunk root) via module_grow_for_prologue.
  *
  * All abs_lines entries' pc values are bumped by 1 because every existing
  * instruction is now at pc+1.  The prepended instruction itself gets a
@@ -367,8 +367,8 @@ UFuncState *uemit_close_function(UEmitter *e) {
 
         /* M4 T15: copy IC names side table into the UProto.  Use the
          * proto's own allocator (inherited from the module at
-         * umodule_alloc_nested_proto time); the resulting array is freed
-         * by umodule_destroy_proto_buffers.
+         * uproto_alloc_nested time); the resulting array is freed
+         * by uproto_destroy_buffers.
          *
          * T22 (EMIT-005): mirror the module-sibling pattern below — only
          * write p->ic_count / p->ic_names after the IC-array allocation
@@ -378,9 +378,9 @@ UFuncState *uemit_close_function(UEmitter *e) {
          * fails and propagates the failure via e->error alone, matching
          * the module path. */
         if (fs->ic_next > 0U) {
-            UModuleAllocFn palloc = p->alloc_fn;
+            UChunkAllocFn palloc = p->alloc_fn;
 #if __STDC_HOSTED__
-            if (palloc == NULL) palloc = emit_alloc_for(e->module);
+            if (palloc == NULL && e->module != NULL) palloc = emit_alloc_for(e->module);
 #endif
             if (palloc == NULL) {
                 e->error = EMIT_OOM;
@@ -396,33 +396,33 @@ UFuncState *uemit_close_function(UEmitter *e) {
                     p->ic_count = fs->ic_next;
                     p->ic_names = dst;
                 }
-            }
-            /* T11: parallel char** companion array.  USymbol* is a const-char*
-             * canonical interned pointer (from ustr_intern); each entry is a
-             * NUL-terminated allocator-owned strdup so the deserializer can
-             * populate ic_name_strs without an originating VM intern table. */
-            if (p->ic_names != NULL) {
-                char **dst_strs = (char **)palloc(NULL,
-                    (size_t)p->ic_count * sizeof(char *), p->alloc_ud);
-                if (dst_strs == NULL) {
-                    e->error = EMIT_OOM;
-                } else {
-                    for (uint16_t i = 0; i < p->ic_count; i++) {
-                        dst_strs[i] = NULL;
-                    }
-                    for (uint16_t i = 0; i < p->ic_count; i++) {
-                        const char *name = (const char *)fs->ic_names[i];
-                        size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
-                        char *dup = (char *)palloc(NULL, nlen + 1U, p->alloc_ud);
-                        if (dup == NULL) {
-                            e->error = EMIT_OOM;
-                            break;
+                /* T11: parallel char** companion array.  USymbol* is a const-char*
+                 * canonical interned pointer (from ustr_intern); each entry is a
+                 * NUL-terminated allocator-owned strdup so the deserializer can
+                 * populate ic_name_strs without an originating VM intern table. */
+                if (p->ic_names != NULL) {
+                    char **dst_strs = (char **)palloc(NULL,
+                        (size_t)p->ic_count * sizeof(char *), p->alloc_ud);
+                    if (dst_strs == NULL) {
+                        e->error = EMIT_OOM;
+                    } else {
+                        for (uint16_t i = 0; i < p->ic_count; i++) {
+                            dst_strs[i] = NULL;
                         }
-                        if (nlen > 0U) emit_memcpy(dup, name, nlen);
-                        dup[nlen] = '\0';
-                        dst_strs[i] = dup;
+                        for (uint16_t i = 0; i < p->ic_count; i++) {
+                            const char *name = (const char *)fs->ic_names[i];
+                            size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
+                            char *dup = (char *)palloc(NULL, nlen + 1U, p->alloc_ud);
+                            if (dup == NULL) {
+                                e->error = EMIT_OOM;
+                                break;
+                            }
+                            if (nlen > 0U) emit_memcpy(dup, name, nlen);
+                            dup[nlen] = '\0';
+                            dst_strs[i] = dup;
+                        }
+                        p->ic_name_strs = dst_strs;
                     }
-                    p->ic_name_strs = dst_strs;
                 }
             }
         } else {
@@ -430,31 +430,36 @@ UFuncState *uemit_close_function(UEmitter *e) {
             p->ic_name_strs = NULL;
         }
     }
-    /* Task 11: top-level funcstate (no target_proto) — copy IC names
-     * into root_proto->ic_count / ic_names (root_proto is allocated at
-     * uemit_init; always non-NULL here).  Mirrors the UProto path above. */
+    /* v0.9.2: top-level funcstate (no target_proto) — copy IC names
+     * into root->ic_count / ic_names.  e->module IS the root UProto.
+     * Mirrors the UProto path above. */
     if (fs->target_proto == NULL && fs->parent == NULL && fs->ic_next > 0U) {
-        UProto *rp = e->module->root_proto;
-        UModuleAllocFn malloc_fn = emit_alloc_for(e->module);
-        if (malloc_fn == NULL || rp == NULL) {
+        UProto *rp = e->module;
+        if (rp == NULL) {
             e->error = EMIT_OOM;
         } else {
-            USymbol **dst = (USymbol **)malloc_fn(NULL,
-                (size_t)fs->ic_next * sizeof(USymbol *), e->module->alloc_ud);
-            if (dst == NULL) {
+            UChunkAllocFn malloc_fn = emit_alloc_for(rp);
+            if (malloc_fn == NULL) {
                 e->error = EMIT_OOM;
             } else {
-                for (uint16_t i = 0; i < fs->ic_next; i++) {
-                    dst[i] = fs->ic_names[i];
+                USymbol **dst = (USymbol **)malloc_fn(NULL,
+                    (size_t)fs->ic_next * sizeof(USymbol *), rp->alloc_ud);
+                if (dst == NULL) {
+                    e->error = EMIT_OOM;
+                } else {
+                    for (uint16_t i = 0; i < fs->ic_next; i++) {
+                        dst[i] = fs->ic_names[i];
+                    }
+                    rp->ic_count = fs->ic_next;
+                    rp->ic_names = dst;
                 }
-                rp->ic_count = fs->ic_next;
-                rp->ic_names = dst;
             }
         }
         /* T11: parallel char** companion array for the root chunk. */
         if (rp != NULL && rp->ic_names != NULL) {
+            UChunkAllocFn malloc_fn = emit_alloc_for(rp);
             char **dst_strs = (char **)malloc_fn(NULL,
-                (size_t)rp->ic_count * sizeof(char *), e->module->alloc_ud);
+                (size_t)rp->ic_count * sizeof(char *), rp->alloc_ud);
             if (dst_strs == NULL) {
                 e->error = EMIT_OOM;
             } else {
@@ -465,7 +470,7 @@ UFuncState *uemit_close_function(UEmitter *e) {
                     const char *name = (const char *)fs->ic_names[i];
                     size_t nlen = (name != NULL) ? urbi_strlen(name) : 0U;
                     char *dup = (char *)malloc_fn(NULL, nlen + 1U,
-                                                   e->module->alloc_ud);
+                                                   rp->alloc_ud);
                     if (dup == NULL) {
                         e->error = EMIT_OOM;
                         break;
@@ -478,15 +483,18 @@ UFuncState *uemit_close_function(UEmitter *e) {
             }
         }
     }
-    /* Always free the funcstate-side IC array (allocated via the module
+    /* Always free the funcstate-side IC array (allocated via the root
      * allocator).  For nested funcstates the names were copied into UProto
-     * above; for top-level funcstates they were copied into UModule by the
+     * above; for top-level funcstates they were copied into root UProto by the
      * block above.  Either way the funcstate-side buffer is now redundant. */
     if (fs->ic_names != NULL) {
-        UModuleAllocFn alloc = emit_alloc_for(e->module);
-        if (alloc != NULL) {
-            /* TIDY-005: explicit (void *) cast on free path. */
-            alloc((void *)fs->ic_names, 0, e->module->alloc_ud);
+        UProto *free_rp = e->module;
+        if (free_rp != NULL) {
+            UChunkAllocFn alloc = emit_alloc_for(free_rp);
+            if (alloc != NULL) {
+                /* TIDY-005: explicit (void *) cast on free path. */
+                alloc((void *)fs->ic_names, 0, free_rp->alloc_ud);
+            }
         }
         fs->ic_names = NULL;
         fs->ic_names_cap = 0;

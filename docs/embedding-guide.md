@@ -6,6 +6,48 @@ All public API symbols are declared in `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi
 
 ---
 
+## Vocabulary
+
+The runtime uses two nouns:
+
+- **chunk** — a unit submitted to the runtime: a `.u` file, a REPL line,
+  or the argument to `urbi_run_chunk`. Concretely a `UProto *` that
+  happens to be a tree root.
+- **proto** — the immutable bytecode unit per function definition.
+  Lua-family precedent (Lua's `Proto`, mruby's `mrb_irep`).
+
+A chunk is just the root proto of a tree. There is no separate `UChunk`
+type; the noun is conceptual, surfaced in API names (`urbi_run_chunk`,
+`urbi_chunk_from_bytes`).
+
+"Module" is retired as a runtime noun in v0.9.2. Pre-v0.9.2 embedders
+may see `UModule`-prefixed names in older docs or guides — these are
+gone in v0.9.2; see the rename diff table below.
+
+### v0.9.1 → v0.9.2 rename diff
+
+| v0.9.1 | v0.9.2 |
+|---|---|
+| `UModule` (struct) | *deleted; UProto absorbs root fields* |
+| `UModuleInstance` | `UChunkInstance` |
+| `UModuleAllocFn` | `UChunkAllocFn` (`UAllocFn` was already taken by `uarena.h`) |
+| `UModuleLoadError` | `UChunkLoadError` |
+| `ULOAD_*` enum values | `UCHUNK_LOAD_*` |
+| `urbi_load_module` | `urbi_load_chunk` |
+| `urbi_module_from_bytes` | `urbi_chunk_from_bytes` |
+| `urbi_module_free` | `urbi_chunk_free` |
+| `urbi_module_instance_create` | `urbi_chunk_instance_create` |
+| `urbi_module_instance_destroy` | `urbi_chunk_instance_destroy` |
+| `urbi_get_or_create_module_instance` | `urbi_get_or_create_chunk_instance` |
+| `urbi_load_translate_load_err` | `urbi_chunk_translate_load_err` |
+
+Other public APIs (`urbi_run_chunk`, `urbi_run_script`, `urbi_unload`)
+keep their names. Argument types: any `UModule *` parameter is now
+`UProto *`. Wire format bumped v1.7 → v1.8 (semantic version bump; byte
+layout unchanged). ABI 0/12/0 → 0/13/0.
+
+---
+
 ## 1. Quick Start
 
 The minimum viable embedding: allocate a VM, initialize it with a heap allocator, run a script, then destroy it.
@@ -143,10 +185,11 @@ host's main `urbi_step` loop continues driving the strand.
 urbi_vm_init(&vm, NULL, NULL);
 URealm *realm = urbi_realm_create(&vm);
 
-UModule module;
-urbi_load_module(buf, len, &module);   /* or urbi_compile_source */
-urbi_run_chunk(&vm, realm, &module, NULL);  /* returns when chunk-top
-                                              * parks or completes */
+char errmsg[256];
+UProto *root = urbi_chunk_from_bytes(buf, len, NULL, NULL,
+                                     errmsg, sizeof(errmsg));
+urbi_run_chunk(&vm, realm, root, NULL);  /* returns when chunk-top
+                                          * parks or completes */
 
 while (running) {
     UStepResult r = urbi_step(&vm, 1000, NULL);
@@ -154,8 +197,8 @@ while (running) {
     /* ... or sleep waiting for events ... */
 }
 
-urbi_vm_destroy(&vm);              /* kills all strands, drops module refs */
-umodule_destroy(&module, &vm);     /* safe: refcount == 0 post-vm_destroy */
+urbi_vm_destroy(&vm);              /* kills all strands, drops proto refs */
+urbi_chunk_free(root);             /* safe: refcount == 0 post-vm_destroy */
 ```
 
 ### Chunk-top parallel semantics
@@ -860,6 +903,18 @@ Multi-VM-per-process will allow one OS thread per VM with no shared state betwee
 ### Rejected path
 
 A Java/CPython-style GIL or shared-mutable-state model is permanently off the table. urbiscript's language semantics do not require it, and the robotics/real-time audience specifically benefits from the absence of locking overhead.
+
+### Footprint: root-only fields on UProto
+
+Every UProto carries `source_name` + 6 other root-only-meaningful fields
+(~40 B on 64-bit, ~20 B on 32-bit). On non-root protos these are
+zero-initialized and waste space. Typical module worst case (50 nested
+protos) ≈ 2 KB slack on 64-bit, 1 KB on 32-bit.
+
+If your port reports footprint pressure, a side-struct optimization
+(`URootMeta` hung off UProto via an 8-byte pointer) is documented in
+`docs/urbi-embedded-design-risks.md` as a v1.x cleanup. Until then,
+the simpler shape is shipped: every UProto looks the same.
 
 ---
 

@@ -27,7 +27,7 @@ file(GLOB URBI_SRC_WATCHER "${URBI_ROOT}/src/watcher/*.c")
 file(GLOB URBI_SRC_EVENT   "${URBI_ROOT}/src/event/*.c")
 file(GLOB URBI_SRC_TAG     "${URBI_ROOT}/src/tag/*.c")
 file(GLOB URBI_SRC_CHANGED "${URBI_ROOT}/src/changed/*.c")
-file(GLOB URBI_SRC_MODULE  "${URBI_ROOT}/src/module/*.c")
+file(GLOB URBI_SRC_MODULE  "${URBI_ROOT}/src/chunk/*.c")
 file(GLOB URBI_SRC_VALUE   "${URBI_ROOT}/src/value/*.c")
 file(GLOB URBI_SRC_RUNTIME "${URBI_ROOT}/src/runtime/*.c")
 file(GLOB URBI_SRC_REALM   "${URBI_ROOT}/src/realm/*.c")
@@ -68,7 +68,7 @@ idf_component_register(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_module_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
+    -std=c99 -Wall -Wextra -mlongcalls  # NOTE: -ffreestanding removed; gates urbi_chunk_from_bytes + stdlib_boot via __STDC_HOSTED__ on hosted ESP-IDF newlib path
     # -Wpedantic is intentionally OFF for the urbi component on ESP-IDF.  Three
     # sources of unfixable noise flood the build log otherwise (hundreds of
     # lines, drowning serial output during on-device debugging):

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-/* Verify every UProto in a freshly-created UModuleInstance has its
+/* Verify every UProto in a freshly-created UChunkInstance has its
  * owning_module_instance back-pointer populated.  v0.9.0-repl. */
 
 #include "utest.h"
@@ -9,8 +9,8 @@
 #include <stddef.h>
 
 #include "urbi/urbi.h"
-#include "module/umodule.h"
-#include "object/umodule_instance.h"
+#include "chunk/uchunk.h"
+#include "object/uchunk_instance.h"
 #include "value/uarena.h"
 #include "lex/ulex.h"
 #include "parse/uparse.h"
@@ -20,7 +20,7 @@
 #define UTEST(name) static void name(void)
 
 /* DFS walk: assert every UProto in the tree has owning_module_instance == mi. */
-static void verify_proto_owns(UProto *p, UModuleInstance *mi)
+static void verify_proto_owns(UProto *p, UChunkInstance *mi)
 {
     if (p == NULL) return;
     UASSERT(p->owning_module_instance == mi);
@@ -30,7 +30,7 @@ static void verify_proto_owns(UProto *p, UModuleInstance *mi)
 }
 
 /* Compile source using the standard emit pipeline. */
-static int compile_src(const char *src, UVM *vm, UModule *m, UArena *arena)
+static int compile_src(const char *src, UVM *vm, UProto *m, UArena *arena)
 {
     ULexer  lex;
     UParser p;
@@ -59,20 +59,20 @@ UTEST(root_proto_owning_mi_populated)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena arena;
-    UModule mod = {0};
+    UProto mod = {0};
     uarena_init(&arena, 4096);
 
     int rc = compile_src("1 + 2;", &vm, &mod, &arena);
     UASSERT_EQ(0, rc);
-    UASSERT(mod.root_proto != NULL);
+    
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
-    UASSERT(mod.root_proto->owning_module_instance == mi);
+    UASSERT(mod.owning_module_instance == mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -86,21 +86,21 @@ UTEST(nested_proto_owning_mi_populated)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena arena;
-    UModule mod = {0};
+    UProto mod = {0};
     uarena_init(&arena, 4096);
 
     int rc = compile_src("var f = function () { 1 };", &vm, &mod, &arena);
     UASSERT_EQ(0, rc);
-    UASSERT(mod.root_proto != NULL);
-    UASSERT(mod.root_proto->nested_count >= 1);
+    
+    UASSERT(mod.nested_count >= 1);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
-    verify_proto_owns(mod.root_proto, mi);
+    verify_proto_owns(&mod, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -114,7 +114,7 @@ UTEST(recursive_nested_owning_mi_populated)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena arena;
-    UModule mod = {0};
+    UProto mod = {0};
     uarena_init(&arena, 4096);
 
     /* outer() contains inner() — produces at least one level of nesting
@@ -122,16 +122,16 @@ UTEST(recursive_nested_owning_mi_populated)
     const char *src = "var outer = function () { var inner = function () { 1 }; inner() };";
     int rc = compile_src(src, &vm, &mod, &arena);
     UASSERT_EQ(0, rc);
-    UASSERT(mod.root_proto != NULL);
+    
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &mod);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &mod);
     UASSERT(mi != NULL);
 
     /* Verify the full tree recursively — root + outer + inner. */
-    verify_proto_owns(mod.root_proto, mi);
+    verify_proto_owns(&mod, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&mod, &vm);
+    uchunk_destroy(&mod, &vm);
     urbi_vm_destroy(&vm);
 }
 
@@ -145,37 +145,37 @@ UTEST(deserialize_roundtrip_owning_mi_populated)
     UASSERT_EQ(URBI_OK, urbi_vm_init(&vm, NULL, NULL));
 
     UArena  arena;
-    UModule m1 = {0};
+    UProto m1 = {0};
     uarena_init(&arena, 4096);
 
     int rc = compile_src("var f = function () { 1 };", &vm, &m1, &arena);
     UASSERT_EQ(0, rc);
 
     /* Serialize. */
-    ptrdiff_t need = umodule_serialize(&m1, NULL, 0);
+    ptrdiff_t need = uchunk_serialize(&m1, NULL, 0);
     UASSERT((ptrdiff_t)0 < need);
 
     uint8_t buf[8192];
     UASSERT((size_t)need <= sizeof(buf));
-    ptrdiff_t wrote = umodule_serialize(&m1, buf, sizeof(buf));
+    ptrdiff_t wrote = uchunk_serialize(&m1, buf, sizeof(buf));
     UASSERT_EQ(need, wrote);
 
     /* Deserialize into a fresh module. */
-    UModule m2 = {0};
+    UProto *m2 = NULL;
     char errmsg[128];
-    UModuleLoadError load_rc = umodule_deserialize(&m2, buf, (size_t)wrote,
-                                                   errmsg, sizeof errmsg);
-    UASSERT_EQ(ULOAD_OK, load_rc);
-    UASSERT(m2.root_proto != NULL);
+    UChunkLoadError load_rc = uchunk_deserialize(&m2, buf, (size_t)wrote,
+                                                   NULL, NULL, errmsg, sizeof errmsg);
+    UASSERT_EQ(UCHUNK_LOAD_OK, load_rc);
+    UASSERT(m2 != NULL);
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m2);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, m2);
     UASSERT(mi != NULL);
 
-    verify_proto_owns(m2.root_proto, mi);
+    verify_proto_owns(m2, mi);
 
     uarena_destroy(&arena);
-    umodule_destroy(&m1, &vm);
-    umodule_destroy(&m2, &vm);
+    uchunk_destroy(&m1, &vm);
+    uchunk_destroy(m2, &vm);
     urbi_vm_destroy(&vm);
 }
 

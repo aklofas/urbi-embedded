@@ -41,7 +41,7 @@ For contributors building or modifying the C99 implementation.
 - [Object model](internals/object-model.md) — UObject layout, hidden classes, inline cache, atom families
 - [Garbage collection](internals/gc.md) — incremental tri-color mark-sweep, write barriers, walker contract
 - [Reactive runtime](internals/reactive-runtime.md) — watchers, scratch frames, sync-execution sites
-- [Realm and modules](internals/realm-and-modules.md) — per-realm globals, module instance cache, IC name interning
+- [Realm and chunks](internals/realm-and-chunks.md) — per-realm globals, chunk instance cache, IC name interning
 - [Scheduler design](internals/scheduler-design.md) — cooperative scheduler contract
 - [Closures](internals/closures.md) — `UFuncState`, upvalue capture, `proto_inst` binding
 - [Emit correctness notes](internals/emit-correctness-notes.md) — verified emit invariants
@@ -135,7 +135,7 @@ The "Since" column is the first release where the doc ships. Rows without a link
 | [Garbage collection](internals/gc.md) | Incremental tri-color mark-sweep: `gc_byte` bit layout, write-barrier protocol, safe-points, strand-walker contract, GC-cell inventory, configurable knobs | `v0.3.0-concurrency` |
 | [Object model](internals/object-model.md) | UObject layout, UShape hidden classes, inline cache, atom-family singletons, prototype-chain forms, slot operations | `v0.4.0-objects` |
 | [Reactive runtime](internals/reactive-runtime.md) | Reactive vocabulary, AST node kinds and emit shapes, watcher lifecycle, scratch-frame primitive, ownership flags, register-allocation invariant | `v0.5.0-reactive` |
-| [Realm and modules](internals/realm-and-modules.md) | Realm structure, per-realm globals API, module instance cache, `ic_name_strs` lazy interning, module-load contract, single-threaded VM assumptions | `v0.5.0-reactive` |
+| [Realm and chunks](internals/realm-and-chunks.md) | Realm structure, per-realm globals API, chunk instance cache, `ic_name_strs` lazy interning, chunk-load contract, single-threaded VM assumptions | `v0.5.0-reactive` |
 | [Emit correctness notes](internals/emit-correctness-notes.md) | Verified emit invariants that don't fit in source comments | `v0.5.2-scratch-frame-followup` |
 
 ### reference/

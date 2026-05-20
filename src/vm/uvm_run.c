@@ -9,8 +9,8 @@
 #include "sched/ustrand.h"           /* UStrand, ustrand_destroy, urbi_strand_arm_init, USTRAND_IS_WAITING */
 #include "sched/usched_cooperative.h" /* sched_strand_init */
 #include "realm/urealm.h"            /* URealm, urbi_realm_global */
-#include "object/umodule_instance.h" /* urbi_module_instance_create */
-#include "module/umodule.h"
+#include "object/uchunk_instance.h" /* urbi_chunk_instance_create */
+#include "chunk/uchunk.h"
 #include "runtime/ucleanup.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
@@ -23,7 +23,7 @@
    - Returns UVM_OK with *out set on success, or the error code on failure.
    - Keeps vm->last_return_closure alive for the caller to inspect. */
 
-UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out) {
+UVMError urbi_vm_run(UVM *vm, URealm *realm, const UProto *root, UValue *out) {
     /* Reset error state at entry so callers who run multiple modules
        don't see stale last_error from a prior failure. */
     vm->last_error = UVM_OK;
@@ -37,8 +37,8 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
     UValue nil = {0};  /* kind = UVAL_NIL, payload zeroed */
     *out = nil;
 
-    /* Empty module (or failed emit): no instructions to dispatch; return Nil. */
-    if (module->root_proto == NULL || module->root_proto->instr_count == 0) {
+    /* Empty root (or failed emit): no instructions to dispatch; return Nil. */
+    if (root == NULL || root->instr_count == 0) {
         return UVM_OK;
     }
 
@@ -94,32 +94,27 @@ UVMError urbi_vm_run(UVM *vm, URealm *realm, const UModule *module, UValue *out)
         }
     }
 
-    /* Wire frame-0 from module.  Set root_proto first so subsequent reads
-     * use it; v0.8.1 Phase 1 migrates hot fields via the alias. */
-    strand.module     = module;
-    strand.root_proto = module->root_proto;
+    /* Wire frame-0 from root.
+     * v0.9.2: root IS the root UProto — no intermediate module. */
+    strand.root_proto = (UProto *)root;
     strand.R          = strand.stack;
-    /* Task 11: all chunk-top data lives on root_proto. */
     strand.pc         = strand.root_proto->instructions;
     strand.pc_base    = strand.root_proto->instructions;
     strand.cur_consts = strand.root_proto->constants;
-    /* v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto,
-     * not module->refcount.  Decrement fires in ustrand_destroy at the end of
-     * this function (single matched pair for the transient path).  strand.root_proto
-     * is already set above; ustrand_destroy reads s->root_proto directly. */
-    umodule_proto_refcount_inc(strand.root_proto);
-    /* M4 follow-up / T72 fix: always create a fresh UModuleInstance for each
-     * urbi_vm_run call.  urbi_get_or_create_module_instance is unsuitable here
-     * because the REPL stack-allocates UModule and reuses the same stack
+    /* v0.8.1 Phase 2 (Variant B fusion): strand-bind bump goes to root_proto.
+     * Decrement fires in ustrand_destroy at the end of this function. */
+    uproto_refcount_inc(strand.root_proto);
+    /* M4 follow-up / T72 fix: always create a fresh UChunkInstance for each
+     * urbi_vm_run call.  urbi_get_or_create_chunk_instance is unsuitable here
+     * because urbi_repl_eval heap-allocates UProto per line and reuses the same
      * address across calls; the cache lookup would return a stale instance
      * with old (freed) ic_names.  Forcing fresh creation ensures ic->name is
-     * populated from the current module's ic_names table.
+     * populated from the current root's ic_names table.
      *
      * urbi_run_chunk pre-creates an instance via get_or_create before calling
      * urbi_vm_run; that cached instance is shadowed by this fresh one (prepended to
-     * vm->module_instances_head) but both are functionally correct — only this
-     * strand's module_instance is used for IC dispatch during this run. */
-    strand.module_instance = urbi_module_instance_create(vm, (UModule *)module);
+     * vm->module_instances_head) but both are functionally correct. */
+    strand.module_instance = urbi_chunk_instance_create(vm, (UProto *)root);
     strand.frame_count = 0;
     strand.open_upvals = NULL;
     strand.out_slot   = out;  /* OP_RET at top-frame writes *out_slot */

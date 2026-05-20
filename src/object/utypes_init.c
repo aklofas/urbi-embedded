@@ -27,7 +27,7 @@
  *            via offsetof(USlotArray, entries) recovery (T26).
  *   USlotHandle walks owner (UObject*); shape_at_create + name are
  *            reachable transitively through the owner.  T37.
- *   UModuleInstance / UProtoInstance — see walkers below.
+ *   UChunkInstance / UProtoInstance — see walkers below.
  *
  * cb is the GC's own mark_root_callback (see src/gc/ugc_incremental.c) —
  * it knows how to shade only those UValKinds that carry a heap cell.  At
@@ -40,7 +40,7 @@
 
 #include "object/uobject.h"
 #include "object/ushape.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "object/uslothandle.h"   /* T37 — walk_uslothandle shades owner */
 #include "object/utypes_init.h"
 #include "event/uevent.h"               /* UEvent, UTYPE_EVENT (spec #3 §3.1) */
@@ -51,7 +51,7 @@
 #include "watcher/uwatcher.h"     /* UWatcher — for walk_uevent/utag chains */
 #include "vm/uvm.h"
 #include "runtime/uclosure.h"     /* UClosure, UUpvalCell (v0.8.4 Step B) */
-#include "module/umodule.h"       /* uproto_root_of, umodule_proto_refcount_dec */
+#include "chunk/uchunk.h"       /* uproto_root_of, uproto_refcount_dec */
 
 /* === walk_uobject ===
  *
@@ -217,7 +217,7 @@ walk_uprops(struct UVM *vm, void *payload,
  * stronger paths and need no separate scan.  Used post-M4 by:
  *   - UPropsTable        (reached via owning UShape)
  *   - USlotArray         (reached via owning UObject's walk_uobject)
- *   - UProtoInstance     (reached via UModuleInstance owner; stronger
+ *   - UProtoInstance     (reached via UChunkInstance owner; stronger
  *                         paths cover IC children — see comment at
  *                         type_uproto_instance below for the OBJ-028
  *                         retirement rationale)
@@ -254,7 +254,7 @@ walk_uslothandle(struct UVM *vm, void *payload,
 /* === walk_umoduleinstance (T16) ===
  *
  * Shades the UProtoInstanceArr bulk so it survives sweep as long as the
- * UModuleInstance is alive.  module is a non-owning pointer to a UModule
+ * UChunkInstance is alive.  module is a non-owning pointer to a UModule
  * that lives outside the GC heap (flash-resident in freestanding builds;
  * caller-owned struct in hosted builds), so it's not shaded. */
 static void
@@ -263,7 +263,7 @@ walk_umoduleinstance(struct UVM *vm, void *payload,
 {
     (void)cb; (void)ctx;  /* direct-pointer walk doesn't go through cb */
 
-    UModuleInstance *mi = (UModuleInstance *)((UCell *)payload - 1);
+    UChunkInstance *mi = (UChunkInstance *)((UCell *)payload - 1);
     if (mi->proto_instances != NULL) {
         gc_shade_gray(vm, (UCell *)mi->proto_instances);
     }
@@ -426,13 +426,13 @@ walk_uclosure(struct UVM *vm, void *payload,
  * hits zero with the self-link sentinel set, promote root_proto to
  * vm->rescued_protos so the vm_destroy sweep can free it.
  *
- * Pairs with the umodule_proto_refcount_inc(uproto_root_of(proto)) call in
+ * Pairs with the uproto_refcount_inc(uproto_root_of(proto)) call in
  * vm_alloc_closure (uvm_closure.c).  No memory is freed here — the GC sweep
  * reclaims the closure cell.  NULL-safe (proto may be NULL for native stdlib
  * closures registered via urbi_make_native_closure).
  *
  * Sentinel-promotion (Step C-2): mirrors the pre-v0.8.4 stdlib_closures
- * sweep in uvm_init.c:498-509.  When umodule_destroy was called with vm=NULL
+ * sweep in uvm_init.c:498-509.  When uchunk_destroy was called with vm=NULL
  * while refcount > 0, root_proto->next_alloc was set to root_proto itself as
  * an unambiguous "rescue me later" signal (see umodule.c).  When the last
  * closure ref drops refcount to 0, promote root_proto to vm->rescued_protos
@@ -444,12 +444,22 @@ uclosure_destroy(struct UVM *vm, void *payload)
     if (cl->proto == NULL) return;
 
     UProto *rp = uproto_root_of(cl->proto);
-    umodule_proto_refcount_dec(rp);
+    uproto_refcount_dec(rp);
 
-    /* v0.8.4 Option B Step C-2: sentinel-promotion. */
+    /* v0.8.4 Option B Step C-2: sentinel-promotion.
+     * heap_allocated=true: thread onto vm->rescued_protos so vm_destroy
+     * sweep can free the struct.
+     * heap_allocated=false (stack/static root): free buffers directly and
+     * zero the struct — do NOT add to rescued_protos (stack address). */
     if (rp != NULL && rp->refcount == 0U && rp->next_alloc == rp) {
-        rp->next_alloc     = vm->rescued_protos;
-        vm->rescued_protos = rp;
+        if (rp->heap_allocated) {
+            rp->next_alloc     = vm->rescued_protos;
+            vm->rescued_protos = rp;
+        } else {
+            rp->next_alloc = NULL;  /* clear sentinel first */
+            uproto_destroy_buffers(rp, rp->alloc_fn, rp->alloc_ud);
+            /* struct itself is not freed: it is stack/static-allocated */
+        }
     }
 }
 
@@ -554,14 +564,14 @@ static const UType type_uslothandle = {
 static const UType type_umodule_instance = {
     .type_tag      = UTYPE_MODULE_INSTANCE,
     .flags         = 0U,
-    .name          = "UModuleInstance",
+    .name          = "UChunkInstance",
     .walk_payload  = walk_umoduleinstance,
     .destroy       = NULL,
 };
 
 /* UProtoInstance walker is a no-op: every UIC entry's children
  * (recv_shapes[e], slots[e], uprops[e]) are reachable through stronger
- * paths (UModuleInstance owns the UProtoInstanceArr; UShapes used by
+ * paths (UChunkInstance owns the UProtoInstanceArr; UShapes used by
  * IC entries are kept alive via walk_ushape from the receiver-side
  * UObject; UProps cells are kept alive via walk_ushape's props_table
  * walk).  The previous walk_uprotoinstance function was an explicit

@@ -5,14 +5,14 @@
  *
  * The unsafe shape: utest_e2e_compile_and_run (bare, not _with_module)
  * compiles a chunk that installs a closure into a realm global and then
- * calls umodule_destroy.  If that closure still holds a UProto pointer
+ * calls uchunk_destroy.  If that closure still holds a UProto pointer
  * into the freed module's nested[] array, any subsequent dispatch through
  * it is a heap-use-after-free.
  *
  * Pre-v0.7.3 + v0.8.0 refcount mechanisms: ASan heap-use-after-free in
  * dispatch_loop_until_yield at the UProto pointer dereference.
  *
- * Post-v0.7.3 (UProto refcount + rescue) + v0.8.0 (UModule refcount +
+ * Post-v0.7.3 (UProto refcount + rescue) + v0.8.0 (UProto refcount +
  * deferred destroy): outcome TBD — this test classifies it.
  * Phase 4 of v0.8.1-uproto-root branches on the outcome. */
 
@@ -22,7 +22,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>

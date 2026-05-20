@@ -37,7 +37,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -85,7 +85,7 @@ UTEST(method_try_catch_in_at_body_absorbs)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -109,7 +109,7 @@ UTEST(method_try_catch_in_at_body_absorbs)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -127,7 +127,7 @@ UTEST(chunktop_try_catch_absorbs_control)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -144,7 +144,7 @@ UTEST(chunktop_try_catch_absorbs_control)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -164,7 +164,7 @@ UTEST(method_try_catch_from_chunktop)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -187,7 +187,7 @@ UTEST(method_try_catch_from_chunktop)
     UASSERT_EQ(1LL, n.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -214,7 +214,7 @@ UTEST(catch_variable_receives_thrown_string)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -246,7 +246,7 @@ UTEST(catch_variable_receives_thrown_string)
     UASSERT(memcmp(s, "hello", 5) == 0);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -264,7 +264,7 @@ UTEST(catch_variable_receives_thrown_string_chunktop)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -280,7 +280,7 @@ UTEST(catch_variable_receives_thrown_string_chunktop)
     UASSERT_EQ((int)UVAL_STR, (int)caught.kind);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -297,7 +297,7 @@ UTEST(catch_variable_int_vs_str)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -317,7 +317,7 @@ UTEST(catch_variable_int_vs_str)
     UASSERT_EQ(77LL, caught.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -337,7 +337,7 @@ UTEST(realm_slot_assign_from_local_int)
                                                utest_e2e_make_nil()));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -357,7 +357,7 @@ UTEST(realm_slot_assign_from_local_int)
     UASSERT_EQ(99LL, caught.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

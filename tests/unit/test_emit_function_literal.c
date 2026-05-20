@@ -16,7 +16,7 @@
 #include "parse/uast.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uparse.h"
 #include "vm/uvm.h"
 
@@ -34,7 +34,7 @@ static UVMError fn_lit_eval(const char *src, UValue *out) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -51,7 +51,7 @@ static UVMError fn_lit_eval(const char *src, UValue *out) {
     if (uemit_finish(&e) == EMIT_OK) {
         vm_rc = urbi_vm_run(&vm, NULL, &module, out);
     }
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return vm_rc;
@@ -65,7 +65,7 @@ static UEmitError fn_lit_emit_error(const char *src) {
     UArena arena;
     urbi_vm_init(&vm, NULL, NULL);
     uarena_init(&arena, 4096);
-    UModule module = {0};
+    UProto module = {0};
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
     UParser p;
@@ -77,7 +77,7 @@ static UEmitError fn_lit_emit_error(const char *src) {
         uarena_reset(&arena);
     }
     UEmitError rc = uemit_finish(&e);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
     return rc;

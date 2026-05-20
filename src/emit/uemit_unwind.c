@@ -12,7 +12,7 @@
 #include "runtime/ucleanup.h"   /* FLAG_HAS_CATCH, FLAG_HAS_FINALLY */
 #include "value/uintern.h"      /* ustr_intern — catch variable interning */
 #include "emit/uemit.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "parse/uast.h"
 #include <stddef.h>
 #include <stdint.h>

@@ -37,7 +37,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -70,7 +70,7 @@ UTEST(pipe_three_slot_writes_chunktop_passes)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -99,7 +99,7 @@ UTEST(pipe_three_slot_writes_chunktop_passes)
     UASSERT_EQ(3LL, c.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -115,7 +115,7 @@ UTEST(pipe_three_slot_writes_in_at_body)
     UASSERT(ev != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -143,7 +143,7 @@ UTEST(pipe_three_slot_writes_in_at_body)
     UASSERT_EQ(1LL, c.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -159,7 +159,7 @@ UTEST(var_decl_pipe_does_not_absorb_rhs)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -180,7 +180,7 @@ UTEST(var_decl_pipe_does_not_absorb_rhs)
     UASSERT_EQ(3LL, z.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -193,7 +193,7 @@ UTEST(local_assign_pipe_does_not_absorb_rhs)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -215,7 +215,7 @@ UTEST(local_assign_pipe_does_not_absorb_rhs)
     UASSERT_EQ(30LL, c.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -228,7 +228,7 @@ UTEST(return_pipe_does_not_absorb_rest)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     /* Function body: `return 42 | Realm.unreachable = 1`.  If parse
@@ -260,7 +260,7 @@ UTEST(return_pipe_does_not_absorb_rest)
     UASSERT_EQ(0LL, unreachable.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -273,7 +273,7 @@ UTEST(throw_pipe_does_not_absorb_rest)
     UASSERT(r != NULL);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     UASSERT_EQ(URBI_OK, urbi_realm_set_global(&vm, r, "unreachable", 11,
@@ -306,7 +306,7 @@ UTEST(throw_pipe_does_not_absorb_rest)
     UASSERT_EQ(0LL, unreachable.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

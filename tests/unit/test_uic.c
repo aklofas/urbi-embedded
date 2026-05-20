@@ -7,18 +7,18 @@
  * and additionally re-pin the URBI_SLOT_FLAG_* attribute bits for the
  * IC.flags summary defined alongside in uobject.h.
  *
- * T16 also covers UModuleInstance / UProtoInstance (the per-VM IC RAM
+ * T16 also covers UChunkInstance / UProtoInstance (the per-VM IC RAM
  * tier) — multi-instance independence is the load-bearing invariant. */
 
 #include "utest.h"
 
 #include "object/uic.h"
-#include "object/umodule_instance.h"
+#include "object/uchunk_instance.h"
 #include "object/uobject.h"
 #include "object/ushape.h"     /* urbi_shape_find_slot — T25 slow-path tests */
 #include "urbi/urbi.h"         /* urbi_get_determinism_checksum — URBI_DEBUG only */
 #include "value/uintern.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "vm/uvm.h"
 #include "realm/urealm.h"
 #include "value/uarena.h"
@@ -60,25 +60,25 @@ UTEST(uic_flag_bits_distinct) {
                0x0F);
 }
 
-/* === T16: UModuleInstance + UProtoInstance ===
+/* === T16: UChunkInstance + UProtoInstance ===
  *
- * Two instances of the same UModule must hold independent IC tables.
+ * Two instances of the same UProto must hold independent IC tables.
  * Build a minimal module with one nested proto whose ic_count = 3 and
  * ic_names = [foo, bar, baz]; spin up two instances and verify
  *   1. both creates succeed and return distinct pointers
  *   2. each instance has its own UProtoInstanceArr (distinct addresses)
  *   3. each instance's IC tables are distinct allocations
- *   4. the IC name pointers match across both instances (same UModule)
+ *   4. the IC name pointers match across both instances (same UProto)
  *   5. every IC entry is zero-initialised (topology_gen[e] == 0 sentinel) */
 
 UTEST(module_instance_basic_create) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    
+    
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
 
     /* Pretend the emitter populated three IC sites. */
@@ -94,7 +94,7 @@ UTEST(module_instance_basic_create) {
     p->ic_names[1] = bar;
     p->ic_names[2] = baz;
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT(mi->module == &m);
     UASSERT(mi->vm == &vm);
@@ -130,8 +130,8 @@ UTEST(module_instance_basic_create) {
         }
     }
 
-    urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -139,10 +139,10 @@ UTEST(module_instance_two_instances_independent) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    
+    
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
 
     USymbol *alpha = (USymbol *)ustr_intern(&vm, "alpha", 5);
@@ -153,12 +153,12 @@ UTEST(module_instance_two_instances_independent) {
     p->ic_names[0] = alpha;
     p->ic_names[1] = beta;
 
-    UModuleInstance *mi_a = urbi_module_instance_create(&vm, &m);
-    UModuleInstance *mi_b = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi_a = urbi_chunk_instance_create(&vm, &m);
+    UChunkInstance *mi_b = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
 
-    /* Distinct UModuleInstance cells. */
+    /* Distinct UChunkInstance cells. */
     UASSERT(mi_a != mi_b);
 
     /* Distinct UProtoInstanceArr bulk allocations. */
@@ -169,7 +169,7 @@ UTEST(module_instance_two_instances_independent) {
     UProtoInstance *pi_b = &mi_b->proto_instances->entries[1];
     UASSERT(pi_a->ic_table != pi_b->ic_table);
 
-    /* Same UModule means matching IC names by pointer identity (interned). */
+    /* Same UProto means matching IC names by pointer identity (interned). */
     UASSERT(pi_a->ic_table[0].name == pi_b->ic_table[0].name);
     UASSERT(pi_a->ic_table[0].name == alpha);
     UASSERT(pi_a->ic_table[1].name == pi_b->ic_table[1].name);
@@ -183,9 +183,9 @@ UTEST(module_instance_two_instances_independent) {
     UASSERT_EQ((int)pi_b->ic_table[0].n,              0);
     UASSERT_EQ((int)pi_b->ic_table[0].replace_cursor, 0);
 
-    urbi_module_instance_destroy(&vm, mi_b);
-    urbi_module_instance_destroy(&vm, mi_a);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi_b);
+    urbi_chunk_instance_destroy(&vm, mi_a);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -196,17 +196,17 @@ UTEST(module_instance_zero_nested_protos) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
+    UProto m = {0};
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT(mi->proto_instances != NULL);
     UASSERT_EQ((int)mi->proto_instances->n, 1);
     UASSERT(mi->proto_instances->entries[0].proto    == NULL);
     UASSERT(mi->proto_instances->entries[0].ic_table == NULL);
 
-    urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -217,31 +217,31 @@ UTEST(module_instance_proto_with_zero_ic_count) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    
+    
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
     /* Leave p->ic_count = 0, p->ic_names = NULL (zero-init from
-     * umodule_alloc_nested_proto). */
+     * uproto_alloc_nested). */
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
     UASSERT_EQ((int)mi->proto_instances->n, 2);
     UASSERT(mi->proto_instances->entries[1].proto    == p);
     UASSERT(mi->proto_instances->entries[1].ic_table == NULL);
 
-    urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
 UTEST(module_instance_invalid_args_return_null) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
-    UModule m = {0};
-    UASSERT(urbi_module_instance_create(NULL, &m) == NULL);
-    UASSERT(urbi_module_instance_create(&vm, NULL) == NULL);
+    UProto m = {0};
+    UASSERT(urbi_chunk_instance_create(NULL, &m) == NULL);
+    UASSERT(urbi_chunk_instance_create(&vm, NULL) == NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -252,7 +252,7 @@ UTEST(module_instance_invalid_args_return_null) {
  * / OP_SETSLOT story is exercised at T42 by the legacy `.chk` revival
  * fixtures (lookup, inheritance, slot-cow-const, shared-protos), so the
  * dispatch-loop integration is verified there rather than reimplemented
- * with synthetic UModule scaffolding here. */
+ * with synthetic UProto scaffolding here. */
 
 UTEST(get_slow_resolves_via_proto_walk_and_fills_ic) {
     /* parent.bar = 123; child has parent as its proto.  child.bar must
@@ -496,34 +496,30 @@ UTEST(resolve_slot_finds_via_protos) {
     urbi_vm_destroy(&vm);
 }
 
-/* === T3 follow-up: entries[0] populated from UModule.ic_count ===
+/* === T3 follow-up: entries[0] populated from UProto.ic_count ===
  *
- * Verifies that urbi_module_instance_create wires up entries[0].ic_table
- * from UModule.ic_count / ic_names (root-chunk IC sites added by T2). */
+ * Verifies that urbi_chunk_instance_create wires up entries[0].ic_table
+ * from UProto.ic_count / ic_names (root-chunk IC sites added by T2). */
 
 UTEST(module_instance_populates_root_chunk_ic_table) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
-    /* Task 11: ic_count and ic_names live on root_proto; allocate a minimal one. */
-    UProto rp;
-    memset(&rp, 0, sizeof(rp));
-    m.root_proto = &rp;
+    UProto m = {0};
 
     /* Intern two symbols for the root-chunk IC sites. */
     USymbol *sx = (USymbol *)ustr_intern(&vm, "x", 1);
     USymbol *sy = (USymbol *)ustr_intern(&vm, "y", 1);
     UASSERT(sx != NULL); UASSERT(sy != NULL);
 
-    /* Populate root-chunk IC fields directly (mimics what T2's emitter does). */
-    rp.ic_count = 2;
+    /* Populate IC fields directly on the root UProto (mimics what the emitter does). */
+    m.ic_count = 2;
     USymbol *names[2];
     names[0] = sx;
     names[1] = sy;
-    rp.ic_names = names;
+    m.ic_names = names;
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     /* entries[0] must carry a real ic_table (not NULL). */
@@ -539,20 +535,18 @@ UTEST(module_instance_populates_root_chunk_ic_table) {
     UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].n, 0);
     UASSERT_EQ((int)mi->proto_instances->entries[0].ic_table[1].replace_cursor, 0);
 
-    urbi_module_instance_destroy(&vm, mi);
-    /* Prevent umodule_destroy from freeing the static names[] array. */
-    rp.ic_names = NULL;
-    rp.ic_count = 0;
-    /* root_proto is stack-allocated; detach before destroy to avoid double-free. */
-    m.root_proto = NULL;
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi);
+    /* Prevent uchunk_destroy from freeing the static names[] array. */
+    m.ic_names = NULL;
+    m.ic_count = 0;
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
 /* === T30: cross-VM IC isolation + determinism-checksum extension ===
  *
  * Two complementary tests:
- *   1. Independent IC tables in two VMs — same UModule loaded into both
+ *   1. Independent IC tables in two VMs — same UProto loaded into both
  *      yields distinct UProtoInstanceArr cells; mutating one IC entry
  *      does not bleed into the other (extends T16's same-VM independence
  *      check across the VM boundary).
@@ -567,13 +561,13 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
     urbi_vm_init(&vm_a, NULL, NULL);
     urbi_vm_init(&vm_b, NULL, NULL);
 
-    /* Same module shape — but each VM gets its own UModuleInstance.  The
+    /* Same module shape — but each VM gets its own UChunkInstance.  The
      * IC tables (allocated via each VM's GC) must live in disjoint memory
      * regions so a fill in vm_a never bleeds into vm_b. */
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    
+    
+    UProto *p = uproto_alloc_nested(&m, &m);
     UASSERT(p != NULL);
 
     USymbol *foo_a = (USymbol *)ustr_intern(&vm_a, "foo", 3);
@@ -586,8 +580,8 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
      * is per-VM IC mutation isolation, not interned-symbol isolation. */
     p->ic_names[0] = foo_a;
 
-    UModuleInstance *mi_a = urbi_module_instance_create(&vm_a, &m);
-    UModuleInstance *mi_b = urbi_module_instance_create(&vm_b, &m);
+    UChunkInstance *mi_a = urbi_chunk_instance_create(&vm_a, &m);
+    UChunkInstance *mi_b = urbi_chunk_instance_create(&vm_b, &m);
     UASSERT(mi_a != NULL); UASSERT(mi_b != NULL);
 
     /* Each VM's registry head points at its own instance. */
@@ -618,49 +612,49 @@ UTEST(multi_vm_two_vms_have_independent_ic_tables) {
      * per se but useful pin against future regressions.) */
     UASSERT(foo_a != foo_b);
 
-    urbi_module_instance_destroy(&vm_b, mi_b);
-    urbi_module_instance_destroy(&vm_a, mi_a);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm_b, mi_b);
+    urbi_chunk_instance_destroy(&vm_a, mi_a);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm_b);
     urbi_vm_destroy(&vm_a);
 }
 
-/* === T5: urbi_get_or_create_module_instance cache helper ===
+/* === T5: urbi_get_or_create_chunk_instance cache helper ===
  *
- * Same (vm, module) pair must return the same UModuleInstance on repeated
+ * Same (vm, module) pair must return the same UChunkInstance on repeated
  * calls; a different module must yield a different instance. */
 
 UTEST(get_or_create_module_instance_caches_per_module) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m1 = {0};
-    UModule m2 = {0};
+    UProto m1 = {0};
+    UProto m2 = {0};
 
-    UModuleInstance *a1 = urbi_get_or_create_module_instance(&vm, &m1);
-    UModuleInstance *a2 = urbi_get_or_create_module_instance(&vm, &m1);
-    UModuleInstance *b1 = urbi_get_or_create_module_instance(&vm, &m2);
+    UChunkInstance *a1 = urbi_get_or_create_chunk_instance(&vm, &m1);
+    UChunkInstance *a2 = urbi_get_or_create_chunk_instance(&vm, &m1);
+    UChunkInstance *b1 = urbi_get_or_create_chunk_instance(&vm, &m2);
 
     UASSERT(a1 != NULL);
     UASSERT(a1 == a2);   /* same module → same instance */
     UASSERT(a1 != b1);   /* different module → different instance */
 
-    umodule_destroy(&m1, NULL);
-    umodule_destroy(&m2, NULL);
+    uchunk_destroy(&m1, NULL);
+    uchunk_destroy(&m2, NULL);
     urbi_vm_destroy(&vm);
 }
 
 /* Same module loaded into two different VMs must produce distinct
- * UModuleInstances, each threaded onto its own vm->module_instances_head. */
+ * UChunkInstances, each threaded onto its own vm->module_instances_head. */
 UTEST(get_or_create_module_instance_isolated_per_vm) {
     UVM vm_a, vm_b;
     urbi_vm_init(&vm_a, NULL, NULL);
     urbi_vm_init(&vm_b, NULL, NULL);
 
-    UModule m = {0};
+    UProto m = {0};
 
-    UModuleInstance *mi_a = urbi_get_or_create_module_instance(&vm_a, &m);
-    UModuleInstance *mi_b = urbi_get_or_create_module_instance(&vm_b, &m);
+    UChunkInstance *mi_a = urbi_get_or_create_chunk_instance(&vm_a, &m);
+    UChunkInstance *mi_b = urbi_get_or_create_chunk_instance(&vm_b, &m);
 
     UASSERT(mi_a != NULL);
     UASSERT(mi_b != NULL);
@@ -670,7 +664,7 @@ UTEST(get_or_create_module_instance_isolated_per_vm) {
     UASSERT(vm_a.module_instances_head == mi_a);
     UASSERT(vm_b.module_instances_head == mi_b);
 
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm_b);
     urbi_vm_destroy(&vm_a);
 }
@@ -683,16 +677,16 @@ UTEST(determinism_checksum_includes_ic_state) {
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
 
-    UModule m = {0};
-    m.root_proto = (UProto *)calloc(1, sizeof(UProto));
-    UASSERT(m.root_proto != NULL);
-    UProto *p = umodule_alloc_nested_proto(&m, m.root_proto);
+    UProto m = {0};
+    
+    
+    UProto *p = uproto_alloc_nested(&m, &m);
     USymbol *foo = (USymbol *)ustr_intern(&vm, "foo", 3);
     p->ic_count = 1;
     p->ic_names = (USymbol **)malloc(sizeof(USymbol *));
     p->ic_names[0] = foo;
 
-    UModuleInstance *mi = urbi_module_instance_create(&vm, &m);
+    UChunkInstance *mi = urbi_chunk_instance_create(&vm, &m);
     UASSERT(mi != NULL);
 
     uint64_t h_before = urbi_get_determinism_checksum(&vm);
@@ -707,13 +701,13 @@ UTEST(determinism_checksum_includes_ic_state) {
 
     UASSERT(h_before != h_after);
 
-    urbi_module_instance_destroy(&vm, mi);
-    umodule_destroy(&m, NULL);
+    urbi_chunk_instance_destroy(&vm, mi);
+    uchunk_destroy(&m, NULL);
     urbi_vm_destroy(&vm);
 }
 
 UTEST(determinism_checksum_stable_with_no_module_instances) {
-    /* Two consecutive checksum reads on a VM with no UModuleInstance must
+    /* Two consecutive checksum reads on a VM with no UChunkInstance must
      * agree (the per-IC fold is a no-op when the registry head is NULL). */
     UVM vm;
     urbi_vm_init(&vm, NULL, NULL);
@@ -724,7 +718,7 @@ UTEST(determinism_checksum_stable_with_no_module_instances) {
 }
 #endif  /* URBI_DEBUG */
 
-/* === T6: urbi_run_chunk binds UModuleInstance on first run ===
+/* === T6: urbi_run_chunk binds UChunkInstance on first run ===
  *
  * Verifies that urbi_run_chunk populates vm->module_instances_head for the
  * module it runs, so downstream OP_GETSLOT/SETSLOT can find the IC table. */
@@ -734,7 +728,7 @@ UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     urbi_vm_init(&vm, NULL, NULL);
 
     /* Compile a trivial source ("var x = 1;") into a fresh module. */
-    UModule m = {0};
+    UProto m = {0};
     UArena arena;
     uarena_init(&arena, 4096);
 
@@ -771,7 +765,7 @@ UTEST(urbi_run_chunk_creates_module_instance_on_first_run) {
     UASSERT(vm.module_instances_head != NULL);
     UASSERT(vm.module_instances_head->module == &m);
 
-    umodule_destroy(&m, NULL);
+    uchunk_destroy(&m, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

@@ -23,7 +23,7 @@
 #include "realm/urealm.h"
 #include "sched/usched_cooperative.h"
 #include "urbi/urbi.h"   /* urbi_strand_create / urbi_strand_destroy */
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "emit/uemit.h"
 #include "lex/ulex.h"
@@ -226,7 +226,7 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     /* Compile a trivial module: just a literal "0;" so OP_RET has a value. */
     ULexer  lex;
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     const char *src = "0;";
     ulex_init(&lex, src, strlen(src));
     uarena_init(&arena, 1024);
@@ -254,7 +254,7 @@ UTEST(uvm_run_transient_threaded_then_unlinked_from_global_realm)
     UASSERT(vm.global_realm->strands_head == NULL);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

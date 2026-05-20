@@ -32,7 +32,7 @@
 #include "urbi/urbi.h"
 #include "realm/urealm.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 
 #include <stddef.h>
@@ -46,7 +46,7 @@
  * destroy the module mid-run, and the documented task #23 symptom
  * (URBI_STEP_FATAL with empty errmsg — graceful, not a crash) shows up
  * on that path.  Destroying the module mid-run UAFs through a different
- * latent bug (`umodule_destroy` frees nested protos still reachable via
+ * latent bug (`uchunk_destroy` frees nested protos still reachable via
  * realm-rooted closures); the REPL avoids that via `urbi_steal_repl_protos`,
  * but `urbi_run_chunk` callers must hold the module themselves. */
 
@@ -86,7 +86,7 @@ UTEST(at_body_calls_class_method_minimal)
     UASSERT(ev != URBI_EVENT_ID_INVALID);
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -107,7 +107,7 @@ UTEST(at_body_calls_class_method_minimal)
      * exercising the bug; post-fix the !fatal branch runs cleanly. */
     if (!fatal) {
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
     }
 }
@@ -132,7 +132,7 @@ UTEST(at_body_calls_class_method_side_effect)
                                                utest_e2e_make_int(0)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -156,7 +156,7 @@ UTEST(at_body_calls_class_method_side_effect)
         UASSERT_EQ(1LL, n.v.i);
 
         uarena_destroy(&arena);
-        umodule_destroy(&module, NULL);
+        uchunk_destroy(&module, NULL);
         urbi_vm_destroy(&vm);
     }
 }
@@ -181,7 +181,7 @@ UTEST(at_body_reads_class_field_control)
                                                utest_e2e_make_int(-1)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -201,7 +201,7 @@ UTEST(at_body_reads_class_field_control)
     UASSERT_EQ(42LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 
@@ -237,7 +237,7 @@ UTEST(s43_chunktop_var_then_at_body_reads_var)
                                                utest_e2e_make_int(-1)));
 
     UArena  arena;
-    UModule module = {0};
+    UProto module = {0};
     uarena_init(&arena, 4096);
 
     int rc = utest_e2e_compile_and_run_with_module(&vm, &arena, &module,
@@ -256,7 +256,7 @@ UTEST(s43_chunktop_var_then_at_body_reads_var)
     UASSERT_EQ(42LL, out.v.i);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_vm_destroy(&vm);
 }
 

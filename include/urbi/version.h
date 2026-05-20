@@ -18,7 +18,7 @@
  * PATCH bumps MAY break ABI per standard semver convention — each bump
  * enumerates breakages in CHANGELOG. Uses to date:
  *   1. v0.7.2-esp32 — S41 urbi_set_diag_fn addition (0/7/1 → 0/7/3).
- *   2. v0.7.3-bugfixes — umodule_destroy signature change (0/7/3 → 0/7/4).
+ *   2. v0.7.3-bugfixes — uchunk_destroy signature change (0/7/3 → 0/7/4).
  *   3. v0.8.0-loader-strand — UModule.refcount + destroy_requested fields;
  *      urbi_run_chunk const-revert; URBI_ERR_LOADER_BUDGET addition
  *      (0/7/4 → 0/7/5).
@@ -41,7 +41,7 @@
  *   6. v0.8.5-recursive-emit — UClosure loses origin_nested +
  *      origin_nested_count fields (-16 B with alignment); UProto gains
  *      ic_index field (+2 B); UModule gains next_proto_serial +
- *      total_proto_count fields (+4 B).  umodule_alloc_nested_proto
+ *      total_proto_count fields (+4 B).  uproto_alloc_nested
  *      signature changes from (module) to (module, parent_proto) — internal
  *      symbol not exposed by the public `include/urbi/` headers.  OP_CLOSURE dispatch arm
  *      rewrites to resolve Bx against executing_proto->nested[] (per-parent
@@ -68,6 +68,17 @@
  *      List, Dict, Symbol, Tag, Event, Mutex, Date, Duration) are marked
  *      readonly at urbi_stdlib_boot.  Global stays mutable per spec §4.1.
  *      (0/11/0 → 0/12/0)
+ *   9. v0.9.2-uproto-only — UModule struct deleted; UProto absorbs root
+ *      metadata (source_name, origin_vm, next_proto_serial, total_proto_count,
+ *      next_in_realm, owning_realm, heap_allocated).  Public API: 7 functions
+ *      renamed (urbi_module_* → urbi_chunk_*; urbi_load_module →
+ *      urbi_load_chunk; urbi_get_or_create_module_instance →
+ *      urbi_get_or_create_chunk_instance).  Type renames: UModuleInstance →
+ *      UChunkInstance; UModuleAllocFn → UChunkAllocFn (UAllocFn was already
+ *      taken in uarena.h); UModuleLoadError → UChunkLoadError + ULOAD_* →
+ *      UCHUNK_LOAD_*.  UStrand.module field deleted.  Wire format v1.7 →
+ *      v1.8 (semantic bump only — byte layout unchanged).  9th use of
+ *      pre-v1.0 escape clause.  (0/12/0 → 0/13/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -82,7 +93,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  12
+#define URBI_API_VERSION_MINOR  13
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \

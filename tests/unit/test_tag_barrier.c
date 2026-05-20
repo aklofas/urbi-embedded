@@ -39,7 +39,7 @@
 #include "event/uevent_native.h"
 #include "object/uobject.h"
 #include "value/uintern.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "gc/ugc_incremental.h"   /* IS_BLACK / IS_GRAY / UGC_COLOR_* */
 #include "urbi/urbi.h"
 

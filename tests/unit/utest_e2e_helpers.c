@@ -38,7 +38,7 @@ utest_e2e_make_nil(void)
 int
 utest_e2e_compile_and_run_with_module(UVM *vm,
                                       UArena *arena,
-                                      UModule *module,
+                                      UProto *module,
                                       const char *src,
                                       UValue *out_result)
 {
@@ -73,15 +73,24 @@ int
 utest_e2e_compile_and_run(UVM *vm, const char *src, UValue *out_result)
 {
     UArena  arena;
-    UModule module = {0};
+    /* Heap-allocate the module so rescued_protos sweep can safely free it
+     * if refcount > 0 when uchunk_destroy is called with a live vm.
+     * Stack modules cannot go on rescued_protos (vm_destroy would free a
+     * stack address). */
+    UProto *module = (UProto *)vm->alloc_fn(NULL, sizeof(UProto), vm->alloc_ud);
+    if (module == NULL) return URBI_ERR_OOM;
+    urbi_zero(module, sizeof(*module));
+    module->heap_allocated = true;
+    module->alloc_fn       = vm->alloc_fn;
+    module->alloc_ud       = vm->alloc_ud;
 
     uarena_init(&arena, 4096);
 
-    int rc = utest_e2e_compile_and_run_with_module(vm, &arena, &module,
+    int rc = utest_e2e_compile_and_run_with_module(vm, &arena, module,
                                                    src, out_result);
 
     uarena_destroy(&arena);
-    umodule_destroy(&module, vm);
+    uchunk_destroy(module, vm);
     return rc;
 }
 

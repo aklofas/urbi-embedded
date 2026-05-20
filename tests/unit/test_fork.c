@@ -13,8 +13,8 @@
 #include "realm/urealm.h"
 #include "sched/ustrand.h"
 #include "urbi/urbi.h"
-#include "module/umodule.h"
-#include "object/umodule_instance.h"
+#include "chunk/uchunk.h"
+#include "object/uchunk_instance.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
@@ -36,7 +36,7 @@
 
 /* Compile `src` into `*out_mod` using vm. Returns true on success. */
 static bool
-fork_compile(UVM *vm, const char *src, UModule *out_mod)
+fork_compile(UVM *vm, const char *src, UProto *out_mod)
 {
     ULexer lex;
     ulex_init(&lex, src, strlen(src));
@@ -44,7 +44,7 @@ fork_compile(UVM *vm, const char *src, UModule *out_mod)
     UArena arena;
     uarena_init(&arena, 4096);
 
-    *out_mod = (UModule){0};
+    *out_mod = (UProto){0};
 
     UEmitter e;
     uemit_init(&e, out_mod, &arena, vm, NULL);
@@ -72,7 +72,7 @@ fork_compile(UVM *vm, const char *src, UModule *out_mod)
 #define FORK_TEST_MAX_STEPS 100000ULL
 
 static int
-fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
+fork_run_to_quiescent(UVM *vm, URealm *realm, UProto *module,
                       UValue *out_result)
 {
     /* Allocate + arm a strand for this module. */
@@ -89,12 +89,11 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
         for (i = 0; i < stack_bytes; i++) p[i] = 0;
     }
     s->R          = s->stack;
-    s->module     = module;
-    s->root_proto = module->root_proto;  /* Task 11: all chunk-top data lives on root_proto */
-    s->pc         = s->root_proto->instructions;
-    s->pc_base    = s->root_proto->instructions;
-    s->cur_consts = s->root_proto->constants;
-    umodule_proto_refcount_inc(s->root_proto);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
+    s->root_proto = module;
+    s->pc         = module->instructions;
+    s->pc_base    = module->instructions;
+    s->cur_consts = module->constants;
+    uproto_refcount_inc(module);  /* v0.8.1 Task 7: pair with ustrand_destroy dec via root_proto->refcount */
     s->frame_count = 0;
     s->open_upvals = NULL;
     if (out_result) {
@@ -103,9 +102,9 @@ fork_run_to_quiescent(UVM *vm, URealm *realm, UModule *module,
 
     /* v0.9.0: stamp owning_module_instance on every nested UProto so that
      * OP_CLOSURE can read child_proto->owning_module_instance directly.
-     * urbi_module_instance_create calls stamp_owning_mi(root_proto, mi)
+     * urbi_chunk_instance_create calls stamp_owning_mi(root_proto, mi)
      * internally — the same stamp urbi_strand_create_for_module performs. */
-    s->module_instance = urbi_module_instance_create(vm, module);
+    s->module_instance = urbi_chunk_instance_create(vm, module);
     if (!s->module_instance) { urbi_strand_destroy(s); return -1; }
 
     urbi_strand_start(s);  /* DORMANT → READY */
@@ -143,7 +142,7 @@ UTEST(fork_detach_basic_no_crash)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(fork_compile(&vm, "1 , 2", &module));
 
     UValue result = {0};
@@ -154,7 +153,7 @@ UTEST(fork_detach_basic_no_crash)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)2);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -169,7 +168,7 @@ UTEST(fork_join_wait_basic)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(fork_compile(&vm, "1 & 2", &module));
 
     UValue result = {0};
@@ -179,7 +178,7 @@ UTEST(fork_join_wait_basic)
     /* spec §7.2: `&` result is void */
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -197,7 +196,7 @@ UTEST(fork_child_inherits_ambient_tags)
     UASSERT(realm != NULL);
     UASSERT(realm->tag != NULL);
 
-    UModule module;
+    UProto module;
     /* Simple comma-separate: spawns a detached strand */
     UASSERT(fork_compile(&vm, "42 , 7", &module));
 
@@ -211,7 +210,7 @@ UTEST(fork_child_inherits_ambient_tags)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)7);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -226,7 +225,7 @@ UTEST(fork_detach_three_way)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(fork_compile(&vm, "1 , 2 , 3", &module));
 
     UValue result = {0};
@@ -237,7 +236,7 @@ UTEST(fork_detach_three_way)
     UASSERT_EQ((int)result.kind, (int)UVAL_INT);
     UASSERT_EQ(result.v.i, (int64_t)3);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -252,14 +251,14 @@ UTEST(fork_detach_quiescent_count_zero)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(fork_compile(&vm, "10 , 20", &module));
 
     int rc = fork_run_to_quiescent(&vm, realm, &module, NULL);
     UASSERT_EQ(rc, 1);
     UASSERT_EQ(vm.strand_runnable_count, 0U);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -322,7 +321,7 @@ UTEST(fork_join_arithmetic_children)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     UASSERT(fork_compile(&vm, "(1 + 2) & (3 + 4)", &module));
 
     UValue result = {0};
@@ -331,7 +330,7 @@ UTEST(fork_join_arithmetic_children)
     UASSERT_EQ(rc, 1);
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }
@@ -361,7 +360,7 @@ UTEST(fork_join_wait_parent_blocked_before_link_to_chain)
     URealm *realm = urbi_realm_create(&vm);
     UASSERT(realm != NULL);
 
-    UModule module;
+    UProto module;
     /* Two consecutive joins — exercises the block-then-link path
      * once per `&` operator without any sleep/event reasons in play. */
     UASSERT(fork_compile(&vm, "1 & 2 & 3", &module));
@@ -372,7 +371,7 @@ UTEST(fork_join_wait_parent_blocked_before_link_to_chain)
     UASSERT_EQ(rc, 1);                          /* reached quiescent */
     UASSERT_EQ((int)result.kind, (int)UVAL_VOID);  /* `&` result is void */
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     urbi_realm_destroy(&vm, realm);
     urbi_vm_destroy(&vm);
 }

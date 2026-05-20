@@ -21,7 +21,7 @@
 #include "vm/uvm.h"
 #include "sched/ustrand.h"
 #include "realm/urealm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "value/uarena.h"
 #include "parse/uast.h"
 #include "emit/uemit.h"
@@ -221,7 +221,7 @@ UTEST(run_chunk_threads_realm_argument_through_vm_run)
     ulex_init(&lex, src, strlen(src));
     UArena arena;
     uarena_init(&arena, 4096);
-    UModule module;
+    UProto module;
     memset(&module, 0, sizeof(module));
     UEmitter e;
     uemit_init(&e, &module, &arena, &vm, NULL);
@@ -249,7 +249,7 @@ UTEST(run_chunk_threads_realm_argument_through_vm_run)
     UASSERT_EQ((int)out_b.kind, (int)UVAL_INT);
     UASSERT_EQ(out_b.v.i, (int64_t)9);
 
-    umodule_destroy(&module, NULL);
+    uchunk_destroy(&module, NULL);
     uarena_destroy(&arena);
     urbi_vm_destroy(&vm);
 }

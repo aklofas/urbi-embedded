@@ -5,15 +5,15 @@
 
    UValue dependency: this header uses UValue but cannot include
    src/value/uvalue.h directly because the include chain
-   uvalue.h → umodule.h → uframe.h would form a cycle.
+   uvalue.h → uproto.h → uframe.h would form a cycle.
    Includers must ensure UValue is in scope before including this header.
-   In practice every translation unit includes umodule.h first (which
-   defines UValue and then includes uframe.h), so this is satisfied
-   automatically.
+   In practice every translation unit includes uchunk.h (which includes
+   uproto.h, which defines UValue and then includes uframe.h), so this
+   is satisfied automatically.
 
-   T6 migration: UCallFrame and UUpvalCell moved from umodule.h to uframe.h.
+   T6 migration: UCallFrame and UUpvalCell moved from umodule.h (now uproto.h) to uframe.h.
    UVM_MAX_FRAMES and UVM_STACK_CAP moved from uvm.h to uframe.h.
-   umodule.h includes uframe.h to re-export the types it previously defined.
+   uproto.h includes uframe.h to re-export the types it previously defined.
    ustrand.h includes uframe.h after uvalue.h so UValue is available. */
 
 #ifndef UFRAME_H
@@ -23,7 +23,8 @@
 #include <stdint.h>
 
 /* UValue is required by this header.  See include-cycle note in the file
-   banner above; includers must pull it in via src/module/umodule.h. */
+   banner above; includers must pull it in via src/chunk/uproto.h (or
+   src/chunk/uchunk.h which transitively includes it). */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,13 +41,13 @@ extern "C" {
 
 /* --- Forward declarations for pointer-only uses in struct fields --- */
 
-struct UProto;    /* defined in umodule.h */
-struct UClosure;  /* defined in umodule.h */
+struct UProto;    /* defined in uproto.h */
+struct UClosure;  /* defined in uproto.h */
 
 /* --- UUpvalCell: runtime heap cell for captured locals.
    Forward typedef only — the full struct definition (with UCell prefix at
    offset 0 for GC) lives in uclosure.h.  This mirrors how UClosure is
-   forward-declared in umodule.h: uframe.h → ugc.h → umodule.h → uframe.h
+   forward-declared in uproto.h: uframe.h → ugc.h → uproto.h → uframe.h
    would form a circular include chain, so the complete layout is deferred
    to the first header that has both UValue and UCell in scope.
    Files that only need `UUpvalCell *` (e.g. ustrand.h, uvm.h) include this

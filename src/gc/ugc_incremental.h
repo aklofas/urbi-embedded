@@ -20,7 +20,7 @@
 
 /* Forward declarations for pointer types used in barrier signatures.
  * Full definitions live in src/sched/ustrand.h / src/runtime/uframe.h /
- * src/module/umodule.h. */
+ * src/chunk/uchunk.h. */
 struct UVM;
 struct UStrand;
 struct UClosure;

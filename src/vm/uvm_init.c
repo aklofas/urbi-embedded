@@ -32,7 +32,7 @@
 #include "object/utypes_init.h"   /* urbi_object_builtin_types_init */
 #include "object/uobject.h"       /* urbi_object_register_gc_roots */
 #include "sched/usched_cooperative.h" /* sched_walk_roots */
-#include "module/umodule.h"           /* umodule_destroy — M6 Phase 4 stdlib_module teardown */
+#include "chunk/uchunk.h"           /* uchunk_destroy — M6 Phase 4 stdlib_module teardown */
 #include "urbi/types.h"               /* URBI_OK, URBI_ERR_OOM — T23 return-code surface */
 
 #if __STDC_HOSTED__
@@ -149,8 +149,8 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     vm->event_proto = NULL;
     vm->tag_proto   = NULL;
 
-    /* M4 T30 — UModuleInstance registry head: empty until first
-     * urbi_module_instance_create. */
+    /* M4 T30 — UChunkInstance registry head: empty until first
+     * urbi_chunk_instance_create. */
     vm->module_instances_head = NULL;
 
     vm->last_return_closure  = NULL;
@@ -257,7 +257,7 @@ int urbi_vm_init(UVM *vm, UVMAllocFn alloc_fn, void *alloc_ud) {
     urbi_object_builtin_types_init(vm);
 
     /* T36: register the M4 GC root provider for atom singletons +
-     * vm->root_shape + the UModuleInstance chain.  Replaces the manual
+     * vm->root_shape + the UChunkInstance chain.  Replaces the manual
      * urbi_pin calls on atom singletons that lived in T8.  Must come
      * after the type-table setup so the walker's gc_shade_gray invocations
      * find a registered UType for each cell. */
@@ -459,11 +459,11 @@ void urbi_vm_destroy(UVM *vm) {
     urealm_teardown_all(vm);  /* T14: destroy all live Realms */
     uwatcher_pool_destroy(vm);  /* T32: free pool slab before GC */
     /* Clear module_instances_head before GC destroy so that:
-     *   (a) object_roots_walker stops shading now-unreachable UModuleInstance
+     *   (a) object_roots_walker stops shading now-unreachable UChunkInstance
      *       cells (harmless but tidy), and
-     *   (b) umodule_destroy_internal's vm->module_instances_head walk (Task 10)
+     *   (b) uchunk_destroy_internal's vm->module_instances_head walk (Task 10)
      *       skips the list instead of dereferencing GC-freed cells post-destroy.
-     * The GC sweep will reclaim all UModuleInstance cells regardless; we only
+     * The GC sweep will reclaim all UChunkInstance cells regardless; we only
      * clear the pointer so the walk in the stdlib teardown path below is safe. */
     vm->module_instances_head = NULL;
     /* GC destroy must run after all subsystems that hold GC-managed cells.
@@ -523,17 +523,18 @@ void urbi_vm_destroy(UVM *vm) {
 
     if (vm->alloc_fn != NULL) {
 
-        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib UModule
+        /* M6 Phase 4 (Wave 2): free the heap-allocated stdlib root UProto
          * deserialized at boot.  Runs AFTER urbi_gc_destroy above so any
-         * UModuleInstance referencing this module has already been
+         * UChunkInstance referencing this root has already been
          * reaped — no dangling ic_names back-reference can survive.
          *
-         * Ordering: BEFORE rescued_protos sweep below.  umodule_destroy may
-         * rescue a non-zero-refcount root_proto onto vm->rescued_protos; that
-         * rescued proto is freed by the sweep that follows. */
+         * Ordering: BEFORE rescued_protos sweep below.  uchunk_destroy may
+         * rescue a non-zero-refcount root onto vm->rescued_protos; that
+         * rescued proto is freed by the sweep that follows.
+         * v0.9.2: uchunk_destroy frees heap_allocated roots automatically. */
         if (vm->stdlib_module != NULL) {
-            umodule_destroy(vm->stdlib_module, vm);
-            vm->alloc_fn(vm->stdlib_module, 0, vm->alloc_ud);
+            uchunk_destroy(vm->stdlib_module, vm);
+            /* uchunk_destroy freed the struct (heap_allocated=true); clear ptr. */
             vm->stdlib_module = NULL;
         }
 
@@ -542,7 +543,7 @@ void urbi_vm_destroy(UVM *vm) {
 
         /* Phase 2 Task 9 (v0.8.1-uproto-root): free rescued whole root_protos.
          * Each entry is a root_proto that was detached from its UModule by
-         * umodule_destroy when root_proto->refcount > 0 (strand still alive).
+         * uchunk_destroy when root_proto->refcount > 0 (strand still alive).
          * The root_proto carries ownership of nested[] and all chunk-top buffers
          * (module shell was freed normally with those fields NULLed).
          *
@@ -552,21 +553,21 @@ void urbi_vm_destroy(UVM *vm) {
          * Walk each rescued root_proto:
          *   1. Capture next_alloc, alloc_fn/alloc_ud before any zero operation.
          *   2. Free all buffers (including nested[] sub-protos) via
-         *      umodule_destroy_proto_buffers — zeroes *rp.
+         *      uproto_destroy_buffers — zeroes *rp.
          *   3. Free the root_proto struct itself. */
         {
             struct UProto *rp = vm->rescued_protos;
             while (rp != NULL) {
                 /* Step 1: capture before any zero operation. */
                 struct UProto  *next     = rp->next_alloc;
-                UModuleAllocFn  rp_alloc = rp->alloc_fn;
+                UChunkAllocFn  rp_alloc = rp->alloc_fn;
                 void           *rp_ud    = rp->alloc_ud;
                 if (rp_alloc == NULL) {
                     rp_alloc = vm->alloc_fn;
                     rp_ud    = vm->alloc_ud;
                 }
                 /* Step 2: free all buffers (nested[] freed recursively inside). */
-                umodule_destroy_proto_buffers(rp, rp_alloc, rp_ud);
+                uproto_destroy_buffers(rp, rp_alloc, rp_ud);
                 /* Step 3: free the root_proto struct. */
                 rp_alloc(rp, 0, rp_ud);
                 rp = next;

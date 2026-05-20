@@ -10,7 +10,7 @@
 #include "tag/utag.h"
 #include "gc/ugc.h"    /* UTYPE_TAG */
 #include "urbi/urbi.h"
-#include "module/umodule.h"   /* UValue, UValKind, UVM_STACK_CAP */
+#include "chunk/uchunk.h"   /* UValue, UValKind, UVM_STACK_CAP */
 #include "sched/usched_cooperative.h"
 
 #include <stdlib.h>
@@ -240,7 +240,6 @@ strand_setup_t30(UStrand *s, UVM *vm,
     s->pc         = instructions;
     s->pc_base    = instructions;
     s->cur_consts = NULL;
-    s->module     = NULL;
     s->frame_count  = 0;
     s->open_upvals  = NULL;
     s->out_slot     = NULL;

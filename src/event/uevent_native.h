@@ -4,7 +4,7 @@
 #ifndef EVENT_NATIVE_H
 #define EVENT_NATIVE_H
 
-#include "module/umodule.h"        /* UValue, UVAL_EVENT */
+#include "chunk/uchunk.h"        /* UValue, UVAL_EVENT */
 #include "runtime/umacros.h"       /* urbi_zero (used by uvalue_from_event) */
 #include "urbi/urbi.h"      /* UHostFn */
 #include "vm/uvm.h"         /* UVMError */

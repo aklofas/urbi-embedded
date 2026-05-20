@@ -3,7 +3,7 @@
  * built-in UType descriptor registration entry point.
  *
  * Implementation in utypes_init.c registers seven UTYPE_* tags
- * (UObject / UProtos / UShape / UProps / USlotHandle / UModuleInstance /
+ * (UObject / UProtos / UShape / UProps / USlotHandle / UChunkInstance /
  * UProtoInstance) directly into vm->type_table[], bypassing
  * urbi_register_type which guards tags < UTYPE_HOST_BASE per src/utype.c.
  *

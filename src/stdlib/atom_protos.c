@@ -24,7 +24,7 @@
 #include "stdlib/atom_protos.h"
 #include "stdlib/object_root.h"
 
-#include "module/umodule.h"        /* UValue, UVAL_*, UClosure typedef */
+#include "chunk/uchunk.h"        /* UValue, UVAL_*, UClosure typedef */
 #include "object/uobject.h"        /* urbi_object_*, urbi_object_atom */
 #include "runtime/uclosure.h"      /* struct UClosure full def + native_method_fn typedef */
 #include "runtime/umacros.h"       /* urbi_strlen */

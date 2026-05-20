@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* test_module_grain_lifetime — Variant B module-grain lifetime.
  *
- * v0.9.0-repl update: urbi_repl_eval now heap-allocates one UModule per REPL
+ * v0.9.0-repl update: urbi_repl_eval now heap-allocates one UProto per REPL
  * line (CHSTR-027 close-out).  Modules persist in realm->loaded_protos_head
  * until urbi_realm_destroy; they are NOT destroyed (and thus NOT rescued onto
  * vm->rescued_protos) during the eval loop.
  *
  * The bounded-overhead invariant is now expressed as:
  *   (a) Structural: realm->loaded_protos_head accumulates exactly N user modules
- *       after N urbi_repl_eval calls (one heap-alloc UModule per chunk).
+ *       after N urbi_repl_eval calls (one heap-alloc UProto per chunk).
  *   (b) Allocation: per-iteration GC allocation < 8 KB (same bound as before;
  *       the module shell is ~400 bytes, not tracked by the GC allocator).
  *
@@ -23,7 +23,7 @@
 #include "urbi/urbi.h"
 #include "urbi/gc.h"
 #include "vm/uvm.h"
-#include "module/umodule.h"
+#include "chunk/uchunk.h"
 #include "realm/urealm.h"
 
 #include <stddef.h>
@@ -34,13 +34,13 @@
 #define UTEST(name) static void name(void)
 
 /* Count user modules in realm->loaded_protos_head (excludes vm->stdlib_module).
- * v0.9.0-repl: each urbi_repl_eval call leaves one heap-alloc UModule in the
+ * v0.9.0-repl: each urbi_repl_eval call leaves one heap-alloc UProto in the
  * realm list; this replaces the old vm->rescued_protos count. */
 static size_t
 count_user_modules(const UVM *vm, const URealm *realm)
 {
     size_t count = 0;
-    const UModule *m = realm->loaded_protos_head;
+    const UProto *m = realm->loaded_protos_head;
     while (m != NULL) {
         if (m != vm->stdlib_module) count++;
         m = m->next_in_realm;
@@ -60,7 +60,7 @@ repl(UVM *vm, URealm *realm, const char *src)
  * Case 1: single closure escaped per chunk.
  *
  * Each iteration: "var f<i> = function() { <i> }"
- * Expected: N modules in realm after N iterations (one heap-alloc UModule per
+ * Expected: N modules in realm after N iterations (one heap-alloc UProto per
  * chunk).  Also: per-iteration GC allocation < 8 KB.
  * ------------------------------------------------------------------------- */
 UTEST(single_closure_escape_bounded)
@@ -109,7 +109,7 @@ UTEST(single_closure_escape_bounded)
  * Case 2: multiple closures escaped per chunk.
  *
  * Each iteration escapes TWO closures from the same chunk: "var a<i> = ...,
- * var b<i> = ...".  Despite two closures, only ONE UModule is allocated per
+ * var b<i> = ...".  Despite two closures, only ONE UProto is allocated per
  * chunk (the heap-alloc granularity is per urbi_repl_eval call).
  *
  * Expected: list_len == N (not 2*N).
@@ -131,7 +131,7 @@ UTEST(multi_closure_per_chunk_still_one_rescue)
         UASSERT_EQ(URBI_OK, repl(&vm, r, src));
     }
 
-    /* One heap-alloc UModule per urbi_repl_eval call regardless of how many
+    /* One heap-alloc UProto per urbi_repl_eval call regardless of how many
      * closures that chunk exposes. */
     size_t list_len = count_user_modules(&vm, r);
     UASSERT_EQ((long long)list_len, (long long)N);
@@ -144,7 +144,7 @@ UTEST(multi_closure_per_chunk_still_one_rescue)
  * Case 3: all chunks — with or without escaping closures — produce one module.
  *
  * Interleave: even iterations escape a closure, odd iterations are pure
- * arithmetic.  With heap-alloc modules, ALL N iterations produce one UModule
+ * arithmetic.  With heap-alloc modules, ALL N iterations produce one UProto
  * in the realm (the module shell persists regardless of closure-escape).
  *
  * Expected: list_len == N (all iterations, not just the even ones).
@@ -170,7 +170,7 @@ UTEST(no_escape_no_rescue)
         UASSERT_EQ(URBI_OK, repl(&vm, r, src));
     }
 
-    /* All iterations produce one heap-alloc UModule in the realm. */
+    /* All iterations produce one heap-alloc UProto in the realm. */
     size_t list_len = count_user_modules(&vm, r);
     UASSERT_EQ((long long)list_len, (long long)N);
 

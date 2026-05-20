@@ -32,8 +32,8 @@
 #include "realm/urealm.h"
 #include "urbi/urbi.h"
 #include "runtime/umacros.h"
-#include "module/umodule.h"
-#include "object/umodule_instance.h"
+#include "chunk/uchunk.h"
+#include "object/uchunk_instance.h"
 #include "runtime/uframe.h"
 #include <stddef.h>
 
@@ -101,10 +101,10 @@ run_on_scratch_core(struct UVM       *vm,
      * s->module_instance->proto_instances->entries[0].ic_table.  The scratch
      * strand runs closure directly at frame_count==0 (not the root chunk), so
      * entries[0] must expose closure's own IC table.  Allocate a minimal
-     * UProtoInstanceArr (one entry) and a stack-local UModuleInstance shell.
+     * UProtoInstanceArr (one entry) and a stack-local UChunkInstance shell.
      * Freed in teardown below; GC does not chase strand.module_instance.
      *
-     * IC pointer-sharing: only the bare UModuleInstance + UProtoInstanceArr
+     * IC pointer-sharing: only the bare UChunkInstance + UProtoInstanceArr
      * structs are allocated — no trailing IC byte array.  entries[0].ic_table
      * is a borrowed read-only pointer into closure->proto_inst's existing IC
      * table.  This is safe because (1) the scratch frame holds no slot-write
@@ -118,7 +118,7 @@ run_on_scratch_core(struct UVM       *vm,
      * dispatch.  Pre-fix the OOM path silently left strand.module_instance
      * = NULL, then OP_GETSLOT (frame_count==0 path) dereferenced NULL — a
      * segfault that masqueraded as a soft cond throw. */
-    UModuleInstance scratch_mi;
+    UChunkInstance scratch_mi;
     int scratch_arr_alloc_failed = 0;
     urbi_zero(&scratch_mi, sizeof(scratch_mi));
     if (closure->proto_inst != NULL) {
