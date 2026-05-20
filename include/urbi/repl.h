@@ -86,6 +86,31 @@ UReplServer *urbi_repl_serve    (struct UVM *vm, const UReplConfig *cfg, int *ou
 void          urbi_repl_stop     (UReplServer *server);
 
 int  urbi_repl_serve_init    (struct UVM *vm, const UReplConfig *cfg, UReplServer **out_server);
+
+/* === Cooperative drive (v0.9.4+) ===
+ *
+ * urbi_repl_serve_step drives the data plane for transports whose
+ * pollable_fd_fn returns -1 (Pi Pico USB CDC + UART, ESP-IDF UART,
+ * FreeRTOS UART, in-process buffer).  Each call performs four
+ * non-blocking sweeps over the registered transports + active
+ * sessions:
+ *
+ *   1. accept  — one accept_fn attempt per non-pollable transport
+ *   2. read    — one read_fn attempt per active session; complete
+ *                NDJSON lines hit the dispatcher
+ *   3. write   — drain pending output via write_fn (partial OK)
+ *   4. close   — tear down sessions whose read_fn returned 0
+ *
+ * Pollable transports (TCP, Unix sockets) continue to use the
+ * listener pthread — serve_step does NOT touch them.  Hosted
+ * applications may mix both: pthread handles TCP, serve_step
+ * handles a debug USB CDC link.
+ *
+ * The timeout_us argument is currently advisory on the cooperative
+ * path: the sweep is best-effort non-blocking, and the embedder is
+ * expected to __wfi() / sleep between calls.  Callers on pollable
+ * transports treat timeout_us as a hint for the dispatcher idle
+ * wait — see v0.9.1 dispatcher semantics. */
 int  urbi_repl_serve_step    (UReplServer *server, uint64_t timeout_us);
 void urbi_repl_serve_shutdown(UReplServer *server);
 
