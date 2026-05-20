@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.9.3-ci-hardening — 2026-05-19
+
+### Added
+
+- **`test-freestanding-host` Makefile target.** Host-`cc`-based per-TU
+  compile under `-ffreestanding -DURBI_BYTECODE_ONLY=1` + nm-grep
+  against the forbidden-libc symbol regex
+  (`printf` / `snprintf` / `malloc` / `free` / `strtod` / `strtol` / `abort` / `exit` / …).
+  Catches the freestanding-leak class without any cross-toolchain
+  dependency. Added to `RELEASETEST_PHASE1` (20 → 21 gates).
+- **Cross-toolchain auto-detect in `releasetest`.** Probes for
+  `arm-none-eabi-gcc`, `riscv-none-elf-gcc`, and `xtensa-esp-elf-gcc`
+  at startup via probe-compile (try-compile `#include <string.h>`,
+  not just `command -v`). When `present`, runs the corresponding
+  cross-build + `test-freestanding.sh` archive check in a sequential
+  Phase 0 before Phase 1. When `broken` (binary on PATH but sysroot
+  missing) or `absent` (binary not on PATH), skips the cross gates
+  with a contextual banner pointing at `docs/cross-toolchain-setup.md`.
+- **`docs/cross-toolchain-setup.md`.** Documents the xpack toolchain
+  install recipe and the `riscv-none-elf-*` → `riscv64-unknown-elf-*`
+  symlink rule. Referenced from the releasetest banner.
+- **Sourceable shell helpers** (`tests/scripts/_bytecode-only-tus.sh`,
+  `tests/scripts/_freestanding-forbidden.sh`). Single source of truth
+  for the URBI_BYTECODE_ONLY TU keep-list and the forbidden-libc
+  regex, shared between the host-side gate and the existing cross
+  archive check.
+
+### Changed
+
+- **`tests/scripts/build-bytecode-only.sh`** now sources the keep-list
+  from `_bytecode-only-tus.sh` instead of inlining it.
+- **`tests/scripts/test-freestanding.sh`** now sources the forbidden
+  regex from `_freestanding-forbidden.sh` instead of inlining it.
+- **Bytecode-only keep-list** no longer includes `src/urbi_aux.c`.
+  The optional `liburbi_aux.a` convenience layer uses `<stdio.h>` by
+  design and is already skipped by cross-build freestanding targets
+  (commit `3a9e939`); the host-side keep-list now matches.
+
+### Why
+
+Two consecutive ships (`v0.9.1-repl-service`, `v0.9.2-uproto-only`)
+merged with `make releasetest` 22/22 green but turned GHA CI red on
+`cross-stm32f4-bytecode-only` + `cross-esp32s3-bytecode-only`
+(`builtin_lobby_send` used `snprintf` unconditionally). Releasetest
+did not exercise the freestanding-clean property at all on the dev
+box — cross-arm/cross-riscv toolchains shipped broken sysroots and
+cross-esp32s3 wasn't in the target list. This tag closes the gate
+before the next port (Pico) lands and surfaces another instance of
+the same leak class.
+
+No ABI / wire / corpus changes. ABI stays `0/13/0`, wire stays `v1.8`.
+
 ## v0.9.2-uproto-only — 2026-05-19 (Approach C: UModule removed)
 
 ### Changed
