@@ -46,6 +46,17 @@ struct UReplSession {
      * (unit-test sessions; buffer transport).  Used by dispatch_auth
      * to bump the per-source rate-limiter on each auth_failed. */
     uint32_t              peer_id;
+    /* v0.9.4 cooperative data plane: per-session inbound NDJSON parse
+     * buffer.  Reader-pthread sessions keep their parse state on the
+     * stack inside reader_main; non-pollable transports (Pico USB CDC,
+     * UART) drive read in single-shot sweeps from urbi_repl_serve_step
+     * and therefore must hold partial-line bytes across calls. */
+    char                 *coop_inbuf;
+    size_t                coop_inbuf_cap;
+    size_t                coop_inbuf_fill;
+    /* v0.9.4: set by the cooperative read sweep on a clean EOF (peer
+     * disconnect, read_fn == 0).  Task 4.5's close sweep reaps these. */
+    bool                  needs_teardown;
     struct UReplSession  *next;
 };
 

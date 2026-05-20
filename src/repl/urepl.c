@@ -240,9 +240,17 @@ urbi_repl_serve_step(UReplServer *server, uint64_t timeout_us)
         return URBI_ERR_INVALID_ARG;
     }
     /* Phase A: accept new clients on non-pollable transports.  Pollable
-     * transports stay on the listener pthread (when running).  Phases
-     * B–D (read / write / close) land in subsequent tasks. */
+     * transports stay on the listener pthread (when running). */
     (void)urepl_accept_sweep_nonpollable(server);
+    /* Phase B: read NDJSON bytes from each non-pollable session and
+     * push complete lines as jobs onto server->job_queue. */
+    (void)urepl_read_sweep_nonpollable(server);
+    /* Drain the job queue on this (VM) thread so the embedder doesn't
+     * also have to drive urbi_step just to get dispatch.  This is the
+     * cooperative counterpart of urepl_dispatch_drain_if_active's
+     * step-hook invocation. */
+    urepl_dispatch_drain(server);
+    /* Phases C (write) and D (close) land in Tasks 4.4 + 4.5. */
     return URBI_OK;
 }
 

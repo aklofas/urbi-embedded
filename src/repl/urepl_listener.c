@@ -104,11 +104,17 @@ flush_session_output(UReplReader *r)
 /* ---- Reader subthread ------------------------------------------------ */
 
 /* Process accumulated read-buffer for newline-delimited NDJSON lines.
- * On each '\n', parse the [start..pos) substring and push as a job.
- * Returns the new "start" index (bytes consumed); the caller compacts
- * the buffer if start > 0 on entry/exit. */
+ * On each '\n', parse the [start..pos) substring and push as a job
+ * addressed to `session_id` on `server`'s job queue.  Returns the new
+ * "start" index (bytes consumed); the caller compacts the buffer if
+ * start > 0 on entry/exit.
+ *
+ * v0.9.4: factored from reader_parse_lines(UReplReader*) so the
+ * cooperative read sweep (urepl_read_sweep_nonpollable) can share the
+ * same line-framing + queue-push path as the reader pthread. */
 static size_t
-reader_parse_lines(UReplReader *r, const char *buf, size_t fill)
+parse_lines_to_jobs(UReplServer *server, uint32_t session_id,
+                    const char *buf, size_t fill)
 {
     size_t start = 0;
     for (size_t i = 0; i < fill; ++i) {
@@ -122,8 +128,8 @@ reader_parse_lines(UReplReader *r, const char *buf, size_t fill)
             if (job != NULL) {
                 int rc = urepl_ndjson_parse(buf + start, line_len, &job->req);
                 if (rc == 0) {
-                    job->session_id = r->session->session_id;
-                    if (urepl_queue_push(r->server->job_queue, job) != URBI_OK) {
+                    job->session_id = session_id;
+                    if (urepl_queue_push(server->job_queue, job) != URBI_OK) {
                         urepl_ndjson_free_req(&job->req);
                         free(job);
                     }
@@ -135,6 +141,82 @@ reader_parse_lines(UReplReader *r, const char *buf, size_t fill)
         start = i + 1;
     }
     return start;
+}
+
+/* v0.9.4: cooperative-mode counterpart of the inbound branch in
+ * reader_main.  Performs ONE non-blocking transport->read_fn into the
+ * session's persistent inbound parse buffer (lazily allocated), then
+ * runs the shared line-framing path to push complete NDJSON lines as
+ * jobs onto server->job_queue.  Returns:
+ *   >0  bytes read this call
+ *    0  clean EOF (peer disconnect) — caller marks needs_teardown
+ *   -1  would-block / no bytes available (also returned on OOM for
+ *       the lazy buffer — fail-quiet)
+ *   -2  hard transport error — caller should tear down
+ *
+ * Single-shot semantics (one read attempt per call) match the spec for
+ * urbi_repl_serve_step; the embedder paces iterations.
+ *
+ * NOT thread-safe with the per-session reader pthread.  Callers that
+ * touch a session driven by a reader thread must not also call this
+ * function.  In practice the sweep skips pollable transports for
+ * exactly this reason. */
+static int
+urepl_session_read_and_dispatch_one(UReplServer *server,
+                                    UReplSession *s,
+                                    const UTransport *transport,
+                                    int client_fd)
+{
+    if (server == NULL || s == NULL || transport == NULL
+        || transport->read_fn == NULL) {
+        return -1;
+    }
+    /* Lazily allocate the inbound parse buffer.  8 KiB matches the
+     * reader-pthread stack buffer (see reader_main).  Allocation failure
+     * is treated as would-block; the next sweep retries. */
+    if (s->coop_inbuf == NULL) {
+        size_t cap = 8192U;
+        s->coop_inbuf = (char *)malloc(cap);
+        if (s->coop_inbuf == NULL) {
+            return -1;
+        }
+        s->coop_inbuf_cap = cap;
+        s->coop_inbuf_fill = 0U;
+    }
+
+    size_t space = s->coop_inbuf_cap - s->coop_inbuf_fill;
+    if (space == 0U) {
+        /* Pathological: a single line longer than the buffer.  Drop the
+         * partial and reset, matching reader_main's overflow policy. */
+        s->coop_inbuf_fill = 0U;
+        space = s->coop_inbuf_cap;
+    }
+
+    int rc = transport->read_fn(client_fd,
+                                s->coop_inbuf + s->coop_inbuf_fill,
+                                space);
+    if (rc == 0) {
+        return 0;        /* EOF */
+    }
+    if (rc < 0) {
+        if (rc == -1) {
+            return -1;   /* would-block */
+        }
+        return -2;       /* hard error */
+    }
+    /* rc > 0: feed the parser. */
+    s->coop_inbuf_fill += (size_t)rc;
+    size_t consumed = parse_lines_to_jobs(server, s->session_id,
+                                          s->coop_inbuf,
+                                          s->coop_inbuf_fill);
+    if (consumed > 0U) {
+        if (consumed < s->coop_inbuf_fill) {
+            memmove(s->coop_inbuf, s->coop_inbuf + consumed,
+                    s->coop_inbuf_fill - consumed);
+        }
+        s->coop_inbuf_fill -= consumed;
+    }
+    return rc;
 }
 
 static void *
@@ -202,7 +284,9 @@ reader_main(void *arg)
             }
             if (rc > 0) {
                 fill += (size_t)rc;
-                size_t consumed = reader_parse_lines(r, rbuf, fill);
+                size_t consumed = parse_lines_to_jobs(server,
+                                                      r->session->session_id,
+                                                      rbuf, fill);
                 if (consumed > 0U) {
                     if (consumed < fill) {
                         memmove(rbuf, rbuf + consumed, fill - consumed);
@@ -707,4 +791,58 @@ urepl_accept_sweep_nonpollable(UReplServer *server)
     }
     pthread_mutex_unlock(&server->sessions_mutex);
     return after - before;
+}
+
+int
+urepl_read_sweep_nonpollable(UReplServer *server)
+{
+    if (server == NULL) {
+        return 0;
+    }
+    int total_bytes = 0;
+    /* Walk sessions under sessions_mutex.  For each session whose
+     * transport is non-pollable, attempt ONE non-blocking read.  We
+     * hold the mutex across the read because the reader pthread (if
+     * any) for the same session would otherwise race the inbound parse
+     * buffer — but for non-pollable transports the reader pthread bails
+     * immediately (pollable_fd < 0 short-circuit at the top of
+     * reader_main), so there is no contention in practice; the lock is
+     * held purely to stop urbi_repl_stop's force-close from racing the
+     * session list walk. */
+    pthread_mutex_lock(&server->sessions_mutex);
+    UReplSession *s = server->sessions_head;
+    while (s != NULL) {
+        UReplSession *next = s->next;
+        UReplReader *r = s->reader;
+        if (r == NULL) {
+            s = next;
+            continue;
+        }
+        const UTransport *t = r->transport;
+        if (t == NULL || t->read_fn == NULL) {
+            s = next;
+            continue;
+        }
+        /* Skip pollable transports — owned by the listener/reader pthread. */
+        if (t->pollable_fd_fn != NULL
+            && t->pollable_fd_fn(r->client_fd) >= 0) {
+            s = next;
+            continue;
+        }
+        int n = urepl_session_read_and_dispatch_one(server, s, t,
+                                                    r->client_fd);
+        if (n > 0) {
+            total_bytes += n;
+        } else if (n == 0) {
+            /* Clean EOF — Task 4.5 close sweep reaps. */
+            s->needs_teardown = true;
+        } else if (n == -2) {
+            /* Hard transport error — also defer teardown to Task 4.5. */
+            s->needs_teardown = true;
+        }
+        /* n == -1: would-block, normal. */
+        s = next;
+    }
+    pthread_mutex_unlock(&server->sessions_mutex);
+    return total_bytes;
 }

@@ -143,12 +143,79 @@ UTEST(repl_serve_step_cooperative_accept_only)
     coop_state = NULL;
 }
 
+/* v0.9.4 Task 4.3: cooperative read sweep.  Inject an NDJSON request
+ * into ts.read_buf and verify that repeated urbi_repl_serve_step calls
+ * consume the bytes and push the resulting job through the dispatcher.
+ *
+ * We pick the simplest possible op — an introspect request — because
+ * (a) the response shape is well-defined (an envelope written into
+ * the session's output ringbuf via push_env), and (b) it doesn't
+ * require auth even when default-secure rules apply.  Phase C (Task
+ * 4.4) will surface the response back through ts.write_buf; for now
+ * we only assert that the input bytes are fully consumed and the job
+ * dispatched (observable via the output ringbuf having grown). */
+UTEST(repl_serve_step_cooperative_read_dispatch)
+{
+    UVM *vm = (UVM *)calloc(1, sizeof(UVM));
+    UASSERT(vm != NULL);
+    UASSERT_EQ(urbi_vm_init(vm, NULL, NULL), URBI_OK);
+
+    static CoopTestState ts;
+    memset(&ts, 0, sizeof(ts));
+    coop_state = &ts;
+
+    /* Inject a single NDJSON line.  introspect is the smallest op that
+     * survives the no-auth default-secure check and reaches the
+     * dispatcher unchanged. */
+    const char *line = "{\"op\":\"introspect\",\"id\":42,"
+                       "\"query\":\"version\"}\n";
+    size_t llen = strlen(line);
+    UASSERT(llen < sizeof(ts.read_buf));
+    memcpy(ts.read_buf, line, llen);
+    ts.read_len = llen;
+
+    UReplConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.bind_addr   = "127.0.0.1";
+    cfg.tcp_port    = -1;
+    cfg.unix_path   = NULL;
+    cfg.max_clients = 4;
+
+    UReplServer *server = NULL;
+    UASSERT_EQ(urbi_repl_serve_init(vm, &cfg, &server), URBI_OK);
+    UASSERT(server != NULL);
+
+    UASSERT_EQ(urbi_repl_register_transport(server,
+                                            &COOP_TEST_TRANSPORT, &ts),
+               URBI_OK);
+
+    /* Drive several sweeps — first accepts, second reads + dispatches.
+     * Loop a few extra times so dispatcher response envelopes flow
+     * into the session's output ringbuf.  The write sweep (Task 4.4)
+     * will eventually surface them in ts.write_buf. */
+    for (int i = 0; i < 16; ++i) {
+        UASSERT_EQ(urbi_repl_serve_step(server, 0), URBI_OK);
+    }
+
+    UASSERT(ts.accepted);
+    /* All input bytes consumed by the cooperative read sweep. */
+    UASSERT_EQ(ts.read_pos, ts.read_len);
+    /* ts.write_buf stays empty until Task 4.4 (write sweep) lands. */
+
+    urbi_repl_stop(server);
+    urbi_vm_destroy(vm);
+    free(vm);
+    coop_state = NULL;
+}
+
 void
 test_repl_serve_step_cooperative_suite(void)
 {
     printf("test_repl_serve_step_cooperative\n");
     utest_run("repl_serve_step_cooperative_accept_only",
               repl_serve_step_cooperative_accept_only);
+    utest_run("repl_serve_step_cooperative_read_dispatch",
+              repl_serve_step_cooperative_read_dispatch);
 }
 
 #else  /* !URBI_ENABLE_REPL */

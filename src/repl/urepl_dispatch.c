@@ -232,6 +232,12 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
     urbi_realm_set_writer(server->vm, session->realm, NULL, NULL);
     urbi_realm_destroy(server->vm, session->realm);
     urepl_ringbuf_destroy(&session->output);
+    /* v0.9.4: free the cooperative inbound parse buffer if one was
+     * lazily allocated by urepl_session_read_and_dispatch_one. */
+    if (session->coop_inbuf != NULL) {
+        free(session->coop_inbuf);
+        session->coop_inbuf = NULL;
+    }
     free(session);
 }
 

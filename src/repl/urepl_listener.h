@@ -60,6 +60,20 @@ void urepl_listener_drain_accepts(UReplServer *server);
  * number of new sessions accepted (informational; zero is normal). */
 int  urepl_accept_sweep_nonpollable(UReplServer *server);
 
+/* v0.9.4: cooperative read sweep.  For every session whose transport
+ * is non-pollable (Pico USB CDC, UART), attempts one non-blocking
+ * read_fn into the session's persistent inbound parse buffer.  Each
+ * completed NDJSON line is pushed onto server->job_queue using the
+ * same line-framing path that the reader pthread uses, so the
+ * v0.9.1 dispatcher sees an identical job stream.  Sessions that
+ * observe a clean EOF (or a hard transport error) have their
+ * needs_teardown flag set for the close sweep (Task 4.5) to reap.
+ *
+ * Returns the total number of bytes consumed across all sessions
+ * (informational).  Pollable sessions are skipped — owned by the
+ * listener / reader pthread. */
+int  urepl_read_sweep_nonpollable(UReplServer *server);
+
 #ifdef __cplusplus
 }
 #endif
