@@ -91,6 +91,7 @@ typedef enum {
     TOK_KW_AT,
     TOK_KW_WHENEVER,
     TOK_KW_WAITUNTIL,
+    TOK_KW_EVERY,
     TOK_KW_ONLEAVE,
     TOK_KW_SYNC,
     TOK_KW_ASYNC,

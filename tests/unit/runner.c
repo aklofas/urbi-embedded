@@ -34,6 +34,7 @@ void utest_run(const char *name, void (*fn)(void)) {
 extern void test_version_suite(void);
 extern void test_lexer_suite(void);
 extern void test_lex_keywords_suite(void);
+extern void test_lex_every_suite(void);
 extern void test_lex_string_suite(void);
 extern void test_lex_float_literals_suite(void);
 extern void test_lex_unicode_suite(void);
@@ -283,6 +284,7 @@ static const struct suite_entry suites[] = {
     {"version",                    test_version_suite},
     {"lexer",                      test_lexer_suite},
     {"lex_keywords",               test_lex_keywords_suite},
+    {"lex_every",                  test_lex_every_suite},
     {"lex_string",                 test_lex_string_suite},
     {"lex_float_literals",         test_lex_float_literals_suite},
     {"lex_unicode",                test_lex_unicode_suite},
