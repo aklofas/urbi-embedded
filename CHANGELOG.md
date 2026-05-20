@@ -1,5 +1,78 @@
 # Changelog
 
+## v0.9.4-pico-example — TBD (hardware bring-up pending)
+
+### Added
+
+- **Raspberry Pi Pico bring-up** on RP2040 (Cortex-M0+ / ARMv6-M /
+  264 KB SRAM / no FPU / no integer divide). Cross-build target
+  `cross-pico` + bytecode-only variant `cross-pico-bytecode-only` +
+  freestanding signature golden gate `test-cross-pico-freestanding-golden`
+  + GHA job `cross-pico`. `releasetest` auto-detects cross-pico when
+  `arm-none-eabi-gcc` probe-compile passes. Hardware validation
+  pending Phase 8 of
+  `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`.
+- **USB CDC REPL transport** for Pi Pico
+  (`src/repl/urepl_transport_usb_cdc_pico.c`,
+  `UREPL_USB_CDC_PICO_TRANSPORT`). TinyUSB CDC, single-host,
+  non-pollable; drives the cooperative `urbi_repl_serve_step` data
+  plane from the embedder's main loop.
+- **Cooperative `urbi_repl_serve_step` data plane.** Stub at v0.9.1 →
+  fully wired four-phase non-blocking sweep (accept / read / write /
+  close) for transports whose `pollable_fd_fn` returns `-1`. Mixed
+  mode (TCP via pthread + USB CDC via cooperative) supported in one
+  process. `spawn_reader` skips `pthread_create` for non-pollable
+  transports (Pico has no pthread).
+- **`every (period) body` language feature.** Lexer keyword
+  `TOK_KW_EVERY` + parser sugar (body wrapped to zero-argument lambda)
+  + stdlib C-native `every()` driven by the scheduler sleep-queue
+  directly. No new opcodes; no wire-format change. Two new `.chk`
+  fixtures (`tests/chk/reactive/every/basic.chk`,
+  `tests/chk/reactive/every/nested.chk` — the nested case is a pinned
+  regression target for the closure-in-body restriction filed
+  against v1.x).
+- **`examples/pico/repl_demo/`** ships a CMake-native interactive demo:
+  onboard LED + on-die ADC4 temperature + BOOTSEL button +
+  TIMER_IRQ_0 100 ms tick, exercised from urbiscript with the
+  cooperative REPL driving USB CDC.
+- **`docs/internals/ports.md`** + **`docs/reference/embedded-port-sources.md`**.
+  Per-silicon footprint + idiosyncrasy reference; pinned upstream SDK
+  tags (esp-idf v6.0.1 / stm32cube-f4 v1.28.2 / pico-sdk 2.2.0).
+
+### Changed
+
+- **`urbi_repl_serve_step` semantics.** No-op stub → real cooperative
+  driver. Signature unchanged; embedders that previously called it
+  expecting a no-op now get the data-plane sweep. The pthread listener
+  short-circuits when no registered transport has a kernel-pollable
+  listener fd (`src/repl/urepl_listener.c:634-648`).
+- **`.chk` corpus** grows from 239 → 241 (basic + nested every fixtures);
+  unit cases unchanged (BSP code is host-empty).
+- **`docs/embedding-guide.md`** §4 documents `every (period) body`; §12
+  documents `UREPL_USB_CDC_PICO_TRANSPORT`.
+- **`docs/internals/repl-service.md`** documents the cooperative
+  `urbi_repl_serve_step` data plane next to the pthread-listener model.
+
+### Unchanged
+
+- **ABI** stays at `0/13/0`. **Wire format** stays at `v1.8 / 0x18`.
+
+### Why
+
+The Pi Pico is the first non-FPU, no-divide silicon the runtime has
+been brought up on, and the first port whose primary REPL transport
+is USB CDC rather than UART or TCP — both factors push the cooperative
+`urbi_repl_serve_step` path from "stub for completeness" to "the
+only path that exists on this hardware." The `every()` language
+feature was a long-standing v1.0 emit gap (legacy stdlib defined it;
+v0.6.2 left it stubbed); bringing up the Pico's BSP demo workload
+made closing the gap a hard prerequisite. v0.9.3's freestanding-host
+gate caught one cross-pico variant of the snprintf-leak class before
+the port shipped.
+
+See `docs/milestones/v0.9.4-pico-example.md` for the full
+retrospective.
+
 ## v0.9.3-ci-hardening — 2026-05-19
 
 ### Added
