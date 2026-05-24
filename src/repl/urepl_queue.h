@@ -23,7 +23,7 @@
 
 #include "repl/urepl_ndjson.h"
 
-#include <pthread.h>
+#include "urepl_threading.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -39,8 +39,8 @@ typedef struct UReplQueue {
     UReplJob       *head;
     UReplJob       *tail;
     size_t          count;
-    pthread_mutex_t mutex;
-    pthread_cond_t  cond_nonempty;
+    urbi_mutex_t    mutex;
+    urbi_cond_t     cond_nonempty;
     bool            inited;
 } UReplQueue;
 
@@ -80,7 +80,7 @@ typedef struct UReplRingbuf {
     size_t          read_pos;
     size_t          fill;      /* bytes currently in buffer */
     bool            overflow;  /* sticky: set on any drop */
-    pthread_mutex_t mutex;
+    urbi_mutex_t    mutex;
     bool            inited;
 } UReplRingbuf;
 

@@ -10,7 +10,7 @@
 #include "urbi/repl.h"
 #include "urbi/urbi.h"
 
-#include <pthread.h>
+#include "urepl_threading.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -84,11 +84,11 @@ struct UReplServer {
     UReplQueue              *job_queue;
     UReplSession            *sessions_head;
     uint32_t                 next_session_id;
-    pthread_mutex_t          sessions_mutex;
+    urbi_mutex_t            sessions_mutex;
     bool                     shutting_down;
 
     /* Phase 3 — listener + reader pthread machinery. */
-    pthread_t                listener_thread;
+    urbi_thread_t           listener_thread;
     bool                     listener_running;
     int                      stop_eventfd;     /* -1 = not initialized */
 
@@ -101,14 +101,14 @@ struct UReplServer {
      * accepted fd here, the VM thread drains in the dispatch hook. */
     UReplAcceptItem         *accept_head;
     UReplAcceptItem         *accept_tail;
-    pthread_mutex_t          accept_queue_mutex;
+    urbi_mutex_t            accept_queue_mutex;
 
     /* Phase 3 — per-IP auth-fail rate-limiter (Task 18 plugs the
      * impl).  void* keeps the auth-internal struct private to the
      * urepl_auth.c TU.  NULL when auth is disabled or before Task 18
      * lands. */
     void                    *auth_limiter;
-    pthread_mutex_t          auth_limiter_mutex;
+    urbi_mutex_t            auth_limiter_mutex;
 };
 
 /* Per-connection reader subthread.  Created on accept, owned by the
@@ -116,7 +116,7 @@ struct UReplServer {
  * client fd + a wake eventfd used by the VM thread (via the dispatch
  * drain hook) to signal "output ready, please flush to socket". */
 typedef struct UReplReader {
-    pthread_t          thread;
+    urbi_thread_t     thread;
     int                client_fd;
     int                wake_eventfd;       /* -1 = none */
     bool               started;
