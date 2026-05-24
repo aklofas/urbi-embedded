@@ -124,3 +124,30 @@ constParameterPointer:src/stdlib/debug_namespace.c
 // File-wide suppression keeps the warning out of the gate until the Wave 2
 // refinement lands; revisit then.
 knownConditionTrueFalse:src/runtime/uunwind.c
+
+// audit:v094-repl-portability — src/repl/urepl_queue.c uses UREPL_MUTEX_LOCK /
+// UREPL_COND_WAIT / UREPL_COND_BROADCAST macros (from src/repl/urepl_threading.h)
+// that expand to pthread_mutex_lock / pthread_cond_wait / pthread_cond_broadcast
+// on POSIX builds.  Cppcheck doesn't model the macro-hidden pthread semantics:
+//   - constParameterPointer: cppcheck thinks `q` / `rb` could be const because
+//     the macro takes &q->mutex (a member-address) rather than mutating q
+//     directly — but pthread_mutex_lock DOES mutate the mutex (and so q's
+//     contents).  Const-qualifying would fail to compile (pthread takes non-
+//     const).
+//   - knownConditionTrueFalse: cppcheck doesn't model pthread_cond_wait's
+//     "release mutex, wait, reacquire mutex" semantics, so the post-wait
+//     check of q->inited (set false during shutdown by another thread) looks
+//     dead.
+// Surfaced by the v0.9.4 typedef-shim swap (commit a8f121c) which replaced
+// direct pthread_* calls with UREPL_* macros; the new indirection broke
+// cppcheck's flow analysis.
+constParameterPointer:src/repl/urepl_queue.c
+knownConditionTrueFalse:src/repl/urepl_queue.c
+
+// audit:v094-repl-portability — src/repl/urepl_dispatch.c dispatch_auth's
+// `job` parameter is only read on both the POSIX and cooperative branches
+// after Task 4's URBI_REPL_COOPERATIVE_ONLY split.  cppcheck suggests
+// const-qualification, but `urbi_native_method_fn`-style dispatch entry
+// points keep matching signatures across the call chain; cascading const
+// into the dispatcher's contract is out of scope for the portability fix.
+constParameterPointer:src/repl/urepl_dispatch.c
