@@ -1123,12 +1123,17 @@ Embedder setup (extern declarations — the Pico transports follow the same head
 
 ```c
 /* FRAGMENT — Pico USB CDC REPL transport */
+#include "urbi/repl.h"
+
 struct UUsbCdcPicoState;
 extern struct UUsbCdcPicoState *urepl_usb_cdc_pico_state_create(void);
 extern const UTransport UREPL_USB_CDC_PICO_TRANSPORT;
 
-UUsbCdcPicoState *st = urepl_usb_cdc_pico_state_create();
-urbi_repl_register_transport(server, &UREPL_USB_CDC_PICO_TRANSPORT, st);
+void register_usb_cdc(UReplServer *server)
+{
+    struct UUsbCdcPicoState *st = urepl_usb_cdc_pico_state_create();
+    urbi_repl_register_transport(server, &UREPL_USB_CDC_PICO_TRANSPORT, st);
+}
 ```
 
 See `examples/pico/repl_demo/main/main.c` for a complete embedder.
