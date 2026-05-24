@@ -20,11 +20,11 @@ urepl_queue_init(UReplQueue *q)
         return URBI_ERR_INVALID_ARG;
     }
     memset(q, 0, sizeof(*q));
-    if (pthread_mutex_init(&q->mutex, NULL) != 0) {
+    if (UREPL_MUTEX_INIT(&q->mutex) != 0) {
         return URBI_ERR_OOM;
     }
-    if (pthread_cond_init(&q->cond_nonempty, NULL) != 0) {
-        pthread_mutex_destroy(&q->mutex);
+    if (UREPL_COND_INIT(&q->cond_nonempty) != 0) {
+        UREPL_MUTEX_DESTROY(&q->mutex);
         return URBI_ERR_OOM;
     }
     q->inited = true;
@@ -45,8 +45,8 @@ urepl_queue_destroy(UReplQueue *q)
         free(j);
         j = next;
     }
-    pthread_cond_destroy(&q->cond_nonempty);
-    pthread_mutex_destroy(&q->mutex);
+    UREPL_COND_DESTROY(&q->cond_nonempty);
+    UREPL_MUTEX_DESTROY(&q->mutex);
     memset(q, 0, sizeof(*q));
 }
 
@@ -57,7 +57,7 @@ urepl_queue_push(UReplQueue *q, UReplJob *job)
         return URBI_ERR_INVALID_ARG;
     }
     job->next = NULL;
-    pthread_mutex_lock(&q->mutex);
+    UREPL_MUTEX_LOCK(&q->mutex);
     if (q->tail == NULL) {
         q->head = job;
         q->tail = job;
@@ -66,8 +66,8 @@ urepl_queue_push(UReplQueue *q, UReplJob *job)
         q->tail = job;
     }
     q->count++;
-    pthread_cond_signal(&q->cond_nonempty);
-    pthread_mutex_unlock(&q->mutex);
+    UREPL_COND_SIGNAL(&q->cond_nonempty);
+    UREPL_MUTEX_UNLOCK(&q->mutex);
     return URBI_OK;
 }
 
@@ -77,12 +77,12 @@ urepl_queue_drain_all(UReplQueue *q)
     if (q == NULL || !q->inited) {
         return NULL;
     }
-    pthread_mutex_lock(&q->mutex);
+    UREPL_MUTEX_LOCK(&q->mutex);
     UReplJob *head = q->head;
     q->head = NULL;
     q->tail = NULL;
     q->count = 0;
-    pthread_mutex_unlock(&q->mutex);
+    UREPL_MUTEX_UNLOCK(&q->mutex);
     return head;
 }
 
@@ -92,13 +92,13 @@ urepl_queue_wait_drain(UReplQueue *q)
     if (q == NULL || !q->inited) {
         return NULL;
     }
-    pthread_mutex_lock(&q->mutex);
+    UREPL_MUTEX_LOCK(&q->mutex);
     while (q->head == NULL) {
-        pthread_cond_wait(&q->cond_nonempty, &q->mutex);
+        UREPL_COND_WAIT(&q->cond_nonempty, &q->mutex);
         /* On shutdown signal, head stays NULL and we exit the loop via
          * the broadcast (caller checks for sentinel head == NULL). */
         if (!q->inited) {
-            pthread_mutex_unlock(&q->mutex);
+            UREPL_MUTEX_UNLOCK(&q->mutex);
             return NULL;
         }
     }
@@ -106,7 +106,7 @@ urepl_queue_wait_drain(UReplQueue *q)
     q->head = NULL;
     q->tail = NULL;
     q->count = 0;
-    pthread_mutex_unlock(&q->mutex);
+    UREPL_MUTEX_UNLOCK(&q->mutex);
     return head;
 }
 
@@ -116,10 +116,10 @@ urepl_queue_signal_shutdown(UReplQueue *q)
     if (q == NULL || !q->inited) {
         return;
     }
-    pthread_mutex_lock(&q->mutex);
+    UREPL_MUTEX_LOCK(&q->mutex);
     /* No new sentinel — consumer re-checks q->inited after waking. */
-    pthread_cond_broadcast(&q->cond_nonempty);
-    pthread_mutex_unlock(&q->mutex);
+    UREPL_COND_BROADCAST(&q->cond_nonempty);
+    UREPL_MUTEX_UNLOCK(&q->mutex);
 }
 
 size_t
@@ -128,9 +128,9 @@ urepl_queue_count(UReplQueue *q)
     if (q == NULL || !q->inited) {
         return 0;
     }
-    pthread_mutex_lock(&q->mutex);
+    UREPL_MUTEX_LOCK(&q->mutex);
     size_t c = q->count;
-    pthread_mutex_unlock(&q->mutex);
+    UREPL_MUTEX_UNLOCK(&q->mutex);
     return c;
 }
 
@@ -148,7 +148,7 @@ urepl_ringbuf_init(UReplRingbuf *rb, size_t cap)
         return URBI_ERR_OOM;
     }
     rb->cap = cap;
-    if (pthread_mutex_init(&rb->mutex, NULL) != 0) {
+    if (UREPL_MUTEX_INIT(&rb->mutex) != 0) {
         free(rb->buf);
         rb->buf = NULL;
         return URBI_ERR_OOM;
@@ -163,7 +163,7 @@ urepl_ringbuf_destroy(UReplRingbuf *rb)
     if (rb == NULL || !rb->inited) {
         return;
     }
-    pthread_mutex_destroy(&rb->mutex);
+    UREPL_MUTEX_DESTROY(&rb->mutex);
     free(rb->buf);
     memset(rb, 0, sizeof(*rb));
 }
@@ -202,13 +202,13 @@ urepl_ringbuf_write(UReplRingbuf *rb, const char *data, size_t n)
     if (rb == NULL || !rb->inited || data == NULL || n == 0U) {
         return 0;
     }
-    pthread_mutex_lock(&rb->mutex);
+    UREPL_MUTEX_LOCK(&rb->mutex);
     size_t written = n;
     if (written > rb->cap) {
         rb->overflow = true;
     }
     ringbuf_write_locked(rb, data, n);
-    pthread_mutex_unlock(&rb->mutex);
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
     return written;
 }
 
@@ -218,7 +218,7 @@ urepl_ringbuf_read(UReplRingbuf *rb, char *dst, size_t dst_cap)
     if (rb == NULL || !rb->inited || dst == NULL || dst_cap == 0U) {
         return 0;
     }
-    pthread_mutex_lock(&rb->mutex);
+    UREPL_MUTEX_LOCK(&rb->mutex);
     size_t avail = rb->fill;
     size_t take = (avail < dst_cap) ? avail : dst_cap;
     if (take > 0U) {
@@ -231,7 +231,7 @@ urepl_ringbuf_read(UReplRingbuf *rb, char *dst, size_t dst_cap)
         rb->read_pos = (rb->read_pos + take) % rb->cap;
         rb->fill -= take;
     }
-    pthread_mutex_unlock(&rb->mutex);
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
     return take;
 }
 
@@ -241,9 +241,9 @@ urepl_ringbuf_fill(UReplRingbuf *rb)
     if (rb == NULL || !rb->inited) {
         return 0;
     }
-    pthread_mutex_lock(&rb->mutex);
+    UREPL_MUTEX_LOCK(&rb->mutex);
     size_t f = rb->fill;
-    pthread_mutex_unlock(&rb->mutex);
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
     return f;
 }
 
@@ -253,8 +253,8 @@ urepl_ringbuf_overflow(UReplRingbuf *rb)
     if (rb == NULL || !rb->inited) {
         return false;
     }
-    pthread_mutex_lock(&rb->mutex);
+    UREPL_MUTEX_LOCK(&rb->mutex);
     bool o = rb->overflow;
-    pthread_mutex_unlock(&rb->mutex);
+    UREPL_MUTEX_UNLOCK(&rb->mutex);
     return o;
 }

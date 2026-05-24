@@ -72,24 +72,24 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
     server->cfg = *cfg;
     server->next_session_id = 1U;
     server->stop_eventfd = -1;
-    if (pthread_mutex_init(&server->sessions_mutex, NULL) != 0) {
+    if (UREPL_MUTEX_INIT(&server->sessions_mutex) != 0) {
         free(server);
         if (out_err != NULL) {
             *out_err = URBI_ERR_OOM;
         }
         return NULL;
     }
-    if (pthread_mutex_init(&server->auth_limiter_mutex, NULL) != 0) {
-        pthread_mutex_destroy(&server->sessions_mutex);
+    if (UREPL_MUTEX_INIT(&server->auth_limiter_mutex) != 0) {
+        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
         free(server);
         if (out_err != NULL) {
             *out_err = URBI_ERR_OOM;
         }
         return NULL;
     }
-    if (pthread_mutex_init(&server->accept_queue_mutex, NULL) != 0) {
-        pthread_mutex_destroy(&server->auth_limiter_mutex);
-        pthread_mutex_destroy(&server->sessions_mutex);
+    if (UREPL_MUTEX_INIT(&server->accept_queue_mutex) != 0) {
+        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
+        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
         free(server);
         if (out_err != NULL) {
             *out_err = URBI_ERR_OOM;
@@ -103,9 +103,9 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
     if (server->job_queue == NULL
         || urepl_queue_init(server->job_queue) != URBI_OK) {
         free(server->job_queue);
-        pthread_mutex_destroy(&server->accept_queue_mutex);
-        pthread_mutex_destroy(&server->auth_limiter_mutex);
-        pthread_mutex_destroy(&server->sessions_mutex);
+        UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
+        UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
+        UREPL_MUTEX_DESTROY(&server->sessions_mutex);
         free(server);
         if (out_err != NULL) {
             *out_err = URBI_ERR_OOM;
@@ -123,9 +123,9 @@ urbi_repl_serve(struct UVM *vm, const UReplConfig *cfg, int *out_err)
         if (lim == NULL) {
             urepl_queue_destroy(server->job_queue);
             free(server->job_queue);
-            pthread_mutex_destroy(&server->accept_queue_mutex);
-            pthread_mutex_destroy(&server->auth_limiter_mutex);
-            pthread_mutex_destroy(&server->sessions_mutex);
+            UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
+            UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
+            UREPL_MUTEX_DESTROY(&server->sessions_mutex);
             free(server);
             if (out_err != NULL) {
                 *out_err = URBI_ERR_OOM;
@@ -188,7 +188,7 @@ urbi_repl_stop(UReplServer *server)
         free(server->auth_limiter);
         server->auth_limiter = NULL;
     }
-    pthread_mutex_destroy(&server->auth_limiter_mutex);
+    UREPL_MUTEX_DESTROY(&server->auth_limiter_mutex);
 
     /* Drain + free any pending-accept items that the listener pushed
      * after the last VM-thread drain but before shutdown.  Each item
@@ -204,7 +204,7 @@ urbi_repl_stop(UReplServer *server)
         free(ai);
         ai = anext;
     }
-    pthread_mutex_destroy(&server->accept_queue_mutex);
+    UREPL_MUTEX_DESTROY(&server->accept_queue_mutex);
 
     /* Unhook the VM back-pointer so the step-driver drain hook no
      * longer sees a freed server. */
@@ -212,7 +212,7 @@ urbi_repl_stop(UReplServer *server)
         server->vm->repl_server = NULL;
     }
 
-    pthread_mutex_destroy(&server->sessions_mutex);
+    UREPL_MUTEX_DESTROY(&server->sessions_mutex);
     free(server);
 }
 

@@ -29,8 +29,9 @@
 
   #define UREPL_COND_INIT(c)      0
   #define UREPL_COND_DESTROY(c)   ((void)0)
-  #define UREPL_COND_SIGNAL(c)    ((void)0)
-  #define UREPL_COND_WAIT(c, m)   ((void)0)  /* never blocks; caller polls */
+  #define UREPL_COND_SIGNAL(c)      ((void)0)
+  #define UREPL_COND_BROADCAST(c)   ((void)0)
+  #define UREPL_COND_WAIT(c, m)     ((void)0)  /* never blocks; caller polls */
 
   #define UREPL_THREAD_CREATE(t, fn, ud)  (-1) /* always fails — caller MUST gate */
   #define UREPL_THREAD_JOIN(t)            ((void)0)
@@ -50,7 +51,8 @@
 
   #define UREPL_COND_INIT(c)      pthread_cond_init((c), NULL)
   #define UREPL_COND_DESTROY(c)   pthread_cond_destroy(c)
-  #define UREPL_COND_SIGNAL(c)    pthread_cond_signal(c)
+  #define UREPL_COND_SIGNAL(c)      pthread_cond_signal(c)
+  #define UREPL_COND_BROADCAST(c)   pthread_cond_broadcast(c)
   #define UREPL_COND_WAIT(c, m)   pthread_cond_wait((c), (m))
 
   #define UREPL_THREAD_CREATE(t, fn, ud)  pthread_create((t), NULL, (fn), (ud))

@@ -92,9 +92,9 @@ urepl_session_create(UReplServer *server)
     }
 
     /* Assign a unique session id + matching lobby hex. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     s->session_id = server->next_session_id++;
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     format_lobby_id(s->session_id, s->lobby_id_hex);
 
     /* Sized output ringbuf. */
@@ -140,10 +140,10 @@ urepl_session_create(UReplServer *server)
     (void)urbi_lobby_register_session(server->vm, r);
 
     /* Link into server's session list (head-insert). */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     s->next = server->sessions_head;
     server->sessions_head = s;
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     return s;
 }
@@ -154,7 +154,7 @@ urepl_session_find(UReplServer *server, uint32_t session_id)
     if (server == NULL) {
         return NULL;
     }
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplSession *s = server->sessions_head;
     while (s != NULL) {
         if (s->session_id == session_id) {
@@ -162,7 +162,7 @@ urepl_session_find(UReplServer *server, uint32_t session_id)
         }
         s = s->next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return s;
 }
 
@@ -172,7 +172,7 @@ urepl_session_find_by_lobby(UReplServer *server, const char *lobby_hex)
     if (server == NULL || lobby_hex == NULL) {
         return NULL;
     }
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplSession *s = server->sessions_head;
     while (s != NULL) {
         if (strcmp(s->lobby_id_hex, lobby_hex) == 0) {
@@ -180,7 +180,7 @@ urepl_session_find_by_lobby(UReplServer *server, const char *lobby_hex)
         }
         s = s->next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return s;
 }
 
@@ -194,7 +194,7 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
      * (`urepl_session_find` from the listener subthread) won't see a
      * session that's mid-teardown.  After this point only the caller
      * holds a reference. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplSession **cur = &server->sessions_head;
     while (*cur != NULL) {
         if (*cur == session) {
@@ -203,7 +203,7 @@ urepl_session_destroy(UReplServer *server, UReplSession *session)
         }
         cur = &(*cur)->next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     /* v0.9.1 Phase 5 disconnect-cleanup sequence (spec section 9):
      *
@@ -357,7 +357,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
         clock_gettime(CLOCK_MONOTONIC, &ts);
         uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
                           + (uint64_t)ts.tv_nsec / 1000ULL;
-        pthread_mutex_lock(&server->auth_limiter_mutex);
+        UREPL_MUTEX_LOCK(&server->auth_limiter_mutex);
         if (matched) {
             urepl_auth_limiter_record_success(
                 (UReplAuthLimiter *)server->auth_limiter, s->peer_id);
@@ -366,7 +366,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
                 (UReplAuthLimiter *)server->auth_limiter,
                 s->peer_id, now_us);
         }
-        pthread_mutex_unlock(&server->auth_limiter_mutex);
+        UREPL_MUTEX_UNLOCK(&server->auth_limiter_mutex);
     }
     if (matched) {
         s->authed = true;

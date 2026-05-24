@@ -29,7 +29,7 @@ struct UBufferTransportState {
     UReplRingbuf c2s;    /* client → server */
     UReplRingbuf s2c;    /* server → client */
     bool         accept_consumed;
-    pthread_mutex_t accept_mutex;
+    urbi_mutex_t accept_mutex;
     /* Single global pointer used by the static vtable functions to map
      * a fd back to the state.  Phase 3's TCP transport will use a real
      * fd-indexed table; for now v0.9.1's single-test pattern means each
@@ -59,7 +59,7 @@ urepl_buffer_transport_create(void)
         free(st);
         return NULL;
     }
-    if (pthread_mutex_init(&st->accept_mutex, NULL) != 0) {
+    if (UREPL_MUTEX_INIT(&st->accept_mutex) != 0) {
         urepl_ringbuf_destroy(&st->c2s);
         urepl_ringbuf_destroy(&st->s2c);
         free(st);
@@ -76,7 +76,7 @@ urepl_buffer_transport_destroy(UBufferTransportState *st)
     }
     urepl_ringbuf_destroy(&st->c2s);
     urepl_ringbuf_destroy(&st->s2c);
-    pthread_mutex_destroy(&st->accept_mutex);
+    UREPL_MUTEX_DESTROY(&st->accept_mutex);
     free(st);
 }
 
@@ -86,9 +86,9 @@ urepl_buffer_transport_reset_accept(UBufferTransportState *st)
     if (st == NULL) {
         return;
     }
-    pthread_mutex_lock(&st->accept_mutex);
+    UREPL_MUTEX_LOCK(&st->accept_mutex);
     st->accept_consumed = false;
-    pthread_mutex_unlock(&st->accept_mutex);
+    UREPL_MUTEX_UNLOCK(&st->accept_mutex);
 }
 
 /* ---- Vtable impl ----------------------------------------------------- */
@@ -101,12 +101,12 @@ bt_accept(void *listener_state, int *out_client_fd)
         return URBI_ERR_INVALID_ARG;
     }
     int taken = 0;
-    pthread_mutex_lock(&st->accept_mutex);
+    UREPL_MUTEX_LOCK(&st->accept_mutex);
     if (!st->accept_consumed) {
         st->accept_consumed = true;
         taken = 1;
     }
-    pthread_mutex_unlock(&st->accept_mutex);
+    UREPL_MUTEX_UNLOCK(&st->accept_mutex);
     if (!taken) {
         return -1;  /* signal "would block / no client" */
     }
