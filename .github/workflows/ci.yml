@@ -63,6 +63,27 @@ jobs:
       - name: Inspect archive
         run: arm-none-eabi-ar t build/arm-cortex-m0plus/liburbi.a
 
+  cross-pico-repl:
+    name: cross-compile (RP2040 / cooperative REPL + example .elf)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi cmake
+      - name: Clone pico-sdk
+        run: |
+          git clone --depth 1 --branch 2.2.0 \
+              https://github.com/raspberrypi/pico-sdk.git ../tools/pico-sdk
+          git -C ../tools/pico-sdk submodule update --init --depth 1
+      - name: Cross-compile liburbi.a (cooperative REPL)
+        run: make cross-pico-repl
+      - name: Build repl_demo.elf
+        run: make test-cross-pico-repl-elf
+      - name: Inspect archive + ELF footprint
+        run: |
+          arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a
+          arm-none-eabi-size examples/pico/repl_demo/build/repl_demo.elf
+
   cross-riscv:
     name: cross-compile (RISC-V rv32imc)
     runs-on: ubuntu-latest
