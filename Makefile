@@ -1281,7 +1281,7 @@ test-cross-pico-freestanding-golden: cross-pico-bytecode-only
 # pico-sdk is absent; local devs without the SDK should run releasetest
 # without false reds. Run explicitly or from CI when working on Pico REPL.
 .PHONY: test-cross-pico-repl-elf
-test-cross-pico-repl-elf: cross-pico-repl
+test-cross-pico-repl-elf: cross-pico-repl tools/urbi-compile-stdlib-pico
 	@if [ -z "$$PICO_SDK_PATH" ] && [ ! -d "../tools/pico-sdk" ]; then \
 	    echo "SKIP: PICO_SDK_PATH unset and ../tools/pico-sdk absent"; \
 	    exit 0; \
