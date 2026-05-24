@@ -57,6 +57,22 @@
 
 - **ABI** stays at `0/13/0`. **Wire format** stays at `v1.8 / 0x18`.
 
+### Footprint
+
+`arm-none-eabi-size build/.../liburbi.a` at v0.9.4 (xpack
+`arm-none-eabi-gcc` 14.2.1 @ `-Os`, calibrated 2026-05-24 from
+`7fbb17d`):
+
+- cross-pico (Cortex-M0+) full: 114,713 B text (88.2% of 130 KB cap)
+- cross-pico bytecode-only: 82,599 B text (84.9% of 95 KB cap)
+
+Caps locked at full **130 KB** / bytecode-only **95 KB** — 10 KB
+above M4F/M7 to absorb the M0+ libgcc-helper floor (no FPU, no
+integer divide, no LDREX/STREX, so every float op, every `/`/`%`,
+and every atomic resolves through `__aeabi_*` / `__atomic_*`
+helpers). Per S35 cap-revision policy; documented in REVIVAL.md
+§14 row S43.
+
 ### Why
 
 The Pi Pico is the first non-FPU, no-divide silicon the runtime has

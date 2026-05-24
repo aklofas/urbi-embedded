@@ -77,13 +77,31 @@ development target. Ports below cover bare-metal + RTOS silicon.
   `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`
   execution plan (workspace-root tree, not tracked in this repo).
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
-  (`-mcpu=cortex-m0plus`); soft-float + libgcc helpers
-  (`__divsf3`, `__mulsf3`, `__addsf3`, `__udivdi3`, `__divdi3`,
-  `__floatsidf`, `__fixdfdi`, etc. — see
-  `tests/cross/pico_freestanding_symbols.golden`).
-- **Footprint:** *TBD — calibrated at first hardware bring-up; see
-  Phase 8 of the plan. Initial estimate: 100–130 KB liburbi.a text;
-  200–250 KB repl_demo.uf2.*
+  (`-mcpu=cortex-m0plus`); soft-float + soft-double + soft-divide via
+  ARM EABI libgcc helpers (`__aeabi_dadd`, `__aeabi_ddiv`, `__aeabi_f2d`,
+  `__aeabi_l2d`, `__aeabi_ldivmod`, `__aeabi_uidiv`,
+  `__atomic_fetch_add_4` for non-LDREX atomics,
+  `__gnu_thumb1_case_uqi` for Thumb1 switch tables, plus `memcpy` /
+  `memset` / `strlen`). Full archive symbol set pinned in
+  `tests/golden/v0.9.4-pico-nm-bytecode-only.txt`. The `__aeabi_d*`
+  double-precision helpers are not from urbiscript code paths exercising
+  double; UVAL_FLOAT arithmetic on `URBI_FLOAT_TYPE=4` builds currently
+  promotes through C `double` and narrows back (see `src/vm/uvm_arith.h`
+  and `src/value/uvalue.c`) — a true-f32 promotion path is on the v1.x
+  roadmap.
+- **Footprint:** Full **114 713 B** / **112.0 KB** (88.2 % of the
+  **130 KB** cap; xpack `arm-none-eabi-gcc` 14.2.1 @ `-Os`, calibrated
+  2026-05-24 from `7fbb17d` on main). Bytecode-only **82 599 B** /
+  **80.7 KB** (84.9 % of the **95 KB** cap). Larger than the STM32F4
+  (M4F) at the same workload because the M0+ has no FPU, no integer-
+  divide hardware, and no LDREX/STREX — every float op, every `/`/`%`,
+  and every atomic goes through libgcc helpers (`__aeabi_d*`,
+  `__aeabi_uidiv`, `__atomic_fetch_add_4`, `__gnu_thumb1_case_uqi`).
+  repl_demo.uf2 on-flash footprint measured at Phase 8 hardware
+  bring-up. Calibration commands:
+  `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
+  `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
+  Caps documented in REVIVAL.md §14 row S43.
 - **Numeric:** URBI_FLOAT_TYPE=4 (single precision); the M0+ has no
   FPU so all float arithmetic goes through libgcc soft-float helpers.
 - **REPL transports:** USB CDC (primary, via TinyUSB) on the native
