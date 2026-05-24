@@ -53,9 +53,53 @@
 - **`docs/internals/repl-service.md`** documents the cooperative
   `urbi_repl_serve_step` data plane next to the pthread-listener model.
 
-### Unchanged
+### Cooperative-only REPL build path
 
-- **ABI** stays at `0/13/0`. **Wire format** stays at `v1.8 / 0x18`.
+New build flag `URBI_REPL_COOPERATIVE_ONLY=1` (paired with
+`URBI_ENABLE_REPL=1`) compiles the REPL service without
+`<pthread.h>` / `<sys/eventfd.h>` / `<sys/socket.h>`. Used by
+`make cross-pico` (auto-paired) and the new `make cross-pico-repl`
+target. New typedef shim `src/repl/urepl_threading.h` introduces
+`urbi_mutex_t` / `urbi_cond_t` / `urbi_thread_t` + `UREPL_*` macros
+that no-op on cooperative builds and resolve to pthread on POSIX.
+Embedders MUST link with matching `URBI_REPL_COOPERATIVE_ONLY`
+setting (struct layouts of UReplServer / UReplReader / UReplQueue /
+UReplRingbuf differ; same trap class as `URBI_FLOAT_TYPE`).
+
+Filtered TUs on cooperative builds (not compiled):
+`urepl_transport_tcp.c`, `urepl_transport_unix.c`,
+`urepl_transport_pty.c`, `urepl_auth.c`.
+
+`urepl_listener.c` is kept in the build (it hosts the cooperative
+`urepl_*_sweep` functions used by `urbi_repl_serve_step`) but its
+POSIX-only sections are guarded with `#ifndef URBI_REPL_COOPERATIVE_ONLY`:
+eventfd helpers, listener_main thread, reader_main thread,
+full spawn_reader, drain_accepts / wake_all_readers implementations.
+Cooperative stubs preserve the dispatcher's unchanged call surface.
+
+`urbi_repl_serve` (threaded entry point) is not exposed on cooperative
+builds — its body is filtered out via the dropped auth / transport TUs
+and listener threads. Use `urbi_repl_serve_init` +
+`urbi_repl_serve_step` instead, driven from the embedder's main loop.
+
+`dispatch_auth` auto-approves on cooperative builds. Freestanding
+embedded targets (USB CDC, UART) have no network threat model;
+token-based auth is meaningful only on socket transports which are not
+compiled in on cooperative builds. Embedders bringing up custom
+cooperative transports with network exposure should re-evaluate (v1.x:
+add an opt-in `cooperative_auth_token` knob — filed in design-risks).
+
+CI: new `cross-pico-repl` GHA job builds `liburbi.a` +
+`examples/pico/repl_demo/build/repl_demo.elf` end-to-end. Phase 0 of
+`make releasetest` includes `cross-pico-repl` whenever
+`arm-none-eabi-gcc` is present.
+
+### Changed (ABI)
+
+- **ABI** bumped `0/13/0` → `0/14/0` (10th pre-v1.0 escape clause;
+  internal struct layouts of UReplServer / UReplReader / UReplQueue /
+  UReplRingbuf differ between cooperative and POSIX modes).
+  **Wire format** stays at `v1.8 / 0x18`.
 
 ### Footprint
 

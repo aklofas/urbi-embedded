@@ -79,6 +79,14 @@
  *      UCHUNK_LOAD_*.  UStrand.module field deleted.  Wire format v1.7 →
  *      v1.8 (semantic bump only — byte layout unchanged).  9th use of
  *      pre-v1.0 escape clause.  (0/12/0 → 0/13/0)
+ *  10. v0.9.4-pico-example — URBI_REPL_COOPERATIVE_ONLY=1 build path.
+ *      Internal struct fields of UReplServer / UReplReader / UReplQueue /
+ *      UReplRingbuf use urbi_mutex_t / urbi_cond_t / urbi_thread_t typedefs
+ *      that resolve to pthread types (~40 bytes each on Linux x86-64) on
+ *      POSIX builds and 1-byte empty stubs on cooperative-only builds.
+ *      Struct layouts therefore differ between the two modes — same silent-
+ *      divergence trap class as URBI_FLOAT_TYPE.  10th use of pre-v1.0
+ *      escape clause.  (0/13/0 → 0/14/0)
  * Strict policy goes live at v1.0.0.
  *
  * Holding a pointer to an opaque type is part of the ABI; reading through
@@ -93,7 +101,7 @@ extern "C" {
 #endif
 
 #define URBI_API_VERSION_MAJOR  0
-#define URBI_API_VERSION_MINOR  13
+#define URBI_API_VERSION_MINOR  14
 #define URBI_API_VERSION_PATCH  0
 #define URBI_API_VERSION_NUM    ((URBI_API_VERSION_MAJOR * 10000) \
                                 + (URBI_API_VERSION_MINOR *   100) \

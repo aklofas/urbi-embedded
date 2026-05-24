@@ -1138,6 +1138,32 @@ void register_usb_cdc(UReplServer *server)
 
 See `examples/pico/repl_demo/main/main.c` for a complete embedder.
 
+### Build-flag contract: `URBI_REPL_COOPERATIVE_ONLY`
+
+If you're embedding on a freestanding target (Pi Pico, bare-metal
+STM32, FPU-less ARM) and have `URBI_ENABLE_REPL=1`, you almost
+certainly want `URBI_REPL_COOPERATIVE_ONLY=1` too. The `cross-pico`
+make recipe auto-pairs them; if you're building `liburbi.a` manually,
+set both yourself.
+
+The flag swaps `urbi_mutex_t` / `urbi_cond_t` / `urbi_thread_t`
+typedefs in internal REPL struct fields from pthread types (~40 bytes
+each on Linux x86-64) to 1-byte empty stubs. Embedders linking
+against the library MUST set the same flag, or struct layouts diverge
+silently — same trap class as `URBI_FLOAT_TYPE`.
+
+Calling `urbi_repl_serve()` (the threaded entry point) on a
+cooperative-only library is **not supported** — the auth and transport
+TUs that back it are filtered out at build time. Use
+`urbi_repl_serve_init` + `urbi_repl_serve_step` instead, driving
+the cooperative loop from your embedder's main loop.
+
+On cooperative builds, `dispatch_auth` auto-approves clients (the
+auth TU is filtered out). USB CDC / UART transports on freestanding
+targets have no network threat model. If you bring up a custom
+cooperative transport with network exposure, treat the auth path as
+no-op until the v1.x `cooperative_auth_token` opt-in lands.
+
 ### See also
 
 - `docs/internals/repl-service.md` — thread model, queue + ringbuf contracts, session lifecycle, transport adapter pattern, full NDJSON schema.

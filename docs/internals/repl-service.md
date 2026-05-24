@@ -524,6 +524,51 @@ formats `"[TTTTTTTT:tag] PREFIX msg\n"` (or no `:tag` segment if tag is
 empty) and writes through `strand->realm->writer` → `vm->writer` →
 default-writer fallback chain.
 
+## Threading abstraction (`src/repl/urepl_threading.h`)
+
+All `src/repl/*.c` files that need synchronization use the
+`urbi_mutex_t` / `urbi_cond_t` / `urbi_thread_t` typedefs +
+`UREPL_*` macros defined in `urepl_threading.h`. The header
+selects between two expansions:
+
+- **Default (POSIX):** typedefs resolve to `pthread_mutex_t` /
+  `pthread_cond_t` / `pthread_t`; macros expand to the matching
+  `pthread_*` calls.
+- **`URBI_REPL_COOPERATIVE_ONLY=1`:** typedefs become 1-byte empty
+  stubs; macros become no-ops (`UREPL_COND_WAIT` returns immediately,
+  callers must already poll the empty-state predicate;
+  `UREPL_THREAD_CREATE` returns `-1` as a defensive measure since
+  live thread-create callers live in `urepl_listener.c`'s POSIX-guarded
+  sections which are skipped in cooperative mode).
+
+The cooperative mode is for freestanding targets without pthread
+(Pi Pico via RP2040, bare-metal STM32F4, FPU-less ARM). Listener +
+socket transport TUs (`urepl_transport_tcp.c`,
+`urepl_transport_unix.c`, `urepl_transport_pty.c`, `urepl_auth.c`)
+get filtered out of `REPL_SRCS` so they don't pull in
+`<sys/eventfd.h>` / `<sys/socket.h>` / `<sys/un.h>`.
+
+`urepl_listener.c` is the exception — it stays in the build because
+it also hosts the cooperative `urepl_accept_sweep_nonpollable`,
+`urepl_read_sweep_nonpollable`, `urepl_write_sweep_nonpollable`,
+and `urepl_disconnect_sweep` functions used by `urbi_repl_serve_step`.
+Its POSIX-only sections (eventfd helpers, listener_main thread,
+reader_main thread, full spawn_reader, real
+drain_accepts / wake_all_readers) are guarded with
+`#ifndef URBI_REPL_COOPERATIVE_ONLY`; cooperative stubs preserve
+the dispatcher's call surface.
+
+`urepl_dispatch.c`'s `dispatch_auth` auto-approves on cooperative
+builds because the auth TU (`urepl_auth.c` with the rate-limiter
+state machine) is not compiled in. Cooperative transports (USB CDC,
+UART) have no network threat model; the v1.x `cooperative_auth_token`
+opt-in is filed in design-risks for future cooperative network
+embedders.
+
+The contract for embedders: `URBI_REPL_COOPERATIVE_ONLY` must match
+the library build. See `docs/embedding-guide.md` §12 for the
+trap-class warning.
+
 ## Carry-forward to v1.x
 
 Two known issues filed in `docs/urbi-embedded-design-risks.md`:
