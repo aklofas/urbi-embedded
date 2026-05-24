@@ -1162,6 +1162,32 @@ cross-pico-bytecode-only:
 		core
 	@sh tests/scripts/test-freestanding.sh build/cross-pico-bytecode-only/liburbi.a
 
+# v0.9.4-followup: cooperative-only REPL build for Pi Pico. Composes
+# cross-pico with URBI_REPL_COOPERATIVE_ONLY=1 + URBI_ENABLE_REPL=1.
+# Distinct TARGET so build dir doesn't clobber the non-REPL cross-pico
+# build at build/arm-cortex-m0plus/. Locks in the portability work
+# via test-cross-pico-repl-elf below.
+cross-pico-repl:
+	$(MAKE) TARGET=arm-cortex-m0plus-repl \
+		URBI_STDLIB_FLAVOR=4 \
+		URBI_ENABLE_REPL=1 \
+		URBI_REPL_COOPERATIVE_ONLY=1 \
+		CC=arm-none-eabi-gcc \
+		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
+		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
+		        -ffreestanding \
+		        -DURBI_CLEANUP_MAX=16 \
+		        -DURBI_STRAND_BUDGET_MAX=200 \
+		        -DURBI_GC_SLICE_BUDGET=2048 \
+		        -DURBI_WATCHER_POOL_SIZE=16 \
+		        -DURBI_WATCHER_READSET_MAX=4 \
+		        -DURBI_EVENT_RING_DEPTH=32 \
+		        -DURBI_FLOAT_TYPE=4 \
+		        -DUVM_STACK_CAP=512" \
+		AR=arm-none-eabi-ar \
+		core
+	@arm-none-eabi-size --totals build/arm-cortex-m0plus-repl/liburbi.a | tail -1
+
 # T10 / Wave 2: ESP32-S3 (Xtensa LX7) bytecode-only cross-build.
 # Uses the unified ESP-IDF v6.0.1+ toolchain (xtensa-esp-elf-{gcc,ar,nm});
 # target ISA selection happens via `-mlongcalls` (the ESP32 Xtensa marker).
@@ -1444,4 +1470,4 @@ docs-check-tools:
 	    exit 1; \
 	}
 
-.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
+.PHONY: all aux core test test-asan test-ubsan test-debug test-switch test-determinism test-determinism-default test-determinism-footprint test-determinism-linux cross-arm cross-riscv cross-stm32f4 cross-pico cross-arm-bytecode-only cross-riscv-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl cross-esp32s3-bytecode-only cross-esp32s3-full clean bake-clean compile_commands.json tidy tidy-fix test-tidy-strict cppcheck test-cppcheck test-scan-build analyzer lint docs-check docs-check-tools coverage coverage-tools test-branch-coverage test-valgrind test-valgrind-deep valgrind-tools fuzz-lex fuzz-parse fuzz-vm fuzz-build fuzz-tools urbi-bin urbi-server-bin urbi-send-bin test-integration test-urbi-server-smoke test-chk releasetest _releasetest_phase1 _releasetest_phase2 test-stress test-gc-none-build test-gc-pause test-loc-cap test-docstring-coverage test-bake-smoke test-bytecode-only test-freestanding test-freestanding-host test-cross-esp32s3-freestanding-golden test-cross-pico-freestanding-golden test-cross-pico-repl-elf test-gc-roots-coverage test-aux-symbols test-embedding-guide oracle-diff test-port-stm32f4
