@@ -40,10 +40,16 @@ project(urbi_pico_repl_demo C CXX ASM)
 pico_sdk_init()
 
 # --- liburbi.a (cross-built by `make cross-pico URBI_ENABLE_REPL=1`) ---
+# LIBURBI_BUILD_SUBDIR may be overridden on the cmake invocation to point at
+# an alternate build directory (e.g. arm-cortex-m0plus-repl for the
+# cross-pico-repl cooperative-REPL build used by test-cross-pico-repl-elf).
+if (NOT DEFINED LIBURBI_BUILD_SUBDIR)
+    set(LIBURBI_BUILD_SUBDIR "arm-cortex-m0plus")
+endif ()
 add_library(liburbi STATIC IMPORTED)
 set_target_properties(liburbi PROPERTIES
     IMPORTED_LOCATION
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../build/arm-cortex-m0plus/liburbi.a)
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../build/${LIBURBI_BUILD_SUBDIR}/liburbi.a)
 
 # --- Bake repl_demo.u into repl_demo_baked.h at configure/build time. ---
 add_custom_command(
@@ -69,6 +75,7 @@ set(URBI_PICO_REPL_TRANSPORT_SOURCES
 # --- The demo executable. ---
 add_executable(repl_demo
     main/main.c
+    main/usb_descriptors.c
     main/bsp/bsp_register.c
     main/bsp/bsp_led.c
     main/bsp/bsp_temp.c

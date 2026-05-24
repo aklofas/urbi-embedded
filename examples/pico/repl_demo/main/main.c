@@ -18,6 +18,7 @@
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/gpio.h"
+#include "hardware/watchdog.h"
 #include "tusb.h"
 
 #include "urbi/urbi.h"

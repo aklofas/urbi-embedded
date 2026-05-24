@@ -823,9 +823,10 @@ releasetest:
 	 echo "=== releasetest: cross-toolchain detection ==="; \
 	 phase0=""; \
 	 if [ "$$arm" = present ]; then \
-	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + cross-pico + test-freestanding(arm,stm32f4,pico) included"; \
+	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + cross-pico + cross-pico-repl + test-freestanding(arm,stm32f4,pico) included"; \
 	     echo "    (test-cross-pico-freestanding-golden runs only under GHA - golden is captured against GHA's apt arm-none-eabi-gcc 13.2.1, image bake uses xpack 14.2.1; symbol set differs by ~1 libgcc helper. See design-risks: 'switch GHA ARM jobs to xpack')"; \
-	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only"; \
+	     echo "    (test-cross-pico-repl-elf NOT in Phase 0 - SKIP path would mask CI regressions; run explicitly when working on Pico REPL)"; \
+	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only cross-pico-repl"; \
 	 elif [ "$$arm" = broken ]; then \
 	     echo "  arm-none-eabi-gcc    : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
 	 else \
@@ -1270,6 +1271,35 @@ test-cross-pico-freestanding-golden: cross-pico-bytecode-only
 	       echo "      Either fix the leak or update the golden after verifying intent:" ; \
 	       echo "        cp /tmp/v0.9.4-pico-nm-bytecode-only.actual.txt tests/golden/v0.9.4-pico-nm-bytecode-only.txt" ; \
 	       exit 1 ; }
+
+# v0.9.4-followup: example .elf link gate. Builds liburbi.a (cooperative
+# REPL) + the repl_demo Pico example to verify the embedding API surface
+# stays linkable end-to-end. Requires pico-sdk at $$PICO_SDK_PATH or
+# vendored at workspace-root tools/pico-sdk; SKIPs if absent (CI clones
+# it explicitly before invoking this target).
+# NOT wired into Phase 0 — the SKIP path would mask CI regressions when
+# pico-sdk is absent; local devs without the SDK should run releasetest
+# without false reds. Run explicitly or from CI when working on Pico REPL.
+.PHONY: test-cross-pico-repl-elf
+test-cross-pico-repl-elf: cross-pico-repl
+	@if [ -z "$$PICO_SDK_PATH" ] && [ ! -d "../tools/pico-sdk" ]; then \
+	    echo "SKIP: PICO_SDK_PATH unset and ../tools/pico-sdk absent"; \
+	    exit 0; \
+	fi
+	@PSP="$${PICO_SDK_PATH:-$$PWD/../tools/pico-sdk}"; \
+	 cd examples/pico/repl_demo && \
+	 mkdir -p build && cd build && \
+	 cmake -DPICO_SDK_PATH="$$PSP" \
+	       -DLIBURBI_BUILD_SUBDIR=arm-cortex-m0plus-repl \
+	       .. > /tmp/repl_demo_cmake.log 2>&1 || \
+	     { cat /tmp/repl_demo_cmake.log; exit 1; }; \
+	 $(MAKE) repl_demo > /tmp/repl_demo_make.log 2>&1 || \
+	     { echo "--- CMake output ---"; cat /tmp/repl_demo_cmake.log; \
+	       echo "--- make output ---"; cat /tmp/repl_demo_make.log; exit 1; }
+	@arm-none-eabi-size build/arm-cortex-m0plus-repl/liburbi.a \
+	                    examples/pico/repl_demo/build/repl_demo.elf \
+	                    | tail -2
+	@echo "PASS: cross-pico-repl example .elf links cleanly"
 
 # T18 / Wave 1: freestanding CI gate.  Asserts cross-arch URBI_BYTECODE_ONLY=1
 # liburbi.a archives have no unresolved hosted-libc symbols (printf, malloc,
