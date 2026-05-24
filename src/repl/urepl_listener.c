@@ -4,17 +4,31 @@
  * Spec §3.1 thread model.  See urepl_listener.h for the lifecycle
  * contract and shutdown choreography.
  *
- * Only compiled when URBI_ENABLE_REPL=1. */
+ * Only compiled when URBI_ENABLE_REPL=1.
+ *
+ * v0.9.4: when URBI_REPL_COOPERATIVE_ONLY=1 (freestanding targets such
+ * as Raspberry Pi Pico), the POSIX-only section (listener pthread, reader
+ * pthread, eventfd, socket includes, auth-limiter rate-check) is compiled
+ * out.  Only the cooperative sweeps and shared helpers remain.  Stub
+ * definitions of urepl_listener_drain_accepts and
+ * urepl_listener_wake_all_readers replace the POSIX implementations so
+ * urepl_dispatch.c can call them unconditionally. */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 /* _POSIX_C_SOURCE=200809L exposes clock_gettime, CLOCK_MONOTONIC, nanosleep. */
 #if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
 #  undef _POSIX_C_SOURCE
 #  define _POSIX_C_SOURCE 200809L
 #endif
+#endif /* !URBI_REPL_COOPERATIVE_ONLY */
+
 #include "repl/urepl_listener.h"
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 #include "repl/urepl_auth.h"
+#endif
 #include "repl/urepl_dispatch.h"
 #include "repl/urepl_ndjson.h"
 #include "repl/urepl_queue.h"
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 #include "repl/urepl_transport_pty.h"
 #include "repl/urepl_transport_tcp.h"
 
@@ -32,8 +46,14 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#else /* URBI_REPL_COOPERATIVE_ONLY */
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#endif /* URBI_REPL_COOPERATIVE_ONLY */
 
-/* ---- Helpers --------------------------------------------------------- */
+/* ---- POSIX-only: eventfd helpers, reader/listener pthreads ----------- */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 
 /* Drain (and discard) any pending bytes on an eventfd. */
 static void
@@ -101,7 +121,9 @@ flush_session_output(UReplReader *r)
     }
 }
 
-/* ---- Reader subthread ------------------------------------------------ */
+#endif /* !URBI_REPL_COOPERATIVE_ONLY (eventfd helpers + flush_session_output) */
+
+/* ---- Shared helpers (POSIX + cooperative builds) --------------------- */
 
 /* Process accumulated read-buffer for newline-delimited NDJSON lines.
  * On each '\n', parse the [start..pos) substring and push as a job
@@ -219,6 +241,9 @@ urepl_session_read_and_dispatch_one(UReplServer *server,
     return rc;
 }
 
+/* ---- POSIX-only: reader/listener pthreads, spawn, auth checks -------- */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
+
 static void *
 reader_main(void *arg)
 {
@@ -318,14 +343,14 @@ reader_main(void *arg)
      * longer find this session_id (urepl_session_destroy unlinks it),
      * so any jobs already on the queue addressed to this session are
      * dropped cleanly by urepl_dispatch_job's "unknown session" path. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     /* Detach session-side back-pointer before destroy so the wake-all
      * walk in urepl_listener_wake_all_readers doesn't dereference us
      * after free. */
     if (r->session != NULL) {
         r->session->reader = NULL;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     if (r->session != NULL) {
         urepl_session_destroy(server, r->session);
@@ -377,10 +402,10 @@ spawn_reader(UReplServer *server, const UTransport *transport,
     session->peer_id = peer_id;
 
     /* Link into the server's reader list under sessions_mutex. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     r->next = server->readers_head;
     server->readers_head = r;
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     /* Emit the hello envelope into the session's output ringbuf.  The
      * reader thread will flush it on its first iteration.  Spec §6
@@ -417,13 +442,13 @@ spawn_reader(UReplServer *server, const UTransport *transport,
     if (pthread_create(&r->thread, NULL, reader_main, r) != 0) {
         /* Spawn failed — tear down what we wired up.  The reader_main
          * path normally owns session destroy; we mirror that here. */
-        pthread_mutex_lock(&server->sessions_mutex);
+        UREPL_MUTEX_LOCK(&server->sessions_mutex);
         UReplReader **cur = &server->readers_head;
         while (*cur != NULL) {
             if (*cur == r) { *cur = r->next; break; }
             cur = &(*cur)->next;
         }
-        pthread_mutex_unlock(&server->sessions_mutex);
+        UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
         /* `session` was non-NULL at this point (urepl_session_create
          * success returned above). */
         session->reader = NULL;
@@ -686,7 +711,7 @@ urepl_listener_stop_and_join(UReplServer *server)
      * Cooperative readers (v0.9.4: non-pollable transports) have no
      * pthread to wake and the client_fd is not a kernel socket — skip
      * both the shutdown() and the eventfd_signal. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplReader *r = server->readers_head;
     while (r != NULL) {
         UREPL_ATOMIC_STORE_BOOL(&r->stop_requested, true);
@@ -705,17 +730,17 @@ urepl_listener_stop_and_join(UReplServer *server)
         }
         r = r->next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     /* Join + free each reader.  readers_head mutates under the
      * sessions_mutex; pop one at a time to keep the lock short. */
     for (;;) {
-        pthread_mutex_lock(&server->sessions_mutex);
+        UREPL_MUTEX_LOCK(&server->sessions_mutex);
         UReplReader *head = server->readers_head;
         if (head != NULL) {
             server->readers_head = head->next;
         }
-        pthread_mutex_unlock(&server->sessions_mutex);
+        UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
         if (head == NULL) break;
 
         if (head->started) {
@@ -760,13 +785,13 @@ urepl_listener_wake_all_readers(UReplServer *server)
     if (server == NULL) {
         return;
     }
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplReader *r = server->readers_head;
     while (r != NULL) {
         eventfd_signal(r->wake_eventfd);
         r = r->next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 }
 
 void
@@ -793,6 +818,98 @@ urepl_listener_drain_accepts(UReplServer *server)
         head = next;
     }
 }
+
+#else /* URBI_REPL_COOPERATIVE_ONLY — stubs for urepl_dispatch.c callers */
+
+/* Cooperative-only spawn_reader: allocate a UReplReader and session,
+ * emit the hello envelope, but do NOT create a wake_eventfd or pthread.
+ * The serve_step sweep drives accept/read/write/close from the embedder's
+ * main loop.  Mirrors the r->cooperative branch of the full spawn_reader
+ * but without any of the POSIX-only plumbing. */
+static int
+spawn_reader(UReplServer *server, const UTransport *transport,
+             int client_fd, uint32_t peer_id)
+{
+    UReplReader *r = (UReplReader *)calloc(1, sizeof(*r));
+    if (r == NULL) {
+        if (transport->close_fn != NULL) {
+            transport->close_fn(client_fd);
+        }
+        return URBI_ERR_OOM;
+    }
+    r->client_fd    = client_fd;
+    r->transport    = transport;
+    r->server       = server;
+    r->cooperative  = true;
+    r->wake_eventfd = -1;
+
+    UReplSession *session = urepl_session_create(server);
+    if (session == NULL) {
+        if (transport->close_fn != NULL) transport->close_fn(client_fd);
+        free(r);
+        return URBI_ERR_OOM;
+    }
+    r->session       = session;
+    session->reader  = r;
+    session->peer_id = peer_id;
+
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
+    r->next = server->readers_head;
+    server->readers_head = r;
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
+
+    char hello_env[256];
+    size_t hello_n = 0;
+    bool auth_required = (server->cfg.auth_token != NULL
+                          && server->cfg.auth_token[0] != '\0');
+    if (urepl_ndjson_emit_hello(hello_env, sizeof(hello_env),
+                                session->lobby_id_hex,
+                                /* synclines */ true,
+                                auth_required,
+                                &hello_n) == 0) {
+        urepl_ringbuf_write(&session->output, hello_env, hello_n);
+    }
+    return URBI_OK;
+}
+
+/* On cooperative-only targets there is no listener pthread and no accept
+ * queue — sessions arrive via urepl_accept_sweep_nonpollable which calls
+ * spawn_reader directly on the VM thread.  These stubs satisfy the
+ * urepl_dispatch_drain_if_active call sites so that function compiles
+ * and links without ifdefs in the caller. */
+void
+urepl_listener_drain_accepts(UReplServer *server)
+{
+    (void)server;
+    /* No-op: cooperative accept is driven by urepl_accept_sweep_nonpollable
+     * in urbi_repl_serve_step, not by the dispatch-drain hook. */
+}
+
+void
+urepl_listener_wake_all_readers(UReplServer *server)
+{
+    (void)server;
+    /* No-op: cooperative readers have no wake_eventfd; the serve_step
+     * sweep writes directly after dispatching. */
+}
+
+int
+urepl_listener_start(UReplServer *server)
+{
+    (void)server;
+    return 0; /* URBI_OK — no listener pthread on cooperative targets */
+}
+
+void
+urepl_listener_stop_and_join(UReplServer *server)
+{
+    (void)server;
+    /* No-op: no pthreads to join. */
+}
+
+#endif /* URBI_REPL_COOPERATIVE_ONLY */
+
+/* ---- Cooperative sweeps (used on all REPL builds) -------------------- */
 
 /* v0.9.4: drain pending session output via one non-blocking write_fn
  * call.  Returns bytes written (>= 0), or negative on a hard transport
@@ -868,7 +985,7 @@ urepl_write_sweep_nonpollable(UReplServer *server)
         return 0;
     }
     int total = 0;
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     for (UReplSession *s = server->sessions_head;
          s != NULL; s = s->next) {
         UReplReader *r = s->reader;
@@ -895,7 +1012,7 @@ urepl_write_sweep_nonpollable(UReplServer *server)
         }
         /* n == 0: nothing pending or would-block — fine. */
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return total;
 }
 
@@ -909,15 +1026,16 @@ urepl_accept_sweep_nonpollable(UReplServer *server)
      * drain.  Spawn_reader pushes onto readers_head + sessions_head
      * under sessions_mutex; we use sessions_head as the observable. */
     int before = 0;
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     for (UReplReader *r = server->readers_head; r != NULL; r = r->next) {
         before++;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
     /* Iterate transports; for each non-pollable one, drain its accept
      * queue.  Pollable transports are owned by the listener pthread
      * (when running) and skipped here to avoid double-accept races. */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
     for (UReplTransportEntry *e = server->transports;
          e != NULL; e = e->next) {
         if (listener_pollable_fd(e) >= 0) {
@@ -931,13 +1049,33 @@ urepl_accept_sweep_nonpollable(UReplServer *server)
      * listener pthread normally defers to urepl_listener_drain_accepts
      * via the dispatch hook. */
     urepl_listener_drain_accepts(server);
+#else
+    /* Cooperative-only: no listener pthread, no accept queue, no auth
+     * rate-limiter.  Call accept_fn directly on every transport — all
+     * are non-pollable by construction on freestanding targets.  Each
+     * accepted fd is handed off to spawn_reader immediately on the
+     * calling (VM) thread. */
+    for (UReplTransportEntry *e = server->transports;
+         e != NULL; e = e->next) {
+        if (e->transport == NULL || e->transport->accept_fn == NULL) {
+            continue;
+        }
+        for (;;) {
+            int client_fd = -1;
+            int ar = e->transport->accept_fn(e->listener_state, &client_fd);
+            if (ar == -1) break;   /* EAGAIN / no more clients */
+            if (ar != 0)  break;   /* hard error */
+            (void)spawn_reader(server, e->transport, client_fd, 0U);
+        }
+    }
+#endif
 
     int after = 0;
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     for (UReplReader *r = server->readers_head; r != NULL; r = r->next) {
         after++;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return after - before;
 }
 
@@ -957,7 +1095,7 @@ urepl_read_sweep_nonpollable(UReplServer *server)
      * reader_main), so there is no contention in practice; the lock is
      * held purely to stop urbi_repl_stop's force-close from racing the
      * session list walk. */
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplSession *s = server->sessions_head;
     while (s != NULL) {
         UReplSession *next = s->next;
@@ -989,7 +1127,7 @@ urepl_read_sweep_nonpollable(UReplServer *server)
         /* n == -1: would-block, normal. */
         s = next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return total_bytes;
 }
 
@@ -1028,7 +1166,7 @@ urepl_disconnect_sweep(UReplServer *server)
         return 0;
     }
     int torn = 0;
-    pthread_mutex_lock(&server->sessions_mutex);
+    UREPL_MUTEX_LOCK(&server->sessions_mutex);
     UReplSession *s = server->sessions_head;
     UReplSession *prev = NULL;
     while (s != NULL) {
@@ -1068,7 +1206,7 @@ urepl_disconnect_sweep(UReplServer *server)
             reader->session = NULL;
         }
 
-        pthread_mutex_unlock(&server->sessions_mutex);
+        UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
 
         /* Close the client fd exactly once.  Cooperative readers never
          * call close_fn themselves (reader_main bails at the pollable
@@ -1089,25 +1227,27 @@ urepl_disconnect_sweep(UReplServer *server)
          * urbi_repl_stop reap loop. */
         if (reader != NULL) {
             if (reader->started) {
-                pthread_join(reader->thread, NULL);
+                UREPL_THREAD_JOIN(reader->thread);
             }
+#ifndef URBI_REPL_COOPERATIVE_ONLY
             if (reader->wake_eventfd >= 0) {
                 close(reader->wake_eventfd);
                 reader->wake_eventfd = -1;
             }
+#endif
             free(reader);
         }
 
         urepl_session_destroy(server, s);
         torn++;
 
-        pthread_mutex_lock(&server->sessions_mutex);
+        UREPL_MUTEX_LOCK(&server->sessions_mutex);
         /* Resume from `next` (cached before unlink + unlock).  `prev`
          * still points at the predecessor of the torn-down session, so
          * the linkage prev->next == next remains correct if another
          * thread inserted at the head while we were unlocked. */
         s = next;
     }
-    pthread_mutex_unlock(&server->sessions_mutex);
+    UREPL_MUTEX_UNLOCK(&server->sessions_mutex);
     return torn;
 }

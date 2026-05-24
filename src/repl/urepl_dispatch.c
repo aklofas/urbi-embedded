@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /* src/repl/urepl_dispatch.c - REPL job dispatcher + session machinery */
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 /* _POSIX_C_SOURCE=200809L exposes clock_gettime / CLOCK_MONOTONIC. */
 #if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L
 #  undef _POSIX_C_SOURCE
 #  define _POSIX_C_SOURCE 200809L
 #endif
+#endif /* !URBI_REPL_COOPERATIVE_ONLY */
 #include "repl/urepl_dispatch.h"
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 #include "repl/urepl_auth.h"
+#endif
 #include "repl/urepl_introspect.h"
 #include "repl/urepl_listener.h"
 #include "repl/urepl_ndjson.h"
@@ -17,7 +21,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef URBI_REPL_COOPERATIVE_ONLY
 #include <time.h>
+#endif
 
 /* Default per-session output ringbuf cap (used when cfg.output_ringbuf_cap
  * is 0). */
@@ -341,6 +347,7 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
         }
         return;
     }
+#ifndef URBI_REPL_COOPERATIVE_ONLY
     /* v0.9.1 Task 17: constant-time comparison.  strcmp's length-
      * dependent timing leaks ~1 byte per probe to an attacker timing
      * round-trips; urepl_auth_token_match walks the full token length
@@ -379,6 +386,15 @@ dispatch_auth(UReplServer *server, UReplSession *s, UReplJob *job)
             push_env(s, env, n);
         }
     }
+#else
+    /* Cooperative-only: auth TU is not compiled in; auto-approve.
+     * Freestanding embedded targets have no network threat model. */
+    (void)expected;
+    s->authed = true;
+    if (urepl_ndjson_emit_auth_ok(env, sizeof(env), job->req.id, &n) == 0) {
+        push_env(s, env, n);
+    }
+#endif /* URBI_REPL_COOPERATIVE_ONLY */
 }
 
 static void

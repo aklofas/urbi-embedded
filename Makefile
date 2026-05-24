@@ -27,9 +27,23 @@ ifeq ($(URBI_ENABLE_REPL),1)
   ifeq ($(URBI_BYTECODE_ONLY),1)
     $(error URBI_ENABLE_REPL=1 is incompatible with URBI_BYTECODE_ONLY=1)
   endif
-  CFLAGS += -DURBI_ENABLE_REPL=1
+  CFLAGS   += -DURBI_ENABLE_REPL=1
   CPPFLAGS += -DURBI_ENABLE_REPL=1
   REPL_SRCS := $(wildcard src/repl/*.c)
+  # v0.9.4-followup: cooperative-only filter (Pico, bare-metal STM32, etc.)
+  # When URBI_REPL_COOPERATIVE_ONLY=1, drop the POSIX-only TUs: TCP/Unix/PTY
+  # listener (pthread + eventfd + sockets) and socket transports. Embedder
+  # drives serve_step from main loop; no listener thread needed.
+  ifeq ($(URBI_REPL_COOPERATIVE_ONLY),1)
+    CFLAGS   += -DURBI_REPL_COOPERATIVE_ONLY=1
+    CPPFLAGS += -DURBI_REPL_COOPERATIVE_ONLY=1
+    REPL_SRCS := $(filter-out \
+        src/repl/urepl_transport_tcp.c \
+        src/repl/urepl_transport_unix.c \
+        src/repl/urepl_transport_pty.c \
+        src/repl/urepl_auth.c, \
+        $(REPL_SRCS))
+  endif
 else
   REPL_SRCS :=
 endif
@@ -301,6 +315,7 @@ tools/urbi-compile-stdlib-f%: tools/urbi-compile-stdlib.c \
         $(filter-out src/stdlib/urbi_stdlib_bytecode.gen.c,$(HOST_BAKE_SRC)) \
         tools/stub_stdlib_bytecode.c
 	cc -std=c99 -Wall -Wextra -Wpedantic -Os -DURBI_FLOAT_TYPE=$* \
+	    $(if $(filter 1,$(URBI_REPL_COOPERATIVE_ONLY)),-DURBI_REPL_COOPERATIVE_ONLY=1,) \
 	    -Iinclude -Isrc -o $@ $^ -lm
 
 # v0.9.4: tools/urbi-compile-stdlib-pico is a symlink to the f4 variant.
@@ -1057,6 +1072,8 @@ cross-stm32f4:
 cross-pico:
 	$(MAKE) TARGET=arm-cortex-m0plus \
 		URBI_STDLIB_FLAVOR=4 \
+		URBI_ENABLE_REPL=$(URBI_ENABLE_REPL) \
+		URBI_REPL_COOPERATIVE_ONLY=$(if $(filter 1,$(URBI_ENABLE_REPL)),1,) \
 		CC=arm-none-eabi-gcc \
 		CFLAGS="-std=c99 -Wall -Wextra -Wpedantic -Os \
 		        -mcpu=cortex-m0plus -mthumb -mfloat-abi=soft \
