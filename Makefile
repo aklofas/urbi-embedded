@@ -403,9 +403,16 @@ test-chk: $(BUILDDIR)/urbi
 	done; \
 	echo "$$count chk fixture(s) passed"
 
-test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-port-stm32f4 test-urbi-server-smoke
+test: $(LIB) $(LIBURBI_AUX) $(TEST_OBJ) test-integration test-chk test-urbi-server-smoke
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $(RUNNER) $(TEST_OBJ) $(LIBURBI_AUX) $(LIB) -lm
 	$(RUNNER_WRAPPER) $(RUNNER)
+# Note: test-port-stm32f4 used to be in the line above but was pulled out to
+# avoid a parallel-make race - it builds host-side stub binaries into a
+# fixed `build/port_stm32f4/` path with no $(TARGET) suffix, so every
+# releasetest Phase 1 variant (test / test-asan / test-ubsan / test-debug
+# / test-switch) raced to write the same binary, producing intermittent
+# "Text file busy" / "Permission denied" failures under -j. Phase 1 now
+# invokes test-port-stm32f4 once as a separate gate.
 
 # v0.8.2: host-side unit tests for STM32F4 port shims, using mock BSP.
 # Each test compiles a single port shim TU against the mock BSP layer.
@@ -761,7 +768,8 @@ RELEASETEST_PHASE1 := \
     test-scan-build test-cppcheck test-tidy-strict \
     test-wire-format-determinism test-docstring-coverage \
     test-bake-smoke test-bytecode-only test-freestanding-host \
-    test-gc-roots-coverage test-aux-symbols test-embedding-guide
+    test-gc-roots-coverage test-aux-symbols test-embedding-guide \
+    test-port-stm32f4
 # Phase 2: valgrind, running alone after Phase 1 finishes.
 # Empirically valgrind throughput collapses by 10-20× when sharing memory
 # bandwidth with concurrent gcov / clang-tidy / cppcheck / fanalyzer
