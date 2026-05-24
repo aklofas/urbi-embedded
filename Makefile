@@ -801,7 +801,8 @@ releasetest:
 	 phase0=""; \
 	 if [ "$$arm" = present ]; then \
 	     echo "  arm-none-eabi-gcc    : present  -> cross-arm + cross-stm32f4 + cross-pico + test-freestanding(arm,stm32f4,pico) included"; \
-	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only test-cross-pico-freestanding-golden"; \
+	     echo "    (test-cross-pico-freestanding-golden runs only under GHA - golden is captured against GHA's apt arm-none-eabi-gcc 13.2.1, image bake uses xpack 14.2.1; symbol set differs by ~1 libgcc helper. See design-risks: 'switch GHA ARM jobs to xpack')"; \
+	     phase0="$$phase0 cross-arm-bytecode-only cross-stm32f4-bytecode-only cross-pico-bytecode-only"; \
 	 elif [ "$$arm" = broken ]; then \
 	     echo "  arm-none-eabi-gcc    : broken   -> sysroot missing; skipped (install xpack via docs/cross-toolchain-setup.md)"; \
 	 else \
