@@ -38,6 +38,7 @@
 #include "uwatcher.h"
 #include "vm/uvm.h"
 #include "tag/utag.h"           /* UTag, member_watchers_head */
+#include "event/uevent_subscribe.h"  /* uevent_at_watchers_remove (W2/v0.10.2) */
 #include "urbi/urbi.h"           /* URBI_ASSERT_NOT_ISR, URBI_LOG_WARN */
 #include "runtime/umacros.h"  /* URBI_INTERNAL_ASSERT */
 #include <stddef.h>
@@ -81,6 +82,8 @@ run_watcher_onleave(UVM *vm, UWatcher *w)
  *   1. Set URBI_WATCHER_PENDING_UNREGISTER so eval pass skips.
  *   2. Unlink from vm->active_watchers_head (pointer-to-pointer walk).
  *   3. Unlink from w->owning_tag->member_watchers_head (NULL-guarded).
+ *   3b. (W2/v0.10.2) For AT_EVENT/AT_EVENT_SYNC/WHENEVER_EVENT, synchronously
+ *       unlink from event->at_watchers_head to close the drain-vs-emit window.
  *   4. Append to pending_onleave_queue tail (set next_active = NULL). */
 void
 pending_onleave_queue_push(UVM *vm, UWatcher *w)
@@ -110,6 +113,30 @@ pending_onleave_queue_push(UVM *vm, UWatcher *w)
         UWatcher **prev = &w->owning_tag->member_watchers_head;
         while (*prev != NULL && *prev != w) prev = &(*prev)->next_in_tag;
         if (*prev == w) *prev = w->next_in_tag;
+    }
+
+    /* Step 3b (W2/v0.10.2): AT_EVENT, AT_EVENT_SYNC, and WHENEVER_EVENT
+     * watchers also thread on event->at_watchers_head via next_in_event.
+     * Unlink synchronously here so that any c_event_emit_async/_sync call
+     * that fires between this push and the next safepoint drain does NOT
+     * dispatch a zombie body strand on the cancelled realm.
+     *
+     * The drain-vs-emit window is the primary hazard (reactive audit F2):
+     * tag-stop cascade is most likely to coincide with event traffic, and
+     * do_spawn_body_coroutine would allocate a strand on the cancelled
+     * realm's strands_head and wire body->watcher_body_owner on a watcher
+     * that is logically being torn down.
+     *
+     * URBI_WATCHER_PENDING_UNREGISTER (set in Step 1) provides defence in
+     * depth; the synchronous unlink here is the primary fix.
+     *
+     * Closes reactive audit F2. */
+    if ((w->mode == UWATCHER_AT_EVENT
+         || w->mode == UWATCHER_AT_EVENT_SYNC
+         || w->mode == UWATCHER_WHENEVER_EVENT)
+        && w->event != NULL) {
+        uevent_at_watchers_remove(w->event, w);
+        w->event = NULL;
     }
 
     /* Step 4: append to FIFO tail (next_active becomes the queue threading
