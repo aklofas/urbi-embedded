@@ -72,10 +72,14 @@ development target. Ports below cover bare-metal + RTOS silicon.
 
 ## Raspberry Pi Pico (RP2040, Cortex-M0+)
 
-- **Status:** Designed at `v0.9.4-pico-example` (2026-05-20). Hardware
-  bring-up pending Phase 8 of the workspace-root
-  `docs/superpowers/plans/2026-05-19-v0.9.4-pico-example.md`
-  execution plan (workspace-root tree, not tracked in this repo).
+- **Status:** Shipped at `v0.9.4-pico-example` (2026-05-24). Hardware
+  verified on a real Raspberry Pi Pico (RP2040, Cortex-M0+, 264 KB SRAM)
+  with the `repl_demo` workload: BOOTSEL press → QSPI_SS bit-bang →
+  debounce → `urbi_inject_event` → event ring → `urbi_step` → C-side
+  `urbi_register_watcher` callback → `gpio_xor_mask` toggles GP25 LED.
+  Full hardware-validation record in
+  [`../release/hardware-validation.md`](../release/hardware-validation.md)
+  (created by a parallel doc pass).
 - **Toolchain:** `arm-none-eabi-gcc` 12+; ARMv6-M Thumb-2 subset
   (`-mcpu=cortex-m0plus`); soft-float + soft-double + soft-divide via
   ARM EABI libgcc helpers (`__aeabi_dadd`, `__aeabi_ddiv`, `__aeabi_f2d`,
@@ -97,8 +101,8 @@ development target. Ports below cover bare-metal + RTOS silicon.
   divide hardware, and no LDREX/STREX — every float op, every `/`/`%`,
   and every atomic goes through libgcc helpers (`__aeabi_d*`,
   `__aeabi_uidiv`, `__atomic_fetch_add_4`, `__gnu_thumb1_case_uqi`).
-  repl_demo.uf2 on-flash footprint measured at Phase 8 hardware
-  bring-up. Calibration commands:
+  repl_demo.uf2 on-flash footprint measured during hardware bring-up.
+  Calibration commands:
   `arm-none-eabi-size build/arm-cortex-m0plus/liburbi.a` (full) and
   `arm-none-eabi-size build/cross-pico-bytecode-only/liburbi.a` (BO).
   Caps documented in REVIVAL.md §14 row S43.
@@ -129,6 +133,21 @@ development target. Ports below cover bare-metal + RTOS silicon.
   - Two-core (Cortex-M0+ × 2); core1 is dormant unless the embedder
     explicitly starts it. liburbi.a is single-VM-per-thread and runs
     on core0 only.
+- **Known limitations (v1.x deferrals from hardware bring-up):**
+  - **REPL session model too heavy for ~256 KB SRAM.** Per-session realm
+    and `lobby.u` compile needs >50 KB on top of the stdlib_boot baseline
+    (~165 KB); the Pico's ~241 KB usable heap cannot accommodate the
+    first session. The `repl_demo` ships with REPL service skipped; a
+    C-side `urbi_register_watcher` callback provides the interactive
+    surface instead. Two remediation paths are sketched (lightweight-
+    session option, `URBI_STDLIB_MINIMAL` build flag) — both deferred
+    to v1.x.
+  - **`whenever (named_event) { body }` does not fire on
+    cooperative-only builds.** Event injection via `urbi_inject_event`
+    reaches the watcher-install check, but the body strand is never
+    scheduled without the listener pthread. Use C-side
+    `urbi_register_watcher` as the equivalent workaround on cooperative
+    targets.
 - **Pico SDK pin:** `2.2.0` at commit
   `a1438dff1d38bd9c65dbd693f0e5db4b9ae91779` (recorded in
   [`../reference/embedded-port-sources.md`](../reference/embedded-port-sources.md)).
