@@ -1050,6 +1050,38 @@ typedef struct UChunkInstance UChunkInstance;
 URBI_ADVANCED UChunkInstance *urbi_chunk_instance_create (struct UVM *vm, struct UProto *root);
 URBI_ADVANCED void             urbi_chunk_instance_destroy(struct UVM *vm, UChunkInstance *mi);
 
+/* === W1/v0.10.3: opaque VM allocation API ===
+ *
+ * urbi_vm_create  — allocate + initialise a UVM via the supplied allocator.
+ *                   Preferred entry point for new embedders.  Returns NULL on
+ *                   alloc failure or when alloc_fn == NULL.
+ *
+ * urbi_vm_free    — tear down + free a UVM created via urbi_vm_create.
+ *                   Safe to call with vm == NULL (no-op).
+ *
+ * urbi_vm_sizeof  — size in bytes of struct UVM, for embedders who want to
+ *                   declare static/BSS storage without including the internal
+ *                   src/vm/uvm.h header.
+ *
+ * urbi_vm_alignof — alignment requirement for struct UVM (always a power of two).
+ *
+ * For static/BSS allocation (advanced; see urbi_vm_init below):
+ *   alignas(urbi_vm_alignof()) static char vm_buf[urbi_vm_sizeof()];
+ *   struct UVM *vm = (struct UVM *)vm_buf;
+ *   urbi_vm_init(vm, my_alloc, NULL);
+ *   ... use vm ...
+ *   urbi_vm_destroy(vm);
+ *
+ * For heap allocation (recommended for new code):
+ *   struct UVM *vm = urbi_vm_create(my_alloc, NULL);
+ *   ... use vm ...
+ *   urbi_vm_free(vm);
+ */
+struct UVM *urbi_vm_create (UVMAllocFn alloc_fn, void *alloc_ud);
+void        urbi_vm_free   (struct UVM *vm);
+size_t      urbi_vm_sizeof (void);
+size_t      urbi_vm_alignof(void);
+
 /* === API-013: VM lifecycle (promoted to public at v0.5.5) ===
  *
  * Hosts allocate a UVM struct themselves, initialize it with urbi_vm_init

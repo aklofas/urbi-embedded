@@ -8,21 +8,18 @@ All public API symbols are declared in `<urbi/urbi.h>`, `<urbi/types.h>`, `<urbi
 
 ## Status of this guide
 
-**This guide is accurate for the current API shape but contains deprecated
-patterns that will be corrected in a future release.**
+**This guide is accurate for the current API shape but retains some deprecated
+patterns that will be removed in a future release.**
 
-Today (pre-v1.0), embedders who want to stack-allocate `struct UVM` must
-include `src/vm/uvm.h` and pass `-Isrc` at compile time. This is a known
-limitation: the public headers only forward-declare `struct UVM`; they do
-not expose its full definition. The proper opaque allocation API
-(`urbi_vm_create()` / `urbi_vm_free()`) is planned for the v0.10.x
-architectural refactor arc (Wave 4 W6). Until that lands:
+The opaque VM allocation API (`urbi_vm_create()` / `urbi_vm_free()` /
+`urbi_vm_sizeof()` / `urbi_vm_alignof()`) landed in v0.10.3 (Wave 4 W1).
+New code should use `urbi_vm_create` and never include `src/vm/uvm.h`.
+The Quick Start section below shows the recommended pattern first.
 
-- Snippets in this guide that include `vm/uvm.h` or `stdlib/stdlib_boot.h`
-  from `src/` are **marked DEPRECATED**. They reflect today's only available
-  pattern, not the intended public API.
-- All such snippets pass `-Isrc` at compile time. That flag and those
-  headers will become unnecessary once the opaque API ships.
+Snippets still marked **DEPRECATED** in this guide include `vm/uvm.h` from
+`src/` and pass `-Isrc`; those reflect the old stack-allocation pattern and
+will be replaced by W6 of the v0.10.x refactor arc. Until then:
+
 - `urbi_stdlib_boot()` is now called automatically inside
   `urbi_realm_global()`. Embedder code that calls it explicitly is harmless
   today but redundant, and the symbol is not declared in any public header
@@ -30,8 +27,6 @@ architectural refactor arc (Wave 4 W6). Until that lands:
 
 The authoritative statement of what is and is not public API remains line 5
 of this document: **never include headers from `src/` in production code**.
-The deprecated snippets below violate that rule as a temporary workaround
-only.
 
 ---
 
@@ -79,16 +74,83 @@ layout unchanged). ABI 0/12/0 → 0/13/0.
 
 ## 1. Quick Start
 
-The minimum viable embedding: allocate a VM, initialize it with a heap allocator, run a script, then destroy it.
+The minimum viable embedding: allocate a VM, run a script, then free it.
+
+```c
+/* STANDALONE EXAMPLE — compile with:
+ *   cc -std=c99 -Iinclude quick_start.c build/host/liburbi.a \
+ *      build/host/liburbi_aux.a -lm -o quick_start
+ *
+ * Requires: liburbi.a and liburbi_aux.a already built (run `make`). */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include "urbi/urbi.h"
+#include "urbi/types.h"
+#include "urbi/aux.h"
+
+/* Simple allocator that wraps the system heap. */
+static void *sys_alloc(void *ptr, size_t nbytes, void *ud)
+{
+    (void)ud;
+    if (nbytes == 0) { free(ptr); return NULL; }
+    return ptr ? realloc(ptr, nbytes) : malloc(nbytes);
+}
+
+int main(void)
+{
+    /* Confirm compile-time header matches link-time library. */
+    if (urbi_aux_check_version() != URBI_OK) {
+        fprintf(stderr, "ABI version mismatch\n");
+        return 1;
+    }
+
+    struct UVM *vm = urbi_vm_create(sys_alloc, NULL);
+    if (vm == NULL) {
+        fprintf(stderr, "urbi_vm_create: out of memory\n");
+        return 1;
+    }
+
+    struct URealm *realm = urbi_realm_global(vm);
+    /* ... use vm and realm ... */
+
+    urbi_vm_free(vm);
+    return 0;
+}
+```
+
+### Static/BSS allocation (advanced)
+
+Deeply embedded targets that need explicit control over `struct UVM`
+placement (e.g. placing it in a specific SRAM region) can use
+`urbi_vm_sizeof` / `urbi_vm_alignof` to declare a buffer without
+including the internal `src/vm/uvm.h` header:
+
+```c
+/* FRAGMENT — static allocation without internal headers */
+#include <stddef.h>
+#include "urbi/urbi.h"
+#include "urbi/types.h"
+
+static _Alignas(8) char vm_buf[/* urbi_vm_sizeof() */4096 * 64];
+
+struct UVM *vm_init_static(UVMAllocFn alloc)
+{
+    /* At startup, verify the buffer is large enough. */
+    if (sizeof(vm_buf) < urbi_vm_sizeof()) return NULL;
+    struct UVM *vm = (struct UVM *)vm_buf;
+    if (urbi_vm_init(vm, alloc, NULL) != URBI_OK) return NULL;
+    return vm;
+}
+```
+
+For a fully self-contained Quick Start using the older stack-allocation
+pattern (still supported; see `urbi_vm_init` / `urbi_vm_destroy` in the
+public header):
 
 > **DEPRECATED — internal header use.** The snippet below references
-> `vm/uvm.h` from `src/`. This is not a supported public embedding
-> pattern; it works today only because the public API does not yet expose
-> opaque VM allocation. **Do not use in new code.** A supported opaque API
-> (`urbi_vm_create()` / `urbi_vm_free()`) lands in Wave 4 of the v0.10.x
-> architectural refactor arc; until then, embedders should treat this
-> snippet as best-effort and consult the "Status of this guide" section
-> above.
+> `vm/uvm.h` from `src/`. Do not use `-Isrc` in new code; prefer
+> `urbi_vm_create` above.
 
 ```c
 /* STANDALONE EXAMPLE — compile with:
@@ -98,8 +160,7 @@ The minimum viable embedding: allocate a VM, initialize it with a heap allocator
  * DEPRECATED: `-Isrc` is required here because `vm/uvm.h` is an internal
  * header that exposes the full `struct UVM` layout for stack allocation.
  * The public headers in `include/urbi/` provide only an opaque
- * forward declaration. This pattern will be replaced by `urbi_vm_create()`
- * in a future release; do not use `-Isrc` in new production code.
+ * forward declaration. Prefer `urbi_vm_create` for new code.
  *
  * Requires: liburbi.a and liburbi_aux.a already built (run `make`). */
 
