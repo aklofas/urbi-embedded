@@ -65,10 +65,13 @@
 #endif
 
 /* Dispatch-time assertion for placeholder opcode stubs.
- * In hosted builds (tests, REPL) this triggers assert() so CI catches
- * stray row-7 opcodes emitted without an emit path.  In freestanding
- * builds it is a no-op — the stub immediately sets strand DEAD, which
- * is safe and produces a VM_TYPE_ERROR diagnostic. */
+ * POLICY: use URBI_DISPATCH_ASSERT ONLY for unreachable-in-production stubs
+ * where the assert serves as a CI trip-wire but the code immediately below
+ * sets a user-visible error and halts safely even if the assert strips.
+ * Do NOT use URBI_DISPATCH_ASSERT for load-bearing invariants — those must
+ * use unconditional HALT() paths so they fire in both debug and release builds.
+ * In hosted builds this triggers assert() so CI catches stray opcodes.
+ * In freestanding builds it is a no-op; the stub below sets UVM_TYPE_ERROR. */
 #if __STDC_HOSTED__
 #  include <assert.h>
 #  define URBI_DISPATCH_ASSERT(cond) assert(cond)
@@ -558,11 +561,29 @@ dispatch:
              * s->module_instance first, then the parent closure's
              * origin_module_instance.  Eliminates both the two-branch
              * proto_inst binding AND the origin_module_instance propagation. */
+            /* runtime-invariants F2: promote load-bearing owning_module_instance
+             * guards from URBI_DISPATCH_ASSERT (strips in release) to
+             * unconditional HALT paths.  These three checks are not debug
+             * diagnostics — a NULL omi or out-of-range ic_index would cause
+             * a NULL dereference or OOB read on the very next line, producing
+             * silent corruption in release builds. */
             struct UChunkInstance *omi = child_proto->owning_module_instance;
-            URBI_DISPATCH_ASSERT(omi != NULL);
-            URBI_DISPATCH_ASSERT(omi->proto_instances != NULL);
-            URBI_DISPATCH_ASSERT((size_t)child_proto->ic_index <
-                                 (size_t)omi->proto_instances->n);
+            if (UNLIKELY(omi == NULL)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "CLOSURE: owning_module_instance not wired");
+                HALT();
+            }
+            if (UNLIKELY(omi->proto_instances == NULL)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "CLOSURE: proto_instances array not allocated");
+                HALT();
+            }
+            if (UNLIKELY((size_t)child_proto->ic_index >=
+                         (size_t)omi->proto_instances->n)) {
+                vm->last_error = UVM_TYPE_ERROR;
+                vm_format_type_error_msg(vm, "CLOSURE: ic_index out of proto_instances range");
+                HALT();
+            }
             cl->proto_inst =
                 &omi->proto_instances->entries[child_proto->ic_index];
 
