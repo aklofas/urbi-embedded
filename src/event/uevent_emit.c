@@ -97,6 +97,16 @@ c_event_emit_async(struct UVM *vm, struct UEvent *e, UValue payload)
     w = e->at_watchers_head;
     while (w) {
         struct UWatcher *next = w->next_in_event;   /* snapshot before any modification */
+        /* W2/v0.10.2 defence in depth: skip watchers whose tag-stop cascade
+         * pushed them to the pending-onleave queue (URBI_WATCHER_PENDING_UNREGISTER
+         * set in pending_onleave_queue_push Step 1).  The synchronous unlink in
+         * Step 3b normally removes them from at_watchers_head before any emit
+         * fires; this guard protects against future code paths that bypass the
+         * synchronous unlink.  Closes reactive audit F2. */
+        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+            w = next;
+            continue;
+        }
         if (w->mode == UWATCHER_AT_EVENT
             || w->mode == UWATCHER_AT_EVENT_SYNC
             || w->mode == UWATCHER_WHENEVER_EVENT) {
@@ -209,6 +219,12 @@ c_event_emit_sync(struct UVM *vm, struct UEvent *e, UValue payload)
     w = e->at_watchers_head;
     while (w) {
         struct UWatcher *next = w->next_in_event;
+        /* W2/v0.10.2 defence in depth: skip watchers pending tag-stop drain.
+         * Mirrors the same guard in c_event_emit_async.  Closes reactive F2. */
+        if (w->flags & URBI_WATCHER_PENDING_UNREGISTER) {
+            w = next;
+            continue;
+        }
         if (w->mode == UWATCHER_AT_EVENT_SYNC) {
             run_event_body_on_scratch(vm, w, payload);
         } else if (w->mode == UWATCHER_AT_EVENT
